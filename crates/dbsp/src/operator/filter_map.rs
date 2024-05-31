@@ -2,7 +2,7 @@ use crate::{
     dynamic::{DataTrait, Erase, WeightTrait},
     trace::BatchReaderFactories,
     typed_batch::{
-        Batch, BatchReader, DynFallbackIndexedWSet, DynFallbackWSet, DynOrdIndexedWSet, DynOrdWSet,
+        Batch, BatchReader, DynOrdIndexedWSet, DynOrdWSet, DynVecIndexedWSet, DynVecWSet,
         OrdIndexedWSet, OrdWSet, TypedBatch,
     },
     Circuit, DBData, DBWeight, Stream,
@@ -115,7 +115,7 @@ impl<C: Circuit, B: FilterMap> Stream<C, B> {
     /// records into `OrdZSet` batches.
     ///
     /// The output of `func` can be any type that implements `trait
-    /// IntoIterator`, e.g., `Option<>` or `Vec<>`.
+    /// IntoIterator`, e.g., `Option<>` or `Vecxxxxv<>`.
     pub fn flat_map<F, I>(&self, mut func: F) -> Stream<C, OrdWSet<I::Item, B::R, B::DynR>>
     where
         F: FnMut(B::ItemRef<'_>) -> I + 'static,
@@ -293,7 +293,7 @@ where
     }
 }
 
-impl<K, DynK, R, DynR> FilterMap for TypedBatch<K, (), R, DynFallbackWSet<DynK, DynR>>
+impl<K, DynK, R, DynR> FilterMap for TypedBatch<K, (), R, DynVecWSet<DynK, DynR>>
 where
     K: DBData + Erase<DynK>,
     DynK: DataTrait + ?Sized,
@@ -361,7 +361,7 @@ where
 }
 
 impl<K, DynK, V, DynV, R, DynR> FilterMap
-    for TypedBatch<K, V, R, DynFallbackIndexedWSet<DynK, DynV, DynR>>
+    for TypedBatch<K, V, R, DynVecIndexedWSet<DynK, DynV, DynR>>
 where
     K: DBData + Erase<DynK>,
     DynK: DataTrait + ?Sized,

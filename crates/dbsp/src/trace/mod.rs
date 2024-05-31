@@ -54,12 +54,15 @@ pub use spine_fueled::Spine as OldSpine;
 pub mod test;
 
 pub use ord::{
-    FallbackIndexedWSet, FallbackIndexedWSetFactories, FallbackKeyBatch, FallbackKeyBatchFactories,
-    FallbackValBatch, FallbackValBatchFactories, FallbackWSet, FallbackWSetFactories,
-    FileIndexedWSet, FileIndexedWSetFactories, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
-    FileValBatchFactories, FileWSet, FileWSetFactories, OrdIndexedWSet, OrdIndexedWSetFactories,
-    OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch, OrdValBatchFactories, OrdWSet,
-    OrdWSetFactories,
+    FallbackIndexedWSet, FallbackIndexedWSetBuilder, FallbackIndexedWSetFactories,
+    FallbackIndexedWSetMerger, FallbackKeyBatch, FallbackKeyBatchFactories, FallbackValBatch,
+    FallbackValBatchFactories, FallbackWSet, FallbackWSetBuilder, FallbackWSetFactories,
+    FallbackWSetMerger, FileIndexedWSet, FileIndexedWSetFactories, FileKeyBatch,
+    FileKeyBatchFactories, FileValBatch, FileValBatchFactories, FileWSet, FileWSetFactories,
+    OrdIndexedWSet, OrdIndexedWSetBuilder, OrdIndexedWSetFactories, OrdIndexedWSetMerger,
+    OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch, OrdValBatchFactories, OrdWSet, OrdWSetBuilder,
+    OrdWSetFactories, OrdWSetMerger, VecIndexedWSet, VecIndexedWSetFactories, VecKeyBatch,
+    VecKeyBatchFactories, VecValBatch, VecValBatchFactories, VecWSet, VecWSetFactories,
 };
 
 use rkyv::{archived_root, Deserialize, Infallible};

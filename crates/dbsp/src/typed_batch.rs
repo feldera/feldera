@@ -6,7 +6,8 @@
 pub use crate::{
     algebra::{
         IndexedZSet as DynIndexedZSet, IndexedZSetReader as DynIndexedZSetReader,
-        OrdIndexedZSet as DynOrdIndexedZSet, OrdZSet as DynOrdZSet, ZSet as DynZSet,
+        OrdIndexedZSet as DynOrdIndexedZSet, OrdZSet as DynOrdZSet,
+        VecIndexedZSet as DynVecIndexedZSet, VecZSet as DynVecZSet, ZSet as DynZSet,
         ZSetReader as DynZSetReader,
     },
     trace::{
@@ -18,6 +19,8 @@ pub use crate::{
         OrdIndexedWSet as DynOrdIndexedWSet, OrdKeyBatch as DynOrdKeyBatch,
         OrdValBatch as DynOrdValBatch, OrdWSet as DynOrdWSet, Spillable as DynSpillable,
         Spine as DynSpine, Stored as DynStored, Trace as DynTrace,
+        VecIndexedWSet as DynVecIndexedWSet, VecKeyBatch as DynVecKeyBatch,
+        VecValBatch as DynVecValBatch, VecWSet as DynVecWSet,
     },
     DBData, DBWeight, DynZWeight, Stream, Timestamp, ZWeight,
 };
@@ -463,6 +466,15 @@ pub type OrdIndexedZSet<K, V> = TypedBatch<K, V, ZWeight, DynOrdIndexedZSet<DynD
 pub type OrdKeyBatch<K, T, R, DynR> = TypedBatch<K, (), R, DynOrdKeyBatch<DynData, T, DynR>>;
 pub type OrdValBatch<K, V, T, R, DynR> =
     TypedBatch<K, V, R, DynOrdValBatch<DynData, DynData, T, DynR>>;
+
+pub type VecWSet<K, R, DynR> = TypedBatch<K, (), R, DynVecWSet<DynData, DynR>>;
+pub type VecZSet<K> = TypedBatch<K, (), ZWeight, DynVecZSet<DynData>>;
+pub type VecIndexedWSet<K, V, R, DynR> =
+    TypedBatch<K, V, R, DynVecIndexedWSet<DynData, DynData, DynR>>;
+pub type VecIndexedZSet<K, V> = TypedBatch<K, V, ZWeight, DynVecIndexedZSet<DynData, DynData>>;
+pub type VecKeyBatch<K, T, R, DynR> = TypedBatch<K, (), R, DynVecKeyBatch<DynData, T, DynR>>;
+pub type VecValBatch<K, V, T, R, DynR> =
+    TypedBatch<K, V, R, DynVecValBatch<DynData, DynData, T, DynR>>;
 
 pub type FileWSet<K, R, DynR> = TypedBatch<K, (), R, DynFileWSet<DynData, DynR>>;
 pub type FileZSet<K> = TypedBatch<K, (), ZWeight, DynFileWSet<DynData, DynZWeight>>;

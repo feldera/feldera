@@ -1,7 +1,10 @@
 //! Compute random samples of data.
 
 use crate::{
-    algebra::{HasOne, IndexedZSetReader, OrdZSet, OrdZSetFactories},
+    algebra::{
+        zset::{VecZSet, VecZSetFactories},
+        HasOne, IndexedZSetReader,
+    },
     circuit::{
         operator_traits::{BinaryOperator, Operator},
         Scope,
@@ -30,7 +33,7 @@ pub const fn default_quantiles() -> u32 {
 
 pub struct StreamSampleUniqueKeyValsFactories<B: IndexedZSetReader> {
     input_factories: B::Factories,
-    output_factories: OrdZSetFactories<DynPair<B::Key, B::Val>>,
+    output_factories: VecZSetFactories<DynPair<B::Key, B::Val>>,
 }
 
 impl<B: IndexedZSetReader> Clone for StreamSampleUniqueKeyValsFactories<B> {
@@ -65,9 +68,9 @@ where
     /// See [`Stream::stream_sample_keys`].
     pub fn dyn_stream_sample_keys(
         &self,
-        output_factories: &OrdZSetFactories<B::Key>,
+        output_factories: &VecZSetFactories<B::Key>,
         sample_size: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, OrdZSet<B::Key>> {
+    ) -> Stream<RootCircuit, VecZSet<B::Key>> {
         self.circuit().region("stream_sample_keys", || {
             let stream = self.try_sharded_version();
 
@@ -93,7 +96,7 @@ where
         &self,
         factories: &StreamSampleUniqueKeyValsFactories<B>,
         sample_size: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, OrdZSet<DynPair<B::Key, B::Val>>> {
+    ) -> Stream<RootCircuit, VecZSet<DynPair<B::Key, B::Val>>> {
         self.circuit().region("stream_sample_unique_key_vals", || {
             let stream = self.try_sharded_version();
 
@@ -116,9 +119,9 @@ where
     /// See [`Stream::stream_key_quantiles`].
     pub fn dyn_stream_key_quantiles(
         &self,
-        output_factories: &OrdZSetFactories<B::Key>,
+        output_factories: &VecZSetFactories<B::Key>,
         num_quantiles: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, OrdZSet<B::Key>> {
+    ) -> Stream<RootCircuit, VecZSet<B::Key>> {
         let sample_size = num_quantiles.apply(|num| num * num);
 
         let output_factories = output_factories.clone();
@@ -132,7 +135,7 @@ where
                 if sample_size <= num_quantiles {
                     sample
                 } else {
-                    let mut builder = <<OrdZSet<_> as Batch>::Builder>::with_capacity(
+                    let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                         &output_factories,
                         (),
                         num_quantiles,
@@ -152,7 +155,7 @@ where
         &self,
         factories: &StreamSampleUniqueKeyValsFactories<B>,
         num_quantiles: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, OrdZSet<DynPair<B::Key, B::Val>>> {
+    ) -> Stream<RootCircuit, VecZSet<DynPair<B::Key, B::Val>>> {
         let sample_size = num_quantiles.apply(|num| num * num);
 
         let factories = factories.clone();
@@ -166,7 +169,7 @@ where
                 if sample_size <= num_quantiles {
                     sample
                 } else {
-                    let mut builder = <<OrdZSet<_> as Batch>::Builder>::with_capacity(
+                    let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                         &factories.output_factories,
                         (),
                         num_quantiles,
@@ -185,7 +188,7 @@ struct SampleKeys<T>
 where
     T: IndexedZSetReader,
 {
-    output_factories: OrdZSetFactories<T::Key>,
+    output_factories: VecZSetFactories<T::Key>,
     _phantom: PhantomData<T>,
 }
 
@@ -193,7 +196,7 @@ impl<T> SampleKeys<T>
 where
     T: IndexedZSetReader,
 {
-    fn new(output_factories: &OrdZSetFactories<T::Key>) -> Self {
+    fn new(output_factories: &VecZSetFactories<T::Key>) -> Self {
         Self {
             output_factories: output_factories.clone(),
             _phantom: PhantomData,
@@ -213,11 +216,11 @@ where
     }
 }
 
-impl<T> BinaryOperator<T, usize, OrdZSet<T::Key>> for SampleKeys<T>
+impl<T> BinaryOperator<T, usize, VecZSet<T::Key>> for SampleKeys<T>
 where
     T: IndexedZSetReader,
 {
-    fn eval(&mut self, input_trace: &T, &sample_size: &usize) -> OrdZSet<T::Key> {
+    fn eval(&mut self, input_trace: &T, &sample_size: &usize) -> VecZSet<T::Key> {
         let sample_size = min(sample_size, MAX_SAMPLE_SIZE);
 
         if sample_size != 0 {
@@ -226,7 +229,7 @@ where
 
             input_trace.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
 
-            let mut builder = <<OrdZSet<_> as Batch>::Builder>::with_capacity(
+            let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                 &self.output_factories,
                 (),
                 sample.len(),
@@ -236,7 +239,7 @@ where
             }
             builder.done()
         } else {
-            <OrdZSet<_>>::dyn_empty(&self.output_factories, ())
+            <VecZSet<_>>::dyn_empty(&self.output_factories, ())
         }
     }
 }
@@ -246,7 +249,7 @@ where
     T: IndexedZSetReader,
 {
     input_factories: T::Factories,
-    output_factories: OrdZSetFactories<DynPair<T::Key, T::Val>>,
+    output_factories: VecZSetFactories<DynPair<T::Key, T::Val>>,
     _phantom: PhantomData<T>,
 }
 
@@ -256,7 +259,7 @@ where
 {
     fn new(
         input_factories: &T::Factories,
-        output_factories: &OrdZSetFactories<DynPair<T::Key, T::Val>>,
+        output_factories: &VecZSetFactories<DynPair<T::Key, T::Val>>,
     ) -> Self {
         Self {
             input_factories: input_factories.clone(),
@@ -279,11 +282,11 @@ where
     }
 }
 
-impl<T> BinaryOperator<T, usize, OrdZSet<DynPair<T::Key, T::Val>>> for SampleUniqueKeyVals<T>
+impl<T> BinaryOperator<T, usize, VecZSet<DynPair<T::Key, T::Val>>> for SampleUniqueKeyVals<T>
 where
     T: IndexedZSetReader,
 {
-    fn eval(&mut self, input_trace: &T, &sample_size: &usize) -> OrdZSet<DynPair<T::Key, T::Val>> {
+    fn eval(&mut self, input_trace: &T, &sample_size: &usize) -> VecZSet<DynPair<T::Key, T::Val>> {
         let sample_size = min(sample_size, MAX_SAMPLE_SIZE);
 
         if sample_size != 0 {
@@ -296,7 +299,7 @@ where
 
             let mut cursor = input_trace.cursor();
 
-            let mut builder = <<OrdZSet<_> as Batch>::Builder>::with_capacity(
+            let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                 &self.output_factories,
                 (),
                 sample_size,
@@ -323,7 +326,7 @@ where
 
             builder.done()
         } else {
-            <OrdZSet<_>>::dyn_empty(&self.output_factories, ())
+            <VecZSet<_>>::dyn_empty(&self.output_factories, ())
         }
     }
 }
@@ -339,7 +342,7 @@ mod test {
             Cursor, Trace,
         },
         typed_batch::{
-            BatchReader, DynBatchReader, DynOrdZSet, OrdIndexedZSet, OrdZSet, TypedBatch,
+            BatchReader, DynBatchReader, DynVecZSet, OrdIndexedZSet, TypedBatch, VecZSet,
         },
         utils::Tup2,
         DynZWeight, RootCircuit, Runtime, ZWeight,
@@ -353,8 +356,8 @@ mod test {
     ) -> AnyResult<(
         InputHandle<usize>,
         IndexedZSetHandle<i32, i32>,
-        OutputHandle<OrdZSet<i32>>,
-        OutputHandle<OrdZSet<i32>>,
+        OutputHandle<VecZSet<i32>>,
+        OutputHandle<VecZSet<i32>>,
     )> {
         let (sample_size_stream, sample_size_handle) = circuit.add_input_stream::<usize>();
         let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32>();
@@ -391,7 +394,7 @@ mod test {
                 Tup2<i32, i32>,
                 (),
                 ZWeight,
-                DynOrdZSet<DynPair<DynData /* <i32> */, DynData /* <i32> */>>,
+                DynVecZSet<DynPair<DynData /* <i32> */, DynData /* <i32> */>>,
             >,
         >,
         OutputHandle<
@@ -399,7 +402,7 @@ mod test {
                 Tup2<i32, i32>,
                 (),
                 ZWeight,
-                DynOrdZSet<DynPair<DynData /* <i32> */, DynData /* <i32> */>>,
+                DynVecZSet<DynPair<DynData /* <i32> */, DynData /* <i32> */>>,
             >,
         >,
         OutputHandle<OrdIndexedZSet<i32, i32>>,

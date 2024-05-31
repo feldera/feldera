@@ -22,8 +22,7 @@ pub use timestamp::Timestamp;
 
 use dbsp::algebra::{OrdIndexedZSetFactories, OrdZSetFactories, UnsignedPrimInt};
 use dbsp::dynamic::{DowncastTrait, DynData, Erase};
-use dbsp::trace::ord::vec::indexed_wset_batch::VecIndexedWSetBuilder;
-use dbsp::trace::ord::vec::wset_batch::VecWSetBuilder;
+use dbsp::trace::ord::{OrdIndexedWSetBuilder, OrdWSetBuilder, OrdWSetFactories};
 use dbsp::trace::BatchReaderFactories;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::{
@@ -1523,8 +1522,8 @@ where
     T: DBData + 'static,
     F: Fn(&D) -> T,
 {
-    let factories = OrdZSetFactories::new::<T, (), ZWeight>();
-    let mut builder = VecWSetBuilder::with_capacity(&factories, (), data.len());
+    let factories = OrdWSetFactories::new::<T, (), ZWeight>();
+    let mut builder = OrdWSetBuilder::with_capacity(&factories, (), data.len());
     let mut cursor = data.cursor();
     while cursor.key_valid() {
         let mut weight = *cursor.weight().deref();
@@ -1544,7 +1543,7 @@ where
 {
     let factories = OrdZSetFactories::new::<D, (), ZWeight>();
 
-    let mut builder = VecWSetBuilder::with_capacity(&factories, (), data.len());
+    let mut builder = OrdWSetBuilder::with_capacity(&factories, (), data.len());
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {
@@ -1570,7 +1569,7 @@ where
     F: Fn((&K, &D), &T) -> bool,
 {
     let factories = OrdIndexedZSetFactories::new::<K, D, ZWeight>();
-    let mut builder = VecIndexedWSetBuilder::with_capacity(&factories, (), data.len());
+    let mut builder = OrdIndexedWSetBuilder::with_capacity(&factories, (), data.len());
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {

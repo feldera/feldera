@@ -2,7 +2,7 @@ use crate::{
     dynamic::DynPair,
     operator::dynamic::sample::StreamSampleUniqueKeyValsFactories,
     trace::BatchReaderFactories,
-    typed_batch::{DynOrdZSet, IndexedZSetReader, TypedBatch},
+    typed_batch::{DynVecZSet, IndexedZSetReader, TypedBatch},
     RootCircuit, Stream, ZWeight,
 };
 
@@ -42,7 +42,7 @@ where
     pub fn stream_sample_keys(
         &self,
         sample_size: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, TypedBatch<B::Key, (), ZWeight, DynOrdZSet<B::DynK>>> {
+    ) -> Stream<RootCircuit, TypedBatch<B::Key, (), ZWeight, DynVecZSet<B::DynK>>> {
         let factories = BatchReaderFactories::new::<B::Key, (), ZWeight>();
 
         self.inner()
@@ -61,7 +61,7 @@ where
         sample_size: &Stream<RootCircuit, usize>,
     ) -> Stream<
         RootCircuit,
-        TypedBatch<Tup2<B::Key, B::Val>, (), ZWeight, DynOrdZSet<DynPair<B::DynK, B::DynV>>>,
+        TypedBatch<Tup2<B::Key, B::Val>, (), ZWeight, DynVecZSet<DynPair<B::DynK, B::DynV>>>,
     > {
         let factories = StreamSampleUniqueKeyValsFactories::new::<B::Key, B::Val>();
 
@@ -98,7 +98,7 @@ where
     pub fn stream_key_quantiles(
         &self,
         num_quantiles: &Stream<RootCircuit, usize>,
-    ) -> Stream<RootCircuit, TypedBatch<B::Key, (), ZWeight, DynOrdZSet<B::DynK>>> {
+    ) -> Stream<RootCircuit, TypedBatch<B::Key, (), ZWeight, DynVecZSet<B::DynK>>> {
         let factories = BatchReaderFactories::new::<B::Key, (), ZWeight>();
 
         self.inner()
@@ -118,7 +118,7 @@ where
         num_quantiles: &Stream<RootCircuit, usize>,
     ) -> Stream<
         RootCircuit,
-        TypedBatch<Tup2<B::Key, B::Val>, (), ZWeight, DynOrdZSet<DynPair<B::DynK, B::DynV>>>,
+        TypedBatch<Tup2<B::Key, B::Val>, (), ZWeight, DynVecZSet<DynPair<B::DynK, B::DynV>>>,
     > {
         let factories = StreamSampleUniqueKeyValsFactories::new::<B::Key, B::Val>();
 

@@ -10,10 +10,10 @@ use crate::{
         ord::{
             file::wset_batch::{FileWSetBuilder, FileWSetMerger},
             merge_batcher::MergeBatcher,
-            vec::wset_batch::{VecWSetBuilder, VecWSetMerger},
+            vec::wset_batch::{VecWSet, VecWSetBuilder, VecWSetFactories, VecWSetMerger},
         },
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, FileWSet,
-        FileWSetFactories, Filter, Merger, OrdWSet, OrdWSetFactories, WeightedItem,
+        FileWSetFactories, Filter, Merger, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
@@ -31,7 +31,7 @@ where
     R: WeightTrait + ?Sized,
 {
     file: FileWSetFactories<K, R>,
-    vec: OrdWSetFactories<K, R>,
+    vec: VecWSetFactories<K, R>,
 }
 
 impl<K, R> Clone for FallbackWSetFactories<K, R>
@@ -60,7 +60,7 @@ where
     {
         Self {
             file: FileWSetFactories::new::<KType, VType, RType>(),
-            vec: OrdWSetFactories::new::<KType, VType, RType>(),
+            vec: VecWSetFactories::new::<KType, VType, RType>(),
         }
     }
 
@@ -110,13 +110,27 @@ where
     inner: Inner<K, R>,
 }
 
+impl<K, R> FallbackWSet<K, R>
+where
+    K: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        match &self.inner {
+            Inner::Vec(vec) => vec.is_empty(),
+            Inner::File(file) => file.is_empty(),
+        }
+    }
+}
+
 #[allow(clippy::large_enum_variant)]
 enum Inner<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    Vec(OrdWSet<K, R>),
+    Vec(VecWSet<K, R>),
     File(FileWSet<K, R>),
 }
 
@@ -131,7 +145,7 @@ where
             Inner::File(file) => Some(file),
         }
     }
-    fn as_vec(&self) -> Option<&OrdWSet<K, R>> {
+    fn as_vec(&self) -> Option<&VecWSet<K, R>> {
         match self {
             Inner::Vec(vec) => Some(vec),
             Inner::File(_file) => None,
@@ -168,9 +182,6 @@ where
     }
 }
 
-// This is `#[cfg(test)]` only because it would be surprisingly expensive in
-// production.
-#[cfg(test)]
 impl<Other, K, R> PartialEq<Other> for FallbackWSet<K, R>
 where
     K: DataTrait + ?Sized,
@@ -183,7 +194,6 @@ where
     }
 }
 
-#[cfg(test)]
 impl<K, R> Eq for FallbackWSet<K, R>
 where
     K: DataTrait + ?Sized,
@@ -380,7 +390,7 @@ where
 {
     AllFile(FileWSetMerger<K, R>),
     AllVec(VecWSetMerger<K, R>),
-    ToVec(GenericMerger<K, DynUnit, (), R, OrdWSet<K, R>>),
+    ToVec(GenericMerger<K, DynUnit, (), R, VecWSet<K, R>>),
     ToFile(GenericMerger<K, DynUnit, (), R, FileWSet<K, R>>),
 }
 
