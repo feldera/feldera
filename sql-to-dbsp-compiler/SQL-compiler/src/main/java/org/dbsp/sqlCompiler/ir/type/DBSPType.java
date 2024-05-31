@@ -168,10 +168,4 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     public DBSPExpression none() {
         return DBSPLiteral.none(this);
     }
-
-    /** True if this type is Option of T for some T */
-    public boolean isOption() {
-        return this.is(DBSPTypeUser.class) &&
-                this.to(DBSPTypeUser.class).name.equals("Option");
-    }
 }

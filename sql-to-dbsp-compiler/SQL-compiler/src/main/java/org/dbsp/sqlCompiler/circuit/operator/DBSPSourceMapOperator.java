@@ -8,10 +8,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -96,8 +95,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
                 keyIndexes++;
             } else {
                 DBSPType fieldType = field.type;
-                DBSPType some = new DBSPTypeUser(
-                        field.getNode(), DBSPTypeCode.USER, "Option", false, fieldType);
+                DBSPType some = new DBSPTypeOption(fieldType);
                 fields.add(new DBSPTypeStruct.Field(
                         field.getNode(), field.name, current, some, field.nameIsQuoted));
             }

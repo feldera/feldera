@@ -136,6 +136,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -151,6 +152,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
@@ -1554,16 +1556,48 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             pr.deref().field(1).applyCloneIfNeeded())
                             .closure(pr.asParameter());
 
-            // Compute aggregates for the window
             DBSPTypeTuple aggResultType = fd.defaultZeroType().to(DBSPTypeTuple.class);
+            DBSPTypeIndexedZSet finalResultType = makeIndexedZSet(
+                    new DBSPTypeTuple(partition.getType(), sortType), aggResultType);
+            // Prepare a type that will make the operator following the window aggregate happy
+            // (that operator is a map_index).  Currently, the compiler cannot represent
+            // exactly the output type of the WindowAggregateOperator, so it lies about the actual type.
+            DBSPTypeIndexedZSet windowOutputType =
+                    makeIndexedZSet(partition.getType(),
+                            new DBSPTypeTuple(
+                                    orderField.getType(),
+                                    new DBSPTypeOption(aggResultType)));
+
+            // Compute aggregates for the window
             DBSPOperator windowAgg = new DBSPWindowAggregateOperator(
                     node, partitioningFunction, null, fd,
                     windowExpr,
-                    makeIndexedZSet(new DBSPTypeTuple(partition.getType(), sortType), aggResultType),
-                    ascending, nullsLast, diff);
+                    windowOutputType,
+                    diff);
             this.compiler.circuit.addOperator(windowAgg);
 
-            DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, windowAgg);
+            // map_index(|(key_ts_agg)| (
+            //         Tup2::new(key_to_agg.0.clone(), UnsignedWrapper::to_signed::<i32, i32, i64, u64>(key_ts_agg.1.0, true, true)),
+            //         key_ts_agg.1.1.unwrap_or_default() ))
+            DBSPVariablePath var = new DBSPVariablePath("key_ts_agg",
+                    new DBSPTypeRawTuple(
+                            partition.getType().ref(),
+                            new DBSPTypeTuple(
+                                    orderField.getType(),  // not the sortType, but the wrapper type around it
+                                    new DBSPTypeOption(aggResultType)).ref()));
+            DBSPExpression ixKey = var.field(0).deref().applyCloneIfNeeded();
+            DBSPExpression ts = var.field(1).deref().field(0);
+            DBSPExpression agg = var.field(1).deref().field(1);
+            DBSPUnsignedUnwrapExpression unwrap = new DBSPUnsignedUnwrapExpression(
+                    node, ts, sortType, ascending, nullsLast);
+            DBSPExpression body = new DBSPRawTupleExpression(
+                    new DBSPTupleExpression(ixKey, unwrap),
+                    new DBSPApplyMethodExpression(node, "unwrap_or_default", aggResultType, agg));
+            DBSPMapIndexOperator index =
+                    new DBSPMapIndexOperator(node, body.closure(var.asParameter()), finalResultType, windowAgg);
+            this.compiler.circuit.addOperator(index);
+
+            DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, index);
             this.compiler.circuit.addOperator(integral);
 
             // Join the previous result with the aggregate

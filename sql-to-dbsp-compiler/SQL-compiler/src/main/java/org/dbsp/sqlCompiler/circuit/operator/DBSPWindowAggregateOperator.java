@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -32,23 +31,15 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
-/**
- * This operator does not correspond to any standard DBSP operator currently.
- * It is implemented as a sequence of 2 DBSP operators: partitioned_rolling_aggregate and
- * map_index.
- * This operator only operates correctly on deltas.  To operate on collections it
+/** This operator only operates correctly on deltas.  To operate on collections it
  * must differentiate its input, and integrate its output. */
 public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
     public final DBSPExpression partitioningFunction;
     public final DBSPExpression window;
-    // TODO: these fields should not be here
-    public final boolean ascending;
-    public final boolean nullsLast;
 
     public DBSPWindowAggregateOperator(
             CalciteObject node,
@@ -58,18 +49,13 @@ public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase
             @Nullable DBSPExpression function,
             @Nullable DBSPAggregate aggregate,
             DBSPExpression window,
+            // The output type of partitioned_rolling_aggregate cannot actually be represented,
+            // so this type is a lie.
             DBSPTypeIndexedZSet outputType,
-            boolean ascending, boolean nullsLast,
             DBSPOperator input) {
-        super(node, "window_aggregate", outputType, function, aggregate, true, input, false);
+        super(node, "partitioned_rolling_aggregate", outputType, function, aggregate, true, input, false);
         this.window = window;
         this.partitioningFunction = partitioningFunction;
-        this.ascending = ascending;
-        this.nullsLast = nullsLast;
-        // Expect a tuple with 2 fields
-        DBSPTypeTuple partAndTime = outputType.keyType.to(DBSPTypeTuple.class);
-        if (partAndTime.size() != 2)
-            throw new InternalCompilerError("Unexpected type for Window aggregate operator " + outputType);
         assert partitioningFunction.is(DBSPClosureExpression.class);
     }
 
@@ -79,7 +65,6 @@ public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase
                 this.getNode(), this.partitioningFunction,
                 expression, this.aggregate, this.window,
                 outputType.to(DBSPTypeIndexedZSet.class),
-                this.ascending, this.nullsLast,
                 this.input());
     }
 
@@ -89,7 +74,7 @@ public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase
             return new DBSPWindowAggregateOperator(
                     this.getNode(), this.partitioningFunction, this.function, this.aggregate, this.window,
                     this.getOutputIndexedZSetType(),
-                    this.ascending, this.nullsLast, newInputs.get(0));
+                    newInputs.get(0));
         return this;
     }
 
@@ -100,9 +85,7 @@ public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase
         DBSPWindowAggregateOperator otherOperator = other.as(DBSPWindowAggregateOperator.class);
         if (otherOperator == null)
             return false;
-        return this.nullsLast == otherOperator.nullsLast &&
-                this.ascending == otherOperator.ascending &&
-                this.partitioningFunction.equivalent(otherOperator.partitioningFunction) &&
+        return this.partitioningFunction.equivalent(otherOperator.partitioningFunction) &&
                 this.window.equivalent(otherOperator.window);
     }
 

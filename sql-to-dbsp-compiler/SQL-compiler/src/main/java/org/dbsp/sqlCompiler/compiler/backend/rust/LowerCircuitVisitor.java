@@ -213,8 +213,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression function = impl.asFold();
         DBSPOperator result = new DBSPWindowAggregateOperator(node.getNode(),
                 node.partitioningFunction, function, null, node.window,
-                node.getOutputIndexedZSetType(), node.ascending, node.nullsLast,
-                this.mapped(node.input()));
+                node.getOutputIndexedZSetType(), this.mapped(node.input()));
         this.map(node, result);
     }
 }
