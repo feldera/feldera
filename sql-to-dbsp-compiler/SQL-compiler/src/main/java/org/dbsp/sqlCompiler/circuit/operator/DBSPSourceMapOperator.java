@@ -95,8 +95,9 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
                 fields.add(field);
                 keyIndexes++;
             } else {
+                DBSPType fieldType = field.type;
                 DBSPType some = new DBSPTypeUser(
-                        field.getNode(), DBSPTypeCode.USER, "Option", false, field.type);
+                        field.getNode(), DBSPTypeCode.USER, "Option", false, fieldType);
                 fields.add(new DBSPTypeStruct.Field(
                         field.getNode(), field.name, current, some, field.nameIsQuoted));
             }
@@ -119,7 +120,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
 
     /** Return a closure that describes the key function when applied to upsertStructType.toTuple(). */
     public DBSPExpression getUpdateKeyFunc(DBSPTypeStruct upsertStructType) {
-        DBSPVariablePath var = new DBSPVariablePath("t", upsertStructType.toTuple().ref());
+        DBSPVariablePath var = new DBSPVariablePath("t", upsertStructType.toTupleDeep().ref());
         DBSPExpression[] fields = new DBSPExpression[this.keyFields.size()];
         int insertAt = 0;
         for (int index: this.keyFields) {

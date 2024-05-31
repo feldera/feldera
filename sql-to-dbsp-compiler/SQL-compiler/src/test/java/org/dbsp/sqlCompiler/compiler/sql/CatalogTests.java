@@ -18,6 +18,41 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue1755() {
+        String sql = """
+                CREATE TYPE CustomType AS (
+                    version TINYINT not null
+                );
+                
+                CREATE TABLE Data (
+                    id BIGINT not null primary key,
+                    msg CustomType
+                );""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue1755_2() {
+        String sql = """
+                CREATE TYPE ADDRESS AS (
+                   address_type    VARCHAR,
+                   address         VARCHAR
+                );
+                
+                CREATE TYPE CustomType AS (
+                    version TINYINT not null,
+                    address ADDRESS
+                );
+                
+                
+                CREATE TABLE Data (
+                    id BIGINT not null primary key,
+                    msg CustomType
+                );""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void testSanitizeNames() {
         String statements = """
                 create table t1(

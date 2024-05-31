@@ -157,7 +157,7 @@ public class ToRustVisitor extends CircuitVisitor {
         for (DBSPTypeStruct.Field field: type.fields.values()) {
             this.builder.append("table.")
                     .append(field.getSanitizedName());
-            if (field.type.mayBeNull) {
+            if (field.type.mayBeNull || field.type.isOption()) {
                 this.builder.append(".map(|x| x");
             }
             if (field.type.is(DBSPTypeVec.class)) {
@@ -165,7 +165,7 @@ public class ToRustVisitor extends CircuitVisitor {
             } else {
                 this.builder.append(".into()");
             }
-            if (field.type.mayBeNull) {
+            if (field.type.mayBeNull || field.type.isOption()) {
                 this.builder.append(")");
             }
             this.builder.append(", ");
@@ -197,7 +197,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(field.getSanitizedName())
                     .append(": tuple.")
                     .append(index++);
-            if (field.type.mayBeNull) {
+            if (field.type.mayBeNull || field.type.isOption()) {
                 this.builder.append(".map(|x| x");
             }
             if (field.type.is(DBSPTypeVec.class)) {
@@ -205,7 +205,7 @@ public class ToRustVisitor extends CircuitVisitor {
             } else {
                 this.builder.append(".into()");
             }
-            if (field.type.mayBeNull) {
+            if (field.type.mayBeNull || field.type.isOption())  {
                 this.builder.append(")");
             }
             this.builder.append(", ")
@@ -546,14 +546,15 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ");
         ix.elementType.accept(this.innerVisitor);
         this.builder.append(", ");
-        upsertStruct.toTuple().accept(this.innerVisitor);
+        DBSPType upsertTuple = upsertStruct.toTupleDeep();
+        upsertTuple.accept(this.innerVisitor);
         this.builder.append(", _>(").increase();
         {
             // Upsert update function
             this.builder.append("Box::new(|updated: &mut ");
-            type.toTuple().accept(this.innerVisitor);
+            type.toTupleDeep().accept(this.innerVisitor);
             this.builder.append(", changes: &");
-            upsertStruct.toTuple().accept(this.innerVisitor);
+            upsertStruct.toTupleDeep().accept(this.innerVisitor);
             this.builder.append("| {");
             int index = 0;
             for (DBSPTypeStruct.Field field: upsertStruct.fields.values()) {
@@ -589,7 +590,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(", ");
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(", ");
-            upsertStruct.toTuple().accept(this.innerVisitor);
+            upsertStruct.toTupleDeep().accept(this.innerVisitor);
             this.builder.append(", ");
             upsertStruct.accept(this.innerVisitor);
             this.builder.append(", _, _>(")

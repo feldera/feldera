@@ -204,22 +204,33 @@ public class DBSPTypeStruct extends DBSPType {
         return builder.append("struct ")
                 .append(this.mayBeNull ? "?" : "")
                 .append(this.name);
-        /*
-                .append(" {")
-                .increase();
-        for (DBSPTypeStruct.Field field: this.fields.values()) {
-            builder.append(field)
-                    .newline();
-        }
-        return builder
-                .decrease()
-                .append("}");
-         */
     }
 
     /** Generate a tuple type by ignoring the struct and field names. */
     public DBSPTypeTuple toTuple() {
         List<DBSPType> types = Linq.list(Linq.map(this.fields.values(), f -> f.type));
         return new DBSPTypeTuple(this.getNode(), types);
+    }
+
+    private static DBSPType toTupleDeep(DBSPType type) {
+        if (type.is(DBSPTypeStruct.class)) {
+            DBSPTypeStruct struct = type.to(DBSPTypeStruct.class);
+            List<DBSPType> types = Linq.list(Linq.map(struct.fields.values(), f -> toTupleDeep(f.type)));
+            return new DBSPTypeTuple(struct.getNode(), types);
+        } else if (type.is(DBSPTypeUser.class)) {
+            DBSPTypeUser user = type.to(DBSPTypeUser.class);
+            DBSPType[] args = Linq.map(user.typeArgs, DBSPTypeStruct::toTupleDeep, DBSPType.class);
+            return new DBSPTypeUser(user.getNode(), user.code, user.name, user.mayBeNull, args);
+        } else if (type.is(DBSPTypeTupleBase.class)) {
+            DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
+            DBSPType[] fields = Linq.map(tuple.tupFields, DBSPTypeStruct::toTupleDeep, DBSPType.class);
+            return tuple.makeType(Linq.list(fields));
+        }
+        return type;
+    }
+
+    /** Generate a tuple type by ignoring the struct and field names, recursively. */
+    public DBSPType toTupleDeep() {
+        return toTupleDeep(this);
     }
 }
