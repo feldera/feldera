@@ -6,13 +6,12 @@ import { useLocalStorage } from '@mantine/hooks'
 import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Link, Typography } from '@mui/material'
 
 const WelcomeCard = () => {
-  const [welcomed, setWelcomed] = useLocalStorage({
-    key: LS_PREFIX + 'home/welcomed',
-    defaultValue: false
+  const [welcomed, setWelcomed] = useLocalStorage<boolean>({
+    key: LS_PREFIX + 'home/welcomed'
   })
   return (
     <>
-      <Accordion expanded={!welcomed} onChange={() => setWelcomed(!welcomed)} disableGutters sx={{}}>
+      <Accordion expanded={!(welcomed ?? true)} onChange={() => setWelcomed(!welcomed)} disableGutters sx={{}}>
         <AccordionSummary
           expandIcon={
             !welcomed ? (

@@ -1,5 +1,6 @@
 'use client'
 
+import { HealthPopup } from '$lib/components/header/HealthPopup'
 import { useAuth } from '$lib/compositions/auth/useAuth'
 // This is the top bar that decides whether to show the hamburger menu or not it
 import Menu from 'mdi-material-ui/Menu'
@@ -36,6 +37,7 @@ const AppBarContent = (props: Props) => {
           className='actions-right'
           sx={{ display: 'flex', alignItems: 'center', mb: 'auto', pointerEvents: 'auto' }}
         >
+          <HealthPopup></HealthPopup>
           <ModeToggler settings={settings} saveSettings={saveSettings} />
           {auth === 'NoAuth' ? (
             <Tooltip title='No authentication'>

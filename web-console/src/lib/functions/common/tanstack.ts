@@ -85,9 +85,15 @@ export type QueryData<Query extends { queryFn: (...args: any) => any }> = Awaite
 
 export const setQueryData = <R>(
   queryClient: QueryClient,
-  query: { queryKey: readonly unknown[]; queryFn: () => Promise<R> },
+  query: { queryKey: readonly unknown[]; queryFn?: () => Promise<R> },
   data: Updater<R | undefined, R | undefined>
 ) => queryClient.setQueryData(query.queryKey, data)
+
+export const setQueriesData = <R>(
+  queryClient: QueryClient,
+  query: { queryKey: readonly unknown[]; queryFn?: () => Promise<R> },
+  data: Updater<R | undefined, R | undefined>
+) => queryClient.setQueriesData({ queryKey: query.queryKey, exact: false }, data)
 
 export const getQueryData = <R>(
   queryClient: QueryClient,

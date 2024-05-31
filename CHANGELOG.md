@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1841](https://github.com/feldera/feldera/pull/1841))
 - WebConsole: DeltaLake input (#1744) and output (#1584) conenctors
 - WebConsole: Add output buffer configuration UI (#1591)
+- WebConsole: Add health popup containing all system errors to the header (#1586)
 
 ### Fixed
 
