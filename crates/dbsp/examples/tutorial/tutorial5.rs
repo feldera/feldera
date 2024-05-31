@@ -54,9 +54,11 @@ fn build_circuit(
         })
         .aggregate_linear(|v| *v as i64);
     let moving_averages = monthly_totals
-        .map_index(|(Tup3(l, y, m), v)| (l.clone(), Tup2(*y as u32 * 12 + (*m as u32 - 1), *v)))
-        .as_partitioned_zset()
-        .partitioned_rolling_average(RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
+        .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+        .partitioned_rolling_average(
+            |Tup2(l, v)| (l.clone(), *v),
+            RelRange::new(RelOffset::Before(2), RelOffset::Before(0)),
+        )
         .map_index(|(l, Tup2(date, avg))| {
             (Tup3(l.clone(), date / 12, date % 12 + 1), avg.unwrap())
         });

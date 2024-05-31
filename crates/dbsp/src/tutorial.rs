@@ -811,19 +811,13 @@
 //! we can obtain a dataset with less noise due to variation from month
 //! to month.   DBSP
 //! provides [`Stream::partitioned_rolling_average`] for this purpose.  To
-//! use it, we have to map our indexed Z-set into a "partitioned indexed
-//! Z-set" ([`OrdPartitionedIndexedZSet`]).
-//! This is just an indexed Z-set in which the key is the "partition"
-//! within which averaging occurs (for us, this is the country), and the
-//! value is a tuple of a "timestamp" and a value.  DBSP uses the
-//! timestamp component, which must have an unsigned integer type, to
-//! define the window.  We can map our `(country, year, month)` key and
-//! `vaccinations` value into a `country` partition, `date` timestamp, and
-//! `vaccinations` value like this:
+//! use it, we have to index our Z-set by time.  DBSP uses the
+//! time component, which must have an unsigned integer type, to
+//! define the window:
 //!
 //! ```ignore
 //!     let moving_averages = monthly_totals
-//!         .map_index(|(Tup3(l, y, m), v)| (l.clone(), Tup2(*y as u32 * 12 + (*m as u32 - 1), *v)))
+//!         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
 //! ```
 //!
 //! Once we've done that, computing the moving average is easy.  Here's how we
@@ -831,13 +825,22 @@
 //! they're in the data set):
 //!
 //! ```ignore
-//!         .as_partitioned_zset()
-//!         .partitioned_rolling_average(RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
+//!         .partitioned_rolling_average(
+//!             |Tup2(l, v)| (l.clone(), *v),
+//!             RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
 //! ```
 //!
+//! As the name of the function suggests, `partitioned_rolling_average`
+//! computes a rolling average within a partition.  In this case, we
+//! partition the data by country.  The first argument of the function
+//! is a closure that splits the value component of the input indexed
+//! Z-set into a partition key and a value.
 //! [`partitioned_rolling_average`](`Stream::partitioned_rolling_average`)
-//! returns a partitioned Z-set with the same type as its input except that the
-//! value type has an `Option` wrapped around it.  In our case, for example, the
+//! returns a partitioned indexed Z-set ([`OrdPartitionedIndexedZSet`]).
+//! This is just an indexed Z-set in which the key is the "partition"
+//! within which averaging occurs (for us, this is the country), and the
+//! value is a tuple of a "timestamp" and a value.  Note that the value
+//! type has an `Option` wrapped around it.  In our case, for example, the
 //! input value type was `isize`, so the output value type is `Option<isize>`.
 //! The output for a given row is `None` if there are no rows in the window,
 //! which can only happen if the range passed in does not include the 0 relative
@@ -911,9 +914,10 @@
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //! #     let moving_averages = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), v)| (l.clone(), Tup2(*y as u32 * 12 + (*m as u32 - 1), *v)))
-//! #         .as_partitioned_zset()
-//! #         .partitioned_rolling_average(RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
+//! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+//! #         .partitioned_rolling_average(
+//! #               |Tup2(l, v)| (l.clone(), *v),
+//! #               RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
 //! #         .map_index(|(l, Tup2(date, avg))| {
 //! #             (Tup3(l.clone(), date / 12, date % 12 + 1), avg.unwrap())
 //! #         });
@@ -1067,9 +1071,10 @@
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //! #     let moving_averages = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), v)| (l.clone(), Tup2(*y as u32 * 12 + (*m as u32 - 1), *v)))
-//! #         .as_partitioned_zset()
-//! #         .partitioned_rolling_average(RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
+//! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
+//! #         .partitioned_rolling_average(
+//! #               |Tup2(l, v)| (l.clone(), *v),
+//! #               RelRange::new(RelOffset::Before(2), RelOffset::Before(0)))
 //! #         .map_index(|(l, Tup2(date, avg))| {
 //! #             (
 //! #                 Tup3(l.clone(), (date / 12) as i32, (date % 12 + 1) as u8),
@@ -1407,9 +1412,9 @@
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //! #     let running_monthly_totals = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), v)| (l.clone(), Tup2(*y as u32 * 12 + (*m as u32 - 1), *v)))
-//! #         .as_partitioned_zset()
+//! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
+//! #             |Tup2(l, v)| (l.clone(), *v),
 //! #             |vaxxed| *vaxxed,
 //! #             |total| total,
 //! #             RelRange::new(RelOffset::Before(u32::MAX), RelOffset::Before(0)),
@@ -1524,9 +1529,9 @@
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //! #     let running_monthly_totals = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), v)| (l.clone(), Tup2(*y as u32 * 12 + (*m as u32 - 1), *v)))
-//! #         .as_partitioned_zset()
+//! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
+//! #             |Tup2(l, v)| (l.clone(), *v),
 //! #             |vaxxed| *vaxxed,
 //! #             |total| total,
 //! #             RelRange::new(RelOffset::Before(u32::MAX), RelOffset::Before(0)),
@@ -1644,9 +1649,9 @@
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //!     let running_monthly_totals = monthly_totals
-//!         .map_index(|(Tup3(l, y, m), v)| (l.clone(), Tup2(*y as u32 * 12 + (*m as u32 - 1), *v)))
-//!         .as_partitioned_zset()
+//!         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
 //!         .partitioned_rolling_aggregate_linear(
+//!             |Tup2(l, v)| (l.clone(), *v),
 //!             |vaxxed| *vaxxed,
 //!             |total| total,
 //!             RelRange::new(RelOffset::Before(u32::MAX), RelOffset::Before(0)),
@@ -1726,9 +1731,9 @@
 //! #         })
 //! #         .aggregate_linear(|v| *v as i64);
 //! #     let running_monthly_totals = monthly_totals
-//! #         .map_index(|(Tup3(l, y, m), v)| (l.clone(), Tup2(*y as u32 * 12 + (*m as u32 - 1), *v)))
-//! #         .as_partitioned_zset()
+//! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
+//! #             |Tup2(l, v)| (l.clone(), *v),
 //! #             |vaxxed| *vaxxed,
 //! #             |total| total,
 //! #             RelRange::new(RelOffset::Before(u32::MAX), RelOffset::Before(0)),

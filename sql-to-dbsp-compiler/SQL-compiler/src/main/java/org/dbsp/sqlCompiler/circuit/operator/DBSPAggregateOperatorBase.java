@@ -11,10 +11,10 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-/**
- * Base class for operators that perform some form of aggregation.
- */
+/*** Base class for operators that perform some form of aggregation. */
 public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
+    // Initially 'aggregate' is not null, and 'function' is null.
+    // After lowering these two are swapped.
     @Nullable
     public final DBSPAggregate aggregate;
     public final boolean isLinear;

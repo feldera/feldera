@@ -1,5 +1,3 @@
-use crate::dynamic::Erase;
-use crate::trace::BatchReaderFactories;
 use crate::{
     algebra::{MulByRef, UnsignedPrimInt},
     dynamic::{DowncastTrait, DynData, DynDataTyped, DynOpt, DynPair, DynWeight},
@@ -18,7 +16,6 @@ use crate::{
     utils::Tup2,
     DBData, DBWeight, OrdIndexedZSet, RootCircuit, Stream, ZWeight,
 };
-use num::PrimInt;
 use std::{mem::take, ops::Div};
 
 // TODO: This should be `OrdIndexedZSet<PK, (TS, V)>`.
@@ -30,10 +27,9 @@ pub type OrdPartitionedOverStream<PK, TS, A> = Stream<
     OrdPartitionedIndexedZSet<PK, TS, DynDataTyped<TS>, Option<A>, DynOpt<DynData>>,
 >;
 
-impl<TS, V>
-    Stream<RootCircuit, TypedBatch<TS, V, ZWeight, DynOrdIndexedZSet<DynDataTyped<TS>, DynData>>>
+impl<TS, V> Stream<RootCircuit, OrdIndexedZSet<TS, V>>
 where
-    TS: DBData + PrimInt,
+    TS: DBData + UnsignedPrimInt,
     V: DBData,
 {
     /// Similar to
@@ -101,8 +97,8 @@ where
             DynData,
             DynData,
             DynData,
-            DynOrdIndexedZSet<DynDataTyped<TS>, DynData>,
-        >::new::<TS, V, PK, OV, Agg::Accumulator, Agg::Output>();
+            DynOrdIndexedZSet<DynData, DynData>,
+        >::new::<V, PK, OV, Agg::Accumulator, Agg::Output>();
 
         self.inner()
             .dyn_partitioned_rolling_aggregate_with_waterline::<_, TS, _, DynData, DynData>(
@@ -120,36 +116,7 @@ where
             )
             .typed()
     }
-}
 
-impl<PK, TS, V> Stream<RootCircuit, OrdIndexedZSet<PK, Tup2<TS, V>>>
-where
-    PK: DBData,
-    TS: DBData + PrimInt,
-    V: DBData,
-{
-    pub fn as_partitioned_zset(
-        &self,
-    ) -> Stream<RootCircuit, OrdPartitionedIndexedZSet<PK, TS, DynDataTyped<TS>, V, DynData>> {
-        let factories = BatchReaderFactories::new::<PK, Tup2<TS, V>, ZWeight>();
-
-        self.inner()
-            .dyn_map_index(
-                &factories,
-                Box::new(|(k, v), kv| {
-                    kv.from_refs(k, unsafe { v.downcast::<Tup2<TS, V>>().erase() })
-                }),
-            )
-            .typed()
-    }
-}
-
-impl<PK, TS, V> Stream<RootCircuit, OrdPartitionedIndexedZSet<PK, TS, DynDataTyped<TS>, V, DynData>>
-where
-    PK: DBData,
-    TS: DBData + UnsignedPrimInt,
-    V: DBData,
-{
     /// Rolling aggregate of a partitioned stream over time range.
     ///
     /// For each record in the input stream, computes an aggregate
@@ -166,20 +133,31 @@ where
     /// computed outputs affected by new data.  For example,
     /// a data point arriving out-of-order may affect previously
     /// computed rolling aggregate value at future times.
-    pub fn partitioned_rolling_aggregate<Agg>(
+    pub fn partitioned_rolling_aggregate<PK, OV, Agg, PF>(
         &self,
+        partition_func: PF,
         aggregator: Agg,
         range: RelRange<TS>,
     ) -> OrdPartitionedOverStream<PK, TS, Agg::Output>
     where
-        Agg: Aggregator<V, (), ZWeight>,
+        Agg: Aggregator<OV, (), ZWeight>,
+        OV: DBData,
+        PK: DBData,
+        PF: Fn(&V) -> (PK, OV) + Clone + 'static,
     {
         let factories =
-            PartitionedRollingAggregateFactories::new::<PK, V, Agg::Accumulator, Agg::Output>();
+            PartitionedRollingAggregateFactories::new::<PK, OV, Agg::Accumulator, Agg::Output>();
 
         self.inner()
-            .dyn_partitioned_rolling_aggregate::<_, _, DynData, _>(
+            .dyn_partitioned_rolling_aggregate::<_, _, _, DynData, _>(
                 &factories,
+                Box::new(
+                    move |v, pk: &mut DynData /* <PK> */, ov: &mut DynData /* <OV> */| unsafe {
+                        let (tmp_pk, tmp_ov) = partition_func(v.downcast());
+                        *pk.downcast_mut() = tmp_pk;
+                        *ov.downcast_mut() = tmp_ov;
+                    },
+                ),
                 &DynAggregatorImpl::new(aggregator),
                 range,
             )
@@ -204,23 +182,34 @@ where
     /// This method only works for linear aggregation functions `f`, i.e.,
     /// functions that satisfy `f(a+b) = f(a) + f(b)`.  It will produce
     /// incorrect results if `f` is not linear.
-    pub fn partitioned_rolling_aggregate_linear<A, O, WF, OF>(
+    pub fn partitioned_rolling_aggregate_linear<PK, OV, A, O, PF, WF, OF>(
         &self,
+        partition_func: PF,
         weigh_func: WF,
         output_func: OF,
         range: RelRange<TS>,
     ) -> OrdPartitionedOverStream<PK, TS, O>
     where
+        PK: DBData,
+        OV: DBData,
         A: DBWeight + MulByRef<ZWeight, Output = A>,
         O: DBData,
-        WF: Fn(&V) -> A + Clone + 'static,
+        PF: Fn(&V) -> (PK, OV) + Clone + 'static,
+        WF: Fn(&OV) -> A + Clone + 'static,
         OF: Fn(A) -> O + Clone + 'static,
     {
-        let factories = PartitionedRollingAggregateLinearFactories::new::<PK, V, A, O>();
+        let factories = PartitionedRollingAggregateLinearFactories::new::<PK, OV, A, O>();
 
         self.inner()
             .dyn_partitioned_rolling_aggregate_linear(
                 &factories,
+                Box::new(
+                    move |v, pk: &mut DynData /* <PK> */, ov: &mut DynData /* <OV> */| unsafe {
+                        let (tmp_pk, tmp_ov) = partition_func(v.downcast());
+                        *pk.downcast_mut() = tmp_pk;
+                        *ov.downcast_mut() = tmp_ov;
+                    },
+                ),
                 Box::new(move |v, r, a: &mut DynWeight /* <A> */| unsafe {
                     *a.downcast_mut() = weigh_func(v.downcast()).mul_by_ref(r.downcast())
                 }),
@@ -236,22 +225,32 @@ where
     ///
     /// For each input record, it computes the average of the values in records
     /// in the same partition in the time range specified by `range`.
-    pub fn partitioned_rolling_average(
+    pub fn partitioned_rolling_average<PK, OV, PF>(
         &self,
+        partition_func: PF,
         range: RelRange<TS>,
-    ) -> OrdPartitionedOverStream<PK, TS, V>
+    ) -> OrdPartitionedOverStream<PK, TS, OV>
     where
-        V: DBWeight + From<ZWeight> + MulByRef<Output = V> + Div<Output = V>,
+        OV: DBWeight + From<ZWeight> + MulByRef<Output = OV> + Div<Output = OV>,
+        PK: DBData,
+        PF: Fn(&V) -> (PK, OV) + Clone + 'static,
     {
-        let factories = PartitionedRollingAverageFactories::new::<PK, V, V>();
+        let factories = PartitionedRollingAverageFactories::new::<PK, OV, OV>();
 
         self.inner()
             .dyn_partitioned_rolling_average(
                 &factories,
-                Box::new(move |v, r, a: &mut DynWeight /* <V> */| unsafe {
-                    *a.downcast_mut() = v.downcast::<V>().mul_by_ref(&V::from(*r.downcast()))
+                Box::new(
+                    move |v, pk: &mut DynData /* <PK> */, ov: &mut DynData /* <OV> */| unsafe {
+                        let (tmp_pk, tmp_ov) = partition_func(v.downcast());
+                        *pk.downcast_mut() = tmp_pk;
+                        *ov.downcast_mut() = tmp_ov;
+                    },
+                ),
+                Box::new(move |v: &DynData, r, a: &mut DynWeight /* <V> */| unsafe {
+                    *a.downcast_mut() = v.downcast::<OV>().mul_by_ref(&OV::from(*r.downcast()))
                 }),
-                Box::new(|avg, v| unsafe { *v.downcast_mut() = take(avg.downcast_mut::<V>()) }),
+                Box::new(|avg, v| unsafe { *v.downcast_mut() = take(avg.downcast_mut::<OV>()) }),
                 range,
             )
             .typed()

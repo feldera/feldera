@@ -63,7 +63,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
@@ -75,7 +74,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
@@ -87,7 +86,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
-import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -157,7 +155,7 @@ public class ToRustVisitor extends CircuitVisitor {
         for (DBSPTypeStruct.Field field: type.fields.values()) {
             this.builder.append("table.")
                     .append(field.getSanitizedName());
-            if (field.type.mayBeNull || field.type.isOption()) {
+            if (field.type.mayBeNull || field.type.is(DBSPTypeOption.class)) {
                 this.builder.append(".map(|x| x");
             }
             if (field.type.is(DBSPTypeVec.class)) {
@@ -165,7 +163,7 @@ public class ToRustVisitor extends CircuitVisitor {
             } else {
                 this.builder.append(".into()");
             }
-            if (field.type.mayBeNull || field.type.isOption()) {
+            if (field.type.mayBeNull || field.type.is(DBSPTypeOption.class)) {
                 this.builder.append(")");
             }
             this.builder.append(", ");
@@ -197,7 +195,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(field.getSanitizedName())
                     .append(": tuple.")
                     .append(index++);
-            if (field.type.mayBeNull || field.type.isOption()) {
+            if (field.type.mayBeNull || field.type.is(DBSPTypeOption.class)) {
                 this.builder.append(".map(|x| x");
             }
             if (field.type.is(DBSPTypeVec.class)) {
@@ -205,7 +203,7 @@ public class ToRustVisitor extends CircuitVisitor {
             } else {
                 this.builder.append(".into()");
             }
-            if (field.type.mayBeNull || field.type.isOption())  {
+            if (field.type.mayBeNull || field.type.is(DBSPTypeOption.class))  {
                 this.builder.append(")");
             }
             this.builder.append(", ")
@@ -967,46 +965,22 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPWindowAggregateOperator operator) {
-        // We generate two DBSP operator calls: partitioned_rolling_aggregate
-        // and map_index
-        DBSPType streamType = new DBSPTypeStream(operator.outputType);
-        String tmp = new NameGen("stream").nextName();
         this.writeComments(operator)
                 .append("let ")
-                .append(tmp)
+                .append(operator.getOutputName())
+                // the output type is not correct, so we don't write it
                 .append(" = ")
                 .append(operator.input().getOutputName())
-                // FIXME: `as_partitioned_zset()` is a temporary workaround.
-                .append(".as_partitioned_zset().partitioned_rolling_aggregate(");
+                .append(".")
+                .append(operator.operation)
+                .append("(");
+        operator.partitioningFunction.accept(this.innerVisitor);
+        builder.append(", ");
         operator.getFunction().accept(this.innerVisitor);
         builder.append(", ");
         operator.window.accept(this.innerVisitor);
         builder.append(");")
                 .newline();
-
-        // TODO: this is ugly https://github.com/feldera/feldera/issues/1733
-        this.builder.append("let ")
-                .append(operator.getOutputName())
-                .append(": ");
-        streamType.accept(this.innerVisitor);
-        DBSPTypeIndexedZSet ix = operator.getOutputIndexedZSetType();
-        // ix has the shape Tup2<Tup2<keyType, timestamp>, aggregate>
-        DBSPType aggregateType = ix.elementType;
-        DBSPTypeTuple key_ts = ix.keyType.to(DBSPTypeTuple.class);
-        assert key_ts.tupFields.length == 2;
-        DBSPType tsType = key_ts.tupFields[1];
-        DBSPVariablePath var = new DBSPVariablePath("ts_agg", new DBSPTypeRawTuple(tsType, aggregateType));
-        DBSPExpression ts = var.field(0);
-        DBSPUnsignedUnwrapExpression unwrap = new DBSPUnsignedUnwrapExpression(
-                operator.getNode(), ts, tsType, operator.ascending, operator.nullsLast);
-
-        builder.append(" = " )
-                .append(tmp)
-                .append(".map_index(|(key, ts_agg)| { ")
-                .append("( Tup2::new(key.clone(), ");
-        // the next generates e.g., UnsignedWrapper::to_signed::<i32, i32, i64, u64>(ts_agg.0)
-        unwrap.accept(this.innerVisitor);
-        builder.append("), ts_agg.1.unwrap_or_default() ) });");
         return VisitDecision.STOP;
     }
 

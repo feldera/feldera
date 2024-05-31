@@ -39,6 +39,7 @@ public enum DBSPTypeCode {
     RAW_TUPLE(null, "", ""),
     REF(null, "", ""),
     RESULT(null, "", "Result"),
+    OPTION(null, "", "Option"),
     SEMIGROUP(null, "", ""),
     STREAM(null, "", ""),
     STRUCT("ROW TYPE", "", ""),

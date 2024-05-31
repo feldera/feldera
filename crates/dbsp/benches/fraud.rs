@@ -262,7 +262,7 @@ impl FraudBenchmark {
 
             let amounts = transactions.map_index(|t| {
                 let timestamp = t.trans_date_trans_time.and_utc().timestamp();
-                (t.cc_num, Tup2(timestamp, t.amt))
+                (timestamp, Tup2(t.cc_num, t.amt))
             });
 
             let transactions_by_ccnum = transactions.map_index(|t| (t.cc_num, t.clone()));
@@ -280,8 +280,8 @@ impl FraudBenchmark {
             //     -- 1 week is 604800  seconds
             //     RANGE BETWEEN 604800  PRECEDING AND 1 PRECEDING) AS avg_spend_pw,
             let avg_spend_pw: Stream<_, AverageSpendingPerWeek> = amounts
-                .as_partitioned_zset()
                 .partitioned_rolling_aggregate_linear(
+                    |Tup2(cc_num, amt)| (cc_num, amt),
                     |amt| Avg::new(*amt, 1),
                     |avg| avg.compute_avg().unwrap(),
                     RelRange::new(RelOffset::Before(DAY_IN_SECONDS * 7), RelOffset::Before(1)),
@@ -297,6 +297,7 @@ impl FraudBenchmark {
             //     RANGE BETWEEN 2592000 PRECEDING AND 1 PRECEDING) AS avg_spend_pm,
             let avg_spend_pm: Stream<_, AverageSpendingPerMonth> = amounts
                 .partitioned_rolling_aggregate_linear(
+                    |Tup2(cc_num, amt)| (cc_num, amt),
                     |amt| Avg::new(*amt, 1),
                     |avg| avg.compute_avg().unwrap(),
                     RelRange::new(RelOffset::Before(DAY_IN_SECONDS * 30), RelOffset::Before(1)),
@@ -312,6 +313,7 @@ impl FraudBenchmark {
             //     RANGE BETWEEN 86400 PRECEDING AND 1 PRECEDING) AS trans_freq_24,
             let trans_freq_24: Stream<_, TransactionFrequency> = amounts
                 .partitioned_rolling_aggregate_linear(
+                    |Tup2(cc_num, amt)| (cc_num, amt),
                     |_amt| 1,
                     |cnt| cnt,
                     RelRange::new(RelOffset::Before(DAY_IN_SECONDS), RelOffset::Before(1)),
