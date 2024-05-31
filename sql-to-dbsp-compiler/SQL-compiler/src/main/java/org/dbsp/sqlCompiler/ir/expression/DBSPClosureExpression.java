@@ -23,13 +23,17 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
-import org.dbsp.sqlCompiler.ir.IDBSPNode;
-import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
@@ -149,5 +153,22 @@ public final class DBSPClosureExpression extends DBSPExpression {
                 .append("| ")
                 .append(this.body)
                 .append(")");
+    }
+
+    /** Compose this closure by applying it after the 'before'
+     * closure expression.  This closure must have exactly 1
+     * parameter, while the before one can have multiple ones.
+     * @param before Closure to compose. */
+    public DBSPClosureExpression applyAfter(
+            IErrorReporter errorReporter, DBSPClosureExpression before) {
+        if (this.parameters.length != 1)
+            throw new InternalCompilerError("Expected closure with 1 parameter", this);
+        DBSPExpression apply = this.call(before.body.borrow());
+        DBSPClosureExpression result = new DBSPClosureExpression(apply, before.parameters);
+        BetaReduction reduction = new BetaReduction(errorReporter);
+        Simplify simplify = new Simplify(errorReporter);
+        IDBSPInnerNode reduced = reduction.apply(result);
+        IDBSPInnerNode simplified = simplify.apply(reduced);
+        return simplified.to(DBSPClosureExpression.class);
     }
 }

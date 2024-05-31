@@ -41,11 +41,6 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
         }
     }
 
-    @Override
-    public boolean hasFunction() {
-        return true;
-    }
-
     public DBSPAggregate getAggregate() {
         return Objects.requireNonNull(this.aggregate);
     }
@@ -54,7 +49,7 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
     public boolean equivalent(DBSPOperator other) {
         if (!super.equivalent(other))
             return false;
-        DBSPWindowAggregateOperator otherOperator = other.as(DBSPWindowAggregateOperator.class);
+        DBSPPartitionedRollingAggregate otherOperator = other.as(DBSPPartitionedRollingAggregate.class);
         if (otherOperator == null)
             return false;
         return this.isLinear == otherOperator.isLinear &&

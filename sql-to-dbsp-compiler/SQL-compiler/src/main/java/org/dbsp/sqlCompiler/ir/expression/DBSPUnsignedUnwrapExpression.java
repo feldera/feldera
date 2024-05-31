@@ -69,7 +69,6 @@ public final class DBSPUnsignedUnwrapExpression extends DBSPExpression {
                 this.ascending, this.nullsLast);
     }
 
-
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         DBSPUnsignedUnwrapExpression otherExpression = other.as(DBSPUnsignedUnwrapExpression.class);
@@ -78,5 +77,9 @@ public final class DBSPUnsignedUnwrapExpression extends DBSPExpression {
         return this.ascending == otherExpression.ascending &&
                 this.nullsLast == otherExpression.nullsLast &&
                 context.equivalent(this.source, otherExpression.source);
+    }
+
+    public DBSPExpression replaceSource(DBSPExpression source) {
+        return new DBSPUnsignedUnwrapExpression(this.getNode(), source, this.type, this.ascending, this.nullsLast);
     }
 }
