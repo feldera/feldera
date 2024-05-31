@@ -130,10 +130,6 @@ public abstract class CircuitVisitor
         return this.preorder(node.to(DBSPUnaryOperator.class));
     }
 
-    public VisitDecision preorder(DBSPIndexOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
-    }
-
     public VisitDecision preorder(DBSPNoopOperator node) {
         return this.preorder(node.to(DBSPUnaryOperator.class));
     }
@@ -174,10 +170,6 @@ public abstract class CircuitVisitor
         return this.preorder((DBSPAggregateOperatorBase) node);
     }
 
-    public VisitDecision preorder(DBSPPartitionedRollingAggregateOperator node) {
-        return this.preorder(node.to(DBSPOperator.class));
-    }
-
     public VisitDecision preorder(DBSPPartitionedRadixTreeAggregateOperator node) {
         return this.preorder(node.to(DBSPOperator.class));
     }
@@ -186,7 +178,7 @@ public abstract class CircuitVisitor
         return this.preorder((DBSPAggregateOperatorBase) node);
     }
 
-    public VisitDecision preorder(DBSPWindowAggregateOperator node) {
+    public VisitDecision preorder(DBSPPartitionedRollingAggregate node) {
         return this.preorder((DBSPAggregateOperatorBase) node);
     }
 
@@ -286,6 +278,10 @@ public abstract class CircuitVisitor
         return this.preorder(node.to(DBSPUnaryOperator.class));
     }
 
+    public VisitDecision preorder(DBSPApply2Operator node) {
+        return this.preorder(node.to(DBSPOperator.class));
+    }
+
     public VisitDecision preorder(DBSPWindowOperator node) {
         return this.preorder(node.to(DBSPOperator.class));
     }
@@ -328,10 +324,6 @@ public abstract class CircuitVisitor
         this.postorder(node.to(DBSPUnaryOperator.class));
     }
 
-    public void postorder(DBSPIndexOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
-    }
-
     public void postorder(DBSPSubtractOperator node) {
         this.postorder(node.to(DBSPOperator.class));
     }
@@ -360,10 +352,6 @@ public abstract class CircuitVisitor
         this.postorder((DBSPAggregateOperatorBase) node);
     }
 
-    public void postorder(DBSPPartitionedRollingAggregateOperator node) {
-        this.postorder(node.to(DBSPOperator.class));
-    }
-
     public void postorder(DBSPPartitionedRadixTreeAggregateOperator node) {
         this.postorder(node.to(DBSPOperator.class));
     }
@@ -372,7 +360,7 @@ public abstract class CircuitVisitor
         this.postorder((DBSPAggregateOperatorBase) node);
     }
 
-    public void postorder(DBSPWindowAggregateOperator node) {
+    public void postorder(DBSPPartitionedRollingAggregate node) {
         this.postorder((DBSPAggregateOperatorBase) node);
     }
 
@@ -480,6 +468,10 @@ public abstract class CircuitVisitor
 
     public void postorder(DBSPApplyOperator node) {
         this.postorder(node.to(DBSPUnaryOperator.class));
+    }
+
+    public void postorder(DBSPApply2Operator node) {
+        this.postorder(node.to(DBSPOperator.class));
     }
 
     public void postorder(DBSPWindowOperator node) {

@@ -133,17 +133,6 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
                     " but it returns " + type, this);
     }
 
-    /**
-     * True if this operator is parameterized by a function.
-     * This is not always the same as this.function == null,
-     * e.g., AggregateOperator always returns 'true', although
-     * the function can be represented as an Aggregate.
-     * This is also true for ConstantOperator, although for these
-     * the function may not be a closure, but rather a constant. */
-    public boolean hasFunction() {
-        return this.function != null;
-    }
-
     /** Return a version of this operator with the function replaced. */
     public abstract DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType);
 

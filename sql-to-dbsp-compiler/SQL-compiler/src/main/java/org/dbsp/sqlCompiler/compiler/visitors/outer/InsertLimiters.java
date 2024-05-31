@@ -7,9 +7,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
@@ -129,7 +129,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPIndexOperator operator) {
+    public void postorder(DBSPMapIndexOperator operator) {
         this.addBounds(operator, 0);
         super.postorder(operator);
     }
@@ -346,7 +346,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.addOperator(apply);
 
             // Window requires data to be indexed
-            DBSPIndexOperator ix = new DBSPIndexOperator(operator.getNode(),
+            DBSPOperator ix = new DBSPMapIndexOperator(operator.getNode(),
                     new DBSPRawTupleExpression(fields.get(0), t.deref()).closure(t.asParameter()),
                     new DBSPTypeIndexedZSet(operator.getNode(),
                             fields.get(0).getType(), dataType), true, replacement);

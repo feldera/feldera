@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -78,8 +79,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
     public void issue1768() {
         String sql = """
                 CREATE TABLE transaction (
-                    trans_date DATE NOT NULL,
-                    trans_time TIME NOT NULL,
+                    trans_date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAY,
                     cc_num BIGINT NOT NULL,
                     merchant STRING,
                     category STRING,
@@ -109,21 +109,18 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 CREATE VIEW V AS SELECT
                     transaction.cc_num,
                     CASE
-                      WHEN dayofweek(trans_date) IN(6, 7) THEN true
+                      WHEN dayofweek(trans_date_time) IN(6, 7) THEN true
                       ELSE false
                     END AS is_weekend,
                     CASE
-                      WHEN hour(trans_time) <= 6 THEN true
+                      WHEN hour(trans_date_time) <= 6 THEN true
                       ELSE false
                     END AS is_night,
                     category,
                     AVG(amt) OVER window_1_day AS avg_spend_pd,
                     AVG(amt) OVER window_7_day AS avg_spend_pw,
                     AVG(amt) OVER window_30_day AS avg_spend_pm,
-                    COUNT(*) OVER (
-                      PARTITION BY transaction.cc_num
-                      ORDER BY unix_time
-                      RANGE BETWEEN 86400 PRECEDING and CURRENT ROW) AS trans_freq_24,
+                    COUNT(*) OVER window_1_day AS trans_freq_24,
                       amt, state, job, unix_time, city_pop, is_fraud
                   FROM transaction
                   JOIN demographics
@@ -152,6 +149,33 @@ public class ComplexQueriesTest extends BaseSQLTests {
             }
         };
         circuit.accept(visitor);
+    }
+
+    @Test
+    public void issue1793() {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
+        String sql = """
+                CREATE TABLE transaction_demographics (
+                    cc_num BIGINT NOT NULL,
+                    category STRING,
+                    amt FLOAT64,
+                    unix_time BIGINT NOT NULL LATENESS 86400,
+                    is_fraud INTEGER,
+                    first STRING
+                );
+            
+                CREATE VIEW V AS SELECT
+                    cc_num,
+                    category,
+                    COUNT(*) OVER window_1_day AS trans_freq_24, amt, unix_time
+                  FROM transaction_demographics
+                  WINDOW
+                    window_1_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 86400 PRECEDING AND CURRENT ROW);""";
+
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.incrementalize = true;
+        compiler.compileStatements(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
     }
 
     @Test @Ignore("Cross apply not yet implemented")

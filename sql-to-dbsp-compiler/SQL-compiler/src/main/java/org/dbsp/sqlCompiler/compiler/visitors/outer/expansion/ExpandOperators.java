@@ -8,10 +8,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRadixTreeAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedTreeAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
@@ -22,7 +20,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWeighOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
@@ -175,36 +172,6 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
         // These two collectively make a delayed integrator operator
         DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), result, delayOutput);
-        this.addOperator(sum);
-        DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), sum, delayOutput);
-        this.addOperator(delay);
-        // TODO: add expansion
-    }
-
-    @Override
-    public void postorder(DBSPWindowAggregateOperator operator) {
-        DBSPOperator input = this.mapped(operator.input());
-        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), input);
-        this.addOperator(integral);
-
-        DBSPOperator prta = new DBSPPartitionedTreeAggregateOperator(
-                operator.getNode(), operator.function, operator.aggregate,
-                input.getType(), input); // TODO: output type is wrong
-        this.addOperator(prta);
-
-        DBSPDelayOutputOperator delayOutput = new DBSPDelayOutputOperator(
-                operator.getNode(), operator.outputType, false, operator.comment);
-        this.addOperator(delayOutput);
-
-        DBSPPartitionedRollingAggregateOperator ra = new DBSPPartitionedRollingAggregateOperator(operator.getNode(),
-                operator.function, operator.aggregate, input, integral, prta, delayOutput);
-        this.addOperator(ra);
-        DBSPMapIndexOperator mi = new DBSPMapIndexOperator(operator.getNode(), operator.window,
-                operator.getOutputIndexedZSetType(), ra);
-        this.map(operator, mi);
-
-        // These two collectively make a delayed integrator operator
-        DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), ra, delayOutput);
         this.addOperator(sum);
         DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), sum, delayOutput);
         this.addOperator(delay);

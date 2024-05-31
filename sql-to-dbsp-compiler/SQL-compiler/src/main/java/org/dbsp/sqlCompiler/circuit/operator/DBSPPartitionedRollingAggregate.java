@@ -37,11 +37,12 @@ import java.util.List;
 
 /** This operator only operates correctly on deltas.  To operate on collections it
  * must differentiate its input, and integrate its output. */
-public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
+public final class DBSPPartitionedRollingAggregate extends DBSPAggregateOperatorBase {
     public final DBSPExpression partitioningFunction;
     public final DBSPExpression window;
 
-    public DBSPWindowAggregateOperator(
+    // TODO: support the linear version of this operator.
+    public DBSPPartitionedRollingAggregate(
             CalciteObject node,
             DBSPExpression partitioningFunction,
             // Initially 'function' is null, and the 'aggregate' is not.
@@ -49,7 +50,7 @@ public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase
             @Nullable DBSPExpression function,
             @Nullable DBSPAggregate aggregate,
             DBSPExpression window,
-            // The output type of partitioned_rolling_aggregate cannot actually be represented,
+            // The output type of partitioned_rolling_aggregate cannot actually be represented using the current IR,
             // so this type is a lie.
             DBSPTypeIndexedZSet outputType,
             DBSPOperator input) {
@@ -61,7 +62,7 @@ public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPWindowAggregateOperator(
+        return new DBSPPartitionedRollingAggregate(
                 this.getNode(), this.partitioningFunction,
                 expression, this.aggregate, this.window,
                 outputType.to(DBSPTypeIndexedZSet.class),
@@ -71,7 +72,7 @@ public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPWindowAggregateOperator(
+            return new DBSPPartitionedRollingAggregate(
                     this.getNode(), this.partitioningFunction, this.function, this.aggregate, this.window,
                     this.getOutputIndexedZSetType(),
                     newInputs.get(0));
@@ -82,7 +83,7 @@ public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase
     public boolean equivalent(DBSPOperator other) {
         if (!super.equivalent(other))
             return false;
-        DBSPWindowAggregateOperator otherOperator = other.as(DBSPWindowAggregateOperator.class);
+        DBSPPartitionedRollingAggregate otherOperator = other.as(DBSPPartitionedRollingAggregate.class);
         if (otherOperator == null)
             return false;
         return this.partitioningFunction.equivalent(otherOperator.partitioningFunction) &&

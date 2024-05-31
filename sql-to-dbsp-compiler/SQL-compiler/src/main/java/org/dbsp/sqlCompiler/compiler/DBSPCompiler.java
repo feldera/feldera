@@ -37,6 +37,7 @@ import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -382,6 +383,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
         DBSPCircuit result = this.circuit.rename(name);
         this.circuit = null;
+        if (this.getDebugLevel() > 0) {
+            boolean verboseDot = this.getDebugLevel() > 1;
+            System.out.println("Writing circuit to file 'final.png'");
+            ToDotVisitor.toDot(this, "final.png", verboseDot, "png", result);
+        }
         return result;
     }
 

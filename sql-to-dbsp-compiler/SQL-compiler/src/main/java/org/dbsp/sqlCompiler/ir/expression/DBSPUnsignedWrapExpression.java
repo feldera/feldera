@@ -124,4 +124,8 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
                 this.nullsLast == otherExpression.nullsLast &&
                 context.equivalent(this.source, otherExpression.source);
     }
+
+    public DBSPExpression replaceSource(DBSPExpression source) {
+        return new DBSPUnsignedWrapExpression(this.getNode(), source, this.ascending, this.nullsLast);
+    }
 }

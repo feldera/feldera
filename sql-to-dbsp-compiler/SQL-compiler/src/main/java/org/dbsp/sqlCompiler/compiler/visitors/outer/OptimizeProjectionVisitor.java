@@ -1,12 +1,17 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -41,42 +46,48 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPMapOperator operator) {
         DBSPOperator source = this.mapped(operator.input());
+        if ((source.is(DBSPStreamJoinOperator.class) || source.is(DBSPJoinOperator.class)) &&
+                // We have to look up the original operator input, not source
+                this.canOptimize.apply(operator.input())) {
+            DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
+            DBSPClosureExpression newFunction = operator.getFunction().to(DBSPClosureExpression.class)
+                    .applyAfter(this.errorReporter, expression);
+            DBSPOperator result = source.withFunction(newFunction, operator.outputType);
+            this.map(operator, result);
+            return;
+        } else if (source.is(DBSPMapOperator.class)) {
+            DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
+            DBSPClosureExpression newFunction = operator.getFunction().to(DBSPClosureExpression.class)
+                    .applyAfter(this.errorReporter, expression);
+            DBSPOperator result = source.withFunction(newFunction, operator.outputType);
+            this.map(operator, result);
+            return;
+        } else if (source.is(DBSPIntegrateOperator.class) ||
+                source.is(DBSPDifferentiateOperator.class) ||
+                source.is(DBSPDelayOperator.class) ||
+                source.is(DBSPNegateOperator.class) ||
+                source.is(DBSPSumOperator.class) ||
+                source.is(DBSPNoopOperator.class)) {
+            // For all such operators we can swap them with the map
+            List<DBSPOperator> newSources = new ArrayList<>();
+            for (DBSPOperator sourceSource: source.inputs) {
+                DBSPOperator newProjection = operator.withInputs(Linq.list(sourceSource), true);
+                newSources.add(newProjection);
+                this.addOperator(newProjection);
+            }
+            DBSPOperator result = source.withInputs(newSources, true);
+            this.map(operator, result, operator != result);
+            return;
+        }
+
         Projection projection = new Projection(this.errorReporter);
         projection.traverse(operator.getFunction());
         if (projection.isProjection) {
-            if ((source.is(DBSPStreamJoinOperator.class) || source.is(DBSPJoinOperator.class)) &&
-                    // We have to look up the original operator input, not source
-                    this.canOptimize.apply(operator.input())) {
-                DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
-                DBSPClosureExpression newFunction = projection.applyAfter(expression);
-                DBSPOperator result = source.withFunction(newFunction, operator.outputType);
-                this.map(operator, result);
-                return;
-            } else if (source.is(DBSPConstantOperator.class)) {
+            if (source.is(DBSPConstantOperator.class)) {
                 DBSPExpression newConstant = projection.applyAfter(
                         source.to(DBSPConstantOperator.class).getFunction().to(DBSPZSetLiteral.class));
                 DBSPOperator result = source.withFunction(newConstant, operator.outputType);
                 this.map(operator, result);
-                return;
-            } else if (source.is(DBSPMapOperator.class)) {
-                Projection sourceProjection = new Projection(this.errorReporter);
-                sourceProjection.traverse(source.getFunction());
-                DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
-                DBSPClosureExpression newFunction = projection.applyAfter(expression);
-                DBSPOperator result = source.withFunction(newFunction, operator.outputType);
-                this.map(operator, result);
-                return;
-            } else if (!source.hasFunction() &&
-                    !source.is(DBSPSourceBaseOperator.class)) {
-                // For all such operators we can swap them with the projection
-                List<DBSPOperator> newSources = new ArrayList<>();
-                for (DBSPOperator sourceSource: source.inputs) {
-                    DBSPOperator newProjection = operator.withInputs(Linq.list(sourceSource), true);
-                    newSources.add(newProjection);
-                    this.addOperator(newProjection);
-                }
-                DBSPOperator result = source.withInputs(newSources, true);
-                this.map(operator, result, operator != result);
                 return;
             } else if (source.is(DBSPFlatMapOperator.class)) {
                 DBSPFlatmap function = source.getFunction().as(DBSPFlatmap.class);
