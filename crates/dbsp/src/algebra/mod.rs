@@ -17,7 +17,8 @@ pub use order::{PartialOrder, TotalOrder};
 pub use present::Present;
 pub use zset::{
     DynZWeight, IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet,
-    OrdZSetFactories, ZBatch, ZBatchReader, ZCursor, ZSet, ZSetReader, ZTrace, ZWeight,
+    OrdZSetFactories, VecIndexedZSet, VecIndexedZSetFactories, VecZSet, VecZSetFactories, ZBatch,
+    ZBatchReader, ZCursor, ZSet, ZSetReader, ZTrace, ZWeight,
 };
 
 use num::PrimInt;
