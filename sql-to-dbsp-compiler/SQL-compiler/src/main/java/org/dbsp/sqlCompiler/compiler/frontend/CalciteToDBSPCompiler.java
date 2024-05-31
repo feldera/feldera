@@ -1515,18 +1515,18 @@ public class CalciteToDBSPCompiler extends RelVisitor
             boolean ascending = collation.getDirection() == RelFieldCollation.Direction.ASCENDING;
             boolean nullsLast = collation.nullDirection != RelFieldCollation.NullDirection.FIRST;
 
-            // This only works correctly if the order field is unsigned.
+            // This only works if the order field is unsigned.
             DBSPExpression orderField = new DBSPUnsignedWrapExpression(
                     node, originalOrderField, ascending, nullsLast);
             DBSPType unsignedSortType = orderField.getType();
 
-            // Map each row to an expression of the form: |t| (partition, (order, (*t).clone()))
-            DBSPExpression orderAndRow = new DBSPTupleExpression(
-                    orderField, inputRowRefVar.deepCopy().deref().applyClone());
-            DBSPExpression mapExpr = new DBSPRawTupleExpression(partition, orderAndRow);
-            DBSPClosureExpression mapClo = mapExpr.closure(inputRowRefVar.asParameter());
-            DBSPOperator mapIndex = new DBSPMapIndexOperator(node, mapClo,
-                    makeIndexedZSet(partition.getType(), orderAndRow.getType()), input);
+            // Map each row to an expression of the form: |t| (order, Tup2(partition, (*t).clone()))
+            DBSPExpression partitionAndRow = new DBSPTupleExpression(
+                    partition, inputRowRefVar.deepCopy().deref().applyClone());
+            DBSPExpression indexExpr = new DBSPRawTupleExpression(orderField, partitionAndRow);
+            DBSPClosureExpression indexClosure = indexExpr.closure(inputRowRefVar.asParameter());
+            DBSPOperator mapIndex = new DBSPMapIndexOperator(node, indexClosure,
+                    makeIndexedZSet(orderField.getType(), partitionAndRow.getType()), input);
             this.compiler.circuit.addOperator(mapIndex);
 
             // This operator is always incremental, so create the non-incremental version
@@ -1546,14 +1546,21 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPAggregate fd = this.compiler.createAggregate(
                     window, aggregateCalls, tuple, inputRowType, 0, ImmutableBitSet.of());
 
+            // This function is always the same: |Tup2(x, y)| (x, y)
+            DBSPVariablePath pr = new DBSPVariablePath("pr", partitionAndRow.getType().ref());
+            DBSPClosureExpression partitioningFunction =
+                    new DBSPRawTupleExpression(
+                            pr.deref().field(0).applyCloneIfNeeded(),
+                            pr.deref().field(1).applyCloneIfNeeded())
+                            .closure(pr.asParameter());
+
             // Compute aggregates for the window
             DBSPTypeTuple aggResultType = fd.defaultZeroType().to(DBSPTypeTuple.class);
             DBSPOperator windowAgg = new DBSPWindowAggregateOperator(
-                    node, null, fd,
+                    node, partitioningFunction, null, fd,
                     windowExpr,
-                    makeIndexedZSet(
-                            new DBSPTypeTuple(partition.getType(), sortType),
-                            aggResultType), ascending, nullsLast, diff);
+                    makeIndexedZSet(new DBSPTypeTuple(partition.getType(), sortType), aggResultType),
+                    ascending, nullsLast, diff);
             this.compiler.circuit.addOperator(windowAgg);
 
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, windowAgg);

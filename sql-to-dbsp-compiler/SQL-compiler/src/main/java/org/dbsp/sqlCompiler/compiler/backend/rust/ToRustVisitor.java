@@ -976,8 +976,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(tmp)
                 .append(" = ")
                 .append(operator.input().getOutputName())
-                // FIXME: `as_partitioned_zset()` is a temporary workaround.
-                .append(".as_partitioned_zset().partitioned_rolling_aggregate(");
+                .append(".partitioned_rolling_aggregate(");
+        operator.partitioningFunction.accept(this.innerVisitor);
+        builder.append(", ");
         operator.getFunction().accept(this.innerVisitor);
         builder.append(", ");
         operator.window.accept(this.innerVisitor);

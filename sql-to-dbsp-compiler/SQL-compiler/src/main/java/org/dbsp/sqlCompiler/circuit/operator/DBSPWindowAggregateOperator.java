@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
@@ -43,6 +44,7 @@ import java.util.List;
  * This operator only operates correctly on deltas.  To operate on collections it
  * must differentiate its input, and integrate its output. */
 public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase {
+    public final DBSPExpression partitioningFunction;
     public final DBSPExpression window;
     // TODO: these fields should not be here
     public final boolean ascending;
@@ -50,25 +52,32 @@ public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase
 
     public DBSPWindowAggregateOperator(
             CalciteObject node,
-            @Nullable DBSPExpression function, @Nullable DBSPAggregate aggregate,
+            DBSPExpression partitioningFunction,
+            // Initially 'function' is null, and the 'aggregate' is not.
+            // After lowering 'aggregate' is not null, and 'function' has its expected shape
+            @Nullable DBSPExpression function,
+            @Nullable DBSPAggregate aggregate,
             DBSPExpression window,
             DBSPTypeIndexedZSet outputType,
             boolean ascending, boolean nullsLast,
             DBSPOperator input) {
         super(node, "window_aggregate", outputType, function, aggregate, true, input, false);
         this.window = window;
+        this.partitioningFunction = partitioningFunction;
         this.ascending = ascending;
         this.nullsLast = nullsLast;
         // Expect a tuple with 2 fields
         DBSPTypeTuple partAndTime = outputType.keyType.to(DBSPTypeTuple.class);
         if (partAndTime.size() != 2)
             throw new InternalCompilerError("Unexpected type for Window aggregate operator " + outputType);
+        assert partitioningFunction.is(DBSPClosureExpression.class);
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPWindowAggregateOperator(
-                this.getNode(), expression, this.aggregate, this.window,
+                this.getNode(), this.partitioningFunction,
+                expression, this.aggregate, this.window,
                 outputType.to(DBSPTypeIndexedZSet.class),
                 this.ascending, this.nullsLast,
                 this.input());
@@ -78,7 +87,7 @@ public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWindowAggregateOperator(
-                    this.getNode(), this.function, this.aggregate, this.window,
+                    this.getNode(), this.partitioningFunction, this.function, this.aggregate, this.window,
                     this.getOutputIndexedZSetType(),
                     this.ascending, this.nullsLast, newInputs.get(0));
         return this;
@@ -93,6 +102,7 @@ public final class DBSPWindowAggregateOperator extends DBSPAggregateOperatorBase
             return false;
         return this.nullsLast == otherOperator.nullsLast &&
                 this.ascending == otherOperator.ascending &&
+                this.partitioningFunction.equivalent(otherOperator.partitioningFunction) &&
                 this.window.equivalent(otherOperator.window);
     }
 
