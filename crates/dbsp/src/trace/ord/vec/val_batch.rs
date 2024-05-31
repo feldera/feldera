@@ -340,18 +340,18 @@ where
     type R = R;
     type Factories = VecValBatchFactories<K, V, T, R>;
 
-    type Cursor<'s> = OrdValCursor<'s, K, V, T, R, O>
+    type Cursor<'s> = VecValCursor<'s, K, V, T, R, O>
     where
         O: 's;
 
-    // type Consumer = OrdValConsumer<K, V, T, R, O>;
+    // type Consumer = VecValConsumer<K, V, T, R, O>;
 
     fn factories(&self) -> Self::Factories {
         self.factories.clone()
     }
 
     fn cursor(&self) -> Self::Cursor<'_> {
-        OrdValCursor {
+        VecValCursor {
             cursor: self.layer.cursor(),
         }
     }
@@ -398,8 +398,8 @@ where
     O: OrdOffset,
 {
     type Batcher = MergeBatcher<Self>;
-    type Builder = OrdValBuilder<K, V, T, R, O>;
-    type Merger = OrdValMerger<K, V, T, R, O>;
+    type Builder = VecValBuilder<K, V, T, R, O>;
+    type Merger = VecValMerger<K, V, T, R, O>;
 
     fn persistent_id(&self) -> Option<PathBuf> {
         unimplemented!()
@@ -418,7 +418,7 @@ where
     }*/
 
     fn begin_merge(&self, other: &Self) -> Self::Merger {
-        OrdValMerger::new_merger(self, other)
+        VecValMerger::new_merger(self, other)
     }
 
     fn recede_to(&mut self, frontier: &T) {
@@ -544,7 +544,7 @@ where
 
 /// State for an in-progress merge.
 #[derive(SizeOf)]
-pub struct OrdValMerger<K, V, T, R, O = usize>
+pub struct VecValMerger<K, V, T, R, O = usize>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -572,7 +572,7 @@ where
     // batch_item_factory: &'static BatchItemVTable<K, V, Pair<K, V>, R>,
 }
 
-impl<K, V, T, R, O> Merger<K, V, T, R, VecValBatch<K, V, T, R, O>> for OrdValMerger<K, V, T, R, O>
+impl<K, V, T, R, O> Merger<K, V, T, R, VecValBatch<K, V, T, R, O>> for VecValMerger<K, V, T, R, O>
 where
     Self: SizeOf,
     K: DataTrait + ?Sized,
@@ -588,7 +588,7 @@ where
         // Leonid: we do not require batch bounds to grow monotonically.
         // assert!(batch1.upper() == batch2.lower());
 
-        OrdValMerger {
+        VecValMerger {
             lower1: batch1.layer.lower_bound(),
             upper1: batch1.layer.lower_bound() + batch1.layer.keys(),
             lower2: batch2.layer.lower_bound(),
@@ -666,7 +666,7 @@ where
 
 /// A cursor for navigating a single layer.
 #[derive(Debug, SizeOf)]
-pub struct OrdValCursor<'s, K, V, T, R, O = usize>
+pub struct VecValCursor<'s, K, V, T, R, O = usize>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -677,7 +677,7 @@ where
     cursor: LayerCursor<'s, K, Layer<V, Leaf<DynDataTyped<T>, R>, O>, O>,
 }
 
-impl<'s, K, V, T, R, O> Clone for OrdValCursor<'s, K, V, T, R, O>
+impl<'s, K, V, T, R, O> Clone for VecValCursor<'s, K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -692,7 +692,7 @@ where
     }
 }
 
-impl<'s, K, V, T, R, O> Cursor<K, V, T, R> for OrdValCursor<'s, K, V, T, R, O>
+impl<'s, K, V, T, R, O> Cursor<K, V, T, R> for VecValCursor<'s, K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -815,12 +815,12 @@ where
     }
 }
 
-pub struct OrdValTimeDiffCursor<'a, T, R>(LeafCursor<'a, DynDataTyped<T>, R>)
+pub struct VecValTimeDiffCursor<'a, T, R>(LeafCursor<'a, DynDataTyped<T>, R>)
 where
     T: Timestamp,
     R: WeightTrait + ?Sized;
 
-impl<'a, T, R> TimeDiffCursor<'a, T, R> for OrdValTimeDiffCursor<'a, T, R>
+impl<'a, T, R> TimeDiffCursor<'a, T, R> for VecValTimeDiffCursor<'a, T, R>
 where
     T: Timestamp,
     R: WeightTrait + ?Sized,
@@ -837,7 +837,7 @@ where
     }
 }
 
-impl<'s, K, V, T, R, O> HasTimeDiffCursor<K, V, T, R> for OrdValCursor<'s, K, V, T, R, O>
+impl<'s, K, V, T, R, O> HasTimeDiffCursor<K, V, T, R> for VecValCursor<'s, K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -845,19 +845,19 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
-    type TimeDiffCursor<'a> = OrdValTimeDiffCursor<'a, T, R> where Self: 'a;
+    type TimeDiffCursor<'a> = VecValTimeDiffCursor<'a, T, R> where Self: 'a;
 
     fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
-        OrdValTimeDiffCursor(self.cursor.child.values())
+        VecValTimeDiffCursor(self.cursor.child.values())
     }
 }
 
-type RawOrdValBuilder<K, V, T, R, O> =
+type RawVecValBuilder<K, V, T, R, O> =
     LayerBuilder<K, LayerBuilder<V, LeafBuilder<DynDataTyped<T>, R>, O>, O>;
 
 /// A builder for creating layers from unsorted update tuples.
 #[derive(SizeOf)]
-pub struct OrdValBuilder<K, V, T, R, O = usize>
+pub struct VecValBuilder<K, V, T, R, O = usize>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -866,7 +866,7 @@ where
     O: OrdOffset,
 {
     time: T,
-    builder: RawOrdValBuilder<K, V, T, R, O>,
+    builder: RawVecValBuilder<K, V, T, R, O>,
     #[size_of(skip)]
     factories: VecValBatchFactories<K, V, T, R>,
     // #[size_of(skip)]
@@ -876,7 +876,7 @@ where
     // batch_item_factory: &'static BatchItemVTable<K, V, Pair<K, V>, R>,
 }
 
-impl<K, V, T, R, O> TimedBuilder<VecValBatch<K, V, T, R, O>> for OrdValBuilder<K, V, T, R, O>
+impl<K, V, T, R, O> TimedBuilder<VecValBatch<K, V, T, R, O>> for VecValBuilder<K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -902,7 +902,7 @@ where
     }
 }
 
-impl<K, V, T, R, O> Builder<VecValBatch<K, V, T, R, O>> for OrdValBuilder<K, V, T, R, O>
+impl<K, V, T, R, O> Builder<VecValBatch<K, V, T, R, O>> for VecValBuilder<K, V, T, R, O>
 where
     Self: SizeOf,
     K: DataTrait + ?Sized,
@@ -915,7 +915,7 @@ where
     fn new_builder(factories: &VecValBatchFactories<K, V, T, R>, time: T) -> Self {
         Self {
             time,
-            builder: RawOrdValBuilder::<K, V, T, R, O>::new(&factories.layer_factories),
+            builder: RawVecValBuilder::<K, V, T, R, O>::new(&factories.layer_factories),
             factories: factories.clone(),
             // item_factory: factories.item_factory,
             // weighted_item_factory: factories.weighted_item_factory,
@@ -927,7 +927,7 @@ where
     fn with_capacity(factories: &VecValBatchFactories<K, V, T, R>, time: T, cap: usize) -> Self {
         Self {
             time,
-            builder: <RawOrdValBuilder<K, V, T, R, O> as TupleBuilder>::with_capacity(
+            builder: <RawVecValBuilder<K, V, T, R, O> as TupleBuilder>::with_capacity(
                 &factories.layer_factories,
                 cap,
             ),
@@ -982,12 +982,12 @@ where
     }
 }
 
-/*pub struct OrdValConsumer<K, V, T, R, O> {
+/*pub struct VecValConsumer<K, V, T, R, O> {
     __type: PhantomData<(K, V, T, R, O)>,
 }
 
-impl<K, V, T, R, O> Consumer<K, V, R, T> for OrdValConsumer<K, V, T, R, O> {
-    type ValueConsumer<'a> = OrdValValueConsumer<'a, K, V, T, R, O>
+impl<K, V, T, R, O> Consumer<K, V, R, T> for VecValConsumer<K, V, T, R, O> {
+    type ValueConsumer<'a> = VecValValueConsumer<'a, K, V, T, R, O>
     where
         Self: 'a;
 
@@ -1011,11 +1011,11 @@ impl<K, V, T, R, O> Consumer<K, V, R, T> for OrdValConsumer<K, V, T, R, O> {
     }
 }
 
-pub struct OrdValValueConsumer<'a, K, V, T, R, O> {
+pub struct VecValValueConsumer<'a, K, V, T, R, O> {
     __type: PhantomData<&'a (K, V, T, R, O)>,
 }
 
-impl<'a, K, V, T, R, O> ValueConsumer<'a, V, R, T> for OrdValValueConsumer<'a, K, V, T, R, O> {
+impl<'a, K, V, T, R, O> ValueConsumer<'a, V, R, T> for VecValValueConsumer<'a, K, V, T, R, O> {
     fn value_valid(&self) -> bool {
         todo!()
     }

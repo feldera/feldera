@@ -221,13 +221,13 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Display for VecWSet<K, R> {
     }
 }
 
-/*impl<K, R, KR> From<Leaf<K, R, KR>> for OrdZSet<K, R, KR> {
+/*impl<K, R, KR> From<Leaf<K, R, KR>> for VecZSet<K, R, KR> {
     fn from(layer: Leaf<K, R, KR>) -> Self {
         Self { layer }
     }
 }
 
-impl<K, R, KR> From<Leaf<K, R, KR>> for Rc<OrdZSet<K, R, KR>> {
+impl<K, R, KR> From<Leaf<K, R, KR>> for Rc<VecZSet<K, R, KR>> {
     fn from(layer: Leaf<K, R, KR>) -> Self {
         Rc::new(From::from(layer))
     }
@@ -299,7 +299,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
     type R = R;
     type Cursor<'s> = VecWSetCursor<'s, K, R>;
     type Factories = VecWSetFactories<K, R>;
-    // type Consumer = OrdZSetConsumer<K, R>;
+    // type Consumer = VecZSetConsumer<K, R>;
 
     #[inline]
     fn factories(&self) -> Self::Factories {
@@ -317,7 +317,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
     /*
     #[inline]
     fn consumer(self) -> Self::Consumer {
-        OrdZSetConsumer {
+        VecZSetConsumer {
             consumer: ColumnLayerConsumer::from(self.layer),
         }
     }*/
@@ -686,7 +686,7 @@ where
 
 /*
 #[derive(Debug, SizeOf)]
-pub struct OrdZSetConsumer<K, R>
+pub struct VecZSetConsumer<K, R>
 where
     K: 'static,
     R: 'static,
@@ -694,8 +694,8 @@ where
     consumer: ColumnLayerConsumer<K, R>,
 }
 
-impl<K, R> Consumer<K, (), R, ()> for OrdZSetConsumer<K, R> {
-    type ValueConsumer<'a> = OrdZSetValueConsumer<'a, K, R>
+impl<K, R> Consumer<K, (), R, ()> for VecZSetConsumer<K, R> {
+    type ValueConsumer<'a> = VecZSetValueConsumer<'a, K, R>
     where
         Self: 'a;
 
@@ -709,7 +709,7 @@ impl<K, R> Consumer<K, (), R, ()> for OrdZSetConsumer<K, R> {
 
     fn next_key(&mut self) -> (K, Self::ValueConsumer<'_>) {
         let (key, values) = self.consumer.next_key();
-        (key, OrdZSetValueConsumer { values })
+        (key, VecZSetValueConsumer { values })
     }
 
     fn seek_key(&mut self, key: &K) {
@@ -718,7 +718,7 @@ impl<K, R> Consumer<K, (), R, ()> for OrdZSetConsumer<K, R> {
 }
 
 #[derive(Debug)]
-pub struct OrdZSetValueConsumer<'a, K, R>
+pub struct VecZSetValueConsumer<'a, K, R>
 where
     K: 'static,
     R: 'static,
@@ -726,7 +726,7 @@ where
     values: ColumnLayerValues<'a, K, R>,
 }
 
-impl<'a, K, R> ValueConsumer<'a, (), R, ()> for OrdZSetValueConsumer<'a, K, R> {
+impl<'a, K, R> ValueConsumer<'a, (), R, ()> for VecZSetValueConsumer<'a, K, R> {
     fn value_valid(&self) -> bool {
         self.values.value_valid()
     }
