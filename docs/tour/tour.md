@@ -1,4 +1,4 @@
-# Tour
+# Use Case: Security Operations
 
 Once you've started the Feldera demo, as described in [Get
 Started](/docs/intro), navigate to [localhost:8080](http://localhost:8080)

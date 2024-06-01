@@ -79,7 +79,11 @@ const sidebars = {
               id: 'use_cases/fraud_detection/fraud_detection',
               label: 'Real-time Fraud Detection',
           },
-          'tour/tour',
+          {
+              type: 'doc',
+              id: 'tour/tour',
+              label: 'Security Operations',
+          }
       ]
     },
     {
