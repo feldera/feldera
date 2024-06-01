@@ -86,6 +86,7 @@ class Client:
         body = {
             "code": program.code,
             "description": program.description or "",
+            "config": { "profile": "optimized" }
         }
 
         resp = self.http.put(
