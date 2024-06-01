@@ -2,8 +2,9 @@
 //!
 //! This is a layer over a storage backend that adds a cache of a
 //! client-provided function of the blocks.
+use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::{
     collections::BTreeMap,
     ops::Range,
@@ -213,12 +214,23 @@ where
     }
 }
 
+use thread_local::ThreadLocal;
+
 /// A cache on top of a storage [backend](crate::storage::backend).
 pub struct BufferCache<E>
 where
     E: CacheEntry,
 {
-    inner: RwLock<CacheInner<E>>,
+    inner: ThreadLocal<RefCell<CacheInner<E>>>,
+}
+
+impl<E> Default for CacheInner<E>
+where
+    E: CacheEntry,
+{
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<E> BufferCache<E>
@@ -231,7 +243,7 @@ where
     /// `backend`, because otherwise the cache will end up with duplicates.
     pub fn new() -> Self {
         Self {
-            inner: RwLock::new(CacheInner::new()),
+            inner: ThreadLocal::new(),
         }
     }
 
@@ -254,7 +266,7 @@ where
         F: Fn(&E) -> Result<T, ()>,
     {
         let key = CacheKey::from((fd, offset));
-        if let Some(aux) = self.inner.write().unwrap().get(key) {
+        if let Some(aux) = self.inner.get_or_default().borrow_mut().get(key) {
             counter!(BUFFER_CACHE_HIT).increment(1);
             return convert(aux)
                 .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
@@ -266,7 +278,10 @@ where
         let aux = E::from_read(block, offset, size)?;
         let retval = convert(&aux)
             .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
-        self.inner.write().unwrap().insert(key, aux.clone());
+        self.inner
+            .get_or_default()
+            .borrow_mut()
+            .insert(key, aux.clone());
         retval
     }
 
@@ -278,8 +293,8 @@ where
         let size = data.len();
         let aux = E::from_write(data, offset, size).unwrap();
         self.inner
-            .write()
-            .unwrap()
+            .get_or_default()
+            .borrow_mut()
             .insert(CacheKey::from((fd, offset)), aux);
         Ok(())
     }
@@ -299,16 +314,25 @@ where
         Self::backend().open(name)
     }
     fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.inner.write().unwrap().delete_file((&fd).into());
+        self.inner
+            .get_or_default()
+            .borrow_mut()
+            .delete_file((&fd).into());
         Self::backend().delete(fd)
     }
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        self.inner.write().unwrap().delete_file((&fd).into());
+        self.inner
+            .get_or_default()
+            .borrow_mut()
+            .delete_file((&fd).into());
         Self::backend().delete_mut(fd)
     }
 
     fn evict(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.inner.write().unwrap().delete_file((&fd).into());
+        self.inner
+            .get_or_default()
+            .borrow_mut()
+            .delete_file((&fd).into());
         Ok(())
     }
 
@@ -326,8 +350,8 @@ where
         let size = data.len();
         let aux = E::from_write(data.clone(), offset, size).unwrap();
         self.inner
-            .write()
-            .unwrap()
+            .get_or_default()
+            .borrow_mut()
             .insert(CacheKey::from((fd, offset)), aux);
         Ok(data)
     }

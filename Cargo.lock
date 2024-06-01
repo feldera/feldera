@@ -3361,6 +3361,7 @@ dependencies = [
  "tempfile",
  "textwrap 0.15.2",
  "thiserror",
+ "thread_local",
  "time",
  "tokio",
  "typedmap",
