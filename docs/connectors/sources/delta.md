@@ -117,7 +117,7 @@ changes for versions 11 onward.  The initial snapshot will be sorted by the
 }
 ```
 
-Read a full snapshot of a Delta table using specified AWS access key. Note that
+Read a full snapshot of a Delta table using the specified AWS access key. Note that
 the `aws_region` parameter is required in this case, because the Delta Lake Rust
 library we use does not currently auto-detect the AWS region.
 
@@ -125,8 +125,8 @@ library we use does not currently auto-detect the AWS region.
 {
   "uri": "s3://feldera-fraud-detection-demo/transaction_train",
   "mode": "snapshot",
-  "aws_access_key_id": $AWS_ACCESS_KEY_ID,
-  "aws_secret_access_key": $AWS_SECRET_ACCESS_KEY,
+  "aws_access_key_id": <AWS_ACCESS_KEY_ID>,
+  "aws_secret_access_key": <AWS_SECRET_ACCESS_KEY>,
   "aws_region": "us-east-1"
 }
 ```

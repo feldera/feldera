@@ -145,6 +145,11 @@ const sidebars = {
                       },
                       {
                           type: 'doc',
+                          id: 'connectors/sinks/delta',
+                          label: 'Delta Lake'
+                      },
+                      {
+                          type: 'doc',
                           id: 'connectors/sinks/kafka',
                           label: 'Kafka'
                       },
