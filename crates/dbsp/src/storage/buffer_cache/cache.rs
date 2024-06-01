@@ -2,16 +2,17 @@
 //!
 //! This is a layer over a storage backend that adds a cache of a
 //! client-provided function of the blocks.
+use crossbeam_skiplist::SkipMap;
 use std::rc::Rc;
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::{
-    collections::BTreeMap,
     ops::Range,
     path::{Path, PathBuf},
 };
 
 use crc32c::crc32c;
-use metrics::counter;
+use metrics::{counter, CounterFn};
 
 use crate::storage::backend::Backend;
 use crate::storage::file::reader::{CorruptionError, Error};
@@ -79,7 +80,7 @@ where
 
     /// Serial number for LRU purposes.  Blocks with higher serial numbers have
     /// been used more recently.
-    serial: u64,
+    serial: AtomicU64,
 }
 
 pub trait CacheEntry: Clone + Send
@@ -96,25 +97,25 @@ where
     E: CacheEntry,
 {
     /// Cache contents.
-    cache: BTreeMap<CacheKey, CacheValue<E>>,
+    cache: SkipMap<CacheKey, CacheValue<E>>,
 
     /// Map from LRU serial number to cache key.  The element with the smallest
     /// serial number was least recently used.
-    lru: BTreeMap<u64, CacheKey>,
+    lru: SkipMap<u64, CacheKey>,
 
     /// Serial number to use the next time we touch a block.
-    next_serial: u64,
+    next_serial: AtomicU64,
 
     /// Sum over `cache[*].block.cost()`.
-    cur_cost: usize,
+    cur_cost: AtomicUsize,
 
     /// Maximum `size`, in bytes.
-    max_cost: usize,
+    max_cost: AtomicUsize,
 }
 
 impl<E> Default for BufferCache<E>
 where
-    E: CacheEntry,
+    E: CacheEntry + 'static,
 {
     fn default() -> Self {
         Self::new()
@@ -123,15 +124,15 @@ where
 
 impl<E> CacheInner<E>
 where
-    E: CacheEntry,
+    E: CacheEntry + 'static,
 {
     fn new() -> Self {
         Self {
-            cache: BTreeMap::new(),
-            lru: BTreeMap::new(),
-            next_serial: 0,
-            cur_cost: 0,
-            max_cost: 1024 * 1024 * 128,
+            cache: SkipMap::new(),
+            lru: SkipMap::new(),
+            next_serial: AtomicU64::new(0),
+            cur_cost: AtomicUsize::new(0),
+            max_cost: AtomicUsize::new(1024 * 1024 * 128),
         }
     }
 
@@ -139,14 +140,23 @@ where
     fn check_invariants(&self) {
         assert_eq!(self.cache.len(), self.lru.len());
         let mut cost = 0;
-        for (key, value) in self.cache.iter() {
-            assert_eq!(self.lru.get(&value.serial), Some(key));
-            cost += value.aux.cost();
+        for entry in self.cache.iter() {
+            //assert_eq!(self.lru.get(&entry.value().serial.load(Ordering::Relaxed)).map(|e| e.value()), Some(entry.key()));
+            cost += entry.value().aux.cost();
         }
-        for (serial, key) in self.lru.iter() {
-            assert_eq!(self.cache.get(key).unwrap().serial, *serial);
+        for entry in self.lru.iter() {
+            // (serial, key)
+            assert_eq!(
+                self.cache
+                    .get(entry.value())
+                    .unwrap()
+                    .value()
+                    .serial
+                    .load(Ordering::Relaxed),
+                *entry.key()
+            );
         }
-        assert_eq!(cost, self.cur_cost);
+        assert_eq!(cost, self.cur_cost.load(Ordering::Relaxed));
     }
 
     fn debug_check_invariants(&self) {
@@ -154,61 +164,73 @@ where
         self.check_invariants()
     }
 
-    fn delete_file(&mut self, fd: i64) {
+    fn delete_file(&self, fd: i64) {
         let offsets: Vec<_> = self
             .cache
             .range(CacheKey::fd_range(fd))
-            .map(|(k, v)| (k.offset, v.serial))
+            .map(|e| (e.key().offset, e.value().serial.load(Ordering::Relaxed)))
             .collect();
         for (offset, serial) in offsets {
             self.lru.remove(&serial).unwrap();
-            self.cur_cost -= self
-                .cache
-                .remove(&CacheKey { fd, offset })
-                .unwrap()
-                .aux
-                .cost();
+            let to_remove = self.cache.remove(&CacheKey { fd, offset }).unwrap();
+            self.cur_cost
+                .fetch_sub(to_remove.value().aux.cost(), Ordering::Relaxed);
         }
         self.debug_check_invariants();
     }
 
-    fn get(&mut self, key: CacheKey) -> Option<&E> {
-        if let Some(value) = self.cache.get_mut(&key) {
-            self.lru.remove(&value.serial);
-            value.serial = self.next_serial;
-            self.lru.insert(value.serial, key);
-            self.next_serial += 1;
-            Some(&value.aux)
+    fn get(&self, key: CacheKey) -> Option<E> {
+        if let Some(entry) = self.cache.get(&key) {
+            self.lru
+                .remove(&entry.value().serial.load(Ordering::Relaxed));
+            entry.value().serial.store(
+                self.next_serial.fetch_add(1, Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+            self.lru
+                .insert(entry.value().serial.load(Ordering::Relaxed), key);
+            Some(entry.value().aux.clone())
         } else {
             None
         }
     }
 
-    fn evict_to(&mut self, max_size: usize) {
-        while self.cur_cost > max_size {
-            let (_key, value) = self.cache.pop_first().unwrap();
-            self.lru.remove(&value.serial);
-            self.cur_cost -= value.aux.cost();
+    fn evict_to(&self, max_size: usize) {
+        while self.cur_cost.load(Ordering::Relaxed) > max_size {
+            let entry = self.cache.pop_front().unwrap();
+            self.lru
+                .remove(&entry.value().serial.load(Ordering::Relaxed));
+            self.cur_cost
+                .fetch_sub(entry.value().aux.cost(), Ordering::Relaxed);
         }
         self.debug_check_invariants();
     }
 
-    fn insert(&mut self, key: CacheKey, aux: E) {
+    fn insert(&self, key: CacheKey, aux: E) {
         let cost = aux.cost();
-        self.evict_to(self.max_cost.saturating_sub(cost));
-        if let Some(old_value) = self.cache.insert(
+        if self.max_cost.load(Ordering::Relaxed) < cost {
+            self.max_cost.store(0, Ordering::Relaxed);
+        } else {
+            self.max_cost.fetch_sub(cost, Ordering::Relaxed);
+        }
+
+        if let Some(entry) = self.cache.remove(&key) {
+            self.lru
+                .remove(&entry.value().serial.load(Ordering::Relaxed));
+            self.cur_cost
+                .fetch_sub(entry.value().aux.cost(), Ordering::Relaxed);
+        }
+        let next_serial = self.next_serial.fetch_add(1, Ordering::Relaxed);
+        self.cache.insert(
             key,
             CacheValue {
                 aux,
-                serial: self.next_serial,
+                serial: AtomicU64::new(next_serial),
             },
-        ) {
-            self.lru.remove(&old_value.serial);
-            self.cur_cost -= old_value.aux.cost();
-        }
-        self.lru.insert(self.next_serial, key);
-        self.cur_cost += cost;
-        self.next_serial += 1;
+        );
+
+        self.lru.insert(next_serial, key);
+        self.cur_cost.fetch_add(cost, Ordering::Relaxed);
         self.debug_check_invariants();
     }
 }
@@ -218,12 +240,12 @@ pub struct BufferCache<E>
 where
     E: CacheEntry,
 {
-    inner: RwLock<CacheInner<E>>,
+    inner: CacheInner<E>,
 }
 
 impl<E> BufferCache<E>
 where
-    E: CacheEntry,
+    E: CacheEntry + 'static,
 {
     /// Creates a new cache on top of `backend`.
     ///
@@ -231,7 +253,7 @@ where
     /// `backend`, because otherwise the cache will end up with duplicates.
     pub fn new() -> Self {
         Self {
-            inner: RwLock::new(CacheInner::new()),
+            inner: CacheInner::new(),
         }
     }
 
@@ -254,9 +276,9 @@ where
         F: Fn(&E) -> Result<T, ()>,
     {
         let key = CacheKey::from((fd, offset));
-        if let Some(aux) = self.inner.write().unwrap().get(key) {
+        if let Some(aux) = self.inner.get(key) {
             counter!(BUFFER_CACHE_HIT).increment(1);
-            return convert(aux)
+            return convert(&aux)
                 .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
         }
 
@@ -266,7 +288,7 @@ where
         let aux = E::from_read(block, offset, size)?;
         let retval = convert(&aux)
             .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
-        self.inner.write().unwrap().insert(key, aux.clone());
+        self.inner.insert(key, aux.clone());
         retval
     }
 
@@ -277,17 +299,14 @@ where
         let data = Self::backend().write_block(fd, offset, data)?;
         let size = data.len();
         let aux = E::from_write(data, offset, size).unwrap();
-        self.inner
-            .write()
-            .unwrap()
-            .insert(CacheKey::from((fd, offset)), aux);
+        self.inner.insert(CacheKey::from((fd, offset)), aux);
         Ok(())
     }
 }
 
 impl<E> Storage for BufferCache<E>
 where
-    E: CacheEntry,
+    E: CacheEntry + 'static,
 {
     fn create(&self) -> Result<FileHandle, StorageError> {
         Self::backend().create()
@@ -299,16 +318,16 @@ where
         Self::backend().open(name)
     }
     fn delete(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.inner.write().unwrap().delete_file((&fd).into());
+        self.inner.delete_file((&fd).into());
         Self::backend().delete(fd)
     }
     fn delete_mut(&self, fd: FileHandle) -> Result<(), StorageError> {
-        self.inner.write().unwrap().delete_file((&fd).into());
+        self.inner.delete_file((&fd).into());
         Self::backend().delete_mut(fd)
     }
 
     fn evict(&self, fd: ImmutableFileHandle) -> Result<(), StorageError> {
-        self.inner.write().unwrap().delete_file((&fd).into());
+        self.inner.delete_file((&fd).into());
         Ok(())
     }
 
@@ -325,10 +344,7 @@ where
         let data = Self::backend().write_block(fd, offset, data)?;
         let size = data.len();
         let aux = E::from_write(data.clone(), offset, size).unwrap();
-        self.inner
-            .write()
-            .unwrap()
-            .insert(CacheKey::from((fd, offset)), aux);
+        self.inner.insert(CacheKey::from((fd, offset)), aux);
         Ok(data)
     }
 
