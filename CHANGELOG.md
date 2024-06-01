@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Documentation: added the
+  [fraud detection use case](https://feldera.com/docs/use_cases/fraud_detection)
+  to the docs section of the website.
+
 ### Fixed
 
 - WebConsole: Fix crash when displaying anonymous output columns (#1757)
