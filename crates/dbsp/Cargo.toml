@@ -75,6 +75,7 @@ sysinfo = "0.30.5"
 libc = "0.2.153"
 static_assertions = "1.1.0"
 lazy_static = "1.4.0"
+thread_local = "1.1.8"
 
 [dependencies.time]
 version = "0.3.20"
