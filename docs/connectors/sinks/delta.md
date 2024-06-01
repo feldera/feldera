@@ -46,42 +46,7 @@ of input changes.  It works by accumulating updates inside the pipeline
 for up to a user-defined period of time or until accumulating a user-defined number
 of updates and writing them to the Delta Table as a small number of large files.
 
-The following parameters are used to configure the output buffer
-
-* `enable_output_buffer` - Enable output buffer.
-
-* `max_output_buffer_time_millis` - Maximum time in milliseconds data is kept
-   in the output buffer.
-
-   When not specified, data is kept in the buffer indefinitely until one of
-   the other trigger conditions is satisfied.  When this option is
-   set the buffer will be flushed at most every
-   `max_output_buffer_time_millis` milliseconds.
-
-   NOTE: this configuration option requires the `enable_output_buffer` flag
-   to be set.
-
-* `max_output_buffer_size_records` - Maximum number of updates to be kept in
-   the output buffer.
-
-   This parameter bounds the maximal size of the buffer.  
-   Note that the size of the buffer is not always equal to the
-   total number of updates output by the pipeline. Updates to the
-   same record can overwrite or cancel previous updates.
-
-   When not specified, the buffer can grow indefinitely until one of
-   the other trigger conditions is satisfied.
-
-   NOTE: this configuration option requires the `enable_output_buffer` flag
-   to be set.
-
-:::note
-
-when the `enable_output_buffer` flag is set, at least one of
-`max_output_buffer_time_millis` or `max_output_buffer_size_records` must be
-specified.
-
-:::
+See [output buffer](/docs/connectors#configuring-the-output-buffer) for details on configuring the output buffer mechanism.
 
 ## Limitations
 
