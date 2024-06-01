@@ -24,7 +24,7 @@ const sidebars = {
         id: 'get-started'
       },
       items: [
-	'intro',
+	'docker',
 	'sandbox',
       ]
     },
@@ -33,7 +33,7 @@ const sidebars = {
       label: 'Deploy',
       link: { type: 'doc', id: 'deploy' },
       items: [
-        'intro',
+        'docker',
         {
           type: 'category',
           label: 'Bring Your Own Cloud',
