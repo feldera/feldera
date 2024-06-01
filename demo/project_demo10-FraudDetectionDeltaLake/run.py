@@ -12,7 +12,7 @@ import time
 DEFAULT_API_URL = "http://localhost:8080"
 
 # How long to run the inference pipeline for.
-INFERENCE_TIME_SECONDS = 30
+INFERENCE_TIME_SECONDS = 60
 
 def main():
     parser = argparse.ArgumentParser(
@@ -281,6 +281,7 @@ def build_program(client, pipeline_name):
     sql.register_view("FEATURE", query)
     return sql
 
+# Split input dataframe into train and test sets
 def get_train_test_data(dataframe, feature_cols, target_col, train_test_split_ratio, random_seed):
     X = dataframe[feature_cols]
     y = dataframe[target_col]
@@ -309,6 +310,7 @@ def train_model(dataframe, config):
     model.fit(X_train, y_train.values.ravel())
     return model, X_test, y_test
 
+# Evaluate prediction accuracy against ground truth.
 def eval_metrics(y, predictions):
     cm = confusion_matrix(y, predictions)
     print("Confusion matrix:")

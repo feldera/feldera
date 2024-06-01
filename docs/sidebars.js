@@ -74,7 +74,12 @@ const sidebars = {
       type: 'category',
       label: 'Use Cases',
       items: [
-        'tour/tour',
+          {
+              type: 'doc',
+              id: 'use_cases/fraud_detection/fraud_detection',
+              label: 'Real-time Fraud Detection',
+          },
+          'tour/tour',
       ]
     },
     {
