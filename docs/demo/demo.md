@@ -13,7 +13,7 @@ built using those vulnerable binaries, and to Kubernetes clusters
 running those vulnerable images.
 
 To follow along, set up the containers using the instructions in [Get
-Started](/docs/intro).  It's also a good idea to take the [Tour](/docs/tour)
+Started](/docs/docker).  It's also a good idea to take the [Tour](/docs/tour)
 to familiarize yourself with Feldera concepts and user interface.
 
 ## Tables

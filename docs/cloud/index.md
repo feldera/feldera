@@ -12,7 +12,7 @@ Please contact us at `learnmore@feldera.com` if you are interested to learn
 more or would like to try out Feldera Cloud. We'd be happy to get you started!
 
 :::tip
-Don't forget to first try out the [Docker demo container](/docs/intro), which requires
+Don't forget to first try out the [Docker demo container](/docs/docker), which requires
 no license key. The Docker demo already showcases many of Feldera's features.
 This documentation is about setting up a distributed cloud deployment.
 :::
