@@ -17,6 +17,7 @@ from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
 from feldera.formats import JSONFormat, CSVFormat
+from feldera._helpers import validate_connector_input_format
 from enum import Enum
 
 
@@ -407,10 +408,7 @@ class SQLContext:
         if config.get("topics") is None:
             raise ValueError("topics is required in the config")
 
-        fmt = fmt.to_dict()
-
-        if fmt.get("config").get("update_format") is None:
-            raise ValueError("update_format not set in the format config; consider using: .with_update_format()")
+        validate_connector_input_format(fmt)
 
         connector = Connector(
             name=connector_name,
@@ -419,7 +417,7 @@ class SQLContext:
                     "name": "kafka_input",
                     "config": config,
                 },
-                "format": fmt,
+                "format": fmt.to_dict(),
             }
         )
 
@@ -445,10 +443,7 @@ class SQLContext:
         if config.get("topic") is None:
             raise ValueError("topic is required in the config")
 
-        fmt = fmt.to_dict()
-
-        if fmt.get("config").get("update_format") is None:
-            raise ValueError("update_format not set in the format config; consider using: .with_update_format()")
+        validate_connector_input_format(fmt)
 
         connector = Connector(
             name=connector_name,
@@ -457,7 +452,7 @@ class SQLContext:
                     "name": "kafka_output",
                     "config": config,
                 },
-                "format": fmt,
+                "format": fmt.to_dict(),
             }
         )
 
@@ -483,10 +478,7 @@ class SQLContext:
         :param fmt: The format of the data in the URL.
         """
 
-        fmt = fmt.to_dict()
-
-        if fmt.get("config").get("update_format") is None:
-            raise ValueError("update_format not set in the format config; consider using: .with_update_format()")
+        validate_connector_input_format(fmt)
 
         connector = Connector(
             name=connector_name,
@@ -497,7 +489,7 @@ class SQLContext:
                         "path": path
                     }
                 },
-                "format": fmt,
+                "format": fmt.to_dict(),
             }
         )
 
