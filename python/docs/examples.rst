@@ -72,7 +72,9 @@ Kafka
 To setup Kafka as the source use :meth:`.SQLContext.connect_source_kafka` and as the sink use
 :meth:`.SQLContext.connect_sink_kafka`.
 
-Both of these methods require a ``config`` which is a key-value pair.
+Both of these methods require a ``config`` which is a dictionary, and ``fmt`` which is a
+`data format configuration <https://www.feldera.com/docs/api/json>`_ that is either a
+:class:`.JSONFormat` or :class:`.CSVFormat`.
 
 The input config looks like the following:
 
@@ -119,7 +121,7 @@ More on Kafka as the output connector at: https://www.feldera.com/docs/connector
 .. code-block:: python
 
     from feldera import SQLContext, SQLSchema
-    from feldera.formats import JSONFormat, UpdateFormat
+    from feldera.formats import JSONFormat, JSONUpdateFormat
 
     TABLE_NAME = "example"
     VIEW_NAME = "example_count"
@@ -141,10 +143,11 @@ More on Kafka as the output connector at: https://www.feldera.com/docs/connector
         "auto.offset.reset": "earliest",
     }
 
-    kafka_format = JSONFormat().with_update_format(UpdateFormat.InsertDelete).with_array(False)
+    # Data format configuration
+    format = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
 
-    sql.connect_source_kafka(TABLE_NAME, "kafka_conn_in", source_config, kafka_format)
-    sql.connect_sink_kafka(VIEW_NAME, "kafka_conn_out", sink_config, kafka_format)
+    sql.connect_source_kafka(TABLE_NAME, "kafka_conn_in", source_config, format)
+    sql.connect_sink_kafka(VIEW_NAME, "kafka_conn_out", sink_config, format)
 
     out = sql.listen(VIEW_NAME)
     sql.start()
@@ -171,7 +174,7 @@ More on the HTTP GET connector at: https://www.feldera.com/docs/connectors/sourc
 .. code-block:: python
 
     from feldera import SQLContext, SQLSchema
-    from feldera.formats import JSONFormat, UpdateFormat
+    from feldera.formats import JSONFormat, JSONUpdateFormat
 
     sql = SQLContext("test_http_get", TEST_CLIENT).get_or_create()
 
@@ -184,7 +187,7 @@ More on the HTTP GET connector at: https://www.feldera.com/docs/connectors/sourc
 
     path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
 
-    fmt = JSONFormat().with_update_format(UpdateFormat.InsertDelete).with_array(False)
+    fmt = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
     sql.connect_source_url(TBL_NAME, "part", path, fmt)
 
     out = sql.listen(VIEW_NAME)

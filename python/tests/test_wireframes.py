@@ -3,7 +3,7 @@ import unittest
 import pandas as pd
 
 from feldera import SQLContext, SQLSchema
-from feldera.formats import JSONFormat, UpdateFormat
+from feldera.formats import JSONFormat, JSONUpdateFormat
 from tests import TEST_CLIENT
 
 
@@ -160,7 +160,7 @@ class TestWireframes(unittest.TestCase):
             "auto.offset.reset": "earliest",
         }
 
-        kafka_format = JSONFormat().with_update_format(UpdateFormat.InsertDelete).with_array(False)
+        kafka_format = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
 
         sink_config = {
             "topic": OUTPUT_TOPIC,
@@ -190,7 +190,7 @@ class TestWireframes(unittest.TestCase):
 
         path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
 
-        fmt = JSONFormat().with_update_format(UpdateFormat.InsertDelete).with_array(False)
+        fmt = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
         sql.connect_source_url(TBL_NAME, "part", path, fmt)
 
         out = sql.listen(VIEW_NAME)

@@ -426,7 +426,13 @@ class SQLContext:
         else:
             self.input_connectors_buffer[table_name] = [connector]
 
-    def connect_sink_kafka(self, view_name: str, connector_name: str, config: dict, fmt: JSONFormat | CSVFormat):
+    def connect_sink_kafka(
+        self,
+        view_name: str,
+        connector_name: str,
+        config: dict,
+        fmt: JSONFormat | CSVFormat
+    ):
         """
         Associates the specified kafka topic on the specified Kafka server as output sink for the specified view in
         Feldera. The topic is populated with changes in the specified view.
