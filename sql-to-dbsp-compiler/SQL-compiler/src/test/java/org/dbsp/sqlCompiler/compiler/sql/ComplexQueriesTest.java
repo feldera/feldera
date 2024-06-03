@@ -1,26 +1,3 @@
-/*
- * Copyright 2022 VMware, Inc.
- * SPDX-License-Identifier: MIT
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
@@ -40,6 +17,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -73,6 +51,101 @@ public class ComplexQueriesTest extends BaseSQLTests {
                     fulfillment
                     on part_order.id = fulfillment.part_order""";
         this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void viewLateness() {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 1);
+        String sql = """
+                create table TRANSACTION (
+                    trans_date_trans_time TIMESTAMP,
+                    cc_num BIGINT,
+                    merchant STRING,
+                    category STRING,
+                    amt DOUBLE,
+                    trans_num STRING,
+                    unix_time INTEGER LATENESS 0,
+                    merch_lat DOUBLE,
+                    merch_long DOUBLE,
+                    is_fraud BIGINT
+                );
+                
+                CREATE TABLE DEMOGRAPHICS (
+                  cc_num BIGINT,
+                  first STRING,
+                  last STRING,
+                  gender STRING,
+                  street STRING,
+                  city STRING,
+                  state STRING,
+                  zip BIGINT,
+                  lat DOUBLE,
+                  long DOUBLE,
+                  city_pop BIGINT,
+                  job STRING,
+                  dob DATE
+                );
+                
+                CREATE VIEW TRANSACTION_DEMOGRAPHICS AS
+                    SELECT * FROM
+                        transaction as t
+                        JOIN demographics as d
+                        ON t.cc_num = d.cc_num;
+
+                LATENESS TRANSACTION_DEMOGRAPHICS.unix_time 0;
+                
+                CREATE VIEW FEATURE AS
+                        SELECT
+                           cc_num,
+                           dayofweek(trans_date_trans_time) as d,
+                           CASE
+                             WHEN dayofweek(trans_date_trans_time) IN(6, 7) THEN true
+                             ELSE false
+                           END AS is_weekend,
+                           hour(trans_date_trans_time) as hour_of_day,
+                           CASE
+                             WHEN hour(trans_date_trans_time) <= 6 THEN true
+                             ELSE false
+                           END AS is_night,
+                           -- Average spending per day, per week, and per month.
+                           AVG(amt) OVER window_1_day AS avg_spend_pd,
+                           AVG(amt) OVER window_7_day AS avg_spend_pw,
+                           AVG(amt) OVER window_30_day AS avg_spend_pm,
+                           -- Average spending over the last three months for the same day of the week.
+                           COALESCE(
+                            AVG(amt) OVER (
+                              PARTITION BY cc_num, EXTRACT(DAY FROM trans_date_trans_time)
+                              ORDER BY unix_time
+                              RANGE BETWEEN 7776000 PRECEDING and CURRENT ROW
+                            ), 0) AS avg_spend_p3m_over_d,
+                           -- Number of transactions in the last 24 hours.
+                           COUNT(*) OVER window_1_day AS trans_freq_24,
+                           amt, unix_time, zip, city_pop, is_fraud
+                        FROM transaction_demographics
+                        WINDOW
+                          window_1_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 86400 PRECEDING AND CURRENT ROW),
+                          window_7_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 604800 PRECEDING AND CURRENT ROW),
+                          window_30_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 2592000 PRECEDING AND CURRENT ROW);
+                      ;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.incrementalize = true;
+        compiler.compileStatements(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int count = 0;
+
+            @Override
+            public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator operator) {
+                this.count++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(4, this.count);
+            }
+        };
+        visitor.apply(circuit);
+        // this.compileRustTestCase(sql);
     }
 
     @Test

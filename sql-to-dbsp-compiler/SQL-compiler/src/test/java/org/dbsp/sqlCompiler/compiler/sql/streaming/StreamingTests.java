@@ -1,10 +1,13 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.CompilerMain;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -423,6 +426,20 @@ public class StreamingTests extends StreamingTest {
         compiler.compileStatement(query);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase("testJoin", ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int count = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.count++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.count);
+            }
+        };
+        visitor.apply(ccs.circuit);
     }
 
     // Test for https://github.com/feldera/feldera/issues/1462
@@ -446,6 +463,20 @@ public class StreamingTests extends StreamingTest {
         compiler.compileStatements(script);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase("testJoinNonMonotoneColumn", ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int count = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.count++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(0, this.count);
+            }
+        };
+        visitor.apply(ccs.circuit);
     }
 
     @Test
@@ -470,6 +501,20 @@ public class StreamingTests extends StreamingTest {
         compiler.compileStatements(script);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase("testJoinTwoColumns", ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int count = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.count++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.count);
+            }
+        };
+        visitor.apply(ccs.circuit);
     }
 
     @Test
