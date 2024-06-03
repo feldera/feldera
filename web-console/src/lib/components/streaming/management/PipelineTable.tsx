@@ -647,7 +647,7 @@ export default function PipelineTable() {
         onDetailPanelExpandedRowIdsChange={updateExpandedRows}
         {...gridPersistence}
       />
-      <PipelineResourcesDialog {...showOnHash('configure')} pipelineId={hash.split('/')[1]} />
+      <PipelineResourcesDialog {...showOnHash('configure')} pipelineName={hash.split('/')[1]} />
     </Card>
   )
 }
@@ -915,8 +915,8 @@ const PipelineActionsCell = (params: { row: Pipeline }) => {
     ),
     configure: () => (
       <Tooltip title='Configure runtime resources' key='configure'>
-        <IconButton size='small' href={`#configure/${pipeline.pipeline_id}`} onClick={() => {}}>
-          <IconCog fontSize={20} />
+        <IconButton size='small' href={`#configure/${pipeline.name}`} onClick={() => {}}>
+          <i className='bx bx-cog' style={{ fontSize: 24 }} />
         </IconButton>
       </Tooltip>
     )

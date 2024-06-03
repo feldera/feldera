@@ -43,7 +43,7 @@ import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 import { useDebouncedCallback } from 'use-debounce'
 
-import { Button, Card, CardContent } from '@mui/material'
+import { Box, Button, Card, CardContent } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -299,9 +299,9 @@ const PipelineBuilderPage = ({
             </CardContent>
             <CardContent sx={{ display: 'flex', alignItems: 'center' }}>
               <EntitySyncIndicator getLabel={stateToSaveLabel} state={saveState} />
-              {pipelineId && (
+              {pipeline.name && (
                 <Box sx={{ ml: 'auto' }}>
-                  <PipelineResourcesThumb pipelineId={pipelineId}></PipelineResourcesThumb>
+                  <PipelineResourcesThumb pipelineName={pipeline.name}></PipelineResourcesThumb>
                 </Box>
               )}
               <Button sx={{ flex: 'none' }} onClick={() => setShow(true)}>
@@ -351,7 +351,7 @@ const PipelineBuilderPage = ({
             disabled={true}
           />
         ))(/view\/connector\/([\w-]+)/.exec(hash)?.[1])}
-      {pipelineId && <PipelineResourcesDialog {...{ show, setShow }} pipelineId={pipelineId}></PipelineResourcesDialog>}
+      {pipeline.name && <PipelineResourcesDialog {...{ show, setShow }} pipelineName={pipeline.name}></PipelineResourcesDialog>}
     </>
   )
 }

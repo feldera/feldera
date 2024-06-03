@@ -1,5 +1,4 @@
-import { PipelineId } from '$lib/services/manager'
-import { PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 
 import { Box } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
@@ -7,8 +6,9 @@ import { useQuery } from '@tanstack/react-query'
 const printRange = (min: number | null | undefined, max: number | null | undefined) =>
   min && max ? `${min} - ${max}` : min ? `min ${min}` : max ? `up to ${max}` : '?'
 
-export const PipelineResourcesThumb = (props: { pipelineId: PipelineId }) => {
-  const configQuery = useQuery({ ...PipelineManagerQuery.pipelineConfig(props.pipelineId) })
+export const PipelineResourcesThumb = (props: { pipelineName: string }) => {
+  const PipelineManagerQuery = usePipelineManagerQuery()
+  const configQuery = useQuery({ ...PipelineManagerQuery.pipelineConfig(props.pipelineName) })
   if (!configQuery.data) {
     return <></>
   }

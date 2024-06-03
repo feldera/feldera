@@ -1,14 +1,14 @@
+import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
 import { useParsedValue } from '$lib/functions/directives/useParsedValue'
-import { valibotRange } from '$lib/functions/valibot'
 import { PipelineId } from '$lib/services/manager'
-import { mutationUpdatePipeline, PipelineManagerQuery } from '$lib/services/pipelineManagerQuery'
+import { mutationUpdatePipeline } from '$lib/services/pipelineManagerQuery'
 import { format } from 'numerable'
 import { Dispatch, SetStateAction } from 'react'
 import { FormContainer, TextFieldElement } from 'react-hook-form-mui'
+import { TwoSeventyRingWithBg } from 'react-svg-spinners'
 import { SliderElement } from 'src/lib/functions/common/react-hook-form-mui'
 import invariant from 'tiny-invariant'
 import * as va from 'valibot'
-import Icon270RingWithBg from '~icons/svg-spinners/270-ring-with-bg'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
 import {
@@ -30,22 +30,26 @@ const cpuCoresRange = { min: 1, max: 256 }
 const memoryMbRange = { min: 100, max: 10000 }
 const storageMbRange = { min: 100, max: 10000000 }
 
+function vaValueRange <T extends string | number | bigint | boolean | Date>({min, max}: {min: T, max: T}): va.Pipe<T> {
+  return [(va.minValue(min), va.maxValue(max))]
+}
+
 /** @see '$lib/services/manager/models/ResourceConfig' */
 const pipelineConfigSchema = va.object({
-  workers: va.optional(va.number(valibotRange(workersRange))),
+  workers: va.optional(va.number(vaValueRange(workersRange))),
   resources: va.optional(
     va.object({
-      cpu_cores_max: va.nullish(va.number(valibotRange(cpuCoresRange))),
-      cpu_cores_min: va.nullish(va.number(valibotRange(cpuCoresRange))),
-      memory_mb_max: va.nullish(va.number(valibotRange(memoryMbRange))),
-      memory_mb_min: va.nullish(va.number(valibotRange(memoryMbRange))),
-      storage_mb_max: va.nullish(va.number(valibotRange(storageMbRange)))
+      cpu_cores_max: va.optional(va.nullish(va.number(vaValueRange(cpuCoresRange)))),
+      cpu_cores_min: va.optional(va.nullish(va.number(vaValueRange(cpuCoresRange)))),
+      memory_mb_max: va.optional(va.nullish(va.number(vaValueRange(memoryMbRange)))),
+      memory_mb_min: va.optional(va.nullish(va.number(vaValueRange(memoryMbRange)))),
+      storage_mb_max: va.optional(va.nullish(va.number(vaValueRange(storageMbRange))))
     })
   )
 })
 
 export const PipelineResourcesDialog = (props: {
-  pipelineId: PipelineId
+  pipelineName: string
   show: boolean
   setShow: Dispatch<SetStateAction<boolean>>
 }) => {
@@ -54,7 +58,7 @@ export const PipelineResourcesDialog = (props: {
   const onSuccess = (value: va.Output<typeof pipelineConfigSchema>) => {
     invariant(configQuery.data && pipelineQuery.data)
     updateConfig({
-      pipelineId: props.pipelineId,
+      pipelineName: props.pipelineName,
       request: {
         ...pipelineQuery.data.descriptor,
         config: {
@@ -66,8 +70,9 @@ export const PipelineResourcesDialog = (props: {
     props.setShow(false)
   }
   const onError = () => {}
-  const configQuery = useQuery({ ...PipelineManagerQuery.pipelineConfig(props.pipelineId), enabled: props.show })
-  const pipelineQuery = useQuery({ ...PipelineManagerQuery.pipelineStatus(props.pipelineId), enabled: props.show })
+  const PipelineManagerQuery = usePipelineManagerQuery()
+  const configQuery = useQuery({ ...PipelineManagerQuery.pipelineConfig(props.pipelineName), enabled: props.show })
+  const pipelineQuery = useQuery({ ...PipelineManagerQuery.pipelineStatus(props.pipelineName), enabled: props.show })
   const disabled = !configQuery.data
   return (
     <Dialog
@@ -92,7 +97,7 @@ export const PipelineResourcesDialog = (props: {
             'Unable to load pipeline config'
           ) : !configQuery.data ? (
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <Icon270RingWithBg fontSize={20} />
+              <TwoSeventyRingWithBg fontSize={20} />
               &ensp; Loading pipeline config...
             </Box>
           ) : (
