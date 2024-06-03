@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation: added the
   [fraud detection use case](https://feldera.com/docs/use_cases/fraud_detection)
   to the docs section of the website.
+- API: storage class can be configured via pipeline resources
+  ([#1829](https://github.com/feldera/feldera/pull/1829))
 
 ### Fixed
 

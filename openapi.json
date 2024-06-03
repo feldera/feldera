@@ -858,6 +858,7 @@
                     "cpu_cores_min": null,
                     "memory_mb_max": null,
                     "memory_mb_min": null,
+                    "storage_class": null,
                     "storage_mb_max": null
                   },
                   "storage": false,
@@ -4877,6 +4878,11 @@
             "description": "The minimum memory in Megabytes to reserve\nfor an instance of this pipeline",
             "nullable": true,
             "minimum": 0
+          },
+          "storage_class": {
+            "type": "string",
+            "description": "Storage class to use for an instance of this pipeline.\nThe class determines storage performance such as IOPS and throughput.",
+            "nullable": true
           },
           "storage_mb_max": {
             "type": "integer",

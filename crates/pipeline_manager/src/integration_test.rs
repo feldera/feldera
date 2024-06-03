@@ -1647,7 +1647,8 @@ async fn pipeline_runtime_configuration() {
             "workers": 100,
             "resources": {
                 "cpu_cores_min": 5,
-                "storage_mb_max": 2000
+                "storage_mb_max": 2000,
+                "storage_class": "normal"
             }
         },
         "connectors": null
@@ -1668,7 +1669,7 @@ async fn pipeline_runtime_configuration() {
     let resources = &resp["resources"];
     assert_eq!(100, workers);
     assert_eq!(
-        json!({ "cpu_cores_min": 5, "cpu_cores_max": null, "memory_mb_min": null, "memory_mb_max": null, "storage_mb_max": 2000 }),
+        json!({ "cpu_cores_min": 5, "cpu_cores_max": null, "memory_mb_min": null, "memory_mb_max": null, "storage_mb_max": 2000, "storage_class": "normal" }),
         *resources
     );
 
@@ -1703,7 +1704,7 @@ async fn pipeline_runtime_configuration() {
     let resources = &resp["resources"];
     assert_eq!(5, workers);
     assert_eq!(
-        json!({ "cpu_cores_min": null, "cpu_cores_max": null, "memory_mb_min": null, "memory_mb_max": 100, "storage_mb_max": null }),
+        json!({ "cpu_cores_min": null, "cpu_cores_max": null, "memory_mb_min": null, "memory_mb_max": 100, "storage_mb_max": null, "storage_class": null }),
         *resources
     );
 }

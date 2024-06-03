@@ -574,4 +574,9 @@ pub struct ResourceConfig {
     /// for an instance of this pipeline
     #[serde(default)]
     pub storage_mb_max: Option<u64>,
+
+    /// Storage class to use for an instance of this pipeline.
+    /// The class determines storage performance such as IOPS and throughput.
+    #[serde(default)]
+    pub storage_class: Option<String>,
 }
