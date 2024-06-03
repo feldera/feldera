@@ -1,9 +1,10 @@
 from IPython.display import display
 from feldera import SQLContext, FelderaClient, SQLSchema
 import pandas as pd
+import plotly.express as px
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
 import numpy as np
 import argparse
 from argparse import RawTextHelpFormatter
@@ -12,7 +13,7 @@ import time
 DEFAULT_API_URL = "http://localhost:8080"
 
 # How long to run the inference pipeline for.
-INFERENCE_TIME_SECONDS = 60
+INFERENCE_TIME_SECONDS = 30
 
 def main():
     parser = argparse.ArgumentParser(
@@ -142,7 +143,7 @@ specifying an AWS access key and region.
     print("Testing the trained model")
 
     y_pred = trained_model.predict(X_test)
-    eval_metrics(y_test, y_pred)
+    eval_metrics(y_test, y_pred, print_metrics = True)
 
     print(f"\nRunning the inference pipeline for {INFERENCE_TIME_SECONDS} seconds")
 
@@ -186,7 +187,8 @@ specifying an AWS access key and region.
             | s3_credentials,
         )
 
-    sql.foreach_chunk("feature", lambda df, chunk : inference(trained_model, df))
+    accuracies = []
+    sql.foreach_chunk("feature", lambda df, chunk_no : infer_collect_metrics(trained_model, df, chunk_no, accuracies))
 
     # Start the pipeline to continuously process the input stream of credit card
     # transactions and output newly computed feature vectors to a Delta table.
@@ -197,6 +199,8 @@ specifying an AWS access key and region.
 
     print(f"Shutting down the inference pipeline after {INFERENCE_TIME_SECONDS} seconds")
     sql.shutdown()
+
+    plot(accuracies)
 
 def build_program(client, pipeline_name):
     sql = SQLContext(pipeline_name, client).get_or_create()
@@ -281,7 +285,6 @@ def build_program(client, pipeline_name):
     sql.register_view("FEATURE", query)
     return sql
 
-# Split input dataframe into train and test sets
 def get_train_test_data(dataframe, feature_cols, target_col, train_test_split_ratio, random_seed):
     X = dataframe[feature_cols]
     y = dataframe[target_col]
@@ -310,23 +313,27 @@ def train_model(dataframe, config):
     model.fit(X_train, y_train.values.ravel())
     return model, X_test, y_test
 
-# Evaluate prediction accuracy against ground truth.
-def eval_metrics(y, predictions):
-    cm = confusion_matrix(y, predictions)
-    print("Confusion matrix:")
-    print(cm)
+def eval_metrics(y, predictions, print_metrics=False):
 
-    if len(cm) < 2 or cm[1][1] == 0:  # checking if there are no true positives
+    labels = [0, 1]
+    cm = confusion_matrix(y, predictions, labels=labels)
+
+    if len(cm) < 2 or cm[1][1]==0:  # checking if there are no true positives
         print('No fraudulent transaction to evaluate')
         return
     else:
-        precision = cm[1][1] / (cm[1][1] + cm[0][1])
-        recall = cm[1][1] / (cm[1][1] + cm[1][0])
-        f1 = (2 * (precision * recall) / (precision + recall))
+        precision = precision_score(y, predictions, pos_label=1)
+        recall = recall_score(y, predictions, pos_label=1)
+        f1 = f1_score(y, predictions, pos_label=1)
 
-    print(f"Precision: {precision * 100:.2f}%")
-    print(f"Recall: {recall * 100:.2f}%")
-    print(f"F1 Score: {f1 * 100:.2f}%")
+    if print_metrics:
+        print("Confusion matrix:")
+        print(cm)
+        print(f"Precision: {precision * 100:.2f}%")
+        print(f"Recall: {recall * 100:.2f}%")
+        print(f"F1 Score: {f1 * 100:.2f}%")
+
+    return precision*100, recall*100, f1*100
 
 def inference(trained_model, df):
     print(f"\nReceived {len(df)} feature vectors.")
@@ -338,7 +345,43 @@ def inference(trained_model, df):
     y_inf = df["is_fraud"].values
     predictions_inf = trained_model.predict(X_inf)
 
-    eval_metrics(y_inf, predictions_inf)
+    return eval_metrics(y_inf, predictions_inf)
+
+def infer_collect_metrics(trained_model, df, chunk_no, accuracies):
+    metrics = inference(trained_model, df)
+    if metrics is not None:
+        precision, recall, f1 = metrics
+        accuracies.append((chunk_no, precision, recall, f1))
+
+def plot(accuracies):
+    df_accuracies = pd.DataFrame(accuracies, columns=['Chunk_Number', 'Precision', 'Recall', 'F1'])
+    df_melted = df_accuracies.melt(id_vars='Chunk_Number', value_vars=['Precision', 'Recall', 'F1'], var_name='Metric', value_name='Value')
+
+    print(df_melted)
+
+    cumulative_data = pd.DataFrame()
+
+    for batch in sorted(df_melted['Chunk_Number'].unique()):
+        batch_data = df_melted[df_melted['Chunk_Number'] <= batch].copy()
+        batch_data['CurrentBatch'] = batch
+        cumulative_data = pd.concat([cumulative_data, batch_data], ignore_index=True)
+
+    fig = px.line(
+        data_frame=cumulative_data,
+        x='Chunk_Number',
+        y='Value',
+        color='Metric',
+        line_group='Metric',
+        markers=True,
+        title='Model Performance Per Batch',
+        animation_frame='CurrentBatch',
+        range_y=[df_melted['Value'].min(), df_melted['Value'].max()],
+        range_x=[df_melted['Chunk_Number'].min(), df_melted['Chunk_Number'].max()],)
+    
+    fig.update_traces(mode='lines+markers')
+    fig.layout.updatemenus[0].buttons[0].args[1]['frame']['duration'] = 1000
+
+    fig.show()
 
 if __name__ == "__main__":
     main()
