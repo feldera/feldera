@@ -14,6 +14,7 @@ from feldera._sql_table import SQLTable
 from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
+from feldera._helpers import ensure_dataframe_has_columns
 from enum import Enum
 
 
@@ -225,6 +226,8 @@ class SQLContext:
         :param table_name: The name of the table.
         :param df: The pandas DataFrame to be pushed to the pipeline.
         """
+
+        ensure_dataframe_has_columns(df)
 
         tbl = self.tables.get(table_name)
 

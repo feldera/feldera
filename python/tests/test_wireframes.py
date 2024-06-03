@@ -104,6 +104,19 @@ class TestWireframes(unittest.TestCase):
 
         sql.run_to_completion()
 
+    def test_df_without_columns(self):
+
+        sql = SQLContext('df_without_columns', TEST_CLIENT).get_or_create()
+        TBL_NAME = "student"
+
+        df = pd.DataFrame([(1, "a"), (2, "b"), (3, "c")])
+
+        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
+        sql.register_view("s", f"SELECT * FROM {TBL_NAME}")
+
+        with self.assertRaises(ValueError):
+            sql.connect_source_pandas(TBL_NAME, df)
+
 
 if __name__ == '__main__':
     unittest.main()
