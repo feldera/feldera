@@ -119,7 +119,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.IndentStream;
@@ -1258,16 +1257,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
         type.type.accept(this);
         if (type.mayBeNull)
             this.builder.append(">");
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeTypedBox type) {
-        this.builder.append("TypedBox::<");
-        type.getTypeArg(0).accept(this);
-        this.builder.append(", DynDataTyped<");
-        type.getTypeArg(0).accept(this);
-        this.builder.append(">>");
         return VisitDecision.STOP;
     }
 

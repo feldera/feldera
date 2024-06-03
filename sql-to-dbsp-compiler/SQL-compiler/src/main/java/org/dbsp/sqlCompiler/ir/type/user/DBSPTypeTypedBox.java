@@ -6,12 +6,25 @@ import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TYPEDBOX;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
-/** Represents the type of a Rust Option[T] type as a TypeUser. */
-@NonCoreIR
 public class DBSPTypeTypedBox extends DBSPTypeUser {
-    public DBSPTypeTypedBox(DBSPType resultType) {
-        super(resultType.getNode(), TYPEDBOX, "TypedBox", false, resultType);
+    static DBSPType[] makeTypeArgs(DBSPType arg, boolean typed) {
+        DBSPType[] result = new DBSPType[2];
+        result[0] = arg;
+        if (typed) {
+            result[1] = new DBSPTypeUser(arg.getNode(), USER, "DynDataTyped", false, arg);
+        } else {
+            result[1] = new DBSPTypeUser(arg.getNode(), USER, "DynData", false);
+        }
+        return result;
+    }
+
+    /** @param typed If true the type is TypedBox<T, DynData>,
+     *              else it is TypedBox<T, DynDataTyped<T>> */
+    public DBSPTypeTypedBox(DBSPType argType, boolean typed) {
+        super(argType.getNode(), TYPEDBOX, "TypedBox", false,
+                makeTypeArgs(argType, typed));
     }
 
     @Override
