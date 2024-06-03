@@ -355,9 +355,4 @@ public class Monotonicity extends CircuitVisitor {
     public void postorder(DBSPPrimitiveAggregateOperator node) {
         this.aggregate(node);
     }
-
-    @Override
-    public void postorder(DBSPPartitionedRollingAggregateOperator node) {
-        // this.aggregate(node);
-    }
 }
