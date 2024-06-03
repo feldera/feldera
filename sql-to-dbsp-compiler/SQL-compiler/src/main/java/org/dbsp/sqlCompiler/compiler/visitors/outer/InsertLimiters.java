@@ -243,7 +243,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         DBSPVariablePath var = new DBSPVariablePath("t", varType);
         DBSPExpression body = var.field(0).deref();
-        body = this.wrapTypedBox(body);
+        body = this.wrapTypedBox(body, true);
         DBSPClosureExpression closure = body.closure(var.asParameter());
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.errorReporter, operator, projection, true);
@@ -356,8 +356,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 operator.getNode(), operator, Monotonicity.getBodyType(expression), delay);
     }
 
-    DBSPExpression wrapTypedBox(DBSPExpression expression) {
-        DBSPType type = new DBSPTypeTypedBox(expression.getType());
+    DBSPExpression wrapTypedBox(DBSPExpression expression, boolean typed) {
+        DBSPType type = new DBSPTypeTypedBox(expression.getType(), typed);
         return new DBSPUnaryExpression(expression.getNode(), type, DBSPOpcode.TYPEDBOX, expression);
     }
 
@@ -405,12 +405,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     operator.getNode(), min.closure(), bound.closure(parameter), operator);
             this.addOperator(waterline);
 
-            DBSPType windowBoundType = fields.get(0).getType();
-
             DBSPVariablePath var = new DBSPVariablePath("t", bound.getType().ref());
             DBSPExpression makePair = new DBSPRawTupleExpression(
-                    this.wrapTypedBox(minimums.get(0)),
-                    this.wrapTypedBox(var.deref().field(0)));
+                    this.wrapTypedBox(minimums.get(0), false),
+                    this.wrapTypedBox(var.deref().field(0), false));
             DBSPApplyOperator apply = new DBSPApplyOperator(
                     operator.getNode(), makePair.closure(var.asParameter()), makePair.getType(), waterline, null);
             this.addOperator(apply);

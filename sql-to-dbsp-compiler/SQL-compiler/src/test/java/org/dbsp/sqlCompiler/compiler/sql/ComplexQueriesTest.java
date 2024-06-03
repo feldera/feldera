@@ -187,6 +187,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
             }
         };
         circuit.accept(visitor);
+        this.compileRustTestCase(sql);
     }
 
     @Test @Ignore("Cross apply not yet implemented")
