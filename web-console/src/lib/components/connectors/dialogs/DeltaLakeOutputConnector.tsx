@@ -8,13 +8,18 @@ import { TabDeltaLakeOptions } from '$lib/components/connectors/dialogs/tabs/del
 import { TabOutputBufferOptions } from '$lib/components/connectors/dialogs/tabs/generic/TabOutputBufferOptions'
 import { GenericEditorForm } from '$lib/components/connectors/dialogs/tabs/GenericConnectorForm'
 import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
+import { bignumber } from '$lib/functions/common/valibot'
 import {
   normalizeDeltaLakeOutputConfig,
   parseConnectorDescrWith,
   parseDeltaLakeOutputSchemaConfig,
   prepareDataWith
 } from '$lib/functions/connectors'
-import { defaultOutputBufferOptions, outputBufferConfigSchema } from '$lib/functions/connectors/outputBuffer'
+import {
+  defaultOutputBufferOptions,
+  outputBufferConfigSchema,
+  outputBufferConfigValidation
+} from '$lib/functions/connectors/outputBuffer'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { Direction } from '$lib/types/connectors'
 import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
@@ -27,21 +32,24 @@ import { valibotResolver } from '@hookform/resolvers/valibot'
 import { FormControlLabel, Switch, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 
-const schema = va.merge([
-  va.object({
-    name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
-    description: va.optional(va.string(), ''),
-    transport: va.nonOptional(
-      va.object(
-        {
-          uri: va.nonOptional(va.string([va.minLength(1, 'Enter DeltaLake resource URI')]))
-        },
-        va.union([va.string(), va.number(), va.boolean()])
+const schema = va.merge(
+  [
+    va.object({
+      name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
+      description: va.optional(va.string(), ''),
+      transport: va.nonOptional(
+        va.object(
+          {
+            uri: va.nonOptional(va.string([va.minLength(1, 'Enter DeltaLake resource URI')]))
+          },
+          va.union([va.string(), va.number(), bignumber(), va.boolean(), va.null_(), va.undefined_()])
+        )
       )
-    )
-  }),
-  outputBufferConfigSchema
-])
+    }),
+    outputBufferConfigSchema
+  ],
+  [outputBufferConfigValidation()]
+)
 
 type DeltaLakeOutputSchema = va.Input<typeof schema>
 

@@ -7,6 +7,9 @@ export type FormFieldOptions =
       default?: string
     }
   | {
+      type: 'secret_string'
+    }
+  | {
       type: 'enum'
       range: string[]
       default: string
@@ -31,4 +34,5 @@ export const formFieldDefaultValue = (option: FormFieldOptions) =>
     .with({ type: 'string' }, o => o.default ?? '')
     .with({ type: 'list' }, o => (o.default ?? '').split(', '))
     .with({ type: 'array' }, o => (o.default ?? '').split(', '))
+    .with({ type: 'secret_string' }, () => '')
     .exhaustive()

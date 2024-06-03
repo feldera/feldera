@@ -7,13 +7,18 @@ import { TabDeltaLakeGeneral } from '$lib/components/connectors/dialogs/tabs/del
 import { TabDeltaLakeOptions } from '$lib/components/connectors/dialogs/tabs/deltalake/TabDeltaLakeOptions'
 import { GenericEditorForm } from '$lib/components/connectors/dialogs/tabs/GenericConnectorForm'
 import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
+import { bignumber } from '$lib/functions/common/valibot'
 import {
   normalizeDeltaLakeInputConfig,
   parseConnectorDescrWith,
   parseDeltaLakeInputSchemaConfig,
   prepareDataWith
 } from '$lib/functions/connectors'
-import { defaultOutputBufferOptions, outputBufferConfigSchema } from '$lib/functions/connectors/outputBuffer'
+import {
+  defaultOutputBufferOptions,
+  outputBufferConfigSchema,
+  outputBufferConfigValidation
+} from '$lib/functions/connectors/outputBuffer'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { Direction } from '$lib/types/connectors'
 import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
@@ -28,22 +33,25 @@ import Box from '@mui/material/Box'
 
 import { DeltaLakeIngestModeElement } from './elements/deltalake/IngestModeElement'
 
-const schema = va.merge([
-  va.object({
-    name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
-    description: va.optional(va.string(), ''),
-    transport: va.nonOptional(
-      va.object(
-        {
-          uri: va.nonOptional(va.string([va.minLength(1)])),
-          filter: va.transform(va.optional(va.string([va.minLength(1)])), v => v || undefined)
-        },
-        va.union([va.string(), va.number(), va.boolean(), va.null_()])
+const schema = va.merge(
+  [
+    va.object({
+      name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
+      description: va.optional(va.string(), ''),
+      transport: va.nonOptional(
+        va.object(
+          {
+            uri: va.nonOptional(va.string([va.minLength(1)])),
+            filter: va.transform(va.optional(va.string([va.minLength(1)])), v => v || undefined)
+          },
+          va.union([va.string(), va.number(), bignumber(), va.boolean(), va.null_(), va.undefined_()])
+        )
       )
-    )
-  }),
-  outputBufferConfigSchema
-])
+    }),
+    outputBufferConfigSchema
+  ],
+  [outputBufferConfigValidation()]
+)
 
 type DeltaLakeInputSchema = va.Input<typeof schema>
 
@@ -90,7 +98,9 @@ export const DeltaLakeInputConnectorDialog = (props: ConnectorDialogProps) => {
     handleClose
   )
 
-  const handleErrors = ({ name, description, transport }: FieldErrors<DeltaLakeInputSchema>) => {
+  const handleErrors = (errors: FieldErrors<DeltaLakeInputSchema>) => {
+    const { name, description, transport } = errors
+    console.log('errors', errors)
     if (!props.show) {
       return
     }

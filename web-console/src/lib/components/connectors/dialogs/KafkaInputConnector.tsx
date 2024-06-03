@@ -24,7 +24,7 @@ import { Direction } from '$lib/types/connectors'
 import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
-import { outputBufferConfigSchema } from 'src/lib/functions/connectors/outputBuffer'
+import { outputBufferConfigSchema, outputBufferConfigValidation } from 'src/lib/functions/connectors/outputBuffer'
 import JSONbig from 'true-json-bigint'
 import * as va from 'valibot'
 
@@ -32,52 +32,55 @@ import { valibotResolver } from '@hookform/resolvers/valibot'
 import { FormControlLabel, Switch, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 
-const schema = va.merge([
-  va.object({
-    name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
-    description: va.optional(va.string(), ''),
-    transport: va.intersect([
-      va.object(
-        {
-          bootstrap_servers: va.optional(
-            va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
-              va.minLength(1, 'Specify at least one server')
-            ])
-          ),
-          auto_offset_reset: va.optional(
-            va.picklist([
-              'smallest',
-              'earliest',
-              'beginning',
-              'largest',
-              'latest',
-              'end',
-              'error',
-              'Invalid enum value'
-            ]),
-            'earliest'
-          ),
-          group_id: va.optional(va.string([va.minLength(1, 'group.id should not be empty')])),
-          topics: va.nonOptional(
-            va.array(va.string([va.minLength(1, 'Topic name should not be empty')]), [
-              va.minLength(1, 'Provide at least one topic')
-            ])
-          ),
-          preset_service: va.optional(va.string([va.toCustom(s => (s === '' ? undefined! : s))]))
-        },
-        // Allow configurations options not mentioned in the schema
-        va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
-      ),
-      authParamsSchema
-    ]),
-    format: va.object({
-      format_name: va.nonOptional(va.picklist(['json', 'csv'])),
-      update_format: va.optional(va.picklist(['raw', 'insert_delete']), 'raw'),
-      json_array: va.nonOptional(va.boolean())
-    })
-  }),
-  outputBufferConfigSchema
-])
+const schema = va.merge(
+  [
+    va.object({
+      name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
+      description: va.optional(va.string(), ''),
+      transport: va.intersect([
+        va.object(
+          {
+            bootstrap_servers: va.optional(
+              va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
+                va.minLength(1, 'Specify at least one server')
+              ])
+            ),
+            auto_offset_reset: va.optional(
+              va.picklist([
+                'smallest',
+                'earliest',
+                'beginning',
+                'largest',
+                'latest',
+                'end',
+                'error',
+                'Invalid enum value'
+              ]),
+              'earliest'
+            ),
+            group_id: va.optional(va.string([va.minLength(1, 'group.id should not be empty')])),
+            topics: va.nonOptional(
+              va.array(va.string([va.minLength(1, 'Topic name should not be empty')]), [
+                va.minLength(1, 'Provide at least one topic')
+              ])
+            ),
+            preset_service: va.optional(va.string([va.toCustom(s => (s === '' ? undefined! : s))]))
+          },
+          // Allow configurations options not mentioned in the schema
+          va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
+        ),
+        authParamsSchema
+      ]),
+      format: va.object({
+        format_name: va.nonOptional(va.picklist(['json', 'csv'])),
+        update_format: va.optional(va.picklist(['raw', 'insert_delete']), 'raw'),
+        json_array: va.nonOptional(va.boolean())
+      })
+    }),
+    outputBufferConfigSchema
+  ],
+  [outputBufferConfigValidation()]
+)
 export type KafkaInputSchema = va.Input<typeof schema>
 
 export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {

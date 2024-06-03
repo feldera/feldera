@@ -1,10 +1,49 @@
 import { BigNumberElement } from '$lib/components/input/BigNumberInput'
 import { NumberElement } from '$lib/components/input/NumberInput'
 import { FormFieldOptions } from '$lib/functions/forms'
-import { AutocompleteElement, SwitchElement, TextFieldElement } from 'react-hook-form-mui'
+import { useState } from 'react'
+import {
+  AutocompleteElement,
+  FieldPath,
+  FieldValues,
+  SwitchElement,
+  TextFieldElement,
+  TextFieldElementProps
+} from 'react-hook-form-mui'
 import { match } from 'ts-pattern'
 
+import { IconButton, InputAdornment } from '@mui/material'
 import { Box } from '@mui/system'
+
+const PasswordElement = <
+  TFieldValues extends FieldValues = FieldValues,
+  TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>,
+  TValue = unknown
+>(
+  props: TextFieldElementProps<TFieldValues, TName, TValue>
+) => {
+  const [showPassword, setShowPassword] = useState(false)
+  return (
+    <TextFieldElement
+      {...props}
+      InputProps={{
+        ...props.InputProps,
+        type: showPassword ? 'text' : 'password',
+        endAdornment: (
+          <InputAdornment position='end'>
+            <IconButton
+              aria-label='toggle password visibility'
+              onClick={() => setShowPassword(!showPassword)}
+              onMouseDown={event => event.preventDefault()}
+            >
+              {showPassword ? <i className='bx bx-hide' /> : <i className='bx bx-show' />}
+            </IconButton>
+          </InputAdornment>
+        )
+      }}
+    />
+  )
+}
 
 export const FormFieldElement = (props: {
   field: string
@@ -29,6 +68,17 @@ export const FormFieldElement = (props: {
           'data-testid': 'input-' + props.field
         }}
       ></TextFieldElement>
+    ))
+    .with({ type: 'secret_string' }, () => (
+      <PasswordElement
+        key={props.field}
+        name={fieldPrefix + props.field}
+        size='small'
+        fullWidth
+        inputProps={{
+          'data-testid': 'input-' + props.field
+        }}
+      ></PasswordElement>
     ))
     .with({ type: 'number' }, ({ range }) => (
       <NumberElement

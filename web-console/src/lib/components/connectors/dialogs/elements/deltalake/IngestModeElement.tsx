@@ -1,13 +1,14 @@
 import { BigNumberElement, BigNumberInputProps } from '$lib/components/input/BigNumberInput'
 import { SQLValueElement } from '$lib/components/streaming/import/SQLValueInput'
 import BigNumber from 'bignumber.js'
-import { useWatch } from 'react-hook-form'
+import { ChangeEvent } from 'react'
+import { useFormContext, useWatch } from 'react-hook-form'
 import { SelectElement, TextareaAutosizeElement } from 'react-hook-form-mui'
 import Markdown from 'react-markdown'
 import { GridItems } from 'src/lib/components/common/GridItems'
 import { match } from 'ts-pattern'
 
-import { BaseTextFieldProps, Box, Grid, Tooltip, useTheme } from '@mui/material'
+import { BaseTextFieldProps, Box, Grid, TextFieldProps, Tooltip, useTheme } from '@mui/material'
 
 export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
   const theme = useTheme()
@@ -24,6 +25,11 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
     }
   }
   const mode: 'snapshot' | 'follow' | 'snapshot_and_follow' = useWatch({ name: props.parentName + '.mode' })
+  const ctx = useFormContext()
+  const unregisterConflicting = (field: string) => (event: ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.value) return
+    ctx.setValue(field, undefined)
+  }
   return (
     <>
       <Grid container spacing={4} sx={{ alignItems: 'center' }}>
@@ -67,6 +73,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                     'data-testid': 'input-snapshot-version'
                   }}
                   tooltipProps={tooltipProps}
+                  onInput={unregisterConflicting(props.parentName + '.datetime')}
                 ></VersionElement>
                 <DatetimeElement
                   parentName={props.parentName}
@@ -75,6 +82,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                     'data-testid': 'input-snapshot-datetime'
                   }}
                   tooltipProps={tooltipProps}
+                  onInput={unregisterConflicting(props.parentName + '.version')}
                 />
               </>
             ))
@@ -87,6 +95,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                     'data-testid': 'input-start-version'
                   }}
                   tooltipProps={tooltipProps}
+                  onInput={unregisterConflicting(props.parentName + '.datetime')}
                 ></VersionElement>
                 <DatetimeElement
                   parentName={props.parentName}
@@ -95,6 +104,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                     'data-testid': 'input-start-datetime'
                   }}
                   tooltipProps={tooltipProps}
+                  onInput={unregisterConflicting(props.parentName + '.version')}
                 />
               </>
             ))
@@ -108,6 +118,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                     'data-testid': 'input-start-version'
                   }}
                   tooltipProps={tooltipProps}
+                  onInput={unregisterConflicting(props.parentName + '.datetime')}
                 ></VersionElement>
                 <DatetimeElement
                   parentName={props.parentName}
@@ -116,6 +127,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                     'data-testid': 'input-start-datetime'
                   }}
                   tooltipProps={tooltipProps}
+                  onInput={unregisterConflicting(props.parentName + '.version')}
                 />
               </>
             ))
@@ -144,7 +156,7 @@ When this option is set, the connector finds and opens the specified version of 
 In `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of\
 the table.  In `follow` and `snapshot_and_follow` modes, it follows transaction log records\
 **after** this version.\n\n\
-Note: at most one of `version` and `datetime` options can be specified.\
+Note: at most one of `version` and `datetime` options can be specified. \
 When neither of the two options is specified, the latest committed version of the table\
 is used.'
         }
@@ -164,7 +176,7 @@ is used.'
     </Box>
   </Tooltip>
 )
-const DatetimeElement = (props: { parentName: string; tooltipProps: any } & BaseTextFieldProps) => (
+const DatetimeElement = (props: { parentName: string; tooltipProps: any } & TextFieldProps) => (
   <Tooltip
     {...props.tooltipProps}
     title={
@@ -176,7 +188,7 @@ When this option is set, the connector finds and opens the version of the table 
 specified point in time.  In `snapshot` and `snapshot_and_follow` modes, it retrieves the\
 snapshot of this version of the table.  In `follow` and `snapshot_and_follow` modes, it\
 follows transaction log records **after** this version.\n\n\
-Note: at most one of `version` and `datetime` options can be specified.\
+Note: at most one of `version` and `datetime` options can be specified. \
 When neither of the two options is specified, the latest committed version of the table\
 is used.'
         }

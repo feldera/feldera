@@ -1,6 +1,8 @@
 import { BigNumberInput } from '$lib/components/input/BigNumberInput'
 import { useIntermediateInput } from '$lib/components/input/IntermediateInput'
 import { NumberInput } from '$lib/components/input/NumberInput'
+import { nonNull } from '$lib/functions/common/function'
+import { getField } from '$lib/functions/common/object'
 import {
   JSONXgressValue,
   numericRange,
@@ -12,19 +14,32 @@ import { ColumnType } from '$lib/services/manager'
 import { BigNumber } from 'bignumber.js/bignumber.js'
 import Dayjs, { isDayjs } from 'dayjs'
 import { ChangeEvent } from 'react'
-import { useFormContext, useWatch } from 'react-hook-form'
+import { useFormContext, useFormState, useWatch } from 'react-hook-form'
 import invariant from 'tiny-invariant'
 import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
 
-import { IconButton, TextField, TextFieldProps } from '@mui/material'
+import { FormHelperText, IconButton, TextField, TextFieldProps } from '@mui/material'
 
 type SQLValueInputProps = { columnType: ColumnType } & Omit<TextFieldProps, 'type' | 'value' | 'onChange'>
 
 export const SQLValueElement = ({ name, ...props }: SQLValueInputProps & { name: string }) => {
   const ctx = useFormContext()
+  console.log('SQLValueElement', name, ctx.getValues(name))
   const value = useWatch({ name })
-  return <SQLValueInput {...props} value={value} onChange={e => ctx.setValue(name, e.target.value)}></SQLValueInput>
+  const state = useFormState({ name })
+  return (
+    <>
+      <SQLValueInput
+        {...props}
+        value={nonNull(value) ? xgressJSONToSQLValue(props.columnType, value) : value}
+        onChange={e => ctx.setValue(name, sqlValueToXgressJSON(props.columnType, e.target.value))}
+      ></SQLValueInput>
+      {(e => e && <FormHelperText sx={{ color: 'error.main' }}>{e.message?.toString()}</FormHelperText>)(
+        getField(name, state.errors)
+      )}
+    </>
+  )
 }
 
 /**
@@ -35,7 +50,7 @@ export const SQLValueElement = ({ name, ...props }: SQLValueInputProps & { name:
 export const SQLValueInput = ({
   columnType,
   ...props
-}: SQLValueInputProps & { value: SQLValueJS; onChange: (event: ChangeEvent<HTMLInputElement>) => void }) => {
+}: SQLValueInputProps & { value?: SQLValueJS; onChange: (event: ChangeEvent<HTMLInputElement>) => void }) => {
   const onChangeEmptyNull = (props: { onChange: (event: ChangeEvent<HTMLInputElement>) => void }) => ({
     onChange: (event: any) => {
       if (event.target.value === '' || event.target.value === undefined) {
@@ -220,7 +235,7 @@ export const SQLValueInput = ({
  */
 function SqlValueTextInput(
   props: {
-    value: SQLValueJS
+    value?: SQLValueJS
     valueToText: (v: SQLValueJS) => string
     fromText: (text: string | null) => JSONXgressValue
     columnType: ColumnType
