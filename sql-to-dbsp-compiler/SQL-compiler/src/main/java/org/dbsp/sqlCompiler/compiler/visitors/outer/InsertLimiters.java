@@ -25,6 +25,7 @@ import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTransferFunctions;
@@ -33,7 +34,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateExpansion
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorExpansion;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -325,7 +325,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             if (lateness != null) {
                 DBSPExpression field = t.deref().field(index);
                 DBSPType type = field.getType();
-                field = new DBSPBinaryExpression(operator.getNode(), field.getType(),
+                field = ExpressionCompiler.makeBinaryExpression(operator.getNode(), field.getType(),
                         DBSPOpcode.SUB, field, lateness);
                 bounds.add(field);
                 DBSPExpression min = type.to(IsBoundedType.class).getMinValue();
@@ -379,7 +379,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 DBSPExpression field = t.deref().field(index);
                 fields.add(field);
                 DBSPType type = field.getType();
-                field = new DBSPBinaryExpression(operator.getNode(), field.getType(),
+                field = ExpressionCompiler.makeBinaryExpression(operator.getNode(), field.getType(),
                         DBSPOpcode.SUB, field.deepCopy(), lateness);
                 bounds.add(field);
                 DBSPExpression min = type.to(IsBoundedType.class).getMinValue();
