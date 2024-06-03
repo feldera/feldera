@@ -18,6 +18,7 @@ from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
 from feldera._helpers import ensure_dataframe_has_columns
 from feldera.formats import JSONFormat, CSVFormat
+from feldera._helpers import validate_connector_input_format
 from enum import Enum
 
 
@@ -410,10 +411,7 @@ class SQLContext:
         if config.get("topics") is None:
             raise ValueError("topics is required in the config")
 
-        fmt = fmt.to_dict()
-
-        if fmt.get("config").get("update_format") is None:
-            raise ValueError("update_format not set in the format config; consider using: .with_update_format()")
+        validate_connector_input_format(fmt)
 
         connector = Connector(
             name=connector_name,
@@ -422,7 +420,7 @@ class SQLContext:
                     "name": "kafka_input",
                     "config": config,
                 },
-                "format": fmt,
+                "format": fmt.to_dict(),
             }
         )
 
@@ -431,7 +429,13 @@ class SQLContext:
         else:
             self.input_connectors_buffer[table_name] = [connector]
 
-    def connect_sink_kafka(self, view_name: str, connector_name: str, config: dict, fmt: JSONFormat | CSVFormat):
+    def connect_sink_kafka(
+        self,
+        view_name: str,
+        connector_name: str,
+        config: dict,
+        fmt: JSONFormat | CSVFormat
+    ):
         """
         Associates the specified kafka topic on the specified Kafka server as output sink for the specified view in
         Feldera. The topic is populated with changes in the specified view.
@@ -448,10 +452,7 @@ class SQLContext:
         if config.get("topic") is None:
             raise ValueError("topic is required in the config")
 
-        fmt = fmt.to_dict()
-
-        if fmt.get("config").get("update_format") is None:
-            raise ValueError("update_format not set in the format config; consider using: .with_update_format()")
+        validate_connector_input_format(fmt)
 
         connector = Connector(
             name=connector_name,
@@ -460,7 +461,7 @@ class SQLContext:
                     "name": "kafka_output",
                     "config": config,
                 },
-                "format": fmt,
+                "format": fmt.to_dict(),
             }
         )
 
@@ -468,6 +469,43 @@ class SQLContext:
             self.output_connectors_buffer[view_name].append(connector)
         else:
             self.output_connectors_buffer[view_name] = [connector]
+
+    def connect_source_url(
+        self,
+        table_name: str,
+        connector_name: str,
+        path: str,
+        fmt: JSONFormat | CSVFormat
+    ):
+        """
+        Associates the specified URL as input source for the specified table in Feldera.
+        Feldera will make a GET request to the specified URL to read the data and populate the table.
+
+        :param table_name: The name of the table.
+        :param connector_name: The unique name for this connector.
+        :param path: The URL to read the data from.
+        :param fmt: The format of the data in the URL.
+        """
+
+        validate_connector_input_format(fmt)
+
+        connector = Connector(
+            name=connector_name,
+            config={
+                "transport": {
+                    "name": "url_input",
+                    "config": {
+                        "path": path
+                    }
+                },
+                "format": fmt.to_dict(),
+            }
+        )
+
+        if table_name in self.input_connectors_buffer:
+            self.input_connectors_buffer[table_name].append(connector)
+        else:
+            self.input_connectors_buffer[table_name] = [connector]
 
     def run_to_completion(self):
         """
