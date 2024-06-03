@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -39,7 +40,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
-import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -153,14 +153,12 @@ public class ComplexQueriesTest extends BaseSQLTests {
 
     @Test
     public void issue1793() {
-        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         String sql = """
                 CREATE TABLE transaction_demographics (
                     cc_num BIGINT NOT NULL,
                     category STRING,
                     amt FLOAT64,
-                    unix_time BIGINT NOT NULL LATENESS 86400,
-                    is_fraud INTEGER,
+                    unix_time INTEGER NOT NULL LATENESS 86400,
                     first STRING
                 );
             
@@ -171,11 +169,24 @@ public class ComplexQueriesTest extends BaseSQLTests {
                   FROM transaction_demographics
                   WINDOW
                     window_1_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 86400 PRECEDING AND CURRENT ROW);""";
-
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.incrementalize = true;
         compiler.compileStatements(sql);
         DBSPCircuit circuit = getCircuit(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int count = 0;
+
+            @Override
+            public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator operator) {
+                this.count++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.count);
+            }
+        };
+        circuit.accept(visitor);
     }
 
     @Test @Ignore("Cross apply not yet implemented")

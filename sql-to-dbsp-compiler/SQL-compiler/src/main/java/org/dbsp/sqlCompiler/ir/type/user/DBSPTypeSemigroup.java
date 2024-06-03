@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 VMware, Inc.
+ * Copyright 2023 VMware, Inc.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -21,21 +21,28 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir.type;
+package org.dbsp.sqlCompiler.ir.type.user;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.util.Linq;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.VEC;
-
-/** Represents the type of a Rust Vec as a TypeUser. */
-public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
-    public DBSPTypeVec(DBSPType vectorElementType, boolean mayBeNull) {
-        super(vectorElementType.getNode(), VEC, "Vec", mayBeNull, vectorElementType);
+/** Represents a Semigroup trait implementation. */
+public class DBSPTypeSemigroup extends DBSPTypeUser {
+    public DBSPTypeSemigroup(DBSPType[] elementTypes, DBSPType[] semigroupTypes) {
+        super(CalciteObject.EMPTY, DBSPTypeCode.SEMIGROUP, "Semigroup" + elementTypes.length, false,
+                Linq.concat(semigroupTypes, elementTypes));
+        if (elementTypes.length != semigroupTypes.length)
+            throw new InternalCompilerError("Each element must have a corresponding semigroup, but I have " +
+                    elementTypes.length + " and " + semigroupTypes.length, this);
     }
 
-    public DBSPType getElementType() {
-        return this.getTypeArg(0);
+    public int semigroupSize() {
+        return this.typeArgs.length / 2;
     }
 
     @Override
@@ -48,18 +55,4 @@ public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
         visitor.pop(this);
         visitor.postorder(this);
     }
-
-    @Override
-    public boolean hasCopy() {
-        return false;
-    }
-
-    @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
-        if (mayBeNull == this.mayBeNull)
-            return this;
-        return new DBSPTypeVec(this.getElementType(), mayBeNull);
-    }
-
-    // sameType and hashCode inherited from TypeUser.
 }

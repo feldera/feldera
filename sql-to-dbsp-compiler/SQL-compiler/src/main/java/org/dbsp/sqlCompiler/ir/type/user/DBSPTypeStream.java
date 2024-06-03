@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 VMware, Inc.
+ * Copyright 2022 VMware, Inc.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -21,29 +21,29 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir.type;
+package org.dbsp.sqlCompiler.ir.type.user;
 
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.util.Linq;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.IIndentStream;
 
-/**
- * Represents a Semigroup trait implementation.
- * TODO: this probably should not exist, but it matches the DBSP APIs.
- */
-public class DBSPTypeSemigroup extends DBSPTypeUser {
-    public DBSPTypeSemigroup(DBSPType[] elementTypes, DBSPType[] semigroupTypes) {
-        super(CalciteObject.EMPTY, DBSPTypeCode.SEMIGROUP, "Semigroup" + elementTypes.length, false,
-                Linq.concat(semigroupTypes, elementTypes));
-        if (elementTypes.length != semigroupTypes.length)
-            throw new InternalCompilerError("Each element must have a corresponding semigroup, but I have " +
-                    elementTypes.length + " and " + semigroupTypes.length, this);
+import java.util.Objects;
+
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STREAM;
+
+/** A type of the form 'Stream<_, elementType>' */
+public class DBSPTypeStream extends DBSPType {
+    public final DBSPType elementType;
+
+    public DBSPTypeStream(DBSPType elementType) {
+        super(elementType.getNode(), STREAM, elementType.mayBeNull);
+        this.elementType = elementType;
     }
 
-    public int semigroupSize() {
-        return this.typeArgs.length / 2;
+    @Override
+    public DBSPType setMayBeNull(boolean mayBeNull) {
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -51,9 +51,30 @@ public class DBSPTypeSemigroup extends DBSPTypeUser {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        for (DBSPType type: this.typeArgs)
-            type.accept(visitor);
+        this.elementType.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), this.elementType.hashCode());
+    }
+
+    @Override
+    public boolean sameType(DBSPType other) {
+        if (!super.sameNullability(other))
+            return false;
+        DBSPTypeStream oRef = other.as(DBSPTypeStream.class);
+        if (oRef == null)
+            return false;
+        return this.elementType.sameType(oRef.elementType);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("stream<")
+                .append(this.elementType)
+                .append(">");
     }
 }

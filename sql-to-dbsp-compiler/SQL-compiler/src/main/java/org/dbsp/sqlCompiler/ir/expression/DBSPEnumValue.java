@@ -29,7 +29,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;

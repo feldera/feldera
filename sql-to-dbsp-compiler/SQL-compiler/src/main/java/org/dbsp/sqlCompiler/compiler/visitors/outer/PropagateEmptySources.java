@@ -19,14 +19,14 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregate;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIndexedZSetLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -100,7 +100,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPPartitionedRollingAggregate operator) {
+    public void postorder(DBSPPartitionedRollingAggregateOperator operator) {
         if (this.replaceUnary(operator))
             super.postorder(operator);
     }

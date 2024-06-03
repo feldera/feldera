@@ -21,26 +21,23 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir.type;
+package org.dbsp.sqlCompiler.ir.type.user;
 
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.ICollectionType;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ZSET;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.VEC;
 
-public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
-    public final DBSPType elementType;
-
-    public DBSPTypeZSet(CalciteObject node, DBSPType elementType) {
-        super(node, ZSET, "WSet", false, elementType);
-        this.elementType = elementType;
-        assert !elementType.is(DBSPTypeZSet.class);
-        assert !elementType.is(DBSPTypeIndexedZSet.class);
+/** Represents the type of a Rust Vec as a TypeUser. */
+public class DBSPTypeVec extends DBSPTypeUser implements ICollectionType {
+    public DBSPTypeVec(DBSPType vectorElementType, boolean mayBeNull) {
+        super(vectorElementType.getNode(), VEC, "Vec", mayBeNull, vectorElementType);
     }
 
-    public DBSPTypeZSet(DBSPType elementType) {
-        this(elementType.getNode(), elementType);
+    public DBSPType getElementType() {
+        return this.getTypeArg(0);
     }
 
     @Override
@@ -48,15 +45,23 @@ public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        this.elementType.accept(visitor);
+        for (DBSPType type: this.typeArgs)
+            type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }
 
     @Override
-    public DBSPType getElementType() {
-        return this.elementType;
+    public boolean hasCopy() {
+        return false;
     }
 
-    // sameType and hashCode inherited from TypeUser
+    @Override
+    public DBSPType setMayBeNull(boolean mayBeNull) {
+        if (mayBeNull == this.mayBeNull)
+            return this;
+        return new DBSPTypeVec(this.getElementType(), mayBeNull);
+    }
+
+    // sameType and hashCode inherited from TypeUser.
 }

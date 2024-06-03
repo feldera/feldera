@@ -10,7 +10,7 @@ import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeSemigroup;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.util.IndentStream;
@@ -124,7 +124,7 @@ public class RustFileWriter {
                         Runtime,
                         NumEntries,
                         MapHandle, ZSetHandle, OutputHandle,
-                        dynamic::DynData,
+                        dynamic::{DynData,DynDataTyped},
                     };
                     use dbsp_adapters::Catalog;
                     use pipeline_types::{deserialize_table_record, serialize_table_record};
