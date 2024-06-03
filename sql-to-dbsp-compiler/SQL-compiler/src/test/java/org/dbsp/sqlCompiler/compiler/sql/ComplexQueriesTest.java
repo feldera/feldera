@@ -144,31 +144,58 @@ public class ComplexQueriesTest extends BaseSQLTests {
 
             @Override
             public void endVisit() {
-                // We expect 5 MapIndex operators instead of 7 if CSE works
-                Assert.assertEquals(5, this.mapIndex);
+                // We expect 9 MapIndex operators instead of 11 if CSE works
+                Assert.assertEquals(9, this.mapIndex);
             }
         };
-        circuit.accept(visitor);
+        visitor.apply(circuit);
+    }
+
+    @Test
+    public void missingCast() {
+        String sql = """
+                create table TRANSACTION (unix_time BIGINT LATENESS 0);
+                """;
+        this.compileRustTestCase(sql);
     }
 
     @Test
     public void issue1793() {
         String sql = """
                 CREATE TABLE transaction_demographics (
+                    trans_date_time TIMESTAMP,
                     cc_num BIGINT NOT NULL,
                     category STRING,
                     amt FLOAT64,
                     unix_time INTEGER NOT NULL LATENESS 86400,
-                    first STRING
+                    first STRING,
+                    state STRING,
+                    job STRING,
+                    city_pop INTEGER,
+                    is_fraud BOOLEAN
                 );
             
                 CREATE VIEW V AS SELECT
                     cc_num,
+                    CASE
+                      WHEN dayofweek(trans_date_time) IN(6, 7) THEN true
+                      ELSE false
+                    END AS is_weekend,
+                    CASE
+                      WHEN hour(trans_date_time) <= 6 THEN true
+                      ELSE false
+                    END AS is_night,
                     category,
-                    COUNT(*) OVER window_1_day AS trans_freq_24, amt, unix_time
+                    AVG(amt) OVER window_1_day AS avg_spend_pd,
+                    AVG(amt) OVER window_7_day AS avg_spend_pw,
+                    AVG(amt) OVER window_30_day AS avg_spend_pm,
+                    COUNT(*) OVER window_1_day AS trans_freq_24,
+                      amt, state, job, unix_time, city_pop, is_fraud
                   FROM transaction_demographics
                   WINDOW
-                    window_1_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 86400 PRECEDING AND CURRENT ROW);""";
+                    window_1_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 86400 PRECEDING AND CURRENT ROW),
+                    window_7_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 604800 PRECEDING AND CURRENT ROW),
+                    window_30_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 2592000 PRECEDING AND CURRENT ROW);""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.incrementalize = true;
         compiler.compileStatements(sql);
@@ -183,10 +210,10 @@ public class ComplexQueriesTest extends BaseSQLTests {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(1, this.count);
+                Assert.assertEquals(3, this.count);
             }
         };
-        circuit.accept(visitor);
+        visitor.apply(circuit);
         this.compileRustTestCase(sql);
     }
 

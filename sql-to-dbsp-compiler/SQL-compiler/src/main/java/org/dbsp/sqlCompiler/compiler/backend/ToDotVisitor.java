@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOutputOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
@@ -149,6 +150,13 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         DBSPExpression expression = node.function;
         if (node.is(DBSPAggregateOperatorBase.class)) {
             DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
+            if (aggregate.aggregate != null) {
+                DBSPAggregate.Implementation impl = aggregate.aggregate.combine(this.errorReporter);
+                expression = impl.asFold(true);
+            }
+        } else if (node.is(DBSPPartitionedRollingAggregateWithWaterlineOperator.class)) {
+            DBSPPartitionedRollingAggregateWithWaterlineOperator aggregate =
+                    node.to(DBSPPartitionedRollingAggregateWithWaterlineOperator.class);
             if (aggregate.aggregate != null) {
                 DBSPAggregate.Implementation impl = aggregate.aggregate.combine(this.errorReporter);
                 expression = impl.asFold(true);
