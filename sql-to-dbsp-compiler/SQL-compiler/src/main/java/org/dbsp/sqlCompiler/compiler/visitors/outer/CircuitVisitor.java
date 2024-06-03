@@ -58,24 +58,18 @@ public abstract class CircuitVisitor
         return Objects.requireNonNull(this.circuit);
     }
 
-    /**
-     * Override to initialize before visiting any node.
-     */
+    /** Override to initialize before visiting any node. */
     public void startVisit(IDBSPOuterNode node) {
         if (node.is(DBSPCircuit.class))
             this.setCircuit(node.to(DBSPCircuit.class));
     }
 
-    /**
-     * Override to finish after visiting all nodes.
-     */
+    /** Override to finish after visiting all nodes. */
     public void endVisit() {
         this.circuit = null;
     }
 
-    /**
-     * Returns by default the input circuit unmodified.
-     */
+    /** Returns by default the input circuit unmodified. */
     @Override
     public DBSPCircuit apply(DBSPCircuit node) {
         this.startVisit(node);

@@ -24,8 +24,8 @@ CREATE TABLE order_pickup (
 
 To specify `LATENESS` for a view, our custom SQL statement `LATENESS`
 must be used.  The statement specifies a view, a column of the view,
-and an expression for the latness value.  Currently this statement
-must appear *before* the view declaration.  For example:
+and an expression for the latness value.  The statement may appear
+before or after the view declaration.  For example:
 
 ```sql
 LATENESS V.COL1 INTERVAL '1' HOUR;
