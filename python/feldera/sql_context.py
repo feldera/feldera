@@ -43,6 +43,8 @@ class SQLContext:
             pipeline_description: str = None,
             program_name: str = None,
             program_description: str = None,
+            storage: bool = False,
+            workers: int = 8
     ):
         self.build_mode: Optional[BuildMode] = None
         self.is_pipeline_running: bool = False
@@ -77,6 +79,8 @@ class SQLContext:
 
         self.program_name: str = program_name or pipeline_name
         self.program_description: str = program_description or ""
+        self.storage: bool = storage
+        self.workers: int = workers
 
     def __build_ddl(self):
         """
@@ -116,10 +120,12 @@ class SQLContext:
                 attached_con = con.attach_relation(view_name, False)
                 attached_cons.append(attached_con)
 
+        config = { 'storage': self.storage, 'workers': self.workers }
         pipeline = Pipeline(
             self.pipeline_name,
             self.program_name,
             self.pipeline_description,
+            config=config,
             attached_connectors=attached_cons
         )
 
