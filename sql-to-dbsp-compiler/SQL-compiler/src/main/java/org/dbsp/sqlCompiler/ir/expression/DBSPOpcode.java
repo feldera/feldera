@@ -1,9 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
-/**
- * This enum encodes the various opcodes for unary and
- * binary operations used in the IR of the SQL compiler.
- */
+/** This enum encodes the various opcodes for unary and
+ * binary operations used in the IR of the SQL compiler. */
 public enum DBSPOpcode {
     // Unary operations
     WRAP_BOOL("wrap_bool", false),
@@ -16,6 +14,7 @@ public enum DBSPOpcode {
     IS_TRUE("is_true", false),
     IS_NOT_TRUE("is_not_true", false),
     IS_NOT_FALSE("is_not_false", false),
+    TYPEDBOX("TypedBox::new", false),
 
     // Binary operations
     ADD("+", false),

@@ -21,31 +21,28 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir.type;
+package org.dbsp.sqlCompiler.ir.type.user;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.ICollectionType;
 
-public class DBSPTypeIndexedZSet extends DBSPTypeUser {
-    public final DBSPType keyType;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ZSET;
+
+public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
     public final DBSPType elementType;
 
-    public DBSPTypeIndexedZSet(CalciteObject node, DBSPType keyType,
-                               DBSPType elementType) {
-        super(node, DBSPTypeCode.INDEXED_ZSET, "IndexedWSet", false, keyType, elementType);
-        this.keyType = keyType;
+    public DBSPTypeZSet(CalciteObject node, DBSPType elementType) {
+        super(node, ZSET, "WSet", false, elementType);
         this.elementType = elementType;
         assert !elementType.is(DBSPTypeZSet.class);
         assert !elementType.is(DBSPTypeIndexedZSet.class);
     }
 
-    public DBSPTypeRawTuple getKVRefType() {
-        return new DBSPTypeRawTuple(this.keyType.ref(), this.elementType.ref());
-    }
-
-    public DBSPTypeRawTuple getKVType() {
-        return new DBSPTypeRawTuple(this.keyType, this.elementType);
+    public DBSPTypeZSet(DBSPType elementType) {
+        this(elementType.getNode(), elementType);
     }
 
     @Override
@@ -53,9 +50,15 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        this.keyType.accept(visitor);
         this.elementType.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }
+
+    @Override
+    public DBSPType getElementType() {
+        return this.elementType;
+    }
+
+    // sameType and hashCode inherited from TypeUser
 }

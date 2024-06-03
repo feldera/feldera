@@ -38,12 +38,14 @@ public enum DBSPTypeCode {
     INDEXED_ZSET(null, "", ""),
     RAW_TUPLE(null, "", ""),
     REF(null, "", ""),
-    RESULT(null, "", "Result"),
-    OPTION(null, "", "Option"),
-    SEMIGROUP(null, "", ""),
-    STREAM(null, "", ""),
     STRUCT("ROW TYPE", "", ""),
     TUPLE(null, "", "Tup"),
+    // User-defined types
+    RESULT(null, "", "Result"),
+    OPTION(null, "", "Option"),
+    TYPEDBOX(null, "", "TypedBox"),
+    SEMIGROUP(null, "", ""),
+    STREAM(null, "", ""),
     USER(null, "", ""),
     VEC("ARRAY", "", ""),
     ZSET("MULTISET", "", "");
