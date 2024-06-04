@@ -1,7 +1,6 @@
 from IPython.display import display
 from feldera import SQLContext, FelderaClient, SQLSchema
 import pandas as pd
-import plotly.express as px
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
@@ -9,11 +8,24 @@ import numpy as np
 import argparse
 from argparse import RawTextHelpFormatter
 import time
+import dash
+from dash.dependencies import Output, Input
+from dash import dcc, html
+import plotly.graph_objs as go
+import threading
+import os
+import signal
 
 DEFAULT_API_URL = "http://localhost:8080"
 
 # How long to run the inference pipeline for.
 INFERENCE_TIME_SECONDS = 30
+
+accuracies = []
+PRECISION_LIST = []
+RECALL_LIST = []
+F1_LIST = []
+CHUNK_NO = []
 
 def main():
     parser = argparse.ArgumentParser(
@@ -187,20 +199,39 @@ specifying an AWS access key and region.
             | s3_credentials,
         )
 
-    accuracies = []
     sql.foreach_chunk("feature", lambda df, chunk_no : infer_collect_metrics(trained_model, df, chunk_no, accuracies))
 
     # Start the pipeline to continuously process the input stream of credit card
     # transactions and output newly computed feature vectors to a Delta table.
 
-    sql.start()
+    def queries_inf():
+        global completed
+        completed = False
+        sql.start()
 
-    time.sleep(INFERENCE_TIME_SECONDS)
+        time.sleep(INFERENCE_TIME_SECONDS)
 
-    print(f"Shutting down the inference pipeline after {INFERENCE_TIME_SECONDS} seconds")
-    sql.shutdown()
+        print(f"Shutting down the inference pipeline after {INFERENCE_TIME_SECONDS} seconds")
+        sql.shutdown()
+        print(f"Pipeline successfully shut down")
+        completed = True
 
-    plot(accuracies)
+    # # version without script termination
+    # def queries_inf():
+    #     sql.start()
+
+    #     time.sleep(INFERENCE_TIME_SECONDS)
+
+    #     print(f"Shutting down the inference pipeline after {INFERENCE_TIME_SECONDS} seconds")
+
+    #     sql.shutdown()
+
+    #     print(f"Pipeline successfully shut down")
+
+    sql_thread = threading.Thread(target = queries_inf)
+    sql_thread.start()
+
+    app.run_server(debug=True, use_reloader=False)
 
 def build_program(client, pipeline_name):
     sql = SQLContext(pipeline_name, client).get_or_create()
@@ -353,35 +384,68 @@ def infer_collect_metrics(trained_model, df, chunk_no, accuracies):
         precision, recall, f1 = metrics
         accuracies.append((chunk_no, precision, recall, f1))
 
-def plot(accuracies):
-    df_accuracies = pd.DataFrame(accuracies, columns=['Chunk_Number', 'Precision', 'Recall', 'F1'])
-    df_melted = df_accuracies.melt(id_vars='Chunk_Number', value_vars=['Precision', 'Recall', 'F1'], var_name='Metric', value_name='Value')
+        PRECISION_LIST.append(precision)
+        RECALL_LIST.append(recall)
+        F1_LIST.append(f1)
+        CHUNK_NO.append(chunk_no)
 
-    print(df_melted)
+        # Sleep to simulate the delay
+        time.sleep(0.2)
 
-    cumulative_data = pd.DataFrame()
+app = dash.Dash(__name__)
 
-    for batch in sorted(df_melted['Chunk_Number'].unique()):
-        batch_data = df_melted[df_melted['Chunk_Number'] <= batch].copy()
-        batch_data['CurrentBatch'] = batch
-        cumulative_data = pd.concat([cumulative_data, batch_data], ignore_index=True)
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=CHUNK_NO,
+    y=PRECISION_LIST,
+    name='Precision',
+    line=dict(color='green', width=4),
+    mode='lines+markers'
+))
+fig.add_trace(go.Scatter(
+    x=CHUNK_NO,
+    y=RECALL_LIST,
+    name='Recall',
+    line=dict(color='blue', width=4),
+    mode='lines+markers'
+))
+fig.add_trace(go.Scatter(
+    x=CHUNK_NO,
+    y=F1_LIST,
+    name='F1 Score',
+    line=dict(color='red', width=4),
+    mode='lines+markers'
+))
 
-    fig = px.line(
-        data_frame=cumulative_data,
-        x='Chunk_Number',
-        y='Value',
-        color='Metric',
-        line_group='Metric',
-        markers=True,
-        title='Model Performance Per Batch',
-        animation_frame='CurrentBatch',
-        range_y=[df_melted['Value'].min(), df_melted['Value'].max()],
-        range_x=[df_melted['Chunk_Number'].min(), df_melted['Chunk_Number'].max()],)
+app.layout = html.Div(
+    [
+        dcc.Graph(id='live-graph', animate=False),
+        dcc.Interval(
+            id='graph-update',
+            interval=800  # Interval in milliseconds
+        ),
+    ]
+    )
+
+@app.callback(Output('live-graph', 'figure'),
+                [Input('graph-update', 'n_intervals')]
+)
+def update_graph_scatter(n):
+    # Exit if the pipeline has completed running
+    if completed == True:
+        os.kill(os.getpid(), signal.SIGTERM)
+    else:
+        fig.update_traces(selector=dict(line_color='green'), x=CHUNK_NO, y=PRECISION_LIST)
+        fig.update_traces(selector=dict(line_color='blue'), x=CHUNK_NO, y=RECALL_LIST)
+        fig.update_traces(selector=dict(line_color='red'), x=CHUNK_NO, y=F1_LIST)
+        return fig
     
-    fig.update_traces(mode='lines+markers')
-    fig.layout.updatemenus[0].buttons[0].args[1]['frame']['duration'] = 1000
-
-    fig.show()
+    # # version without script termination
+    # def update_graph_scatter(n):
+    #     fig.update_traces(selector=dict(line_color='green'), x=CHUNK_NO, y=PRECISION_LIST)
+    #     fig.update_traces(selector=dict(line_color='blue'), x=CHUNK_NO, y=RECALL_LIST)
+    #     fig.update_traces(selector=dict(line_color='red'), x=CHUNK_NO, y=F1_LIST)
+    #     return fig
 
 if __name__ == "__main__":
     main()
