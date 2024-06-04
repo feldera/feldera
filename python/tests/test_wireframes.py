@@ -119,6 +119,18 @@ class TestWireframes(unittest.TestCase):
         with self.assertRaises(ValueError):
             sql.connect_source_pandas(TBL_NAME, df)
 
+    def test_sql_error(self):
+        sql = SQLContext('sql_error', TEST_CLIENT).get_or_create()
+        TBL_NAME = "student"
+        df = pd.DataFrame([(1, "a"), (2, "b"), (3, "c")], columns=["id", "name"])
+        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
+        sql.register_view("s", f"SELECT FROM blah")
+        sql.connect_source_pandas(TBL_NAME, df)
+        _ = sql.listen("s")
+
+        with self.assertRaises(Exception):
+            sql.run_to_completion()
+
     def test_kafka(self):
         from kafka import KafkaProducer
         from kafka.admin import KafkaAdminClient, NewTopic
