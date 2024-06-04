@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the docs section of the website.
 - API: storage class can be configured via pipeline resources
   ([#1829](https://github.com/feldera/feldera/pull/1829))
+- [Python] Add support for Avro format
+  ([#1836](https://github.com/feldera/feldera/pull/1836))
 
 ### Fixed
 
