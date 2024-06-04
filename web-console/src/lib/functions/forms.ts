@@ -1,29 +1,52 @@
 import BigNumber from 'bignumber.js'
 import { match } from 'ts-pattern'
 
-export type FormFieldOptions =
+type EnumFormField<TEnum extends string = any> = {
+  type: 'enum'
+  range: readonly TEnum[]
+  default: TEnum
+  getHelperText?: (value: TEnum) => string
+}
+
+export type FormFieldOptions = {
+  label?: string
+  tooltip?: string
+} & (
   | {
-      type: 'string' | 'boolean' | 'list' | 'array'
+      type: 'string'
       default?: string
+      getHelperText?: (value: string) => string
+    }
+  | {
+      type: 'boolean'
+      default?: string
+      getHelperText?: (value: boolean) => string
+    }
+  | {
+      type: 'list' | 'array'
+      default?: string
+      getHelperText?: (value: string[]) => string
     }
   | {
       type: 'secret_string'
+      getHelperText?: (value: string) => string
     }
-  | {
-      type: 'enum'
-      range: string[]
-      default: string
-    }
+  | EnumFormField<any>
   | {
       type: 'number'
       range: { min: number; max: number }
       default?: string
+      getHelperText?: (value: number) => string
     }
   | {
       type: 'bignumber'
       range: { min: BigNumber; max: BigNumber }
       default?: string
+      getHelperText?: (value: BigNumber) => string
     }
+)
+
+export type FormFields = Record<string, FormFieldOptions>
 
 export const formFieldDefaultValue = (option: FormFieldOptions) =>
   match(option)

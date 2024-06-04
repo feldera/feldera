@@ -3,7 +3,7 @@ import { SQLValueElement } from '$lib/components/streaming/import/SQLValueInput'
 import BigNumber from 'bignumber.js'
 import { ChangeEvent } from 'react'
 import { useFormContext, useWatch } from 'react-hook-form'
-import { SelectElement, TextareaAutosizeElement } from 'react-hook-form-mui'
+import { SelectElement, TextareaAutosizeElement, TextFieldElement } from 'react-hook-form-mui'
 import Markdown from 'react-markdown'
 import { GridItems } from 'src/lib/components/common/GridItems'
 import { match } from 'ts-pattern'
@@ -36,7 +36,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
         <GridItems xs={12}>
           <SelectElement
             name={props.parentName + '.mode'}
-            label='ingest mode'
+            label='Ingest mode'
             size='small'
             fullWidth
             options={[
@@ -68,7 +68,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                 <FilterElement parentName={props.parentName} tooltipProps={tooltipProps} />
                 <VersionElement
                   parentName={props.parentName}
-                  label='snapshot version'
+                  label='Snapshot version'
                   inputProps={{
                     'data-testid': 'input-snapshot-version'
                   }}
@@ -77,20 +77,21 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                 ></VersionElement>
                 <DatetimeElement
                   parentName={props.parentName}
-                  label='snapshot datetime'
+                  label='Snapshot datetime'
                   inputProps={{
                     'data-testid': 'input-snapshot-datetime'
                   }}
                   tooltipProps={tooltipProps}
                   onInput={unregisterConflicting(props.parentName + '.version')}
                 />
+                <TimestampColumnElement parentName={props.parentName} tooltipProps={tooltipProps} />
               </>
             ))
             .with('follow', () => (
               <>
                 <VersionElement
                   parentName={props.parentName}
-                  label='start version'
+                  label='Start version'
                   inputProps={{
                     'data-testid': 'input-start-version'
                   }}
@@ -99,7 +100,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                 ></VersionElement>
                 <DatetimeElement
                   parentName={props.parentName}
-                  label='start datetime'
+                  label='Start datetime'
                   inputProps={{
                     'data-testid': 'input-start-datetime'
                   }}
@@ -113,7 +114,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                 <FilterElement parentName={props.parentName} tooltipProps={tooltipProps} />
                 <VersionElement
                   parentName={props.parentName}
-                  label='start version'
+                  label='Start version'
                   inputProps={{
                     'data-testid': 'input-start-version'
                   }}
@@ -122,13 +123,14 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                 ></VersionElement>
                 <DatetimeElement
                   parentName={props.parentName}
-                  label='start datetime'
+                  label='Start datetime'
                   inputProps={{
                     'data-testid': 'input-start-datetime'
                   }}
                   tooltipProps={tooltipProps}
                   onInput={unregisterConflicting(props.parentName + '.version')}
                 />
+                <TimestampColumnElement parentName={props.parentName} tooltipProps={tooltipProps} />
               </>
             ))
             .exhaustive()}
@@ -228,8 +230,8 @@ e.g.: `ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'`."
   >
     <TextareaAutosizeElement
       resizeStyle='vertical'
-      name={props.parentName + '.filter'}
-      label='snapshot filter'
+      name={props.parentName + '.snapshot_filter'}
+      label='Snapshot filter'
       size='small'
       fullWidth
       inputProps={{
@@ -240,3 +242,31 @@ e.g.: `ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'`."
     ></TextareaAutosizeElement>
   </Tooltip>
 )
+
+const TimestampColumnElement = (props: { parentName: string; tooltipProps: any }) => {
+  return (
+    <Tooltip
+      {...props.tooltipProps}
+      title={
+        <Markdown>
+          {
+            '\
+Table column that serves as an event timestamp.\n\n\
+When this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,\
+the snapshot of the table will be sorted by the corresponding column.'
+          }
+        </Markdown>
+      }
+    >
+      <TextFieldElement
+        name={props.parentName + '.timestamp_column'}
+        label='Timestamp column'
+        size='small'
+        fullWidth
+        inputProps={{
+          'data-testid': 'input-timestamp-column'
+        }}
+      />
+    </Tooltip>
+  )
+}

@@ -289,7 +289,13 @@ export const normalizeSnowflakeOutputConfig = (data: {
 export const parseDeltaLakeInputSchemaConfig = (config: ConnectorDescr['config']) => {
   invariant(config.transport.name === TransportConfig.name.DELTA_TABLE_INPUT)
   return {
-    transport: config.transport.config as typeof config.transport.config & { uri: string }
+    transport: {
+      ...(config.transport.config as typeof config.transport.config & {
+        uri: string
+        mode: 'snapshot' | 'follow' | 'snapshot_and_follow'
+      }),
+      version: (version => (version ? BigNumber(version) : undefined))(config.transport.config.version)
+    }
   }
 }
 
@@ -303,7 +309,12 @@ export const normalizeDeltaLakeInputConfig = (data: { transport: Record<string, 
 export const parseDeltaLakeOutputSchemaConfig = (config: ConnectorDescr['config']) => {
   invariant(config.transport.name === TransportConfig.name.DELTA_TABLE_OUTPUT)
   return {
-    transport: config.transport.config as typeof config.transport.config & { uri: string }
+    transport: {
+      ...(config.transport.config as typeof config.transport.config & {
+        uri: string
+        mode: 'append' | 'truncate' | 'error_if_exists'
+      })
+    }
   }
 }
 

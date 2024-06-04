@@ -25,7 +25,6 @@ type SQLValueInputProps = { columnType: ColumnType } & Omit<TextFieldProps, 'typ
 
 export const SQLValueElement = ({ name, ...props }: SQLValueInputProps & { name: string }) => {
   const ctx = useFormContext()
-  console.log('SQLValueElement', name, ctx.getValues(name))
   const value = useWatch({ name })
   const state = useFormState({ name })
   return (

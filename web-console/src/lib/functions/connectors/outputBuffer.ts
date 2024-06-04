@@ -25,7 +25,7 @@ export const outputBufferConfigValidation = <
 >() =>
   va.forward<T>(
     va.custom(
-      input => !input.max_output_buffer_time_millis && !input.max_output_buffer_size_records,
+      input => !!input.max_output_buffer_time_millis || !!input.max_output_buffer_size_records,
       'Specify either max_output_buffer_time_millis or max_output_buffer_size_records'
     ),
     ['max_output_buffer_time_millis'] as va.PathList<T>

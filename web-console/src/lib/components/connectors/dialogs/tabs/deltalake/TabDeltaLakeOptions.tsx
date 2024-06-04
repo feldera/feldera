@@ -1,4 +1,4 @@
-import { FormFieldElement } from '$lib/components/services/dialogs/elements/FormFieldElement'
+import { FormField } from '$lib/components/forms/FormField'
 import { PickFormFieldElement } from '$lib/components/services/dialogs/elements/PickFormFieldElement'
 import { useDeltaLakeStorageType } from '$lib/compositions/connectors/dialogs/useDeltaLakeStorageType'
 import {
@@ -10,12 +10,13 @@ import {
   deltaLakeNoOptions
 } from '$lib/functions/deltalake/configSchema'
 import { formFieldDefaultValue } from '$lib/functions/forms'
-import { useFormContext, useWatch } from 'react-hook-form-mui'
+import { useWatch } from 'react-hook-form-mui'
 import { match } from 'ts-pattern'
 
-import { Box, Grid, IconButton, Typography } from '@mui/material'
+import { Box, Grid } from '@mui/material'
 
-const omitFields = new Set(['uri', 'mode', 'filter', 'version', 'datetime'])
+// Essentially, all named fields in DeltaTableReaderConfig
+const omitFields = new Set(['uri', 'timestamp_column', 'mode', 'snapshot_filter', 'version', 'datetime'])
 
 export const TabDeltaLakeOptions = (props: { parentName: string; disabled?: boolean }) => {
   const { storageType } = useDeltaLakeStorageType(props)
@@ -29,36 +30,21 @@ export const TabDeltaLakeOptions = (props: { parentName: string; disabled?: bool
     .exhaustive()
 
   const formValues = useWatch({ name: props.parentName })
-  const ctx = useFormContext()
-  const usedFields = Object.keys(formValues).filter(field => !omitFields.has(field)) // .filter(field => fieldOptions[field])
+  const usedFields = Object.keys(formValues).filter(field => !omitFields.has(field))
 
   return (
     <>
       <Box sx={{ height: '100%', overflowY: 'auto', pr: '3rem', mr: '-1rem' }}>
-        <Grid container spacing={4} sx={{ height: 'auto', alignItems: 'center' }}>
+        <Grid container spacing={4} sx={{ height: 'auto', alignItems: 'start' }}>
           {usedFields.map(field => (
-            <>
-              <Grid item xs={12} sm={6}>
-                <Typography>{field}</Typography>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <Box sx={{ display: 'flex' }}>
-                  <FormFieldElement
-                    fieldOptions={fieldOptions[field] ?? { type: 'string' }}
-                    field={field}
-                    disabled={props.disabled}
-                    parentName={props.parentName}
-                  ></FormFieldElement>
-                  <IconButton
-                    size='small'
-                    sx={{ mr: '-2.5rem', ml: '0.5rem' }}
-                    onClick={() => ctx.unregister(props.parentName + '.' + field)}
-                  >
-                    <i className='bx bx-x' />
-                  </IconButton>
-                </Box>
-              </Grid>
-            </>
+            <FormField
+              key={field}
+              field={field}
+              fieldOptions={fieldOptions[field] ?? { type: 'string' }}
+              disabled={props.disabled}
+              parentName={props.parentName}
+              optional={true}
+            ></FormField>
           ))}
 
           <Grid item xs={12} sm={6}>

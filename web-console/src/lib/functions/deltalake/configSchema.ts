@@ -1,8 +1,6 @@
-import { FormFieldOptions } from '$lib/functions/forms'
+import { FormFields } from '$lib/functions/forms'
 
-type DeltaLakeOptions = Record<string, FormFieldOptions>
-
-export const deltaLakeAwsOptions: DeltaLakeOptions = {
+export const deltaLakeAwsOptions: FormFields = {
   aws_access_key_id: { type: 'secret_string' },
   aws_secret_access_key: { type: 'secret_string' },
   aws_region: { type: 'string' },
@@ -12,14 +10,14 @@ export const deltaLakeAwsOptions: DeltaLakeOptions = {
   aws_token: { type: 'string' }
 }
 
-export const deltaLakeGoogleOptions: DeltaLakeOptions = {
+export const deltaLakeGoogleOptions: FormFields = {
   google_service_account: { type: 'string' },
   google_service_account_key: { type: 'secret_string' },
   google_bucket: { type: 'string' },
   google_application_credentials: { type: 'string' }
 }
 
-export const deltaLakeAzureOptions: DeltaLakeOptions = {
+export const deltaLakeAzureOptions: FormFields = {
   azure_account_name: { type: 'string' },
   azure_access_key: { type: 'secret_string' },
   azure_client_id: { type: 'string' },
@@ -40,8 +38,8 @@ export const deltaLakeAzureOptions: DeltaLakeOptions = {
   azure_disable_tagging: { type: 'boolean' }
 }
 
-export const deltaLakeFileSystemOptions: DeltaLakeOptions = {}
+export const deltaLakeFileSystemOptions: FormFields = {}
 
-export const deltaLakeGenericHttpOptions: DeltaLakeOptions = {}
+export const deltaLakeGenericHttpOptions: FormFields = {}
 
-export const deltaLakeNoOptions: DeltaLakeOptions = {}
+export const deltaLakeNoOptions: FormFields = {}

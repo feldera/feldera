@@ -1,3 +1,4 @@
+import { DeltaLakeWriteModeElement } from '$lib/components/connectors/dialogs/elements/deltalake/WriteModeElement'
 import {
   ConnectorEditDialog,
   PlainDialogContent,
@@ -15,11 +16,7 @@ import {
   parseDeltaLakeOutputSchemaConfig,
   prepareDataWith
 } from '$lib/functions/connectors'
-import {
-  defaultOutputBufferOptions,
-  outputBufferConfigSchema,
-  outputBufferConfigValidation
-} from '$lib/functions/connectors/outputBuffer'
+import { outputBufferConfigSchema, outputBufferConfigValidation } from '$lib/functions/connectors/outputBuffer'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { Direction } from '$lib/types/connectors'
 import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
@@ -40,7 +37,8 @@ const schema = va.merge(
       transport: va.nonOptional(
         va.object(
           {
-            uri: va.nonOptional(va.string([va.minLength(1, 'Enter DeltaLake resource URI')]))
+            uri: va.nonOptional(va.string([va.minLength(1, 'Enter DeltaLake resource URI')])),
+            mode: va.nonOptional(va.picklist(['append', 'truncate', 'error_if_exists']))
           },
           va.union([va.string(), va.number(), bignumber(), va.boolean(), va.null_(), va.undefined_()])
         )
@@ -83,9 +81,10 @@ export const DeltaLakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
     : {
         name: '',
         transport: {
-          uri: ''
+          uri: '',
+          mode: 'append'
         },
-        ...defaultOutputBufferOptions
+        enable_output_buffer: true
       }
 
   const onSubmit = useConnectorRequest(
@@ -170,6 +169,7 @@ export const DeltaLakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
                   testid: 'button-tab-config',
                   content: (
                     <>
+                      <DeltaLakeWriteModeElement parentName='transport' />
                       <TabDeltaLakeOptions disabled={props.disabled} parentName='transport' />
                       {tabFooter}
                     </>

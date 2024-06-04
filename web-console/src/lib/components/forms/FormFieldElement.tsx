@@ -12,7 +12,7 @@ import {
 } from 'react-hook-form-mui'
 import { match } from 'ts-pattern'
 
-import { IconButton, InputAdornment } from '@mui/material'
+import { FormHelperText, IconButton, InputAdornment } from '@mui/material'
 import { Box } from '@mui/system'
 
 const PasswordElement = <
@@ -50,6 +50,7 @@ export const FormFieldElement = (props: {
   fieldOptions: FormFieldOptions | undefined
   disabled?: boolean
   parentName: string | undefined
+  helperText?: string
 }) => {
   if (!props.fieldOptions) {
     return <></>
@@ -67,6 +68,7 @@ export const FormFieldElement = (props: {
         inputProps={{
           'data-testid': 'input-' + props.field
         }}
+        helperText={props.helperText}
       ></TextFieldElement>
     ))
     .with({ type: 'secret_string' }, () => (
@@ -78,6 +80,7 @@ export const FormFieldElement = (props: {
         inputProps={{
           'data-testid': 'input-' + props.field
         }}
+        helperText={props.helperText}
       ></PasswordElement>
     ))
     .with({ type: 'number' }, ({ range }) => (
@@ -91,6 +94,7 @@ export const FormFieldElement = (props: {
           'data-testid': 'input-' + props.field
         }}
         optional
+        helperText={props.helperText}
       ></NumberElement>
     ))
     .with({ type: 'bignumber' }, ({ range }) => (
@@ -104,20 +108,19 @@ export const FormFieldElement = (props: {
           'data-testid': 'input-' + props.field
         }}
         optional
+        helperText={props.helperText}
       />
     ))
     .with({ type: 'enum' }, ({ range }) => (
       <AutocompleteElement
         key={props.field}
         name={fieldPrefix + props.field}
-        options={range.map(option => ({
-          id: option,
-          label: option
-        }))}
+        options={range.map(o => o)}
         textFieldProps={{
           inputProps: {
             'data-testid': 'input-' + props.field
-          } as any
+          } as any,
+          helperText: props.helperText
         }}
         autocompleteProps={{
           disableClearable: true,
@@ -144,6 +147,7 @@ export const FormFieldElement = (props: {
             } as any
           }}
         ></SwitchElement>
+        {!!props.helperText && <FormHelperText>{props.helperText}</FormHelperText>}
       </Box>
     ))
     .with({ type: 'list' }, { type: 'array' }, () => (
@@ -165,6 +169,7 @@ export const FormFieldElement = (props: {
         inputProps={{
           'data-testid': 'input-' + props.field
         }}
+        helperText={props.helperText}
       />
     ))
     .exhaustive()

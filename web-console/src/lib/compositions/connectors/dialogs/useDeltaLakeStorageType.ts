@@ -55,7 +55,11 @@ export const useDeltaLakeStorageType = ({ parentName }: { parentName: string }) 
         return state
       }
       const inferred = inferDeltaLakeStorageConfig(uri)
-      handleAutofill({ inferred, removeFields: inferredFields(state.inferred) })
+      // TODO: this enables autofilling inferred options from URI. Enable if needed.
+      // Otherwise this Hook can be simplified
+      // handleAutofill({ inferred, removeFields: inferredFields(state.inferred) })
+      void handleAutofill
+      void inferredFields
       return { uri, inferred }
     },
     getInferred(uri)

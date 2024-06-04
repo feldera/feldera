@@ -1,4 +1,4 @@
-import { FormFieldElement } from '$lib/components/services/dialogs/elements/FormFieldElement'
+import { FormFieldElement } from '$lib/components/forms/FormFieldElement'
 import { outputBufferOptions } from '$lib/functions/connectors/outputBuffer'
 
 import { Grid, Typography } from '@mui/material'
