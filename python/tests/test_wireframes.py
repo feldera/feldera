@@ -1,6 +1,8 @@
 import time
 import unittest
 import pandas as pd
+from kafka import KafkaProducer, KafkaConsumer, TopicPartition
+from kafka.admin import KafkaAdminClient, NewTopic
 
 from feldera import SQLContext, SQLSchema
 from feldera.formats import JSONFormat, JSONUpdateFormat
@@ -120,8 +122,6 @@ class TestWireframes(unittest.TestCase):
             sql.connect_source_pandas(TBL_NAME, df)
 
     def test_kafka(self):
-        from kafka import KafkaProducer
-        from kafka.admin import KafkaAdminClient, NewTopic
         import json
 
         KAFKA_SERVER = "localhost:19092"
@@ -191,6 +191,15 @@ class TestWireframes(unittest.TestCase):
         df = out.to_pandas()
         assert df.shape[0] != 0
 
+        consumer = KafkaConsumer(
+            OUTPUT_TOPIC,
+            bootstrap_servers=KAFKA_SERVER,
+            auto_offset_reset='earliest',
+        )
+
+        for message in consumer:
+            print(message)
+
     def test_http_get(self):
         sql = SQLContext("test_http_get", TEST_CLIENT).get_or_create()
 
@@ -214,6 +223,60 @@ class TestWireframes(unittest.TestCase):
 
         assert df.shape[0] == 3
 
+    def test_avro_format(self):
+        from feldera.formats import AvroFormat
+
+        KAFKA_URL_FROM_PIPELINE = "redpanda:9092"
+        KAFKA_SERVER = "localhost:19092"
+        TOPIC = "test_avro_format"
+
+        admin_client = KafkaAdminClient(
+            bootstrap_servers=KAFKA_SERVER,
+            client_id="test_client"
+        )
+        existing_topics = set(admin_client.list_topics())
+        if TOPIC in existing_topics:
+            admin_client.delete_topics([TOPIC])
+
+        df = pd.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+
+        sql = SQLContext("test_avro_format", TEST_CLIENT).get_or_create()
+
+        TBL_NAME = "items"
+        VIEW_NAME = "s"
+
+        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
+        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+
+        sql.connect_source_pandas(TBL_NAME, df)
+
+        sink_config = {
+            "topic": TOPIC,
+            "bootstrap.servers": KAFKA_URL_FROM_PIPELINE,
+            "auto.offset.reset": "earliest",
+        }
+
+        avro_format = AvroFormat().with_schema({
+            "type": "record",
+            "name": "items",
+            "fields": [
+                {"name": "id", "type": ["null", "int"]},
+                {"name": "name", "type": ["null", "string"]}
+            ]
+        })
+
+        sql.connect_sink_kafka(VIEW_NAME, "out_avro_kafka", sink_config, avro_format)
+
+        sql.run_to_completion()
+
+        consumer = KafkaConsumer(
+            TOPIC,
+            bootstrap_servers=KAFKA_SERVER,
+            auto_offset_reset='earliest',
+        )
+
+        msg = next(consumer)
+        assert msg.value is not None
 
 if __name__ == '__main__':
     unittest.main()

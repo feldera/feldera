@@ -17,7 +17,7 @@ from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
 from feldera._helpers import ensure_dataframe_has_columns
-from feldera.formats import JSONFormat, CSVFormat
+from feldera.formats import JSONFormat, CSVFormat, AvroFormat
 from feldera._helpers import validate_connector_input_format
 from enum import Enum
 
@@ -440,7 +440,7 @@ class SQLContext:
         view_name: str,
         connector_name: str,
         config: dict,
-        fmt: JSONFormat | CSVFormat
+        fmt: JSONFormat | CSVFormat | AvroFormat
     ):
         """
         Associates the specified kafka topic on the specified Kafka server as output sink for the specified view in

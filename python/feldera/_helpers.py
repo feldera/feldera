@@ -1,5 +1,5 @@
 import pandas as pd
-from feldera.formats import JSONFormat, CSVFormat
+from feldera.formats import JSONFormat, CSVFormat, AvroFormat
 
 
 def ensure_dataframe_has_columns(df: pd.DataFrame):
@@ -27,7 +27,7 @@ def dataframe_from_response(buffer: list[list[dict]]):
 
 
 def validate_connector_input_format(fmt: JSONFormat | CSVFormat):
-    if not isinstance(fmt, JSONFormat) and not isinstance(fmt, CSVFormat):
+    if not isinstance(fmt, JSONFormat) and not isinstance(fmt, CSVFormat) and not isinstance(fmt, AvroFormat):
         raise ValueError("format must be JSONFormat or CSVFormat")
 
     if isinstance(fmt, JSONFormat) and fmt.config.get("update_format") is None:
