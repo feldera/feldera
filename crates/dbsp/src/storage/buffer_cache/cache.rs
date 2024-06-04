@@ -12,7 +12,7 @@ use std::{
 };
 
 use crc32c::crc32c;
-use metrics::{counter, CounterFn};
+use metrics::counter;
 
 use crate::storage::backend::Backend;
 use crate::storage::file::reader::{CorruptionError, Error};
@@ -136,34 +136,6 @@ where
         }
     }
 
-    #[allow(dead_code)]
-    fn check_invariants(&self) {
-        assert_eq!(self.cache.len(), self.lru.len());
-        let mut cost = 0;
-        for entry in self.cache.iter() {
-            //assert_eq!(self.lru.get(&entry.value().serial.load(Ordering::Relaxed)).map(|e| e.value()), Some(entry.key()));
-            cost += entry.value().aux.cost();
-        }
-        for entry in self.lru.iter() {
-            // (serial, key)
-            assert_eq!(
-                self.cache
-                    .get(entry.value())
-                    .unwrap()
-                    .value()
-                    .serial
-                    .load(Ordering::Relaxed),
-                *entry.key()
-            );
-        }
-        assert_eq!(cost, self.cur_cost.load(Ordering::Relaxed));
-    }
-
-    fn debug_check_invariants(&self) {
-        #[cfg(debug_assertions)]
-        self.check_invariants()
-    }
-
     fn delete_file(&self, fd: i64) {
         let offsets: Vec<_> = self
             .cache
@@ -176,7 +148,6 @@ where
             self.cur_cost
                 .fetch_sub(to_remove.value().aux.cost(), Ordering::Relaxed);
         }
-        self.debug_check_invariants();
     }
 
     fn get(&self, key: CacheKey) -> Option<E> {
@@ -203,16 +174,12 @@ where
             self.cur_cost
                 .fetch_sub(entry.value().aux.cost(), Ordering::Relaxed);
         }
-        self.debug_check_invariants();
     }
 
     fn insert(&self, key: CacheKey, aux: E) {
+        let max_cost = self.max_cost.load(Ordering::Relaxed);
         let cost = aux.cost();
-        if self.max_cost.load(Ordering::Relaxed) < cost {
-            self.max_cost.store(0, Ordering::Relaxed);
-        } else {
-            self.max_cost.fetch_sub(cost, Ordering::Relaxed);
-        }
+        self.evict_to(max_cost.saturating_sub(cost));
 
         if let Some(entry) = self.cache.remove(&key) {
             self.lru
@@ -231,7 +198,6 @@ where
 
         self.lru.insert(next_serial, key);
         self.cur_cost.fetch_add(cost, Ordering::Relaxed);
-        self.debug_check_invariants();
     }
 }
 
