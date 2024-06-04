@@ -29,10 +29,10 @@ Replace ``{BRANCH_NAME}`` with the name of the branch you want to install from.
 Key Concepts
 ************
 
-* :class:`feldera.FelderaClient` or :class:`.Client`
+* :class:`.FelderaClient`
    - This is the actual HTTP client used to make requests to your Feldera 
      instance.
-   - creating an instance of :class:`.Client` is usually the first thing you 
+   - creating an instance of :class:`.FelderaClient` is usually the first thing you
      will do while working with Feldera.
 
    - Example:
@@ -62,7 +62,7 @@ Key Concepts
 
       - The first parameter is the name of this SQL context. By default, this is
         the name used in both Feldera Program and Pipeline.
-      - The second parameter here is :class:`.Client` that we created above.
+      - The second parameter here is :class:`.FelderaClient` that we created above.
 
 * :meth:`.SQLContext.run_to_completion`
    - Runs this Feldera pipeline to completion. Normally this means until the EoF

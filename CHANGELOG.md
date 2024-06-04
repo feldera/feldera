@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.17.0] - 2024-05-28
 
+- [Python] Added support for Kafka connector via Python SDK
+  ([#1807](https://github.com/feldera/feldera/pull/1807))
+- [Python] Added support for HTTP GET connector via Python SDK
+
 ### Added
 
 - Added backpressure mode to the `/egress` endpoint, which applies
