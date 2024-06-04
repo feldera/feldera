@@ -19,6 +19,7 @@ from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
 from feldera._helpers import ensure_dataframe_has_columns
 from feldera.formats import JSONFormat, CSVFormat, AvroFormat
 from feldera._helpers import validate_connector_input_format
+from feldera.pipeline_resource_config import PipelineResourceConfig
 from enum import Enum
 
 
@@ -38,6 +39,15 @@ class SQLContext:
 
     The SQLContext is the main entry point for the Feldera SQL API.
     Abstracts the interaction with the Feldera API and provides a high-level interface for SQL pipelines.
+
+    :param pipeline_name: The name of the pipeline.
+    :param client: The :class:`.FelderaClient` instance to use.
+    :param pipeline_description: The description of the pipeline.
+    :param program_name: The name of the program. Defaults to the pipeline name.
+    :param program_description: The description of the program. Defaults to an empty string.
+    :param storage: Set `True` to use storage with this pipeline. Defaults to False.
+    :param workers: The number of workers to use with this pipeline. Defaults to 8.
+    :param pipeline_resource_config: The :class:`.PipelineResourceConfig` for the pipeline. Defaults to None.
     """
 
     def __init__(
@@ -48,7 +58,8 @@ class SQLContext:
             program_name: str = None,
             program_description: str = None,
             storage: bool = False,
-            workers: int = 8
+            workers: int = 8,
+            pipeline_resource_config: PipelineResourceConfig = None,
     ):
         self.build_mode: Optional[BuildMode] = None
         self.is_pipeline_running: bool = False
@@ -85,6 +96,7 @@ class SQLContext:
         self.program_description: str = program_description or ""
         self.storage: bool = storage
         self.workers: int = workers
+        self.pipeline_resource_config = pipeline_resource_config
 
     def __build_ddl(self):
         """
@@ -125,6 +137,9 @@ class SQLContext:
                 attached_cons.append(attached_con)
 
         config = { 'storage': self.storage, 'workers': self.workers }
+        if self.pipeline_resource_config:
+            config["resources"] = self.pipeline_resource_config.__dict__
+
         pipeline = Pipeline(
             self.pipeline_name,
             self.program_name,
