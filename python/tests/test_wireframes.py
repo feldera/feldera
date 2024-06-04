@@ -191,15 +191,6 @@ class TestWireframes(unittest.TestCase):
         df = out.to_pandas()
         assert df.shape[0] != 0
 
-        consumer = KafkaConsumer(
-            OUTPUT_TOPIC,
-            bootstrap_servers=KAFKA_SERVER,
-            auto_offset_reset='earliest',
-        )
-
-        for message in consumer:
-            print(message)
-
     def test_http_get(self):
         sql = SQLContext("test_http_get", TEST_CLIENT).get_or_create()
 

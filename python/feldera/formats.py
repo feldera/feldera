@@ -2,6 +2,20 @@ from typing import Optional, Mapping
 from typing_extensions import Self
 from enum import Enum
 import json
+from abc import ABC
+
+class Format(ABC):
+    """
+    Base class for all data formats.
+    """
+
+    def to_dict(self) -> dict:
+        """
+        Serialize to a dict to be used in the API request.
+
+        :meta private:
+        """
+        raise NotImplementedError
 
 
 class JSONUpdateFormat(Enum):
@@ -46,7 +60,7 @@ class JSONUpdateFormat(Enum):
                 return "raw"
 
 
-class JSONFormat:
+class JSONFormat(Format):
     """
     Used to represent data ingested and output from Feldera in the JSON format.
     """
@@ -92,7 +106,7 @@ class JSONFormat:
         }
 
 
-class CSVFormat:
+class CSVFormat(Format):
     """
     Used to represent data ingested and output from Feldera in the CSV format.
     
@@ -110,7 +124,7 @@ class CSVFormat:
         }
 
 
-class AvroFormat:
+class AvroFormat(Format):
     """
     Avro output format configuration.
 
@@ -122,7 +136,7 @@ class AvroFormat:
         This schema must match precisely the SQL view definition, including nullability of columns.
     :param registry_urls:
         List of schema registry URLs. When non-empty, the connector will
-        post the schema to the registry and uses the schema id returned
+        post the schema to the registry and use the schema id returned
         by the registry.  Otherwise, schema id 0 is used.
     :param registry_headers:
         Custom headers that will be added to every call to the schema registry.
@@ -141,7 +155,7 @@ class AvroFormat:
         Password used to authenticate with the registry.
         Requires `registry_urls` to be set.
     :param registry_authorization_token:
-        Sets used to authenticate with the registry.
+        Token used to authenticate with the registry.
         Requires `registry_urls` to be set.  This option is mutually exclusive with
         password-based authentication (see `registry_username` and `registry_password`).
     """
@@ -187,7 +201,7 @@ class AvroFormat:
         """
         List of schema registry URLs.
 
-        When non-empty, the connector will post the schema to the registry and uses the schema id returned
+        When non-empty, the connector will post the schema to the registry and use the schema id returned
         by the registry.  Otherwise, schema id 0 is used.
         """
         self.registry_urls = registry_urls
@@ -251,7 +265,7 @@ class AvroFormat:
 
     def with_registry_authorization_token(self, registry_authorization_token: str) -> Self:
         """
-        Sets used to authenticate with the registry.
+        Token used to authenticate with the registry.
 
         Requires `registry_urls` to be set. This option is mutually exclusive with
         password-based authentication (see `registry_username` and `registry_password`).

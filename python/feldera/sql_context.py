@@ -458,7 +458,7 @@ class SQLContext:
         if config.get("topic") is None:
             raise ValueError("topic is required in the config")
 
-        validate_connector_input_format(fmt)
+        validate_connector_input_format(fmt, supports_avro=True)
 
         connector = Connector(
             name=connector_name,

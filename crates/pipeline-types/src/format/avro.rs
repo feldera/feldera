@@ -13,8 +13,8 @@ pub struct AvroEncoderConfig {
     /// nullability of columns.
     pub schema: String,
     /// List of schema registry URLs. When non-empty, the connector will
-    /// post the schema to the registry and uses the schema id returned
-    /// by the registry .  Otherwise, schema id 0 is used.
+    /// post the schema to the registry and use the schema id returned
+    /// by the registry.  Otherwise, schema id 0 is used.
     #[serde(default)]
     pub registry_urls: Vec<String>,
     /// Custom headers that will be added to every call to the schema registry.
@@ -39,7 +39,7 @@ pub struct AvroEncoderConfig {
     ///
     /// Requires `registry_urls` to be set.
     pub registry_password: Option<String>,
-    /// Sets used to authenticate with the registry.
+    /// Token used to authenticate with the registry.
     ///
     /// Requires `registry_urls` to be set. This option is mutually exclusive with
     /// password-based authentication (see `registry_username` and `registry_password`).
