@@ -1,7 +1,7 @@
-from typing import Optional, Dict, Any, Mapping
+from typing import Optional, Any, Mapping
 
 
-class PipelineResourceConfig:
+class Resources:
     """
     Class used to specify the resource configuration for a pipeline.
 

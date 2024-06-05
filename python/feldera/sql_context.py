@@ -19,7 +19,7 @@ from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
 from feldera._helpers import ensure_dataframe_has_columns
 from feldera.formats import JSONFormat, CSVFormat, AvroFormat
 from feldera._helpers import validate_connector_input_format
-from feldera.pipeline_resource_config import PipelineResourceConfig
+from feldera.resources import Resources
 from enum import Enum
 
 
@@ -59,7 +59,7 @@ class SQLContext:
             program_description: str = None,
             storage: bool = False,
             workers: int = 8,
-            pipeline_resource_config: PipelineResourceConfig = None,
+            pipeline_resource_config: Resources = None,
     ):
         self.build_mode: Optional[BuildMode] = None
         self.is_pipeline_running: bool = False

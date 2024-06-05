@@ -282,7 +282,7 @@ class TestWireframes(unittest.TestCase):
         assert msg.value is not None
 
     def test_pipeline_resource_config(self):
-        from feldera.pipeline_resource_config import PipelineResourceConfig
+        from feldera.resources import Resources
 
         config = {
             "cpu_cores_max": 3,
@@ -293,7 +293,7 @@ class TestWireframes(unittest.TestCase):
             "storage_class": None,
         }
 
-        pipeline_resource_config = PipelineResourceConfig(config)
+        pipeline_resource_config = Resources(config)
         name = "test_pipeline_resource_config"
 
         sql = SQLContext(
