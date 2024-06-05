@@ -87,7 +87,7 @@ class FelderaClient:
         body = {
             "code": program.code,
             "description": program.description or "",
-            "config": config or {}
+            "config": config or {"profile": "optimized"}
         }
 
         resp = self.http.put(
