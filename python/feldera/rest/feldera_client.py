@@ -77,16 +77,17 @@ class FelderaClient:
             version=resp.get("version"),
         )
 
-    def compile_program(self, program: Program):
+    def compile_program(self, program: Program, config: Optional[dict] = None):
         """
         Compiles a SQL program
 
         :param program: The program to compile
+        :param config: Optional. The configuration for the compilation
         """
         body = {
             "code": program.code,
             "description": program.description or "",
-            "config": { "profile": "optimized" }
+            "config": config or {}
         }
 
         resp = self.http.put(

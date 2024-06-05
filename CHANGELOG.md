@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [Python] Added support for HTTP GET connector via Python SDK
 - [Python] Add support for Avro format
   ([#1836](https://github.com/feldera/feldera/pull/1836))
-- [Python]: allow specifying pipeline resource configuration via SQLContext
+- [Python] allow specifying pipeline resource configuration and compilation profile via SQLContext
   ([#1835](https://github.com/feldera/feldera/pull/1835))
 
 ### Fixed

@@ -293,13 +293,13 @@ class TestWireframes(unittest.TestCase):
             "storage_class": None,
         }
 
-        pipeline_resource_config = Resources(config)
+        resources = Resources(config)
         name = "test_pipeline_resource_config"
 
         sql = SQLContext(
             name,
             TEST_CLIENT,
-            pipeline_resource_config=pipeline_resource_config
+            resources=resources
         ).get_or_create()
 
         TBL_NAME = "items"
