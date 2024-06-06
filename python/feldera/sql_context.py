@@ -4,6 +4,7 @@ import re
 
 from typing import Optional, Dict, Callable
 
+import pandas as pd
 from typing_extensions import Self
 from queue import Queue
 
@@ -18,9 +19,9 @@ from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
 from feldera._helpers import ensure_dataframe_has_columns
 from feldera.formats import JSONFormat, CSVFormat, AvroFormat
-from feldera._helpers import validate_connector_input_format
 from feldera.resources import Resources
 from feldera.enums import BuildMode, CompilationProfile
+from feldera._helpers import validate_connector_input_format, chunk_dataframe
 
 
 def _table_name_from_sql(ddl: str) -> str:
@@ -72,7 +73,7 @@ class SQLContext:
         # TODO: to be used for schema inference
         self.todo_tables: Dict[str, Optional[SQLTable]] = {}
 
-        self.http_input_buffer: list[Dict[str, dict | list[dict] | str]] = []
+        self.http_input_buffer: list[Dict[str, pd.DataFrame]] = []
 
         # buffer that stores all input connectors to be created
         # this is a Mapping[table_name -> list[Connector]]
@@ -173,7 +174,15 @@ class SQLContext:
 
         for input_buffer in self.http_input_buffer:
             for tbl_name, data in input_buffer.items():
-                self.client.push_to_pipeline(self.pipeline_name, tbl_name, "json", data, array=True)
+                for datum in chunk_dataframe(data):
+                    self.client.push_to_pipeline(
+                        self.pipeline_name,
+                        tbl_name,
+                        "json",
+                        datum.to_json(orient='records', date_format="iso"),
+                        array=True,
+                        dont_serialize=True
+                    )
 
         self.http_input_buffer.clear()
 
@@ -273,7 +282,7 @@ class SQLContext:
 
         if tbl:
             # tbl.validate_schema(df)   TODO: something like this would be nice
-            self.http_input_buffer.append({tbl.name: df.to_dict('records')})
+            self.http_input_buffer.append({tbl.name: df})
             return
 
         tbl = self.todo_tables.get(table_name)

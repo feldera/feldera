@@ -135,18 +135,18 @@ class TestPipeline(unittest.TestCase):
         name = str(uuid.uuid4())
         self.test_create_pipeline(name, False)
 
-        TEST_CLIENT.start_pipeline(name)
+        TEST_CLIENT.pause_pipeline(name)
 
         t1 = threading.Thread(target=self.__listener, args=(name,))
         t1.start()
 
+        TEST_CLIENT.start_pipeline(name)
         TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
 
         t1.join()
 
         assert self.result
 
-        TEST_CLIENT.pause_pipeline(name)
         TEST_CLIENT.shutdown_pipeline(name)
         TEST_CLIENT.delete_pipeline(name)
 

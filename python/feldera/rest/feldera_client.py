@@ -381,6 +381,7 @@ class FelderaClient:
             array: bool = False,
             force: bool = False,
             update_format: str = "raw",
+            dont_serialize: bool = False,
     ):
         """
         Insert data into a pipeline
@@ -396,6 +397,7 @@ class FelderaClient:
             the default value is "insert_delete", other supported formats: "weighted", "debezium", "snowflake", "raw"
 
         :param data: The data to insert
+        :param dont_serialize: If True, the data will not be serialized to JSON. Use if the data is already serialized.
         """
 
         if format not in ["json", "csv"]:
@@ -428,6 +430,7 @@ class FelderaClient:
             params=params,
             content_type=content_type,
             body=data,
+            dont_serialize=dont_serialize,
         )
 
     def listen_to_pipeline(

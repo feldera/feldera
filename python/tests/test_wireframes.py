@@ -1,7 +1,7 @@
 import time
 import unittest
 import pandas as pd
-from kafka import KafkaProducer, KafkaConsumer, TopicPartition
+from kafka import KafkaProducer, KafkaConsumer
 from kafka.admin import KafkaAdminClient, NewTopic
 
 from feldera import SQLContext, SQLSchema
@@ -323,6 +323,31 @@ class TestWireframes(unittest.TestCase):
         assert df.shape[0] == 3
 
         assert TEST_CLIENT.get_pipeline(name).config["resources"] == config
+
+    def test_timestamp_pandas(self):
+        sql = SQLContext("test_timestamp_pandas", TEST_CLIENT).get_or_create()
+
+        TBL_NAME = "items"
+        VIEW_NAME = "s"
+
+        # backend doesn't support TIMESTAMP of format: "2024-06-06T18:06:28.443"
+        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING", "birthdate": "STRING"}))
+
+        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+
+        df = pd.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"], "birthdate": [
+            pd.Timestamp.now(), pd.Timestamp.now(), pd.Timestamp.now()
+        ]})
+
+        sql.connect_source_pandas(TBL_NAME, df)
+
+        out = sql.listen(VIEW_NAME)
+
+        sql.run_to_completion()
+
+        df = out.to_pandas()
+
+        assert df.shape[0] == 3
 
 
 if __name__ == '__main__':
