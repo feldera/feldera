@@ -275,6 +275,14 @@ polymorphic_return_function2!(
     Timestamp
 );
 
+pub fn minus_Date_ShortInterval_Date(left: Date, right: ShortInterval) -> Date {
+    let days = (right.milliseconds() / (86400 * 1000)) as i32;
+    let diff = left.days() - days;
+    Date::new(diff)
+}
+
+polymorphic_return_function2!(minus, Date, Date, ShortInterval, ShortInterval, Date, Date);
+
 pub fn minus_Timestamp_Timestamp_LongInterval(left: Timestamp, right: Timestamp) -> LongInterval {
     let ldate = left.to_dateTime();
     let rdate = right.to_dateTime();
