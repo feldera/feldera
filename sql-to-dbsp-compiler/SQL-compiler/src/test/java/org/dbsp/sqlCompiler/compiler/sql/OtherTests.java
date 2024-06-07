@@ -935,6 +935,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode jsonNode = mapper.readTree(json);
         Assert.assertNotNull(jsonNode);
+        Assert.assertNotNull(jsonNode.get(0).get("snippet").asText());
     }
 
     @Test
