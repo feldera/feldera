@@ -179,7 +179,8 @@ class SQLContext:
                         self.pipeline_name,
                         tbl_name,
                         "json",
-                        datum.to_json(orient='records', date_format="iso"),
+                        datum.to_json(orient='records', date_format='epoch'),
+                        json_flavor = 'pandas',
                         array=True,
                         dont_serialize=True
                     )

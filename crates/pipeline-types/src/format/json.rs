@@ -140,6 +140,8 @@ pub enum JsonFlavor {
     /// JSON format accepted by the Kafka Connect `JsonConverter` class.
     #[serde(rename = "kafka_connect_json_converter")]
     KafkaConnectJsonConverter,
+    #[serde(rename = "pandas")]
+    Pandas,
     /// Parquet to-json format.
     /// (For internal use only)
     #[serde(skip)]

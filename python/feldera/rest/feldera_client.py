@@ -381,6 +381,7 @@ class FelderaClient:
             array: bool = False,
             force: bool = False,
             update_format: str = "raw",
+            json_flavor: str = None,
             dont_serialize: bool = False,
     ):
         """
@@ -395,7 +396,8 @@ class FelderaClient:
         :param force: If True, the data will be inserted even if the pipeline is paused
         :param update_format: JSON data change event format, used in conjunction with the "json" format,
             the default value is "insert_delete", other supported formats: "weighted", "debezium", "snowflake", "raw"
-
+        :param json_flavor: JSON encoding used for individual table records, the default value is "default", other supported encodings:
+            "debezium_mysql", "snowflake", "kafka_connect_json_converter", "pandas"
         :param data: The data to insert
         :param dont_serialize: If True, the data will not be serialized to JSON. Use if the data is already serialized.
         """
@@ -405,6 +407,9 @@ class FelderaClient:
 
         if update_format not in ["insert_delete", "weighted", "debezium", "snowflake", "raw"]:
             raise ValueError("update_format must be one of 'insert_delete', 'weighted', 'debezium', 'snowflake', 'raw'")
+
+        if json_flavor is not None and json_flavor not in ["default", "debezium_mysql", "snowflake", "kafka_connect_json_converter", "pandas"]:
+            raise ValueError("json_flavor must be one of 'default', 'debezium_mysql', 'snowflake', 'kafka_connect_json_converter', 'pandas'")
 
         # python sends `True` which isn't accepted by the backend
         array = _prepare_boolean_input(array)
@@ -418,6 +423,9 @@ class FelderaClient:
         if format == "json":
             params["array"] = array
             params["update_format"] = update_format
+
+        if json_flavor is not None:
+            params["json_flavor"] = json_flavor
 
         content_type = "application/json"
 

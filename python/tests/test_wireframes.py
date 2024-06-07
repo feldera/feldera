@@ -331,7 +331,7 @@ class TestWireframes(unittest.TestCase):
         VIEW_NAME = "s"
 
         # backend doesn't support TIMESTAMP of format: "2024-06-06T18:06:28.443"
-        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING", "birthdate": "STRING"}))
+        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING", "birthdate": "TIMESTAMP"}))
 
         sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
 

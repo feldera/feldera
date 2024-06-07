@@ -3790,7 +3790,8 @@
           "default",
           "debezium_mysql",
           "snowflake",
-          "kafka_connect_json_converter"
+          "kafka_connect_json_converter",
+          "pandas"
         ]
       },
       "JsonParserConfig": {
