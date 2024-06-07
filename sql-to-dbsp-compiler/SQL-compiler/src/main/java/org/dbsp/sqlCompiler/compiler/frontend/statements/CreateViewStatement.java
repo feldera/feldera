@@ -27,6 +27,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -37,12 +38,14 @@ public class CreateViewStatement extends CreateRelationStatement {
     /** Compiled and optimized query. */
     private final RelRoot compiled;
     public final SqlNode query;
+    public final boolean local;
 
-    public CreateViewStatement(SqlNode node, String statement, String tableName,
+    public CreateViewStatement(SqlCreateLocalView node, String statement, String tableName,
                                boolean nameIsQuoted, @Nullable String comment,
                                List<RelColumnMetadata> columns, SqlNode query,
                                RelRoot compiled) {
         super(node, statement, tableName, nameIsQuoted, comment, columns);
+        this.local = node.isLocal;
         this.query = query;
         this.compiled = compiled;
     }
