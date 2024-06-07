@@ -5,7 +5,9 @@ use crate::{
     interval::{LongInterval, ShortInterval},
     FromInteger, ToInteger,
 };
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
+use chrono::{
+    DateTime, Datelike, Days, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc,
+};
 use core::fmt::Formatter;
 use dbsp::num_entries_scalar;
 use num::PrimInt;
@@ -275,6 +277,14 @@ polymorphic_return_function2!(
     Timestamp
 );
 
+pub fn plus_Date_ShortInterval_Date(left: Date, right: ShortInterval) -> Date {
+    let days = (right.milliseconds() / (86400 * 1000)) as i32;
+    let diff = left.days() + days;
+    Date::new(diff)
+}
+
+polymorphic_return_function2!(plus, Date, Date, ShortInterval, ShortInterval, Date, Date);
+
 pub fn minus_Date_ShortInterval_Date(left: Date, right: ShortInterval) -> Date {
     let days = (right.milliseconds() / (86400 * 1000)) as i32;
     let diff = left.days() - days;
@@ -282,6 +292,40 @@ pub fn minus_Date_ShortInterval_Date(left: Date, right: ShortInterval) -> Date {
 }
 
 polymorphic_return_function2!(minus, Date, Date, ShortInterval, ShortInterval, Date, Date);
+
+pub fn plus_Date_LongInterval_Date(left: Date, right: LongInterval) -> Date {
+    let date = left.to_date();
+    if right.months() < 0 {
+        let result = date
+            .checked_sub_months(Months::new(-right.months() as u32))
+            .unwrap();
+        Date::from_date(result)
+    } else {
+        let result = date
+            .checked_add_months(Months::new(right.months() as u32))
+            .unwrap();
+        Date::from_date(result)
+    }
+}
+
+polymorphic_return_function2!(plus, Date, Date, LongInterval, LongInterval, Date, Date);
+
+pub fn minus_Date_LongInterval_Date(left: Date, right: LongInterval) -> Date {
+    let date = left.to_date();
+    if right.months() < 0 {
+        let result = date
+            .checked_add_months(Months::new(-right.months() as u32))
+            .unwrap();
+        Date::from_date(result)
+    } else {
+        let result = date
+            .checked_sub_months(Months::new(right.months() as u32))
+            .unwrap();
+        Date::from_date(result)
+    }
+}
+
+polymorphic_return_function2!(minus, Date, Date, LongInterval, LongInterval, Date, Date);
 
 pub fn minus_Timestamp_Timestamp_LongInterval(left: Timestamp, right: Timestamp) -> LongInterval {
     let ldate = left.to_dateTime();
@@ -540,6 +584,12 @@ impl Date {
         Self { days }
     }
 
+    pub fn from_date(date: NaiveDate) -> Self {
+        Self {
+            days: (date - NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()).num_days() as i32,
+        }
+    }
+
     pub fn days(&self) -> i32 {
         self.days
     }
@@ -552,6 +602,15 @@ impl Date {
         Utc.timestamp_opt(self.days() as i64 * 86400, 0)
             .single()
             .unwrap()
+    }
+
+    pub fn to_date(&self) -> NaiveDate {
+        let nd = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+        if self.days >= 0 {
+            nd.checked_add_days(Days::new(self.days as u64)).unwrap()
+        } else {
+            nd.checked_sub_days(Days::new((-self.days) as u64)).unwrap()
+        }
     }
 
     pub fn first_day_of_week() -> i64 {
