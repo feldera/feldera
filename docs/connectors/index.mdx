@@ -35,7 +35,7 @@ A connector specification consists of three parts:
   (e.g.,
   [Kafka](/docs/connectors/sources/kafka), 
   [URL](/docs/connectors/sources/http-get), 
-  Delta Lake, etc.) and its configuration.
+  [Delta Lake](/docs/connectors/sources/delta), etc.) and its configuration.
 * Data format specification, which defines the data format for the connector
   (e.g., 
   [CSV](/docs/api/csv),
@@ -49,6 +49,63 @@ This architecture allows the user to combine different transports and data forma
   HTTP [input](/docs/connectors/sources/http) and [output](/docs/connectors/sinks/http) connectors
   which are not managed by the user, as they directly feed/fetch data into/from a pipeline via
   dedicated pipeline endpoints.
+
+## Configuring the output buffer
+
+By default a Feldera pipeline sends a batch of changes to the output transport
+for each batch of input updates it processes.  This can result in a stream of
+small updates, which is normal and even preferable for output transports like
+[Kafka](/docs/connectors/sinks/kafka); however it can cause performance problems
+for other connectors, such as the [Delta Lake connector](/docs/connectors/sinks/delta)
+by creating a large number of small files.
+
+The output buffer mechanism is designed to solve this problem by decoupling the
+rate at which the pipeline pushes changes to the output transport from the rate
+of input changes.  It works by accumulating updates inside the pipeline
+for up to a user-defined period of time or until accumulating a user-defined number
+of updates and writing them as a single batch to the output transport.
+
+The output buffer can be setup for each individual output connector as part
+of connector configuration.  The following parameters are used to configure the
+output buffer:
+
+* `enable_output_buffer` - Enable output buffer.
+
+* `max_output_buffer_time_millis` - Maximum time in milliseconds data is kept
+   in the output buffer.
+
+   When not specified, data is kept in the buffer indefinitely until one of
+   the other trigger conditions is satisfied.  When this option is
+   set the buffer will be flushed at most every
+   `max_output_buffer_time_millis` milliseconds.
+
+   NOTE: this configuration option requires the `enable_output_buffer` flag
+   to be set.
+
+* `max_output_buffer_size_records` - Maximum number of updates to be kept in
+   the output buffer.
+
+   This parameter bounds the maximal size of the buffer.  
+   Note that the size of the buffer is not always equal to the
+   total number of updates output by the pipeline. Updates to the
+   same record can overwrite or cancel previous updates.
+
+   When not specified, the buffer can grow indefinitely until one of
+   the other trigger conditions is satisfied.
+
+   NOTE: this configuration option requires the `enable_output_buffer` flag
+   to be set.
+
+:::note
+
+When the `enable_output_buffer` flag is set, at least one of
+`max_output_buffer_time_millis` or `max_output_buffer_size_records` must be
+specified.
+
+:::
+
+See [Delta Lake output connector documentation](/docs/connectors/sinks/delta#curl)
+for an example of configuring the output buffer.
 
 ## Example usage
 

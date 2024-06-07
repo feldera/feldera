@@ -3,9 +3,11 @@ import pandas
 import re
 
 from typing import Optional, Dict, Callable
+
 from typing_extensions import Self
 from queue import Queue
 
+from feldera.rest.errors import FelderaAPIError
 from feldera import FelderaClient
 from feldera.rest.program import Program
 from feldera.rest.pipeline import Pipeline
@@ -14,6 +16,9 @@ from feldera._sql_table import SQLTable
 from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
+from feldera._helpers import ensure_dataframe_has_columns
+from feldera.formats import JSONFormat, CSVFormat, AvroFormat
+from feldera._helpers import validate_connector_input_format
 from enum import Enum
 
 
@@ -42,6 +47,8 @@ class SQLContext:
             pipeline_description: str = None,
             program_name: str = None,
             program_description: str = None,
+            storage: bool = False,
+            workers: int = 8
     ):
         self.build_mode: Optional[BuildMode] = None
         self.is_pipeline_running: bool = False
@@ -76,6 +83,8 @@ class SQLContext:
 
         self.program_name: str = program_name or pipeline_name
         self.program_description: str = program_description or ""
+        self.storage: bool = storage
+        self.workers: int = workers
 
     def __build_ddl(self):
         """
@@ -115,10 +124,12 @@ class SQLContext:
                 attached_con = con.attach_relation(view_name, False)
                 attached_cons.append(attached_con)
 
+        config = { 'storage': self.storage, 'workers': self.workers }
         pipeline = Pipeline(
             self.pipeline_name,
             self.program_name,
             self.pipeline_description,
+            config=config,
             attached_connectors=attached_cons
         )
 
@@ -176,6 +187,21 @@ class SQLContext:
         self.build_mode = BuildMode.GET_OR_CREATE
         return self
 
+    def pipeline_state(self) -> str:
+        """
+        Returns the state of the pipeline.
+        """
+
+        try:
+            pipeline = self.client.get_pipeline(self.pipeline_name)
+            return pipeline.current_state()
+
+        except FelderaAPIError as err:
+            if err.status_code == 404:
+                return "Uninitialized"
+            else:
+                raise err
+
     def register_table(self, table_name: str, schema: Optional[SQLSchema] = None, ddl: str = None):
         """
         Registers a table with the SQLContext. The table can be registered with a schema or with the SQL DDL.
@@ -225,6 +251,8 @@ class SQLContext:
         :param table_name: The name of the table.
         :param df: The pandas DataFrame to be pushed to the pipeline.
         """
+
+        ensure_dataframe_has_columns(df)
 
         tbl = self.tables.get(table_name)
 
@@ -365,6 +393,125 @@ class SQLContext:
 
         handler = CallbackRunner(self.client, self.pipeline_name, view_name, callback, queue)
         handler.start()
+
+    def connect_source_kafka(
+        self,
+        table_name: str,
+        connector_name: str,
+        config: dict,
+        fmt: JSONFormat | CSVFormat
+    ):
+        """
+        Associates the specified kafka topics on the specified Kafka server as input source for the specified table in
+        Feldera. The table is populated with changes from the specified kafka topics.
+
+        :param table_name: The name of the table.
+        :param connector_name: The unique name for this connector.
+        :param config: The configuration for the kafka connector.
+        :param fmt: The format of the data in the kafka topic.
+        """
+
+        if config.get("bootstrap.servers") is None:
+            raise ValueError("'bootstrap.servers' is required in the config")
+
+        if config.get("topics") is None:
+            raise ValueError("topics is required in the config")
+
+        validate_connector_input_format(fmt)
+
+        connector = Connector(
+            name=connector_name,
+            config={
+                "transport": {
+                    "name": "kafka_input",
+                    "config": config,
+                },
+                "format": fmt.to_dict(),
+            }
+        )
+
+        if table_name in self.input_connectors_buffer:
+            self.input_connectors_buffer[table_name].append(connector)
+        else:
+            self.input_connectors_buffer[table_name] = [connector]
+
+    def connect_sink_kafka(
+        self,
+        view_name: str,
+        connector_name: str,
+        config: dict,
+        fmt: JSONFormat | CSVFormat | AvroFormat
+    ):
+        """
+        Associates the specified kafka topic on the specified Kafka server as output sink for the specified view in
+        Feldera. The topic is populated with changes in the specified view.
+
+        :param view_name: The name of the view whose changes are sent to kafka topic.
+        :param connector_name: The unique name for this connector.
+        :param config: The configuration for the kafka connector.
+        :param fmt: The format of the data in the kafka topic.
+        """
+
+        if config.get("bootstrap.servers") is None:
+            raise ValueError("'bootstrap.servers' is required in the config")
+
+        if config.get("topic") is None:
+            raise ValueError("topic is required in the config")
+
+        validate_connector_input_format(fmt)
+
+        connector = Connector(
+            name=connector_name,
+            config={
+                "transport": {
+                    "name": "kafka_output",
+                    "config": config,
+                },
+                "format": fmt.to_dict(),
+            }
+        )
+
+        if view_name in self.output_connectors_buffer:
+            self.output_connectors_buffer[view_name].append(connector)
+        else:
+            self.output_connectors_buffer[view_name] = [connector]
+
+    def connect_source_url(
+        self,
+        table_name: str,
+        connector_name: str,
+        path: str,
+        fmt: JSONFormat | CSVFormat
+    ):
+        """
+        Associates the specified URL as input source for the specified table in Feldera.
+        Feldera will make a GET request to the specified URL to read the data and populate the table.
+
+        :param table_name: The name of the table.
+        :param connector_name: The unique name for this connector.
+        :param path: The URL to read the data from.
+        :param fmt: The format of the data in the URL.
+        """
+
+        validate_connector_input_format(fmt)
+
+        connector = Connector(
+            name=connector_name,
+            config={
+                "transport": {
+                    "name": "url_input",
+                    "config": {
+                        "path": path
+                    }
+                },
+                "format": fmt.to_dict(),
+            }
+        )
+
+        if table_name in self.input_connectors_buffer:
+            self.input_connectors_buffer[table_name].append(connector)
+        else:
+            self.input_connectors_buffer[table_name] = [connector]
 
     def run_to_completion(self):
         """

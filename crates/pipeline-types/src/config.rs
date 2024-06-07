@@ -296,7 +296,7 @@ pub struct OutputBufferConfig {
 
     /// Maximum number of updates to be kept in the output buffer.
     ///
-    /// This parameter bounds the maximal size of the buffer.  
+    /// This parameter bounds the maximal size of the buffer.
     /// Note that the size of the buffer is not always equal to the
     /// total number of updates output by the pipeline. Updates to the
     /// same record can overwrite or cancel previous updates.
@@ -308,6 +308,22 @@ pub struct OutputBufferConfig {
     /// to be set.
     #[serde(default = "default_max_buffer_size_records")]
     pub max_output_buffer_size_records: usize,
+}
+
+impl OutputBufferConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.enable_output_buffer
+            && self.max_output_buffer_size_records == default_max_buffer_size_records()
+            && self.max_output_buffer_time_millis == default_max_buffer_time_millis()
+        {
+            return Err(
+                "when the 'enable_output_buffer' flag is set, one of 'max_output_buffer_size_records' and 'max_output_buffer_time_millis' settings must be specified"
+                    .to_string(),
+            );
+        }
+
+        Ok(())
+    }
 }
 
 /// Describes an output connector configuration
@@ -558,4 +574,9 @@ pub struct ResourceConfig {
     /// for an instance of this pipeline
     #[serde(default)]
     pub storage_mb_max: Option<u64>,
+
+    /// Storage class to use for an instance of this pipeline.
+    /// The class determines storage performance such as IOPS and throughput.
+    #[serde(default)]
+    pub storage_class: Option<String>,
 }

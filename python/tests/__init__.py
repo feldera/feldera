@@ -1,6 +1,6 @@
-from feldera.rest import Client
+from feldera.rest import FelderaClient
 
 BASE_URL = 'http://localhost:8080'
 
 
-TEST_CLIENT = Client(BASE_URL)
+TEST_CLIENT = FelderaClient(BASE_URL)

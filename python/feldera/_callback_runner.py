@@ -23,6 +23,7 @@ class CallbackRunner(Thread):
             queue: Optional[Queue],
     ):
         super().__init__()
+        self.daemon = True
         self.client: FelderaClient = client
         self.pipeline_name: str = pipeline_name
         self.view_name: str = view_name

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Documentation: added the
+  [fraud detection use case](https://feldera.com/docs/use_cases/fraud_detection)
+  to the docs section of the website.
+- API: storage class can be configured via pipeline resources
+  ([#1829](https://github.com/feldera/feldera/pull/1829))
+- [Python] Added support for Kafka connector via Python SDK
+  ([#1807](https://github.com/feldera/feldera/pull/1807))
+- [Python] Added support for HTTP GET connector via Python SDK
+- [Python] Add support for Avro format
+  ([#1836](https://github.com/feldera/feldera/pull/1836))
+
 ### Fixed
 
 - WebConsole: Fix crash when displaying anonymous output columns (#1757)

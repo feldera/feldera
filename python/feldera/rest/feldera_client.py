@@ -15,7 +15,7 @@ def _prepare_boolean_input(value: bool) -> str:
     return "true" if value else "false"
 
 
-class Client:
+class FelderaClient:
     """
     A client for the Feldera HTTP API
 
@@ -86,6 +86,7 @@ class Client:
         body = {
             "code": program.code,
             "description": program.description or "",
+            "config": { "profile": "optimized" }
         }
 
         resp = self.http.put(

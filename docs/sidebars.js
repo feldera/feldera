@@ -24,7 +24,7 @@ const sidebars = {
         id: 'get-started'
       },
       items: [
-	'intro',
+	'docker',
 	'sandbox',
       ]
     },
@@ -33,7 +33,7 @@ const sidebars = {
       label: 'Deploy',
       link: { type: 'doc', id: 'deploy' },
       items: [
-        'intro',
+        'docker',
         {
           type: 'category',
           label: 'Bring Your Own Cloud',
@@ -74,7 +74,16 @@ const sidebars = {
       type: 'category',
       label: 'Use Cases',
       items: [
-        'tour/tour',
+          {
+              type: 'doc',
+              id: 'use_cases/fraud_detection/fraud_detection',
+              label: 'Real-time Fraud Detection',
+          },
+          {
+              type: 'doc',
+              id: 'tour/tour',
+              label: 'Security Operations',
+          }
       ]
     },
     {
@@ -115,6 +124,11 @@ const sidebars = {
                       },
                       {
                           type: 'doc',
+                          id: 'connectors/sources/delta',
+                          label: 'Delta Lake'
+                      },                      
+                      {
+                          type: 'doc',
                           id: 'connectors/sources/kafka',
                           label: 'Kafka'
                       },
@@ -137,6 +151,11 @@ const sidebars = {
                           type: 'doc',
                           id: 'connectors/sinks/http',
                           label: 'HTTP'
+                      },
+                      {
+                          type: 'doc',
+                          id: 'connectors/sinks/delta',
+                          label: 'Delta Lake'
                       },
                       {
                           type: 'doc',

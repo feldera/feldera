@@ -64,3 +64,135 @@ to to call :meth:`.SQLContext.listen` before you call
 
     # see the result
     print(df)
+
+
+Kafka
+******
+
+To setup Kafka as the source use :meth:`.SQLContext.connect_source_kafka` and as the sink use
+:meth:`.SQLContext.connect_sink_kafka`.
+
+Both of these methods require a ``config`` which is a dictionary, and ``fmt`` which is a
+`data format configuration <https://www.feldera.com/docs/api/json>`_ that is either a
+:class:`.JSONFormat` or :class:`.CSVFormat`.
+
+The input config looks like the following:
+
+.. highlight:: python
+.. code-block:: python
+
+    source_config = {
+        "topics": [INPUT_TOPIC],
+        "bootstrap.servers": KAFKA_SERVER_URL,
+        "auto.offset.reset": "earliest",
+    }
+
+Here,
+
+- ``topics`` is a list of Kafka topics to subscribe to for input data.
+- ``bootstrap.servers`` is the ``host:port`` of the Kafka server.
+- Similarly, other
+  `relevant options supported by librdkafka <https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md>`_
+  can also be set here, like: ``auto.offset.reset``
+
+More on Kafka as an input connector at: https://www.feldera.com/docs/connectors/sources/kafka
+
+Similarly, the output config looks like the following:
+
+.. highlight:: python
+.. code-block:: python
+
+    sink_config = {
+        "topic": OUTPUT_TOPIC,
+        "bootstrap.servers": PIPELINE_TO_KAFKA_SERVER,
+        "auto.offset.reset": "earliest",
+    }
+
+Here the only notable difference is:
+
+- ``topic`` is the name of the topic to write the output data to.
+
+More on Kafka as the output connector at: https://www.feldera.com/docs/connectors/sinks/kafka
+
+.. warning::
+    Kafka is a streaming data source, therefore running: :meth:`.SQLContext.run_to_completion` will run forever.
+
+.. highlight:: python
+.. code-block:: python
+
+    from feldera import SQLContext, SQLSchema
+    from feldera.formats import JSONFormat, JSONUpdateFormat
+
+    TABLE_NAME = "example"
+    VIEW_NAME = "example_count"
+    KAFKA_SERVER = "localhost:9092"
+
+    sql = SQLContext('kafka', 'http://localhost:8080').get_or_create()
+    sql.register_table(TABLE_NAME, SQLSchema({"id": "INT NOT NULL PRIMARY KEY"}))
+    sql.register_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
+
+    source_config = {
+        "topics": ["example_topic"],
+        "bootstrap.servers": KAFKA_SERVER,
+        "auto.offset.reset": "earliest",
+    }
+
+    sink_config = {
+        "topic": "example_topic_out",
+        "bootstrap.servers": KAFKA_SERVER,
+        "auto.offset.reset": "earliest",
+    }
+
+    # Data format configuration
+    format = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
+
+    sql.connect_source_kafka(TABLE_NAME, "kafka_conn_in", source_config, format)
+    sql.connect_sink_kafka(VIEW_NAME, "kafka_conn_out", sink_config, format)
+
+    out = sql.listen(VIEW_NAME)
+    sql.start()
+    time.sleep(10)
+    sql.shutdown()
+    df = out.to_pandas()
+
+
+HTTP GET
+*********
+
+
+Feldera can ingest data from a user-provided URL into a SQL table.
+The file is fetched using HTTP with the GET method.
+
+More on the HTTP GET connector at: https://www.feldera.com/docs/connectors/sources/http-get
+
+.. note::
+    The JSON used as input for Feldera should be in
+    `newline-delimited JSON (NDJSON) format <https://www.feldera.com/docs/api/json/#encoding-multiple-changes>`_.
+
+
+.. highlight:: python
+.. code-block:: python
+
+    from feldera import SQLContext, SQLSchema
+    from feldera.formats import JSONFormat, JSONUpdateFormat
+
+    sql = SQLContext("test_http_get", TEST_CLIENT).get_or_create()
+
+    TBL_NAME = "items"
+    VIEW_NAME = "s"
+
+    sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
+
+    sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+
+    path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
+
+    fmt = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
+    sql.connect_source_url(TBL_NAME, "part", path, fmt)
+
+    out = sql.listen(VIEW_NAME)
+
+    sql.run_to_completion()
+
+    df = out.to_pandas()
+

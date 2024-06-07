@@ -65,6 +65,31 @@ public class TimeTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue1843() {
+        String sql = """
+                create table credit_card_transactions(transaction_time timestamp);
+                
+                create table my_timer(t timestamp);\s
+                
+                create view recent_transactions as
+                SELECT * FROM credit_card_transactions
+                WHERE transaction_time >= (SELECT t FROM my_timer) - INTERVAL 1 DAY;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue1844() {
+        String sql = """
+                create table credit_card_transactions(transaction_time timestamp);
+                create table my_timer(id int primary key, t timestamp);\s
+                
+                create view recent_transactions as
+                SELECT * FROM credit_card_transactions
+                WHERE transaction_time >= (SELECT DATE_SUB(t, INTERVAL 1 DAY) FROM my_timer);""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void testInterval() {
         this.testQuery("SELECT INTERVAL '20' YEAR",
                 new DBSPIntervalMonthsLiteral(240));

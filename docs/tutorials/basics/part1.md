@@ -18,13 +18,13 @@ Amazon S3 and Redpanda, a Kafka-compatible message queue.
 ## Step 0. Launch Feldera
 
 Make sure that you have Feldera up and running by following the [Getting
-Started](/intro.md) guide.  Open the Feldera Web Console on
+Started](/docker.md) guide.  Open the Feldera Web Console on
 [localhost:8080](http://localhost:8080).
 
 :::tip For the impatient
 
 If you started Feldera using the demo profile as described in the [Getting
-Started](/intro.md) guide, it has created a couple of SQL programs and
+Started](/docker.md) guide, it has created a couple of SQL programs and
 pipelines.  One of these programs, called
 "Feldera Basics Tutorial" and the associated pipeline
 "Feldera Basics Tutorial Pipeline" are identical to the ones

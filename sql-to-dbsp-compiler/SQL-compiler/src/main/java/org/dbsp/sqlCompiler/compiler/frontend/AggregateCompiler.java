@@ -405,8 +405,8 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression increment = aggregatedValue;
         if (!increment.getType().mayBeNull)
             increment = increment.some();
-        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "DefaultOptSemigroup",
-                false, accumulator.getType().setMayBeNull(false));
+        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
+                false, accumulator.getType());
         this.setFoldingFunction(new DBSPAggregate.Implementation(
                 node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, null));
     }

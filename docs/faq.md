@@ -149,7 +149,7 @@ expect that it will be ready within the next 6 months.
 - You can try our online sandbox: <https://try.feldera.com>
 
 - You can download a docker image that offers everything packaged:
-  <https://www.feldera.com/docs/intro#start-the-demo>
+  <https://www.feldera.com/docs/docker#start-the-demo>
 
 - We will be very happy to help design a prototype solution for your
   particular problem.

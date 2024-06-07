@@ -1,7 +1,7 @@
-# Tour
+# Use Case: Security Operations
 
 Once you've started the Feldera demo, as described in [Get
-Started](/docs/intro), navigate to [localhost:8080](http://localhost:8080)
+Started](/docs/docker), navigate to [localhost:8080](http://localhost:8080)
 in your web browser to view the Feldera user interface.  A status
 dashboard fills most of the home screen, as shown below, and a
 sidebar on the left offers access to tabs for Feldera features:

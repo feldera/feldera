@@ -1235,6 +1235,12 @@ impl ControllerInner {
 
         let is_fault_tolerant;
 
+        endpoint_config
+            .connector_config
+            .output_buffer_config
+            .validate()
+            .map_err(|e| ControllerError::invalid_output_buffer_configuration(endpoint_name, &e))?;
+
         let encoder = if let Some(mut endpoint) = endpoint {
             endpoint
                 .connect(Box::new(move |fatal: bool, e: AnyError| {

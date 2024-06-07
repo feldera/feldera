@@ -1300,6 +1300,7 @@ pub(crate) fn runtime_config() -> impl Strategy<Value = RuntimeConfig> {
             memory_mb_min: config.7,
             memory_mb_max: config.8,
             storage_mb_max: config.9,
+            storage_class: None,
         },
         min_storage_rows: None,
     })
@@ -1335,6 +1336,7 @@ pub(crate) fn option_runtime_config() -> impl Strategy<Value = Option<RuntimeCon
                 memory_mb_min: config.7,
                 memory_mb_max: config.8,
                 storage_mb_max: config.9,
+                storage_class: None,
             },
             min_storage_rows: None,
         })

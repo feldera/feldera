@@ -858,6 +858,7 @@
                     "cpu_cores_min": null,
                     "memory_mb_max": null,
                     "memory_mb_min": null,
+                    "storage_class": null,
                     "storage_mb_max": null
                   },
                   "storage": false,
@@ -3555,7 +3556,7 @@
         "properties": {
           "datetime": {
             "type": "string",
-            "description": "Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format.\n\nWhen this option is set, the connector finds and opens the version of the table as of the\nspecified point in time.  In `snapshot` and `snapshot_and_follow` modes, it retrieves the\nsnapshot of this version of the table.  In `follow` and `snapshot_and_follow` modes, it\nfollows transaction log records **after** this version.\n\nNote: at most one of `version` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
+            "description": "Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,\n\"2024-12-09T16:09:53+00:00.\n\nWhen this option is set, the connector finds and opens the version of the table as of the\nspecified point in time.  In `snapshot` and `snapshot_and_follow` modes, it retrieves the\nsnapshot of this version of the table (based on the server time recorded in the transaction\nlog, not the event time encoded in the data).  In `follow` and `snapshot_and_follow` modes, it\nfollows transaction log records **after** this version.\n\nNote: at most one of `version` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
             "nullable": true
           },
           "mode": {
@@ -3568,12 +3569,12 @@
           },
           "timestamp_column": {
             "type": "string",
-            "description": "Table column that serves as an event timestamp.\n\nWhen this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,\nthe snapshot of the table will be sorted by the corresponding column.",
+            "description": "Table column that serves as an event timestamp.\n\n\nWhen this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,\nthe snapshot of the table is ingested in the timestamp order.  This setting is required\nfor tables declared with the\n[`LATENESS`](https://www.feldera.com/docs/sql/streaming#lateness-expressions) attribute\nin Feldera SQL. It impacts the performance of the connector, since data must be sorted\nbefore pushing it to the pipeline; therefore it is not recommended to use this\nsettings for tables without `LATENESS`.",
             "nullable": true
           },
           "uri": {
             "type": "string",
-            "description": "Table URI."
+            "description": "Table URI.\n\nExample: \"s3://feldera-fraud-detection-data/demographics_train\""
           },
           "version": {
             "type": "integer",
@@ -4877,6 +4878,11 @@
             "description": "The minimum memory in Megabytes to reserve\nfor an instance of this pipeline",
             "nullable": true,
             "minimum": 0
+          },
+          "storage_class": {
+            "type": "string",
+            "description": "Storage class to use for an instance of this pipeline.\nThe class determines storage performance such as IOPS and throughput.",
+            "nullable": true
           },
           "storage_mb_max": {
             "type": "integer",
