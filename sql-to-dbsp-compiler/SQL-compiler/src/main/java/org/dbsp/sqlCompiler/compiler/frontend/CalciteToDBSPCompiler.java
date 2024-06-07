@@ -113,7 +113,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.HasSchema;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlLatenessStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlRemove;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -1964,7 +1964,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
 
-        if (this.generateOutputForNextView) {
+        if (this.generateOutputForNextView && !view.local) {
             this.metadata.addView(view);
             // Create two operators chained, a ViewOperator and a SinkOperator.
             DBSPViewOperator vo = new DBSPViewOperator(

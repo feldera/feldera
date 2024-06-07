@@ -272,13 +272,14 @@ SqlCreate SqlCreateView(Span s, boolean replace) :
     final SqlIdentifier id;
     SqlNodeList columnList = null;
     final SqlNode query;
+    boolean local = false;
 }
 {
+    [ <LOCAL> { local = true; } ]
     <VIEW> id = CompoundIdentifier()
     [ columnList = ParenthesizedSimpleIdentifierList() ]
     <AS> query = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY) {
-        return SqlDdlNodes.createView(s.end(this), replace, id, columnList,
-            query);
+        return new SqlCreateLocalView(s.end(this), replace, local, id, columnList, query);
     }
 }
 

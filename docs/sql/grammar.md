@@ -42,7 +42,7 @@ typedef
   | name generalType [, name type ]*
 
 createViewStatement
-  :   CREATE VIEW name
+  :   CREATE [ LOCAL ] VIEW name
       [ '(' columnName [, columnName ]* ')' ]
       AS query
 
@@ -174,6 +174,12 @@ nth item in the `SELECT` clause.
 
 SQL `CREATE FUNCTION` can be used to declare [user-defined
 functions](udf.md).
+
+SQL `CREATE VIEW` is used to declare a view.  The optional `LOCAL`
+keyword can be used to indicate that the declared view is not exposed
+to the outside world as an output of the computation.  This is useful
+for modularizing the SQL code, by declaring intermediate views that
+are used in the implementation of other views.
 
 An aggregate query is a query that contains a `GROUP BY` or a `HAVING`
 clause, or aggregate functions in the `SELECT` clause. In the

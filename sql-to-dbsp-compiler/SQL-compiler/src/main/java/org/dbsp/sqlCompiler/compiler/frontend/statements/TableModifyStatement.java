@@ -28,10 +28,8 @@ import org.apache.calcite.sql.SqlNode;
 
 import javax.annotation.Nullable;
 
-/**
- * Describes a SQL statements that modifies a table
- * (e.g., an INSERT or REMOVE statement).
- */
+/** Describes a SQL statements that modifies a table
+ * (e.g., an INSERT or REMOVE statement). */
 public class TableModifyStatement extends FrontEndStatement {
     public final String tableName;
     public final SqlNode data;

@@ -26,7 +26,6 @@ package org.dbsp.sqlCompiler.compiler.sql;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
-import org.apache.calcite.sql.ddl.SqlCreateView;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
@@ -34,6 +33,7 @@ import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlExtendedColumnDeclaration;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -58,6 +58,7 @@ public class ParserTests {
                 ", COL4 VARCHAR" +
                 ")";
         String ddl1 = "CREATE VIEW V AS SELECT * FROM T";
+        String ddl2 = "CREATE LOCAL VIEW V2 AS SELECT * FROM T";
 
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
@@ -65,7 +66,12 @@ public class ParserTests {
 
         node = calcite.parse(ddl1);
         Assert.assertNotNull(node);
-        Assert.assertTrue(node instanceof SqlCreateView);
+        Assert.assertTrue(node instanceof SqlCreateLocalView);
+
+        node = calcite.parse(ddl2);
+        Assert.assertNotNull(node);
+        Assert.assertTrue(node instanceof SqlCreateLocalView);
+        Assert.assertTrue(((SqlCreateLocalView) node).isLocal);
     }
 
     @Test

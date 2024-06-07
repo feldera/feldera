@@ -953,6 +953,23 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
+    public void testLocalView() {
+        String sql = """
+                    CREATE TABLE T(I INTEGER, S VARCHAR);
+                    CREATE LOCAL VIEW V AS SELECT * FROM T;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        Assert.assertEquals(0, circuit.getOutputCount());
+
+        String oneMore = "CREATE VIEW W AS SELECT * FROM V;";
+        compiler = this.testCompiler();
+        compiler.compileStatements(sql + oneMore);
+        circuit = getCircuit(compiler);
+        Assert.assertEquals(1, circuit.getOutputCount());
+    }
+
+    @Test
     public void testRemove() {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatement("CREATE TABLE T(I INTEGER, S VARCHAR)");

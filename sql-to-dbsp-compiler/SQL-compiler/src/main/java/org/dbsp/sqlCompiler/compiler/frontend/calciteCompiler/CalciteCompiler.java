@@ -74,7 +74,6 @@ import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
 import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
 import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.ddl.SqlCreateType;
-import org.apache.calcite.sql.ddl.SqlCreateView;
 import org.apache.calcite.sql.ddl.SqlDropTable;
 import org.apache.calcite.sql.ddl.SqlKeyConstraint;
 import org.apache.calcite.sql.fun.SqlLibrary;
@@ -102,15 +101,16 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlLatenessStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.ICastable;
@@ -847,7 +847,7 @@ public class CalciteCompiler implements IWritesLogs {
             }
             case CREATE_VIEW: {
                 SqlToRelConverter converter = this.getConverter();
-                SqlCreateView cv = (SqlCreateView) node;
+                SqlCreateLocalView cv = (SqlCreateLocalView) node;
                 SqlNode query = cv.query;
                 if (cv.getReplace())
                     throw new UnsupportedException("OR REPLACE not supported", object);
@@ -861,7 +861,7 @@ public class CalciteCompiler implements IWritesLogs {
                 relRoot = relRoot.withRel(optimized);
                 String viewName = cv.name.getSimple();
                 CreateViewStatement view = new CreateViewStatement(
-                        node, sqlStatement,
+                        cv, sqlStatement,
                         cv.name.getSimple(), Utilities.identifierIsQuoted(cv.name),
                         comment, columns, cv.query, relRoot);
                 // From Calcite's point of view we treat this view just as another table.
