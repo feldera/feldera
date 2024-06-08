@@ -40,6 +40,15 @@ pub const BUFFER_CACHE_HIT: &str = "disk.buffer_cache_hit";
 /// Total number of buffer cache misses.
 pub const BUFFER_CACHE_MISS: &str = "disk.buffer_cache_miss";
 
+/// Total number of compactions done by compaction thread.
+pub const TOTAL_COMPACTIONS: &str = "file.compacted";
+
+/// Sizes of batches that get compacted.
+pub const COMPACTION_SIZE: &str = "file.compaction_size";
+
+/// Compaction duration for a single batch.
+pub const COMPACTION_DURATION: &str = "file.compaction_duration";
+
 /// Adds descriptions for the metrics we expose.
 pub(super) fn describe_disk_metrics() {
     // Storage backend metrics.
@@ -67,4 +76,13 @@ pub(super) fn describe_disk_metrics() {
     // Buffer cache metrics.
     describe_counter!(BUFFER_CACHE_HIT, "total number of buffer cache hits");
     describe_counter!(BUFFER_CACHE_MISS, "total number of buffer cache misses");
+
+    // Compactor metrics.
+    describe_counter!(TOTAL_COMPACTIONS, "total number of compactions");
+    describe_histogram!(
+        COMPACTION_SIZE,
+        Unit::Count,
+        "Batch sizes encountered in compaction"
+    );
+    describe_histogram!(COMPACTION_DURATION, Unit::Seconds, "Time to compact batch");
 }
