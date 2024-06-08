@@ -40,6 +40,7 @@ use dyn_clone::DynClone;
 use rand::Rng;
 use size_of::SizeOf;
 use std::path::Path;
+use std::time::Instant;
 use std::{fmt::Debug, hash::Hash, path::PathBuf};
 
 pub mod cursor;

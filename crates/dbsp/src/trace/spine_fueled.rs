@@ -95,12 +95,15 @@ use crate::{
 };
 
 use crate::dynamic::{ClonableTrait, DeserializableDyn};
+use crate::storage::backend::metrics::{COMPACTION_DURATION, COMPACTION_SIZE, TOTAL_COMPACTIONS};
 use crate::storage::file::to_bytes;
 use crate::storage::{checkpoint_path, write_commit_metadata};
+use metrics::{counter, histogram};
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use std::{
     fmt::{self, Debug, Display, Formatter, Write},
     fs,
@@ -299,7 +302,7 @@ where
         let mut cursors = Vec::with_capacity(self.merging.len());
         for merge_state in self.merging.iter().rev() {
             match merge_state {
-                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _)) => {
+                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _, _)) => {
                     if !batch1.is_empty() {
                         cursors.push(batch1.cursor());
                     }
@@ -408,7 +411,7 @@ where
 
         for batch in self.merging.iter() {
             match batch {
-                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _)) => {
+                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _, _)) => {
                     s.write_fmt(format_args!(
                         "[{}+{}],",
                         batch1.num_entries_deep(),
@@ -446,7 +449,7 @@ where
     {
         for batch in self.merging.iter().rev() {
             match batch {
-                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _)) => {
+                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _, _)) => {
                     map(batch1);
                     map(batch2);
                 }
@@ -465,7 +468,7 @@ where
             .iter()
             .rev()
             .fold(init, |acc, batch| match batch {
-                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _)) => {
+                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _, _)) => {
                     let acc = fold(acc, batch1);
                     fold(acc, batch2)
                 }
@@ -484,7 +487,7 @@ where
             .iter()
             .rev()
             .try_fold(init, |acc, batch| match batch {
-                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _)) => {
+                MergeState::Double(MergeVariant::InProgress(batch1, batch2, _, _)) => {
                     let acc = fold(acc, batch1)?;
                     fold(acc, batch2)
                 }
@@ -1159,7 +1162,7 @@ where
     fn map_batches_mut<F: FnMut(&mut <Self as Trace>::Batch)>(&mut self, mut f: F) {
         for batch in self.merging.iter_mut().rev() {
             match batch {
-                MergeState::Double(MergeVariant::InProgress(_batch1, _batch2, _)) => {
+                MergeState::Double(MergeVariant::InProgress(_batch1, _batch2, _, _)) => {
                     panic!("map_batches_mut called on an in-progress batch")
                 }
                 MergeState::Double(MergeVariant::Complete(Some(batch))) => {
@@ -1202,7 +1205,7 @@ where
     fn len(&self) -> usize {
         match self {
             MergeState::Single(Some(b)) => b.len(),
-            MergeState::Double(MergeVariant::InProgress(b1, b2, _)) => b1.len() + b2.len(),
+            MergeState::Double(MergeVariant::InProgress(b1, b2, _, _)) => b1.len() + b2.len(),
             MergeState::Double(MergeVariant::Complete(Some(b))) => b.len(),
             _ => 0,
         }
@@ -1291,9 +1294,10 @@ where
             (Some(batch1), Some(batch2)) => {
                 // Leonid: we do not require batch bounds to grow monotonically.
                 //assert!(batch1.upper() == batch2.lower());
-
+                let start = Instant::now();
+                counter!(TOTAL_COMPACTIONS).increment(1);
                 let begin_merge = <B as Batch>::begin_merge(&batch1, &batch2);
-                MergeVariant::InProgress(batch1, batch2, begin_merge)
+                MergeVariant::InProgress(batch1, batch2, begin_merge, start)
             }
             (batch @ Some(_), None) | (None, batch @ Some(_)) => MergeVariant::Complete(batch),
             (None, None) => MergeVariant::Complete(None),
@@ -1323,7 +1327,7 @@ where
     B: Batch,
 {
     /// Describes an actual in-progress merge between two non-trivial batches.
-    InProgress(B, B, <B as Batch>::Merger),
+    InProgress(B, B, <B as Batch>::Merger, Instant),
     /// A merge that requires no further work. May or may not represent a
     /// non-trivial batch.
     Complete(Option<B>),
@@ -1362,12 +1366,15 @@ where
         fuel: &mut isize,
     ) {
         let variant = replace(self, MergeVariant::Complete(None));
-        if let MergeVariant::InProgress(b1, b2, mut merge) = variant {
+        if let MergeVariant::InProgress(b1, b2, mut merge, start) = variant {
             merge.work(&b1, &b2, key_filter, value_filter, fuel);
             if *fuel > 0 {
-                *self = MergeVariant::Complete(Some(merge.done()));
+                let merged = merge.done();
+                histogram!(COMPACTION_SIZE).record(merged.len() as f64);
+                histogram!(COMPACTION_DURATION).record(start.elapsed().as_secs_f64());
+                *self = MergeVariant::Complete(Some(merged));
             } else {
-                *self = MergeVariant::InProgress(b1, b2, merge);
+                *self = MergeVariant::InProgress(b1, b2, merge, start);
             }
         } else {
             *self = variant;
@@ -1382,7 +1389,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InProgress(batch1, batch2, merger) => f
+            Self::InProgress(batch1, batch2, merger, _start) => f
                 .debug_tuple("InProgress")
                 .field(batch1)
                 .field(batch2)
