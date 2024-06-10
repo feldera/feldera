@@ -39,4 +39,7 @@ class OutputHandler:
         """
 
         self.handler.join()
+
+        if len(self.buffer) == 0:
+            return pd.DataFrame()
         return pd.concat(self.buffer, ignore_index=True)

@@ -32,7 +32,7 @@ class HttpRequests:
             content_type: str = "application/json",
             params: Optional[Mapping[str, Any]] = None,
             stream: bool = False,
-            dont_serialize: bool = False,
+            serialize: bool = True,
     ) -> Any:
         """
         :param http_method: The HTTP method to use. Takes the equivalent `requests.*` module. (Example: `requests.get`)
@@ -41,7 +41,7 @@ class HttpRequests:
         :param content_type: The value for `Content-Type` HTTP header. "application/json" by default.
         :param params: The query parameters part of this request.
         :param stream: True if the response is expected to be a HTTP stream.
-        :param dont_serialize: True if the body is already serialized.
+        :param serialize: True if the body needs to be serialized to JSON.
         """
         self.headers["Content-Type"] = content_type
 
@@ -77,7 +77,7 @@ class HttpRequests:
                     request_path,
                     timeout=timeout,
                     headers=headers,
-                    data=json_serialize(body) if not dont_serialize else body,
+                    data=json_serialize(body) if serialize else body,
                     params=params,
                     stream=stream,
                 )
@@ -108,7 +108,7 @@ class HttpRequests:
             content_type: Optional[str] = "application/json",
             params: Optional[Mapping[str, Any]] = None,
             stream: bool = False,
-            dont_serialize: bool = False,
+            serialize: bool = True,
     ) -> Any:
         return self.send_request(
             requests.post,
@@ -116,7 +116,7 @@ class HttpRequests:
             body,
             content_type,
             params, stream=stream,
-            dont_serialize=dont_serialize
+            serialize=serialize
         )
 
     def patch(

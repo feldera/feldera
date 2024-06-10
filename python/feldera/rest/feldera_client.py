@@ -32,12 +32,18 @@ class FelderaClient:
         """
         :param url: The url to Feldera API (ex: https://try.feldera.com)
         :param api_key: The optional API key for Feldera
-        :param timeout: (optional) The amount of time in seconds that the cient will wait for a response beforing timing
+        :param timeout: (optional) The amount of time in seconds that the client will wait for a response before timing
             out.
         """
 
         self.config = Config(url, api_key, timeout)
         self.http = HttpRequests(self.config)
+
+        try:
+            self.programs()
+        except Exception as e:
+            logging.error(f"Failed to connect to Feldera API: {e}")
+            raise e
 
     def programs(self) -> list[Program]:
         """
@@ -382,7 +388,7 @@ class FelderaClient:
             force: bool = False,
             update_format: str = "raw",
             json_flavor: str = None,
-            dont_serialize: bool = False,
+            serialize: bool = True,
     ):
         """
         Insert data into a pipeline
@@ -399,7 +405,7 @@ class FelderaClient:
         :param json_flavor: JSON encoding used for individual table records, the default value is "default", other supported encodings:
             "debezium_mysql", "snowflake", "kafka_connect_json_converter", "pandas"
         :param data: The data to insert
-        :param dont_serialize: If True, the data will not be serialized to JSON. Use if the data is already serialized.
+        :param serialize: If True, the data will be serialized to JSON. True by default
         """
 
         if format not in ["json", "csv"]:
@@ -438,7 +444,7 @@ class FelderaClient:
             params=params,
             content_type=content_type,
             body=data,
-            dont_serialize=dont_serialize,
+            serialize=serialize,
         )
 
     def listen_to_pipeline(

@@ -180,9 +180,9 @@ class SQLContext:
                         tbl_name,
                         "json",
                         datum.to_json(orient='records', date_format='epoch'),
-                        json_flavor = 'pandas',
+                        json_flavor='pandas',
                         array=True,
-                        dont_serialize=True
+                        serialize=False
                     )
 
         self.http_input_buffer.clear()
