@@ -60,7 +60,8 @@ const GC_POLL_INTERVAL: Duration = Duration::from_secs(3);
 /// "endColumn" : 13,
 /// "warning" : false,
 /// "errorType" : "Error parsing SQL",
-/// "message" : "Encountered \"<EOF>\" at line 14, column 13."
+/// "message" : "Encountered \"<EOF>\" at line 14, column 13.",
+/// "snippet" : "..."
 /// } ]
 /// ```
 #[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
@@ -74,6 +75,7 @@ pub(crate) struct SqlCompilerMessage {
     warning: bool,
     error_type: String,
     message: String,
+    snippet: String,
 }
 
 /// Program compilation status.

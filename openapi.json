@@ -5201,7 +5201,7 @@
       },
       "SqlCompilerMessage": {
         "type": "object",
-        "description": "A SQL compiler error.\n\nThe SQL compiler returns a list of errors in the following JSON format if\nit's invoked with the `-je` option.\n\n```ignore\n[ {\n\"startLineNumber\" : 14,\n\"startColumn\" : 13,\n\"endLineNumber\" : 14,\n\"endColumn\" : 13,\n\"warning\" : false,\n\"errorType\" : \"Error parsing SQL\",\n\"message\" : \"Encountered \\\"<EOF>\\\" at line 14, column 13.\"\n} ]\n```",
+        "description": "A SQL compiler error.\n\nThe SQL compiler returns a list of errors in the following JSON format if\nit's invoked with the `-je` option.\n\n```ignore\n[ {\n\"startLineNumber\" : 14,\n\"startColumn\" : 13,\n\"endLineNumber\" : 14,\n\"endColumn\" : 13,\n\"warning\" : false,\n\"errorType\" : \"Error parsing SQL\",\n\"message\" : \"Encountered \\\"<EOF>\\\" at line 14, column 13.\",\n\"snippet\" : \"...\"\n} ]\n```",
         "required": [
           "startLineNumber",
           "startColumn",
@@ -5209,7 +5209,8 @@
           "endColumn",
           "warning",
           "errorType",
-          "message"
+          "message",
+          "snippet"
         ],
         "properties": {
           "endColumn": {
@@ -5224,6 +5225,9 @@
             "type": "string"
           },
           "message": {
+            "type": "string"
+          },
+          "snippet": {
             "type": "string"
           },
           "startColumn": {
