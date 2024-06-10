@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [Python] Added support for HTTP GET connector via Python SDK
 - [Python] Add support for Avro format
   ([#1836](https://github.com/feldera/feldera/pull/1836))
+- [Python] Add function to wait for the pipeline to become idle
+  ([#1841](https://github.com/feldera/feldera/pull/1841))
 
 ### Fixed
 
