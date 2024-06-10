@@ -32,12 +32,18 @@ class FelderaClient:
         """
         :param url: The url to Feldera API (ex: https://try.feldera.com)
         :param api_key: The optional API key for Feldera
-        :param timeout: (optional) The amount of time in seconds that the cient will wait for a response beforing timing
+        :param timeout: (optional) The amount of time in seconds that the client will wait for a response before timing
             out.
         """
 
         self.config = Config(url, api_key, timeout)
         self.http = HttpRequests(self.config)
+
+        try:
+            self.programs()
+        except Exception as e:
+            logging.error(f"Failed to connect to Feldera API: {e}")
+            raise e
 
     def programs(self) -> list[Program]:
         """
@@ -381,6 +387,8 @@ class FelderaClient:
             array: bool = False,
             force: bool = False,
             update_format: str = "raw",
+            json_flavor: str = None,
+            serialize: bool = True,
     ):
         """
         Insert data into a pipeline
@@ -394,8 +402,10 @@ class FelderaClient:
         :param force: If True, the data will be inserted even if the pipeline is paused
         :param update_format: JSON data change event format, used in conjunction with the "json" format,
             the default value is "insert_delete", other supported formats: "weighted", "debezium", "snowflake", "raw"
-
+        :param json_flavor: JSON encoding used for individual table records, the default value is "default", other supported encodings:
+            "debezium_mysql", "snowflake", "kafka_connect_json_converter", "pandas"
         :param data: The data to insert
+        :param serialize: If True, the data will be serialized to JSON. True by default
         """
 
         if format not in ["json", "csv"]:
@@ -403,6 +413,9 @@ class FelderaClient:
 
         if update_format not in ["insert_delete", "weighted", "debezium", "snowflake", "raw"]:
             raise ValueError("update_format must be one of 'insert_delete', 'weighted', 'debezium', 'snowflake', 'raw'")
+
+        if json_flavor is not None and json_flavor not in ["default", "debezium_mysql", "snowflake", "kafka_connect_json_converter", "pandas"]:
+            raise ValueError("json_flavor must be one of 'default', 'debezium_mysql', 'snowflake', 'kafka_connect_json_converter', 'pandas'")
 
         # python sends `True` which isn't accepted by the backend
         array = _prepare_boolean_input(array)
@@ -417,6 +430,9 @@ class FelderaClient:
             params["array"] = array
             params["update_format"] = update_format
 
+        if json_flavor is not None:
+            params["json_flavor"] = json_flavor
+
         content_type = "application/json"
 
         if format == "csv":
@@ -428,6 +444,7 @@ class FelderaClient:
             params=params,
             content_type=content_type,
             body=data,
+            serialize=serialize,
         )
 
     def listen_to_pipeline(

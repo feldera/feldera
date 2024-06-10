@@ -140,6 +140,12 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%:z"),
                 decimal_format: DecimalFormat::String,
             },
+            JsonFlavor::Pandas => Self {
+                time_format: TimeFormat::String("%H:%M:%S%.f"),
+                date_format: DateFormat::String("%Y-%m-%d"),
+                timestamp_format: TimestampFormat::MillisSinceEpoch,
+                decimal_format: DecimalFormat::String,
+            },
             JsonFlavor::ParquetConverter => Self {
                 time_format: TimeFormat::Nanos,
                 date_format: DateFormat::String("%Y-%m-%d"),

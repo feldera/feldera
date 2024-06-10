@@ -32,3 +32,12 @@ def validate_connector_input_format(fmt: Format):
 
     if isinstance(fmt, JSONFormat) and fmt.config.get("update_format") is None:
         raise ValueError("update_format not set in the format config; consider using: .with_update_format()")
+
+
+def chunk_dataframe(df, chunk_size=1000):
+    """
+    Yield successive n-sized chunks from the given dataframe.
+    """
+
+    for i in range(0, len(df), chunk_size):
+        yield df.iloc[i:i + chunk_size]

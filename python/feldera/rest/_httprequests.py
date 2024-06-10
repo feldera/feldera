@@ -9,6 +9,10 @@ import requests
 from typing import Callable, Optional, Any, Union, Mapping, Sequence, List
 
 
+def json_serialize(body: Any) -> str:
+    return json.dumps(body) if body else "" if body == "" else "null"
+
+
 class HttpRequests:
     def __init__(self, config: Config) -> None:
         self.config = config
@@ -28,6 +32,7 @@ class HttpRequests:
             content_type: str = "application/json",
             params: Optional[Mapping[str, Any]] = None,
             stream: bool = False,
+            serialize: bool = True,
     ) -> Any:
         """
         :param http_method: The HTTP method to use. Takes the equivalent `requests.*` module. (Example: `requests.get`)
@@ -36,6 +41,7 @@ class HttpRequests:
         :param content_type: The value for `Content-Type` HTTP header. "application/json" by default.
         :param params: The query parameters part of this request.
         :param stream: True if the response is expected to be a HTTP stream.
+        :param serialize: True if the body needs to be serialized to JSON.
         """
         self.headers["Content-Type"] = content_type
 
@@ -71,7 +77,7 @@ class HttpRequests:
                     request_path,
                     timeout=timeout,
                     headers=headers,
-                    data=json.dumps(body) if body else "" if body == "" else "null",
+                    data=json_serialize(body) if serialize else body,
                     params=params,
                     stream=stream,
                 )
@@ -102,8 +108,16 @@ class HttpRequests:
             content_type: Optional[str] = "application/json",
             params: Optional[Mapping[str, Any]] = None,
             stream: bool = False,
+            serialize: bool = True,
     ) -> Any:
-        return self.send_request(requests.post, path, body, content_type, params, stream=stream)
+        return self.send_request(
+            requests.post,
+            path,
+            body,
+            content_type,
+            params, stream=stream,
+            serialize=serialize
+        )
 
     def patch(
             self,

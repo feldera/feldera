@@ -33,3 +33,11 @@ make html
 ```
 
 To clean the build, run `make clean`.
+
+## Testing
+
+
+```bash
+cd python
+python3 -m unittest
+```

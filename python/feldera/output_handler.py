@@ -20,7 +20,8 @@ class OutputHandler:
 
         # the callback that is passed to the `CallbackRunner`
         def callback(df: pd.DataFrame, _: int):
-            self.buffer.append(df)
+            if not df.empty:
+                self.buffer.append(df)
 
         # sets up the callback runner
         self.handler = CallbackRunner(self.client, self.pipeline_name, self.view_name, callback, queue)
@@ -38,4 +39,7 @@ class OutputHandler:
         """
 
         self.handler.join()
-        return pd.concat(self.buffer)
+
+        if len(self.buffer) == 0:
+            return pd.DataFrame()
+        return pd.concat(self.buffer, ignore_index=True)
