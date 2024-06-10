@@ -1,5 +1,4 @@
-import { ThemeColor } from 'src/@core/layouts/types'
-
+import { ThemeColor } from '@core/layouts/types'
 import { PaletteMode } from '@mui/material'
 
 const DefaultPalette = (mode: PaletteMode, themeColor: ThemeColor) => {

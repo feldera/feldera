@@ -1,5 +1,5 @@
 import { GridItems } from '$lib/components/common/GridItems'
-import { KafkaOutputSchema } from '$lib/components/connectors/dialogs'
+import { KafkaOutputSchema } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
 import { SelectElement, SwitchElement, useFormContext } from 'react-hook-form-mui'
 
 import Grid from '@mui/material/Grid'

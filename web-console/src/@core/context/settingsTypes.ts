@@ -1,5 +1,4 @@
-import { ContentWidth, ThemeColor } from 'src/@core/layouts/types'
-
+import { ContentWidth, ThemeColor } from '@core/layouts/types'
 import { PaletteMode } from '@mui/material'
 
 export type Settings = {

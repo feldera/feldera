@@ -1,11 +1,13 @@
-import { EditorSchema, KafkaInputSchema, KafkaOutputSchema } from '$lib/components/connectors/dialogs'
 import { DebeziumInputSchema } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
+import { EditorSchema } from '$lib/components/connectors/dialogs/GenericEditorConnector'
+import { KafkaInputSchema } from '$lib/components/connectors/dialogs/KafkaInputConnector'
+import { KafkaOutputSchema } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
 import { SnowflakeOutputSchema } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
 import { assertUnion } from '$lib/functions/common/array'
 import { nonNull } from '$lib/functions/common/function'
 import { parseAuthParams } from '$lib/functions/kafka/authParamsSchema'
 import { fromKafkaConfig, LibrdkafkaOptionType, toKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
-import { ConnectorDescr, TransportConfig } from '$lib/services/manager'
+import { ConnectorDescr, OutputBufferConfig, TransportConfig } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import { SVGImport } from '$lib/types/imports'
 import IconGenericBoilingFlask from '$public/icons/generic/boiling-flask.svg'
@@ -24,8 +26,6 @@ import SnowflakeLogo from '$public/images/vendors/snowflake-logo.svg'
 import BigNumber from 'bignumber.js/bignumber.js'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
-
-import { OutputBufferConfig } from './connectors/outputBuffer'
 
 // Determine the type of a connector from its config entries.
 export const connectorDescrToType = (config: ConnectorDescr['config']): ConnectorType => {
@@ -93,34 +93,6 @@ export const prepareDataWith =
       max_output_buffer_size_records: data.max_output_buffer_size_records
     }
   })
-
-// const genericConnectorOptions = new Set([
-//   'enable_output_buffer',
-//   'max_output_buffer_time_millis',
-//   'max_output_buffer_size_records'
-// ])
-
-// const splitTransportConfig = <A extends Record<string, any>>(options: A) => {
-//   let specificConfig: Record<string, any> = {},
-//     genericConfig: Record<string, any> = {}
-//   for (const [key, value] of Object.entries(options)) {
-//     genericConnectorOptions.has(key) ? (genericConfig[key] = value) : (specificConfig[key] = value)
-//   }
-//   return {
-//     specificConfig: specificConfig as A,
-//     genericConfig: genericConfig as A
-//   }
-// }
-
-// const withoutGenericTransportOptions =
-//   <A extends Record<string, any>, B>(f: (a: A) => B) =>
-//   (config: A) => {
-//     const { specificConfig, genericConfig } = splitTransportConfig(config)
-//     return {
-//       ...genericConfig,
-//       ...f(specificConfig)
-//     }
-//   }
 
 /**
  * Given an existing ConnectorDescr return the KafkaInputSchema

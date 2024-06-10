@@ -1,14 +1,12 @@
-import {
-  ConfigEditorDialog,
-  KafkaInputConnectorDialog,
-  KafkaOutputConnectorDialog,
-  UrlConnectorDialog
-} from '$lib/components/connectors/dialogs'
 import { DebeziumInputConnectorDialog } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
 import { DeltaLakeInputConnectorDialog } from '$lib/components/connectors/dialogs/DeltaLakeInputConnector'
 import { DeltaLakeOutputConnectorDialog } from '$lib/components/connectors/dialogs/DeltaLakeOutputConnector'
+import { ConfigEditorDialog } from '$lib/components/connectors/dialogs/GenericEditorConnector'
+import { KafkaInputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaInputConnector'
+import { KafkaOutputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
 import { S3InputConnectorDialog } from '$lib/components/connectors/dialogs/S3InputConnector'
 import { SnowflakeOutputConnectorDialog } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
+import { UrlConnectorDialog } from '$lib/components/connectors/dialogs/UrlConnector'
 import { connectorDescrToType } from '$lib/functions/connectors'
 import { ConnectorDescr } from '$lib/services/manager'
 import { ConnectorType } from '$lib/types/connectors'

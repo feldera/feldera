@@ -40,9 +40,11 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                 label: 'snapshot_and_follow'
               }
             ]}
-            inputProps={{
-              'data-testid': 'input-ingest-mode'
-            }}
+            InputProps={
+              {
+                'data-testid': 'input-ingest-mode'
+              } as any
+            }
             helperText={match(mode)
               .with('follow', () => 'Follow the changelog of the table, only ingesting changes (new and deleted rows).')
               .with('snapshot', () => 'Read a snapshot of the table and stop.')
@@ -57,7 +59,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                   parentName={props.parentName}
                   label='Snapshot version'
                   inputProps={{
-                    'data-testid': 'input-snapshot-version'
+                    'data-testid': 'input-version'
                   }}
                   onInput={unregisterConflicting(props.parentName + '.datetime')}
                 ></VersionElement>
@@ -65,7 +67,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                   parentName={props.parentName}
                   label='Snapshot datetime'
                   inputProps={{
-                    'data-testid': 'input-snapshot-datetime'
+                    'data-testid': 'input-datetime'
                   }}
                   onInput={unregisterConflicting(props.parentName + '.version')}
                 />
@@ -78,7 +80,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                   parentName={props.parentName}
                   label='Start version'
                   inputProps={{
-                    'data-testid': 'input-start-version'
+                    'data-testid': 'input-version'
                   }}
                   onInput={unregisterConflicting(props.parentName + '.datetime')}
                 ></VersionElement>
@@ -86,7 +88,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                   parentName={props.parentName}
                   label='Start datetime'
                   inputProps={{
-                    'data-testid': 'input-start-datetime'
+                    'data-testid': 'input-datetime'
                   }}
                   onInput={unregisterConflicting(props.parentName + '.version')}
                 />
@@ -99,7 +101,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                   parentName={props.parentName}
                   label='Start version'
                   inputProps={{
-                    'data-testid': 'input-start-version'
+                    'data-testid': 'input-version'
                   }}
                   onInput={unregisterConflicting(props.parentName + '.datetime')}
                 ></VersionElement>
@@ -107,7 +109,7 @@ export const DeltaLakeIngestModeElement = (props: { parentName: string }) => {
                   parentName={props.parentName}
                   label='Start datetime'
                   inputProps={{
-                    'data-testid': 'input-start-datetime'
+                    'data-testid': 'input-datetime'
                   }}
                   onInput={unregisterConflicting(props.parentName + '.version')}
                 />

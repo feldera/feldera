@@ -3,9 +3,9 @@
 import themeConfig from '$lib/functions/configs/themeConfig'
 import ArrowUp from 'mdi-material-ui/ArrowUp'
 import { useState } from 'react'
-import ScrollToTop from 'src/@core/components/scroll-to-top'
-import { LayoutProps } from 'src/@core/layouts/types'
 
+import ScrollToTop from '@core/components/scroll-to-top'
+import { LayoutProps } from '@core/layouts/types'
 import Box from '@mui/material/Box'
 import Fab from '@mui/material/Fab'
 import { styled, useTheme } from '@mui/material/styles'

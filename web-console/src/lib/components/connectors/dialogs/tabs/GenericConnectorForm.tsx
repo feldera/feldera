@@ -17,41 +17,44 @@ export const GenericEditorForm = <T extends FieldValues>(props: {
   setEditorDirty?: Dispatch<SetStateAction<'dirty' | 'clean' | 'error'>>
 }) => {
   return (
-    <Grid container spacing={4}>
-      <Grid item sm={4} xs={12}>
-        <TextFieldElement
-          name='name'
-          label={props.direction === Direction.OUTPUT ? 'Data Sink Name' : 'Data Source Name'}
-          size='small'
-          fullWidth
-          placeholder={PLACEHOLDER_VALUES['connector_name']}
-          aria-describedby='validation-name'
-          disabled={props.disabled}
-          inputProps={{
-            'data-testid': 'input-datasource-name'
-          }}
-        />
+    <>
+      <Grid container spacing={4}>
+        <Grid item sm={4} xs={12}>
+          <TextFieldElement
+            name='name'
+            label={props.direction === Direction.OUTPUT ? 'Data Sink Name' : 'Data Source Name'}
+            size='small'
+            fullWidth
+            placeholder={PLACEHOLDER_VALUES['connector_name']}
+            aria-describedby='validation-name'
+            disabled={props.disabled}
+            inputProps={{
+              'data-testid': 'input-datasource-name'
+            }}
+          />
+        </Grid>
+        <Grid item sm={8} xs={12}>
+          <TextFieldElement
+            name='description'
+            label='Description'
+            size='small'
+            fullWidth
+            placeholder={PLACEHOLDER_VALUES['connector_description']}
+            aria-describedby='validation-description'
+            disabled={props.disabled}
+            inputProps={{
+              'data-testid': 'input-datasource-description'
+            }}
+          />
+        </Grid>
+        <Grid item sm={12} xs={12}>
+          <Box sx={{ height: { xs: '50vh', md: '40vh' } }}>
+            <JSONEditorElement {...props}></JSONEditorElement>
+          </Box>
+        </Grid>
       </Grid>
-      <Grid item sm={8} xs={12}>
-        <TextFieldElement
-          name='description'
-          label='Description'
-          size='small'
-          fullWidth
-          placeholder={PLACEHOLDER_VALUES['connector_description']}
-          aria-describedby='validation-description'
-          disabled={props.disabled}
-          inputProps={{
-            'data-testid': 'input-datasource-description'
-          }}
-        />
-      </Grid>
-      <Grid item sm={12} xs={12}>
-        <Box sx={{ height: { xs: '50vh', md: '40vh' } }}>
-          <JSONEditorElement {...props}></JSONEditorElement>
-        </Box>
-      </Grid>
-    </Grid>
+      <Box sx={{ mt: 'auto' }}></Box>
+    </>
   )
 }
 

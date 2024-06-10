@@ -1,4 +1,5 @@
 import { resolve } from 'path'
+import svgr from 'vite-plugin-svgr'
 
 import { defineConfig, devices } from '@playwright/experimental-ct-react'
 import react from '@vitejs/plugin-react'
@@ -32,13 +33,16 @@ export default defineConfig({
     ctViteConfig: {
       resolve: {
         alias: {
+          '$app': resolve(__dirname, './src/app'),
           '$lib': resolve(__dirname, './src/lib'),
           '$tests': resolve(__dirname, './tests'),
           'src/lib': resolve(__dirname, './src/lib'),
+          '$public': resolve(__dirname, './public'),
+          '@core': resolve(__dirname, './src/@core')
         },
       },
       plugins: [
-        react(),
+        react(), svgr()
       ],
     },
     testIdAttribute: 'data-testid',

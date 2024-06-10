@@ -57,7 +57,11 @@ The following URI types are recognized:
             name={props.parentName + '.' + 'uri'}
             size='small'
             label='DeltaLake storage URI'
+            placeholder='E.g. s3://bucket/path, abfs://container.dfs.core.windows.net/path ...'
             fullWidth
+            inputProps={{
+              'data-testid': 'input-storage-uri'
+            }}
           ></TextFieldElement>
         </FormTooltip>
         {match(storageType)

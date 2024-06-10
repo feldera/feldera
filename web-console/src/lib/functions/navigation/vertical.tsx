@@ -1,7 +1,8 @@
 import { OpenAPI } from '$lib/services/manager'
 import SalesforceSlack from '$public/icons/vendors/salesforce-slack.svg'
+
 // The main menu that shows up on the left side of the screen.
-import { VerticalNavItemsType } from 'src/@core/layouts/types'
+import { VerticalNavItemsType } from '@core/layouts/types'
 
 // TODO: remove conditional Settings page link display
 // after more content is added to Settings page

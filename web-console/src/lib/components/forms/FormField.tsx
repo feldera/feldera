@@ -1,5 +1,5 @@
 import { FormTooltip } from '$lib/components/forms/Tooltip'
-import { useFormContext } from 'react-hook-form-mui'
+import { useFormContext, useWatch } from 'react-hook-form-mui'
 import { FormFieldOptions } from 'src/lib/functions/forms'
 
 import { Grid, IconButton, Typography } from '@mui/material'
@@ -15,6 +15,8 @@ export const FormField = (props: {
   optional?: boolean
 }) => {
   const ctx = useFormContext()
+  const value = useWatch({ name: props.parentName + '.' + props.field })
+
   return (
     <>
       <Grid item xs={12} sm={6} display='flex' alignItems='start'>
@@ -29,15 +31,14 @@ export const FormField = (props: {
             field={props.field}
             disabled={props.disabled}
             parentName={props.parentName}
-            helperText={props.fieldOptions.getHelperText?.(
-              ctx.getValues(props.parentName + '.' + props.field) as never
-            )}
+            helperText={props.fieldOptions.getHelperText?.(value as never)}
           ></FormFieldElement>
           {props.optional ? (
             <IconButton
               size='small'
               sx={{ mr: '-2.5rem', ml: '0.5rem' }}
               onClick={() => ctx.unregister(props.parentName + '.' + props.field)}
+              data-testid={`button-remove-${props.field}`}
             >
               <i className='bx bx-x' />
             </IconButton>

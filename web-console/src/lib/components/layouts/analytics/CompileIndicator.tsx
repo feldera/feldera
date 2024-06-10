@@ -4,10 +4,10 @@
 // more information.
 
 import { ProgramDescr } from '$lib/services/manager'
-import CustomChip from 'src/@core/components/mui/chip'
-import { ThemeColor } from 'src/@core/layouts/types'
 import { match, P } from 'ts-pattern'
 
+import CustomChip from '@core/components/mui/chip'
+import { ThemeColor } from '@core/layouts/types'
 import DoneIcon from '@mui/icons-material/Done'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import { CircularProgress, Tooltip } from '@mui/material'

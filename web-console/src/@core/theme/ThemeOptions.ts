@@ -1,6 +1,6 @@
-import localFont from 'next/font/local'
-import { Settings } from 'src/@core/context/settingsTypes'
+import '@fontsource-variable/public-sans'
 
+import { Settings } from '@core/context/settingsTypes'
 import { ThemeOptions } from '@mui/material'
 import { deepmerge } from '@mui/utils'
 
@@ -9,10 +9,7 @@ import palette from './palette'
 import shadows from './shadows'
 import spacing from './spacing'
 
-const publicSans = localFont({
-  src: '../../../public/fonts/PublicSans-VariableFont_wght.ttf',
-  display: 'swap'
-})
+// https://stackoverflow.com/questions/74269160/how-to-import-google-font-with-vitejs
 
 const themeOptions = (settings: Settings): ThemeOptions => {
   const { mode, themeColor } = settings
@@ -20,7 +17,7 @@ const themeOptions = (settings: Settings): ThemeOptions => {
   const themeConfig = {
     palette: palette(mode, themeColor),
     typography: {
-      fontFamily: publicSans.style.fontFamily
+      fontFamily: 'Public Sans Variable'
     },
     shadows: shadows(mode),
     ...spacing,

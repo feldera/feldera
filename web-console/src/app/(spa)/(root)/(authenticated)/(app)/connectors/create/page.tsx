@@ -2,17 +2,15 @@
 
 import { Breadcrumbs } from '$lib/components/common/BreadcrumbsHeader'
 import { GridItems } from '$lib/components/common/GridItems'
-import {
-  ConfigEditorDialog,
-  KafkaInputConnectorDialog,
-  KafkaOutputConnectorDialog,
-  UrlConnectorDialog
-} from '$lib/components/connectors/dialogs'
 import { AddConnectorCard } from '$lib/components/connectors/dialogs/AddConnectorCard'
 import { DebeziumInputConnectorDialog } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
 import { DeltaLakeInputConnectorDialog } from '$lib/components/connectors/dialogs/DeltaLakeInputConnector'
 import { DeltaLakeOutputConnectorDialog } from '$lib/components/connectors/dialogs/DeltaLakeOutputConnector'
+import { ConfigEditorDialog } from '$lib/components/connectors/dialogs/GenericEditorConnector'
+import { KafkaInputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaInputConnector'
+import { KafkaOutputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
 import { SnowflakeOutputConnectorDialog } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
+import { UrlConnectorDialog } from '$lib/components/connectors/dialogs/UrlConnector'
 import { useHashPart } from '$lib/compositions/useHashPart'
 import { connectorTypeToLogo } from '$lib/functions/connectors'
 import { showOnHashPart } from '$lib/functions/urlHash'
@@ -94,10 +92,7 @@ const ConnectorCreateGrid = () => {
               <Button
                 variant='contained'
                 color='success'
-                endIcon={
-                  <i className={`bx bx-check`} style={{}} />
-                  // <i className={`bx bx-check`} style={{  }} />
-                }
+                endIcon={<i className={`bx bx-check`} style={{}} />}
                 type='submit'
                 data-testid='button-create'
               >

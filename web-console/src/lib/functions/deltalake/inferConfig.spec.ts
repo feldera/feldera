@@ -89,7 +89,7 @@ test('Test DeltaLake config inference', async ({}) => {
     ],
     [
       'https://zb-account_net.dfs.fabric.microsoft.com/container_0-x',
-      { type: 'azure_blob', config: { azure_account_name: 'zb-account_net', container_name: 'container_0-x' } }
+      { type: 'azure_blob', config: { azure_account_name: 'zb-account_net', azure_container_name: 'container_0-x' } }
     ],
     [
       'https://zb-account_net.dfs.fabric.microsoft.com',

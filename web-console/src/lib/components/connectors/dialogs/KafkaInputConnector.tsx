@@ -6,6 +6,7 @@ import {
   PlainDialogContent,
   VerticalTabsDialogContent
 } from '$lib/components/connectors/dialogs/elements/DialogComponents'
+import { JsonSwitch } from '$lib/components/connectors/dialogs/JSONSwitch'
 import { TabGenericInputFormatDetails } from '$lib/components/connectors/dialogs/tabs/generic/TabGenericInputFormatDetails'
 import { GenericEditorForm } from '$lib/components/connectors/dialogs/tabs/GenericConnectorForm'
 import { TabKafkaAuth } from '$lib/components/connectors/dialogs/tabs/kafka/TabKafkaAuth'
@@ -29,7 +30,6 @@ import JSONbig from 'true-json-bigint'
 import * as va from 'valibot'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
-import { FormControlLabel, Switch, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 
 const schema = va.merge(
@@ -146,16 +146,6 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
 
   const [editorDirty, setEditorDirty] = useState<'dirty' | 'clean' | 'error'>('clean')
   const [rawJSON, setRawJSON] = useState(false)
-  const jsonSwitch = (
-    <Box sx={{ pl: 4 }}>
-      <Tooltip title={editorDirty !== 'clean' ? 'Fix errors before switching the view' : undefined}>
-        <FormControlLabel
-          control={<Switch checked={rawJSON} onChange={(e, v) => setRawJSON(v)} disabled={editorDirty !== 'clean'} />}
-          label='Edit JSON'
-        />
-      </Tooltip>
-    </Box>
-  )
 
   const tabFooter = <TabFooter submitButton={props.submitButton} {...{ activeTab, setActiveTab, tabs }} />
 
@@ -178,7 +168,7 @@ export const KafkaInputConnectorDialog = (props: ConnectorDialogProps) => {
           setActiveTab
         }}
       >
-        {jsonSwitch}
+        <JsonSwitch {...{ rawJSON, setRawJSON, editorDirty }}></JsonSwitch>
         <Box sx={{ height: '70vh' }}>
           {rawJSON ? (
             <PlainDialogContent submitButton={props.submitButton}>

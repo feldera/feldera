@@ -1,6 +1,6 @@
 import React, { ForwardedRef } from 'react'
-import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
 
+import { hexToRGBA } from '@core/utils/hex-to-rgba'
 import MuiChip from '@mui/material/Chip'
 import { useTheme } from '@mui/material/styles'
 

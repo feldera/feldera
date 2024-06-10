@@ -1,6 +1,6 @@
 import { ReactNode } from 'react'
-import { Settings } from 'src/@core/context/settingsTypes'
 
+import { Settings } from '@core/context/settingsTypes'
 import { Box, Typography } from '@mui/material'
 import { styled, useTheme } from '@mui/material/styles'
 import MuiSwipeableDrawer, { SwipeableDrawerProps } from '@mui/material/SwipeableDrawer'

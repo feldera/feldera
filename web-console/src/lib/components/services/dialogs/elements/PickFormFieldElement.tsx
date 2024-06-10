@@ -75,7 +75,7 @@ export function PickFormFieldElement(props: {
           <TextField
             placeholder={props.options.length ? 'Select option to add' : 'Enter option name, press Enter to add it'}
             {...params}
-            inputProps={inputProps}
+            inputProps={{ ...inputProps, 'data-testid': 'input-select-field' }}
           />
         )
       }}

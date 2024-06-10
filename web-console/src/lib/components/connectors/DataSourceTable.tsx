@@ -17,8 +17,8 @@ import { ApiError, ConnectorDescr, ConnectorsService } from '$lib/services/manag
 import { mutationUpdateConnector, PipelineManagerQueryKey } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
-import CustomChip from 'src/@core/components/mui/chip'
 
+import CustomChip from '@core/components/mui/chip'
 import { Box, Button, IconButton, Tooltip } from '@mui/material'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'

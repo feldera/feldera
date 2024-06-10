@@ -3,10 +3,10 @@
 import { useAuth } from '$lib/compositions/auth/useAuth'
 // This is the top bar that decides whether to show the hamburger menu or not it
 import Menu from 'mdi-material-ui/Menu'
-import { Settings } from 'src/@core/context/settingsTypes'
-import ModeToggler from 'src/@core/layouts/components/shared-components/ModeToggler'
-import UserDropdown from 'src/@core/layouts/components/shared-components/UserDropdown'
 
+import { Settings } from '@core/context/settingsTypes'
+import ModeToggler from '@core/layouts/components/shared-components/ModeToggler'
+import UserDropdown from '@core/layouts/components/shared-components/UserDropdown'
 import { Tooltip } from '@mui/material'
 // also has the search bar and the user dropdown and the notification dropdown.
 import Box from '@mui/material/Box'
