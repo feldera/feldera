@@ -692,6 +692,18 @@ where
     }
 }
 
+#[derive(Clone)]
+pub struct ConcatSemigroup<V>(PhantomData<V>);
+
+impl<V> Semigroup<Vec<V>> for ConcatSemigroup<Vec<V>>
+where
+    V: Clone,
+{
+    fn combine(left: &Vec<V>, right: &Vec<V>) -> Vec<V> {
+        left.iter().chain(right).cloned().collect()
+    }
+}
+
 #[inline(always)]
 pub fn wrap_bool(b: Option<bool>) -> bool {
     match b {

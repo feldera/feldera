@@ -767,4 +767,75 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 """
         );
     }
+
+    @Test
+    public void testArrayAgg() {
+        // Tests from https://cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions#array_agg
+        this.qs("""
+                SELECT ARRAY_AGG(x) AS array_agg FROM UNNEST(ARRAY [2, 1,-2, 3, -2, 1, 2]) AS x;
+                +-------------------------+
+                | array_agg               |
+                +-------------------------+
+                | {-2, -2, 1, 1, 2, 2, 3} |
+                +-------------------------+
+                (1 row)
+                
+                SELECT ARRAY_AGG(DISTINCT x) AS array_agg
+                FROM UNNEST(ARRAY [2, 1, -2, 3, -2, 1, 2]) AS x;
+                +---------------+
+                | array_agg     |
+                +---------------+
+                | {-2, 1, 2, 3} |
+                +---------------+
+                (1 row)
+                
+                SELECT ARRAY_AGG(x IGNORE NULLS) AS array_agg
+                FROM UNNEST(ARRAY [NULL, 1, -2, 3, -2, 1, NULL]) AS x;
+                +-------------------+
+                | array_agg         |
+                +-------------------+
+                | {-2, -2, 1, 1, 3} |
+                +-------------------+
+                (1 row)
+                
+                WITH vals AS
+                  (
+                    SELECT 1 x, 'a' y UNION ALL
+                    SELECT 1 x, 'b' y UNION ALL
+                    SELECT 2 x, 'a' y UNION ALL
+                    SELECT 2 x, 'c' y
+                  )
+                SELECT x, ARRAY_AGG(y) as array_agg
+                FROM vals
+                GROUP BY x;
+                +---------------+
+                | x | array_agg |
+                +---------------+
+                | 1 | { a, b}   |
+                | 2 | { a, c}   |
+                +---------------+
+                (1 row)""");
+    }
+
+    @Test
+    public void testOverArrayAgg() {
+        // The order of the elements in the array is non-deterministic
+        this.qs("""
+                SELECT
+                  x,
+                  ARRAY_AGG(x) OVER (ORDER BY ABS(x)) AS array_agg
+                FROM UNNEST(ARRAY [2, 1, -2, 3, -2, 1, 2]) AS x;
+                +----+-------------------------+
+                | x  | array_agg               |
+                +----+-------------------------+
+                | 1  | {1, 1}                  |
+                | 1  | {1, 1}                  |
+                | 2  | {1, 1, -2, -2, 2, 2}    |
+                | -2 | {1, 1, -2, -2, 2, 2}    |
+                | -2 | {1, 1, -2, -2, 2, 2}    |
+                | 2  | {1, 1, -2, -2, 2, 2}    |
+                | 3  | {1, 1, -2, -2, 2, 2, 3} |
+                +----+-------------------------+
+                (1 row)""", false);
+    }
 }

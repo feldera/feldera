@@ -289,7 +289,7 @@ public class Simplify extends InnerRewriteVisitor {
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = source.borrow();
+        DBSPExpression result = source.borrow(expression.mut);
         if (source.is(DBSPDerefExpression.class)) {
             result = source.to(DBSPDerefExpression.class).expression;
         }
