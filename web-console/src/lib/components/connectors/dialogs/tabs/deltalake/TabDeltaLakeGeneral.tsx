@@ -1,4 +1,5 @@
 import { GridItems } from '$lib/components/common/GridItems'
+import { FormTooltip } from '$lib/components/forms/Tooltip'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { Direction } from '$lib/types/connectors'
 import { TextFieldElement } from 'react-hook-form-mui'
@@ -41,12 +42,24 @@ export const TabDeltaLakeGeneral = (props: { direction: Direction; disabled?: bo
             'data-testid': 'input-datasource-description'
           }}
         />
-        <TextFieldElement
-          name={props.parentName + '.' + 'uri'}
-          size='small'
-          label='DeltaLake storage URI'
-          fullWidth
-        ></TextFieldElement>
+        <FormTooltip
+          title={`Delta Table storage URI.
+
+The following URI types are recognized:
+* AWS S3 - compatible URL
+* Google Cloud Storage URL
+* Microsoft Azure Storage URL
+* HTTP(S) URL of a generic resource
+* File System URI
+`}
+        >
+          <TextFieldElement
+            name={props.parentName + '.' + 'uri'}
+            size='small'
+            label='DeltaLake storage URI'
+            fullWidth
+          ></TextFieldElement>
+        </FormTooltip>
         {match(storageType)
           .with(undefined, () => <Chip sx={{ width: 200 }} label='URI not recognized'></Chip>)
           .with('aws_s3', () => (

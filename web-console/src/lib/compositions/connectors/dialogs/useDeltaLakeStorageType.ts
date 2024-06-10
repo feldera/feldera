@@ -16,9 +16,9 @@ const inferredFields = (
 ) => (inferred ? Object.keys(inferred.config) : [])
 
 export const useDeltaLakeStorageType = ({ parentName }: { parentName: string }) => {
-  const uri = useWatch<Record<string, string>>({ name: parentName + '.' + 'uri', defaultValue: '' })
-
   const ctx = useFormContext()
+  const uri = useWatch<Record<string, string>>({ name: parentName + '.uri' })
+
   const handleAutofill = ({
     removeFields,
     inferred
@@ -56,7 +56,7 @@ export const useDeltaLakeStorageType = ({ parentName }: { parentName: string }) 
       }
       const inferred = inferDeltaLakeStorageConfig(uri)
       // TODO: this enables autofilling inferred options from URI. Enable if needed.
-      // Otherwise this Hook can be simplified
+      // Otherwise `useDeltaLakeStorageType` Hook can be simplified
       // handleAutofill({ inferred, removeFields: inferredFields(state.inferred) })
       void handleAutofill
       void inferredFields

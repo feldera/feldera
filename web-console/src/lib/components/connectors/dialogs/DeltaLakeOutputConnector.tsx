@@ -20,6 +20,7 @@ import { outputBufferConfigSchema, outputBufferConfigValidation } from '$lib/fun
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { Direction } from '$lib/types/connectors'
 import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
+import BigNumber from 'bignumber.js/bignumber.js'
 import { useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
 import JSONbig from 'true-json-bigint'
@@ -77,14 +78,16 @@ export const DeltaLakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
   }
 
   const defaultValues: DeltaLakeOutputSchema = props.connector
-    ? parseConnectorDescrWith(parseDeltaLakeOutputSchemaConfig)(props.connector)
+    ? (parseConnectorDescrWith(parseDeltaLakeOutputSchemaConfig)(props.connector) as DeltaLakeOutputSchema)
     : {
         name: '',
         transport: {
           uri: '',
           mode: 'append'
         },
-        enable_output_buffer: true
+        enable_output_buffer: true,
+        max_output_buffer_time_millis: new BigNumber(10000),
+        max_output_buffer_size_records: new BigNumber(1000000)
       }
 
   const onSubmit = useConnectorRequest(

@@ -1,7 +1,6 @@
 import { BigNumberInput } from '$lib/components/input/BigNumberInput'
 import { useIntermediateInput } from '$lib/components/input/IntermediateInput'
 import { NumberInput } from '$lib/components/input/NumberInput'
-import { nonNull } from '$lib/functions/common/function'
 import { getField } from '$lib/functions/common/object'
 import {
   JSONXgressValue,
@@ -31,8 +30,13 @@ export const SQLValueElement = ({ name, ...props }: SQLValueInputProps & { name:
     <>
       <SQLValueInput
         {...props}
-        value={nonNull(value) ? xgressJSONToSQLValue(props.columnType, value) : value}
-        onChange={e => ctx.setValue(name, sqlValueToXgressJSON(props.columnType, e.target.value))}
+        value={value === undefined ? undefined : xgressJSONToSQLValue(props.columnType, value)}
+        onChange={e =>
+          ctx.setValue(
+            name,
+            e.target.value === undefined ? undefined : sqlValueToXgressJSON(props.columnType, e.target.value)
+          )
+        }
       ></SQLValueInput>
       {(e => e && <FormHelperText sx={{ color: 'error.main' }}>{e.message?.toString()}</FormHelperText>)(
         getField(name, state.errors)
@@ -197,7 +201,7 @@ export const SQLValueInput = ({
           ...props,
           value: (() => {
             invariant(props.value === null || props.value === undefined || isDayjs(props.value))
-            return props.value?.format('YYYY-MM-DDTHH:mm:ss') ?? ''
+            return props.value?.format('YYYY-MM-DDTHH:mm:ss') ?? 0 // `0` forcefully resets the display of built-in field, it doesn't propagate as a value
           })(),
           onChange: (e: ChangeEvent) => {
             const str = (e.target as any).value

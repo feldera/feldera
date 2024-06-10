@@ -1,5 +1,5 @@
 import { nonNull } from '$lib/functions/common/function'
-import BigNumber from 'bignumber.js'
+import BigNumber from 'bignumber.js/bignumber.js'
 import { useFormContext } from 'react-hook-form-mui'
 import invariant from 'tiny-invariant'
 
@@ -73,7 +73,7 @@ export function PickFormFieldElement(props: {
         const inputProps = { ...params.inputProps, value: params.inputProps.value === '' ? '' : undefined }
         return (
           <TextField
-            placeholder={props.options.length ? 'Select option to add' : 'Enter option name'}
+            placeholder={props.options.length ? 'Select option to add' : 'Enter option name, press Enter to add it'}
             {...params}
             inputProps={inputProps}
           />

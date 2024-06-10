@@ -29,18 +29,45 @@ import Box from '@mui/material/Box'
 
 import { DeltaLakeIngestModeElement } from './elements/deltalake/IngestModeElement'
 
+const restEntries = va.union([va.string(), va.number(), bignumber(), va.boolean(), va.null_(), va.undefined_()])
+
+const commonEntries = {
+  uri: va.nonOptional(va.string([va.minLength(1, 'Enter DeltaLake storage URI')]), 'Enter DeltaLake storage URI')
+}
+
 const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
   description: va.optional(va.string(), ''),
   transport: va.nonOptional(
-    va.object(
-      {
-        uri: va.nonOptional(va.string([va.minLength(1)])),
-        filter: va.transform(va.optional(va.string([va.minLength(1)])), v => v || undefined),
-        mode: va.nonOptional(va.picklist(['snapshot', 'follow', 'snapshot_and_follow']))
-      },
-      va.union([va.string(), va.number(), bignumber(), va.boolean(), va.null_(), va.undefined_()])
-    )
+    va.variant('mode', [
+      va.object(
+        {
+          ...commonEntries,
+          mode: va.literal('snapshot'),
+          snapshot_filter: va.transform(va.optional(va.string()), v => v || undefined),
+          timestamp_column: va.transform(va.optional(va.string()), v => v || undefined)
+        },
+        restEntries
+      ),
+      va.object(
+        {
+          ...commonEntries,
+          mode: va.literal('follow'),
+          snapshot_filter: va.transform(va.any(), () => undefined),
+          timestamp_column: va.transform(va.any(), () => undefined)
+        },
+        restEntries
+      ),
+      va.object(
+        {
+          ...commonEntries,
+          mode: va.literal('snapshot_and_follow'),
+          snapshot_filter: va.transform(va.optional(va.string()), v => v || undefined),
+          timestamp_column: va.transform(va.optional(va.string()), v => v || undefined)
+        },
+        restEntries
+      )
+    ])
   )
 })
 
@@ -72,7 +99,7 @@ export const DeltaLakeInputConnectorDialog = (props: ConnectorDialogProps) => {
   }
 
   const defaultValues: DeltaLakeInputSchema = props.connector
-    ? parseConnectorDescrWith(parseDeltaLakeInputSchemaConfig)(props.connector)
+    ? (parseConnectorDescrWith(parseDeltaLakeInputSchemaConfig)(props.connector) as unknown as DeltaLakeInputSchema)
     : {
         name: '',
         transport: {
@@ -91,7 +118,6 @@ export const DeltaLakeInputConnectorDialog = (props: ConnectorDialogProps) => {
 
   const handleErrors = (errors: FieldErrors<DeltaLakeInputSchema>) => {
     const { name, description, transport } = errors
-    console.log('in err', errors)
     if (!props.show) {
       return
     }
@@ -133,7 +159,13 @@ export const DeltaLakeInputConnectorDialog = (props: ConnectorDialogProps) => {
                 disabled={props.disabled}
                 direction={Direction.INPUT}
                 configFromText={text => parseDeltaLakeInputSchemaConfig(JSONbig.parse(text))}
-                configToText={config => JSONbig.stringify(normalizeDeltaLakeInputConfig(config), undefined, '\t')}
+                configToText={config =>
+                  JSONbig.stringify(
+                    normalizeDeltaLakeInputConfig(va.safeParse(schema, config).output as any),
+                    undefined,
+                    '\t'
+                  )
+                }
                 setEditorDirty={setEditorDirty}
               />
             </PlainDialogContent>

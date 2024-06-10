@@ -1,6 +1,6 @@
 import { bignumber, maxBigNumber, minBigNumber } from '$lib/functions/common/valibot'
 import { FormFieldOptions } from '$lib/functions/forms'
-import BigNumber from 'bignumber.js'
+import BigNumber from 'bignumber.js/bignumber.js'
 import * as va from 'valibot'
 
 export type OutputBufferConfig = {

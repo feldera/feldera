@@ -1,8 +1,8 @@
+import { FormTooltip } from '$lib/components/forms/Tooltip'
 import { useFormContext } from 'react-hook-form-mui'
-import Markdown from 'react-markdown'
 import { FormFieldOptions } from 'src/lib/functions/forms'
 
-import { Grid, IconButton, Tooltip, Typography, useTheme } from '@mui/material'
+import { Grid, IconButton, Typography } from '@mui/material'
 import { Box } from '@mui/system'
 
 import { FormFieldElement } from './FormFieldElement'
@@ -14,26 +14,13 @@ export const FormField = (props: {
   parentName: string
   optional?: boolean
 }) => {
-  const theme = useTheme()
   const ctx = useFormContext()
   return (
     <>
       <Grid item xs={12} sm={6} display='flex' alignItems='start'>
-        <Tooltip
-          slotProps={{
-            tooltip: {
-              sx: {
-                backgroundColor: theme.palette.background.default,
-                color: theme.palette.text.primary,
-                fontSize: 14
-              }
-            }
-          }}
-          title={props.fieldOptions.tooltip ? <Markdown>{props.fieldOptions.tooltip}</Markdown> : undefined}
-          disableInteractive
-        >
+        <FormTooltip title={props.fieldOptions.tooltip}>
           <Typography sx={{ pt: '0.5em' }}>{props.fieldOptions?.label ?? props.field}</Typography>
-        </Tooltip>
+        </FormTooltip>
       </Grid>
       <Grid item xs={12} sm={6}>
         <Box sx={{ display: 'flex' }}>

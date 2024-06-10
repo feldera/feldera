@@ -21,7 +21,7 @@ import DeltaLakeLogo from '$public/images/vendors/databricks-delta-lake-logo.svg
 import DebeziumLogo from '$public/images/vendors/debezium-logo-color.svg'
 import KafkaLogo from '$public/images/vendors/kafka-logo-black.svg'
 import SnowflakeLogo from '$public/images/vendors/snowflake-logo.svg'
-import BigNumber from 'bignumber.js'
+import BigNumber from 'bignumber.js/bignumber.js'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 
@@ -290,11 +290,13 @@ export const parseDeltaLakeInputSchemaConfig = (config: ConnectorDescr['config']
   invariant(config.transport.name === TransportConfig.name.DELTA_TABLE_INPUT)
   return {
     transport: {
-      ...(config.transport.config as typeof config.transport.config & {
-        uri: string
-        mode: 'snapshot' | 'follow' | 'snapshot_and_follow'
-      }),
-      version: (version => (version ? BigNumber(version) : undefined))(config.transport.config.version)
+      ...(config => ({
+        ...config,
+        datetime: config.datetime ?? undefined,
+        snapshot_filter: config.snapshot_filter ?? undefined,
+        timestamp_column: config.timestamp_column ?? undefined,
+        version: config.version ? BigNumber(config.version) : undefined
+      }))(config.transport.config)
     }
   }
 }
@@ -310,10 +312,7 @@ export const parseDeltaLakeOutputSchemaConfig = (config: ConnectorDescr['config'
   invariant(config.transport.name === TransportConfig.name.DELTA_TABLE_OUTPUT)
   return {
     transport: {
-      ...(config.transport.config as typeof config.transport.config & {
-        uri: string
-        mode: 'append' | 'truncate' | 'error_if_exists'
-      })
+      ...config.transport.config
     }
   }
 }
