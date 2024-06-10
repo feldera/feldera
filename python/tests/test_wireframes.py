@@ -281,5 +281,49 @@ class TestWireframes(unittest.TestCase):
         msg = next(consumer)
         assert msg.value is not None
 
+    def test_pipeline_resource_config(self):
+        from feldera.resources import Resources
+
+        config = {
+            "cpu_cores_max": 3,
+            "cpu_cores_min": 2,
+            "memory_mb_max": 500,
+            "memory_mb_min": 300,
+            "storage_mb_max": None,
+            "storage_class": None,
+        }
+
+        resources = Resources(config)
+        name = "test_pipeline_resource_config"
+
+        sql = SQLContext(
+            name,
+            TEST_CLIENT,
+            resources=resources
+        ).get_or_create()
+
+        TBL_NAME = "items"
+        VIEW_NAME = "s"
+
+        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
+
+        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+
+        path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
+
+        fmt = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
+        sql.connect_source_url(TBL_NAME, "part", path, fmt)
+
+        out = sql.listen(VIEW_NAME)
+
+        sql.run_to_completion()
+
+        df = out.to_pandas()
+
+        assert df.shape[0] == 3
+
+        assert TEST_CLIENT.get_pipeline(name).config["resources"] == config
+
+
 if __name__ == '__main__':
     unittest.main()

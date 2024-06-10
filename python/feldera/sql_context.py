@@ -19,13 +19,8 @@ from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
 from feldera._helpers import ensure_dataframe_has_columns
 from feldera.formats import JSONFormat, CSVFormat, AvroFormat
 from feldera._helpers import validate_connector_input_format
-from enum import Enum
-
-
-class BuildMode(Enum):
-    CREATE = 1
-    GET = 2
-    GET_OR_CREATE = 3
+from feldera.resources import Resources
+from feldera.enums import BuildMode, CompilationProfile
 
 
 def _table_name_from_sql(ddl: str) -> str:
@@ -38,6 +33,17 @@ class SQLContext:
 
     The SQLContext is the main entry point for the Feldera SQL API.
     Abstracts the interaction with the Feldera API and provides a high-level interface for SQL pipelines.
+
+    :param pipeline_name: The name of the pipeline.
+    :param client: The :class:`.FelderaClient` instance to use.
+    :param pipeline_description: The description of the pipeline.
+    :param program_name: The name of the program. Defaults to the pipeline name.
+    :param program_description: The description of the program. Defaults to an empty string.
+    :param storage: Set `True` to use storage with this pipeline. Defaults to False.
+    :param workers: The number of workers to use with this pipeline. Defaults to 8.
+    :param resources: The :class:`.PipelineResourceConfig` for the pipeline. Defaults to None.
+    :param compilation_profile: The compilation profile to use when compiling the program. Defaults to
+        :class:`.CompilationProfile.OPTIMIZED`.
     """
 
     def __init__(
@@ -48,7 +54,9 @@ class SQLContext:
             program_name: str = None,
             program_description: str = None,
             storage: bool = False,
-            workers: int = 8
+            workers: int = 8,
+            resources: Resources = None,
+            compilation_profile: CompilationProfile = CompilationProfile.OPTIMIZED
     ):
         self.build_mode: Optional[BuildMode] = None
         self.is_pipeline_running: bool = False
@@ -85,6 +93,8 @@ class SQLContext:
         self.program_description: str = program_description or ""
         self.storage: bool = storage
         self.workers: int = workers
+        self.resources: Resources = resources
+        self.compilation_profile: CompilationProfile = compilation_profile
 
     def __build_ddl(self):
         """
@@ -108,7 +118,9 @@ class SQLContext:
 
         program = Program(self.program_name, self.ddl, self.program_description)
 
-        self.client.compile_program(program)
+        self.client.compile_program(program, {
+            "profile": self.compilation_profile.value
+        })
 
         attached_cons = []
 
@@ -125,6 +137,9 @@ class SQLContext:
                 attached_cons.append(attached_con)
 
         config = { 'storage': self.storage, 'workers': self.workers }
+        if self.resources:
+            config["resources"] = self.resources.__dict__
+
         pipeline = Pipeline(
             self.pipeline_name,
             self.program_name,
