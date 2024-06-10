@@ -91,7 +91,7 @@ export const sqlValueToXgressJSON = (type: ColumnType, value: SQLValueJS): JSONX
     })
     .with({ type: 'TIMESTAMP' }, () => {
       invariant(typeof value === 'string' || isDayjs(value))
-      return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
+      return dayjs(value).format('YYYY-MM-DD HH:mm:ss.SSS')
     })
     .with({ type: 'ARRAY' }, () => {
       invariant(Array.isArray(value))

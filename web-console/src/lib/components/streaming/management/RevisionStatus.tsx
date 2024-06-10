@@ -18,8 +18,8 @@ import {
   useRef,
   useState
 } from 'react'
-import { ThemeColor } from 'src/@core/layouts/types'
 
+import { ThemeColor } from '@core/layouts/types'
 import { DiffEditor, MonacoDiffEditor } from '@monaco-editor/react'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'

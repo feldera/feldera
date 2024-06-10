@@ -137,7 +137,12 @@ export function JSONEditor<T>(props: {
       onMount={handleEditorDidMount}
       theme={vscodeTheme}
       defaultLanguage='yaml'
-      options={isMonacoEditorDisabled(props.disabled)}
+      options={{
+        ...isMonacoEditorDisabled(props.disabled),
+        scrollbar: {
+          vertical: 'hidden'
+        }
+      }}
       value={props.valueToText(props.value)}
       data-testid={props['data-testid']}
     />

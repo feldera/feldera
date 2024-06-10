@@ -15,9 +15,9 @@ import { ApiError, ProgramDescr, ProgramsService, ProgramStatus } from '$lib/ser
 import { mutationUpdateProgram, PipelineManagerQueryKey } from '$lib/services/pipelineManagerQuery'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { useCallback, useState } from 'react'
-import CustomChip from 'src/@core/components/mui/chip'
 import { match, P } from 'ts-pattern'
 
+import CustomChip from '@core/components/mui/chip'
 import { Button, IconButton, Tooltip } from '@mui/material'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'

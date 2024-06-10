@@ -1,9 +1,9 @@
 import themeConfig from '$lib/functions/configs/themeConfig'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Settings } from 'src/@core/context/settingsTypes'
-import { NavLink } from 'src/@core/layouts/types'
 
+import { Settings } from '@core/context/settingsTypes'
+import { NavLink } from '@core/layouts/types'
 import Box, { BoxProps } from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import ListItem from '@mui/material/ListItem'

@@ -113,7 +113,7 @@ const IoSelectBox = (props: {
   )
 }
 
-const shouldDisplayConnector = (direction: Direction, connectorType: ConnectorType) =>
+const shouldDisplayConnector = (direction: Direction) => (connectorType: ConnectorType) =>
   (d => d === Direction.INPUT_OUTPUT || d === direction)(connectorTypeToDirection(connectorType))
 
 const SideBarAddIo = () => {
@@ -175,7 +175,7 @@ const SideBarAddIo = () => {
                 {drawer.nodeType === 'add_input' ? 'Add Input Source' : 'Add Output Destination'}
               </Link>
               <Typography color='text.primary'>
-                {drawer.connectorType && connectorTypeToTitle(drawer.connectorType)}
+                {drawer.connectorType && connectorTypeToTitle(drawer.connectorType).full}
               </Typography>
             </Breadcrumbs>
           )}
@@ -192,22 +192,23 @@ const SideBarAddIo = () => {
             ConnectorType.KAFKA_OUT,
             ConnectorType.DEBEZIUM_IN,
             ConnectorType.SNOWFLAKE_OUT,
+            ConnectorType.DELTALAKE_IN,
+            ConnectorType.DELTALAKE_OUT,
             ConnectorType.S3_IN,
             ConnectorType.URL_IN,
             ConnectorType.UNKNOWN
-          ].map(
-            type =>
-              shouldDisplayConnector(drawer.direction, type) && (
-                <IoSelectBox
-                  key={type}
-                  data-testid={'box-connector-' + type}
-                  icon={connectorTypeToLogo(type)}
-                  howMany={sourceCounts[type] ?? 0}
-                  newButtonProps={{ href: `#new/connector/${drawer.direction}/${type}` }}
-                  selectButtonProps={{ href: `#${drawer!.nodeType}/${type ?? ''}` }}
-                />
-              )
-          )}
+          ]
+            .filter(shouldDisplayConnector(drawer.direction))
+            .map(type => (
+              <IoSelectBox
+                key={type}
+                data-testid={'box-connector-' + type}
+                icon={connectorTypeToLogo(type)}
+                howMany={sourceCounts[type] ?? 0}
+                newButtonProps={{ href: `#new/connector/${drawer.direction}/${type}` }}
+                selectButtonProps={{ href: `#${drawer!.nodeType}/${type ?? ''}` }}
+              />
+            ))}
         </Grid>
       )}
       {!!drawer?.connectorType && (

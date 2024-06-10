@@ -22,7 +22,7 @@
     "lint": "eslint --max-warnings 0 --fix \"src/**/*.{js,jsx,ts,tsx}\"",
     "format": "prettier --write \"{src,tests}/**/*.{js,jsx,ts,tsx}\"",
     "format-check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
-    "generate-openapi": "openapi --input ../openapi.json --output ./src/lib/services/manager && yarn format && patch -p2 < openapi-fixes.patch",
+    "generate-openapi": "openapi --input ../openapi.json --request ./src/lib/services/manager/core/request.ts --output ./src/lib/services/manager && yarn format && patch -p2 < openapi-fixes.patch",
     "build-openapi": "cd .. && cargo run --bin pipeline-manager -- --dump-openapi",
     "test": "PLAYWRIGHT_API_ORIGIN=http://localhost:8080/ PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/ DISPLAY= yarn playwright test",
     "test-ui": "PLAYWRIGHT_API_ORIGIN=http://localhost:8080/ PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/ DISPLAY= yarn playwright test --ui-host=0.0.0.0",
@@ -43,6 +43,7 @@
     "@emotion/server": "^11.11.0",
     "@emotion/styled": "^11.11.5",
     "@faker-js/faker": "^8.4.1",
+    "@fontsource-variable/public-sans": "^5.0.19",
     "@hookform/resolvers": "^3.3.4",
     "@mantine/hooks": "^7.9.1",
     "@monaco-editor/react": "^4.6.0",
@@ -122,6 +123,7 @@
     "use-debounce": "^10.0.0",
     "valibot": "^0.30.0",
     "vite": "^5.2.11",
+    "vite-plugin-svgr": "^4.2.0",
     "yaml": "^2.4.2",
     "zustand": "^4.5.2"
   }

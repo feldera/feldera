@@ -1,6 +1,5 @@
-import { NavSectionTitle } from 'src/@core/layouts/types'
-import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
-
+import { NavSectionTitle } from '@core/layouts/types'
+import { hexToRGBA } from '@core/utils/hex-to-rgba'
 import Divider from '@mui/material/Divider'
 import MuiListSubheader, { ListSubheaderProps } from '@mui/material/ListSubheader'
 import { styled, useTheme } from '@mui/material/styles'

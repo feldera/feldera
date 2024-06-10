@@ -1,11 +1,11 @@
-import { LibrdkafkaOptionElement } from '$lib/components/services/dialogs/elements/LibrdkafkaOptionElement'
-import { PickLibrdkafkaOptionElement } from '$lib/components/services/dialogs/elements/PickLibrdkafkaOptionElement'
+import { FormField } from '$lib/components/forms/FormField'
+import { PickFormFieldElement } from '$lib/components/services/dialogs/elements/PickFormFieldElement'
 import { nubLast } from '$lib/functions/common/array'
-import { LibrdkafkaOptions, librdkafkaOptions } from '$lib/functions/kafka/librdkafkaOptions'
-import { useFormContext, useWatch } from 'react-hook-form-mui'
-import Markdown from 'react-markdown'
+import { formFieldDefaultValue } from '$lib/functions/forms'
+import { LibrdkafkaOptions } from '$lib/functions/kafka/librdkafkaOptions'
+import { useWatch } from 'react-hook-form-mui'
 
-import { Box, Grid, IconButton, Link, Tooltip, Typography, useTheme } from '@mui/material'
+import { Box, Grid, Link, Typography } from '@mui/material'
 
 export const LibrdkafkaOptionsElement = (props: {
   disabled?: boolean
@@ -15,73 +15,33 @@ export const LibrdkafkaOptionsElement = (props: {
   requiredFields: string[]
 }) => {
   const formValues = useWatch({ name: props.parentName })
-  const ctx = useFormContext()
   const usedFields = nubLast(
     props.requiredFields.concat(Object.keys(formValues).filter(field => props.fieldOptions[field]))
   )
-  const theme = useTheme()
 
   return (
     <>
       <Box sx={{ height: '100%', overflowY: 'auto', pr: '3rem', mr: '-1rem' }}>
         <Grid container spacing={4} sx={{ height: 'auto' }}>
           {usedFields.map(field => (
-            <>
-              <Grid item xs={12} sm={6} display='flex' alignItems='center'>
-                <Tooltip
-                  slotProps={{
-                    tooltip: {
-                      sx: {
-                        backgroundColor: theme.palette.background.default,
-                        color: theme.palette.text.primary,
-                        fontSize: 14
-                      }
-                    }
-                  }}
-                  title={
-                    <Markdown>
-                      {
-                        (optionName => librdkafkaOptions.find(option => option.name === optionName))(
-                          field.replaceAll('_', '.')
-                        )?.description
-                      }
-                    </Markdown>
-                  }
-                  disableInteractive
-                >
-                  <Typography>{field.replaceAll('_', '.')}</Typography>
-                </Tooltip>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <Box sx={{ display: 'flex' }}>
-                  <LibrdkafkaOptionElement
-                    fieldOptions={props.fieldOptions[field]}
-                    field={field}
-                    disabled={props.disabled}
-                    parentName={props.parentName}
-                  ></LibrdkafkaOptionElement>
-                  {props.requiredFields.includes(field) ? (
-                    <></>
-                  ) : (
-                    <IconButton
-                      size='small'
-                      sx={{ mr: '-2.5rem', ml: '0.5rem' }}
-                      onClick={() => ctx.unregister(props.parentName + '.' + field)}
-                    >
-                      <i className='bx bx-x' />
-                    </IconButton>
-                  )}
-                </Box>
-              </Grid>
-            </>
+            <FormField
+              key={field}
+              field={field}
+              fieldOptions={props.fieldOptions[field]}
+              disabled={props.disabled}
+              parentName={props.parentName}
+              optional={!props.requiredFields.includes(field)}
+            ></FormField>
           ))}
 
           <Grid item xs={12} sm={6}>
-            <PickLibrdkafkaOptionElement
+            <PickFormFieldElement
               parentName={props.parentName}
-              fieldOptions={props.fieldOptions}
-              usedFields={usedFields}
-            ></PickLibrdkafkaOptionElement>
+              options={Object.keys(props.fieldOptions)
+                .filter(option => !usedFields.includes(option))
+                .map(option => option.replaceAll('_', '.'))}
+              getDefault={(field: string) => formFieldDefaultValue(props.fieldOptions[field])}
+            ></PickFormFieldElement>
           </Grid>
         </Grid>
       </Box>

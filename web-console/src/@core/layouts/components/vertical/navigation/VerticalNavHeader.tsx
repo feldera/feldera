@@ -2,8 +2,8 @@ import LightLogo from '$public/images/feldera/LogoSolid.svg'
 import DarkLogo from '$public/images/feldera/LogoWhite.svg'
 import Link from 'next/link'
 import { ReactNode } from 'react'
-import { Settings } from 'src/@core/context/settingsTypes'
 
+import { Settings } from '@core/context/settingsTypes'
 import Box, { BoxProps } from '@mui/material/Box'
 import { styled } from '@mui/material/styles'
 

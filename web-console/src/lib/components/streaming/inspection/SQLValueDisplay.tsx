@@ -1,6 +1,6 @@
 import { getValueFormatter, SQLValueJS } from '$lib/functions/sqlValue'
+import { ColumnType } from '$lib/services/manager'
 import { useMemo } from 'react'
-import { ColumnType } from 'src/lib/services/manager'
 
 import { Typography } from '@mui/material'
 

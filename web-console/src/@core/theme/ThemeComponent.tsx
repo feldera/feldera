@@ -1,7 +1,7 @@
 import themeConfig from '$lib/functions/configs/themeConfig'
 import { ReactNode } from 'react'
-import { Settings } from 'src/@core/context/settingsTypes'
 
+import { Settings } from '@core/context/settingsTypes'
 import CssBaseline from '@mui/material/CssBaseline'
 import GlobalStyles from '@mui/material/GlobalStyles'
 import { createTheme, responsiveFontSizes, ThemeProvider } from '@mui/material/styles'

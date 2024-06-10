@@ -3,8 +3,8 @@
 import themeConfig from '$lib/functions/configs/themeConfig'
 import { LS_PREFIX } from '$lib/types/localStorage'
 import { createContext, ReactNode } from 'react'
-import { Settings } from 'src/@core/context/settingsTypes'
 
+import { Settings } from '@core/context/settingsTypes'
 import { useLocalStorage } from '@mantine/hooks'
 
 export type SettingsContextValue = {

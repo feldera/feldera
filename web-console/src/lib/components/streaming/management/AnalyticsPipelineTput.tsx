@@ -6,8 +6,8 @@ import { calcPipelineThroughput } from '$lib/compositions/streaming/management/u
 import { GlobalMetrics } from '$lib/types/pipeline'
 import { ApexOptions } from 'apexcharts'
 import { format } from 'd3-format'
-import ReactApexcharts from 'src/@core/components/react-apexcharts'
 
+import ReactApexcharts from '@core/components/react-apexcharts'
 import { Box } from '@mui/material'
 import Card from '@mui/material/Card'
 import { useTheme } from '@mui/material/styles'

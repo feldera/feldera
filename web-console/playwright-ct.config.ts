@@ -1,6 +1,5 @@
 import { resolve } from 'path'
-import { FileSystemIconLoader } from 'unplugin-icons/loaders'
-import UnpluginIcons from 'unplugin-icons/vite'
+import svgr from 'vite-plugin-svgr'
 
 import { defineConfig, devices } from '@playwright/experimental-ct-react'
 import react from '@vitejs/plugin-react'
@@ -9,7 +8,7 @@ import react from '@vitejs/plugin-react'
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
-  testDir: './src/lib/components',
+  testDir: './src/lib',
   /* The base directory, relative to the config file, for snapshot files created with toMatchSnapshot and toHaveScreenshot. */
   snapshotDir: './playwright-snapshots/ct',
   /* Maximum time one test can run for. */
@@ -34,24 +33,16 @@ export default defineConfig({
     ctViteConfig: {
       resolve: {
         alias: {
+          '$app': resolve(__dirname, './src/app'),
           '$lib': resolve(__dirname, './src/lib'),
           '$tests': resolve(__dirname, './tests'),
           'src/lib': resolve(__dirname, './src/lib'),
+          '$public': resolve(__dirname, './public'),
+          '@core': resolve(__dirname, './src/@core')
         },
       },
       plugins: [
-        react(),
-        UnpluginIcons({
-          compiler: 'jsx', jsx: 'react',
-          customCollections: {
-            'vendors': FileSystemIconLoader(
-              "./public/icons/vendors",
-            ),
-            'generic': FileSystemIconLoader(
-              "./public/icons/generic",
-            ),
-          }
-         }),
+        react(), svgr()
       ],
     },
     testIdAttribute: 'data-testid',

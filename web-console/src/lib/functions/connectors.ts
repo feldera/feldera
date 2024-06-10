@@ -1,23 +1,29 @@
-import { EditorSchema, KafkaInputSchema, KafkaOutputSchema } from '$lib/components/connectors/dialogs'
 import { DebeziumInputSchema } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
+import { EditorSchema } from '$lib/components/connectors/dialogs/GenericEditorConnector'
+import { KafkaInputSchema } from '$lib/components/connectors/dialogs/KafkaInputConnector'
+import { KafkaOutputSchema } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
 import { SnowflakeOutputSchema } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
 import { assertUnion } from '$lib/functions/common/array'
+import { nonNull } from '$lib/functions/common/function'
 import { parseAuthParams } from '$lib/functions/kafka/authParamsSchema'
-import { fromKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
-import { ConnectorDescr, TransportConfig } from '$lib/services/manager'
+import { fromKafkaConfig, LibrdkafkaOptionType, toKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
+import { ConnectorDescr, OutputBufferConfig, TransportConfig } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import { SVGImport } from '$lib/types/imports'
 import IconGenericBoilingFlask from '$public/icons/generic/boiling-flask.svg'
 import IconGenericHttpGet from '$public/icons/generic/http-get.svg'
 import IconVendorsAmazonS3 from '$public/icons/vendors/amazon-s3.svg'
 import IconVendorsApacheKafka from '$public/icons/vendors/apache-kafka.svg'
+import IconVendorsDeltaLake from '$public/icons/vendors/databricks-delta-lake-icon.svg'
 import IconVendorsDebezium from '$public/icons/vendors/debezium.svg'
 import IconVendorsSnowflake from '$public/icons/vendors/snowflake.svg'
 import ImageHttpGet from '$public/images/generic/http-get.svg'
 import S3Logo from '$public/images/vendors/amazon-s3-logo.svg'
+import DeltaLakeLogo from '$public/images/vendors/databricks-delta-lake-logo.svg'
 import DebeziumLogo from '$public/images/vendors/debezium-logo-color.svg'
 import KafkaLogo from '$public/images/vendors/kafka-logo-black.svg'
 import SnowflakeLogo from '$public/images/vendors/snowflake-logo.svg'
+import BigNumber from 'bignumber.js/bignumber.js'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 
@@ -26,28 +32,21 @@ export const connectorDescrToType = (config: ConnectorDescr['config']): Connecto
   return match(config)
     .with(
       { transport: { name: TransportConfig.name.KAFKA_INPUT }, format: { config: { update_format: 'debezium' } } },
-      () => {
-        return ConnectorType.DEBEZIUM_IN
-      }
+      () => ConnectorType.DEBEZIUM_IN
     )
     .with(
       { transport: { name: TransportConfig.name.KAFKA_OUTPUT }, format: { config: { update_format: 'snowflake' } } },
-      () => {
-        return ConnectorType.SNOWFLAKE_OUT
-      }
+      () => ConnectorType.SNOWFLAKE_OUT
     )
-    .with({ transport: { name: TransportConfig.name.KAFKA_INPUT } }, () => {
-      return ConnectorType.KAFKA_IN
-    })
-    .with({ transport: { name: TransportConfig.name.KAFKA_OUTPUT } }, () => {
-      return ConnectorType.KAFKA_OUT
-    })
-    .with({ transport: { name: TransportConfig.name.URL_INPUT } }, () => {
-      return ConnectorType.URL_IN
-    })
-    .otherwise(() => {
-      return ConnectorType.UNKNOWN
-    })
+    .with({ transport: { name: TransportConfig.name.KAFKA_INPUT } }, () => ConnectorType.KAFKA_IN)
+    .with({ transport: { name: TransportConfig.name.KAFKA_OUTPUT } }, () => ConnectorType.KAFKA_OUT)
+    .with({ transport: { name: TransportConfig.name.URL_INPUT } }, () => ConnectorType.URL_IN)
+    .with({ transport: { name: TransportConfig.name.DELTA_TABLE_INPUT } }, () => ConnectorType.DELTALAKE_IN)
+    .with({ transport: { name: TransportConfig.name.DELTA_TABLE_OUTPUT } }, () => ConnectorType.DELTALAKE_OUT)
+    .with({ transport: { name: TransportConfig.name.S3_INPUT } }, () => ConnectorType.S3_IN)
+    .with({ transport: { name: TransportConfig.name.FILE_INPUT } }, () => ConnectorType.UNKNOWN)
+    .with({ transport: { name: TransportConfig.name.FILE_OUTPUT } }, () => ConnectorType.UNKNOWN)
+    .exhaustive()
 }
 
 export const parseConnectorDescrWith =
@@ -56,9 +55,44 @@ export const parseConnectorDescrWith =
     return {
       name: connector.name,
       description: connector.description,
+      enable_output_buffer: connector.config.enable_output_buffer,
+      max_output_buffer_time_millis: (n => (nonNull(n) ? BigNumber(n) : n))(
+        connector.config.max_output_buffer_time_millis
+      ),
+      max_output_buffer_size_records: (n => (nonNull(n) ? BigNumber(n) : n))(
+        connector.config.max_output_buffer_size_records
+      ),
       ...parseConfig(connector.config)
     }
   }
+
+// Define what should happen when the form is submitted
+export const prepareDataWith =
+  <
+    T extends {
+      transport: Record<string, any>
+      format?: Record<string, any>
+    },
+    R
+  >(
+    normalizeConfig: (config: T) => R
+  ) =>
+  (
+    data: {
+      name: string
+      description?: string
+    } & T &
+      OutputBufferConfig
+  ) => ({
+    name: data.name,
+    description: data.description,
+    config: {
+      ...normalizeConfig(data),
+      enable_output_buffer: data.enable_output_buffer,
+      max_output_buffer_time_millis: data.max_output_buffer_time_millis,
+      max_output_buffer_size_records: data.max_output_buffer_size_records
+    }
+  })
 
 /**
  * Given an existing ConnectorDescr return the KafkaInputSchema
@@ -84,10 +118,32 @@ export const parseKafkaInputSchemaConfig = (config: ConnectorDescr['config']) =>
 
 export const parseKafkaInputSchema = parseConnectorDescrWith(parseKafkaInputSchemaConfig)
 
+export const normalizeKafkaInputConfig = (data: {
+  transport: KafkaInputSchema['transport']
+  format: Record<string, string | boolean>
+}) => ({
+  transport: {
+    name: TransportConfig.name.KAFKA_INPUT,
+    config: toKafkaConfig(data.transport)
+  },
+  format: {
+    name: data.format.format_name,
+    config: {
+      ...(data.format.format_name === 'json'
+        ? {
+            update_format: data.format.update_format,
+            array: data.format.json_array
+          }
+        : {})
+    }
+  }
+})
+
 // Given an existing ConnectorDescr return the KafkaOutputSchema
 // if connector is of type KAFKA_OUT.
 export const parseKafkaOutputSchemaConfig = (config: ConnectorDescr['config']) => {
   invariant(config.transport.name === TransportConfig.name.KAFKA_OUTPUT)
+
   const authConfig = parseAuthParams(config.transport.config)
 
   return {
@@ -104,12 +160,33 @@ export const parseKafkaOutputSchemaConfig = (config: ConnectorDescr['config']) =
 
 export const parseKafkaOutputSchema = parseConnectorDescrWith(parseKafkaOutputSchemaConfig)
 
+export const normalizeKafkaOutputConfig = (data: {
+  transport: Record<string, LibrdkafkaOptionType>
+  format: Record<string, string | boolean>
+}) => ({
+  transport: {
+    name: TransportConfig.name.KAFKA_OUTPUT,
+    config: toKafkaConfig(data.transport)
+  },
+  format: {
+    name: data.format.format_name,
+    config: {
+      ...(data.format.format_name === 'json'
+        ? {
+            array: data.format.json_array
+          }
+        : {})
+    }
+  }
+})
+
 // Given an existing ConnectorDescr return the DebeziumInputSchema
 // if connector is of type DEBEZIUM_IN.
 export const parseDebeziumInputSchemaConfig = (config: ConnectorDescr['config']) => {
   invariant(config.transport.name === TransportConfig.name.KAFKA_INPUT)
 
   const authConfig = parseAuthParams(config.transport.config)
+
   return {
     transport: {
       ...fromKafkaConfig(config.transport.config),
@@ -122,6 +199,27 @@ export const parseDebeziumInputSchemaConfig = (config: ConnectorDescr['config'])
     }
   }
 }
+
+export const normalizeDebeziumInputConfig = (data: {
+  transport: DebeziumInputSchema['transport']
+  format: Record<string, string | boolean>
+}) => ({
+  transport: {
+    name: TransportConfig.name.KAFKA_INPUT,
+    config: toKafkaConfig(data.transport)
+  },
+  format: {
+    name: data.format.format_name,
+    config: {
+      ...(data.format.format_name === 'json'
+        ? {
+            update_format: data.format.update_format,
+            json_flavor: data.format.json_flavor
+          }
+        : {})
+    }
+  }
+})
 
 export const parseDebeziumInputSchema = parseConnectorDescrWith(parseDebeziumInputSchemaConfig)
 
@@ -143,6 +241,60 @@ export const parseSnowflakeOutputSchemaConfig = (config: ConnectorDescr['config'
 }
 
 export const parseSnowflakeOutputSchema = parseConnectorDescrWith(parseSnowflakeOutputSchemaConfig)
+
+export const normalizeSnowflakeOutputConfig = (data: {
+  transport: Record<string, LibrdkafkaOptionType>
+  format: Record<string, string | boolean>
+}) => ({
+  transport: {
+    name: TransportConfig.name.KAFKA_OUTPUT,
+    config: toKafkaConfig(data.transport)
+  },
+  format: {
+    name: data.format.format_name,
+    config: {
+      update_format: data.format.update_format
+    }
+  }
+})
+
+export const parseDeltaLakeInputSchemaConfig = (config: ConnectorDescr['config']) => {
+  invariant(config.transport.name === TransportConfig.name.DELTA_TABLE_INPUT)
+  return {
+    transport: {
+      ...(config => ({
+        ...config,
+        datetime: config.datetime ?? undefined,
+        snapshot_filter: config.snapshot_filter ?? undefined,
+        timestamp_column: config.timestamp_column ?? undefined,
+        version: config.version ? BigNumber(config.version) : undefined
+      }))(config.transport.config)
+    }
+  }
+}
+
+export const normalizeDeltaLakeInputConfig = (data: { transport: Record<string, any> }) => ({
+  transport: {
+    name: TransportConfig.name.DELTA_TABLE_INPUT,
+    config: data.transport
+  }
+})
+
+export const parseDeltaLakeOutputSchemaConfig = (config: ConnectorDescr['config']) => {
+  invariant(config.transport.name === TransportConfig.name.DELTA_TABLE_OUTPUT)
+  return {
+    transport: {
+      ...config.transport.config
+    }
+  }
+}
+
+export const normalizeDeltaLakeOutputConfig = (data: { transport: Record<string, any> }) => ({
+  transport: {
+    name: TransportConfig.name.DELTA_TABLE_OUTPUT,
+    config: data.transport
+  }
+})
 
 // Given an existing ConnectorDescr return the CsvFileSchema
 // if connector is of type FILE.
@@ -190,6 +342,12 @@ export const connectorTypeToDirection = (status: ConnectorType) =>
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
       return Direction.OUTPUT
     })
+    .with(ConnectorType.DELTALAKE_IN, () => {
+      return Direction.INPUT
+    })
+    .with(ConnectorType.DELTALAKE_OUT, () => {
+      return Direction.OUTPUT
+    })
     .with(ConnectorType.S3_IN, () => {
       return Direction.INPUT
     })
@@ -201,56 +359,45 @@ export const connectorTypeToDirection = (status: ConnectorType) =>
     })
     .exhaustive()
 
-/// Given a connector type return to which name in the config it corresponds to.
-export const connectorTransportName = (status: ConnectorType) =>
-  match(status)
-    .with(ConnectorType.KAFKA_IN, () => {
-      return 'kafka_input'
-    })
-    .with(ConnectorType.KAFKA_OUT, () => {
-      return 'kafka_output'
-    })
-    .with(ConnectorType.DEBEZIUM_IN, () => {
-      return 'kafka_input'
-    })
-    .with(ConnectorType.SNOWFLAKE_OUT, () => {
-      return 'kafka_output'
-    })
-    .with(ConnectorType.S3_IN, () => {
-      return 's3_input'
-    })
-    .with(ConnectorType.URL_IN, () => {
-      return 'url_input'
-    })
-    .with(ConnectorType.UNKNOWN, () => {
-      return ''
-    })
-    .exhaustive()
-
 // Return the title of a connector (for display in components).
 export const connectorTypeToTitle = (status: ConnectorType) =>
   match(status)
-    .with(ConnectorType.KAFKA_IN, () => {
-      return 'Kafka Input'
-    })
-    .with(ConnectorType.KAFKA_OUT, () => {
-      return 'Kafka Output'
-    })
-    .with(ConnectorType.DEBEZIUM_IN, () => {
-      return 'Debezium Input'
-    })
-    .with(ConnectorType.SNOWFLAKE_OUT, () => {
-      return 'Snowflake Output'
-    })
-    .with(ConnectorType.S3_IN, () => {
-      return 'S3 Compatible Input'
-    })
-    .with(ConnectorType.URL_IN, () => {
-      return 'HTTP URL'
-    })
-    .with(ConnectorType.UNKNOWN, () => {
-      return 'Connector'
-    })
+    .with(ConnectorType.KAFKA_IN, () => ({
+      full: 'Kafka Input',
+      short: 'Kafka In'
+    }))
+    .with(ConnectorType.KAFKA_OUT, () => ({
+      full: 'Kafka Output',
+      short: 'Kafka Out'
+    }))
+    .with(ConnectorType.DEBEZIUM_IN, () => ({
+      full: 'Debezium Input',
+      short: 'Debezium In'
+    }))
+    .with(ConnectorType.SNOWFLAKE_OUT, () => ({
+      full: 'Snowflake Output',
+      short: 'Snowflake Out'
+    }))
+    .with(ConnectorType.DELTALAKE_IN, () => ({
+      full: 'Delta Lake Input',
+      short: 'DeltaLake In'
+    }))
+    .with(ConnectorType.DELTALAKE_OUT, () => ({
+      full: 'Delta Lake Output',
+      short: 'DeltaLake Out'
+    }))
+    .with(ConnectorType.S3_IN, () => ({
+      full: 'S3 Compatible Input',
+      short: 'S3 In'
+    }))
+    .with(ConnectorType.URL_IN, () => ({
+      full: 'HTTP GET',
+      short: 'HTTP GET'
+    }))
+    .with(ConnectorType.UNKNOWN, () => ({
+      full: 'Generic Connector',
+      short: 'Generic'
+    }))
     .exhaustive()
 
 // Return the icon of a connector (for display in components).
@@ -267,6 +414,12 @@ export const connectorTypeToLogo = (status: ConnectorType): SVGImport =>
     })
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
       return SnowflakeLogo
+    })
+    .with(ConnectorType.DELTALAKE_IN, () => {
+      return DeltaLakeLogo
+    })
+    .with(ConnectorType.DELTALAKE_OUT, () => {
+      return DeltaLakeLogo
     })
     .with(ConnectorType.S3_IN, () => {
       return S3Logo
@@ -294,6 +447,12 @@ export const connectorTypeToIcon = (status: ConnectorType) =>
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
       return IconVendorsSnowflake
     })
+    .with(ConnectorType.DELTALAKE_IN, () => {
+      return IconVendorsDeltaLake
+    })
+    .with(ConnectorType.DELTALAKE_OUT, () => {
+      return IconVendorsDeltaLake
+    })
     .with(ConnectorType.S3_IN, () => {
       return IconVendorsAmazonS3
     })
@@ -316,6 +475,12 @@ export const getStatusObj = (status: ConnectorType) =>
     })
     .with(ConnectorType.DEBEZIUM_IN, () => {
       return { title: 'Debezium In', color: 'secondary' as const }
+    })
+    .with(ConnectorType.DELTALAKE_IN, () => {
+      return { title: 'DeltaLake In', color: 'secondary' as const }
+    })
+    .with(ConnectorType.DELTALAKE_OUT, () => {
+      return { title: 'DeltaLake Out', color: 'secondary' as const }
     })
     .with(ConnectorType.SNOWFLAKE_OUT, () => {
       return { title: 'Snowflake Out', color: 'secondary' as const }

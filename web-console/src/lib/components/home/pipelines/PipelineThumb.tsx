@@ -4,9 +4,9 @@ import { calcPipelineThroughput, usePipelineMetrics } from '$lib/compositions/st
 import { InputEndpointMetrics, OutputEndpointMetrics, Pipeline, PipelineStatus } from '$lib/types/pipeline'
 import { format } from 'd3-format'
 import { useState } from 'react'
-import ReactApexcharts from 'src/@core/components/react-apexcharts'
-import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
 
+import ReactApexcharts from '@core/components/react-apexcharts'
+import { hexToRGBA } from '@core/utils/hex-to-rgba'
 import { Box, Button, Collapse, Link, Typography } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
 

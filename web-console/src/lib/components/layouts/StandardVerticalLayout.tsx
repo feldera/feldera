@@ -3,9 +3,9 @@
 import { useAuth } from '$lib/compositions/auth/useAuth'
 import VerticalNavItems from '$lib/functions/navigation/vertical'
 import { ReactNode } from 'react'
-import { useSettings } from 'src/@core/hooks/useSettings'
-import { VerticalLayout } from 'src/@core/layouts/VerticalLayout'
 
+import { useSettings } from '@core/hooks/useSettings'
+import { VerticalLayout } from '@core/layouts/VerticalLayout'
 import { Theme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
 

@@ -3,8 +3,8 @@
 // Currently does not persist across full-reloads, for that we have to save the
 import WeatherNight from 'mdi-material-ui/WeatherNight'
 import WeatherSunny from 'mdi-material-ui/WeatherSunny'
-import { Settings } from 'src/@core/context/settingsTypes'
 
+import { Settings } from '@core/context/settingsTypes'
 // settings in local storage.
 import { PaletteMode } from '@mui/material'
 import IconButton from '@mui/material/IconButton'

@@ -1,5 +1,4 @@
-import { hexToRGBA } from 'src/@core/utils/hex-to-rgba'
-
+import { hexToRGBA } from '@core/utils/hex-to-rgba'
 import { Theme } from '@mui/material/styles'
 
 const Timeline = (theme: Theme) => {

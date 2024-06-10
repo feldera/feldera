@@ -1,9 +1,9 @@
 // The save indicator that is shown while editing programs or pipelines and
 // indicates if the modified version has been saved or is currently being saved.
 
-import ColoredChip from 'src/@core/components/mui/chip'
 import { match } from 'ts-pattern'
 
+import ColoredChip from '@core/components/mui/chip'
 import IconCloudDone from '@mui/icons-material/CloudDone'
 import IconCloudOff from '@mui/icons-material/CloudOff'
 import IconSync from '@mui/icons-material/Sync'

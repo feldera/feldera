@@ -1,15 +1,11 @@
 'use client'
 /** @jsxImportSource @emotion/react */
 
-import StatusSnackBar from '$lib/components/common/errors/StatusSnackBar'
-import { AuthenticationProvider } from '$lib/components/layouts/AuthProvider'
 import { OpenAPI } from '$lib/services/manager'
-import { Next13ProgressBar as NextProgressBar } from 'next13-progressbar'
 import { ReactNode } from 'react'
-import { SettingsConsumer, SettingsProvider } from 'src/@core/context/settingsContext'
-import ThemeComponent from 'src/@core/theme/ThemeComponent'
 
-import { useTheme } from '@mui/material/styles'
+import { SettingsConsumer, SettingsProvider } from '@core/context/settingsContext'
+import ThemeComponent from '@core/theme/ThemeComponent'
 import { LocalizationProvider } from '@mui/x-date-pickers'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import { LicenseInfo } from '@mui/x-license'
@@ -29,35 +25,18 @@ OpenAPI.BASE =
 // provide the default query function to your app with defaultOptions
 const queryClient = new QueryClient({})
 
-const Layout = (props: { children: ReactNode }) => {
-  const theme = useTheme()
-  return (
-    <>
-      <NextProgressBar height='3px' color={theme.palette.primary.main} options={{ showSpinner: false }} showOnShallow />
-      {props.children}
-      <StatusSnackBar />
-    </>
-  )
-}
-
 export default (props: { children: ReactNode }) => {
   return (
     <EmotionRootStyleRegistry>
       <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale='en-gb'>
         <QueryClientProvider client={queryClient}>
-          <AuthenticationProvider>
-            <SettingsProvider>
-              <SettingsConsumer>
-                {({ settings }) => {
-                  return (
-                    <ThemeComponent settings={settings}>
-                      <Layout>{props.children}</Layout>
-                    </ThemeComponent>
-                  )
-                }}
-              </SettingsConsumer>
-            </SettingsProvider>
-          </AuthenticationProvider>
+          <SettingsProvider>
+            <SettingsConsumer>
+              {({ settings }) => {
+                return <ThemeComponent settings={settings}>{props.children}</ThemeComponent>
+              }}
+            </SettingsConsumer>
+          </SettingsProvider>
         </QueryClientProvider>
       </LocalizationProvider>
     </EmotionRootStyleRegistry>

@@ -21,3 +21,6 @@ export function pruneObj<T extends Record<string | number | symbol, unknown>>(ob
   }
   return obj
 }
+
+export const getField = (path: string, object: any) =>
+  path.split('.').reduce((acc, field) => (acc instanceof Object ? acc[field] : acc), object)

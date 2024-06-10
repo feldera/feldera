@@ -212,10 +212,7 @@ const ServiceDialogs = () => {
             type='submit'
             variant='contained'
             color='success'
-            endIcon={
-              // <i className={`bx bx-check`} style={{  }} />
-              <i className={`bx bx-check`} style={{}} />
-            }
+            endIcon={<i className={`bx bx-check`} style={{}} />}
           >
             Register
           </Button>
@@ -240,10 +237,7 @@ const ServiceDialogs = () => {
             type='submit'
             variant='contained'
             color='success'
-            endIcon={
-              // <i className={`bx bx-check`} style={{  }} />
-              <i className={`bx bx-check`} style={{}} />
-            }
+            endIcon={<i className={`bx bx-check`} style={{}} />}
           >
             Update
           </Button>

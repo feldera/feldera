@@ -3,10 +3,10 @@
 
 import { TabFooter } from '$lib/components/connectors/dialogs/tabs/TabFooter'
 import { TabLabel } from '$lib/components/connectors/dialogs/tabs/TabLabel'
-import { connectorTransportName, parseUrlSchema } from '$lib/functions/connectors'
+import { parseUrlSchema } from '$lib/functions/connectors'
 import { PLACEHOLDER_VALUES } from '$lib/functions/placeholders'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
-import { ConnectorType } from '$lib/types/connectors'
+import { TransportConfig } from '$lib/services/manager'
 import { ConnectorDialogProps } from '$lib/types/connectors/ConnectorDialogProps'
 import { useEffect, useState } from 'react'
 import { FieldErrors } from 'react-hook-form'
@@ -25,7 +25,7 @@ import IconButton from '@mui/material/IconButton'
 import Tab from '@mui/material/Tab'
 import Typography from '@mui/material/Typography'
 
-import { TabGenericInputFormatDetails } from './tabs/TabGenericInputFormatDetails'
+import { TabGenericInputFormatDetails } from './tabs/generic/TabGenericInputFormatDetails'
 import Transition from './tabs/Transition'
 
 const schema = va.object({
@@ -82,7 +82,7 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
 
   const normalizeConfig = (data: { transport: UrlSchema['transport']; format: UrlSchema['format'] }) => ({
     transport: {
-      name: connectorTransportName(ConnectorType.URL_IN),
+      name: TransportConfig.name.URL_INPUT,
       config: {
         path: data.transport.url
       }

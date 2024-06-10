@@ -952,11 +952,13 @@ export const librdkafkaOptions = [
   .map(row => {
     const data = {
       name: row[0].trim(),
+      label: row[0].trim().replaceAll('_', '.'),
       scope: row[1].trim() as 'C' | 'P' | '*',
       range: row[2].trim(),
       default: row[3].trim(),
       importance: row[4].trim(),
       description: row[5],
+      tooltip: row[5],
       type: deduceType(row)
     }
     if (data.type === 'number') {
@@ -1108,12 +1110,3 @@ export const fromKafkaConfig = ({ kafka_service, ...config }: Record<string, str
 }
 
 export type LibrdkafkaOptions = (typeof librdkafkaOptions)[number]
-
-export const librdkafkaDefaultValue = (option: Omit<LibrdkafkaOptions, 'scope' | 'importance'>) =>
-  match(option.type)
-    .with('boolean', () => option.default === 'true')
-    .with('number', () => parseInt(option.default))
-    .with('enum', 'string', () => option.default)
-    .with('list', () => option.default.split(', '))
-    .with('array', () => option.default.split(', '))
-    .exhaustive()

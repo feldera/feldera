@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1835](https://github.com/feldera/feldera/pull/1835))
 - [Python] Add function to wait for the pipeline to become idle
   ([#1841](https://github.com/feldera/feldera/pull/1841))
+- WebConsole: DeltaLake input (#1744) and output (#1584) conenctors
+- WebConsole: Add output buffer configuration UI (#1591)
 
 ### Fixed
 

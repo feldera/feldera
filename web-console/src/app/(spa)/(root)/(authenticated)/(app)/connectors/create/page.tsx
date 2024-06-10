@@ -2,15 +2,15 @@
 
 import { Breadcrumbs } from '$lib/components/common/BreadcrumbsHeader'
 import { GridItems } from '$lib/components/common/GridItems'
-import {
-  ConfigEditorDialog,
-  KafkaInputConnectorDialog,
-  KafkaOutputConnectorDialog,
-  UrlConnectorDialog
-} from '$lib/components/connectors/dialogs'
 import { AddConnectorCard } from '$lib/components/connectors/dialogs/AddConnectorCard'
 import { DebeziumInputConnectorDialog } from '$lib/components/connectors/dialogs/DebeziumInputConnector'
+import { DeltaLakeInputConnectorDialog } from '$lib/components/connectors/dialogs/DeltaLakeInputConnector'
+import { DeltaLakeOutputConnectorDialog } from '$lib/components/connectors/dialogs/DeltaLakeOutputConnector'
+import { ConfigEditorDialog } from '$lib/components/connectors/dialogs/GenericEditorConnector'
+import { KafkaInputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaInputConnector'
+import { KafkaOutputConnectorDialog } from '$lib/components/connectors/dialogs/KafkaOutputConnector'
 import { SnowflakeOutputConnectorDialog } from '$lib/components/connectors/dialogs/SnowflakeOutputConnector'
+import { UrlConnectorDialog } from '$lib/components/connectors/dialogs/UrlConnector'
 import { useHashPart } from '$lib/compositions/useHashPart'
 import { connectorTypeToLogo } from '$lib/functions/connectors'
 import { showOnHashPart } from '$lib/functions/urlHash'
@@ -56,6 +56,13 @@ const ConnectorCreateGrid = () => {
             data-testid='box-connector-debezium'
           />
           <AddConnectorCard
+            icon={connectorTypeToLogo(ConnectorType.DELTALAKE_IN)}
+            title='Connect with Delta Lake'
+            addInput={{ href: '#input/deltalake' }}
+            addOutput={{ href: '#output/deltalake' }}
+            data-testid='box-connector-deltalake'
+          />
+          <AddConnectorCard
             icon={connectorTypeToLogo(ConnectorType.SNOWFLAKE_OUT)}
             title='Connect to a Snowflake table'
             addOutput={{ href: '#output/snowflake' }}
@@ -85,10 +92,7 @@ const ConnectorCreateGrid = () => {
               <Button
                 variant='contained'
                 color='success'
-                endIcon={
-                  <i className={`bx bx-check`} style={{}} />
-                  // <i className={`bx bx-check`} style={{  }} />
-                }
+                endIcon={<i className={`bx bx-check`} style={{}} />}
                 type='submit'
                 data-testid='button-create'
               >
@@ -104,6 +108,8 @@ const ConnectorCreateGrid = () => {
           .with('input/kafka', () => KafkaInputConnectorDialog)
           .with('output/kafka', () => KafkaOutputConnectorDialog)
           .with('input/debezium', () => DebeziumInputConnectorDialog)
+          .with('input/deltalake', () => DeltaLakeInputConnectorDialog)
+          .with('output/deltalake', () => DeltaLakeOutputConnectorDialog)
           .with('output/snowflake', () => SnowflakeOutputConnectorDialog)
           .with('generic', () => ConfigEditorDialog)
           .otherwise(() => null)
