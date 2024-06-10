@@ -73,7 +73,7 @@ public class CompilerMessages {
             output.append(contents.getFragment(this.range));
         }
 
-        public JsonNode toJson(ObjectMapper mapper) {
+        public JsonNode toJson(SourceFileContents contents, ObjectMapper mapper) {
             ObjectNode result = mapper.createObjectNode();
             result.put("startLineNumber", this.range.start.line);
             result.put("startColumn", this.range.start.column);
@@ -82,6 +82,8 @@ public class CompilerMessages {
             result.put("warning", this.warning);
             result.put("errorType", this.errorType);
             result.put("message", this.message);
+            String snippet = contents.getFragment(this.range);
+            result.put("snippet", snippet);
             return result;
         }
 
@@ -166,7 +168,7 @@ public class CompilerMessages {
     public String toString() {
         StringBuilder builder = new StringBuilder();
         if (this.compiler.options.ioOptions.emitJsonErrors) {
-            JsonNode node = this.toJson();
+            JsonNode node = this.toJson(this.compiler.sources);
             builder.append(node.toPrettyString());
         } else {
             for (Error message: this.messages) {
@@ -182,11 +184,11 @@ public class CompilerMessages {
         return this.messages.isEmpty();
     }
 
-    public JsonNode toJson() {
+    public JsonNode toJson(SourceFileContents contents) {
         ObjectMapper mapper = new ObjectMapper();
         ArrayNode result = mapper.createArrayNode();
         for (Error message: this.messages) {
-            JsonNode node = message.toJson(mapper);
+            JsonNode node = message.toJson(contents, mapper);
             result.add(node);
         }
         return result;
