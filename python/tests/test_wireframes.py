@@ -198,7 +198,7 @@ class TestWireframes(unittest.TestCase):
 
         out = sql.listen(VIEW_NAME)
         sql.start()
-        time.sleep(10)
+        sql.wait_for_idle()
         sql.shutdown()
         df = out.to_pandas()
         assert df.shape[0] != 0

@@ -578,6 +578,69 @@ class SQLContext:
 
         self.__push_http_inputs()
 
+    def wait_for_idle(
+            self,
+            idle_interval_s: float = 5.0,
+            timeout_s: float = 600.0,
+            poll_interval_s: float = 0.2
+    ):
+        """
+        Waits for the pipeline to become idle and then returns.
+
+        Idle is defined as a sufficiently long interval in which the number of
+        input and processed records reported by the pipeline do not change, and
+        they equal each other (thus, all input records present at the pipeline
+        have been processed).
+
+        :param idle_interval_s: Idle interval duration (default is 5.0 seconds).
+        :param timeout_s: Timeout waiting for idle (default is 600.0 seconds).
+        :param poll_interval_s: Polling interval, should be set substantially
+            smaller than the idle interval (default is 0.2 seconds).
+        :raises ValueError: If idle interval is larger than timeout, poll interval
+            is larger than timeout, or poll interval is larger than idle interval.
+        :raises RuntimeError: If the metrics are missing or the timeout was
+            reached.
+        """
+        if idle_interval_s > timeout_s:
+            raise ValueError(f"idle interval ({idle_interval_s}s) cannot be larger than timeout ({timeout_s}s)")
+        if poll_interval_s > timeout_s:
+            raise ValueError(f"poll interval ({poll_interval_s}s) cannot be larger than timeout ({timeout_s}s)")
+        if poll_interval_s > idle_interval_s:
+            raise ValueError(f"poll interval ({poll_interval_s}s) cannot be larger "
+                             f"than idle interval ({idle_interval_s}s)")
+
+        start_time_s = time.monotonic()
+        idle_started_s = None
+        prev = (0, 0)
+        while True:
+            now_s = time.monotonic()
+
+            # Metrics retrieval
+            metrics: dict = self.client.get_pipeline_stats(self.pipeline_name).get("global_metrics")
+            total_input_records: int | None = metrics.get("total_input_records")
+            total_processed_records: int | None = metrics.get("total_processed_records")
+            if total_input_records is None:
+                raise RuntimeError("total_input_records is missing from the pipeline metrics")
+            if total_processed_records is None:
+                raise RuntimeError("total_processed_records is missing from the pipeline metrics")
+
+            # Idle check
+            unchanged = prev[0] == total_input_records and prev[1] == total_processed_records
+            equal = total_input_records == total_processed_records
+            prev = (total_input_records, total_processed_records)
+            if unchanged and equal:
+                if idle_started_s is None:
+                    idle_started_s = now_s
+            else:
+                idle_started_s = None
+            if idle_started_s is not None and now_s - idle_started_s >= idle_interval_s:
+                return
+
+            # Timeout
+            if now_s - start_time_s >= timeout_s:
+                raise RuntimeError(f"waiting for idle reached timeout ({timeout_s}s)")
+            time.sleep(poll_interval_s)
+
     def pause(self):
         """
         Pauses the pipeline.
