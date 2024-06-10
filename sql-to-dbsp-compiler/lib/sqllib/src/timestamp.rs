@@ -554,6 +554,59 @@ some_polymorphic_function3!(
     Timestamp
 );
 
+pub fn tumble_Timestamp_ShortInterval_ShortInterval(
+    ts: Timestamp,
+    i: ShortInterval,
+    t: ShortInterval,
+) -> Timestamp {
+    let t_ms = t.milliseconds();
+    let ts_ms = ts.milliseconds() - t_ms;
+    let i_ms = i.milliseconds();
+    let round = ts_ms - ts_ms % i_ms;
+    Timestamp::new(round + t_ms)
+}
+
+some_polymorphic_function3!(
+    tumble,
+    Timestamp,
+    Timestamp,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval,
+    Timestamp
+);
+
+pub fn hop_Timestamp_ShortInterval_ShortInterval(
+    ts: Timestamp,
+    period: ShortInterval,
+    size: ShortInterval,
+) -> Vec<Timestamp> {
+    let mut result = Vec::<Timestamp>::new();
+    let ts_ms = ts.milliseconds();
+    let size_ms = size.milliseconds();
+    let period_ms = period.milliseconds();
+    // Start of first interval which contains ts
+    let round = ts_ms - (ts_ms % period_ms) + period_ms - size_ms;
+    let mut add = 0;
+    while add < size.milliseconds() {
+        result.push(Timestamp::new(round + add));
+        add += period.milliseconds();
+    }
+    result
+}
+
+some_polymorphic_function3!(
+    hop,
+    Timestamp,
+    Timestamp,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval,
+    ShortInterval,
+    Vec<Timestamp>
+);
+
 //////////////////////////// Date
 
 #[derive(

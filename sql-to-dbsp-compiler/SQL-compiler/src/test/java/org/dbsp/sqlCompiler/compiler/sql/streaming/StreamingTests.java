@@ -5,10 +5,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperato
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -26,16 +28,36 @@ import java.util.List;
 /** Tests that exercise streaming features. */
 public class StreamingTests extends StreamingTest {
     @Test
+    public void hoppingTest() {
+        String sql = """
+                CREATE TABLE series (
+                    pickup TIMESTAMP NOT NULL
+                );
+                CREATE VIEW V AS
+                SELECT * FROM TABLE(
+                  HOP(
+                    TABLE series,
+                    DESCRIPTOR(pickup),
+                    INTERVAL '2' MINUTE,
+                    INTERVAL '5' MINUTE));""";
+
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("hoppingTest", ccs);
+    }
+
+    @Test
     public void tumblingTestLimits() {
         String sql = """
                CREATE TABLE series (
                    pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
                );
                CREATE VIEW V AS
-               SELECT TUMBLE_START(pickup, INTERVAL '30' MINUTES, TIME '00:12:00'),
-                      TUMBLE_END(pickup, INTERVAL '30' MINUTES, TIME '00:12:00')
+               SELECT TUMBLE_START(pickup, INTERVAL 30 MINUTES, TIME '00:12:00'),
+                      TUMBLE_END(pickup, INTERVAL 30 MINUTES, TIME '00:12:00')
                FROM series
-               GROUP BY TUMBLE(pickup, INTERVAL '30' MINUTES, TIME '00:12:00');""";
+               GROUP BY TUMBLE(pickup, INTERVAL 30 MINUTES, TIME '00:12:00');""";
 
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);

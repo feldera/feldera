@@ -219,7 +219,6 @@ public class TypeCompiler implements ICompilerComponent {
                 case ROW:
                 case OTHER:
                 case CURSOR:
-                case COLUMN_LIST:
                 case DYNAMIC_STAR:
                 case SARG:
                 case TIME_WITH_LOCAL_TIME_ZONE:

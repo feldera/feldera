@@ -100,6 +100,7 @@ tablePrimary
       '(' TABLE [ [ catalogName . ] schemaName . ] tableName ')'
   |   tablePrimary '(' columnDecl [, columnDecl ]* ')'
   |   UNNEST '(' expression ')' [ WITH ORDINALITY ]
+  |   TABLE '(' functionName '(' expression [, expression ]* ')' ')'
 
 groupItem:
       expression
@@ -302,3 +303,9 @@ See [Streaming SQL Extensions](streaming.md#lateness-expressions)
 ### WATERMARKS
 
 See [Streaming SQL Extensions](streaming.md#watermark-expressions)
+
+### Table functions
+
+Table functions are invoked using the syntax `TABLE(function(arguments))`.
+
+See [Table functions](table.md#table-functions)

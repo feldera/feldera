@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [SQL] CREATE LOCAL VIEW statement to declare views which are not outputs.
   ([#1851](https://github.com/feldera/feldera/pull/1851))
+- [SQL] Support for hopping windows using table functions
+  ([#1855](https://github.com/feldera/feldera/pull/1855))
 
 ### Added
 

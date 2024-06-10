@@ -43,6 +43,7 @@ import org.apache.calcite.rel.logical.LogicalJoin;
 import org.apache.calcite.rel.logical.LogicalMinus;
 import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.rel.logical.LogicalSort;
+import org.apache.calcite.rel.logical.LogicalTableFunctionScan;
 import org.apache.calcite.rel.logical.LogicalTableScan;
 import org.apache.calcite.rel.logical.LogicalUnion;
 import org.apache.calcite.rel.logical.LogicalValues;
@@ -83,6 +84,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
@@ -91,7 +93,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -121,6 +122,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
@@ -146,19 +148,16 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
+import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -166,6 +165,11 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IdShuffle;
@@ -251,11 +255,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return result;
     }
 
-    /**
-     * This retrieves the operator that is an input.  If the operator may
+    /** This retrieves the operator that is an input.  If the operator may
      * produce multiset results and this is not desired (asMultiset = false),
-     * a distinct operator is introduced in the circuit.
-     */
+     * a distinct operator is introduced in the circuit. */
     private DBSPOperator getInputAs(RelNode input, boolean asMultiset) {
         DBSPOperator op = this.getOperator(input);
         if (op.isMultiset && !asMultiset) {
@@ -388,6 +390,151 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(uncollectNode,
                 flatmap, TypeCompiler.makeZSet(type), left);
         this.assignOperator(correlate, flatMap);
+    }
+
+    /** Given a DESCRIPTOR RexCall, return the reference to the single colum
+     * that is referred by the DESCRIPTOR. */
+    int getDescriptor(RexNode descriptor) {
+        assert descriptor instanceof RexCall;
+        RexCall call = (RexCall) descriptor;
+        assert call.getKind() == SqlKind.DESCRIPTOR;
+        assert call.getOperands().size() == 1;
+        RexNode operand = call.getOperands().get(0);
+        assert operand instanceof RexInputRef;
+        RexInputRef ref = (RexInputRef) operand;
+        return ref.getIndex();
+    }
+
+    void compileTumble(LogicalTableFunctionScan scan, RexCall call) {
+        CalciteObject node = CalciteObject.create(scan);
+        DBSPTypeTuple type = this.convertType(scan.getRowType(), false).to(DBSPTypeTuple.class);
+        assert scan.getInputs().size() == 1;
+        RelNode input = scan.getInput(0);
+        DBSPTypeTuple inputRowType = this.convertType(input.getRowType(), false).to(DBSPTypeTuple.class);
+        DBSPOperator opInput = this.getInputAs(input, true);
+        // This is the same as a LogicalProject which adds two columns
+        DBSPVariablePath row = inputRowType.ref().var("t");
+        ExpressionCompiler expressionCompiler = new ExpressionCompiler(row, this.compiler);
+        List<RexNode> operands = call.getOperands();
+        assert call.operandCount() == 2 || call.operandCount() == 3;
+        int timestampIndex = this.getDescriptor(operands.get(0));
+        DBSPExpression interval = expressionCompiler.compile(operands.get(1));
+        DBSPExpression start = null;
+        if (call.operandCount() == 3)
+            start = expressionCompiler.compile(operands.get(2));
+
+        DBSPExpression[] results = new DBSPExpression[inputRowType.size() + 2];
+        for (int i = 0; i < inputRowType.size(); i++) {
+            results[i] = row.deref().field(i).applyCloneIfNeeded();
+        }
+        int nextIndex = inputRowType.size();
+
+        List<DBSPExpression> tumbleArguments = new ArrayList<>();
+        tumbleArguments.add(row.deref().field(timestampIndex));
+        tumbleArguments.add(interval);
+        if (start != null)
+            tumbleArguments.add(start);
+        DBSPType tumbleType = type.tupFields[nextIndex];
+        results[nextIndex] = ExpressionCompiler.compilePolymorphicFunction(
+                "tumble", node, tumbleType, tumbleArguments, 2, 3);
+        results[nextIndex + 1] = ExpressionCompiler.makeBinaryExpression(node,
+                tumbleType, DBSPOpcode.ADD, results[nextIndex], interval);
+
+        DBSPClosureExpression func = new DBSPTupleExpression(results).closure(row.asParameter());
+        DBSPMapOperator result = new DBSPMapOperator(node, func, makeZSet(type), opInput);
+        this.assignOperator(scan, result);
+    }
+
+    void compileHop(LogicalTableFunctionScan scan, RexCall call) {
+        CalciteObject node = CalciteObject.create(scan);
+        DBSPTypeTuple type = this.convertType(scan.getRowType(), false).to(DBSPTypeTuple.class);
+        assert scan.getInputs().size() == 1;
+        RelNode input = scan.getInput(0);
+        DBSPTypeTuple inputRowType = this.convertType(input.getRowType(), false).to(DBSPTypeTuple.class);
+        DBSPOperator opInput = this.getInputAs(input, true);
+        DBSPVariablePath row = inputRowType.ref().var("t");
+        ExpressionCompiler expressionCompiler = new ExpressionCompiler(row, this.compiler);
+        List<RexNode> operands = call.getOperands();
+        assert call.operandCount() == 3 || call.operandCount() == 4;
+        int timestampIndex = this.getDescriptor(operands.get(0));
+        DBSPExpression interval = expressionCompiler.compile(operands.get(1));
+        DBSPExpression start = null;
+        DBSPExpression size = expressionCompiler.compile(operands.get(2));
+        if (call.operandCount() == 4)
+            start = expressionCompiler.compile(operands.get(3));
+
+        DBSPExpression[] results = new DBSPExpression[inputRowType.size() + 1];
+        for (int i = 0; i < inputRowType.size(); i++) {
+            results[i] = row.deref().field(i).applyCloneIfNeeded();
+        }
+        int nextIndex = inputRowType.size();
+
+        // Map builds the array
+        List<DBSPExpression> hopArguments = new ArrayList<>();
+        DBSPType timestampType = row.deref().field(timestampIndex).getType();
+        hopArguments.add(row.deref().field(timestampIndex));
+        hopArguments.add(interval);
+        hopArguments.add(size);
+        if (start != null)
+            hopArguments.add(start);
+        DBSPType hopType = type.tupFields[nextIndex];
+        results[nextIndex] = ExpressionCompiler.compilePolymorphicFunction(
+                "hop", node, new DBSPTypeVec(hopType, false), hopArguments, 3, 4);
+        DBSPTupleExpression mapBody = new DBSPTupleExpression(results);
+        DBSPClosureExpression func = mapBody.closure(row.asParameter());
+        DBSPMapOperator map = new DBSPMapOperator(node, func, makeZSet(mapBody.getType()), opInput);
+        this.circuit.addOperator(map);
+
+        // Flatmap flattens the array
+        DBSPVariablePath data = new DBSPVariablePath("data", mapBody.getType().ref());
+        DBSPVariablePath e = new DBSPVariablePath("e", timestampType);
+        DBSPExpression collectionExpression = data.deref().field(nextIndex).borrow();
+
+        List<DBSPStatement> statements = new ArrayList<>();
+        String varName = "x";
+        for (int i = 0; i < inputRowType.size(); i++) {
+            DBSPLetStatement stat = new DBSPLetStatement(varName + i, data.deref().field(i).applyCloneIfNeeded());
+            statements.add(stat);
+        }
+        DBSPLetStatement array = new DBSPLetStatement("array", collectionExpression);
+        statements.add(array);
+        DBSPLetStatement clone = new DBSPLetStatement("array_clone", array.getVarReference().deref().applyClone());
+        statements.add(clone);
+        DBSPExpression iter = new DBSPApplyMethodExpression("into_iter",
+                DBSPTypeAny.getDefault(), clone.getVarReference().applyClone());
+        DBSPExpression[] resultFields = new DBSPExpression[type.size()];
+        for (int i = 0; i < inputRowType.size(); i++)
+            resultFields[i] = statements.get(i).to(DBSPLetStatement.class).getVarReference().applyClone();
+        nextIndex = inputRowType.size();
+        resultFields[nextIndex++] = e;
+        resultFields[nextIndex] = ExpressionCompiler.makeBinaryExpression(node,
+                timestampType, DBSPOpcode.ADD, e, size);
+
+        DBSPExpression toTuple = new DBSPTupleExpression(resultFields).closure(e.asParameter());
+        DBSPExpression makeTuple = new DBSPApplyMethodExpression(node,
+                "map", DBSPTypeAny.getDefault(), iter, toTuple);
+        DBSPBlockExpression block = new DBSPBlockExpression(statements, makeTuple);
+
+        DBSPOperator result = new DBSPFlatMapOperator(node, block.closure(data.asParameter()), makeZSet(type), map);
+        this.assignOperator(scan, result);
+    }
+
+    void visitTableFunction(LogicalTableFunctionScan scan) {
+        CalciteObject node = CalciteObject.create(scan);
+        RexNode operation = scan.getCall();
+        assert operation instanceof RexCall;
+        RexCall call = (RexCall) operation;
+        switch (call.getOperator().getName()) {
+            case "HOP":
+                this.compileHop(scan, call);
+                return;
+            case "TUMBLE":
+                this.compileTumble(scan, call);
+                return;
+            default:
+                break;
+        }
+        throw new UnimplementedException(node);
     }
 
     void visitUncollect(Uncollect uncollect) {
@@ -1327,7 +1474,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPType inputRowType = input.getOutputZSetElementType();
             AggregateCall lastCall = Utilities.last(this.aggregateCalls);
             SqlKind kind = lastCall.getAggregation().getKind();
-            int offset = kind == SqlKind.LEAD ? -1 : +1;
+            int offset = kind == org.apache.calcite.sql.SqlKind.LEAD ? -1 : +1;
 
             // Partition by the specified fields
             List<Integer> partitionKeys = group.keys.toList();
@@ -1639,7 +1786,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         @Override
         boolean isCompatible(AggregateCall call) {
             SqlKind kind = call.getAggregation().getKind();
-            return kind != SqlKind.LAG && kind != SqlKind.LEAD;
+            return kind != org.apache.calcite.sql.SqlKind.LAG && kind != org.apache.calcite.sql.SqlKind.LEAD;
         }
     }
 
@@ -1861,7 +2008,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.visitIfMatches(node, LogicalIntersect.class, this::visitIntersect) ||
                 this.visitIfMatches(node, LogicalWindow.class, this::visitWindow) ||
                 this.visitIfMatches(node, LogicalSort.class, this::visitSort) ||
-                this.visitIfMatches(node, Uncollect.class, this::visitUncollect);
+                this.visitIfMatches(node, Uncollect.class, this::visitUncollect) ||
+                this.visitIfMatches(node, LogicalTableFunctionScan.class, this::visitTableFunction);
         if (!success)
             throw new UnimplementedException(CalciteObject.create(node));
     }

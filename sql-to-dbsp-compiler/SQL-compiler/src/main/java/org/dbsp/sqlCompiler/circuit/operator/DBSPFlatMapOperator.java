@@ -35,6 +35,13 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
+    // Initially the expression is DBSPFlatmap, but later it is lowered
+    // into a lambda of the form
+    // |x| -> {
+    //   let array: &Vec<i32> = &(*x).A;
+    //   let array_clone: Vec<i32> = (*array).clone();
+    //   array_clone.clone().into_iter().map(move |e: X| ... )
+    // }
     public DBSPFlatMapOperator(CalciteObject node, DBSPExpression expression,
                                DBSPTypeZSet outputType, DBSPOperator input) {
         super(node, "flat_map", expression, outputType, true, input);
