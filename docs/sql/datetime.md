@@ -231,7 +231,7 @@ The following arithmetic operations are supported:
 
 | Operation                   | Result Type        | Explanation                                                      |
 |-----------------------------|--------------------|------------------------------------------------------------------|
-| `DATE` + `INTERVAL`         | `TIMESTAMP`        | Add an interval to a date                                        |
+| `DATE` + `INTERVAL`         | `DATE`             | Add an interval to a date                                        |
 | `INTERVAL` + `INTERVAL`     | `INTERVAL`         | Add two intervals; both must have the same type                  |
 | `TIMESTAMP` + `INTERVAL`    | `TIMESTAMP`        | Add an interval to a timestamp                                   |
 | `TIME` + `INTERVAL`         | `TIME`             | Add an interval to a time. Performs wrapping addition.           |
@@ -253,6 +253,10 @@ nanoseconds in a day.  For this reason, adding or subtracting a long
 interval from a `TIME` value is supported, but always leaves the
 `TIME` value unchanged (since long intervals always consist of a whole
 number of days).
+
+Arithmetic between a DATE and an INTERVAL first converts the interval
+to a whole number days (rounding down) and then performs the
+computation on whole days.
 
 ## Timezones
 

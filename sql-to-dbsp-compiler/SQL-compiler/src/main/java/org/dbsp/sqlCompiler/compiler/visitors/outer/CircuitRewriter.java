@@ -29,7 +29,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
@@ -48,14 +47,13 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
@@ -293,21 +291,6 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || function != operator.getFunction()) {
             result = new DBSPIntegrateTraceRetainKeysOperator(operator.getNode(), function,
                     sources.get(0), sources.get(1));
-        }
-        this.map(operator, result);
-    }
-
-    @Override
-    public void postorder(DBSPIndexOperator operator) {
-        DBSPType outputType = this.transform(operator.outputType);
-        DBSPOperator input = this.mapped(operator.input());
-        DBSPExpression function = this.transform(operator.getFunction());
-        DBSPOperator result = operator;
-        if (!outputType.sameType(operator.outputType)
-                || input != operator.input()
-                || function != operator.getFunction()) {
-            result = new DBSPIndexOperator(operator.getNode(), function.to(DBSPClosureExpression.class),
-                    outputType.to(DBSPTypeIndexedZSet.class), operator.isMultiset, input);
         }
         this.map(operator, result);
     }

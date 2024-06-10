@@ -23,9 +23,18 @@
 
 package org.dbsp.sqlCompiler.compiler.backend;
 
-import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.*;
+import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOutputOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.LowerCircuitVisitor;
@@ -44,6 +53,8 @@ import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * This visitor dumps the circuit to a dot file, so it can be visualized.
@@ -53,11 +64,13 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     private final IndentStream stream;
     // If true show code, otherwise just topology
     private final boolean details;
+    private final Set<DBSPOperator> edgesLabeled;
 
     public ToDotVisitor(IErrorReporter reporter, IndentStream stream, boolean details) {
         super(reporter);
         this.stream = stream;
         this.details = details;
+        this.edgesLabeled = new HashSet<>();
     }
 
     @Override
@@ -92,10 +105,11 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             this.stream.append(input.getOutputName())
                     .append(" -> ")
                     .append(node.getOutputName());
-            if (this.details) {
+            if (this.details && !this.edgesLabeled.contains(input)) {
                 this.stream.append(" [label=")
                         .append(Utilities.doubleQuote(input.getOutputRowType().toString()))
                         .append("]");
+                this.edgesLabeled.add(input);
             }
             this.stream.append(";")
                     .newline();
@@ -136,6 +150,13 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         DBSPExpression expression = node.function;
         if (node.is(DBSPAggregateOperatorBase.class)) {
             DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
+            if (aggregate.aggregate != null) {
+                DBSPAggregate.Implementation impl = aggregate.aggregate.combine(this.errorReporter);
+                expression = impl.asFold(true);
+            }
+        } else if (node.is(DBSPPartitionedRollingAggregateWithWaterlineOperator.class)) {
+            DBSPPartitionedRollingAggregateWithWaterlineOperator aggregate =
+                    node.to(DBSPPartitionedRollingAggregateWithWaterlineOperator.class);
             if (aggregate.aggregate != null) {
                 DBSPAggregate.Implementation impl = aggregate.aggregate.combine(this.errorReporter);
                 expression = impl.asFold(true);

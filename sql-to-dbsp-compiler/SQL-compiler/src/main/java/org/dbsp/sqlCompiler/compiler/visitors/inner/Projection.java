@@ -1,10 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
-import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -143,23 +141,6 @@ public class Projection extends InnerVisitor {
             this.parameters.add(param.asVariable().variable);
         }
         return VisitDecision.CONTINUE;
-    }
-
-    /** Compose this projection by applying it after another
-     * closure expression.  This closure must have exactly 1
-     * parameter, while the before one can have multiple ones.
-     * @param before Closure to compose. */
-    public DBSPClosureExpression applyAfter(DBSPClosureExpression before) {
-        Objects.requireNonNull(this.expression);
-        if (this.expression.parameters.length != 1)
-            throw new InternalCompilerError("Expected closure with 1 parameter", this.expression);
-        DBSPExpression apply = this.expression.call(before.body.borrow());
-        DBSPClosureExpression result = new DBSPClosureExpression(apply, before.parameters);
-        BetaReduction reduction = new BetaReduction(this.errorReporter);
-        Simplify simplify = new Simplify(this.errorReporter);
-        IDBSPInnerNode reduced = reduction.apply(result);
-        IDBSPInnerNode simplified = simplify.apply(reduced);
-        return simplified.to(DBSPClosureExpression.class);
     }
 
     public Shuffle getShuffle() {

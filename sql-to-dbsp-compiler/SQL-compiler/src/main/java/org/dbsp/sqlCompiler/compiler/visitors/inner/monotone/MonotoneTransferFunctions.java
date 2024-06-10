@@ -25,6 +25,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
@@ -310,10 +312,35 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     }
 
     @Override
+    public void postorder(DBSPUnsignedWrapExpression expression) {
+        MonotoneExpression source = this.get(expression.source);
+        DBSPExpression reduced = null;
+        if (source.mayBeMonotone()) {
+            reduced = expression.replaceSource(source.getReducedExpression());
+        }
+        MonotoneExpression result = new MonotoneExpression(
+                expression, source.copyMonotonicity(expression.getType()), reduced);
+        this.set(expression, result);
+    }
+
+    @Override
+    public void postorder(DBSPUnsignedUnwrapExpression expression) {
+        MonotoneExpression source = this.get(expression.source);
+        DBSPExpression reduced = null;
+        if (source.mayBeMonotone()) {
+            reduced = expression.replaceSource(source.getReducedExpression());
+        }
+        MonotoneExpression result = new MonotoneExpression(
+                expression, source.copyMonotonicity(expression.getType()), reduced);
+        this.set(expression, result);
+    }
+
+    @Override
     public void postorder(DBSPUnaryExpression expression) {
         MonotoneExpression source = this.get(expression.source);
         DBSPExpression reduced = null;
-        if (expression.operation == DBSPOpcode.UNARY_PLUS &&
+        if ((expression.operation == DBSPOpcode.UNARY_PLUS ||
+                expression.operation == DBSPOpcode.TYPEDBOX) &&
             source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
         }

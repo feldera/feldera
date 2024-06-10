@@ -112,15 +112,15 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Utilities;
 
@@ -801,6 +801,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .append("_")
                     .append(expression.source.getType().baseTypeWithSuffix())
                     .append("_(");
+            expression.source.accept(this);
+            this.builder.append(")");
+            return VisitDecision.STOP;
+        } else if (expression.operation == DBSPOpcode.TYPEDBOX) {
+            this.builder.append("TypedBox::new(");
             expression.source.accept(this);
             this.builder.append(")");
             return VisitDecision.STOP;

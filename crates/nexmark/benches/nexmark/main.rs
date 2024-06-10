@@ -7,7 +7,8 @@ use ascii_table::AsciiTable;
 use clap::Parser;
 use dbsp::circuit::{CircuitConfig, StorageCacheConfig, StorageConfig};
 use dbsp::storage::backend::metrics::{
-    FILES_CREATED, READS_SUCCESS, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS,
+    BUFFER_CACHE_HIT, BUFFER_CACHE_MISS, FILES_CREATED, READS_SUCCESS, TOTAL_BYTES_READ,
+    TOTAL_BYTES_WRITTEN, TOTAL_COMPACTIONS, WRITES_SUCCESS,
 };
 use dbsp::storage::backend::tempdir_for_thread;
 use dbsp::utils::Tup2;
@@ -229,10 +230,13 @@ fn create_ascii_table(config: &NexmarkConfig) -> AsciiTable {
             "# Files",
             "# Writes",
             "# Reads",
-            "Avg Write Size",
-            "Avg Read Size",
-            "Total Writes",
-            "Total Reads",
+            "Avg WrSz",
+            "Avg RdSz",
+            "Writes",
+            "Reads",
+            "Cache Hit",
+            "Cache Miss",
+            "Compactions",
         ]);
         max_width += 50;
     }
@@ -380,6 +384,9 @@ struct Metrics {
     reads_success: u64,
     total_bytes_written: u64,
     total_bytes_read: u64,
+    buffer_cache_hit: u64,
+    buffer_cache_miss: u64,
+    total_compactions: u64,
 }
 
 impl From<&MetricsSnapshot> for Metrics {
@@ -390,6 +397,9 @@ impl From<&MetricsSnapshot> for Metrics {
             reads_success: parse_counter(source, READS_SUCCESS),
             total_bytes_written: parse_counter(source, TOTAL_BYTES_WRITTEN),
             total_bytes_read: parse_counter(source, TOTAL_BYTES_READ),
+            buffer_cache_hit: parse_counter(source, BUFFER_CACHE_HIT),
+            buffer_cache_miss: parse_counter(source, BUFFER_CACHE_MISS),
+            total_compactions: parse_counter(source, TOTAL_COMPACTIONS),
         }
     }
 }
@@ -406,6 +416,9 @@ struct MetricsDiff {
     avg_rblock: u64,
     total_bytes_written: u64,
     total_bytes_read: u64,
+    cache_miss: u64,
+    cache_hit: u64,
+    total_compactions: u64,
 }
 
 impl Sub<&Metrics> for &Metrics {
@@ -427,6 +440,9 @@ impl Sub<&Metrics> for &Metrics {
             avg_rblock: div(rbytes_diff, n_reads),
             total_bytes_written: lhs.total_bytes_written - rhs.total_bytes_written,
             total_bytes_read: lhs.total_bytes_read - rhs.total_bytes_read,
+            cache_miss: lhs.buffer_cache_miss - rhs.buffer_cache_miss,
+            cache_hit: lhs.buffer_cache_hit - rhs.buffer_cache_hit,
+            total_compactions: lhs.total_compactions - rhs.total_compactions,
         }
     }
 }
@@ -482,6 +498,9 @@ fn main() -> Result<()> {
                 format!("{}", HumanBytes::from(diff.avg_rblock)),
                 format!("{}", HumanBytes::from(diff.total_bytes_written)),
                 format!("{}", HumanBytes::from(diff.total_bytes_read)),
+                format!("{}", diff.cache_hit),
+                format!("{}", diff.cache_miss),
+                format!("{}", diff.total_compactions),
             ])
         }
         row

@@ -86,6 +86,13 @@ export const InsertionTable = ({
           }
         }}
         getRowId={(row: Row) => row.genId}
+        onCellEditStart={(params, event) => {
+          if (params.reason === 'printableKeyDown') {
+            // Prevent editing the field value when pressing printable key after single-clicking on a cell
+            // https://mui.com/x/react-data-grid/events/#disabling-the-default-behavior
+            event.defaultMuiPrevented = true
+          }
+        }}
         columns={[
           ...relation.fields.map((col: Field): GridColDef<Row> => {
             return {

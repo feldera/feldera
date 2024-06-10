@@ -3,8 +3,9 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
@@ -204,16 +205,31 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPWindowAggregateOperator node) {
+    public void postorder(DBSPPartitionedRollingAggregateOperator node) {
         if (node.aggregate == null) {
             super.postorder(node);
             return;
         }
         DBSPAggregate.Implementation impl = node.getAggregate().combine(this.errorReporter);
         DBSPExpression function = impl.asFold();
-        DBSPOperator result = new DBSPWindowAggregateOperator(node.getNode(),
+        DBSPOperator result = new DBSPPartitionedRollingAggregateOperator(node.getNode(),
                 node.partitioningFunction, function, null, node.window,
                 node.getOutputIndexedZSetType(), this.mapped(node.input()));
+        this.map(node, result);
+    }
+
+    @Override
+    public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator node) {
+        if (node.aggregate == null) {
+            super.postorder(node);
+            return;
+        }
+        DBSPAggregate.Implementation impl = node.aggregate.combine(this.errorReporter);
+        DBSPExpression function = impl.asFold();
+        DBSPOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getNode(),
+                node.partitioningFunction, function, null, node.window,
+                node.getOutputIndexedZSetType(),
+                this.mapped(node.inputs.get(0)), this.mapped(node.inputs.get(1)));
         this.map(node, result);
     }
 }

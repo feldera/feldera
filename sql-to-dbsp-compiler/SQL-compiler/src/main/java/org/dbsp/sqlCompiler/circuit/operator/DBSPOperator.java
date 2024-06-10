@@ -33,9 +33,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeStream;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -131,17 +131,6 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
         if (!expected.sameType(type))
             throw new InternalCompilerError(this + ": Expected function to return " + expected +
                     " but it returns " + type, this);
-    }
-
-    /**
-     * True if this operator is parameterized by a function.
-     * This is not always the same as this.function == null,
-     * e.g., AggregateOperator always returns 'true', although
-     * the function can be represented as an Aggregate.
-     * This is also true for ConstantOperator, although for these
-     * the function may not be a closure, but rather a constant. */
-    public boolean hasFunction() {
-        return this.function != null;
     }
 
     /** Return a version of this operator with the function replaced. */

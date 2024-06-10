@@ -1,16 +1,19 @@
-package org.dbsp.sqlCompiler.ir.type;
+package org.dbsp.sqlCompiler.ir.type.user;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.OPTION;
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.RESULT;
 
-/** Represents the type of a Rust Option[T] type as a TypeUser. */
+/** Represents the type of a Rust Result[T, String] type as a TypeUser. */
 @NonCoreIR
-public class DBSPTypeOption extends DBSPTypeUser {
-    public DBSPTypeOption(DBSPType resultType) {
-        super(resultType.getNode(), OPTION, "Option", false, resultType);
+public class DBSPTypeResult extends DBSPTypeUser {
+    public DBSPTypeResult(DBSPType resultType) {
+        super(resultType.getNode(), RESULT, "Result", false,
+                resultType, DBSPTypeString.varchar(false));
     }
 
     @Override

@@ -16,8 +16,9 @@ data: {
       "org.apache.calcite.sql.ddl.SqlCreateType"
       "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlExtendedColumnDeclaration"
       "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlCreateFunctionDeclaration"
-      "org.dbsp.sqlCompiler.compiler.frontend.statements.SqlRemove"
-      "org.dbsp.sqlCompiler.compiler.frontend.statements.SqlLateness"
+      "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove"
+      "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness"
+      "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView"
     ]
 
     # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is

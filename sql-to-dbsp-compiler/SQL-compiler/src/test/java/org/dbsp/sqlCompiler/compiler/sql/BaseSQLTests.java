@@ -61,7 +61,7 @@ public class BaseSQLTests {
      */
     public static class CompilerCircuitStream {
         final DBSPCompiler compiler;
-        final DBSPCircuit circuit;
+        public final DBSPCircuit circuit;
         final InputOutputChangeStream stream;
 
         public CompilerCircuitStream(DBSPCompiler compiler) {

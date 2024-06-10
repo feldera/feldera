@@ -503,19 +503,28 @@ async fn metadata(state: WebData<ServerState>) -> impl Responder {
 
 #[get("/heap_profile")]
 async fn heap_profile() -> impl Responder {
-    let mut prof_ctl = jemalloc_pprof::PROF_CTL.as_ref().unwrap().lock().await;
-    if !prof_ctl.activated() {
-        return Err(PipelineError::HeapProfilerError {
-            error: "jemalloc profiling is disabled".to_string(),
-        });
+    #[cfg(target_os = "linux")]
+    {
+        let mut prof_ctl = jemalloc_pprof::PROF_CTL.as_ref().unwrap().lock().await;
+        if !prof_ctl.activated() {
+            return Err(PipelineError::HeapProfilerError {
+                error: "jemalloc profiling is disabled".to_string(),
+            });
+        }
+        match prof_ctl.dump_pprof() {
+            Ok(profile) => Ok(HttpResponse::Ok()
+                .content_type("application/protobuf")
+                .body(profile)),
+            Err(e) => Err(PipelineError::HeapProfilerError {
+                error: e.to_string(),
+            }),
+        }
     }
-    match prof_ctl.dump_pprof() {
-        Ok(profile) => Ok(HttpResponse::Ok()
-            .content_type("application/protobuf")
-            .body(profile)),
-        Err(e) => Err(PipelineError::HeapProfilerError {
-            error: e.to_string(),
-        }),
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err::<HttpResponse, PipelineError>(PipelineError::HeapProfilerError {
+            error: "heap profiling is only supported on Linux".to_string(),
+        })
     }
 }
 

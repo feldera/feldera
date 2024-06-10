@@ -1,19 +1,23 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.expansion;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOutputOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRadixTreeAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedTreeAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
@@ -21,8 +25,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWeighOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
@@ -31,10 +35,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Utilities;
 
 import java.util.HashMap;
 import java.util.List;
@@ -54,6 +57,57 @@ public class ExpandOperators extends CircuitCloneVisitor {
         this.expansion = new HashMap<>();
     }
 
+    void addExpansion(DBSPOperator operator, OperatorExpansion expansion) {
+        this.expansion.put(operator, expansion);
+    }
+
+    void identity(DBSPOperator operator) {
+        // Replace an operator with another one of the same kind
+        super.replace(operator);
+        DBSPOperator replacement = this.mapped(operator);
+        this.addExpansion(operator, new ReplacementExpansion(replacement));
+    }
+
+    @Override
+    public void postorder(DBSPSourceMultisetOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPSourceMapOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPMapIndexOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPViewOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPMapOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPDeindexOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPFilterOperator node) {
+        this.identity(node);
+    }
+
+    @Override
+    public void postorder(DBSPNoopOperator node) {
+        this.identity(node);
+    }
+
     @Override
     public void postorder(DBSPIntegrateOperator operator) {
         if (verbosity < 2) {
@@ -69,7 +123,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
         this.map(operator, sum);
         DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), sum, delayOutput);
         this.addOperator(delay);
-        Utilities.putNew(this.expansion, operator, new IntegralExpansion(delayOutput, sum, delay));
+        this.addExpansion(operator, new IntegralExpansion(delayOutput, sum, delay));
     }
 
     @Override
@@ -87,7 +141,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
         this.addOperator(sum);
         DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), sum, delayOutput);
         this.map(operator, delay);
-        Utilities.putNew(this.expansion, operator, new IntegralExpansion(delayOutput, sum, delay));
+        this.addExpansion(operator, new IntegralExpansion(delayOutput, sum, delay));
     }
 
     @Override
@@ -102,7 +156,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
         this.addOperator(delay);
         DBSPSubtractOperator sub = new DBSPSubtractOperator(operator.getNode(), input, delay);
         this.map(operator, sub);
-        Utilities.putNew(this.expansion, operator, new DifferentialExpansion(delay, sub));
+        this.addExpansion(operator, new DifferentialExpansion(delay, sub));
     }
 
     @Override
@@ -125,7 +179,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
             DBSPStreamAggregateOperator result = new DBSPStreamAggregateOperator(operator.getNode(),
                     operator.getOutputIndexedZSetType(), weightedSum, null, weigh, false);
             this.map(operator, result);
-            Utilities.putNew(this.expansion, operator, new StreamAggregateExpansion(weigh, result));
+            this.addExpansion(operator, new StreamAggregateExpansion(weigh, result));
         } else {
             this.replace(operator);
         }
@@ -146,7 +200,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
                 operator.function, operator.outputType, input, integrator);
         this.addOperator(agg);
         DBSPUpsertFeedbackOperator upsert = new DBSPUpsertFeedbackOperator(operator.getNode(), agg);
-        Utilities.putNew(this.expansion, operator, new AggregateExpansion(integrator, agg, upsert));
+        this.addExpansion(operator, new AggregateExpansion(integrator, agg, upsert));
         this.map(operator, upsert);
     }
 
@@ -156,10 +210,16 @@ public class ExpandOperators extends CircuitCloneVisitor {
         DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getNode(), input);
         this.addOperator(integrator);
         DBSPStreamDistinctOperator distinct = new DBSPStreamDistinctOperator(operator.getNode(), integrator);
-        Utilities.putNew(this.expansion, operator, new DistinctExpansion(integrator, distinct));
+        this.addExpansion(operator, new DistinctExpansion(integrator, distinct));
         this.map(operator, distinct);
     }
 
+    @Override
+    public void postorder(DBSPPartitionedRollingAggregateOperator operator) {
+        this.identity(operator);
+    }
+
+    /*
     @Override
     public void postorder(DBSPPartitionedTreeAggregateOperator operator) {
         DBSPOperator input = this.mapped(operator.input());
@@ -180,36 +240,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
         this.addOperator(delay);
         // TODO: add expansion
     }
-
-    @Override
-    public void postorder(DBSPWindowAggregateOperator operator) {
-        DBSPOperator input = this.mapped(operator.input());
-        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), input);
-        this.addOperator(integral);
-
-        DBSPOperator prta = new DBSPPartitionedTreeAggregateOperator(
-                operator.getNode(), operator.function, operator.aggregate,
-                input.getType(), input); // TODO: output type is wrong
-        this.addOperator(prta);
-
-        DBSPDelayOutputOperator delayOutput = new DBSPDelayOutputOperator(
-                operator.getNode(), operator.outputType, false, operator.comment);
-        this.addOperator(delayOutput);
-
-        DBSPPartitionedRollingAggregateOperator ra = new DBSPPartitionedRollingAggregateOperator(operator.getNode(),
-                operator.function, operator.aggregate, input, integral, prta, delayOutput);
-        this.addOperator(ra);
-        DBSPMapIndexOperator mi = new DBSPMapIndexOperator(operator.getNode(), operator.window,
-                operator.getOutputIndexedZSetType(), ra);
-        this.map(operator, mi);
-
-        // These two collectively make a delayed integrator operator
-        DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), ra, delayOutput);
-        this.addOperator(sum);
-        DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), sum, delayOutput);
-        this.addOperator(delay);
-        // TODO: add expansion
-    }
+     */
 
     @Override
     public void postorder(DBSPUpsertFeedbackOperator operator) {
@@ -230,7 +261,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
         this.addOperator(sum);
         DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), sum, delayOutput);
         this.addOperator(delay);
-        Utilities.putNew(this.expansion, operator, new UpsertExpansion(delayOutput, upsert, sum, delay));
+        this.addExpansion(operator, new UpsertExpansion(delayOutput, upsert, sum, delay));
     }
 
     @Override
@@ -251,7 +282,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
         this.addOperator(rightJoin);
         DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), deltaJoin, leftJoin, rightJoin);
         this.map(operator, sum);
-        Utilities.putNew(this.expansion, operator, new JoinExpansion(leftIntegrator, rightIntegrator,
+        this.addExpansion(operator, new JoinExpansion(leftIntegrator, rightIntegrator,
                 leftJoin, rightJoin, deltaJoin, sum));
     }
 }

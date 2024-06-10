@@ -28,7 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -37,14 +37,38 @@ import java.util.Objects;
 /** Generate an IndexedZSet by applying a function to every element of an input dataset.
  * Output is always an IndexedZSet.  Input can be a ZSet or an IndexedZSet */
 public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
-    public DBSPMapIndexOperator(CalciteObject node, DBSPExpression expression,
+    /** Create an MapIndexOperator
+     * @param node            Corresponding Calcite node.
+     * @param indexFunction   Function that indexes.  The function has the shape
+     *                        |row| (key(row), value(row)).
+     * @param outputType      Type of output stream element.
+     * @param input           Source operator. */
+    public DBSPMapIndexOperator(CalciteObject node, DBSPExpression indexFunction,
                                 DBSPTypeIndexedZSet outputType,
                                 DBSPOperator input) {
-        super(node, "map_index", expression, outputType, true, input);
+        super(node, "map_index", indexFunction, outputType, input.isMultiset, input);
         DBSPType outputElementType = outputType.getKVType();
         // Expression must return a tuple that is composed of a key and a value
-        this.checkResultType(expression, outputElementType);
-        this.checkArgumentFunctionType(expression, 0, input);
+        this.checkResultType(indexFunction, outputElementType);
+        this.checkArgumentFunctionType(indexFunction, 0, input);
+    }
+
+    /** Create an MapIndexOperator
+     * @param node            Corresponding Calcite node.
+     * @param indexFunction   Function that indexes.  The function has the shape
+     *                        |row| (key(row), value(row)).
+     * @param isMultiset      True if the input is a multiset.
+     * @param outputType      Type of output stream element.
+     * @param input           Source operator. */
+    public DBSPMapIndexOperator(CalciteObject node, DBSPExpression indexFunction,
+                                DBSPTypeIndexedZSet outputType,
+                                boolean isMultiset,
+                                DBSPOperator input) {
+        super(node, "map_index", indexFunction, outputType, isMultiset, input);
+        DBSPType outputElementType = outputType.getKVType();
+        // Expression must return a tuple that is composed of a key and a value
+        this.checkResultType(indexFunction, outputElementType);
+        this.checkArgumentFunctionType(indexFunction, 0, input);
     }
 
     @Override

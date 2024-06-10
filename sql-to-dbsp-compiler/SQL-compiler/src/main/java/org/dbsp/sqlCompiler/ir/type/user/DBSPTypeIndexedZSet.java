@@ -21,30 +21,34 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir.type;
+package org.dbsp.sqlCompiler.ir.type.user;
 
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.util.IIndentStream;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 
-import java.util.Objects;
-
-import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STREAM;
-
-/**
- * A type of the form 'Stream<_, elementType>'
- */
-public class DBSPTypeStream extends DBSPType {
+public class DBSPTypeIndexedZSet extends DBSPTypeUser {
+    public final DBSPType keyType;
     public final DBSPType elementType;
 
-    public DBSPTypeStream(DBSPType elementType) {
-        super(elementType.getNode(), STREAM, elementType.mayBeNull);
+    public DBSPTypeIndexedZSet(CalciteObject node, DBSPType keyType,
+                               DBSPType elementType) {
+        super(node, DBSPTypeCode.INDEXED_ZSET, "IndexedWSet", false, keyType, elementType);
+        this.keyType = keyType;
         this.elementType = elementType;
+        assert !elementType.is(DBSPTypeZSet.class);
+        assert !elementType.is(DBSPTypeIndexedZSet.class);
     }
 
-    @Override
-    public DBSPType setMayBeNull(boolean mayBeNull) {
-        throw new UnsupportedOperationException();
+    public DBSPTypeRawTuple getKVRefType() {
+        return new DBSPTypeRawTuple(this.keyType.ref(), this.elementType.ref());
+    }
+
+    public DBSPTypeRawTuple getKVType() {
+        return new DBSPTypeRawTuple(this.keyType, this.elementType);
     }
 
     @Override
@@ -52,30 +56,9 @@ public class DBSPTypeStream extends DBSPType {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        this.keyType.accept(visitor);
         this.elementType.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(super.hashCode(), this.elementType.hashCode());
-    }
-
-    @Override
-    public boolean sameType(DBSPType other) {
-        if (!super.sameNullability(other))
-            return false;
-        DBSPTypeStream oRef = other.as(DBSPTypeStream.class);
-        if (oRef == null)
-            return false;
-        return this.elementType.sameType(oRef.elementType);
-    }
-
-    @Override
-    public IIndentStream toString(IIndentStream builder) {
-        return builder.append("stream<")
-                .append(this.elementType)
-                .append(">");
     }
 }

@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
@@ -41,11 +41,6 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
         }
     }
 
-    @Override
-    public boolean hasFunction() {
-        return true;
-    }
-
     public DBSPAggregate getAggregate() {
         return Objects.requireNonNull(this.aggregate);
     }
@@ -54,7 +49,7 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
     public boolean equivalent(DBSPOperator other) {
         if (!super.equivalent(other))
             return false;
-        DBSPWindowAggregateOperator otherOperator = other.as(DBSPWindowAggregateOperator.class);
+        DBSPPartitionedRollingAggregateOperator otherOperator = other.as(DBSPPartitionedRollingAggregateOperator.class);
         if (otherOperator == null)
             return false;
         return this.isLinear == otherOperator.isLinear &&

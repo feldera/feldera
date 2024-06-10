@@ -66,8 +66,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
@@ -935,6 +935,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode jsonNode = mapper.readTree(json);
         Assert.assertNotNull(jsonNode);
+        Assert.assertNotNull(jsonNode.get(0).get("snippet").asText());
     }
 
     @Test
@@ -950,6 +951,23 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 }
             }
         }
+    }
+
+    @Test
+    public void testLocalView() {
+        String sql = """
+                    CREATE TABLE T(I INTEGER, S VARCHAR);
+                    CREATE LOCAL VIEW V AS SELECT * FROM T;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        Assert.assertEquals(0, circuit.getOutputCount());
+
+        String oneMore = "CREATE VIEW W AS SELECT * FROM V;";
+        compiler = this.testCompiler();
+        compiler.compileStatements(sql + oneMore);
+        circuit = getCircuit(compiler);
+        Assert.assertEquals(1, circuit.getOutputCount());
     }
 
     @Test

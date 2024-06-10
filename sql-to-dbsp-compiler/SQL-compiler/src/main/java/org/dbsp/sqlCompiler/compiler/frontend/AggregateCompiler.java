@@ -54,7 +54,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
@@ -405,8 +405,8 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression increment = aggregatedValue;
         if (!increment.getType().mayBeNull)
             increment = increment.some();
-        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "DefaultOptSemigroup",
-                false, accumulator.getType().setMayBeNull(false));
+        DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
+                false, accumulator.getType());
         this.setFoldingFunction(new DBSPAggregate.Implementation(
                 node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, null));
     }
