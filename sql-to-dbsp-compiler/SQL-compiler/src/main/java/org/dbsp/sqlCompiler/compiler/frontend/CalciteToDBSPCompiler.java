@@ -1586,7 +1586,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                                     new DBSPTypeOption(aggResultType)).ref()));
             DBSPExpression ixKey = var.field(0).deref().applyCloneIfNeeded();
             DBSPExpression ts = var.field(1).deref().field(0);
-            DBSPExpression agg = var.field(1).deref().field(1);
+            DBSPExpression agg = var.field(1).deref().field(1).applyCloneIfNeeded();
             DBSPUnsignedUnwrapExpression unwrap = new DBSPUnsignedUnwrapExpression(
                     node, ts, sortType, ascending, nullsLast);
             DBSPExpression body = new DBSPRawTupleExpression(

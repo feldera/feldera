@@ -43,6 +43,7 @@ import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
@@ -51,14 +52,17 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
 import org.dbsp.util.NameGen;
@@ -77,13 +81,9 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.SEMIGROUP;
  */
 public class AggregateCompiler implements ICompilerComponent {
     public final DBSPCompiler compiler;
-    /**
-     * Type of result expected.
-     */
+    /** Type of result expected. */
     public final DBSPType resultType;
-    /**
-     * Almost all aggregates may return nullable results, even if Calcite pretends it's not true.
-     */
+    /** Almost all aggregates may return nullable results, even if Calcite pretends it's not true. */
     public final DBSPType nullableResultType;
     // Deposit compilation result here
     @Nullable
@@ -251,8 +251,45 @@ public class AggregateCompiler implements ICompilerComponent {
                 zero, semigroup, linear));
     }
 
+    void processArrayAgg(SqlBasicAggFunction function) {
+        CalciteObject node = CalciteObject.create(function);
+        SqlKind kind = function.getKind();
+        assert kind == SqlKind.ARRAY_AGG;
+
+        boolean ignoreNulls = this.call.ignoreNulls();
+        boolean distinct = this.call.isDistinct();
+        DBSPType elementType = this.resultType.to(DBSPTypeVec.class).getElementType();
+        DBSPExpression zero = new DBSPVecLiteral(elementType);
+        DBSPExpression aggregatedValue = this.getAggregatedValue();
+        DBSPVariablePath accumulator = this.resultType.var(this.genAccumulatorName());
+        String functionName;
+        DBSPExpression[] arguments;
+        if (ignoreNulls && elementType.mayBeNull) {
+            functionName = "array_agg_opt";
+            arguments = new DBSPExpression[5];
+        } else {
+            functionName = "array_agg";
+            arguments = new DBSPExpression[4];
+        }
+        arguments[0] = accumulator.borrow(true);
+        arguments[1] = aggregatedValue.applyCloneIfNeeded();
+        arguments[2] = this.compiler.weightVar;
+        arguments[3] = new DBSPBoolLiteral(distinct);
+        if (arguments.length == 5) {
+            arguments[4] = new DBSPBoolLiteral(ignoreNulls);
+        }
+        DBSPExpression increment = new DBSPApplyExpression(node, functionName, this.resultType, arguments);
+        DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "ConcatSemigroup", false, accumulator.getType());
+        this.setFoldingFunction(new DBSPAggregate.Implementation(
+                node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup, null));
+    }
+
     void processBasic(SqlBasicAggFunction function) {
         SqlKind kind = function.getKind();
+        if (kind == SqlKind.ARRAY_AGG) {
+            this.processArrayAgg(function);
+            return;
+        }
         CalciteObject node = CalciteObject.create(function);
         DBSPTupleExpression tuple = Objects.requireNonNull(this.aggArgument).to(DBSPTupleExpression.class);
         assert tuple.fields.length == 2: "Expected 2 arguments for " + kind;
