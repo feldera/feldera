@@ -5,7 +5,6 @@ use crate::{
     operator::dynamic::{
         distinct::DistinctFactories, recursive::RecursiveStreams as DynRecursiveStreams,
     },
-    trace::Spillable,
     typed_batch::{DynIndexedZSet, TypedBatch},
     ChildCircuit, Circuit, DBData, SchedulerError, Stream, ZWeight,
 };
@@ -39,12 +38,12 @@ impl<K, V, B, C> RecursiveStreams<C> for Stream<C, TypedBatch<K, V, ZWeight, B>>
 where
     C: Circuit,
     C::Parent: Circuit,
-    B: Checkpoint + DynIndexedZSet + Spillable + Send + Sync,
+    B: Checkpoint + DynIndexedZSet + Send + Sync,
     K: DBData + Erase<B::Key>,
     V: DBData + Erase<B::Val>,
 {
     type Inner = Stream<C, B>;
-    type Output = Stream<C::Parent, TypedBatch<K, V, ZWeight, B::Spilled>>;
+    type Output = Stream<C::Parent, TypedBatch<K, V, ZWeight, B>>;
 
     unsafe fn typed(inner: &Self::Inner) -> Self {
         Stream::typed(inner)
@@ -207,7 +206,7 @@ where
     ///               .plus(&init_labels);
     ///         Ok(result)
     ///     })
-    ///     .unwrap().unspill();
+    ///     .unwrap();
     ///
     ///     labels.inspect(move |ls| {
     ///         assert_eq!(*ls, expected_outputs.next().unwrap());

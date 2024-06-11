@@ -364,14 +364,12 @@ mod test {
 
         let sample_handle = input_stream
             .shard()
-            .spill()
             .integrate_trace()
             .stream_sample_keys(&sample_size_stream)
             .output();
 
         let quantile_handle = input_stream
             .shard()
-            .spill()
             .integrate_trace()
             .stream_key_quantiles(&sample_size_stream)
             .output();
@@ -413,14 +411,12 @@ mod test {
 
         let sample_handle = input_stream
             .shard()
-            .spill()
             .integrate_trace()
             .stream_sample_unique_key_vals(&sample_size_stream)
             .output();
 
         let quantile_handle = input_stream
             .shard()
-            .spill()
             .integrate_trace()
             .stream_unique_key_val_quantiles(&sample_size_stream)
             .output();

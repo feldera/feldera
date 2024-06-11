@@ -2,46 +2,13 @@ use crate::{
     dynamic::{DowncastTrait, DynData, Erase},
     operator::TraceBound,
     trace::BatchReaderFactories,
-    typed_batch::{
-        Batch, DynBatch, DynBatchReader, DynSpillable, DynStored, Spillable, Spine, Stored,
-        TypedBatch, TypedBox,
-    },
-    BatchReader, Circuit, DBData, DBWeight, Stream,
+    typed_batch::{Batch, DynBatch, DynBatchReader, Spine, TypedBatch, TypedBox},
+    Circuit, DBData, DBWeight, Stream,
 };
 use dyn_clone::clone_box;
 use size_of::SizeOf;
 
 use super::dynamic::trace::FileValSpine;
-
-impl<C, B> Stream<C, B>
-where
-    C: Circuit,
-    B: BatchReader<Time = ()>,
-{
-    // TODO: derive timestamp type from the parent circuit.
-
-    pub fn spill(
-        &self,
-    ) -> Stream<C, TypedBatch<B::Key, B::Val, B::R, <B::InnerBatch as DynSpillable>::Spilled>>
-    where
-        B: Spillable,
-        B::InnerBatch: DynSpillable,
-    {
-        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
-        self.inner().dyn_spill(&factories).typed()
-    }
-
-    pub fn unspill(
-        &self,
-    ) -> Stream<C, TypedBatch<B::Key, B::Val, B::R, <B::InnerBatch as DynStored>::Unspilled>>
-    where
-        B: Stored,
-        B::InnerBatch: DynStored,
-    {
-        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
-        self.inner().dyn_unspill(&factories).typed()
-    }
-}
 
 impl<C, K, V, R, B> Stream<C, TypedBatch<K, V, R, B>>
 where
@@ -248,11 +215,7 @@ where
     ///
     /// The result batch is stored durably for fault tolerance.
     #[track_caller]
-    pub fn integrate_trace(&self) -> Stream<C, Spine<B>>
-    where
-        B: Stored,
-        B::InnerBatch: DynStored,
-    {
+    pub fn integrate_trace(&self) -> Stream<C, Spine<B>> {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 
         self.inner().dyn_integrate_trace(&factories).typed()
@@ -275,8 +238,6 @@ where
     ) -> Stream<C, Spine<B>>
     where
         Spine<B>: SizeOf,
-        B: Stored,
-        B::InnerBatch: DynStored,
     {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 

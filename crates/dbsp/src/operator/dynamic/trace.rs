@@ -10,7 +10,7 @@ use crate::{
     },
     circuit_cache_key,
     dynamic::DataTrait,
-    trace::{copy_batch, Batch, BatchReader, Filter, Spillable, Spine, Stored, Trace},
+    trace::{copy_batch, Batch, BatchReader, Filter, Spine, Trace},
     Error, Timestamp,
 };
 use dyn_clone::clone_box;
@@ -254,61 +254,6 @@ where
     C: Circuit,
     B: Clone + Send + Sync + 'static,
 {
-    /// Spills the in-memory batches in `self` to storage.
-    pub fn dyn_spill(
-        &self,
-        output_factories: &<B::Spilled as BatchReader>::Factories,
-    ) -> Stream<C, B::Spilled>
-    where
-        B: Spillable,
-    {
-        // We construct the trace bounds for the unspilled stream and copy it
-        // into the spilled stream, to ensure that `spilled.trace_bounds()` is
-        // the same as `self.trace_bounds()`.  This is an important property
-        // (see [`Self::trace_bounds`]).
-        //
-        // (We can't do this the same way as for sharded streams, by mapping
-        // from the spilled stream back to the unspilled stream as with
-        // [`Stream::try_unsharded_version`], because the types are different;
-        // we'd need an `Unspillable` trait.)
-        let bounds = self.trace_bounds();
-        let sharded = self.try_sharded_version();
-        let spilled = self
-            .circuit()
-            .cache_get_or_insert_with(SpillId::new(self.origin_node_id().clone()), || {
-                let output_factories = output_factories.clone();
-                let spilled =
-                    sharded.apply_named("spill", move |batch| batch.spill(&output_factories));
-                self.circuit().cache_insert(
-                    BoundsId::<B>::new(spilled.origin_node_id().clone()),
-                    bounds.clone(),
-                );
-                spilled
-            })
-            .clone();
-        spilled.mark_sharded_if(self);
-        spilled
-    }
-
-    /// Reads stored batches back into memory.
-    pub fn dyn_unspill(
-        &self,
-        output_factories: &<B::Unspilled as BatchReader>::Factories,
-    ) -> Stream<C, B::Unspilled>
-    where
-        B: Stored,
-    {
-        let output_factories = output_factories.clone();
-        let unspilled = self.apply_named("unspill", move |batch| batch.unspill(&output_factories));
-        if self.is_sharded() {
-            unspilled.mark_sharded();
-        }
-        if self.is_distinct() {
-            unspilled.mark_distinct();
-        }
-        unspilled
-    }
-
     /// See [`Stream::trace`].
     pub fn dyn_trace(
         &self,
@@ -457,7 +402,7 @@ where
     #[track_caller]
     pub fn dyn_integrate_trace(&self, factories: &B::Factories) -> Stream<C, Spine<B>>
     where
-        B: Batch<Time = ()> + Stored,
+        B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
         self.dyn_integrate_trace_with_bound(factories, TraceBound::new(), TraceBound::new())
@@ -470,7 +415,7 @@ where
         lower_val_bound: TraceBound<B::Val>,
     ) -> Stream<C, Spine<B>>
     where
-        B: Batch<Time = ()> + Stored,
+        B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
         self.integrate_trace_inner(
@@ -1014,8 +959,8 @@ mod test {
                         },
                     );
 
-                let trace = stream.spill().integrate_trace();
-                stream.spill().integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0.saturating_sub(100));
+                let trace = stream.integrate_trace();
+                stream.integrate_trace_retain_keys(&watermark, |key, ts| *key >= ts.0.saturating_sub(100));
                 trace.apply(|trace| {
                     // println!("retain_keys: {}bytes", trace.size_of().total_bytes());
                     assert!(trace.size_of().total_bytes() < 70000);
@@ -1023,8 +968,8 @@ mod test {
 
                 let stream2 = stream.map_index(|(k, v)| (*k, *v)).shard();
 
-                let trace2 = stream2.spill().integrate_trace();
-                stream2.spill().integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1.saturating_sub(1000));
+                let trace2 = stream2.integrate_trace();
+                stream2.integrate_trace_retain_values(&watermark, |val, ts| *val >= ts.1.saturating_sub(1000));
 
                 trace2.apply(|trace| {
                     // println!("retain_vals: {}bytes", trace.size_of().total_bytes());

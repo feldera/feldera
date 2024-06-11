@@ -8,7 +8,7 @@ use crate::{
     },
     trace::{
         cursor::{CursorPair, ReverseKeyCursor},
-        BatchReader, BatchReaderFactories, Spillable,
+        BatchReaderFactories,
     },
     utils::Tup2,
     DBData, DynZWeight, RootCircuit, Stream, ZWeight,
@@ -17,9 +17,8 @@ use std::{cmp::Ordering, marker::PhantomData, ops::Neg};
 
 const MAX_RETRACTIONS_CAPACITY: usize = 100_000usize;
 
-pub struct LagFactories<B: IndexedZSet + Spillable, OV: DataTrait + ?Sized> {
+pub struct LagFactories<B: IndexedZSet, OV: DataTrait + ?Sized> {
     input_factories: B::Factories,
-    stored_factories: <B::Spilled as BatchReader>::Factories,
     output_factories: OrdIndexedZSetFactories<B::Key, DynPair<B::Val, OV>>,
     keys_factory: &'static dyn Factory<AffectedKeys<B::Val>>,
     output_val_factory: &'static dyn Factory<OV>,
@@ -27,7 +26,7 @@ pub struct LagFactories<B: IndexedZSet + Spillable, OV: DataTrait + ?Sized> {
 
 impl<B, OV> LagFactories<B, OV>
 where
-    B: IndexedZSet + Spillable,
+    B: IndexedZSet,
     OV: DataTrait + ?Sized,
 {
     pub fn new<KType, VType, OVType>() -> Self
@@ -38,7 +37,6 @@ where
     {
         Self {
             input_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
-            stored_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
             output_factories: BatchReaderFactories::new::<KType, Tup2<VType, OVType>, ZWeight>(),
             keys_factory: WithFactory::<LeanVec<VType>>::FACTORY,
             output_val_factory: WithFactory::<OVType>::FACTORY,
@@ -80,7 +78,7 @@ where
 
 impl<B> Stream<RootCircuit, B>
 where
-    B: IndexedZSet + Spillable + Send,
+    B: IndexedZSet + Send,
 {
     /// See [`Stream::lag`].
     #[allow(clippy::type_complexity)]
@@ -95,7 +93,6 @@ where
     {
         self.dyn_group_transform(
             &factories.input_factories,
-            &factories.stored_factories,
             &factories.output_factories,
             Box::new(Lag::new(
                 factories.output_factories.val_factory(),

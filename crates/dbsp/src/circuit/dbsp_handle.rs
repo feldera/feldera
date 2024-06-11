@@ -956,7 +956,6 @@ mod tests {
             let (sample_size_stream, sample_size_handle) = circuit.add_input_stream::<usize>();
             let map_factories = BatchReaderFactories::new::<Tup2<i32, i32>, (), ZWeight>();
             let sample_handle = stream
-                .spill()
                 .integrate_trace()
                 .stream_sample_unique_key_vals(&sample_size_stream)
                 .inner()
@@ -982,7 +981,6 @@ mod tests {
             let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
             let (sample_size_stream, sample_size_handle) = circuit.add_input_stream::<usize>();
             let sample_handle = stream
-                .spill()
                 .integrate_trace()
                 .stream_sample_unique_key_vals(&sample_size_stream)
                 .inner()
@@ -997,7 +995,6 @@ mod tests {
                 .typed()
                 .output();
             let _sample_handle2: OutputHandle<OrdZSet<Tup2<i32, i32>>> = stream
-                .spill()
                 .integrate_trace()
                 .stream_sample_unique_key_vals(&sample_size_stream)
                 .inner()
@@ -1026,7 +1023,6 @@ mod tests {
             let tb = TraceBound::new();
             tb.set(Box::new(10).erase_box());
             let sample_handle = stream
-                .spill()
                 .integrate_trace_with_bound(tb.clone(), tb)
                 .stream_sample_unique_key_vals(&sample_size_stream)
                 .inner()

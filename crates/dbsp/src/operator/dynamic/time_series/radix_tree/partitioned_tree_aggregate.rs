@@ -18,7 +18,7 @@ use crate::{
     },
     trace::{
         cursor::CursorEmpty, ord::fallback::indexed_wset::FallbackIndexedWSet, BatchReader,
-        BatchReaderFactories, Builder, Cursor, Spillable, Spine,
+        BatchReaderFactories, Builder, Cursor, Spine,
     },
     utils::Tup2,
     Circuit, DBData, DynZWeight, RootCircuit, Stream, ZWeight,
@@ -68,14 +68,14 @@ pub type OrdPartitionedRadixTreeStream<PK, TS, A> =
 
 pub struct PartitionedTreeAggregateFactories<TS, V, Z, O, Acc>
 where
-    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
     Acc: DataTrait + ?Sized,
     TS: DBData + PrimInt,
     V: DataTrait + ?Sized,
 {
     input_factories: Z::Factories,
-    stored_factories: <Z::Spilled as BatchReader>::Factories,
+    stored_factories: Z::Factories,
     output_factories: O::Factories,
     radix_tree_factories: RadixTreeFactories<TS, Acc>,
     phantom: PhantomData<fn(&TS, &V)>,
@@ -85,7 +85,7 @@ impl<TS, V, Z, O, Acc> PartitionedTreeAggregateFactories<TS, V, Z, O, Acc>
 where
     TS: DBData + PrimInt,
     V: DataTrait + ?Sized,
-    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
     Acc: DataTrait + ?Sized,
 {
@@ -111,7 +111,7 @@ where
 
 impl<TS, V, Z, O, Acc> Clone for PartitionedTreeAggregateFactories<TS, V, Z, O, Acc>
 where
-    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
     Acc: DataTrait + ?Sized,
     TS: DBData + PrimInt,
@@ -205,7 +205,7 @@ where
         aggregator: &dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>,
     ) -> OrdPartitionedRadixTreeStream<Z::Key, TS, Acc>
     where
-        Z: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable + SizeOf + Send,
+        Z: PartitionedIndexedZSet<DynDataTyped<TS>, V> + SizeOf + Send,
         TS: DBData + PrimInt,
         V: DataTrait + ?Sized,
         Acc: DataTrait + ?Sized,
@@ -228,7 +228,7 @@ where
         aggregator: &dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>,
     ) -> Stream<RootCircuit, O>
     where
-        Z: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable + SizeOf + Send,
+        Z: PartitionedIndexedZSet<DynDataTyped<TS>, V> + SizeOf + Send,
         Acc: DataTrait + ?Sized,
         Out: DataTrait + ?Sized,
         TS: DBData + PrimInt,
@@ -272,9 +272,7 @@ where
                     .add_ternary_operator(
                         PartitionedRadixTreeAggregate::new(factories, aggregator),
                         &stream,
-                        &stream
-                            .dyn_spill(&factories.stored_factories)
-                            .dyn_integrate_trace(&factories.stored_factories),
+                        &stream.dyn_integrate_trace(&factories.stored_factories),
                         &feedback.delayed_trace,
                     )
                     .mark_sharded();
@@ -297,7 +295,7 @@ where
 ///   radix tree.
 struct PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Acc, Out, O>
 where
-    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
     TS: DBData + PrimInt,
     V: DataTrait + ?Sized,
@@ -311,7 +309,7 @@ where
 
 impl<TS, V, Z, IT, OT, Acc, Out, O> PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Acc, Out, O>
 where
-    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
@@ -333,7 +331,7 @@ where
 impl<TS, V, Z, IT, OT, Acc, Out, O> Operator
     for PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Acc, Out, O>
 where
-    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
@@ -354,7 +352,7 @@ where
 impl<TS, V, Z, IT, OT, Acc, Out, O> TernaryOperator<Z, IT, OT, O>
     for PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Acc, Out, O>
 where
-    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
     TS: DBData + PrimInt,
@@ -626,7 +624,6 @@ mod test {
 
             let factory = BatchReaderFactories::new::<u64, Tup2<Prefix<u64>, TreeNode<u64, u64>>, ZWeight>();
             aggregate
-                .dyn_spill(&factory)
                 .dyn_integrate_trace(&factory)
                 .apply(move |tree_trace| {
                     println!("Radix trees:");
