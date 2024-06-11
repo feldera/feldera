@@ -8,8 +8,7 @@ use crate::{
     dynamic::{Data, DataTrait, DynDataTyped, DynPair, Erase},
     trace::{
         ord::fallback::indexed_wset::{FallbackIndexedWSet, FallbackIndexedWSetFactories},
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spillable,
-        Spine,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine,
     },
     utils::Tup2,
     Circuit, DBData, DynZWeight, NumEntries, RootCircuit, Stream, ZWeight,
@@ -184,8 +183,8 @@ pub type NeighborhoodStream<K, V> = Stream<RootCircuit, DynNeighborhood<K, V>>;
 pub type NeighborhoodDescrStream<K, V> =
     Stream<RootCircuit, Option<Box<DynNeighborhoodDescr<K, V>>>>;
 
-pub struct NeighborhoodFactories<B: IndexedZSetReader + Spillable> {
-    input_factories: <B::Spilled as BatchReader>::Factories,
+pub struct NeighborhoodFactories<B: IndexedZSetReader> {
+    input_factories: B::Factories,
     local_factories: OrdIndexedZSetFactories<B::Key, B::Val>,
     stored_factories: FallbackIndexedWSetFactories<B::Key, B::Val, DynZWeight>,
     output_factories: <DynNeighborhood<B::Key, B::Val> as BatchReader>::Factories,
@@ -193,7 +192,7 @@ pub struct NeighborhoodFactories<B: IndexedZSetReader + Spillable> {
 
 impl<B> NeighborhoodFactories<B>
 where
-    B: IndexedZSetReader + Spillable,
+    B: IndexedZSetReader,
 {
     pub fn new<KType, VType>() -> Self
     where
@@ -212,7 +211,7 @@ where
 
 impl<B> Stream<RootCircuit, B>
 where
-    B: IndexedZSet + Spillable,
+    B: IndexedZSet,
 {
     /// Returns a small contiguous range of rows ([`DynNeighborhood`]) of the input
     /// table.
@@ -274,9 +273,7 @@ where
                 .circuit()
                 .add_binary_operator(
                     NeighborhoodLocal::new(&factories.local_factories),
-                    &stream
-                        .dyn_spill(&factories.input_factories)
-                        .dyn_integrate_trace(&factories.input_factories),
+                    &stream.dyn_integrate_trace(&factories.input_factories),
                     neighborhood_descr,
                 )
                 .differentiate_with_initial_value(Batch::dyn_empty(&factories.local_factories, ()));
@@ -290,7 +287,6 @@ where
                 ),
                 &local_output
                     .dyn_gather(&factories.local_factories, 0)
-                    .dyn_spill(&factories.stored_factories)
                     .dyn_integrate_trace(&factories.stored_factories),
                 neighborhood_descr,
             );

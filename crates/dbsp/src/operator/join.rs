@@ -9,7 +9,6 @@ use crate::{
             TraceJoinFuncs,
         },
     },
-    trace::Spillable,
     typed_batch::{IndexedZSet, OrdIndexedZSet, OrdZSet, ZSet},
     Circuit, DBData, Stream,
 };
@@ -321,9 +320,8 @@ where
 
     pub fn join_generic<I2, F, Z, It>(&self, other: &Stream<C, I2>, join: F) -> Stream<C, Z>
     where
-        I1::InnerBatch: Spillable,
         I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
-        I2::InnerBatch: Spillable + Send,
+        I2::InnerBatch: Send,
         Z: IndexedZSet,
         Box<Z::DynK>: Clone,
         Box<Z::DynV>: Clone,
@@ -344,9 +342,8 @@ where
     /// excluding keys that are present in `other`.
     pub fn antijoin<I2>(&self, other: &Stream<C, I2>) -> Stream<C, I1>
     where
-        I1::InnerBatch: Spillable,
         I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
-        I2::InnerBatch: Spillable + Send,
+        I2::InnerBatch: Send,
         Box<I1::DynK>: Clone,
         Box<I1::DynV>: Clone,
     {
@@ -374,8 +371,7 @@ where
         I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
         I1::Inner: DynFilterMap,
         I2::Inner: DynFilterMap,
-        I1::InnerBatch: Spillable,
-        I2::InnerBatch: Spillable + Send,
+        I2::InnerBatch: Send,
         O: DBData,
         Box<I1::DynK>: Clone,
         Box<I1::DynV>: Clone,

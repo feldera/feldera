@@ -25,9 +25,7 @@ use crate::{
         },
         Avg,
     },
-    trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spillable, Spine,
-    },
+    trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine},
     utils::Tup2,
     Circuit, DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
 };
@@ -63,7 +61,7 @@ pub type OrdPartitionedOverStream<PK, TS, A> =
 
 pub struct PartitionedRollingAggregateFactories<TS, V, Acc, Out, B, O>
 where
-    B: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    B: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: IndexedZSet<Key = B::Key>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
@@ -71,7 +69,6 @@ where
     V: DataTrait + ?Sized,
 {
     input_factories: B::Factories,
-    stored_factories: <B::Spilled as BatchReader>::Factories,
     radix_tree_factories: FilePartitionedRadixTreeFactories<B::Key, TS, Acc>,
     partitioned_tree_aggregate_factories: OrdPartitionedTreeAggregateFactories<TS, V, B, Acc>,
     output_factories: O::Factories,
@@ -80,7 +77,7 @@ where
 
 impl<TS, V, Acc, Out, B, O> PartitionedRollingAggregateFactories<TS, V, Acc, Out, B, O>
 where
-    B: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    B: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedIndexedZSet<DynDataTyped<TS>, DynOpt<Out>, Key = B::Key>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
@@ -96,7 +93,6 @@ where
     {
         Self {
             input_factories: BatchReaderFactories::new::<KType, Tup2<TS, VType>, ZWeight>(),
-            stored_factories: BatchReaderFactories::new::<KType, Tup2<TS, VType>, ZWeight>(),
             radix_tree_factories: BatchReaderFactories::new::<
                 KType,
                 Tup2<Prefix<TS>, TreeNode<TS, AType>>,
@@ -117,14 +113,13 @@ where
 pub struct PartitionedRollingAggregateWithWaterlineFactories<PK, TS, V, Acc, Out, B>
 where
     PK: DataTrait + ?Sized,
-    B: IndexedZSet + Spillable,
+    B: IndexedZSet,
     TS: DBData + UnsignedPrimInt + Erase<B::Key>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
 {
     input_factories: B::Factories,
-    stored_factories: <B::Spilled as BatchReader>::Factories,
     rolling_aggregate_factories: PartitionedRollingAggregateFactories<
         TS,
         V,
@@ -139,7 +134,7 @@ impl<PK, TS, V, Acc, Out, B>
     PartitionedRollingAggregateWithWaterlineFactories<PK, TS, V, Acc, Out, B>
 where
     PK: DataTrait + ?Sized,
-    B: IndexedZSet + Spillable,
+    B: IndexedZSet,
     TS: DBData + UnsignedPrimInt + Erase<B::Key>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
@@ -155,7 +150,6 @@ where
     {
         Self {
             input_factories: BatchReaderFactories::new::<TS, VType, ZWeight>(),
-            stored_factories: BatchReaderFactories::new::<TS, VType, ZWeight>(),
             rolling_aggregate_factories: PartitionedRollingAggregateFactories::new::<
                 PKType,
                 PVType,
@@ -168,7 +162,7 @@ where
 
 pub struct PartitionedRollingAggregateLinearFactories<TS, V, OV, A, B, O>
 where
-    B: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    B: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: IndexedZSet<Key = B::Key>,
     TS: DBData + UnsignedPrimInt,
     V: DataTrait + ?Sized,
@@ -183,7 +177,7 @@ where
 
 impl<TS, V, OV, A, B, O> PartitionedRollingAggregateLinearFactories<TS, V, OV, A, B, O>
 where
-    B: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    B: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedIndexedZSet<DynDataTyped<TS>, DynOpt<OV>, Key = B::Key>,
     B::Key: DataTrait,
     TS: DBData + UnsignedPrimInt,
@@ -214,7 +208,7 @@ where
 
 pub struct PartitionedRollingAverageFactories<TS, V, W, B, O>
 where
-    B: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    B: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: IndexedZSet<Key = B::Key>,
     TS: DBData + UnsignedPrimInt,
     V: DataTrait + ?Sized,
@@ -227,7 +221,7 @@ where
 
 impl<TS, V, W, B, O> PartitionedRollingAverageFactories<TS, V, W, B, O>
 where
-    B: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable,
+    B: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedIndexedZSet<DynDataTyped<TS>, DynOpt<V>, Key = B::Key>,
     TS: DBData + UnsignedPrimInt,
     V: DataTrait + ?Sized,
@@ -377,10 +371,7 @@ where
         range: RelRange<TS>,
     ) -> OrdPartitionedOverStream<PK, DynDataTyped<TS>, Out>
     where
-        B: IndexedZSet + Spillable,
-        B::Spilled: for<'a> DynFilterMap<
-            DynItemRef<'a> = (&'a <B as BatchReader>::Key, &'a <B as BatchReader>::Val),
-        >,
+        B: IndexedZSet,
         B: for<'a> DynFilterMap<
             DynItemRef<'a> = (&'a <B as BatchReader>::Key, &'a <B as BatchReader>::Val),
         >,
@@ -426,11 +417,7 @@ where
                         Box::new(<TS as Bounded>::max_value()).erase_box(),
                     )
                 });
-                let window = self.dyn_window(
-                    &factories.input_factories,
-                    &factories.stored_factories,
-                    &bounds,
-                );
+                let window = self.dyn_window(&factories.input_factories, &bounds);
 
                 // Now that we've truncated old inputs, which required the
                 // input stream to be indexed by time, we can re-index it
@@ -483,7 +470,7 @@ where
         range: RelRange<TS>,
     ) -> OrdPartitionedOverStream<PK, DynDataTyped<TS>, Out>
     where
-        B: IndexedZSet + Spillable,
+        B: IndexedZSet,
         B: for<'a> DynFilterMap<
             DynItemRef<'a> = (&'a <B as BatchReader>::Key, &'a <B as BatchReader>::Val),
         >,
@@ -545,7 +532,7 @@ where
         range: RelRange<TS>,
     ) -> OrdPartitionedOverStream<PK, DynDataTyped<TS>, O>
     where
-        B: IndexedZSet + Spillable,
+        B: IndexedZSet,
         B: for<'a> DynFilterMap<
             DynItemRef<'a> = (&'a <B as BatchReader>::Key, &'a <B as BatchReader>::Val),
         >,
@@ -585,7 +572,7 @@ where
         range: RelRange<TS>,
     ) -> OrdPartitionedOverStream<PK, DynDataTyped<TS>, V>
     where
-        B: IndexedZSet + Spillable,
+        B: IndexedZSet,
         B: for<'a> DynFilterMap<
             DynItemRef<'a> = (&'a <B as BatchReader>::Key, &'a <B as BatchReader>::Val),
         >,
@@ -625,7 +612,7 @@ impl<B> Stream<RootCircuit, B> {
         bound: TraceBound<DynPair<DynDataTyped<TS>, DynOpt<Out>>>,
     ) -> Stream<RootCircuit, O>
     where
-        B: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Spillable + Send,
+        B: PartitionedIndexedZSet<DynDataTyped<TS>, V> + Send,
         O: PartitionedIndexedZSet<DynDataTyped<TS>, DynOpt<Out>, Key = B::Key>,
         Acc: DataTrait + ?Sized,
         Out: DataTrait + ?Sized,
@@ -642,11 +629,8 @@ impl<B> Stream<RootCircuit, B> {
                 &factories.partitioned_tree_aggregate_factories,
                 aggregator,
             )
-            .dyn_spill(&factories.radix_tree_factories)
             .dyn_integrate_trace(&factories.radix_tree_factories);
-        let input_trace = stream_window
-            .dyn_spill(&factories.stored_factories)
-            .dyn_integrate_trace(&factories.stored_factories);
+        let input_trace = stream_window.dyn_integrate_trace(&factories.input_factories);
 
         // Truncate timestamps `< bound` in the output trace.
         let bounds = TraceBounds::new();
@@ -1123,7 +1107,6 @@ mod test {
             bound.set(Box::new(b).erase_box());
 
             aggregate_500_500_waterline
-                .spill()
                 .integrate_trace_with_bound(TraceBound::new(), bound)
                 .apply(move |trace| {
                     if let Some(bound) = size_bound {

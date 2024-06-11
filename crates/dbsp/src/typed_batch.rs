@@ -17,8 +17,7 @@ pub use crate::{
         FileIndexedWSet as DynFileIndexedWSet, FileKeyBatch as DynFileKeyBatch,
         FileValBatch as DynFileValBatch, FileWSet as DynFileWSet,
         OrdIndexedWSet as DynOrdIndexedWSet, OrdKeyBatch as DynOrdKeyBatch,
-        OrdValBatch as DynOrdValBatch, OrdWSet as DynOrdWSet, Spillable as DynSpillable,
-        Spine as DynSpine, Stored as DynStored, Trace as DynTrace,
+        OrdValBatch as DynOrdValBatch, OrdWSet as DynOrdWSet, Spine as DynSpine, Trace as DynTrace,
         VecIndexedWSet as DynVecIndexedWSet, VecKeyBatch as DynVecKeyBatch,
         VecValBatch as DynVecValBatch, VecWSet as DynVecWSet,
     },
@@ -101,32 +100,6 @@ pub trait BatchReader: 'static {
     fn stream_from_inner<C: Clone>(stream: &Stream<C, Self::Inner>) -> Stream<C, Self>
     where
         Self: Sized;
-}
-
-pub trait Spillable: Batch<Time = ()>
-where
-    Self::InnerBatch: DynSpillable,
-{
-}
-
-impl<B> Spillable for B
-where
-    B: Batch<Time = ()>,
-    B::InnerBatch: DynSpillable,
-{
-}
-
-pub trait Stored: Batch<Time = ()>
-where
-    Self::InnerBatch: DynStored,
-{
-}
-
-impl<B> Stored for B
-where
-    B: Batch<Time = ()>,
-    B::InnerBatch: DynStored,
-{
 }
 
 /// A statically typed wrapper around [`DynBatch`].
@@ -502,19 +475,6 @@ pub type Spine<B> = TypedBatch<
     <B as BatchReader>::Val,
     <B as BatchReader>::R,
     DynSpine<<B as BatchReader>::Inner>,
->;
-pub type SpilledSpine<B> = TypedBatch<
-    <B as BatchReader>::Key,
-    <B as BatchReader>::Val,
-    <B as BatchReader>::R,
-    DynSpine<<<B as Batch>::InnerBatch as DynSpillable>::Spilled>,
->;
-
-pub type SpilledBatch<B> = TypedBatch<
-    <B as BatchReader>::Key,
-    <B as BatchReader>::Val,
-    <B as BatchReader>::R,
-    <<B as Batch>::InnerBatch as DynSpillable>::Spilled,
 >;
 
 impl<C: Clone, B: BatchReader> Stream<C, B> {

@@ -19,8 +19,7 @@ use crate::{
     operator::dynamic::{distinct::DistinctFactories, filter_map::DynFilterMap},
     time::Timestamp,
     trace::{
-        BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, Spillable,
-        WeightedItem,
+        BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, WeightedItem,
     },
     utils::Tup2,
     DBData, ZWeight,
@@ -191,7 +190,7 @@ where
 pub struct AntijoinFactories<I1, I2, T>
 where
     I1: IndexedZSet,
-    I2: IndexedZSet + Spillable,
+    I2: IndexedZSet,
     T: Timestamp,
 {
     pub join_factories: JoinFactories<I1, I2, T, I1>,
@@ -201,7 +200,7 @@ where
 impl<I1, I2, T> AntijoinFactories<I1, I2, T>
 where
     I1: IndexedZSet,
-    I2: IndexedZSet<Key = I1::Key> + Spillable,
+    I2: IndexedZSet<Key = I1::Key>,
     T: Timestamp,
 {
     pub fn new<KType, V1Type, V2Type>() -> Self
@@ -220,7 +219,7 @@ where
 impl<I1, I2, T> Clone for AntijoinFactories<I1, I2, T>
 where
     I1: IndexedZSet,
-    I2: IndexedZSet + Spillable,
+    I2: IndexedZSet,
     T: Timestamp,
 {
     fn clone(&self) -> Self {
@@ -233,8 +232,8 @@ where
 
 pub struct OuterJoinFactories<I1, I2, T, O>
 where
-    I1: IndexedZSet + Spillable,
-    I2: IndexedZSet + Spillable,
+    I1: IndexedZSet,
+    I2: IndexedZSet,
     T: Timestamp,
     O: DataTrait + ?Sized,
 {
@@ -249,8 +248,8 @@ where
 
 impl<I1, I2, T, O> OuterJoinFactories<I1, I2, T, O>
 where
-    I1: IndexedZSet + Spillable,
-    I2: IndexedZSet<Key = I1::Key> + Spillable,
+    I1: IndexedZSet,
+    I2: IndexedZSet<Key = I1::Key>,
     T: Timestamp,
     O: DataTrait + ?Sized,
 {
@@ -274,8 +273,8 @@ where
 
 impl<I1, I2, T, O> Clone for OuterJoinFactories<I1, I2, T, O>
 where
-    I1: IndexedZSet + Spillable,
-    I2: IndexedZSet + Spillable,
+    I1: IndexedZSet,
+    I2: IndexedZSet,
     T: Timestamp,
     O: DataTrait + ?Sized,
 {
@@ -386,28 +385,24 @@ impl<I1> Stream<RootCircuit, I1> {
     /// benchmarking purposes.
     #[track_caller]
     #[doc(hidden)]
-    #[allow(clippy::too_many_arguments)]
     pub fn dyn_join_incremental<F, I2, Z>(
         &self,
         self_factories: &I1::Factories,
         other_factories: &I2::Factories,
-        stored_self_factories: &<I1::Spilled as BatchReader>::Factories,
-        stored_other_factories: &<I2::Spilled as BatchReader>::Factories,
         output_factories: &Z::Factories,
         other: &Stream<RootCircuit, I2>,
         join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
     ) -> Stream<RootCircuit, Z>
     where
-        I1: IndexedZSet + Spillable + Send,
-        I2: IndexedZSet<Key = I1::Key> + Spillable + Send,
+        I1: IndexedZSet + Send,
+        I2: IndexedZSet<Key = I1::Key> + Send,
         F: Clone + Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + 'static,
         Z: ZSet,
     {
         let left = self.dyn_shard(self_factories);
         let right = other.dyn_shard(other_factories);
 
-        left.dyn_spill(stored_self_factories)
-            .dyn_integrate_trace(stored_self_factories)
+        left.dyn_integrate_trace(self_factories)
             .delay_trace()
             .dyn_stream_join_inner(
                 output_factories,
@@ -415,23 +410,19 @@ impl<I1> Stream<RootCircuit, I1> {
                 join_func.fork(),
                 Location::caller(),
             )
-            .plus(
-                &left.dyn_stream_join_inner(
-                    output_factories,
-                    &right
-                        .dyn_spill(stored_other_factories)
-                        .dyn_integrate_trace(stored_other_factories),
-                    join_func,
-                    Location::caller(),
-                ),
-            )
+            .plus(&left.dyn_stream_join_inner(
+                output_factories,
+                &right.dyn_integrate_trace(other_factories),
+                join_func,
+                Location::caller(),
+            ))
     }
 }
 
 impl<C, I1> Stream<C, I1>
 where
     C: Circuit,
-    I1: IndexedZSet + Spillable + Send,
+    I1: IndexedZSet + Send,
 {
     /// See [`Stream::join`].
     #[track_caller]
@@ -442,7 +433,7 @@ where
         join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, V, DynUnit>,
     ) -> Stream<C, OrdZSet<V>>
     where
-        I2: IndexedZSet<Key = I1::Key> + Spillable + Send,
+        I2: IndexedZSet<Key = I1::Key> + Send,
         V: DataTrait + ?Sized,
     {
         self.dyn_join_generic(factories, other, join_funcs)
@@ -457,7 +448,7 @@ where
         join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, K, V>,
     ) -> Stream<C, OrdIndexedZSet<K, V>>
     where
-        I2: IndexedZSet<Key = I1::Key> + Spillable + Send,
+        I2: IndexedZSet<Key = I1::Key> + Send,
         K: DataTrait + ?Sized,
         V: DataTrait + ?Sized,
     {
@@ -473,7 +464,7 @@ where
         join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
     ) -> Stream<C, Z>
     where
-        I2: IndexedZSet<Key = I1::Key> + Spillable + Send,
+        I2: IndexedZSet<Key = I1::Key> + Send,
         Z: IndexedZSet,
     {
         // TODO: I think this is correct, but we need a proper proof.
@@ -562,7 +553,7 @@ where
         other: &Stream<C, I2>,
     ) -> Stream<C, I1>
     where
-        I2: IndexedZSet<Key = I1::Key> + Spillable + Send,
+        I2: IndexedZSet<Key = I1::Key> + Send,
         Box<I1::Key>: Clone,
         Box<I1::Val>: Clone,
     {
@@ -610,7 +601,7 @@ where
 impl<C, Z> Stream<C, Z>
 where
     C: Circuit,
-    Z: IndexedZSet + Spillable,
+    Z: IndexedZSet,
 {
     /// See [Stream::outer_join].
     pub fn dyn_outer_join<Z2, O>(
@@ -627,7 +618,7 @@ where
     ) -> Stream<C, OrdZSet<O>>
     where
         Z: DynFilterMap + Send,
-        Z2: IndexedZSet<Key = Z::Key> + Spillable + Send,
+        Z2: IndexedZSet<Key = Z::Key> + Send,
         Z2: DynFilterMap,
         O: DataTrait + ?Sized,
         Box<Z::Key>: Clone,
@@ -667,7 +658,7 @@ where
         Z: for<'a> DynFilterMap<
                 DynItemRef<'a> = (&'a <Z as BatchReader>::Key, &'a <Z as BatchReader>::Val),
             > + Send,
-        Z2: IndexedZSet<Key = Z::Key> + Spillable + Send,
+        Z2: IndexedZSet<Key = Z::Key> + Send,
         Z2: for<'a> DynFilterMap<
             DynItemRef<'a> = (&'a <Z2 as BatchReader>::Key, &'a <Z2 as BatchReader>::Val),
         >,
@@ -1491,7 +1482,7 @@ mod test {
             })
             .unwrap();
 
-            paths.integrate().unspill().stream_distinct().inspect(move |ps| {
+            paths.integrate().stream_distinct().inspect(move |ps| {
                 assert_eq!(*ps, outputs.next().unwrap());
             });
             Ok(())
@@ -1579,7 +1570,6 @@ mod test {
                 // FIXME: make sure the `export` API works on typed streams correctly,
                 // so that the `inner`/`typed` calls below are not needed.
                 Ok(result
-                    .spill()
                     .integrate_trace()
                     .inner()
                     .export()
@@ -1587,7 +1577,7 @@ mod test {
             })
             .unwrap();
 
-        computed_labels.consolidate().unspill()
+        computed_labels.consolidate()
     }
 
     #[test]
@@ -1723,7 +1713,7 @@ mod test {
                 },
                     // FIXME: make sure the `export` API works on typed streams correctly,
                     // so that the `inner`/`typed` calls below are not needed.
-                result.spill().integrate_trace().inner().export().typed::<Spine<FallbackZSet<Label>>>()))
+                result.integrate_trace().inner().export().typed::<Spine<FallbackZSet<Label>>>()))
             }).unwrap();
 
             result.consolidate().inspect(move |res: &FallbackZSet<Label>| {

@@ -9,10 +9,7 @@ use crate::{
     dynamic::{rkyv::DeserializableDyn, rkyv::SerializeDyn, ClonableTrait},
     operator::dynamic::trace::TraceBound,
     storage::{checkpoint_path, file::to_bytes, write_commit_metadata},
-    trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Cursor, Serializer, Spillable,
-        Spine,
-    },
+    trace::{BatchFactories, BatchReader, BatchReaderFactories, Cursor, Serializer, Spine},
     Error,
 };
 use rkyv::Deserialize;
@@ -22,31 +19,25 @@ use uuid::Uuid;
 impl<C, B> Stream<C, B>
 where
     C: Circuit,
-    B: IndexedZSet + Spillable,
+    B: IndexedZSet,
     Box<B::Key>: Clone,
 {
     /// See [`Stream::window`].
     pub fn dyn_window(
         &self,
-        input_factories: &B::Factories,
-        stored_factories: &<B::Spilled as BatchReader>::Factories,
+        factories: &B::Factories,
         bounds: &Stream<C, (Box<B::Key>, Box<B::Key>)>,
-    ) -> Stream<C, B::Spilled> {
+    ) -> Stream<C, B> {
         let bound = TraceBound::new();
         let bound_clone = bound.clone();
         bounds.apply(move |(lower, _upper)| {
             bound_clone.set(lower.clone());
         });
         let trace = self
-            .dyn_spill(stored_factories)
-            .dyn_integrate_trace_with_bound(stored_factories, bound, TraceBound::new())
+            .dyn_integrate_trace_with_bound(factories, bound, TraceBound::new())
             .delay_trace();
-        self.circuit().add_ternary_operator(
-            <Window<B>>::new(input_factories, stored_factories),
-            &trace,
-            self,
-            bounds,
-        )
+        self.circuit()
+            .add_ternary_operator(<Window<B>>::new(factories), &trace, self, bounds)
     }
 }
 
@@ -56,7 +47,7 @@ struct CommittedWindow {
     window: Option<(Vec<u8>, Vec<u8>)>,
 }
 
-impl<B: IndexedZSet + Spillable> From<&Window<B>> for CommittedWindow {
+impl<B: IndexedZSet> From<&Window<B>> for CommittedWindow {
     fn from(value: &Window<B>) -> Self {
         // Transform the window bounds into a serialized form and store it as a byte vector.
         // This is necessary because the key type is not sized.
@@ -77,10 +68,9 @@ impl<B: IndexedZSet + Spillable> From<&Window<B>> for CommittedWindow {
 
 struct Window<B>
 where
-    B: IndexedZSet + Spillable,
+    B: IndexedZSet,
 {
     factories: B::Factories,
-    output_factories: <B::Spilled as BatchReader>::Factories,
     // `None` means we're at the start of a clock epoch, no inputs
     // have been received yet, and window boundaries haven't been set.
     window: Option<(Box<B::Key>, Box<B::Key>)>,
@@ -89,15 +79,11 @@ where
 
 impl<B> Window<B>
 where
-    B: IndexedZSet + Spillable,
+    B: IndexedZSet,
 {
-    pub fn new(
-        factories: &B::Factories,
-        output_factories: &<B::Spilled as BatchReader>::Factories,
-    ) -> Self {
+    pub fn new(factories: &B::Factories) -> Self {
         Self {
             factories: factories.clone(),
-            output_factories: output_factories.clone(),
             window: None,
             _phantom: PhantomData,
         }
@@ -118,7 +104,7 @@ where
 
 impl<B> Operator for Window<B>
 where
-    B: IndexedZSet + Spillable,
+    B: IndexedZSet,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Window")
@@ -164,9 +150,9 @@ where
     }
 }
 
-impl<B> TernaryOperator<Spine<B::Spilled>, B, (Box<B::Key>, Box<B::Key>), B::Spilled> for Window<B>
+impl<B> TernaryOperator<Spine<B>, B, (Box<B::Key>, Box<B::Key>), B> for Window<B>
 where
-    B: IndexedZSet + Spillable,
+    B: IndexedZSet,
     Box<B::Key>: Clone,
 {
     /// * `batch` - input stream containing new time series data points indexed
@@ -180,10 +166,10 @@ where
     // in region3.
     fn eval(
         &mut self,
-        trace: Cow<'_, Spine<B::Spilled>>,
+        trace: Cow<'_, Spine<B>>,
         batch: Cow<'_, B>,
         bounds: Cow<'_, (Box<B::Key>, Box<B::Key>)>,
-    ) -> B::Spilled {
+    ) -> B {
         //           ┌────────────────────────────────────────┐
         //           │       previous window                  │
         //           │                                        │             e1
@@ -281,7 +267,7 @@ where
         }
 
         self.window = Some((start1, end1));
-        B::Spilled::dyn_from_tuples(&self.output_factories, (), &mut tuples)
+        B::dyn_from_tuples(&self.factories, (), &mut tuples)
     }
 
     fn input_preference(
@@ -539,7 +525,6 @@ mod test {
             input.window(&bounds);
 
             input
-                .spill()
                 .integrate_trace_with_bound(bound, TraceBound::new())
                 .apply(|trace| {
                     assert!(trace.size_of().total_bytes() < 50000);
