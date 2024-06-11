@@ -30,7 +30,6 @@ import {
 } from '$lib/services/manager'
 import {
   mutationCreatePipeline,
-  mutationUpdatePipeline,
   PipelineManagerQueryKey,
   updatePipelineConnectorName
 } from '$lib/services/pipelineManagerQuery'
@@ -276,7 +275,6 @@ const PipelineBuilderPage = ({
 
   useCreatePipelineEffect(pipeline, setSaveState, setFormError)
   useRenderPipelineEffect(pipeline, saveState, setMissingSchemaDialog)
-  const { mutate: updatePipelineMutate } = useMutation(mutationUpdatePipeline(queryClient))
 
   const onConnectorUpdateSuccess = (connector: ConnectorDescr, oldConnectorName: string) => {
     invalidateQuery(queryClient, PipelineManagerQueryKey.pipelineStatus(pipeline.name))
@@ -297,16 +295,18 @@ const PipelineBuilderPage = ({
             <CardContent>
               <Metadata errors={formError} {...{ pipeline, updatePipeline }} disabled={saveState === 'isLoading'} />
             </CardContent>
-            <CardContent sx={{ display: 'flex', alignItems: 'center' }}>
+            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <EntitySyncIndicator getLabel={stateToSaveLabel} state={saveState} />
               {pipeline.name && (
                 <Box sx={{ ml: 'auto' }}>
                   <PipelineResourcesThumb pipelineName={pipeline.name}></PipelineResourcesThumb>
                 </Box>
               )}
-              <Button sx={{ flex: 'none' }} onClick={() => setShow(true)}>
-                Configure resources
-              </Button>
+              {pipeline.name && (
+                <Button sx={{ flex: 'none' }} onClick={() => setShow(true)} variant='outlined'>
+                  Configure resources
+                </Button>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -351,7 +351,9 @@ const PipelineBuilderPage = ({
             disabled={true}
           />
         ))(/view\/connector\/([\w-]+)/.exec(hash)?.[1])}
-      {pipeline.name && <PipelineResourcesDialog {...{ show, setShow }} pipelineName={pipeline.name}></PipelineResourcesDialog>}
+      {pipeline.name && (
+        <PipelineResourcesDialog {...{ show, setShow }} pipelineName={pipeline.name}></PipelineResourcesDialog>
+      )}
     </>
   )
 }

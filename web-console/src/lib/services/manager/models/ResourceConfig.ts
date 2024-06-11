@@ -24,6 +24,11 @@ export type ResourceConfig = {
    */
   memory_mb_min?: number | null
   /**
+   * Storage class to use for an instance of this pipeline.
+   * The class determines storage performance such as IOPS and throughput.
+   */
+  storage_class?: string | null
+  /**
    * The total storage in Megabytes to reserve
    * for an instance of this pipeline
    */

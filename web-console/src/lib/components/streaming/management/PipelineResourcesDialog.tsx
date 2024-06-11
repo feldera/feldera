@@ -1,10 +1,9 @@
+import { NumberElement } from '$lib/components/input/NumberInput'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
-import { useParsedValue } from '$lib/functions/directives/useParsedValue'
-import { PipelineId } from '$lib/services/manager'
 import { mutationUpdatePipeline } from '$lib/services/pipelineManagerQuery'
 import { format } from 'numerable'
-import { Dispatch, SetStateAction } from 'react'
-import { FormContainer, TextFieldElement } from 'react-hook-form-mui'
+import { Dispatch, ReactNode, SetStateAction } from 'react'
+import { FormContainer, SwitchElement, TextFieldElement, useWatch } from 'react-hook-form-mui'
 import { TwoSeventyRingWithBg } from 'react-svg-spinners'
 import { SliderElement } from 'src/lib/functions/common/react-hook-form-mui'
 import invariant from 'tiny-invariant'
@@ -17,34 +16,44 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
-  DialogContentText,
   DialogTitle,
   Fade,
   FormLabel,
-  Stack
+  Grid,
+  Typography
 } from '@mui/material'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-const workersRange = { min: 1, max: 256 }
-const cpuCoresRange = { min: 1, max: 256 }
-const memoryMbRange = { min: 100, max: 10000 }
-const storageMbRange = { min: 100, max: 10000000 }
+const workersRange = { min: 1, max: 64 }
+const cpuCoresRange = { min: 0, max: 64 }
+const memoryMbRange = { min: 100, max: 64000 }
+const storageMbRange = { min: 1000, max: 1000000 }
 
-function vaValueRange <T extends string | number | bigint | boolean | Date>({min, max}: {min: T, max: T}): va.Pipe<T> {
+function vaValueRange<T extends string | number | bigint | boolean | Date>({
+  min,
+  max
+}: {
+  min: T
+  max: T
+}): va.Pipe<T> {
   return [(va.minValue(min), va.maxValue(max))]
 }
 
 /** @see '$lib/services/manager/models/ResourceConfig' */
 const pipelineConfigSchema = va.object({
   workers: va.optional(va.number(vaValueRange(workersRange))),
+  storage: va.optional(va.boolean()),
   resources: va.optional(
-    va.object({
-      cpu_cores_max: va.optional(va.nullish(va.number(vaValueRange(cpuCoresRange)))),
-      cpu_cores_min: va.optional(va.nullish(va.number(vaValueRange(cpuCoresRange)))),
-      memory_mb_max: va.optional(va.nullish(va.number(vaValueRange(memoryMbRange)))),
-      memory_mb_min: va.optional(va.nullish(va.number(vaValueRange(memoryMbRange)))),
-      storage_mb_max: va.optional(va.nullish(va.number(vaValueRange(storageMbRange))))
-    })
+    va.partial(
+      va.object({
+        cpu_cores_max: va.transform(va.nullish(va.number(vaValueRange(cpuCoresRange))), v => v || null),
+        cpu_cores_min: va.transform(va.nullish(va.number(vaValueRange(cpuCoresRange))), v => v || null),
+        memory_mb_max: va.transform(va.nullish(va.number(vaValueRange(memoryMbRange))), v => v || null),
+        memory_mb_min: va.transform(va.nullish(va.number(vaValueRange(memoryMbRange))), v => v || null),
+        storage_mb_max: va.transform(va.nullish(va.number(vaValueRange(storageMbRange))), v => v || null),
+        storage_class: va.transform(va.nullish(va.string()), v => v || null)
+      })
+    )
   )
 })
 
@@ -55,12 +64,13 @@ export const PipelineResourcesDialog = (props: {
 }) => {
   const queryClient = useQueryClient()
   const { mutate: updateConfig } = useMutation(mutationUpdatePipeline(queryClient))
-  const onSuccess = (value: va.Output<typeof pipelineConfigSchema>) => {
+  const onSuccess = (value: va.Input<typeof pipelineConfigSchema>) => {
     invariant(configQuery.data && pipelineQuery.data)
     updateConfig({
       pipelineName: props.pipelineName,
       request: {
-        ...pipelineQuery.data.descriptor,
+        name: pipelineQuery.data.descriptor.name,
+        description: pipelineQuery.data.descriptor.description,
         config: {
           ...configQuery.data,
           ...value
@@ -77,7 +87,7 @@ export const PipelineResourcesDialog = (props: {
   return (
     <Dialog
       fullWidth
-      maxWidth='xs'
+      maxWidth='md'
       open={props.show}
       scroll='body'
       onClose={() => props.setShow(false)}
@@ -87,12 +97,11 @@ export const PipelineResourcesDialog = (props: {
       <FormContainer
         resolver={valibotResolver(pipelineConfigSchema)}
         values={configQuery.data}
-        defaultValues={{ resources: { cpu_cores_min: 2, cpu_cores_max: 6 } }}
         onSuccess={onSuccess}
         onError={onError}
         shouldUnregister={false}
       >
-        <DialogTitle sx={{ px: 6 }}>
+        <DialogTitle sx={{ px: 6, textAlign: 'center' }}>
           {configQuery.isError ? (
             'Unable to load pipeline config'
           ) : !configQuery.data ? (
@@ -101,156 +110,188 @@ export const PipelineResourcesDialog = (props: {
               &ensp; Loading pipeline config...
             </Box>
           ) : (
-            'Pipeline runtime resources'
+            `${pipelineQuery.data?.descriptor.name ?? 'Pipeline'} runtime resources`
           )}
-          <DialogContentText>{pipelineQuery.data?.descriptor.name ?? <>&nbsp;</>}</DialogContentText>
         </DialogTitle>
-        <DialogContent sx={{ pb: 0 }}>
-          <Stack spacing={2} sx={{ px: 8 }}>
-            <Box sx={{}}>
-              <FormLabel component='legend'>Workers</FormLabel>
-              <TextFieldElement
-                name='workers'
-                type={'number'}
+        <PipelineResourcesForm disabled={disabled}></PipelineResourcesForm>
+      </FormContainer>
+    </Dialog>
+  )
+}
+
+const Label = (props: { children: ReactNode }) => (
+  <FormLabel component='legend' sx={{ pb: 2 }}>
+    {props.children}
+  </FormLabel>
+)
+
+export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
+  const storageEnabled: boolean = useWatch({ name: 'storage' }) ?? false
+  return (
+    <>
+      <DialogContent sx={{ pb: 0 }}>
+        <Grid container spacing={{ xs: 4, sm: 16 }} sx={{ px: 8 }} alignItems={'center'}>
+          <Grid item xs={12} sm={4}>
+            <Label>Workers</Label>
+            <NumberElement
+              name='workers'
+              size='small'
+              fullWidth
+              inputProps={workersRange}
+              disabled={props.disabled}
+            ></NumberElement>
+            <SliderElement
+              valueLabelDisplay='off'
+              name={'workers'}
+              {...workersRange}
+              marks={[workersRange.min, workersRange.max / 2, workersRange.max].map(value => ({
+                value,
+                label: value
+              }))}
+            />
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <Label>Logical CPUs</Label>
+            <Box sx={{ display: 'flex', gap: 4, justifyContent: 'space-between' }}>
+              <NumberElement
+                name='resources.cpu_cores_min'
+                optional
+                label='Min'
                 size='small'
-                placeholder='none'
-                inputProps={workersRange}
-                disabled={disabled}
-                {...useParsedValue(v => (v === '' ? null : v))}
-              ></TextFieldElement>
+                {...cpuCoresRange}
+                placeholder='default'
+                disabled={props.disabled}
+                InputLabelProps={{
+                  shrink: true
+                }}
+              ></NumberElement>
+              <NumberElement
+                name='resources.cpu_cores_max'
+                optional
+                label='Max'
+                size='small'
+                inputProps={cpuCoresRange}
+                placeholder='default'
+                disabled={props.disabled}
+                InputLabelProps={{
+                  shrink: true
+                }}
+              ></NumberElement>
+            </Box>
+            <Box sx={{}}>
               <SliderElement
                 valueLabelDisplay='off'
-                name={'workers'}
-                {...workersRange}
-                marks={[workersRange.min, 128, workersRange.max].map(value => ({
+                name={['resources.cpu_cores_min', 'resources.cpu_cores_max']}
+                {...cpuCoresRange}
+                marks={[cpuCoresRange.min, cpuCoresRange.max / 2, cpuCoresRange.max].map(value => ({
                   value,
                   label: value
                 }))}
               />
             </Box>
-            <Box>
-              <FormLabel component='legend'>Logical CPUs</FormLabel>
-              <Box sx={{ display: 'flex', gap: 4, justifyContent: 'space-between', pt: 2 }}>
-                <TextFieldElement
-                  name='resources.cpu_cores_min'
-                  label='Min'
-                  type={'number'}
-                  size='small'
-                  inputProps={cpuCoresRange}
-                  placeholder='none'
-                  InputLabelProps={{
-                    shrink: true
-                  }}
-                  disabled={disabled}
-                  {...useParsedValue(v => (v === '' ? null : v))}
-                ></TextFieldElement>
-                <TextFieldElement
-                  name='resources.cpu_cores_max'
-                  label='Max'
-                  type={'number'}
-                  size='small'
-                  inputProps={cpuCoresRange}
-                  placeholder='none'
-                  InputLabelProps={{
-                    shrink: true
-                  }}
-                  disabled={disabled}
-                  {...useParsedValue(v => (v === '' ? null : v))}
-                ></TextFieldElement>
-              </Box>
-              <Box sx={{}}>
-                <SliderElement
-                  valueLabelDisplay='off'
-                  name={['resources.cpu_cores_min', 'resources.cpu_cores_max']}
-                  {...cpuCoresRange}
-                  marks={[cpuCoresRange.min, 128, cpuCoresRange.max].map(value => ({
-                    value,
-                    label: value
-                  }))}
-                />
-              </Box>
-              <Box sx={{ display: 'flex', width: '100%', gap: 2, pt: 2 }}></Box>
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <Label>Memory MB</Label>
+            <Box sx={{ display: 'flex', gap: 4, justifyContent: 'space-between' }}>
+              <NumberElement
+                name='resources.memory_mb_min'
+                optional
+                label='Min'
+                size='small'
+                {...memoryMbRange}
+                inputProps={{ step: 100 }}
+                placeholder='default'
+                InputLabelProps={{
+                  shrink: true
+                }}
+                disabled={props.disabled}
+              ></NumberElement>
+              <NumberElement
+                name='resources.memory_mb_max'
+                optional
+                label='Max'
+                size='small'
+                {...memoryMbRange}
+                inputProps={{ step: 100 }}
+                placeholder='default'
+                InputLabelProps={{
+                  shrink: true
+                }}
+                disabled={props.disabled}
+              ></NumberElement>
             </Box>
             <Box sx={{}}>
-              <FormLabel component='legend'>Memory MB</FormLabel>
-              <Box sx={{ display: 'flex', gap: 4, justifyContent: 'space-between', pt: 2 }}>
-                <TextFieldElement
-                  name='resources.memory_mb_min'
-                  label='Min'
-                  type={'number'}
-                  size='small'
-                  inputProps={{ ...memoryMbRange, step: 100 }}
-                  placeholder='none'
-                  InputLabelProps={{
-                    shrink: true
-                  }}
-                  disabled={disabled}
-                  {...useParsedValue(v => (v === '' ? null : v))}
-                ></TextFieldElement>
-                <TextFieldElement
-                  name='resources.memory_mb_max'
-                  label='Max'
-                  type={'number'}
-                  size='small'
-                  inputProps={{ ...memoryMbRange, step: 100 }}
-                  placeholder='none'
-                  InputLabelProps={{
-                    shrink: true
-                  }}
-                  disabled={disabled}
-                  {...useParsedValue(v => (v === '' ? null : v))}
-                ></TextFieldElement>
-              </Box>
-              <Box sx={{ display: 'flex' }}>
-                <SliderElement
-                  valueLabelDisplay='off'
-                  name={['resources.memory_mb_min', 'resources.memory_mb_max']}
-                  {...memoryMbRange}
-                  marks={[memoryMbRange.min, 5000, memoryMbRange.max].map(value => ({
-                    value,
-                    label: format(value * 1000000, '0.00bd')
-                  }))}
-                />
-              </Box>
+              <SliderElement
+                valueLabelDisplay='off'
+                name={['resources.memory_mb_min', 'resources.memory_mb_max']}
+                {...memoryMbRange}
+                marks={[memoryMbRange.min, memoryMbRange.max / 2, memoryMbRange.max].map(value => ({
+                  value,
+                  label: format(value * 1000000, '0.00bd')
+                }))}
+              />
+            </Box>
+          </Grid>
+          <Typography sx={{ px: { xs: 4, sm: 16 }, mb: { xs: 0, sm: -16 } }} color='gray'>
+            It is recommended to have storage larger than the memory minimum
+          </Typography>
+          <Grid item xs={12} sm={4} alignSelf={'start'}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', justifyItems: 'start', height: '100%' }}>
+              <Label>Storage (spill to disk)</Label>
+              <SwitchElement name='storage' label='' sx={{ mb: 'auto' }}></SwitchElement>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={4} alignSelf={'start'}>
+            <Label>Storage class</Label>
+            <TextFieldElement
+              name='resources.storage_class'
+              label=''
+              size='small'
+              InputLabelProps={{
+                shrink: true
+              }}
+              disabled={props.disabled || !storageEnabled}
+            ></TextFieldElement>
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <Label>Storage MB</Label>
+            <Box sx={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+              <NumberElement
+                optional
+                name='resources.storage_mb_max'
+                label='Max'
+                size='small'
+                {...storageMbRange}
+                placeholder='default'
+                InputLabelProps={{
+                  shrink: true
+                }}
+                disabled={props.disabled || !storageEnabled}
+              ></NumberElement>
             </Box>
             <Box sx={{}}>
-              <FormLabel component='legend'>Storage MB</FormLabel>
-
-              <Box sx={{ display: 'flex', gap: 4, justifyContent: 'flex-end', pt: 2 }}>
-                <TextFieldElement
-                  name='resources.storage_mb_max'
-                  label='Max'
-                  type={'number'}
-                  size='small'
-                  inputProps={{ ...storageMbRange }}
-                  placeholder='none'
-                  InputLabelProps={{
-                    shrink: true
-                  }}
-                  disabled={disabled}
-                  {...useParsedValue(v => (v === '' ? null : v))}
-                ></TextFieldElement>
-              </Box>
-              <Box sx={{}}>
-                <SliderElement
-                  valueLabelDisplay='off'
-                  name={'resources.storage_mb_max'}
-                  {...storageMbRange}
-                  marks={[storageMbRange.min, 5000000, storageMbRange.max].map(value => ({
-                    value,
-                    label: format(value * 1000000, '0.00bd')
-                  }))}
-                />
-              </Box>
+              <SliderElement
+                valueLabelDisplay='off'
+                name={'resources.storage_mb_max'}
+                {...storageMbRange}
+                marks={[storageMbRange.min, storageMbRange.max / 2, storageMbRange.max].map(value => ({
+                  value,
+                  label: format(value * 1000000, '0.00bd')
+                }))}
+                disabled={props.disabled || !storageEnabled}
+              />
             </Box>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button type={'submit'} disabled={disabled}>
-            Apply
-          </Button>
-        </DialogActions>
-      </FormContainer>
-    </Dialog>
+          </Grid>
+        </Grid>
+      </DialogContent>
+      <DialogActions>
+        <Typography color='gray' sx={{ px: 8 }}>
+          The settings will take effect after pipeline restart
+        </Typography>
+        <Button type={'submit'} disabled={props.disabled} variant='contained'>
+          Apply
+        </Button>
+      </DialogActions>
+    </>
   )
 }

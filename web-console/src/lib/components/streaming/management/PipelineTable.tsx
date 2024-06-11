@@ -39,7 +39,6 @@ import dayjs from 'dayjs'
 import Link from 'next/link'
 import React, { useCallback, useEffect, useState } from 'react'
 import { TwoSeventyRingWithBg } from 'react-svg-spinners'
-import CustomChip from 'src/@core/components/mui/chip'
 import { showOnHashPart } from 'src/lib/functions/urlHash'
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
@@ -74,6 +73,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { PipelineResourcesDialog } from './PipelineResourcesDialog'
+import { PipelineResourcesThumb } from './PipelineResourcesThumb'
 
 interface ConnectorData {
   relation: Relation
@@ -488,21 +488,6 @@ export default function PipelineTable() {
       }
     },
     {
-      field: 'storage',
-      headerName: 'Storage',
-      width: 90,
-      editable: true,
-      type: 'boolean',
-      display: 'flex',
-      valueGetter: (_, row) => row.descriptor.config.storage,
-      valueSetter: (value, row) => {
-        return {
-          ...row,
-          descriptor: { ...row.descriptor, config: { ...row.descriptor.config, storage: value } }
-        }
-      }
-    },
-    {
       field: 'modification',
       headerName: 'Changes',
       width: 145,
@@ -519,7 +504,7 @@ export default function PipelineTable() {
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 120,
+      width: 150,
       display: 'flex',
       renderCell: PipelineActionsCell
     }
@@ -914,7 +899,11 @@ const PipelineActionsCell = (params: { row: Pipeline }) => {
       </IconButton>
     ),
     configure: () => (
-      <Tooltip title='Configure runtime resources' key='configure'>
+      <Tooltip
+        title={<PipelineResourcesThumb pipelineName={pipeline.name}></PipelineResourcesThumb>}
+        key='configure'
+        disableInteractive
+      >
         <IconButton size='small' href={`#configure/${pipeline.name}`} onClick={() => {}}>
           <i className='bx bx-cog' style={{ fontSize: 24 }} />
         </IconButton>

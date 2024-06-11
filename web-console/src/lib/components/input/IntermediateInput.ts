@@ -1,4 +1,5 @@
 import { ChangeEvent, Dispatch, useEffect, useReducer, useState } from 'react'
+import { useDebounce } from 'use-debounce'
 
 import { TextFieldProps } from '@mui/material'
 
@@ -61,18 +62,20 @@ export function useIntermediateInput<T>({
     // regardless of current editing state, produced by useReducer.
     const propsValueText = 'value' in props && props.value !== undefined ? props.valueToText(props.value) : ''
     const [oldText, setOldText] = useState(propsValueText)
+    const [debouncedValue] = useDebounce(propsValueText, 2)
     useEffect(() => {
-      if (propsValueText === oldText) {
+      if (debouncedValue === oldText) {
         return
       }
-      setValueText(propsValueText)
-      setOldText(propsValueText)
-    }, [propsValueText, oldText])
+      setValueText(debouncedValue)
+      setOldText(debouncedValue)
+    }, [debouncedValue, oldText])
   }
   return intermediateValueInputProps({
     ...props,
     valueToText: props.valueToText,
     value,
+    currentValue: props.value,
     setValueText,
     nullDisplayText
   })
@@ -89,6 +92,7 @@ function intermediateValueInputProps<T>({
   ...props
 }: {
   value: IntermediateInputState<T | undefined>
+  currentValue: T | undefined
   setValueText: Dispatch<string | null>
   valueToText: (valid: T) => string | null
   nullDisplayText: string
@@ -103,7 +107,10 @@ function intermediateValueInputProps<T>({
       }
     },
     onChange: (e: ChangeEvent<HTMLInputElement>) => setValueText(e.target.value),
-    value: 'valid' in value ? valueToText(value.valid!) ?? props.nullDisplayText : value.intermediate
+    value: 'valid' in value ? valueToText(value.valid!) ?? props.nullDisplayText : value.intermediate,
+    onBlur: () => {
+      setValueText(valueToText(props.currentValue!))
+    }
   }
 }
 

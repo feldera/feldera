@@ -1,16 +1,14 @@
 /* generated using openapi-typescript-codegen -- do not edit */
 /* istanbul ignore file */
 /* tslint:disable */
-import JSONbig from 'true-json-bigint'
-
 /* eslint-disable */
 import { ApiError } from './ApiError'
-import { CancelablePromise } from './CancelablePromise'
-
 import type { ApiRequestOptions } from './ApiRequestOptions'
 import type { ApiResult } from './ApiResult'
+import { CancelablePromise } from './CancelablePromise'
 import type { OnCancel } from './CancelablePromise'
 import type { OpenAPIConfig } from './OpenAPI'
+
 export const isDefined = <T>(value: T | null | undefined): value is Exclude<T, null | undefined> => {
   return value !== undefined && value !== null
 }
@@ -110,7 +108,7 @@ export const getFormData = (options: ApiRequestOptions): FormData | undefined =>
       if (isString(value) || isBlob(value)) {
         formData.append(key, value)
       } else {
-        formData.append(key, JSONbig.stringify(value))
+        formData.append(key, JSON.stringify(value))
       }
     }
 
@@ -187,11 +185,11 @@ export const getHeaders = async (config: OpenAPIConfig, options: ApiRequestOptio
 export const getRequestBody = (options: ApiRequestOptions): any => {
   if (options.body !== undefined) {
     if (options.mediaType?.includes('/json')) {
-      return JSONbig.stringify(options.body)
+      return JSON.stringify(options.body)
     } else if (isString(options.body) || isBlob(options.body) || isFormData(options.body)) {
       return options.body
     } else {
-      return JSONbig.stringify(options.body)
+      return JSON.stringify(options.body)
     }
   }
   return undefined
@@ -242,7 +240,7 @@ export const getResponseBody = async (response: Response): Promise<any> => {
         const jsonTypes = ['application/json', 'application/problem+json']
         const isJSON = jsonTypes.some(type => contentType.toLowerCase().startsWith(type))
         if (isJSON) {
-          return JSONbig.parse(await response.text())
+          return await response.json()
         } else {
           return await response.text()
         }
@@ -276,7 +274,7 @@ export const catchErrorCodes = (options: ApiRequestOptions, result: ApiResult): 
     const errorStatusText = result.statusText ?? 'unknown'
     const errorBody = (() => {
       try {
-        return JSONbig.stringify(result.body, null, 2)
+        return JSON.stringify(result.body, null, 2)
       } catch (e) {
         return undefined
       }

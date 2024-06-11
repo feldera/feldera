@@ -32,6 +32,9 @@ export class HttpInputOutputService {
    * @param mode Output mode. Must be one of 'watch' or 'snapshot'. The default value is 'watch'
    * @param quantiles For 'quantiles' queries: the number of quantiles to output. The default value is 100.
    * @param array Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`
+   * @param backpressure Apply backpressure on the pipeline when the HTTP client cannot receive data fast enough.
+   * When this flag is set to false (the default), the HTTP connector drops data chunks if the client is not keeping up with its output.  This prevents a slow HTTP client from slowing down the entire pipeline.
+   * When the flag is set to true, the connector waits for the client to receive each chunk and blocks the pipeline if the client cannot keep up.
    * @param requestBody When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.
    * @returns Chunk Connection to the endpoint successfully established. The body of the response contains a stream of data chunks.
    * @throws ApiError
@@ -44,6 +47,7 @@ export class HttpInputOutputService {
     mode?: EgressMode | null,
     quantiles?: number | null,
     array?: boolean | null,
+    backpressure?: boolean | null,
     requestBody?: NeighborhoodQuery | null
   ): CancelablePromise<Chunk> {
     return __request(OpenAPI, {
@@ -58,7 +62,8 @@ export class HttpInputOutputService {
         query: query,
         mode: mode,
         quantiles: quantiles,
-        array: array
+        array: array,
+        backpressure: backpressure
       },
       body: requestBody,
       mediaType: 'application/json',

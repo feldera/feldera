@@ -174,8 +174,10 @@ is used.'
         name={props.parentName + '.datetime'}
         size='small'
         fullWidth
-        focused
         columnType={{ type: 'TIMESTAMP', nullable: false }}
+        InputLabelProps={{
+          shrink: true
+        }}
         {...props}
       ></SQLValueElement>
     </Box>
