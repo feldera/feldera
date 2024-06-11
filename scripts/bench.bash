@@ -12,10 +12,11 @@ rm -rf gh-pages
 fi
 NEXMARK_CSV_FILE='nexmark_results.csv'
 NEXMARK_DRAM_CSV_FILE='dram_nexmark_results.csv'
+NEXMARK_SQL_CSV_FILE='sql_nexmark_results.csv'
 NEXMARK_PERSISTENCE_CSV_FILE='persistence_nexmark_results.csv'
 GALEN_CSV_FILE='galen_results.csv'
 LDBC_CSV_FILE='ldbc_results.csv'
-rm -f crates/nexmark/${NEXMARK_CSV_FILE} crates/dbsp/${GALEN_CSV_FILE} crates/dbsp/${LDBC_CSV_FILE} crates/nexmark/${NEXMARK_DRAM_CSV_FILE} crates/nexmark/${NEXMARK_PERSISTENCE_CSV_FILE}
+rm -f crates/nexmark/${NEXMARK_CSV_FILE} crates/nexmark/${NEXMARK_SQL_CSV_FILE} crates/dbsp/${GALEN_CSV_FILE} crates/dbsp/${LDBC_CSV_FILE} crates/nexmark/${NEXMARK_DRAM_CSV_FILE} crates/nexmark/${NEXMARK_PERSISTENCE_CSV_FILE}
 
 # Run nexmark benchmark
 EVENT_RATE=10000000
@@ -27,6 +28,20 @@ if [ "$SMOKE" != "" ]; then
   MAX_EVENTS=1000000
 fi
 cargo bench --bench nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES}  --num-event-generators ${GENERATORS} --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE}
+
+# Run nexmark SQL benchmark
+# This test requires a running instance of redpanda and pipeline-manager.
+# The Earthfile should run those.
+# 100M events causes out of memory problems with SQL tests
+MAX_EVENTS=10000000
+if [ "$SMOKE" != "" ]; then
+  MAX_EVENTS=1000000
+fi
+KAFKA_BROKER=localhost:9092
+rpk topic -X brokers=$KAFKA_BROKER delete bid auction person
+cargo run  -p dbsp_nexmark --example generate --features with-kafka -- --max-events ${MAX_EVENTS} -O bootstrap.servers=$KAFKA_BROKER
+FELDERA_API=http://localhost:8080
+python3 benchmark/feldera-sql/run.py --api-url $FELDERA_API --kafka-broker $KAFKA_BROKER --csv crates/nexmark/${NEXMARK_SQL_CSV_FILE}
 
 # Run galen benchmark
 cargo bench --bench galen --features="with-csv" -- --workers 10 --csv ${GALEN_CSV_FILE}
