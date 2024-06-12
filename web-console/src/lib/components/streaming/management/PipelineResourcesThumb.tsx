@@ -4,7 +4,7 @@ import { Box } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
 
 const printRange = (min: number | null | undefined, max: number | null | undefined, suffix: string, none: string) =>
-  min && max ? `${min} - ${max} ${suffix}` : min ? `min ${min} ${suffix}` : max ? `up to ${max} ${suffix}` : none
+  min && max ? `${min} — ${max} ${suffix}` : min ? `min ${min} ${suffix}` : max ? `up to ${max} ${suffix}` : none
 
 export const PipelineResourcesThumb = (props: { pipelineName: string }) => {
   const PipelineManagerQuery = usePipelineManagerQuery()
@@ -20,7 +20,14 @@ export const PipelineResourcesThumb = (props: { pipelineName: string }) => {
         CPU: {printRange(res?.cpu_cores_min, res?.cpu_cores_max, 'cores', 'default')} |&nbsp;
       </Box>
       <Box sx={{ whiteSpace: 'nowrap' }}>
-        RAM: {printRange(res?.memory_mb_min, res?.memory_mb_max, 'MB', 'default')} |&nbsp;
+        RAM:{' '}
+        {printRange(
+          res?.memory_mb_min ? res.memory_mb_min / 1000 : undefined,
+          res?.memory_mb_max ? res.memory_mb_max / 1000 : undefined,
+          'GB',
+          'default'
+        )}{' '}
+        |&nbsp;
       </Box>
       <Box sx={{ whiteSpace: 'nowrap' }}>
         Storage:{' '}

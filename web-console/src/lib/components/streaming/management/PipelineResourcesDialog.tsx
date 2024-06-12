@@ -10,18 +10,7 @@ import invariant from 'tiny-invariant'
 import * as va from 'valibot'
 
 import { valibotResolver } from '@hookform/resolvers/valibot'
-import {
-  Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Fade,
-  FormLabel,
-  Grid,
-  Typography
-} from '@mui/material'
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Fade, Grid, Typography } from '@mui/material'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 const workersRange = { min: 1, max: 64 }
@@ -119,10 +108,10 @@ export const PipelineResourcesDialog = (props: {
   )
 }
 
-const Label = (props: { children: ReactNode }) => (
-  <FormLabel component='legend' sx={{ pb: 2 }}>
+const Label = (props: { children: ReactNode; disabled?: boolean }) => (
+  <Typography component='legend' sx={{ pb: 2 }} color={props.disabled ? 'gray' : undefined}>
     {props.children}
-  </FormLabel>
+  </Typography>
 )
 
 export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
@@ -130,9 +119,9 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
   return (
     <>
       <DialogContent sx={{ pb: 0 }}>
-        <Grid container spacing={{ xs: 4, sm: 16 }} sx={{ px: 8 }} alignItems={'center'}>
+        <Grid container columnSpacing={{ xs: 4, sm: 16 }} rowSpacing={4} sx={{ px: 8 }} alignItems={'center'}>
           <Grid item xs={12} sm={4}>
-            <Label>Workers</Label>
+            <Label disabled={props.disabled}>Workers</Label>
             <NumberElement
               name='workers'
               size='small'
@@ -151,7 +140,7 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
             />
           </Grid>
           <Grid item xs={12} sm={4}>
-            <Label>Logical CPUs</Label>
+            <Label disabled={props.disabled}>Logical CPUs</Label>
             <Box sx={{ display: 'flex', gap: 4, justifyContent: 'space-between' }}>
               <NumberElement
                 name='resources.cpu_cores_min'
@@ -191,7 +180,7 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
             </Box>
           </Grid>
           <Grid item xs={12} sm={4}>
-            <Label>Memory MB</Label>
+            <Label disabled={props.disabled}>Memory (GB)</Label>
             <Box sx={{ display: 'flex', gap: 4, justifyContent: 'space-between' }}>
               <NumberElement
                 name='resources.memory_mb_min'
@@ -199,7 +188,7 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
                 label='Min'
                 size='small'
                 {...memoryMbRange}
-                inputProps={{ step: 100 }}
+                multiplier={1000}
                 placeholder='default'
                 InputLabelProps={{
                   shrink: true
@@ -212,7 +201,7 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
                 label='Max'
                 size='small'
                 {...memoryMbRange}
-                inputProps={{ step: 100 }}
+                multiplier={1000}
                 placeholder='default'
                 InputLabelProps={{
                   shrink: true
@@ -225,28 +214,47 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
                 valueLabelDisplay='off'
                 name={['resources.memory_mb_min', 'resources.memory_mb_max']}
                 {...memoryMbRange}
-                marks={[memoryMbRange.min, memoryMbRange.max / 2, memoryMbRange.max].map(value => ({
-                  value,
-                  label: format(value * 1000000, '0.00bd')
-                }))}
+                marks={new Array(2)
+                  .fill(undefined)
+                  .flatMap((_, i) =>
+                    new Array(10)
+                      .fill(undefined)
+                      .map((_, i) => 100 * (i + 1))
+                      .map(value => ({
+                        value: value * Math.pow(10, i)
+                      }))
+                  )
+                  .concat(
+                    new Array(1).fill(undefined).flatMap((_, i) =>
+                      new Array(14)
+                        .fill(undefined)
+                        .map((_, i) => 4000 * (i + 3))
+                        .map(value => ({
+                          value: value * Math.pow(2, i)
+                        }))
+                    )
+                  )
+                  .map(({ value }) => ({
+                    value,
+                    label: [100, 32000, 64000].find(x => x === value) ? format(value * 1000000, '0.00bd') : ''
+                  }))}
+                step={null}
               />
             </Box>
           </Grid>
-          <Typography sx={{ px: { xs: 4, sm: 16 }, mb: { xs: 0, sm: -16 } }} color='gray'>
-            It is recommended to have storage larger than the memory minimum
-          </Typography>
           <Grid item xs={12} sm={4} alignSelf={'start'}>
             <Box sx={{ display: 'flex', flexDirection: 'column', justifyItems: 'start', height: '100%' }}>
-              <Label>Storage (spill to disk)</Label>
+              <Label disabled={props.disabled}>Storage (spill to disk)</Label>
               <SwitchElement name='storage' label='' sx={{ mb: 'auto' }}></SwitchElement>
             </Box>
           </Grid>
           <Grid item xs={12} sm={4} alignSelf={'start'}>
-            <Label>Storage class</Label>
+            <Label disabled={props.disabled || !storageEnabled}>Storage class</Label>
             <TextFieldElement
               name='resources.storage_class'
               label=''
               size='small'
+              placeholder='default'
               InputLabelProps={{
                 shrink: true
               }}
@@ -254,7 +262,7 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
             ></TextFieldElement>
           </Grid>
           <Grid item xs={12} sm={4}>
-            <Label>Storage MB</Label>
+            <Label disabled={props.disabled || !storageEnabled}>Storage (GB)</Label>
             <Box sx={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
               <NumberElement
                 optional
@@ -262,6 +270,7 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
                 label='Max'
                 size='small'
                 {...storageMbRange}
+                multiplier={1000}
                 placeholder='default'
                 InputLabelProps={{
                   shrink: true
@@ -274,19 +283,33 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
                 valueLabelDisplay='off'
                 name={'resources.storage_mb_max'}
                 {...storageMbRange}
-                marks={[storageMbRange.min, storageMbRange.max / 2, storageMbRange.max].map(value => ({
-                  value,
-                  label: format(value * 1000000, '0.00bd')
-                }))}
+                marks={new Array(3)
+                  .fill(undefined)
+                  .flatMap((_, i) =>
+                    new Array(10)
+                      .fill(undefined)
+                      .map((_, i) => 1000 * (i + 1))
+                      .map(value => ({
+                        value: value * Math.pow(10, i)
+                      }))
+                  )
+                  .map(({ value }) => ({
+                    value,
+                    label: [1000, 500000, 1000000].find(x => x === value) ? format(value * 1000000, '0.00bd') : ''
+                  }))}
+                step={null}
                 disabled={props.disabled || !storageEnabled}
               />
             </Box>
           </Grid>
+          <Typography sx={{ px: { xs: 4, sm: 16 } }} color='gray'>
+            If storage is enabled it is recommended to configure limit larger than the memory minimum.
+          </Typography>
         </Grid>
       </DialogContent>
-      <DialogActions>
-        <Typography color='gray' sx={{ px: 8 }}>
-          The settings will take effect after pipeline restart
+      <DialogActions sx={{ mt: 4 }}>
+        <Typography color='gray' sx={{ pl: 8 }}>
+          For running pipelines, changes only take effect upon restart.
         </Typography>
         <Button type={'submit'} disabled={props.disabled} variant='contained'>
           Apply
