@@ -236,7 +236,7 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
                   )
                   .map(({ value }) => ({
                     value,
-                    label: [100, 32000, 64000].find(x => x === value) ? format(value * 1000000, '0.00bd') : ''
+                    label: [100, 32000, 64000].find(x => x === value) ? format(value * 1000000, '0bd') : ''
                   }))}
                 step={null}
               />
@@ -295,7 +295,7 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
                   )
                   .map(({ value }) => ({
                     value,
-                    label: [1000, 500000, 1000000].find(x => x === value) ? format(value * 1000000, '0.00bd') : ''
+                    label: [1000, 500000, 1000000].find(x => x === value) ? format(value * 1000000, '0bd') : ''
                   }))}
                 step={null}
                 disabled={props.disabled || !storageEnabled}
