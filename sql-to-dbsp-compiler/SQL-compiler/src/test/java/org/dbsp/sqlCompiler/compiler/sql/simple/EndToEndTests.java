@@ -419,10 +419,10 @@ public class EndToEndTests extends BaseSQLTests {
         this.testQuery(query, new DBSPZSetLiteral(
                 new DBSPTupleExpression(
                         new DBSPBoolLiteral(true),
-                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false))
+                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))
                 ),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false),
-                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false))
+                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))
                 )));
     }
 
@@ -451,11 +451,11 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPTupleExpression(
                         new DBSPBoolLiteral(true),
                         new DBSPI64Literal(0, false),
-                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false))
+                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))
                 ),
                 new DBSPTupleExpression(new DBSPBoolLiteral(false),
                         new DBSPI64Literal(0, false),
-                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false))
+                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))
                 )));
     }
 

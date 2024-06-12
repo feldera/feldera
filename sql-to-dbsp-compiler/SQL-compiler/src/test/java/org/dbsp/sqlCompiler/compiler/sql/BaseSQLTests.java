@@ -246,7 +246,7 @@ public class BaseSQLTests {
         return new DBSPCompiler(options);
     }
 
-    static DBSPCircuit getCircuit(DBSPCompiler compiler) {
+    public static DBSPCircuit getCircuit(DBSPCompiler compiler) {
         compiler.optimize();
         String name = "circuit" + testsToRun.size();
         return compiler.getFinalCircuit(name);
