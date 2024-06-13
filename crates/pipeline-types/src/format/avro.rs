@@ -18,7 +18,7 @@ pub struct AvroEncoderConfig {
     ///
     /// The first 5 bytes of the Avro message are the magic byte
     /// and 4-byte schema ID.
-    /// https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format
+    /// <https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format>
     #[serde(default)]
     pub serialize_data_only: bool,
     /// List of schema registry URLs. When non-empty, the connector will
