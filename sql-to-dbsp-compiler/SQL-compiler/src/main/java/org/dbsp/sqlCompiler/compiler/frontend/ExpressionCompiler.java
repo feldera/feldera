@@ -1311,7 +1311,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 DBSPType nonNull = type.setMayBeNull(false);
                 return new DBSPApplyExpression(node, method, nonNull, ops.get(0), ops.get(1)).cast(type);
             }
-            case HOP:
             case DOT:
             default:
                 throw new UnimplementedException(node);
