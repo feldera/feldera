@@ -42,6 +42,10 @@ DECIMAL(10, 4))` if you expect 10-digit results to be possible.
     <th>Description</th>
   </tr>
   <tr>
+     <td><code>ARRAY_AGG([ ALL | DISTINCT ] value [ RESPECT NULLS | IGNORE NULLS ] )</code></td>
+     <td>Gathers all values in an array.  The order of the values in the array is unspecified (but it is deterministic).</td>
+  </tr>
+  <tr>
      <td><code>AVG( [ ALL | DISTINCT ] numeric)</code></td>
      <td>Returns the average (arithmetic mean) of numeric across all input values</td>
   </tr>

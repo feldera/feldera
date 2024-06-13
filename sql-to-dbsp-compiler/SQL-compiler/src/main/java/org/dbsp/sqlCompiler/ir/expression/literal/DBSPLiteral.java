@@ -54,6 +54,8 @@ public abstract class DBSPLiteral extends DBSPExpression {
 
     /** Represents a "null" value of the specified type. */
     public static DBSPExpression none(DBSPType type) {
+        if (!type.mayBeNull)
+            throw new RuntimeException(type.toString() + " cannot represent NULL");
         if (type.is(DBSPTypeInteger.class)) {
             DBSPTypeInteger it = type.to(DBSPTypeInteger.class);
             if (!it.signed)

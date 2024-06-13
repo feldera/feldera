@@ -113,7 +113,11 @@ public class Simplify extends InnerRewriteVisitor {
                 // Cast from type to Option<type>
                 result = lit.getWithNullable(type.mayBeNull);
             } else if (lit.isNull) {
-                result = DBSPLiteral.none(type);
+                if (type.mayBeNull) {
+                    result = DBSPLiteral.none(type);
+                }
+                // Otherwise this expression will certainly generate
+                // a runtime error if evaluated.  But it may never be evaluated.
             } else if (litType.is(DBSPTypeNull.class)) {
                 // This is a literal with type "NULL".
                 // Convert it to a literal of the resulting type
@@ -289,7 +293,7 @@ public class Simplify extends InnerRewriteVisitor {
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = source.borrow();
+        DBSPExpression result = source.borrow(expression.mut);
         if (source.is(DBSPDerefExpression.class)) {
             result = source.to(DBSPDerefExpression.class).expression;
         }

@@ -1,6 +1,6 @@
 // Array operations
 
-use crate::{some_function2, some_generic_function2};
+use crate::{some_function2, some_generic_function2, Weight};
 use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::Index;
@@ -412,4 +412,38 @@ where
     T: Eq + Hash,
 {
     Some(arrays_overlap_vec__vec_(first?, second))
+}
+
+pub fn array_agg<T>(accumulator: &mut Vec<T>, value: T, weight: Weight, distinct: bool) -> Vec<T>
+where
+    T: Clone,
+{
+    if weight < 0 {
+        panic!("Negative weight {:?}", weight);
+    }
+    if distinct {
+        accumulator.push(value.clone())
+    } else {
+        for _i in 0..weight {
+            accumulator.push(value.clone())
+        }
+    }
+    accumulator.to_vec()
+}
+
+pub fn array_agg_opt<T>(
+    accumulator: &mut Vec<Option<T>>,
+    value: Option<T>,
+    weight: Weight,
+    distinct: bool,
+    ignore_nulls: bool,
+) -> Vec<Option<T>>
+where
+    T: Clone,
+{
+    if ignore_nulls && value.is_none() {
+        accumulator.to_vec()
+    } else {
+        array_agg(accumulator, value, weight, distinct)
+    }
 }

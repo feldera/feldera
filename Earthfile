@@ -34,6 +34,13 @@ install-deps:
     RUN sudo apt-get install nodejs -y
     RUN npm install --global yarn
     RUN npm install --global openapi-typescript-codegen
+    RUN apt install unzip -y
+    RUN apt install python3-requests -y
+    RUN arch=`dpkg --print-architecture`; \
+            curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
+            && unzip rpk-linux-$arch.zip -d /bin/ \
+            && rpk version \
+            && rm rpk-linux-$arch.zip
 
 install-rust:
     FROM +install-deps
@@ -320,12 +327,6 @@ pipeline-manager-container-cors-all:
 build-demo-container:
     FROM +install-rust
     WORKDIR /
-    RUN apt install unzip -y
-    RUN arch=`dpkg --print-architecture`; \
-            curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
-            && unzip rpk-linux-$arch.zip -d /bin/ \
-            && rpk version \
-            && rm rpk-linux-$arch.zip
     # Install snowsql
     RUN curl -O https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.2/linux_x86_64/snowsql-1.2.28-linux_x86_64.bash \
         && SNOWSQL_DEST=/bin SNOWSQL_LOGIN_SHELL=~/.profile bash snowsql-1.2.28-linux_x86_64.bash \
@@ -357,13 +358,13 @@ test-docker-compose:
 test-docker-compose-stable:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    ENV FELDERA_VERSION=0.17.0
+    ENV FELDERA_VERSION=0.18.0
     RUN apk --no-cache add curl
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
-                --pull ghcr.io/feldera/pipeline-manager:0.17.0 \
+                --pull ghcr.io/feldera/pipeline-manager:0.18.0 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
-                --pull ghcr.io/feldera/demo-container:0.17.0
+                --pull ghcr.io/feldera/demo-container:0.18.0
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo && \
             # This should run the latest version of the code and in the process, trigger a migration.
             COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" FELDERA_VERSION=latest RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml up -d db pipeline-manager redpanda && \
@@ -513,11 +514,30 @@ ui-playwright-tests:
     END
 
 benchmark:
-    FROM +build-nexmark
+    FROM +build-manager
     COPY scripts/bench.bash scripts/bench.bash
-
-    RUN bash scripts/bench.bash
+    COPY benchmark/feldera-sql/run.py benchmark/feldera-sql/run.py
+    COPY +build-manager/pipeline-manager .
+    COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
+    RUN mkdir -p /working-dir/cargo_workspace
+    COPY Cargo.lock /working-dir/cargo_workspace/Cargo.lock
+    ENV PGHOST=localhost
+    ENV PGUSER=postgres
+    ENV PGCLIENTENCODING=UTF8
+    ENV PGPORT=5432
+    ENV RUST_LOG=error
+    ENV WITH_POSTGRES=1
+    ENV IN_CI=1
+    WITH DOCKER --pull postgres
+        RUN docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
+            sleep 10 && \
+            (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=optimized &) && \
+            sleep 5 && \
+            docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 redpanda start --smp 2 \
+            && bash scripts/bench.bash
+    END
     SAVE ARTIFACT crates/nexmark/nexmark_results.csv AS LOCAL .
+    SAVE ARTIFACT crates/nexmark/sql_nexmark_results.csv AS LOCAL .
     SAVE ARTIFACT crates/nexmark/dram_nexmark_results.csv AS LOCAL .
     SAVE ARTIFACT crates/dbsp/galen_results.csv AS LOCAL .
     #SAVE ARTIFACT crates/dbsp/ldbc_results.csv AS LOCAL .

@@ -17,6 +17,7 @@ fi
 
 NEXMARK_CSV_FILE='nexmark_results.csv'
 NEXMARK_DRAM_CSV_FILE='dram_nexmark_results.csv'
+NEXMARK_SQL_CSV_FILE='sql_nexmark_results.csv'
 NEXMARK_PERSISTENCE_CSV_FILE='persistence_nexmark_results.csv'
 GALEN_CSV_FILE='galen_results.csv'
 LDBC_CSV_FILE='ldbc_results.csv'
@@ -45,10 +46,11 @@ fi
 
 # Copy nexmark results
 mkdir -p ${DEPLOY_DIR}
-mv ${NEXMARK_CSV_FILE} ${NEXMARK_DRAM_CSV_FILE} ${DEPLOY_DIR}
+mv ${NEXMARK_CSV_FILE} ${NEXMARK_DRAM_CSV_FILE} ${NEXMARK_SQL_CSV_FILE} ${DEPLOY_DIR}
 gzip -f ${DEPLOY_DIR}/${NEXMARK_CSV_FILE}
 #gzip -f ${DEPLOY_DIR}/${NEXMARK_PERSISTENCE_CSV_FILE}
 gzip -f ${DEPLOY_DIR}/${NEXMARK_DRAM_CSV_FILE}
+gzip -f ${DEPLOY_DIR}/${NEXMARK_SQL_CSV_FILE}
 
 # Add galen results to repo
 DEPLOY_DIR="gh-pages/galen/${CI_MACHINE_TYPE}/${PR_COMMIT_SHA}/"

@@ -1,6 +1,7 @@
-package org.dbsp.sqlCompiler.compiler.sql;
+package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
