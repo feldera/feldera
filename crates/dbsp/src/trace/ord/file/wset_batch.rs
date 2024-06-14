@@ -349,6 +349,10 @@ where
         self.key_count()
     }
 
+    fn byte_size(&self) -> usize {
+        self.file.byte_size().unwrap() as usize
+    }
+
     #[inline]
     fn lower(&self) -> AntichainRef<'_, ()> {
         AntichainRef::new(&[()])

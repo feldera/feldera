@@ -201,7 +201,7 @@ struct RuntimeInner {
     layout: Layout,
     storage: PathBuf,
     cache: StorageCacheConfig,
-    min_storage_rows: usize,
+    min_storage_bytes: usize,
     store: LocalStore,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
@@ -271,7 +271,7 @@ impl RuntimeInner {
             layout: config.layout,
             cache,
             storage,
-            min_storage_rows: config.min_storage_rows,
+            min_storage_bytes: config.min_storage_bytes,
             store: TypedDashMap::new(),
             panic_info,
         })
@@ -604,14 +604,14 @@ impl Runtime {
         }
     }
 
-    /// Returns the minimum number of rows of a trace to spill it to
+    /// Returns the minimum number of bytes in a batch to spill it to
     /// storage. For threads that run without a runtime, this method returns
     /// `usize::MAX`.
-    pub fn min_storage_rows() -> usize {
+    pub fn min_storage_bytes() -> usize {
         RUNTIME.with(|rt| {
             rt.borrow()
                 .as_ref()
-                .map_or(usize::MAX, |runtime| runtime.0.min_storage_rows)
+                .map_or(usize::MAX, |runtime| runtime.0.min_storage_bytes)
         })
     }
 
@@ -935,7 +935,7 @@ mod tests {
                 path: path.to_str().unwrap().to_string(),
                 cache: StorageCacheConfig::default(),
             }),
-            min_storage_rows: usize::MAX,
+            min_storage_bytes: usize::MAX,
             init_checkpoint: Uuid::nil(),
         };
 
@@ -957,7 +957,7 @@ mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
             storage: None,
-            min_storage_rows: usize::MAX,
+            min_storage_bytes: usize::MAX,
             init_checkpoint: Uuid::nil(),
         };
         let storage_path_clone = storage_path.clone();
@@ -980,7 +980,7 @@ mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(4),
             storage: None,
-            min_storage_rows: usize::MAX,
+            min_storage_bytes: usize::MAX,
             init_checkpoint: Uuid::nil(),
         };
         let storage_path_clone = storage_path.clone();

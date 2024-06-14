@@ -278,6 +278,10 @@ where
         self.file.n_rows(1) as usize
     }
 
+    fn byte_size(&self) -> usize {
+        self.file.byte_size().unwrap() as usize
+    }
+
     fn lower(&self) -> AntichainRef<'_, T> {
         self.lower.as_ref()
     }

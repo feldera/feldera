@@ -1,9 +1,11 @@
 use std::fmt::{Display, Formatter};
+use std::mem::replace;
 use std::path::PathBuf;
 
 use crate::trace::cursor::DelegatingCursor;
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
+use crate::trace::TimedBuilder;
 use crate::{
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     time::AntichainRef,
@@ -15,13 +17,13 @@ use crate::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, FileValBatch,
         FileValBatchFactories, Filter, Merger, OrdValBatch, OrdValBatchFactories, WeightedItem,
     },
-    DBData, DBWeight, NumEntries, Runtime, Timestamp,
+    DBData, DBWeight, NumEntries, Timestamp,
 };
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 
-use super::utils::GenericMerger;
+use super::utils::{copy_to_builder, BuildTo, GenericMerger, MergeTo};
 
 pub struct FallbackValBatchFactories<K, V, T, R>
 where
@@ -250,6 +252,14 @@ where
         }
     }
 
+    #[inline]
+    fn byte_size(&self) -> usize {
+        match &self.inner {
+            Inner::File(file) => file.byte_size(),
+            Inner::Vec(vec) => vec.byte_size(),
+        }
+    }
+
     fn lower(&self) -> AntichainRef<'_, T> {
         match &self.inner {
             Inner::Vec(vec) => vec.lower(),
@@ -352,27 +362,22 @@ where
     ) -> Self {
         FallbackValMerger {
             factories: batch1.factories.clone(),
-            inner: if batch1.len() + batch2.len() < Runtime::min_storage_rows() {
-                match (&batch1.inner, &batch2.inner) {
-                    (Inner::Vec(vec1), Inner::Vec(vec2)) => {
-                        MergerInner::AllVec(VecValMerger::new_merger(vec1, vec2))
-                    }
-                    _ => MergerInner::ToVec(GenericMerger::new(
-                        &batch1.factories.vec,
-                        batch1,
-                        batch2,
-                    )),
+            inner: match (
+                MergeTo::from((batch1, batch2)),
+                &batch1.inner,
+                &batch2.inner,
+            ) {
+                (MergeTo::Memory, Inner::Vec(vec1), Inner::Vec(vec2)) => {
+                    MergerInner::AllVec(VecValMerger::new_merger(vec1, vec2))
                 }
-            } else {
-                match (&batch1.inner, &batch2.inner) {
-                    (Inner::File(file1), Inner::File(file2)) => {
-                        MergerInner::AllFile(FileValMerger::new_merger(file1, file2))
-                    }
-                    _ => MergerInner::ToFile(GenericMerger::new(
-                        &batch1.factories.file,
-                        batch1,
-                        batch2,
-                    )),
+                (MergeTo::Memory, _, _) => {
+                    MergerInner::ToVec(GenericMerger::new(&batch1.factories.vec, batch1, batch2))
+                }
+                (MergeTo::Storage, Inner::File(file1), Inner::File(file2)) => {
+                    MergerInner::AllFile(FileValMerger::new_merger(file1, file2))
+                }
+                (MergeTo::Storage, _, _) => {
+                    MergerInner::ToFile(GenericMerger::new(&batch1.factories.file, batch1, batch2))
                 }
             },
         }
@@ -472,8 +477,43 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    /// In-memory.
+    Vec(VecValBuilder<K, V, T, R, usize>),
+
+    /// On-storage.
     File(FileValBuilder<K, V, T, R>),
-    Vec(VecValBuilder<K, V, T, R>),
+
+    /// In-memory as long as we don't exceed a maximum threshold size.
+    Threshold {
+        vec: VecValBuilder<K, V, T, R, usize>,
+
+        /// Bytes left to add until the threshold is exceeded.
+        remaining: usize,
+    },
+}
+
+impl<K, V, T, R> FallbackValBuilder<K, V, T, R>
+where
+    Self: SizeOf,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    T: Timestamp,
+    R: WeightTrait + ?Sized,
+{
+    /// We ran out of the bytes threshold for `BuilderInner::Threshold`. Spill
+    /// to storage.
+    fn over_threshold(&mut self) {
+        let new_inner =
+            BuilderInner::File(FileValBuilder::timed_with_capacity(&self.factories.file, 0));
+        let BuilderInner::Threshold { vec, .. } = replace(&mut self.inner, new_inner) else {
+            unreachable!()
+        };
+        let BuilderInner::File(file) = &mut self.inner else {
+            unreachable!()
+        };
+
+        copy_to_builder(file, vec.done().cursor());
+    }
 }
 
 impl<K, V, T, R> Builder<FallbackValBatch<K, V, T, R>> for FallbackValBuilder<K, V, T, R>
@@ -495,14 +535,17 @@ where
     ) -> Self {
         Self {
             factories: factories.clone(),
-            inner: if capacity < Runtime::min_storage_rows() {
-                BuilderInner::Vec(VecValBuilder::with_capacity(&factories.vec, time, capacity))
-            } else {
-                BuilderInner::File(FileValBuilder::with_capacity(
-                    &factories.file,
-                    time,
-                    capacity,
-                ))
+            inner: match BuildTo::for_capacity(
+                &factories.vec,
+                &factories.file,
+                time,
+                capacity,
+                VecValBuilder::with_capacity,
+                FileValBuilder::with_capacity,
+            ) {
+                BuildTo::Memory(vec) => BuilderInner::Vec(vec),
+                BuildTo::Storage(file) => BuilderInner::File(file),
+                BuildTo::Threshold(vec, remaining) => BuilderInner::Threshold { vec, remaining },
             },
         }
     }
@@ -513,6 +556,15 @@ where
         match &mut self.inner {
             BuilderInner::File(file) => file.push(item),
             BuilderInner::Vec(vec) => vec.push(item),
+            BuilderInner::Threshold { vec, remaining } => {
+                let size = item.size_of().total_bytes();
+                vec.push(item);
+                if size > *remaining {
+                    self.over_threshold();
+                } else {
+                    *remaining -= size;
+                }
+            }
         }
     }
 
@@ -520,6 +572,15 @@ where
         match &mut self.inner {
             BuilderInner::File(file) => file.push_refs(key, val, weight),
             BuilderInner::Vec(vec) => vec.push_refs(key, val, weight),
+            BuilderInner::Threshold { vec, remaining } => {
+                let size = (key, val, weight).size_of().total_bytes();
+                vec.push_refs(key, val, weight);
+                if size > *remaining {
+                    self.over_threshold();
+                } else {
+                    *remaining -= size;
+                }
+            }
         }
     }
 
@@ -527,6 +588,15 @@ where
         match &mut self.inner {
             BuilderInner::File(file) => file.push_vals(key, val, weight),
             BuilderInner::Vec(vec) => vec.push_vals(key, val, weight),
+            BuilderInner::Threshold { vec, remaining } => {
+                let size = (key as &K, val as &V, weight as &R).size_of().total_bytes();
+                vec.push_vals(key, val, weight);
+                if size > *remaining {
+                    self.over_threshold();
+                } else {
+                    *remaining -= size;
+                }
+            }
         }
     }
 
@@ -535,7 +605,9 @@ where
             factories: self.factories,
             inner: match self.inner {
                 BuilderInner::File(file) => Inner::File(file.done()),
-                BuilderInner::Vec(vec) => Inner::Vec(vec.done()),
+                BuilderInner::Vec(vec) | BuilderInner::Threshold { vec, .. } => {
+                    Inner::Vec(vec.done())
+                }
             },
         }
     }

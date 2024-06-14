@@ -319,6 +319,11 @@ where
     /// The number of updates in the batch.
     fn len(&self) -> usize;
 
+    /// The memory or storage size of the batch in bytes, used to decide whether
+    /// to keep the result of a merge in memory or on storage.  This can be an
+    /// approximation.
+    fn byte_size(&self) -> usize;
+
     /// True if the batch is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
