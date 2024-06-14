@@ -41,6 +41,43 @@ class TestWireframes(unittest.TestCase):
 
         assert df.shape[0] == 100
 
+        sql.delete()
+
+    def test_local_listen_after_start(self):
+        sql = SQLContext('notebook', TEST_CLIENT).get_or_create()
+
+        TBL_NAMES = ['students', 'grades']
+        view_name = "average_scores"
+
+        df_students = pd.read_csv('students.csv')
+        df_grades = pd.read_csv('grades.csv')
+
+        sql.register_table(TBL_NAMES[0], SQLSchema({"name": "STRING", "id": "INT"}))
+        sql.register_table(TBL_NAMES[1], SQLSchema({
+            "student_id": "INT",
+            "science": "INT",
+            "maths": "INT",
+            "art": "INT"
+        }))
+
+        query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
+        sql.register_view(view_name, query)
+
+        sql.start()
+
+        out = sql.listen(view_name)
+
+        sql.connect_source_pandas(TBL_NAMES[0], df_students, flush=True)
+        sql.connect_source_pandas(TBL_NAMES[1], df_grades, flush=True)
+
+        sql.wait_for_completion()
+
+        df = out.to_pandas()
+
+        sql.shutdown()
+        sql.delete()
+        assert df.shape[0] == 100
+
     def test_two_SQLContexts(self):
         # https://github.com/feldera/feldera/issues/1770
 
@@ -78,6 +115,9 @@ class TestWireframes(unittest.TestCase):
 
         assert df.columns.tolist() not in df2.columns.tolist()
 
+        sql.delete()
+        sql2.delete()
+
     def test_foreach_chunk(self):
         def callback(df: pd.DataFrame, seq_no: int):
             print(f"\nSeq No: {seq_no}, DF size: {df.shape[0]}\n")
@@ -108,6 +148,8 @@ class TestWireframes(unittest.TestCase):
 
         sql.run_to_completion()
 
+        sql.delete()
+
     def test_df_without_columns(self):
 
         sql = SQLContext('df_without_columns', TEST_CLIENT).get_or_create()
@@ -132,6 +174,8 @@ class TestWireframes(unittest.TestCase):
 
         with self.assertRaises(Exception):
             sql.run_to_completion()
+
+        sql.client.delete_program(sql.program_name)
 
     def test_kafka(self):
         import json
@@ -203,6 +247,8 @@ class TestWireframes(unittest.TestCase):
         df = out.to_pandas()
         assert df.shape[0] != 0
 
+        sql.delete(delete_connectors=True)
+
     def test_http_get(self):
         sql = SQLContext("test_http_get", TEST_CLIENT).get_or_create()
 
@@ -225,6 +271,8 @@ class TestWireframes(unittest.TestCase):
         df = out.to_pandas()
 
         assert df.shape[0] == 3
+
+        sql.delete(delete_connectors=True)
 
     def test_avro_format(self):
         from feldera.formats import AvroFormat
@@ -281,6 +329,8 @@ class TestWireframes(unittest.TestCase):
         msg = next(consumer)
         assert msg.value is not None
 
+        sql.delete(delete_connectors=True)
+
     def test_pipeline_resource_config(self):
         from feldera.resources import Resources
 
@@ -324,6 +374,8 @@ class TestWireframes(unittest.TestCase):
 
         assert TEST_CLIENT.get_pipeline(name).config["resources"] == config
 
+        sql.delete()
+
     def test_timestamp_pandas(self):
         sql = SQLContext("test_timestamp_pandas", TEST_CLIENT).get_or_create()
 
@@ -348,6 +400,8 @@ class TestWireframes(unittest.TestCase):
         df = out.to_pandas()
 
         assert df.shape[0] == 3
+
+        sql.delete()
 
 
 if __name__ == '__main__':

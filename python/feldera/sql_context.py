@@ -21,7 +21,7 @@ from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
 from feldera._helpers import ensure_dataframe_has_columns
 from feldera.formats import JSONFormat, CSVFormat, AvroFormat
 from feldera.resources import Resources
-from feldera.enums import BuildMode, CompilationProfile
+from feldera.enums import BuildMode, CompilationProfile, PipelineStatus
 from feldera._helpers import validate_connector_input_format, chunk_dataframe
 
 
@@ -61,7 +61,6 @@ class SQLContext:
             compilation_profile: CompilationProfile = CompilationProfile.OPTIMIZED
     ):
         self.build_mode: Optional[BuildMode] = None
-        self.is_pipeline_running: bool = False
 
         self.ddl: str = ""
 
@@ -215,18 +214,18 @@ class SQLContext:
         self.build_mode = BuildMode.GET_OR_CREATE
         return self
 
-    def pipeline_state(self) -> str:
+    def pipeline_status(self) -> PipelineStatus:
         """
-        Returns the state of the pipeline.
+        Returns the current state of the pipeline.
         """
 
         try:
             pipeline = self.client.get_pipeline(self.pipeline_name)
-            return pipeline.current_state()
+            return PipelineStatus.from_str(pipeline.current_state())
 
         except FelderaAPIError as err:
             if err.status_code == 404:
-                return "Uninitialized"
+                return PipelineStatus.UNINITIALIZED
             else:
                 raise err
 
@@ -273,13 +272,18 @@ class SQLContext:
 
         self.tables[name] = SQLTable(name, ddl)
 
-    def connect_source_pandas(self, table_name: str, df: pandas.DataFrame):
+    def connect_source_pandas(self, table_name: str, df: pandas.DataFrame, flush: bool = False):
         """
         Adds a pandas DataFrame to the input buffer of the SQLContext, to be pushed to the pipeline.
+        Note that if the pipeline is running, the data will not be pushed if `flush` is False.
 
         :param table_name: The name of the table.
         :param df: The pandas DataFrame to be pushed to the pipeline.
+        :param flush: If True, the data will be pushed to the pipeline immediately. Defaults to False.
         """
+
+        if flush and self.pipeline_status() != PipelineStatus.RUNNING:
+            raise RuntimeError("Pipeline must be running to flush the data")
 
         ensure_dataframe_has_columns(df)
 
@@ -288,19 +292,13 @@ class SQLContext:
         if tbl:
             # tbl.validate_schema(df)   TODO: something like this would be nice
             self.http_input_buffer.append({tbl.name: df})
+            if flush:
+                self.__push_http_inputs()
             return
 
-        tbl = self.todo_tables.get(table_name)
-
-        if not tbl:
-            raise ValueError(f"Table {table_name} not registered")
-
-        # tbl.infer_schema(df)  TODO: support schema inference
-
-        self.tables[table_name] = tbl
-        self.todo_tables.pop(table_name)
-
-        self.http_input_buffer.append({tbl.name: df.to_dict('records')})
+        # TODO: handle schema inference
+        if tbl is None:
+            raise ValueError(f"Cannot push to table {table_name} as it is not registered yet")
 
     def register_local_view(self, name: str, query: str):
         """
@@ -374,9 +372,11 @@ class SQLContext:
             - This method must be called before calling :meth:`.run_to_completion`, or :meth:`.start`.
         """
 
-        queue = Queue(maxsize=1)
+        queue: Optional[Queue] = None
 
-        self.views_tx.append({view_name: queue})
+        if self.pipeline_status() != PipelineStatus.RUNNING:
+            queue = Queue(maxsize=1)
+            self.views_tx.append({view_name: queue})
 
         handler = OutputHandler(self.client, self.pipeline_name, view_name, queue)
         handler.start()
@@ -464,7 +464,7 @@ class SQLContext:
 
         queue: Optional[Queue] = None
 
-        if not self.is_pipeline_running:
+        if self.pipeline_status() != PipelineStatus.RUNNING:
             queue = Queue(maxsize=1)
             self.views_tx.append({view_name: queue})
 
@@ -590,11 +590,39 @@ class SQLContext:
         else:
             self.input_connectors_buffer[table_name] = [connector]
 
+    def wait_for_completion(self):
+        """
+        Blocks until the pipeline has completed processing all input records.
+        Will block indefinitely if the source is streaming.
+
+        :raises RuntimeError: If the pipeline returns unknown metrics.
+        """
+
+        if self.pipeline_status() not in [
+            PipelineStatus.RUNNING,
+            PipelineStatus.INITIALIZING,
+            PipelineStatus.PROVISIONING,
+        ]:
+            raise RuntimeError("Pipeline must be running to wait for completion")
+
+        while True:
+            metrics: dict = self.client.get_pipeline_stats(self.pipeline_name).get("global_metrics")
+            pipeline_complete: bool = metrics.get("pipeline_complete")
+
+            if pipeline_complete is None:
+                raise RuntimeError("received unknown metrics from the pipeline, pipeline_complete is None")
+
+            if pipeline_complete:
+                break
+
+            time.sleep(1)
+
     def run_to_completion(self):
         """
         .. _run_to_completion:
 
         Runs the pipeline to completion, waiting for all input records to be processed.
+        Will block indefinitely if the source is streaming.
 
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
@@ -615,17 +643,7 @@ class SQLContext:
 
         self.__push_http_inputs()
 
-        while True:
-            metrics: dict = self.client.get_pipeline_stats(self.pipeline_name).get("global_metrics")
-            pipeline_complete: bool = metrics.get("pipeline_complete")
-
-            if pipeline_complete is None:
-                raise RuntimeError("received unknown metrics from the pipeline, pipeline_complete is None")
-
-            if pipeline_complete:
-                break
-
-            time.sleep(1)
+        self.wait_for_completion()
 
         for view_queue in self.views_tx:
             for view_name, queue in view_queue.items():
@@ -724,7 +742,6 @@ class SQLContext:
         """
 
         self.client.pause_pipeline(self.pipeline_name)
-        self.is_pipeline_running = False
 
     def shutdown(self):
         """
@@ -732,7 +749,6 @@ class SQLContext:
         """
 
         self.client.shutdown_pipeline(self.pipeline_name)
-        self.is_pipeline_running = False
 
     def resume(self):
         """
@@ -740,4 +756,27 @@ class SQLContext:
         """
 
         self.client.start_pipeline(self.pipeline_name)
-        self.is_pipeline_running = True
+
+    def delete(self, delete_program: bool = True, delete_connectors: bool = False):
+        """
+        Deletes the pipeline.
+
+        :param delete_program: If True, also deletes the program associated with the pipeline. True by default.
+        :param delete_connectors: If True, also deletes the connectors associated with the pipeline. False by default.
+        """
+
+        if self.pipeline_status() != PipelineStatus.SHUTDOWN:
+            raise RuntimeError("Pipeline must be shutdown before deletion")
+
+        self.client.delete_pipeline(self.pipeline_name)
+
+        if delete_program:
+            self.client.delete_program(self.program_name)
+
+        if delete_connectors:
+            for connector in self.input_connectors_buffer.values():
+                for conn in connector:
+                    self.client.delete_connector(conn.name)
+            for connector in self.output_connectors_buffer.values():
+                for conn in connector:
+                    self.client.delete_connector(conn.name)
