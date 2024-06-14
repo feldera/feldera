@@ -11,7 +11,7 @@ use crate::{
         ord::filter,
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, TimedBuilder,
     },
-    Timestamp,
+    Runtime, Timestamp,
 };
 
 /// The row position of a [`Cursor`], regardless of the underlying type of the
@@ -20,6 +20,7 @@ use crate::{
 /// [`GenericMerger`] uses this to save and restore positions in the batches
 /// it's merging, since it can't keep a cursor around from one run to another
 /// because of lifetime issues.
+#[derive(SizeOf)]
 enum Position<K>
 where
     K: DataTrait + ?Sized,
@@ -64,6 +65,7 @@ where
     }
 }
 
+#[derive(SizeOf)]
 pub(super) struct GenericMerger<K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
@@ -319,16 +321,100 @@ where
     }
 }
 
-impl<K, V, T, R, O> SizeOf for GenericMerger<K, V, T, R, O>
+/// Reads all of the data from `cursor` and writes it to `builder`.
+pub(super) fn copy_to_builder<B, Output, C, K, V, T, R>(builder: &mut B, mut cursor: C)
 where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
+    B: TimedBuilder<Output>,
+    Output: Batch<Key = K, Val = V, Time = T, R = R>,
+    C: HasTimeDiffCursor<K, V, T, R>,
+    K: ?Sized,
+    V: ?Sized,
     R: WeightTrait + ?Sized,
-    O: Batch + BatchReader<Key = K, Val = V, R = R, Time = T>,
-    O::Builder: TimedBuilder<O>,
 {
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        self.builder.size_of_children(context)
+    let mut tmp = cursor.weight_factory().default_box();
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            let mut td_cursor = cursor.time_diff_cursor();
+            while let Some((time, diff)) = td_cursor.current(&mut tmp) {
+                builder.push_time(cursor.key(), cursor.val(), time, diff);
+                td_cursor.step();
+            }
+            drop(td_cursor);
+            cursor.step_val();
+        }
+        cursor.step_key();
+    }
+}
+
+pub(super) enum MergeTo {
+    Memory,
+    Storage,
+}
+
+impl<B> From<(&B, &B)> for MergeTo
+where
+    B: BatchReader,
+{
+    fn from((batch1, batch2): (&B, &B)) -> Self {
+        // This is equivalent to `batch1.byte_size() + batch2.byte_size() >=
+        // Runtime::min_storage_bytes()` but it avoids calling `byte_size()` any
+        // more than necessary since it can be expensive.
+        let spill = match Runtime::min_storage_bytes() {
+            0 => true,
+            usize::MAX => false,
+            min_storage_bytes => {
+                let size1 = batch1.approximate_byte_size();
+                size1 >= min_storage_bytes || {
+                    let size2 = batch2.approximate_byte_size();
+                    size1 + size2 >= min_storage_bytes
+                }
+            }
+        };
+
+        if spill {
+            Self::Storage
+        } else {
+            Self::Memory
+        }
+    }
+}
+
+pub(super) enum BuildTo<M, S> {
+    Memory(M),
+    Storage(S),
+    Threshold(M, usize),
+}
+
+impl<M, S> BuildTo<M, S> {
+    pub fn for_capacity<MF, SF, T, MC, SC>(
+        vf: MF,
+        sf: SF,
+        time: T,
+        capacity: usize,
+        mc: MC,
+        sc: SC,
+    ) -> Self
+    where
+        MC: Fn(MF, T, usize) -> M,
+        SC: Fn(SF, T, usize) -> S,
+    {
+        match Runtime::min_storage_bytes() {
+            usize::MAX => {
+                // Storage is disabled.
+                Self::Memory(mc(vf, time, capacity))
+            }
+
+            min_storage_bytes if capacity >= min_storage_bytes => {
+                // If `capacity` is filled up then we'll have at least 1 byte
+                // per item (as a bottom of the barrel estimate) so we might as
+                // well start out on storage.
+                Self::Storage(sc(sf, time, capacity))
+            }
+            min_storage_bytes => {
+                // Start out in memory and spill to storage if
+                // `min_storage_bytes` is used.
+                Self::Threshold(mc(vf, time, capacity), min_storage_bytes)
+            }
+        }
     }
 }

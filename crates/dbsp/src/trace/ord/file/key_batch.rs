@@ -133,14 +133,17 @@ where
 ///
 /// Each tuple in `FileKeyBatch<K, T, R>` has key type `K`, value type `()`,
 /// weight type `R`, and time type `R`.
+#[derive(SizeOf)]
 pub struct FileKeyBatch<K, T, R>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileKeyBatchFactories<K, T, R>,
     #[allow(clippy::type_complexity)]
+    #[size_of(skip)]
     file: Reader<(
         &'static K,
         &'static DynUnit,
@@ -251,6 +254,10 @@ where
         self.file.n_rows(1) as usize
     }
 
+    fn approximate_byte_size(&self) -> usize {
+        self.file.byte_size().unwrap() as usize
+    }
+
     fn lower(&self) -> AntichainRef<'_, T> {
         self.lower.as_ref()
     }
@@ -348,12 +355,14 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct FileKeyMerger<K, T, R>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileKeyBatchFactories<K, T, R>,
     lower: Antichain<T>,
     upper: Antichain<T>,
@@ -364,6 +373,7 @@ where
     lower2: usize,
 
     // Output so far.
+    #[size_of(skip)]
     writer: Writer2<K, DynUnit, DynDataTyped<T>, R>,
 }
 
@@ -536,17 +546,6 @@ where
         }
         self.lower1 = cursor1.cursor.absolute_position() as usize;
         self.lower2 = cursor2.cursor.absolute_position() as usize;
-    }
-}
-
-impl<K, T, R> SizeOf for FileKeyMerger<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
     }
 }
 
@@ -828,14 +827,17 @@ where
 }
 
 /// A builder for creating layers from unsorted update tuples.
+#[derive(SizeOf)]
 pub struct FileKeyBuilder<K, T, R>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileKeyBatchFactories<K, T, R>,
     time: T,
+    #[size_of(skip)]
     writer: Writer2<K, DynUnit, DynDataTyped<T>, R>,
     key: Box<DynOpt<K>>,
 }
@@ -948,28 +950,6 @@ where
             Antichain::from_elem(time_next)
         };
         self.done_with_bounds(lower, upper)
-    }
-}
-
-impl<K, T, R> SizeOf for FileKeyBuilder<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
-    }
-}
-
-impl<K, T, R> SizeOf for FileKeyBatch<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
     }
 }
 

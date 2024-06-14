@@ -51,11 +51,11 @@ pub struct Config {
     pub progress: bool,
 
     /// Configure storage. Without this option, data is kept in memory. With
-    /// this option, if `ROWS` is 0 or omitted, all data is written to storage;
+    /// this option, if `BYTES` is 0 or omitted, all data is written to storage;
     /// otherwise, data batches are written to storage when they are estimated
-    /// to contain at least `ROWS` rows.
-    #[clap(long="storage", default_value_t = usize::MAX, default_missing_value = "0", hide_default_value(true), value_name("ROWS"))]
-    pub min_storage_rows: usize,
+    /// to contain at least `BYTES` bytes.
+    #[clap(long="storage", default_value_t = usize::MAX, default_missing_value = "0", hide_default_value(true), value_name("BYTES"))]
+    pub min_storage_bytes: usize,
 
     /// Storage cache configuration. By default, the benchmark uses the
     /// operating system page cache. This option enables the internal Feldera
@@ -156,7 +156,7 @@ impl Default for Config {
             input_batch_size: 40_000,
             output_csv: None,
             progress: true,
-            min_storage_rows: usize::MAX,
+            min_storage_bytes: usize::MAX,
             feldera_cache: false,
         }
     }

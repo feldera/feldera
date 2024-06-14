@@ -223,7 +223,7 @@ fn create_ascii_table(config: &NexmarkConfig) -> AsciiTable {
     ];
     let mut max_width = 200;
 
-    if config.min_storage_rows != usize::MAX {
+    if config.min_storage_bytes != usize::MAX {
         result_columns.extend_from_slice(&[
             "# Files",
             "Avg WrSz",
@@ -266,7 +266,7 @@ fn run_query(config: &NexmarkConfig, snapshotter: &Snapshotter, query: Query) ->
                 StorageCacheConfig::PageCache
             },
         }),
-        min_storage_rows: config.min_storage_rows,
+        min_storage_bytes: config.min_storage_bytes,
         ..CircuitConfig::with_workers(num_cores)
     };
     let (dbsp, input_handle) =
@@ -491,7 +491,7 @@ fn main() -> Result<()> {
             format!("{}", HumanBytes::from(after.peak_rss)),
             format!("{}", after.page_faults - before.page_faults),
         ];
-        if nexmark_config.min_storage_rows != usize::MAX {
+        if nexmark_config.min_storage_bytes != usize::MAX {
             row.extend_from_slice(&[
                 format!("{}", diff.n_created),
                 format!("{}", HumanBytes::from(diff.avg_wblock)),
