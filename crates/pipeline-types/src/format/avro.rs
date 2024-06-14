@@ -20,7 +20,7 @@ pub struct AvroEncoderConfig {
     /// and 4-byte schema ID.
     /// <https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format>
     #[serde(default)]
-    pub serialize_data_only: bool,
+    pub skip_schema_id: bool,
     /// List of schema registry URLs. When non-empty, the connector will
     /// post the schema to the registry and use the schema id returned
     /// by the registry.  Otherwise, schema id 0 is used.

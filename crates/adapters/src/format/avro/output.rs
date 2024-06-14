@@ -88,7 +88,7 @@ struct AvroEncoder {
     /// Count of skipped deletes, used to rate-limit error messages.
     skipped_deletes: usize,
     /// `True` if the serialized result should not include the schema ID.
-    serialize_data_only: bool,
+    skip_schema_id: bool,
 }
 
 impl AvroEncoder {
@@ -221,7 +221,7 @@ impl AvroEncoder {
         };
 
         let mut buffer = vec![0u8; 5];
-        if !config.serialize_data_only {
+        if !config.skip_schema_id {
             buffer[1..].clone_from_slice(&schema_id.to_be_bytes());
         }
 
@@ -231,7 +231,7 @@ impl AvroEncoder {
             schema,
             buffer,
             skipped_deletes: 0,
-            serialize_data_only: config.serialize_data_only,
+            skip_schema_id: config.skip_schema_id,
         })
     }
 }
@@ -281,7 +281,7 @@ impl Encoder for AvroEncoder {
                 let mut avro_buffer = to_avro_datum(&self.schema, avro_value)
                     .map_err(|e| anyhow!("error serializing Avro value: {e}"))?;
 
-                if !self.serialize_data_only {
+                if !self.skip_schema_id {
                     // 5 is the length of the Avro message header (magic byte + 4-byte schema id).
                     self.buffer.truncate(5);
                 } else {
