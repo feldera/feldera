@@ -39,19 +39,33 @@ This step has the following sub-steps:
    cargo run -p pipeline-manager --features pg-embed
    ```
 
+3. Save the access methods to the Kafka broker and the API for the
+   Feldera instance in shell variables:
+
+   - `$KAFKA_BROKER`: The host and port to access the Kafka broker
+     from the shell prompt.
+
+   - `$KAFKA_FROM_FELDERA`: The host and port that Feldera can use to
+     access the Kafka broker.  This might be different from
+     `$KAFKA_BROKER` if Feldera is running in containers or VMs with
+     an independent networking configuration.
+
+   - `$FELDERA_API`: The URL for the Feldera API.
+
+   If you used the commands above to start Redpanda and Feldera, these
+   commands will set the shell variables correctly:
+
+   ```
+   KAFKA_BROKER=localhost:9092
+   KAFKA_FROM_FELDERA=localhost:9092
+   FELDERA_API=http://localhost:8080
+   ```
+
 ## Step 2: Generate data into Kafka
 
 This step has the following sub-steps:
 
-1. Save `host:port` for accessing the broker into `$KAFKA_BROKER`,
-   i.e. if you started Redpanda with the command suggested in the
-   previous step:
-
-   ```
-   KAFKA_BROKER=localhost:9092
-   ```
-   
-2. Delete any existing events already generated into the Kafka broker,
+1. Delete any existing events already generated into the Kafka broker,
    using the `rpk` utility from Redpanda.  If this is the first time
    you're generating events into this broker, then you can skip this
    step (but it doesn't hurt to run it):
@@ -60,7 +74,7 @@ This step has the following sub-steps:
    rpk topic -X brokers=$KAFKA_BROKER delete bid auction person
    ```
 
-3. Generate events into the Kafka broker using a command like the
+2. Generate events into the Kafka broker using a command like the
    following:
 
    ```
@@ -70,7 +84,7 @@ This step has the following sub-steps:
    The command above generates 10 million events.  This is a moderate
    number that you should feel free to increase or decrease.
 
-4. Optionally, if you want to verify that the requested number of
+3. Optionally, if you want to verify that the requested number of
    events was generated, you can use the following command using the
    `rpk` utility that comes with Redpanda.  It should print exactly
    the number pased as `--max-events` earlier:
@@ -81,16 +95,8 @@ This step has the following sub-steps:
 
 ## Step 3: Run the benchmark
 
-This step has the following sub-steps:
+To run the benchmark itself, run:
 
-1. Save the API URL for the instance into `$FELDERA_API`, e.g.:
-
-   ```
-   FELDERA_API=http://localhost:8080
-   ```
-
-2. Run the benchmark itself:
-
-    ```
-    python3 benchmark/feldera-sql/run.py --api-url $FELDERA_API --kafka-broker $KAFKA_BROKER
-    ```
+```
+python3 benchmark/feldera-sql/run.py --api-url $FELDERA_API --kafka-broker $KAFKA_FROM_FELDERA
+```

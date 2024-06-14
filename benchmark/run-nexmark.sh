@@ -16,6 +16,7 @@ parse=false
 
 # Feldera SQL options.
 kafka_broker=localhost:9092
+kafka_from_feldera=
 api_url=http://localhost:8080
 
 # Dataflow options.
@@ -94,6 +95,12 @@ do
 	--kafka-broker)
 	    nextarg=kafka_broker
 	    ;;
+	--kafka-from-feldera=*)
+	    kafka_from_feldera=${arg#--kafka-from-feldera=}
+	    ;;
+	--kafka-from-feldera)
+	    nextarg=kafka_from_feldera
+	    ;;
 	--api-url=*)
 	    api_url=${arg#--api-url=}
 	    ;;
@@ -147,6 +154,8 @@ nexmark.txt.  These options select other modes of operation:
 
 The feldera backend with --language=sql takes the following additional options:
   --kafka-broker=BROKER  Kafka broker (default: $kafka_broker)
+  --kafka-from-feldera=BROKER  Kafka broker as accessed from Feldera (defaults
+                               to the same as --kafka-broker)
   --api-url=URL         URL to the Feldera API (default: $api_url)
 
 The beam.dataflow backend takes more configuration.  These settings are
@@ -464,7 +473,7 @@ case $runner:$language in
 	CARGO=$(find_program cargo)
 	run_log feldera-sql/run.py \
 	    --api-url="$api_url" \
-	    --kafka-broker="$kafka_broker" \
+	    --kafka-broker="${kafka_from_feldera:-${kafka_broker}}" \
 	    --cores $cores \
 	    --input-topic-suffix "-$events" \
 	    --csv results.csv \
