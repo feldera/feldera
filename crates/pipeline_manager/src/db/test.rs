@@ -984,7 +984,7 @@ async fn versioning() {
         min_batch_size_records: 0,
         max_buffering_delay_usecs: 0,
         resources: ResourceConfig::default(),
-        min_storage_rows: None,
+        min_storage_bytes: None,
     };
     handle
         .db
@@ -1300,7 +1300,7 @@ pub(crate) fn runtime_config() -> impl Strategy<Value = RuntimeConfig> {
             storage_mb_max: config.9,
             storage_class: None,
         },
-        min_storage_rows: None,
+        min_storage_bytes: None,
     })
 }
 
@@ -1335,7 +1335,7 @@ pub(crate) fn option_runtime_config() -> impl Strategy<Value = Option<RuntimeCon
                 storage_mb_max: config.9,
                 storage_class: None,
             },
-            min_storage_rows: None,
+            min_storage_bytes: None,
         })
     })
 }

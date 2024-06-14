@@ -215,11 +215,11 @@ pub struct CircuitConfig {
     pub layout: Layout,
     /// Storage configuration (if storage is enabled).
     pub storage: Option<StorageConfig>,
-    /// Minimum number of rows in a persistent trace to spill it to storage. If
-    /// this is 0, then all traces will be stored on disk; if it is
-    /// `usize::MAX`, then all traces will be kept in memory; and intermediate
+    /// Estimated minimum number of bytes in a data batch to spill it to
+    /// storage. If this is 0, then all batches will be stored on disk; if it is
+    /// `usize::MAX`, then all batches will be kept in memory; and intermediate
     /// values specify a threshold.
-    pub min_storage_rows: usize,
+    pub min_storage_bytes: usize,
     /// The initial checkpoint to start the circuit from.
     ///
     /// In case of a new circuit, this should be `Uuid::nil()`.
@@ -239,7 +239,7 @@ impl CircuitConfig {
         Self {
             layout: Layout::new_solo(n),
             storage: None,
-            min_storage_rows: usize::MAX,
+            min_storage_bytes: usize::MAX,
             init_checkpoint: Uuid::nil(),
         }
     }
@@ -1050,7 +1050,7 @@ mod tests {
                 path: temp.path().to_str().unwrap().to_string(),
                 cache: StorageCacheConfig::default(),
             }),
-            min_storage_rows: 0,
+            min_storage_bytes: 0,
             init_checkpoint: Uuid::nil(),
         };
         (temp, cconf)

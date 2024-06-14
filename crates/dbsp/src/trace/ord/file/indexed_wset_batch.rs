@@ -137,14 +137,17 @@ where
 ///
 /// Each tuple in `FileIndexedWSet<K, V, R>` has key type `K`, value type `V`,
 /// weight type `R`, and time `()`.
+#[derive(SizeOf)]
 pub struct FileIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileIndexedWSetFactories<K, V, R>,
     #[allow(clippy::type_complexity)]
+    #[size_of(skip)]
     file: Reader<(&'static K, &'static DynUnit, (&'static V, &'static R, ()))>,
     lower_bound: usize,
 }
@@ -355,6 +358,10 @@ where
         self.file.n_rows(1) as usize
     }
 
+    fn approximate_byte_size(&self) -> usize {
+        self.file.byte_size().unwrap() as usize
+    }
+
     #[inline]
     fn lower(&self) -> AntichainRef<'_, ()> {
         AntichainRef::new(&[()])
@@ -442,12 +449,14 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct FileIndexedWSetMerger<K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileIndexedWSetFactories<K, V, R>,
 
     // Position in first batch.
@@ -456,6 +465,7 @@ where
     lower2: usize,
 
     // Output so far.
+    #[size_of(skip)]
     writer: Writer2<K, DynUnit, V, R>,
 }
 
@@ -633,17 +643,6 @@ where
         }
         self.lower1 = cursor1.key_cursor.absolute_position() as usize;
         self.lower2 = cursor2.key_cursor.absolute_position() as usize;
-    }
-}
-
-impl<K, V, R> SizeOf for FileIndexedWSetMerger<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
     }
 }
 
@@ -878,13 +877,16 @@ where
 }
 
 /// A builder for batches from ordered update tuples.
+#[derive(SizeOf)]
 pub struct FileIndexedWSetBuilder<K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileIndexedWSetFactories<K, V, R>,
+    #[size_of(skip)]
     writer: Writer2<K, DynUnit, V, R>,
     key: Box<DynOpt<K>>,
 }
@@ -978,28 +980,6 @@ where
         _upper: Antichain<()>,
     ) -> FileIndexedWSet<K, V, R> {
         self.done()
-    }
-}
-
-impl<K, V, R> SizeOf for FileIndexedWSetBuilder<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
-    }
-}
-
-impl<K, V, R> SizeOf for FileIndexedWSet<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
     }
 }
 
