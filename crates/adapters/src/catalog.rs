@@ -16,7 +16,7 @@ use pipeline_types::serde_with_context::SqlSerdeConfig;
 use pipeline_types::serialize_struct;
 use serde::{Deserialize, Serialize};
 use serde_arrow::schema::SerdeArrowSchema;
-use serde_arrow::ArrowBuilder;
+use serde_arrow::ArrayBuilder;
 
 /// Descriptor that specifies the format in which records are received
 /// or into which they should be encoded before sending.
@@ -284,7 +284,7 @@ pub trait SerCursor {
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
 
     /// Serialize current key into arrow format. Panics if invalid.
-    fn serialize_key_to_arrow(&mut self, dst: &mut ArrowBuilder) -> AnyResult<()>;
+    fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()>;
 
     #[cfg(feature = "with-avro")]
     /// Convert current key to an Avro value.
@@ -405,7 +405,7 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
         self.cursor.serialize_key_weight(dst)
     }
 
-    fn serialize_key_to_arrow(&mut self, dst: &mut ArrowBuilder) -> AnyResult<()> {
+    fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
         self.cursor.serialize_key_to_arrow(dst)
     }
 

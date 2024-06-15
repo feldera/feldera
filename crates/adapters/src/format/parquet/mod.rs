@@ -7,7 +7,6 @@ use anyhow::{bail, Result as AnyResult};
 use arrow::datatypes::{
     DataType, Field as ArrowField, Fields, IntervalUnit as ArrowIntervalUnit, Schema, TimeUnit,
 };
-use arrow::record_batch::RecordBatch;
 use bytes::Bytes;
 use erased_serde::Serialize as ErasedSerialize;
 use parquet::arrow::ArrowWriter;
@@ -15,7 +14,7 @@ use parquet::file::properties::WriterProperties;
 use parquet::file::reader::{FileReader, SerializedFileReader};
 use serde::Deserialize;
 use serde_arrow::schema::SerdeArrowSchema;
-use serde_arrow::ArrowBuilder;
+use serde_arrow::ArrayBuilder;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
 
@@ -347,8 +346,7 @@ impl Encoder for ParquetEncoder {
         let mut buffer = take(&mut self.buffer);
         let props = WriterProperties::builder().build();
         let schema = Arc::new(Schema::new(self.parquet_schema.to_arrow_fields()?));
-        let fields = self.parquet_schema.to_arrow_fields()?;
-        let mut builder = ArrowBuilder::new(&fields)?;
+        let mut builder = ArrayBuilder::new(self.parquet_schema.clone())?;
 
         let mut num_records = 0;
         let mut cursor = CursorWithPolarity::new(
@@ -395,8 +393,7 @@ impl Encoder for ParquetEncoder {
                     let buffer_cursor = Cursor::new(&mut buffer);
                     let mut writer =
                         ArrowWriter::try_new(buffer_cursor, schema.clone(), Some(props.clone()))?;
-                    let arrays = builder.build_arrays()?;
-                    let batch = RecordBatch::try_new(schema.clone(), arrays)?;
+                    let batch = builder.to_record_batch()?;
                     writer.write(&batch)?;
                     writer.close()?;
 
@@ -413,8 +410,7 @@ impl Encoder for ParquetEncoder {
             let buffer_cursor = Cursor::new(&mut buffer);
             let mut writer =
                 ArrowWriter::try_new(buffer_cursor, schema.clone(), Some(props.clone()))?;
-            let arrays = builder.build_arrays()?;
-            let batch = RecordBatch::try_new(schema.clone(), arrays)?;
+            let batch = builder.to_record_batch()?;
             writer.write(&batch)?;
             writer.close()?;
             self.output_consumer.push_buffer(&buffer, num_records);

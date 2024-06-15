@@ -18,7 +18,7 @@ use deltalake::datafusion::dataframe::DataFrameWriteOptions;
 use deltalake::datafusion::logical_expr::Literal;
 use deltalake::datafusion::prelude::{col, SessionContext};
 use deltalake::datafusion::sql::sqlparser::test_utils::table;
-use deltalake::kernel::{BinaryOperator, DataType, StructField};
+use deltalake::kernel::{DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};

@@ -23,7 +23,8 @@ use log::{debug, error, info, trace};
 use pipeline_types::transport::delta_table::DeltaTableWriteMode;
 use pipeline_types::{program_schema::Relation, transport::delta_table::DeltaTableWriterConfig};
 use serde_arrow::schema::SerdeArrowSchema;
-use serde_arrow::ArrowBuilder;
+use serde_arrow::ArrayBuilder;
+use std::cmp::min;
 use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
@@ -147,12 +148,10 @@ impl DeltaTableWriter {
             .ok_or_else(|| (anyhow!("worker thread terminated unexpectedly"), true))?
     }
 
-    fn insert_record_batch(&mut self, builder: &mut ArrowBuilder) -> AnyResult<()> {
-        let arrays = builder
-            .build_arrays()
+    fn insert_record_batch(&mut self, builder: &mut ArrayBuilder) -> AnyResult<()> {
+        let batch = builder
+            .to_record_batch()
             .map_err(|e| anyhow!("error generating arrow arrays: {e}"))?;
-        let batch = RecordBatch::try_new(self.inner.arrow_schema.clone(), arrays)
-            .map_err(|e| anyhow!("error generating record batch: {e}"))?;
         self.command(Command::Insert(batch))
             .map_err(|(e, _fatal)| e)
     }
@@ -285,8 +284,15 @@ impl WriterTask {
 
         // TODO: make target_file_size configurable.
         // TODO: configure WriterProperties, e.g., do we want to set WriterProperties::sorting_columns?
-        let writer_config =
-            WriterConfig::new(self.inner.arrow_schema.clone(), vec![], None, None, None);
+        let writer_config = WriterConfig::new(
+            self.inner.arrow_schema.clone(),
+            vec![],
+            None,
+            None,
+            None,
+            min(32, self.inner.arrow_schema.fields.len() as i32),
+            None,
+        );
 
         self.writer = Some(DeltaWriter::new(
             self.delta_table.object_store(),
@@ -328,7 +334,6 @@ impl WriterTask {
                         predicate: None,
                     },
                 )
-                .map_err(|e| anyhow!("error pre-committing changes to the delta table: {e}"))?
                 .await
                 .map_err(|e| anyhow!("error committing changes to the delta table: {e}"))?;
 
@@ -417,8 +422,7 @@ impl Encoder for DeltaTableWriter {
     }
 
     fn encode(&mut self, batch: &dyn SerBatchReader) -> AnyResult<()> {
-        let fields = self.inner.serde_arrow_schema.to_arrow_fields()?;
-        let mut insert_builder = ArrowBuilder::new(&fields)?;
+        let mut insert_builder = ArrayBuilder::new(self.inner.serde_arrow_schema.clone())?;
 
         let mut num_insert_records = 0;
 
