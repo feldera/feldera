@@ -12,6 +12,15 @@ pub struct AvroEncoderConfig {
     /// This schema must match precisely the SQL view definition, including
     /// nullability of columns.
     pub schema: String,
+    /// Set `True` if the serialized message should only contain
+    /// the data and not contain the magic byte + schema ID.
+    /// `False` by default.
+    ///
+    /// The first 5 bytes of the Avro message are the magic byte
+    /// and 4-byte schema ID.
+    /// <https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format>
+    #[serde(default)]
+    pub skip_schema_id: bool,
     /// List of schema registry URLs. When non-empty, the connector will
     /// post the schema to the registry and use the schema id returned
     /// by the registry.  Otherwise, schema id 0 is used.

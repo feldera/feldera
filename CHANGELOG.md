@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [SQL] Support for ARRAY_AGG aggregation function.
 - [SQL] Support for hopping windows using table functions
   ([#1855](https://github.com/feldera/feldera/pull/1855))
+- API: Support skipping the serialization of schema ID in Avro format.
+  ([#1871](https://github.com/feldera/feldera/pull/1871))
 
 ## [0.18.0] - 2024-06-11
 

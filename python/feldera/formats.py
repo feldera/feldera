@@ -134,6 +134,11 @@ class AvroFormat(Format):
         Avro schema used to encode output records.
         Specified as a string containing schema definition in JSON format.
         This schema must match precisely the SQL view definition, including nullability of columns.
+    :param skip_schema_id:
+        Set `True` if the serialized message should only contain the data and
+        not contain the magic byte + schema ID. `False` by default.
+        The first 5 bytes of the Avro message are the magic byte and 4-byte schema ID.
+        https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format
     :param registry_urls:
         List of schema registry URLs. When non-empty, the connector will
         post the schema to the registry and use the schema id returned
@@ -164,6 +169,7 @@ class AvroFormat(Format):
             self,
             config: Optional[dict] = None,
             schema: Optional[str] = None,
+            skip_schema_id: Optional[bool] = None,
             registry_urls: Optional[list[str]] = None,
             registry_headers: Optional[Mapping[str, str]] = None,
             registry_proxy: Optional[str] = None,
@@ -176,6 +182,7 @@ class AvroFormat(Format):
         self.__dict__.update(config)
 
         self.schema = schema
+        self.skip_schema_id = skip_schema_id
         self.registry_urls = registry_urls
         self.registry_headers = registry_headers
         self.registry_proxy = registry_proxy
@@ -195,6 +202,17 @@ class AvroFormat(Format):
             schema = json.dumps(schema)
 
         self.schema = schema
+        return self
+
+    def with_skip_schema_id(self, skip_schema_id: bool) -> Self:
+        """
+        Set `True` if the serialized message should only contain the data and
+        not contain the magic byte + schema ID. `False` by default.
+
+        The first 5 bytes of the Avro message are the magic byte and 4-byte schema ID.
+        https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format
+        """
+        self.skip_schema_id = skip_schema_id
         return self
 
     def with_registry_urls(self, registry_urls: list[str]) -> Self:
