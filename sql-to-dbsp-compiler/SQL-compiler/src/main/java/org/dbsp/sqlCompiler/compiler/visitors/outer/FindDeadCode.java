@@ -97,16 +97,9 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
         return VisitDecision.STOP;
     }
 
-    @Override
-    public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator operator) {
-        this.keep(operator);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPSinkOperator operator) {
+    VisitDecision keepInverseReachable(DBSPOperator destination) {
         List<DBSPOperator> r = new ArrayList<>();
-        r.add(operator);
+        r.add(destination);
         while (!r.isEmpty()) {
             DBSPOperator op = r.remove(0);
             this.reachable.add(op);
@@ -116,6 +109,16 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
             r.addAll(op.inputs);
         }
         return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+        return this.keepInverseReachable(operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPSinkOperator operator) {
+       return this.keepInverseReachable(operator);
     }
 
     @Override
