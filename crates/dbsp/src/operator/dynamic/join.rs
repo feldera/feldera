@@ -1306,9 +1306,32 @@ mod test {
                 },
                 zset! {},
             ];
+            let inc_filtered_outputs_vec = vec![
+                zset! {
+                    Tup2(2, "c g".to_string()) => 9,
+                    Tup2(2, "c h".to_string()) => 12,
+                    Tup2(2, "d g".to_string()) => 12,
+                    Tup2(2, "d h".to_string()) => 16,
+                    Tup2(3, "e i".to_string()) => 25,
+                    Tup2(3, "e j".to_string()) => -10,
+                    Tup2(3, "f i".to_string()) => -10,
+                    Tup2(3, "f j".to_string()) => 4
+                },
+                zset! {
+                    Tup2(1, "b b".to_string()) => 2,
+                },
+                zset! {},
+                zset! {
+                    Tup2(4, "n k".to_string()) => 10,
+                    Tup2(4, "n l".to_string()) => -4,
+                    Tup2(4, "n m".to_string()) => 2,
+                },
+                zset! {},
+            ];
 
             //let mut inc_outputs = inc_outputs_vec.clone().into_iter();
             let mut inc_outputs2 = inc_outputs_vec.into_iter();
+            let mut inc_filtered_outputs = inc_filtered_outputs_vec.into_iter();
 
             let index1: Stream<_, OrdIndexedZSet<u64, String>> = circuit
                 .add_source(Generator::new(move || {
@@ -1357,6 +1380,22 @@ mod test {
                         assert_eq!(fm, &inc_outputs2.next().unwrap())
                     }
                 });
+
+            index1
+                .join_flatmap(&index2, |&k: &u64, s1, s2| {
+                    if s1.as_str() == "a" {
+                        None
+                    } else {
+                        Some(Tup2(k, format!("{} {}", s1, s2)))
+                    }
+                })
+                .gather(0)
+                .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
+                    if Runtime::worker_index() == 0 {
+                        assert_eq!(fm, &inc_filtered_outputs.next().unwrap())
+                    }
+                });
+
             Ok(())
         })
         .unwrap()

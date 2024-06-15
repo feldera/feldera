@@ -1,3 +1,5 @@
+use std::iter::once;
+
 use crate::{
     dynamic::{DowncastTrait, DynData, DynUnit, Erase},
     operator::dynamic::{
@@ -22,6 +24,20 @@ where
     Box<Z::DynK>: Clone,
     F: Fn(&I1::Key, &I1::Val, &I2::Val) -> Z::Key + Clone + 'static,
 {
+    mk_trace_join_flatmap_funcs::<I1, I2, Z, _, _>(move |k, v1, v2| once(join(k, v1, v2)))
+}
+
+fn mk_trace_join_flatmap_funcs<I1, I2, Z, F, It>(
+    join: F,
+) -> TraceJoinFuncs<I1::DynK, I1::DynV, I2::DynV, Z::DynK, DynUnit>
+where
+    I1: IndexedZSet,
+    I2: IndexedZSet<Key = I1::Key, DynK = I1::DynK>,
+    Z: ZSet,
+    Box<Z::DynK>: Clone,
+    F: Fn(&I1::Key, &I1::Val, &I2::Val) -> It + Clone + 'static,
+    It: IntoIterator<Item = Z::Key> + 'static,
+{
     let mut key1: Box<Z::DynK> = Box::<Z::Key>::default().erase_box();
     let mut val1: Box<DynUnit> = Box::new(()).erase_box();
 
@@ -32,12 +48,16 @@ where
 
     TraceJoinFuncs {
         left: Box::new(move |k, v1, v2, cb| unsafe {
-            *key1.downcast_mut() = join(k.downcast(), v1.downcast(), v2.downcast());
-            cb(key1.as_mut(), val1.as_mut());
+            for key in join(k.downcast(), v1.downcast(), v2.downcast()) {
+                *key1.downcast_mut() = key;
+                cb(key1.as_mut(), val1.as_mut());
+            }
         }),
         right: Box::new(move |k, v2, v1, cb| unsafe {
-            *key2.downcast_mut() = join_clone(k.downcast(), v1.downcast(), v2.downcast());
-            cb(key2.as_mut(), val2.as_mut());
+            for key in join_clone(k.downcast(), v1.downcast(), v2.downcast()) {
+                *key2.downcast_mut() = key;
+                cb(key2.as_mut(), val2.as_mut());
+            }
         }),
     }
 }
@@ -113,6 +133,36 @@ where
             mk_trace_join_funcs::<OrdIndexedZSet<K1, V1>, OrdIndexedZSet<K1, V2>, OrdZSet<V>, _>(
                 join,
             );
+
+        let join_factories = JoinFactories::new::<K1, V1, V2, V, ()>();
+
+        self.inner()
+            .dyn_join(&join_factories, &other.inner(), join_funcs)
+            .typed()
+    }
+
+    /// Equivalent to [`join`](`Self::join`) followed by [`flat_map`](`Self::flat_map`).
+    ///
+    /// Behaves like `join` followed by `flat_map`, but does not materialize
+    /// intermediate values.
+    pub fn join_flatmap<F, V2, V, It>(
+        &self,
+        other: &Stream<C, OrdIndexedZSet<K1, V2>>,
+        join: F,
+    ) -> Stream<C, OrdZSet<V>>
+    where
+        V2: DBData,
+        V: DBData,
+        F: Fn(&K1, &V1, &V2) -> It + Clone + 'static,
+        It: IntoIterator<Item = V> + 'static,
+    {
+        let join_funcs = mk_trace_join_flatmap_funcs::<
+            OrdIndexedZSet<K1, V1>,
+            OrdIndexedZSet<K1, V2>,
+            OrdZSet<V>,
+            _,
+            It,
+        >(join);
 
         let join_factories = JoinFactories::new::<K1, V1, V2, V, ()>();
 
