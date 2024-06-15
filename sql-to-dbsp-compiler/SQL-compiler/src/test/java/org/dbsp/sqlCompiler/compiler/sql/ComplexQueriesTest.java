@@ -17,7 +17,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
-import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -55,7 +54,6 @@ public class ComplexQueriesTest extends BaseSQLTests {
 
     @Test
     public void viewLateness() {
-        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 1);
         String sql = """
                 create table TRANSACTION (
                     trans_date_trans_time TIMESTAMP,

@@ -2,8 +2,8 @@ package org.dbsp.simulator.operators;
 
 import org.dbsp.simulator.collections.BaseCollection;
 import org.dbsp.simulator.collections.ZSet;
-import org.dbsp.simulator.types.WeightType;
 import org.dbsp.simulator.values.SqlTuple;
+import org.dbsp.simulator.types.WeightType;
 
 import java.util.function.Function;
 

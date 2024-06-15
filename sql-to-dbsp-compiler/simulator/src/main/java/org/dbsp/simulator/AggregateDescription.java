@@ -1,6 +1,6 @@
 package org.dbsp.simulator;
 
-import org.dbsp.util.TriFunction;
+import org.dbsp.simulator.util.TriFunction;
 
 import java.util.function.Function;
 

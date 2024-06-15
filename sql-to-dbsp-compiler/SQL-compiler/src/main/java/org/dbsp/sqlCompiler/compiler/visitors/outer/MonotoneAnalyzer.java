@@ -21,12 +21,12 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         final boolean details = this.getDebugLevel() >= 3;
 
         if (debug)
-            ToDotVisitor.toDot(this.reporter, "original.jpg", details, "jpg", circuit);
+            ToDotVisitor.toDot(this.reporter, "original.png", details, "png", circuit);
         ExpandOperators expander = new ExpandOperators(this.reporter, 1);
         Repeat repeat = new Repeat(this.reporter, expander);
         DBSPCircuit expanded = repeat.apply(circuit);
         if (debug)
-            ToDotVisitor.toDot(reporter, "expanded.jpg", false, "jpg", expanded);
+            ToDotVisitor.toDot(reporter, "expanded.png", false, "png", expanded);
 
         Monotonicity monotonicity = new Monotonicity(this.reporter);
         expanded = monotonicity.apply(expanded);
@@ -37,7 +37,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         DBSPCircuit result = limiters.apply(circuit);
 
         if (debug)
-            ToDotVisitor.toDot(reporter, "limited.jpg", details, "jpg", result);
+            ToDotVisitor.toDot(reporter, "limited.png", details, "png", result);
         return result;
     }
 

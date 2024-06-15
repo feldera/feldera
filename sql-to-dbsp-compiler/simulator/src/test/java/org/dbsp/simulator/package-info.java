@@ -5,9 +5,9 @@
 @ParametersAreNonnullByDefault
 @FieldsAreNonnullByDefault
 @MethodsAreNonnullByDefault
-package org.dbsp.simulator.values;
+package org.dbsp.simulator;
 
-import org.dbsp.util.FieldsAreNonnullByDefault;
-import org.dbsp.util.MethodsAreNonnullByDefault;
+import org.dbsp.simulator.util.FieldsAreNonnullByDefault;
+import org.dbsp.simulator.util.MethodsAreNonnullByDefault;
 
 import javax.annotation.ParametersAreNonnullByDefault;

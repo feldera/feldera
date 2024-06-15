@@ -2,8 +2,8 @@ package org.dbsp.simulator.collections;
 
 import org.dbsp.simulator.AggregateDescription;
 import org.dbsp.simulator.types.WeightType;
-import org.dbsp.util.IIndentStream;
-import org.dbsp.util.ToIndentableString;
+import org.dbsp.simulator.util.IIndentStream;
+import org.dbsp.simulator.util.ToIndentableString;
 
 import java.util.HashMap;
 import java.util.Map;
