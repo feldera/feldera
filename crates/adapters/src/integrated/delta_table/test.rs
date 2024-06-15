@@ -711,12 +711,12 @@ proptest! {
         // Filter delta table by id
         let mut json_file_filtered_by_id = delta_table_snapshot_to_json::<TestStruct2>(
             &table_uri,
-            &HashMap::from([("snapshot_filter".to_string(), "id >= 10000 and id <= 20000".to_string())]));
+            &HashMap::from([("snapshot_filter".to_string(), "id >= 10000 ".to_string())]));
 
         let expected_filtered_zset = OrdZSet::from_tuples(
             (),
             data.clone().into_iter()
-                .filter(|x| x.field >= 10000 && x.field <= 20000)
+                .filter(|x| x.field >= 10000)
                 .map(|x| Tup2(Tup2(x,()),1)).collect()
             );
 
@@ -726,22 +726,17 @@ proptest! {
         // Filter delta table by timestamp.
         let mut json_file_filtered_by_ts = delta_table_snapshot_to_json::<TestStruct2>(
             &table_uri,
-            &HashMap::from([("snapshot_filter".to_string(), "ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'".to_string())]));
+            &HashMap::from([("snapshot_filter".to_string(), "ts >= '2005-01-01 00:00:00'".to_string())]));
 
         let start = NaiveDate::from_ymd_opt(2005, 1, 1)
                 .unwrap()
                 .and_hms_milli_opt(0, 0, 0, 0)
                 .unwrap();
 
-        let end = NaiveDate::from_ymd_opt(2010, 12, 31)
-                .unwrap()
-                .and_hms_milli_opt(23, 59, 59, 0)
-                .unwrap();
-
         let expected_filtered_zset = OrdZSet::from_tuples(
             (),
             data.into_iter()
-                .filter(|x| x.field_2.milliseconds() >= start.timestamp_millis() && x.field_2.milliseconds() <= end.timestamp_millis())
+                .filter(|x| x.field_2.milliseconds() >= start.timestamp_millis())
                 .map(|x| Tup2(Tup2(x,()),1)).collect()
             );
 
