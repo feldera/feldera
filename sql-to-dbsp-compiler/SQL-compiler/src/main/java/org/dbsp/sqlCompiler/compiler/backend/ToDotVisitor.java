@@ -165,7 +165,9 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         if (expression == null)
             return "";
         if (node.is(DBSPFlatMapOperator.class)) {
-            expression = LowerCircuitVisitor.rewriteFlatmap(expression.to(DBSPFlatmap.class));
+            if (expression.is(DBSPFlatmap.class)) {
+                expression = LowerCircuitVisitor.rewriteFlatmap(expression.to(DBSPFlatmap.class));
+            }
         }
         String result = ToRustInnerVisitor.toRustString(
                 this.errorReporter, expression, CompilerOptions.getDefault(), true);

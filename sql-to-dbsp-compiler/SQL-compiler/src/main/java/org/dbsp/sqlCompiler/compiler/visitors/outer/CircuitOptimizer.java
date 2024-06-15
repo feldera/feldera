@@ -74,6 +74,8 @@ public class CircuitOptimizer implements ICompilerComponent {
             passes.add(new Simplify(reporter).circuitRewriter());
             // The predicate below controls which nodes have their output dumped at runtime
             passes.add(new InstrumentDump(reporter, t -> false));
+            if (options.languageOptions.incrementalize)
+                passes.add(new NoIntegralVisitor(reporter));
         }
         passes.add(new RemoveDeindexOperators(reporter));
         passes.add(new RemoveViewOperators(reporter));
@@ -81,8 +83,6 @@ public class CircuitOptimizer implements ICompilerComponent {
         passes.add(new ExpandWriteLog(reporter).circuitRewriter());
         passes.add(new Simplify(reporter).circuitRewriter());
         passes.add(new CSE(reporter));
-        if (options.languageOptions.incrementalize)
-            passes.add(new NoIntegralVisitor(reporter));
         return new Passes(reporter, passes);
     }
 
