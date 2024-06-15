@@ -1,7 +1,7 @@
 package org.dbsp.simulator.values;
 
 import org.dbsp.simulator.types.StringSqlType;
-import org.dbsp.util.Utilities;
+import org.dbsp.simulator.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Objects;

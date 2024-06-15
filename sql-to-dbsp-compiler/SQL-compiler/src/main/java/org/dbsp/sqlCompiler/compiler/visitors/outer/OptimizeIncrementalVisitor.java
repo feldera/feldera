@@ -29,10 +29,8 @@ import org.dbsp.util.Linq;
 
 import java.util.List;
 
-/**
- * This visitor optimizes incremental circuits by pushing integral operators
- * forward.
- */
+/** This visitor optimizes incremental circuits by pushing integral operators
+ * forward. */
 public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
     public OptimizeIncrementalVisitor(IErrorReporter reporter) {
         super(reporter, false);

@@ -1,8 +1,8 @@
 package org.dbsp.simulator.collections;
 
-import org.dbsp.util.ICastable;
-import org.dbsp.util.IndentStream;
-import org.dbsp.util.ToIndentableString;
+import org.dbsp.simulator.util.ICastable;
+import org.dbsp.simulator.util.IndentStream;
+import org.dbsp.simulator.util.ToIndentableString;
 
 public abstract class BaseCollection<Weight> implements ICastable, ToIndentableString {
     @Override

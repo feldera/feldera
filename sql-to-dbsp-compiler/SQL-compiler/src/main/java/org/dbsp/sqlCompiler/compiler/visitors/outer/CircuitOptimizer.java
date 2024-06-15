@@ -62,26 +62,27 @@ public class CircuitOptimizer implements ICompilerComponent {
             passes.add(new MergeSums(reporter));
             passes.add(new PropagateEmptySources(reporter));
             passes.add(new DeadCode(reporter, options.languageOptions.generateInputForEveryTable, true));
-            passes.add(new OptimizeProjections(reporter));
             passes.add(new OptimizeDistinctVisitor(reporter));
             if (options.languageOptions.incrementalize) {
                 passes.add(new IncrementalizeVisitor(reporter));
                 passes.add(new OptimizeIncrementalVisitor(reporter));
             }
             passes.add(new DeadCode(reporter, true, false));
-            if (options.languageOptions.incrementalize)
-                passes.add(new NoIntegralVisitor(reporter));
+            passes.add(new MonotoneAnalyzer(reporter));
+            passes.add(new OptimizeProjections(reporter));
+            passes.add(new DeadCode(reporter, true, false));
             passes.add(new Simplify(reporter).circuitRewriter());
             // The predicate below controls which nodes have their output dumped at runtime
             passes.add(new InstrumentDump(reporter, t -> false));
         }
-        passes.add(new MonotoneAnalyzer(reporter));
         passes.add(new RemoveDeindexOperators(reporter));
         passes.add(new RemoveViewOperators(reporter));
         passes.add(new EliminateFunctions(reporter).circuitRewriter());
         passes.add(new ExpandWriteLog(reporter).circuitRewriter());
         passes.add(new Simplify(reporter).circuitRewriter());
         passes.add(new CSE(reporter));
+        if (options.languageOptions.incrementalize)
+            passes.add(new NoIntegralVisitor(reporter));
         return new Passes(reporter, passes);
     }
 

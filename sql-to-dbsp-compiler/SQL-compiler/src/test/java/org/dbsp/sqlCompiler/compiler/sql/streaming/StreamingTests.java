@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -534,6 +535,45 @@ public class StreamingTests extends StreamingTest {
             @Override
             public void endVisit() {
                 Assert.assertEquals(1, this.count);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
+    public void testJoinFilter() {
+        // Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
+        // Join two streams with lateness, and filter based on lateness column
+        String script = """
+            CREATE TABLE series (
+                    metadata VARCHAR NOT NULL,
+                    event_date DATE NOT NULL LATENESS INTERVAL 1 DAYS
+            );
+            
+            CREATE TABLE shift(
+                    person VARCHAR NOT NULL,
+                    on_call DATE NOT NULL LATENESS INTERVAL 1 DAYS
+            );
+        
+            CREATE VIEW V AS
+            (SELECT metadata, event_date FROM series JOIN shift
+             ON series.metadata = shift.person AND event_date > on_call);
+            """;
+        DBSPCompiler compiler = testCompiler();
+        compiler.compileStatements(script);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int count = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.count++;
+            }
+
+            @Override
+            // TODO: should be 1
+            public void endVisit() {
+                Assert.assertEquals(0, this.count);
             }
         };
         visitor.apply(ccs.circuit);
