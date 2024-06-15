@@ -22,7 +22,7 @@ use pipeline_types::serde_with_context::{
     DateFormat, SerializationContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
 };
-use serde_arrow::ArrowBuilder;
+use serde_arrow::ArrayBuilder;
 use std::any::Any;
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
 
@@ -77,7 +77,7 @@ trait BytesSerializer<C>: Send {
         buf: &mut Vec<u8>,
     ) -> AnyResult<()>;
 
-    fn serialize_arrow<T>(&mut self, _val: &T, _buf: &mut ArrowBuilder) -> AnyResult<()>
+    fn serialize_arrow<T>(&mut self, _val: &T, _buf: &mut ArrayBuilder) -> AnyResult<()>
     where
         T: SerializeWithContext<C>,
     {
@@ -214,7 +214,7 @@ impl BytesSerializer<SqlSerdeConfig> for ParquetSerializer {
         unimplemented!()
     }
 
-    fn serialize_arrow<T>(&mut self, val: &T, builder: &mut ArrowBuilder) -> AnyResult<()>
+    fn serialize_arrow<T>(&mut self, val: &T, builder: &mut ArrayBuilder) -> AnyResult<()>
     where
         T: SerializeWithContext<SqlSerdeConfig>,
     {
@@ -554,7 +554,7 @@ where
         self.serializer.serialize(self.key.as_ref().unwrap(), dst)
     }
 
-    fn serialize_key_to_arrow(&mut self, dst: &mut ArrowBuilder) -> AnyResult<()> {
+    fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
         self.serializer
             .serialize_arrow(self.key.as_ref().unwrap(), dst)
     }

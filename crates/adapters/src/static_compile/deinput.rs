@@ -11,7 +11,7 @@ use dbsp::{
     ZSetHandle, ZWeight,
 };
 use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
-use serde_arrow::{deserializer_from_record_batch, Mut};
+use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
 
 /// A deserializer that parses byte arrays into a strongly typed representation.
@@ -430,8 +430,8 @@ where
     C: Clone + Send + 'static,
 {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let mut deserializer = deserializer_from_record_batch(data)?;
-        let records = Vec::<D>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        let deserializer = ArrowDeserializer::from_record_batch(data)?;
+        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.handle
             .append(&mut records.into_iter().map(|r| Tup2(K::from(r), 1)).collect());
 
@@ -439,8 +439,8 @@ where
     }
 
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let mut deserializer = deserializer_from_record_batch(data)?;
-        let records = Vec::<D>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        let deserializer = ArrowDeserializer::from_record_batch(data)?;
+        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.handle
             .append(&mut records.into_iter().map(|r| Tup2(K::from(r), -1)).collect());
 
@@ -610,8 +610,8 @@ where
     C: Clone + Send + 'static,
 {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let mut deserializer = deserializer_from_record_batch(data)?;
-        let records = Vec::<D>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        let deserializer = ArrowDeserializer::from_record_batch(data)?;
+        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.handle.append(
             &mut records
                 .into_iter()
@@ -623,8 +623,8 @@ where
     }
 
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let mut deserializer = deserializer_from_record_batch(data)?;
-        let records = Vec::<D>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        let deserializer = ArrowDeserializer::from_record_batch(data)?;
+        let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
         self.handle.append(
             &mut records
                 .into_iter()
@@ -888,8 +888,8 @@ where
     VF: Fn(&V) -> K + Clone + Send + 'static,
 {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let mut deserializer = deserializer_from_record_batch(data)?;
-        let records = Vec::<VD>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        let deserializer = ArrowDeserializer::from_record_batch(data)?;
+        let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
         self.handle.append(
             &mut records
                 .into_iter()
@@ -904,8 +904,8 @@ where
     }
 
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
-        let mut deserializer = deserializer_from_record_batch(data)?;
-        let records = Vec::<VD>::deserialize_with_context(Mut(&mut deserializer), &self.config)?;
+        let deserializer = ArrowDeserializer::from_record_batch(data)?;
+        let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
         self.handle.append(
             &mut records
                 .into_iter()
