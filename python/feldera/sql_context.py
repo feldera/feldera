@@ -301,7 +301,25 @@ class SQLContext:
 
         self.http_input_buffer.append({tbl.name: df.to_dict('records')})
 
-    def register_view(self, name: str, query: str):
+    def register_local_view(self, name: str, query: str):
+        """
+        Registers a local view with the SQLContext.
+        Local views are not exposed to the outside world as an output of the computation.
+        This is useful for modularizing the SQL code, by declaring intermediate views
+        that are used in the implementation of other views.
+
+        Auto inserts the trailing semicolon if not present.
+
+        :param name: The name of the view.
+        :param query: The query to be used to create the view.
+        """
+
+        if query[-1] != ';':
+            query += ';'
+
+        self.views[name] = f"CREATE LOCAL VIEW {name} AS {query}"
+
+    def register_output_view(self, name: str, query: str):
         """
         Registers a Feldera View based on the provided query.
         Auto inserts the trailing semicolon if not present.
