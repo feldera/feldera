@@ -265,9 +265,12 @@ def wait_for_status(pipeline_name, status):
 
 def write_results(results, outfile):
     writer = csv.writer(outfile)
-    writer.writerow(['when', 'runner', 'mode', 'language', 'name', 'num_cores', 'num_events', 'elapsed'])
+    writer.writerow(['when', 'runner', 'mode', 'language', 'name', 'num_cores', 'num_events', 'elapsed', 'peak_memory_bytes'])
     writer.writerows(results)
     
+def write_metrics(results, outfile):
+    writer = csv.writer(outfile)
+    writer.writerows(results)
 
 def main():
     # Command-line arguments
@@ -278,13 +281,15 @@ def main():
     parser.add_argument("--kafka-broker", required=True, help="Kafka broker (e.g., localhost:9092 )")
     parser.add_argument("--cores", type=int, help="Number of cores to use for workers (default: 16)")
     parser.add_argument('--lateness', action=argparse.BooleanOptionalAction, help='whether to use lateness for GC to save memory (default: --lateness)')
-    parser.add_argument('--merge', action=argparse.BooleanOptionalAction, help='whether to merge all the queries into one program (default: --no-lateness)')
+    parser.add_argument('--merge', action=argparse.BooleanOptionalAction, help='whether to merge all the queries into one program (default: --no-merge)')
     parser.add_argument('--storage', action=argparse.BooleanOptionalAction, help='whether to enable storage (default: --no-storage)')
     parser.add_argument('--min-storage-rows', type=int, help='If storage is enabled, the minimum number of rows to write a batch to storage.')
     parser.add_argument('--query', action='append', help='queries to run (by default, all queries), specify one or more of: ' + ','.join(sort_queries(QUERY_SQL.keys())))
     parser.add_argument('--input-topic-suffix', help='suffix to apply to input topic names (by default, "")')
     parser.add_argument('--csv', help='File to write results in .csv format')
-    parser.set_defaults(lateness=True, merge=False, storage=False, cores=16)
+    parser.add_argument('--csv-metrics', help='File to write pipeline metrics (memory, disk) in .csv format')
+    parser.add_argument('--metrics-interval', help='How often metrics should be sampled, in seconds (default: 1)')
+    parser.set_defaults(lateness=True, merge=False, storage=False, cores=16, metrics_interval=1)
     
     global api_url, kafka_broker
     api_url = parser.parse_args().api_url
@@ -299,6 +304,8 @@ def main():
         min_storage_rows = int(min_storage_rows)
     suffix = parser.parse_args().input_topic_suffix or ''
     csvfile = parser.parse_args().csv
+    csvmetricsfile = parser.parse_args().csv_metrics
+    metricsinterval = float(parser.parse_args().metrics_interval)
 
     output_connector_names = queries
     if merge and len(queries) > 1:
@@ -357,6 +364,14 @@ def main():
 
     # Run the pipelines
     results = []
+    pipeline_metric_names = ["name", "elapsed_seconds", "rss_bytes", "buffered_input_records", "total_input_records", "total_processed_records"]
+    disk_metric_names = ["total_files_created", "total_bytes_written", "total_writes_success", "buffer_cache_hit"]
+    disk_write_latency_names = ["count", "first", "middle", "last", "minimum", "maximum", "mean"]
+    for s in disk_metric_names:
+        pipeline_metric_names += ["disk_" + s] 
+    for s in disk_write_latency_names:
+        pipeline_metric_names += ["disk_write_latency_histogram_" + s] 
+    pipeline_metrics = [pipeline_metric_names]
     for pipeline_name in queries:
         start = time.time()
 
@@ -367,32 +382,63 @@ def main():
         # Wait till the pipeline is completed
         start = time.time()
         last_processed = 0
+        last_metrics = 0
+        peak_memory = 0
         while True:
             stats = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}/stats").json()
             elapsed = time.time() - start
-            processed = stats["global_metrics"]["total_processed_records"]
-            if processed > last_processed:
-                before, after = ('\r', '') if os.isatty(1) else ('', '\n')
-                sys.stdout.write(f"{before}Pipeline {pipeline_name} processed {processed} records in {elapsed:.1f} seconds{after}")
-                last_processed = processed
-            if stats["global_metrics"]["pipeline_complete"]:
-                break
+            if "global_metrics" in stats:
+                global_metrics = stats["global_metrics"]
+                processed = global_metrics["total_processed_records"]
+                peak_memory = max(peak_memory, global_metrics["rss_bytes"])
+                if processed > last_processed:
+                    before, after = ('\r', '') if os.isatty(1) else ('', '\n')
+                    sys.stdout.write(f"{before}Pipeline {pipeline_name} processed {processed} records in {elapsed:.1f} seconds{after}")
+                    if elapsed - last_metrics > metricsinterval:
+                        last_metrics = elapsed
+                        metrics_list = [pipeline_name, elapsed, global_metrics["rss_bytes"], global_metrics["buffered_input_records"], global_metrics["total_input_records"], global_metrics["total_processed_records"]]
+                        disk_index = len(metrics_list)
+                        for i in range(11):
+                            metrics_list += [""]
+                        for s in stats["metrics"]:
+                            if s["key"] == "disk.total_files_created":
+                                metrics_list[disk_index] = s["value"]["Counter"]
+                            elif s["key"] == "disk.total_bytes_written":
+                                metrics_list[disk_index + 1] = s["value"]["Counter"]
+                            elif s["key"] == "disk.total_writes_success":
+                                metrics_list[disk_index + 2] = s["value"]["Counter"]
+                            elif s["key"] == "disk.buffer_cache_hit":
+                                metrics_list[disk_index + 3] = s["value"]["Counter"]
+                            elif s["key"] == "disk.write_latency" and s["value"]["Histogram"] is not None:
+                                print(str(s))
+                                metrics_list[disk_index + 4] = s["value"]["Histogram"]["count"]
+                                metrics_list[disk_index + 5] = s["value"]["Histogram"]["first"]
+                                metrics_list[disk_index + 6] = s["value"]["Histogram"]["middle"]
+                                metrics_list[disk_index + 7] = s["value"]["Histogram"]["last"]
+                                metrics_list[disk_index + 8] = s["value"]["Histogram"]["minimum"]
+                                metrics_list[disk_index + 9] = s["value"]["Histogram"]["maximum"]
+                                metrics_list[disk_index + 10] = s["value"]["Histogram"]["mean"]
+                        pipeline_metrics += [metrics_list]
+                    last_processed = processed
+                if stats["global_metrics"]["pipeline_complete"]:
+                    break
             time.sleep(.1)
         if os.isatty(1):
             print()
         elapsed = "{:.1f}".format(time.time() - start)
         print(f"Pipeline {pipeline_name} completed in {elapsed} s")
 
-        results += [[when, "feldera", "stream", "sql", pipeline_name, cores, last_processed, elapsed]]
+        results += [[when, "feldera", "stream", "sql", pipeline_name, cores, last_processed, elapsed, peak_memory]]
 
         # Start pipeline
         elapsed = stop_pipeline(pipeline_name, True)
         print(f"Stopped pipeline {pipeline_name} in {elapsed:.1f} s")
-
+    
     write_results(results, sys.stdout)
     if csvfile is not None:
         write_results(results, open(csvfile, 'w', newline=''))
-
+    if csvmetricsfile is not None:
+        write_metrics(pipeline_metrics, open(csvmetricsfile, 'w', newline=''))
 
 if __name__ == "__main__":
     main()
