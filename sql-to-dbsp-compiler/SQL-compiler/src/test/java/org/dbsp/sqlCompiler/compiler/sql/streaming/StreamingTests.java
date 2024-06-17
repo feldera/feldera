@@ -5,13 +5,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperato
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -542,7 +539,7 @@ public class StreamingTests extends StreamingTest {
 
     @Test
     public void testJoinFilter() {
-        // Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
+        // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         // Join two streams with lateness, and filter based on lateness column
         String script = """
             CREATE TABLE series (
@@ -562,6 +559,7 @@ public class StreamingTests extends StreamingTest {
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(script);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("testJoinFilter", ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int count = 0;
 
@@ -620,5 +618,41 @@ public class StreamingTests extends StreamingTest {
                  1                | -1
                  2                | 1""");
         this.addRustTestCase("testAggregate", ccs);
+    }
+
+    @Test
+    public void testHopWindows() {
+        // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 1);
+        String sql = """
+                CREATE TABLE DATA(
+                    moment TIMESTAMP NOT NULL,
+                    amount DECIMAL(10, 2),
+                    cc_num VARCHAR
+                );
+                
+                CREATE LOCAL VIEW hop AS
+                SELECT * FROM TABLE(HOP(TABLE DATA, DESCRIPTOR(moment), INTERVAL 4 HOURS, INTERVAL 1 HOURS));
+                
+                CREATE LOCAL VIEW agg AS
+                SELECT
+                  AVG(amount) AS avg_amt,
+                  STDDEV(amount) as stddev_amt,
+                  COUNT(cc_num) AS trans,
+                  ARRAY_AGG(moment) AS moments
+                FROM hop
+                GROUP BY cc_num, window_start;
+                
+                CREATE VIEW results AS
+                SELECT
+                  avg_amt,
+                  COALESCE(stddev_amt, 0) AS stddev_amt,
+                  trans,
+                  moment
+                FROM agg CROSS JOIN UNNEST(moments) as moment;
+                """;
+        DBSPCompiler compiler = testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("testHopWindows", ccs);
     }
 }

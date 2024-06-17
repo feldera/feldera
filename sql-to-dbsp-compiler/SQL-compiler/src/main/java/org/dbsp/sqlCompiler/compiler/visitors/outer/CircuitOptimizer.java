@@ -69,6 +69,7 @@ public class CircuitOptimizer implements ICompilerComponent {
             }
             passes.add(new DeadCode(reporter, true, false));
             passes.add(new MonotoneAnalyzer(reporter));
+            passes.add(new FilterJoin(reporter));
             passes.add(new OptimizeProjections(reporter));
             passes.add(new DeadCode(reporter, true, false));
             passes.add(new Simplify(reporter).circuitRewriter());

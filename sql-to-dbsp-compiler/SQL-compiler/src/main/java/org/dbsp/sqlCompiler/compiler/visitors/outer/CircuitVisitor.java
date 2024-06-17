@@ -268,6 +268,10 @@ public abstract class CircuitVisitor
         return this.preorder(node.to(DBSPOperator.class));
     }
 
+    public VisitDecision preorder(DBSPJoinFlatmapOperator node) {
+        return this.preorder(node.to(DBSPOperator.class));
+    }
+
     public VisitDecision preorder(DBSPPrimitiveAggregateOperator node) {
         return this.preorder(node.to(DBSPOperator.class));
     }
@@ -339,6 +343,10 @@ public abstract class CircuitVisitor
     }
 
     public void postorder(DBSPJoinOperator node) {
+        this.postorder(node.to(DBSPOperator.class));
+    }
+
+    public void postorder(DBSPJoinFlatmapOperator node) {
         this.postorder(node.to(DBSPOperator.class));
     }
 

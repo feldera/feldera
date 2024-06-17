@@ -139,6 +139,8 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
+        if (this.isNull)
+            return builder.append("None");
         return builder.append(DBSPTypeCode.TUPLE.rustName)
                 .append(this.fields.length)
                 .append("::new(")
