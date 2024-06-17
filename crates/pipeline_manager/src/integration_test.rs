@@ -493,11 +493,19 @@ impl TestConfig {
             .await;
         assert_eq!(StatusCode::ACCEPTED, resp.status());
 
-        let now = Instant::now();
+        let start = Instant::now();
+        println!("Waiting for compilation");
+        let mut last_wait_println = Instant::now();
         loop {
-            println!("Waiting for compilation");
+            if last_wait_println.elapsed().as_secs() >= 60 {
+                println!(
+                    "Waiting for compilation since {} seconds",
+                    start.elapsed().as_secs()
+                );
+                last_wait_println = Instant::now();
+            }
             std::thread::sleep(time::Duration::from_secs(1));
-            if now.elapsed().as_secs() > 480 {
+            if start.elapsed().as_secs() > 480 {
                 panic!("Compilation timeout");
             }
             let mut resp = self.get(format!("/v0/programs/{program_name}")).await;
@@ -520,7 +528,7 @@ impl TestConfig {
     }
 
     /// Wait for the pipeline to reach the specified status.
-    /// Panic afrer `timeout`.
+    /// Panic after `timeout`.
     async fn wait_for_pipeline_status(
         &self,
         name: &str,
@@ -528,16 +536,27 @@ impl TestConfig {
         timeout: Duration,
     ) -> Pipeline {
         let start = Instant::now();
+        println!("Waiting for pipeline status {status:?}...");
+        let mut last_wait_println = Instant::now();
         loop {
             let mut response = self.get(format!("/v0/pipelines/{name}")).await;
 
             let pipeline = response.json::<Pipeline>().await.unwrap();
 
-            println!("Pipeline:\n{pipeline:#?}");
+            if last_wait_println.elapsed().as_secs() >= 60 {
+                println!("Pipeline:\n{pipeline:#?}");
+                println!(
+                    "Waiting for pipeline status {status:?} since {} seconds",
+                    start.elapsed().as_secs()
+                );
+                last_wait_println = Instant::now();
+            }
+
             if pipeline.state.current_status == status {
                 return pipeline;
             }
             if start.elapsed() >= timeout {
+                println!("Pipeline:\n{pipeline:#?}");
                 panic!("Timeout waiting for pipeline status {status:?}");
             }
             sleep(Duration::from_millis(300)).await;
