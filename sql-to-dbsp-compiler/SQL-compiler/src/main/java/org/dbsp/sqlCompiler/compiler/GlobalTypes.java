@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -23,8 +24,9 @@ class GlobalTypes {
         Utilities.putNew(this.declarations, struct.name, struct);
     }
 
+    @Nullable
     public DBSPTypeStruct getStructByName(String name) {
-        return Utilities.getExists(this.declarations, name);
+        return this.declarations.get(name);
     }
 
     public boolean containsStruct(String name) {
