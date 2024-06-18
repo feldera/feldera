@@ -77,6 +77,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
@@ -122,7 +123,6 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
@@ -142,14 +142,13 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
-import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
-import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -163,6 +162,7 @@ import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -240,7 +240,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return this.compiler.getTypeCompiler().convertType(dt, asStruct);
     }
 
-    private DBSPTypeZSet makeZSet(DBSPType type) {
+    DBSPTypeZSet makeZSet(DBSPType type) {
         return TypeCompiler.makeZSet(type);
     }
 
@@ -455,67 +455,26 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<RexNode> operands = call.getOperands();
         assert call.operandCount() == 3 || call.operandCount() == 4;
         int timestampIndex = this.getDescriptor(operands.get(0));
+        // Need to do a few more checks, Calcite should be doing these really.
         DBSPExpression interval = expressionCompiler.compile(operands.get(1));
-        DBSPExpression start = null;
+        if (!interval.getType().is(DBSPTypeMillisInterval.class)) {
+            throw new UnsupportedException("Hopping window intervals must be 'short' SQL intervals (days and lower)",
+                    interval.getNode());
+        }
+        DBSPExpression start;
         DBSPExpression size = expressionCompiler.compile(operands.get(2));
+        if (!size.getType().is(DBSPTypeMillisInterval.class)) {
+            throw new UnsupportedException("Hopping window intervals must be 'short' SQL intervals (days and lower)",
+                    size.getNode());
+        }
         if (call.operandCount() == 4)
             start = expressionCompiler.compile(operands.get(3));
+        else
+            start = new DBSPIntervalMillisLiteral(0, false);
 
-        DBSPExpression[] results = new DBSPExpression[inputRowType.size() + 1];
-        for (int i = 0; i < inputRowType.size(); i++) {
-            results[i] = row.deref().field(i).applyCloneIfNeeded();
-        }
-        int nextIndex = inputRowType.size();
-
-        // Map builds the array
-        List<DBSPExpression> hopArguments = new ArrayList<>();
-        hopArguments.add(row.deref().field(timestampIndex));
-        hopArguments.add(interval);
-        hopArguments.add(size);
-        if (start != null)
-            hopArguments.add(start);
-        DBSPType hopType = type.tupFields[nextIndex];
-        results[nextIndex] = ExpressionCompiler.compilePolymorphicFunction(
-                "hop", node, new DBSPTypeVec(hopType, false), hopArguments, 3, 4);
-        DBSPTupleExpression mapBody = new DBSPTupleExpression(results);
-        DBSPClosureExpression func = mapBody.closure(row.asParameter());
-        DBSPMapOperator map = new DBSPMapOperator(node, func, makeZSet(mapBody.getType()), opInput);
-        this.circuit.addOperator(map);
-
-        // Flatmap flattens the array
-        DBSPVariablePath data = new DBSPVariablePath("data", mapBody.getType().ref());
-        // This is not the timestamp type, since e can never be null.
-        DBSPVariablePath e = new DBSPVariablePath("e", hopType);
-        DBSPExpression collectionExpression = data.deref().field(nextIndex).borrow();
-
-        List<DBSPStatement> statements = new ArrayList<>();
-        String varName = "x";
-        for (int i = 0; i < inputRowType.size(); i++) {
-            DBSPLetStatement stat = new DBSPLetStatement(varName + i, data.deref().field(i).applyCloneIfNeeded());
-            statements.add(stat);
-        }
-        DBSPLetStatement array = new DBSPLetStatement("array", collectionExpression);
-        statements.add(array);
-        DBSPLetStatement clone = new DBSPLetStatement("array_clone", array.getVarReference().deref().applyClone());
-        statements.add(clone);
-        DBSPExpression iter = new DBSPApplyMethodExpression("into_iter",
-                DBSPTypeAny.getDefault(), clone.getVarReference().applyClone());
-        DBSPExpression[] resultFields = new DBSPExpression[type.size()];
-        for (int i = 0; i < inputRowType.size(); i++)
-            resultFields[i] = statements.get(i).to(DBSPLetStatement.class).getVarReference().applyClone();
-        nextIndex = inputRowType.size();
-        resultFields[nextIndex++] = e;
-        resultFields[nextIndex] = ExpressionCompiler.makeBinaryExpression(node,
-                // not the timestampType, but the hopType
-                hopType, DBSPOpcode.ADD, e, size);
-
-        DBSPExpression toTuple = new DBSPTupleExpression(resultFields).closure(e.asParameter());
-        DBSPExpression makeTuple = new DBSPApplyMethodExpression(node,
-                "map", DBSPTypeAny.getDefault(), iter, toTuple);
-        DBSPBlockExpression block = new DBSPBlockExpression(statements, makeTuple);
-
-        DBSPOperator result = new DBSPFlatMapOperator(node, block.closure(data.asParameter()), makeZSet(type), map);
-        this.assignOperator(scan, result);
+        DBSPHopOperator hop = new DBSPHopOperator(
+                node, timestampIndex, interval, start, size, makeZSet(type), opInput);
+        this.assignOperator(scan, hop);
     }
 
     void visitTableFunction(LogicalTableFunctionScan scan) {

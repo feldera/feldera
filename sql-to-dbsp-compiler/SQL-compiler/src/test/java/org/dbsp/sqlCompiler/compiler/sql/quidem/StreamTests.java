@@ -142,7 +142,7 @@ public class StreamTests extends SqlIoTest {
                 (10 rows)""");
     }
 
-    @Test @Ignore("Hop with 4 arguments TBD")
+    @Test
     public void testHop4() {
         this.qs("""
                 SELECT * FROM TABLE(HOP(TABLE ORDERS, DESCRIPTOR(ROWTIME), INTERVAL '5' MINUTE, INTERVAL '10' MINUTE, INTERVAL '2' MINUTE));

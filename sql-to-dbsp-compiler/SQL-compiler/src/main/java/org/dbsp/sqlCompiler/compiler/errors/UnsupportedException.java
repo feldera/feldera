@@ -40,11 +40,11 @@ public class UnsupportedException extends BaseCompilerException {
     }
 
     public UnsupportedException(String msg, CalciteObject obj) {
-        super(msg, obj);
+        super(msg + ": " + obj, obj);
     }
 
     public UnsupportedException(String msg, IHasCalciteObject obj) {
-        super(msg, obj.getNode());
+        this(msg, obj.getNode());
     }
 
     @Override

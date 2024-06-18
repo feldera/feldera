@@ -577,17 +577,38 @@ some_polymorphic_function3!(
     Timestamp
 );
 
-pub fn hop_Timestamp_ShortInterval_ShortInterval(
+// Start of first interval which contains ts
+pub fn hop_start(
     ts: Timestamp,
     period: ShortInterval,
     size: ShortInterval,
-) -> Vec<Timestamp> {
-    let mut result = Vec::<Timestamp>::new();
+    start: ShortInterval,
+) -> i64 {
     let ts_ms = ts.milliseconds();
     let size_ms = size.milliseconds();
     let period_ms = period.milliseconds();
-    // Start of first interval which contains ts
-    let round = ts_ms - (ts_ms % period_ms) + period_ms - size_ms;
+    let start_ms = start.milliseconds();
+    ts_ms - ((ts_ms - start_ms) % period_ms) + period_ms - size_ms
+}
+
+// Helper function used by the monotonicity analysis for hop table functions
+pub fn hop_start_timestamp(
+    ts: Timestamp,
+    period: ShortInterval,
+    size: ShortInterval,
+    start: ShortInterval,
+) -> Timestamp {
+    Timestamp::new(hop_start(ts, period, size, start))
+}
+
+pub fn hop_Timestamp_ShortInterval_ShortInterval_ShortInterval(
+    ts: Timestamp,
+    period: ShortInterval,
+    size: ShortInterval,
+    start: ShortInterval,
+) -> Vec<Timestamp> {
+    let mut result = Vec::<Timestamp>::new();
+    let round = hop_start(ts, period, size, start);
     let mut add = 0;
     while add < size.milliseconds() {
         result.push(Timestamp::new(round + add));
@@ -596,14 +617,17 @@ pub fn hop_Timestamp_ShortInterval_ShortInterval(
     result
 }
 
-pub fn hop_TimestampN_ShortInterval_ShortInterval(
+pub fn hop_TimestampN_ShortInterval_ShortInterval_ShortInterval(
     ts: Option<Timestamp>,
     period: ShortInterval,
     size: ShortInterval,
+    start: ShortInterval,
 ) -> Vec<Timestamp> {
     match ts {
         None => Vec::new(),
-        Some(ts) => hop_Timestamp_ShortInterval_ShortInterval(ts, period, size),
+        Some(ts) => {
+            hop_Timestamp_ShortInterval_ShortInterval_ShortInterval(ts, period, size, start)
+        }
     }
 }
 
