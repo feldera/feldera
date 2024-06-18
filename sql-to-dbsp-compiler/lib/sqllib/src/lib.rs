@@ -1047,6 +1047,18 @@ pub fn times_i32_ShortInterval(left: i32, right: ShortInterval) -> ShortInterval
 
 some_polymorphic_function2!(times, i32, i32, ShortInterval, ShortInterval, ShortInterval);
 
+pub fn times_i32_LongInterval(left: i32, right: LongInterval) -> LongInterval {
+    right * left
+}
+
+some_polymorphic_function2!(times, i32, i32, LongInterval, LongInterval, LongInterval);
+
+pub fn times_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
+    left * right
+}
+
+some_polymorphic_function2!(times, LongInterval, LongInterval, i32, i32, LongInterval);
+
 /***** decimals ***** */
 
 #[inline(always)]

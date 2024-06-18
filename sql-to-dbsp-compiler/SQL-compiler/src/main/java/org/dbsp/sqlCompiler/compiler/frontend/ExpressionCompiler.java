@@ -440,8 +440,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return call.op.getName().toLowerCase();
     }
 
-    static DBSPExpression compilePolymorphicFunction(String opName, CalciteObject node, DBSPType resultType,
-                                              List<DBSPExpression> ops, Integer... expectedArgCount) {
+    public static DBSPExpression compilePolymorphicFunction(String opName, CalciteObject node, DBSPType resultType,
+                                                            List<DBSPExpression> ops, Integer... expectedArgCount) {
         validateArgCount(node, ops.size(), expectedArgCount);
         StringBuilder functionName = new StringBuilder(opName);
         DBSPExpression[] operands = ops.toArray(new DBSPExpression[0]);

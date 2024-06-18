@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
@@ -148,6 +149,14 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPIntegrateOperator operator) {
+        ReplacementExpansion expanded = this.getReplacement(operator);
+        if (expanded != null)
+            this.addBounds(expanded.replacement, 0);
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPHopOperator operator) {
         ReplacementExpansion expanded = this.getReplacement(operator);
         if (expanded != null)
             this.addBounds(expanded.replacement, 0);

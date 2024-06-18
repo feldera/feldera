@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -70,6 +71,14 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPSourceMultisetOperator operator) {
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPHopOperator operator) {
+        // This is not exactly true, since hop operators are expanded into a map and
+        // a flatmap, but it turns out that for monotonicity analysis it's simpler
+        // to analyze the original operator.
         this.identity(operator);
     }
 

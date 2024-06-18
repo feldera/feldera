@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.util.IIndentStream;
@@ -35,7 +36,9 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public final class DBSPIntervalMonthsLiteral extends DBSPLiteral implements IsNumericLiteral {
+public final class DBSPIntervalMonthsLiteral
+        extends DBSPLiteral
+        implements IsNumericLiteral, IsIntervalLiteral {
     /** Expressed in months */
     @Nullable public final Integer value;
 
@@ -103,5 +106,12 @@ public final class DBSPIntervalMonthsLiteral extends DBSPLiteral implements IsNu
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPIntervalMonthsLiteral(this.getNode(), this.type, this.value);
+    }
+
+    @Override
+    public IsIntervalLiteral multiply(long value) {
+        if (this.value == null)
+            return this;
+        return new DBSPIntervalMonthsLiteral(Math.toIntExact(this.value * value));
     }
 }

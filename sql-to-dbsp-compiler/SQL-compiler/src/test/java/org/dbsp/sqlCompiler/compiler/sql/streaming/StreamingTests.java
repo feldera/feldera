@@ -65,8 +65,20 @@ public class StreamingTests extends StreamingTest {
     }
 
     @Test
-    public void variableHoppingTest() {
+    public void longIntervalHoppingTest() {
         String sql = """
+                CREATE TABLE series (
+                    pickup TIMESTAMP
+                );
+                CREATE VIEW V AS
+                SELECT * FROM TABLE(
+                  HOP(
+                    TABLE series,
+                    DESCRIPTOR(pickup),
+                    INTERVAL 1 MONTH,
+                    INTERVAL 2 MONTH));""";
+        this.statementsFailingInCompilation(sql, "Hopping window intervals must be 'short'");
+        sql = """
                 CREATE TABLE series (
                     pickup TIMESTAMP
                 );
@@ -681,10 +693,9 @@ public class StreamingTests extends StreamingTest {
 
     @Test
     public void testHopWindows() {
-        // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 1);
         String sql = """
                 CREATE TABLE DATA(
-                    moment TIMESTAMP NOT NULL,
+                    moment TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAYS,
                     amount DECIMAL(10, 2),
                     cc_num VARCHAR
                 );

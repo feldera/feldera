@@ -181,6 +181,14 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             case "controlled_filter" -> " style=filled fillcolor=cyan";
             case "apply" -> " style=filled fillcolor=yellow";
             case "integrate_trace_retain_keys", "integrate_trace_retain_values" -> " style=filled fillcolor=pink";
+            // stateful operators
+            case "distinct", "stream_distinct",
+                 "aggregate", "partitioned_rolling_aggregate", "aggregate_linear",
+                 "stream_aggregate", "stream_aggregate_linear", "partitioned_rolling_aggregate_with_waterline",
+                 "partitioned_tree_aggregate",
+                 "join", "stream_join", "join_flatmap",
+                 "delay_trace", "delay", "differentiate", "topK", "integrate",
+                 "lag_custom_order", "upsert" -> " style=filled fillcolor=red";
             default -> "";
         };
     }

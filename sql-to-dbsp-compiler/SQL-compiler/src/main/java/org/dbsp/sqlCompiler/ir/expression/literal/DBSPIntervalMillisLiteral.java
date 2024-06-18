@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.util.IIndentStream;
@@ -35,7 +36,9 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 import java.util.Objects;
 
-public final class DBSPIntervalMillisLiteral extends DBSPLiteral implements IsNumericLiteral {
+public final class DBSPIntervalMillisLiteral
+        extends DBSPLiteral
+        implements IsNumericLiteral, IsIntervalLiteral {
     @Nullable public final Long value;
 
     public DBSPIntervalMillisLiteral() {
@@ -88,6 +91,13 @@ public final class DBSPIntervalMillisLiteral extends DBSPLiteral implements IsNu
         if (this.value != null)
             return builder.append(this.value.toString());
         return builder.append("null");
+    }
+
+    @Override
+    public IsIntervalLiteral multiply(long value) {
+        if (this.value == null)
+            return this;
+        return new DBSPIntervalMillisLiteral(Math.multiplyExact(this.value, value), this.isNull);
     }
 
     @Override

@@ -281,8 +281,11 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         left.getReducedExpression(), right.getReducedExpression());
             }
         }
-        if (left.mayBeMonotone() && expression.operation == DBSPOpcode.DIV) {
-            // Dividing a monotone expression by a positive constant produces a monotone result
+        if (left.mayBeMonotone() &&
+                (expression.operation == DBSPOpcode.DIV || expression.operation == DBSPOpcode.MUL)) {
+            // Multiplying or dividing a monotone expression by
+            // a positive constant produces a monotone result
+            // TODO: multiplication is commutative.
             if (expression.right.is(DBSPLiteral.class)) {
                 if (expression.right.is(IsNumericLiteral.class)) {
                     if (expression.right.to(IsNumericLiteral.class).gt0()) {
@@ -373,7 +376,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         name.startsWith("numeric_inc") ||
                         name.startsWith("extract_year_") ||
                         name.startsWith("extract_epoch_") ||
-                        name.startsWith("extract_hour_Time")
+                        name.startsWith("extract_hour_Time") ||
+                        name.equals("hop_start_timestamp")
                 ) {
                     resultType = new MonotoneType(expression.getType());
                     reduced = expression.replaceArguments(reducedArgs);

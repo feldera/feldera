@@ -71,7 +71,9 @@ HOP(data, DESCRIPTOR(timecol), slide, size [, offset ])
 
 Indicates a hopping window for `timecol`, covering rows within the
 interval of `size`, shifting every `slide` and optionally aligned at
-`offset`.  The type of the `timecol` has to be `TIMESTAMP`.
+`offset`.  The type of the `timecol` has to be `TIMESTAMP`.  The
+intervals must be compile-time constants, and be expressed as a
+"short" interval (i.e., days or smaller time units).
 
 Here is an example:
 

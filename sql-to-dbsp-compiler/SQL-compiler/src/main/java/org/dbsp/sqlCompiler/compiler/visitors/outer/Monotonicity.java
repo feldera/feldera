@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -26,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTransferFun
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -102,7 +104,34 @@ public class Monotonicity extends CircuitVisitor {
                 this.errorReporter, operator, projection, pairOfReferences);
         return Objects.requireNonNull(analyzer.applyAnalysis(closure));
     }
-    
+
+    @Override
+    public void postorder(DBSPHopOperator node) {
+        MonotoneExpression input = this.getMonotoneExpression(node.input());
+        if (input == null)
+            return;
+        if (!input.mayBeMonotone())
+            return;
+        IMaybeMonotoneType projection = getBodyType(input);
+        DBSPTypeTuple varType = projection.getType().to(DBSPTypeTuple.class);
+
+        DBSPVariablePath var = new DBSPVariablePath("t", varType.ref());
+        DBSPExpression[] fields = new DBSPExpression[varType.size() + 2];
+        DBSPType timestampType = varType.tupFields[node.timestampIndex];
+        for (int i = 0; i < varType.size(); i++) {
+            fields[i] = var.deepCopy().deref().field(i);
+        }
+        fields[varType.size()] = new DBSPApplyExpression("hop_start_timestamp",  timestampType,
+                fields[node.timestampIndex].deepCopy(), node.interval, node.size, node.start);
+        fields[varType.size() + 1] = fields[varType.size()].deepCopy();
+        DBSPExpression body = new DBSPTupleExpression(fields);
+        DBSPClosureExpression closure = body.closure(var.asParameter());
+        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
+                this.errorReporter, node, projection, false);
+        MonotoneExpression result = analyzer.applyAnalysis(closure);
+        this.set(node, result);
+    }
+
     @Override
     public void postorder(DBSPSourceMultisetOperator node) {
         List<IMaybeMonotoneType> fields = new ArrayList<>();
