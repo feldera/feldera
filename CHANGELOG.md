@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- [SQL] Support for ARRAY_AGG aggregation function.
+- [avro] Allow serializing non-nullable SQL columns into nullable Avro columns
+  ([#1892](https://github.com/feldera/feldera/pull/1892))
+- [SQL] Support for `ARRAY_AGG` aggregation function.
 - [SQL] Support for hopping windows using table functions
   ([#1855](https://github.com/feldera/feldera/pull/1855))
 - API: Support skipping the serialization of schema ID in Avro format.
