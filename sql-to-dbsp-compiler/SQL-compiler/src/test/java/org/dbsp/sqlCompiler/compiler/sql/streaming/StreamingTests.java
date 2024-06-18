@@ -46,6 +46,65 @@ public class StreamingTests extends StreamingTest {
     }
 
     @Test
+    public void nullableHoppingTest() {
+        String sql = """
+                CREATE TABLE series (
+                    pickup TIMESTAMP
+                );
+                CREATE VIEW V AS
+                SELECT * FROM TABLE(
+                  HOP(
+                    TABLE series,
+                    DESCRIPTOR(pickup),
+                    INTERVAL '2' MINUTE,
+                    INTERVAL '5' MINUTE));""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("nullableHoppingTest", ccs);
+    }
+
+    @Test
+    public void variableHoppingTest() {
+        String sql = """
+                CREATE TABLE series (
+                    pickup TIMESTAMP
+                );
+                CREATE VIEW V AS
+                SELECT * FROM TABLE(
+                  HOP(
+                    TABLE series,
+                    DESCRIPTOR(pickup),
+                    NULL,
+                    NULL));""";
+        this.statementsFailingInCompilation(sql, "Cannot apply 'HOP'");
+        sql = """
+                CREATE TABLE series (
+                    pickup TIMESTAMP
+                );
+                CREATE VIEW V AS
+                SELECT * FROM TABLE(
+                  HOP(
+                    TABLE series,
+                    DESCRIPTOR(pickup),
+                    6,
+                    DATE '2020-12-20'));""";
+        this.statementsFailingInCompilation(sql, "Cannot apply 'HOP'");
+        sql = """
+                CREATE TABLE series (
+                    pickup TIMESTAMP
+                );
+                CREATE VIEW V AS
+                SELECT * FROM TABLE(
+                  HOP(
+                    TABLE series,
+                    DESCRIPTOR(pickup),
+                    DESCRIPTOR(column),
+                    INTERVAL 1 HOUR));""";
+        this.statementsFailingInCompilation(sql, "Cannot apply 'HOP'");
+    }
+
+    @Test
     public void tumblingTestLimits() {
         String sql = """
                CREATE TABLE series (

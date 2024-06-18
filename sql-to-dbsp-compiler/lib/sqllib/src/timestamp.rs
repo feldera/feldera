@@ -596,16 +596,16 @@ pub fn hop_Timestamp_ShortInterval_ShortInterval(
     result
 }
 
-some_polymorphic_function3!(
-    hop,
-    Timestamp,
-    Timestamp,
-    ShortInterval,
-    ShortInterval,
-    ShortInterval,
-    ShortInterval,
-    Vec<Timestamp>
-);
+pub fn hop_TimestampN_ShortInterval_ShortInterval(
+    ts: Option<Timestamp>,
+    period: ShortInterval,
+    size: ShortInterval,
+) -> Vec<Timestamp> {
+    match ts {
+        None => Vec::new(),
+        Some(ts) => hop_Timestamp_ShortInterval_ShortInterval(ts, period, size),
+    }
+}
 
 //////////////////////////// Date
 

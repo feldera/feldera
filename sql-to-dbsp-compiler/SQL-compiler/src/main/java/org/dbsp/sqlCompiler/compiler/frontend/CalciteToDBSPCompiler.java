@@ -353,14 +353,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
             rightProject = (Project) correlateRight;
             correlateRight = rightProject.getInput(0);
         }
-        if (!(correlateRight instanceof Uncollect))
+        if (!(correlateRight instanceof Uncollect uncollect))
             throw new UnimplementedException(node);
-        Uncollect uncollect = (Uncollect) correlateRight;
         CalciteObject uncollectNode = CalciteObject.create(uncollect);
         RelNode uncollectInput = uncollect.getInput();
-        if (!(uncollectInput instanceof LogicalProject))
+        if (!(uncollectInput instanceof LogicalProject project))
             throw new UnimplementedException(node);
-        LogicalProject project = (LogicalProject) uncollectInput;
         if (project.getProjects().size() != 1)
             throw new UnimplementedException(node);
         RexNode projection = project.getProjects().get(0);
@@ -471,7 +469,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         // Map builds the array
         List<DBSPExpression> hopArguments = new ArrayList<>();
-        DBSPType timestampType = row.deref().field(timestampIndex).getType();
         hopArguments.add(row.deref().field(timestampIndex));
         hopArguments.add(interval);
         hopArguments.add(size);
@@ -487,7 +484,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         // Flatmap flattens the array
         DBSPVariablePath data = new DBSPVariablePath("data", mapBody.getType().ref());
-        DBSPVariablePath e = new DBSPVariablePath("e", timestampType);
+        // This is not the timestamp type, since e can never be null.
+        DBSPVariablePath e = new DBSPVariablePath("e", hopType);
         DBSPExpression collectionExpression = data.deref().field(nextIndex).borrow();
 
         List<DBSPStatement> statements = new ArrayList<>();
@@ -508,7 +506,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         nextIndex = inputRowType.size();
         resultFields[nextIndex++] = e;
         resultFields[nextIndex] = ExpressionCompiler.makeBinaryExpression(node,
-                timestampType, DBSPOpcode.ADD, e, size);
+                // not the timestampType, but the hopType
+                hopType, DBSPOpcode.ADD, e, size);
 
         DBSPExpression toTuple = new DBSPTupleExpression(resultFields).closure(e.asParameter());
         DBSPExpression makeTuple = new DBSPApplyMethodExpression(node,
@@ -1356,13 +1355,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * @return          -1 if the operands don't have the expected shape.  The limit value otherwise.
      */
     int limitValue(RexNode compared, int expectedIndex, RexNode limit, boolean eq) {
-        if (compared instanceof RexInputRef) {
-            RexInputRef ri = (RexInputRef) compared;
+        if (compared instanceof RexInputRef ri) {
             if (ri.getIndex() != expectedIndex)
                 return -1;
         }
-        if (limit instanceof RexLiteral) {
-            RexLiteral literal = (RexLiteral) limit;
+        if (limit instanceof RexLiteral literal) {
             SqlTypeName type = literal.getType().getSqlTypeName();
             if (SqlTypeName.INT_TYPES.contains(type)) {
                 Integer value = literal.getValueAs(Integer.class);
@@ -1839,10 +1836,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 // Aggregate functions seem always to be at the end.
                 // The window always seems to collect all fields.
                 int aggregationArgumentIndex = inputRowType.size();
-                if (operator instanceof SqlRankFunction) {
-                    SqlRankFunction rank = (SqlRankFunction) operator;
-                    if (parent instanceof LogicalFilter) {
-                        LogicalFilter filter = (LogicalFilter) parent;
+                if (operator instanceof SqlRankFunction rank) {
+                    if (parent instanceof LogicalFilter filter) {
                         RexNode condition = filter.getCondition();
                         if (condition instanceof RexCall) {
                             int limit = this.isLimit((RexCall) condition, aggregationArgumentIndex);
@@ -2149,9 +2144,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.modifyTableTranslation = new ModifyTableTranslation(
                 modify, def, targetColumnList, this.compiler);
         DBSPZSetLiteral result;
-        if (modify.rel instanceof LogicalTableScan) {
+        if (modify.rel instanceof LogicalTableScan scan) {
             // Support for INSERT INTO table (SELECT * FROM otherTable)
-            LogicalTableScan scan = (LogicalTableScan) modify.rel;
             List<String> name = scan.getTable().getQualifiedName();
             String sourceTable = name.get(name.size() - 1);
             result = this.tableContents.getTableContents(sourceTable);
@@ -2220,8 +2214,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType rowType = def.getRowTypeAsTuple(this.compiler.getTypeCompiler());
         DBSPTypeStruct originalRowType = def.getRowTypeAsStruct(this.compiler.getTypeCompiler());
         CalciteObject identifier = CalciteObject.EMPTY;
-        if (create.node instanceof SqlCreateTable) {
-            SqlCreateTable sct = (SqlCreateTable)create.node;
+        if (create.node instanceof SqlCreateTable sct) {
             identifier = CalciteObject.create(sct.name);
         }
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
