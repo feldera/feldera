@@ -173,6 +173,33 @@ void AttributeDef(List<SqlNode> list) :
     }
 }
 
+SqlNodeList KeyValueList() :
+{
+    final Span s;
+    final List<SqlNode> list = new ArrayList<SqlNode>();
+}
+{
+    <LPAREN> { s = span(); }
+    KeyValue(list)
+    (
+        <COMMA> KeyValue(list)
+    )*
+    <RPAREN> {
+        return new SqlNodeList(list, s.end(this));
+    }
+}
+
+void KeyValue(List<SqlNode> list) :
+{
+    final SqlNode key;
+    final SqlNode value;
+}
+{
+    key = StringLiteral() { list.add(key); }
+    <EQ>
+    value = StringLiteral() { list.add(value); }
+}
+
 /** REMOVE FROM TABLE */
 SqlNode RemoveStatement() :
 {
@@ -254,16 +281,16 @@ SqlCreate SqlCreateExtendedTable(Span s, boolean replace) :
 {
     final boolean ifNotExists;
     final SqlIdentifier id;
-    SqlNodeList tableElementList = null;
-    SqlNode query = null;
+    SqlNodeList tableElementList;
+    SqlNodeList connector = null;
 }
 {
     <TABLE> ifNotExists = IfNotExistsOpt() id = CompoundIdentifier()
-    [ tableElementList = ExtendedTableElementList() ]
-    [ <AS> query = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY) ]
+    tableElementList = ExtendedTableElementList()
+    [ <WITH> connector = KeyValueList() ]
     {
-        return SqlDdlNodes.createTable(s.end(this), replace, ifNotExists, id,
-            tableElementList, query);
+        return new SqlCreateTable(s.end(this), replace, ifNotExists, id,
+            tableElementList, connector);
     }
 }
 
@@ -273,13 +300,15 @@ SqlCreate SqlCreateView(Span s, boolean replace) :
     SqlNodeList columnList = null;
     final SqlNode query;
     boolean local = false;
+    SqlNodeList connector = null;
 }
 {
     [ <LOCAL> { local = true; } ]
     <VIEW> id = CompoundIdentifier()
     [ columnList = ParenthesizedSimpleIdentifierList() ]
+    [ <WITH> connector = KeyValueList() ]
     <AS> query = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY) {
-        return new SqlCreateLocalView(s.end(this), replace, local, id, columnList, query);
+        return new SqlCreateLocalView(s.end(this), replace, local, id, columnList, connector, query);
     }
 }
 

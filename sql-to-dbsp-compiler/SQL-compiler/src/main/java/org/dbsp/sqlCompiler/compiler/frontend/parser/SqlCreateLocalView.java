@@ -24,22 +24,25 @@ public class SqlCreateLocalView extends SqlCreate {
     public final boolean isLocal;
     public final @Nullable SqlNodeList columnList;
     public final SqlNode query;
+    @Nullable public final SqlNodeList connectorProperties;
 
     private static final SqlOperator OPERATOR =
             new SqlSpecialOperator("CREATE VIEW", SqlKind.CREATE_VIEW);
 
     public SqlCreateLocalView(SqlParserPos pos, boolean replace, boolean local, SqlIdentifier name,
-                        @Nullable SqlNodeList columnList, SqlNode query) {
+                              @Nullable SqlNodeList columnList, @Nullable SqlNodeList connectorProperties,
+                              SqlNode query) {
         super(OPERATOR, pos, replace, false);
         this.name = Objects.requireNonNull(name, "name");
         this.columnList = columnList; // may be null
         this.query = Objects.requireNonNull(query, "query");
         this.isLocal = local;
+        this.connectorProperties = connectorProperties;
     }
 
     @SuppressWarnings("nullness")
     @Override public List<SqlNode> getOperandList() {
-        return ImmutableNullableList.of(name, columnList, query);
+        return ImmutableNullableList.of(name, columnList, connectorProperties, query);
     }
 
     @Override public void unparse(SqlWriter writer, int leftPrec, int rightPrec) {
@@ -61,6 +64,7 @@ public class SqlCreateLocalView extends SqlCreate {
             }
             writer.endList(frame);
         }
+        SqlCreateTable.writeProperties(writer, this.connectorProperties);
         writer.keyword("AS");
         writer.newlineAndIndent();
         query.unparse(writer, 0, 0);

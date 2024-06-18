@@ -11,8 +11,10 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.util.Linq;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.apache.calcite.sql.type.SqlTypeName.NULL;
 
@@ -49,6 +51,12 @@ public class AvroSchemaWrapper implements IHasSchema {
         RelDataType rowType = this.convertRecord(this.schema);
         return Linq.map(rowType.getFieldList(), f -> new RelColumnMetadata(
                 CalciteObject.EMPTY, f, false, false, null, null, null));
+    }
+
+    @Nullable
+    @Override
+    public Map<String, String> getConnectorProperties() {
+        return null;
     }
 
     private RelDataType convertRecord(Schema recordSchema) {

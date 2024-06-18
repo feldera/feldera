@@ -25,6 +25,10 @@
 
 package org.dbsp.util;
 
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
@@ -50,9 +54,7 @@ import java.util.function.Function;
 public class Utilities {
     private Utilities() {}
 
-    /**
-     * Escape special characters in a string.
-     */
+    /** Escape special characters in a string. */
     public static String escape(String value) {
         StringBuilder builder = new StringBuilder();
         final int length = value.length();
@@ -89,9 +91,7 @@ public class Utilities {
         return result;
     }
 
-    /**
-     * Escape special characters in a string.
-     */
+    /** Escape special characters in a string. */
     public static String escapeDoubleQuotes(String value) {
         StringBuilder builder = new StringBuilder();
         final int length = value.length();
@@ -106,9 +106,7 @@ public class Utilities {
         return builder.toString();
     }
 
-    /**
-     * Detects if dot is installed.
-     */
+    /** Detects if the dot executable (from graphviz) is installed. */
     public static boolean isDotInstalled() {
         try {
             runProcess(".", "dot", "-V");
@@ -118,16 +116,20 @@ public class Utilities {
         }
     }
 
-    /**
-     * Add double quotes around string and escape symbols that need it.
-     */
+    public static ObjectMapper deterministicObjectMapper() {
+        return JsonMapper
+                .builder()
+                .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
+                .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                .build();
+    }
+
+    /** Add double quotes around string and escape symbols that need it. */
     public static String doubleQuote(String value) {
          return "\"" + escape(value) + "\"";
      }
 
-    /**
-     * Just adds single quotes around a string.  No escaping is performed.
-     */
+    /** Just adds single quotes around a string.  No escaping is performed. */
      public static String singleQuote(@Nullable String other) {
          return "'" + other + "'";
      }
@@ -183,9 +185,7 @@ public class Utilities {
         return result;
     }
 
-    /**
-     * True when a simple identifier is quoted.
-     */
+    /** True when a simple identifier is quoted. */
     public static boolean identifierIsQuoted(SqlIdentifier id) {
         // Heuristic: the name is quoted if it's shorter than the position would indicate.
         SqlParserPos parserPosition = id.getParserPosition();

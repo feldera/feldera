@@ -33,9 +33,16 @@ latenessStatement
 createTableStatement
   :   CREATE TABLE name
       '(' tableElement [, tableElement ]* ')'
+      [ 'WITH' keyValueList ]
 
 createTypeStatement
   :   CREATE TYPE name AS '(' typedef ')'
+
+keyValueList
+  : '(' keyValue ( ',' keyValue )* ')'
+
+keyValue
+  : stringLiteral '=' stringLiteral
 
 typedef
   : generalType
@@ -44,6 +51,7 @@ typedef
 createViewStatement
   :   CREATE [ LOCAL ] VIEW name
       [ '(' columnName [, columnName ]* ')' ]
+      [ 'WITH' keyValueList ]
       AS query
 
 tableElement
