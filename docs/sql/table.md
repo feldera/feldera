@@ -71,7 +71,7 @@ HOP(data, DESCRIPTOR(timecol), slide, size [, offset ])
 
 Indicates a hopping window for `timecol`, covering rows within the
 interval of `size`, shifting every `slide` and optionally aligned at
-`offset`.
+`offset`.  The type of the `timecol` has to be `TIMESTAMP`.
 
 Here is an example:
 
@@ -93,6 +93,7 @@ SELECT * FROM TABLE(
     SIZE => INTERVAL '5' MINUTE));
 ```
 
-applies hopping with 5-minute interval size on rows from table orders
-and shifting every 2 minutes. rowtime is the column of table orders
-that tells data completeness.
+applies hopping with 5-minute interval size on rows from table
+`orders` and shifting every 2 minutes.
+
+A `NULL` timestamp produces no rows in the result.

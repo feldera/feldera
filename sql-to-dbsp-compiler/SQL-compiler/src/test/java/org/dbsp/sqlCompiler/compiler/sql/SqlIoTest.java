@@ -200,17 +200,17 @@ public abstract class SqlIoTest extends BaseSQLTests {
      * @param query             Query to run.
      * @param messageFragment   This fragment should appear in the error message. */
     public void queryFailingInCompilation(String query, String messageFragment) {
-        this.statementFailingInCompilation("CREATE VIEW VV AS " + query, messageFragment);
+        this.statementsFailingInCompilation("CREATE VIEW VV AS " + query, messageFragment);
     }
 
-    /** Run a statement that is expected to fail in compilation.
-     * @param statement         Statement to compile.
+    /** Run one or more statements that are expected to fail in compilation.
+     * @param statements        Statements to compile.
      * @param messageFragment   This fragment should appear in the error message. */
-    public void statementFailingInCompilation(String statement, String messageFragment) {
+    public void statementsFailingInCompilation(String statements, String messageFragment) {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);
-        compiler.compileStatement(statement);
+        compiler.compileStatements(statements);
         compiler.optimize();
         Assert.assertTrue(compiler.messages.exitCode != 0);
         String message = compiler.messages.toString();

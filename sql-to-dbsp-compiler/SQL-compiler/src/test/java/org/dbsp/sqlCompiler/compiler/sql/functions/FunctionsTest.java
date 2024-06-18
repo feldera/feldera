@@ -22,7 +22,7 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testTypeError() {
-        this.statementFailingInCompilation("CREATE FUNCTION error(x INTEGER) RETURNS INTEGER AS ''",
+        this.statementsFailingInCompilation("CREATE FUNCTION error(x INTEGER) RETURNS INTEGER AS ''",
                 "should return");
     }
 
