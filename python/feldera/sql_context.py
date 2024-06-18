@@ -69,6 +69,7 @@ class SQLContext:
         # https://softwaremaniacs.org/blog/2020/02/05/dicts-ordered/en/
         self.views: Dict[str, str] = {}
         self.tables: Dict[str, SQLTable] = {}
+        self.types: Dict[str, str] = {}
 
         # TODO: to be used for schema inference
         self.todo_tables: Dict[str, Optional[SQLTable]] = {}
@@ -101,10 +102,11 @@ class SQLContext:
         """
         Internal function used to create the DDL from the registered tables and views.
         """
+        types = "\n".join([type for type in self.types.values()])
         tables = "\n".join([tbl.build_ddl() for tbl in self.tables.values()])
         views = "\n".join([view for view in self.views.values()])
 
-        self.ddl = tables + "\n" + views
+        self.ddl = types + "\n" + tables + "\n" + views
 
     def __setup_pipeline(self):
         """
@@ -311,6 +313,20 @@ class SQLContext:
             query += ';'
 
         self.views[name] = f"CREATE VIEW {name} AS {query}"
+
+    def register_type(self, name: str, spec: str):
+        """
+        Registers a SQL type.
+        Auto inserts the trailing semicolon if not present.
+
+        :param name: The name of the type.
+        :param spec: Type definition.
+        """
+
+        if spec[-1] != ';':
+            spec += ';'
+
+        self.types[name] = f"CREATE TYPE {name} AS {spec}"
 
     def listen(self, view_name: str) -> OutputHandler:
         """
