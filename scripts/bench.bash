@@ -34,7 +34,7 @@ cargo bench --bench nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${M
 # This test requires a running instance of redpanda and pipeline-manager.
 # The Earthfile should run those.
 # 100M events causes out of memory problems with SQL tests
-MAX_EVENTS=10000000
+MAX_EVENTS=100000000
 if [ "$SMOKE" != "" ]; then
   MAX_EVENTS=1000000
 fi
