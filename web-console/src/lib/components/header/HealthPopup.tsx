@@ -2,7 +2,7 @@ import { useSystemErrors } from '$lib/compositions/health/useSystemErrors'
 import { SystemError } from '$lib/services/pipelineManagerAggregateQuery'
 import PopupState, { bindHover, bindPopover } from 'material-ui-popup-state'
 import HoverPopover from 'material-ui-popup-state/HoverPopover'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { sendGithubReport } from 'src/lib/services/feedback'
 import JSONbig from 'true-json-bigint'
 
@@ -21,26 +21,15 @@ import {
   Tooltip,
   Typography
 } from '@mui/material'
+import Popover from '@mui/material/Popover'
 
-export function HealthPopup() {
+export function HealthHoverPopup() {
   const { systemErrors } = useSystemErrors()
   return (
     <PopupState variant='popover' popupId='demo-popup-popover'>
       {popupState => (
         <div>
-          {systemErrors.length ? (
-            <Badge badgeContent={systemErrors.length} color='error'>
-              <IconButton color='warning' {...bindHover(popupState)}>
-                <i className='bx bx-error' style={{ fontSize: 24 }} />
-              </IconButton>
-            </Badge>
-          ) : (
-            <Tooltip title='No errors detected in Feldera deployment' slotProps={{ tooltip: { sx: { fontSize: 14 } } }}>
-              <IconButton color='success'>
-                <i className='bx bx-check-circle' style={{ fontSize: 24 }} />
-              </IconButton>
-            </Tooltip>
-          )}
+          <HealthButton {...{ systemErrors, buttonProps: bindHover(popupState) }}></HealthButton>
           <HoverPopover
             {...bindPopover(popupState)}
             anchorOrigin={{
@@ -60,6 +49,43 @@ export function HealthPopup() {
     </PopupState>
   )
 }
+
+export function HealthClickPopup() {
+  const { systemErrors } = useSystemErrors()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLButtonElement>(undefined!)
+  return (
+    <>
+      <HealthButton {...{ systemErrors, buttonProps: { onClick: () => setOpen(!open), ref } }}></HealthButton>
+      <Popover
+        open={open}
+        anchorEl={ref.current}
+        onClose={() => setOpen(false)}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'left'
+        }}
+      >
+        <HealthMenu systemErrors={systemErrors}></HealthMenu>
+      </Popover>
+    </>
+  )
+}
+
+const HealthButton = (props: { systemErrors: SystemError[]; buttonProps: IconButtonProps }) =>
+  props.systemErrors.length ? (
+    <Badge badgeContent={props.systemErrors.length} color='error'>
+      <IconButton color='warning' {...props.buttonProps}>
+        <i className='bx bx-error' style={{ fontSize: 24 }} />
+      </IconButton>
+    </Badge>
+  ) : (
+    <Tooltip title='No errors detected in Feldera deployment' slotProps={{ tooltip: { sx: { fontSize: 14 } } }}>
+      <IconButton color='success'>
+        <i className='bx bx-check-circle' style={{ fontSize: 24 }} />
+      </IconButton>
+    </Tooltip>
+  )
 
 export function HealthMenu({ systemErrors }: { systemErrors: SystemError[] }) {
   const { copy } = useClipboard()
