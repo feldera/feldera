@@ -308,12 +308,18 @@ class SQLContext:
         This is useful for modularizing the SQL code, by declaring intermediate views
         that are used in the implementation of other views.
 
+        Marking a view as local results in it not being materialized, potentially yielding performance benefit
+        over regular views at the cost of not being able to observe it (e.g., attach connectors to it).
+        This is particularly handy for intermediate views that are used in the implementation of other views,
+        a practice that benefits modularization of the SQL code.
+
         Auto inserts the trailing semicolon if not present.
 
         :param name: The name of the view.
         :param query: The query to be used to create the view.
         """
 
+        query = query.strip()
         if query[-1] != ';':
             query += ';'
 
