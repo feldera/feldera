@@ -268,11 +268,8 @@ window aggregate.  The grammar for window aggregates is:
 windowedAggregateCall
   : agg '(' [ ALL | DISTINCT ] value [, value ]* ')'
       [ RESPECT NULLS | IGNORE NULLS ]
-      [ WITHIN GROUP '(' ORDER BY orderItem [, orderItem ]* ')' ]
-      [ FILTER '(' WHERE condition ')' ]
       OVER windowSpec
   | agg '(' '*' ')'
-      [ FILTER  '(' WHERE condition ')' ]
       OVER windowSpec
 
 windowSpec
