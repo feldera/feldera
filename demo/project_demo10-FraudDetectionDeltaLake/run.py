@@ -278,7 +278,7 @@ def build_program(client, pipeline_name):
           window_30_day AS (PARTITION BY t.cc_num ORDER BY unix_time RANGE BETWEEN 2592000 PRECEDING AND CURRENT ROW);
       """
 
-    sql.register_view("FEATURE", query)
+    sql.register_output_view("FEATURE", query)
     return sql
 
 # Split input dataframe into train and test sets

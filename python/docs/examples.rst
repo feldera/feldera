@@ -45,7 +45,7 @@ to to call :meth:`.SQLContext.listen` before you call
     # here, we provide a query, that gets registered as a view in feldera
     # this query will be executed on the data in the table
     query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-    sql.register_view(view_name, query)
+    sql.register_output_view(view_name, query)
 
     # connect the source (a pandas Dataframe in this case) to the tables
     sql.connect_source_pandas(TBL_NAMES[0], df_students)
@@ -129,7 +129,7 @@ More on Kafka as the output connector at: https://www.feldera.com/docs/connector
 
     sql = SQLContext('kafka', 'http://localhost:8080').get_or_create()
     sql.register_table(TABLE_NAME, SQLSchema({"id": "INT NOT NULL PRIMARY KEY"}))
-    sql.register_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
+    sql.register_output_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
 
     source_config = {
         "topics": ["example_topic"],
@@ -183,7 +183,7 @@ More on the HTTP GET connector at: https://www.feldera.com/docs/connectors/sourc
 
     sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
 
-    sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+    sql.register_output_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
 
     path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
 
