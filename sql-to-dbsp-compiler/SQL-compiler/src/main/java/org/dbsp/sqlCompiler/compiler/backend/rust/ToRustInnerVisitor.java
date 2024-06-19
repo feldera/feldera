@@ -83,6 +83,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIndexedZSetLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
@@ -118,6 +119,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
@@ -390,6 +392,28 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append(", ");
         }
         this.builder.decrease().append(")");
+        if (literal.mayBeNull())
+            this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPMapLiteral literal) {
+        if (literal.isNull)
+            return this.doNull(literal);
+        if (literal.mayBeNull())
+            this.builder.append("Some(");
+        this.builder.append("BTreeMap::from([")
+                .increase();
+        assert literal.values != null;
+        for (int i = 0; i < Objects.requireNonNull(literal.keys).size(); i++) {
+            this.builder.append("(");
+            literal.keys.get(i).accept(this);
+            this.builder.append(", ");
+            literal.values.get(i).accept(this);
+            this.builder.append("), ");
+        }
+        this.builder.decrease().append("])");
         if (literal.mayBeNull())
             this.builder.append(")");
         return VisitDecision.STOP;
@@ -724,20 +748,39 @@ public class ToRustInnerVisitor extends InnerVisitor {
             expression.right.accept(this);
             this.builder.append("]");
             return VisitDecision.STOP;
-        } else if(expression.operation == DBSPOpcode.SQL_INDEX) {
-            DBSPTypeVec vec = expression.left.getType().to(DBSPTypeVec.class);
-            this.builder.append("index")
-                    .append("_")
-                    .append(expression.left.getType().nullableSuffix())
-                    .append("_")
-                    .append(vec.getElementType().nullableSuffix())
-                    .append("_")
-                    .append(expression.right.getType().nullableSuffix())
-                    .append("(");
-            expression.left.accept(this);
-            this.builder.append(", ");
-            expression.right.accept(this);
-            this.builder.append(" - 1)");
+        } else if (expression.operation == DBSPOpcode.SQL_INDEX) {
+            DBSPType collectionType = expression.left.getType();
+            if (collectionType.is(DBSPTypeVec.class)) {
+                DBSPTypeVec vec = collectionType.to(DBSPTypeVec.class);
+                this.builder.append("index")
+                        .append("_")
+                        .append(expression.left.getType().nullableSuffix())
+                        .append("_")
+                        .append(vec.getElementType().nullableSuffix())
+                        .append("_")
+                        .append(expression.right.getType().nullableSuffix())
+                        .append("(");
+                expression.left.accept(this);
+                this.builder.append(", ");
+                expression.right.accept(this);
+                this.builder.append(" - 1)");
+            } else if (collectionType.is(DBSPTypeMap.class)) {
+                DBSPTypeMap vec = collectionType.to(DBSPTypeMap.class);
+                this.builder.append("map_index")
+                        .append("_")
+                        .append(expression.left.getType().nullableSuffix())
+                        .append("_")
+                        .append(vec.getKeyType().nullableSuffix())
+                        .append("_")
+                        .append(expression.right.getType().nullableSuffix())
+                        .append("(");
+                expression.left.accept(this);
+                this.builder.append(", ");
+                expression.right.accept(this);
+                this.builder.append(")");
+            } else {
+                throw new UnsupportedException(expression.getNode());
+            }
             return VisitDecision.STOP;
         } else if (expression.operation == DBSPOpcode.DIV_NULL) {
             this.builder.append("div_null")

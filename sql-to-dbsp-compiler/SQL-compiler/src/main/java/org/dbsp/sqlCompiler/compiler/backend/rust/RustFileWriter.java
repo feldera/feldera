@@ -132,6 +132,7 @@ public class RustFileWriter {
                     use ::serde::{Deserialize,Serialize};
                     use compare::{Compare, Extract};
                     use std::{
+                        collections::BTreeMap,
                         convert::identity,
                         ops::Neg,
                         fmt::{Debug, Formatter, Result as FmtResult},

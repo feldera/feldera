@@ -24,8 +24,8 @@ const sidebars = {
         id: 'get-started'
       },
       items: [
-	'docker',
-	'sandbox',
+        'docker',
+        'sandbox',
       ]
     },
     {
@@ -95,15 +95,15 @@ const sidebars = {
               label: "Python SDK",
               href: "pathname:///python/index.html",
             },
-            'api/rest', 
-	    {
-	      type: 'category',
-	      label: 'Connectors',
-	      link: {
-		type: 'doc',
-		id: 'connectors/index'
-	      },
-	      items: [
+            'api/rest',
+            {
+              type: 'category',
+              label: 'Connectors',
+              link: {
+                type: 'doc',
+                id: 'connectors/index'
+              },
+              items: [
               {
                   type: 'category',
                   label: 'Input',
@@ -126,7 +126,7 @@ const sidebars = {
                           type: 'doc',
                           id: 'connectors/sources/delta',
                           label: 'Delta Lake'
-                      },                      
+                      },
                       {
                           type: 'doc',
                           id: 'connectors/sources/kafka',
@@ -169,17 +169,17 @@ const sidebars = {
                       }
                   ]
               }
-	      ]
-	    },
+              ]
+            },
             {
               type: 'category',
-	      label: 'Formats',
-	      items: [
-		'api/json', 
-		'api/parquet', 
+              label: 'Formats',
+              items: [
+                'api/json',
+                'api/parquet',
                 'api/csv',
-	      ],
-	    },
+              ],
+            },
             {
               type: 'category',
               label: 'SQL Reference',
@@ -199,6 +199,7 @@ const sidebars = {
                 'sql/string',
                 'sql/binary',
                 'sql/array',
+                'sql/map',
                 'sql/datetime',
                 'sql/streaming',
                 'sql/udf'

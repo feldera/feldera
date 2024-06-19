@@ -48,6 +48,7 @@ public enum DBSPTypeCode {
     STREAM(null, "", ""),
     USER(null, "", ""),
     VEC("ARRAY", "", ""),
+    MAP("MAP", "", "BTreeMap"),
     ZSET("MULTISET", "", "");
 
     @Nullable

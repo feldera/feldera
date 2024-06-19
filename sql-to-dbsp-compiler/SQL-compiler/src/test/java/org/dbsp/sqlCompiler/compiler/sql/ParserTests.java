@@ -158,6 +158,17 @@ public class ParserTests {
     }
 
     @Test
+    public void mapTypeTest() throws SqlParseException {
+        CalciteCompiler calcite = this.getCompiler();
+        String ddl = """
+                CREATE TABLE T (
+                   data     MAP<INT, INT>
+                );""";
+        SqlNode node = calcite.parseStatements(ddl);
+        Assert.assertNotNull(node);
+    }
+
+    @Test
     public void latenessTest() throws SqlParseException {
         CalciteCompiler calcite = this.getCompiler();
         String ddl = """

@@ -65,7 +65,7 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
         if (data != null) {
             for (DBSPExpression e : data) {
                 if (!e.getType().sameType(data.get(0).getType()))
-                    throw new InternalCompilerError("Not all values of set have the same type:" +
+                    throw new InternalCompilerError("Not all values of vector have the same type:" +
                             e.getType() + " vs " + data.get(0).getType(), this);
                 this.add(e);
             }
@@ -78,7 +78,7 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
         this.data = new ArrayList<>();
         for (DBSPExpression e: data) {
             if (!e.getType().sameType(data[0].getType()))
-                throw new InternalCompilerError("Not all values of set have the same type:" +
+                throw new InternalCompilerError("Not all values of vector have the same type:" +
                         e.getType() + " vs " + data[0].getType(), this);
             this.add(e);
         }
