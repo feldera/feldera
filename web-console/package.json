@@ -118,6 +118,7 @@
     "react-svg-spinners": "^0.3.1",
     "reactflow": "^11.11.3",
     "sort-on": "^6.0.0",
+    "svelte-attr": "^0.0.2",
     "tiny-invariant": "^1.3.3",
     "true-json-bigint": "^1.0.1",
     "ts-pattern": "^5.1.1",

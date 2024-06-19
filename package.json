@@ -1,0 +1,8 @@
+{
+  "dependencies": {},
+  "devDependencies": {
+    "@skeletonlabs/skeleton": "^2.10.0",
+    "@skeletonlabs/tw-plugin": "^0.4.0",
+    "@sveltejs/adapter-static": "^3.0.2"
+  }
+}

@@ -1,0 +1,11 @@
+@import '@fontsource-variable/public-sans';
+@import url('boxicons/css/boxicons.min.css');
+@import url('@fortawesome/fontawesome-free/css/brands.min.css');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.preset-grayout-surface {
+  @apply text-surface-600 hover:text-surface-950 dark:text-surface-400 hover:dark:text-surface-50;
+}
