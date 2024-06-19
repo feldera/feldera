@@ -16,8 +16,11 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.List;
+import java.util.Map;
 
 /** An interface implemented by objects which have a name and a schema */
 public interface IHasSchema extends IHasCalciteObject {
@@ -27,6 +30,9 @@ public interface IHasSchema extends IHasCalciteObject {
     boolean nameIsQuoted();
     /** The list of columns of this object */
     List<RelColumnMetadata> getColumns();
+    /** Properties describing the connector attached to this object */
+    @Nullable
+    Map<String, String> getConnectorProperties();
 
     /** Return the index of the specified column. */
     default int getColumnIndex(SqlIdentifier id) {
@@ -39,7 +45,7 @@ public interface IHasSchema extends IHasCalciteObject {
     }
 
     default JsonNode asJson() {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ObjectNode result = mapper.createObjectNode();
         result.put("name", this.getName());
         result.put("case_sensitive", this.nameIsQuoted());
@@ -67,6 +73,14 @@ public interface IHasSchema extends IHasCalciteObject {
         }
         if (hasKey)
             result.set("primary_key", keyFields);
+        Map<String, String> props = this.getConnectorProperties();
+        if (props != null) {
+            ObjectNode properties = mapper.createObjectNode();
+            for (Map.Entry<String, String> entry: props.entrySet()) {
+                properties.put(entry.getKey(), entry.getValue());
+            }
+            result.set("connector", properties);
+        }
         return result;
     }
 

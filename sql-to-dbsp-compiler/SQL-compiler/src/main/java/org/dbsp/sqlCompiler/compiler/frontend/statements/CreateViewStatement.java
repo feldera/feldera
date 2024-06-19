@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /** The representation of a CREATE VIEW AS ... DDL statement. */
@@ -43,8 +44,9 @@ public class CreateViewStatement extends CreateRelationStatement {
     public CreateViewStatement(SqlCreateLocalView node, String statement, String tableName,
                                boolean nameIsQuoted, @Nullable String comment,
                                List<RelColumnMetadata> columns, SqlNode query,
-                               RelRoot compiled) {
-        super(node, statement, tableName, nameIsQuoted, comment, columns);
+                               RelRoot compiled,
+                               @Nullable Map<String, String> connectorProperties) {
+        super(node, statement, tableName, nameIsQuoted, comment, columns, connectorProperties);
         this.local = node.isLocal;
         this.query = query;
         this.compiled = compiled;

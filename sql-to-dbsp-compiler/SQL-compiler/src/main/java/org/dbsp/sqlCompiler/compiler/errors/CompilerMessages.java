@@ -8,6 +8,7 @@ import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IHasSourcePositionRange;
+import org.dbsp.util.Utilities;
 
 import java.io.PrintStream;
 import java.util.ArrayList;
@@ -185,7 +186,7 @@ public class CompilerMessages {
     }
 
     public JsonNode toJson(SourceFileContents contents) {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ArrayNode result = mapper.createArrayNode();
         for (Error message: this.messages) {
             JsonNode node = message.toJson(contents, mapper);

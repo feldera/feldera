@@ -30,20 +30,26 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.Map;
 
 /** Base class for CreateTableStatement and CreateViewStatement. */
-public abstract class CreateRelationStatement extends FrontEndStatement implements IHasSchema {
+public abstract class CreateRelationStatement
+        extends FrontEndStatement
+        implements IHasSchema {
     public final String relationName;
     public final boolean nameIsQuoted;
     public final List<RelColumnMetadata> columns;
+    @Nullable final Map<String, String> connectorProperties;
 
     protected CreateRelationStatement(SqlNode node, String statement, String relationName,
                                       boolean nameIsQuoted, @Nullable String comment,
-                                      List<RelColumnMetadata> columns) {
+                                      List<RelColumnMetadata> columns,
+                                      @Nullable Map<String, String> connectorProperties) {
         super(node, statement, comment);
         this.nameIsQuoted = nameIsQuoted;
         this.relationName = relationName;
         this.columns = columns;
+        this.connectorProperties = connectorProperties;
     }
 
     public AbstractTable getEmulatedTable() {
@@ -57,6 +63,8 @@ public abstract class CreateRelationStatement extends FrontEndStatement implemen
     public List<RelColumnMetadata> getColumns() {
         return this.columns;
     }
+
+    @Nullable public Map<String, String> getConnectorProperties() { return this.connectorProperties; }
 
     @Override
     public String toString() {

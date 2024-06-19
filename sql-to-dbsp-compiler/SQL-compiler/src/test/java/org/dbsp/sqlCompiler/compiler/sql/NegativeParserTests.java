@@ -12,9 +12,7 @@ import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
 
-/**
- * Parser tests that are expected to fail.
- */
+/** Parser tests that are expected to fail. */
 public class NegativeParserTests extends BaseSQLTests {
     @Override
     public CompilerOptions testOptions(boolean incremental, boolean optimize) {
@@ -44,6 +42,32 @@ public class NegativeParserTests extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
         TestUtil.assertMessagesContain(compiler.messages, "Duplicate declaration");
+    }
+
+    @Test
+    public void testConnectorProperties() {
+        String ddl = "CREATE TABLE T(T INT) WITH ( 5 )";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatement(ddl);
+        TestUtil.assertMessagesContain(compiler.messages, "Error parsing SQL: Encountered \"5\" at");
+
+        // properties need to be SQL strings
+        ddl = "CREATE TABLE T(T INT) WITH ( a = b )";
+        compiler = this.testCompiler();
+        compiler.compileStatement(ddl);
+        TestUtil.assertMessagesContain(compiler.messages, "Error parsing SQL: Encountered \"a\" at");
+
+        // properties need to be SQL strings
+        ddl = "CREATE TABLE T(T INT) WITH ( NULL = 'NULL' )";
+        compiler = this.testCompiler();
+        compiler.compileStatement(ddl);
+        TestUtil.assertMessagesContain(compiler.messages, "Error parsing SQL: Encountered \"NULL\" at");
+
+        // properties cannot be an empty list
+        ddl = "CREATE TABLE T(T INT) WITH ( )";
+        compiler = this.testCompiler();
+        compiler.compileStatement(ddl);
+        TestUtil.assertMessagesContain(compiler.messages, "Error parsing SQL: Encountered \")\" at");
     }
 
     @Test

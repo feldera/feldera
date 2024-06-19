@@ -28,13 +28,15 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.Map;
 
 /** Describes a table as produced by a CREATE TABLE DDL statement. */
 public class CreateTableStatement extends CreateRelationStatement {
     public CreateTableStatement(SqlNode node, String statement,
                                 String tableName, boolean nameIsQuoted,
                                 @Nullable String comment,
-                                List<RelColumnMetadata> columns) {
-        super(node, statement, tableName, nameIsQuoted, comment, columns);
+                                List<RelColumnMetadata> columns,
+                                @Nullable Map<String, String> connectorProperties) {
+        super(node, statement, tableName, nameIsQuoted, comment, columns, connectorProperties);
     }
 }

@@ -20,7 +20,7 @@ public class ProgramMetadata {
     }
 
     public ObjectNode asJson() {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ArrayNode inputs = mapper.createArrayNode();
         for (IHasSchema input: this.inputTables.values())
             inputs.add(input.asJson());
