@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- [avro] Allow serializing non-nullable SQL columns into nullable Avro columns
+  ([#1892](https://github.com/feldera/feldera/pull/1892))
 - [SQL] Support for specifying connector properties in SQL
   ([#1896](https://github.com/feldera/feldera/pull/1896))
 - [SQL] Support for ARRAY_AGG aggregation function.

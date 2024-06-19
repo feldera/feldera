@@ -142,13 +142,15 @@ impl serde::ser::Error for AvroSerializerError {
 
 pub struct StructSerializer<'a> {
     schema: &'a RecordSchema,
+    optional: OptionalField,
     fields: Vec<(String, AvroValue)>,
 }
 
 impl<'a> StructSerializer<'a> {
-    pub fn new(schema: &'a RecordSchema) -> Self {
+    fn new(schema: &'a RecordSchema, optional: OptionalField) -> Self {
         Self {
             schema,
+            optional,
             fields: Vec::with_capacity(schema.fields.len()),
         }
     }
@@ -175,20 +177,28 @@ impl<'a> SerializeStruct for StructSerializer<'a> {
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AvroValue::Record(self.fields))
+        match self.optional {
+            OptionalField::NonOptional => Ok(AvroValue::Record(self.fields)),
+            OptionalField::Optional(i) => Ok(AvroValue::Union(
+                i,
+                Box::new(AvroValue::Record(self.fields)),
+            )),
+        }
     }
 }
 
 pub struct SeqSerializer<'a> {
     schema: &'a AvroSchema,
     items: Vec<AvroValue>,
+    optional: OptionalField,
 }
 
 impl<'a> SeqSerializer<'a> {
-    fn new(schema: &'a AvroSchema, len: Option<usize>) -> Self {
+    fn new(schema: &'a AvroSchema, len: Option<usize>, optional: OptionalField) -> Self {
         Self {
             schema,
             items: Vec::with_capacity(len.unwrap_or(0)),
+            optional,
         }
     }
 }
@@ -207,20 +217,27 @@ impl<'a> SerializeSeq for SeqSerializer<'a> {
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AvroValue::Array(self.items))
+        match self.optional {
+            OptionalField::NonOptional => Ok(AvroValue::Array(self.items)),
+            OptionalField::Optional(i) => {
+                Ok(AvroValue::Union(i, Box::new(AvroValue::Array(self.items))))
+            }
+        }
     }
 }
 
 pub struct MapSerializer<'a> {
     schema: &'a AvroSchema,
+    optional: OptionalField,
     key: String,
     map: HashMap<String, AvroValue>,
 }
 
 impl<'a> MapSerializer<'a> {
-    fn new(schema: &'a AvroSchema, len: Option<usize>) -> Self {
+    fn new(schema: &'a AvroSchema, len: Option<usize>, optional: OptionalField) -> Self {
         Self {
             schema,
+            optional,
             key: String::new(),
             map: HashMap::with_capacity(len.unwrap_or_default()),
         }
@@ -259,7 +276,12 @@ impl<'a> SerializeMap for MapSerializer<'a> {
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AvroValue::Map(self.map))
+        match self.optional {
+            OptionalField::NonOptional => Ok(AvroValue::Map(self.map)),
+            OptionalField::Optional(i) => {
+                Ok(AvroValue::Union(i, Box::new(AvroValue::Map(self.map))))
+            }
+        }
     }
 }
 
@@ -339,6 +361,36 @@ impl SerializeStructVariant for StructVariantSerializer {
     }
 }
 
+enum OptionalField {
+    NonOptional,
+    Optional(u32),
+}
+
+fn serialize_maybe_optional<F>(schema: &AvroSchema, f: F) -> Result<AvroValue, AvroSerializerError>
+where
+    F: Fn(&AvroSchema) -> Result<AvroValue, AvroSerializerError>,
+{
+    match schema {
+        AvroSchema::Union(union_schema) => match union_schema.variants() {
+            [AvroSchema::Null, s] => Ok(AvroValue::Union(1, Box::new(f(s)?))),
+            [s, AvroSchema::Null] => Ok(AvroValue::Union(0, Box::new(f(s)?))),
+            _ => f(schema),
+        },
+        _ => f(schema),
+    }
+}
+
+fn schema_unwrap_optional(schema: &AvroSchema) -> (&AvroSchema, OptionalField) {
+    match schema {
+        AvroSchema::Union(union_schema) => match union_schema.variants() {
+            [AvroSchema::Null, s] => (s, OptionalField::Optional(1)),
+            [s, AvroSchema::Null] => (s, OptionalField::Optional(0)),
+            _ => (schema, OptionalField::NonOptional),
+        },
+        _ => (schema, OptionalField::NonOptional),
+    }
+}
+
 /// Serializer that encodes data into Avro [`Value`](apache_avro::types::Value)s
 /// that match a schema.  This value can then be serialized into a binary representation.
 ///
@@ -379,61 +431,61 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
     type SerializeStructVariant = StructVariantSerializer;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
-        Ok(AvroValue::Boolean(v))
+        serialize_maybe_optional(self.schema, |_| Ok(AvroValue::Boolean(v)))
     }
 
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
-        Ok(AvroValue::Int(v as i32))
+        serialize_maybe_optional(self.schema, |_| Ok(AvroValue::Int(v as i32)))
     }
 
     fn serialize_i16(self, v: i16) -> Result<Self::Ok, Self::Error> {
-        Ok(AvroValue::Int(v as i32))
+        serialize_maybe_optional(self.schema, |_| Ok(AvroValue::Int(v as i32)))
     }
 
     fn serialize_i32(self, v: i32) -> Result<Self::Ok, Self::Error> {
-        match self.schema {
+        serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::Date => Ok(AvroValue::Date(v)),
             _ => Ok(AvroValue::Int(v)),
-        }
+        })
     }
 
     fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
-        match self.schema {
+        serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::TimestampMicros => Ok(AvroValue::TimestampMicros(v)),
             AvroSchema::TimestampMillis => Ok(AvroValue::TimestampMillis(v / 1000)),
             _ => Ok(AvroValue::Long(v)),
-        }
+        })
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
-        Ok(AvroValue::Int(v as i32))
+        serialize_maybe_optional(self.schema, |_| Ok(AvroValue::Int(v as i32)))
     }
 
     fn serialize_u16(self, v: u16) -> Result<Self::Ok, Self::Error> {
-        Ok(AvroValue::Int(v as i32))
+        serialize_maybe_optional(self.schema, |_| Ok(AvroValue::Int(v as i32)))
     }
 
     fn serialize_u32(self, v: u32) -> Result<Self::Ok, Self::Error> {
-        match self.schema {
+        serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::Long => Ok(AvroValue::Long(v as i64)),
             AvroSchema::Int if v <= i32::MAX as u32 => Ok(AvroValue::Int(v as i32)),
-            AvroSchema::Int => Err(AvroSerializerError::out_of_bounds(&v, "u32", self.schema)),
-            _ => Err(AvroSerializerError::incompatible("u32", self.schema)),
-        }
+            AvroSchema::Int => Err(AvroSerializerError::out_of_bounds(&v, "u32", schema)),
+            _ => Err(AvroSerializerError::incompatible("u32", schema)),
+        })
     }
 
     fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
-        match self.schema {
+        serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::Long if v < i64::MAX as u64 => Ok(AvroValue::Long(v as i64)),
-            AvroSchema::Long => Err(AvroSerializerError::out_of_bounds(&v, "u64", self.schema)),
+            AvroSchema::Long => Err(AvroSerializerError::out_of_bounds(&v, "u64", schema)),
             AvroSchema::TimeMicros => Ok(AvroValue::TimeMicros(v as i64)),
             AvroSchema::TimeMillis => Ok(AvroValue::TimeMillis((v / 1000) as i32)),
-            _ => Err(AvroSerializerError::incompatible("u64", self.schema)),
-        }
+            _ => Err(AvroSerializerError::incompatible("u64", schema)),
+        })
     }
 
     fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
-        match self.schema {
+        serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::Decimal(decimal_schema) => {
                 let mut decimal = RustDecimal::deserialize(v.to_be_bytes());
                 decimal.rescale(decimal_schema.scale as u32);
@@ -448,38 +500,40 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
                     decimal.mantissa().to_be_bytes(),
                 )))
             }
-            _ => Err(AvroSerializerError::incompatible("u128", self.schema)),
-        }
+            _ => Err(AvroSerializerError::incompatible("u128", schema)),
+        })
     }
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
-        match self.schema {
+        serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::Float => Ok(AvroValue::Float(v)),
             AvroSchema::Double => Ok(AvroValue::Double(v as f64)),
-            _ => Err(AvroSerializerError::incompatible("f32", self.schema)),
-        }
+            _ => Err(AvroSerializerError::incompatible("f32", schema)),
+        })
     }
 
     fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
-        match self.schema {
+        serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::Double => Ok(AvroValue::Double(v)),
-            _ => Err(AvroSerializerError::incompatible("f64", self.schema)),
-        }
+            _ => Err(AvroSerializerError::incompatible("f64", schema)),
+        })
     }
 
     fn serialize_char(self, v: char) -> Result<Self::Ok, Self::Error> {
-        self.serialize_str(&once(v).collect::<String>())
+        serialize_maybe_optional(self.schema, |_| {
+            Ok(AvroValue::String(once(v).collect::<String>()))
+        })
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        Ok(AvroValue::String(v.to_owned()))
+        serialize_maybe_optional(self.schema, |_| Ok(AvroValue::String(v.to_owned())))
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        match self.schema {
+        serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::Bytes => Ok(AvroValue::Bytes(v.to_vec())),
-            _ => Err(AvroSerializerError::incompatible("byte array", self.schema)),
-        }
+            _ => Err(AvroSerializerError::incompatible("byte array", schema)),
+        })
     }
 
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
@@ -516,11 +570,11 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
     }
 
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AvroValue::Null)
+        serialize_maybe_optional(self.schema, |_| Ok(AvroValue::Null))
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
-        Ok(AvroValue::Null)
+        serialize_maybe_optional(self.schema, |_| Ok(AvroValue::Null))
     }
 
     fn serialize_unit_variant(
@@ -529,15 +583,15 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         variant_index: u32,
         variant: &'static str,
     ) -> Result<Self::Ok, Self::Error> {
-        match self.schema {
+        serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::Enum(_enum_schema) => {
                 Ok(AvroValue::Enum(variant_index, variant.to_string()))
             }
             _ => Err(AvroSerializerError::incompatible(
                 &format!("enum variant '{variant}'"),
-                self.schema,
+                schema,
             )),
-        }
+        })
     }
 
     fn serialize_newtype_struct<T>(
@@ -565,8 +619,8 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        match self.schema {
-            AvroSchema::Array(schema) => Ok(SeqSerializer::new(schema, len)),
+        match schema_unwrap_optional(self.schema) {
+            (AvroSchema::Array(schema), location) => Ok(SeqSerializer::new(schema, len, location)),
             _ => Err(AvroSerializerError::incompatible("sequence", self.schema)),
         }
     }
@@ -596,8 +650,8 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
-        match self.schema {
-            AvroSchema::Map(schema) => Ok(MapSerializer::new(schema, len)),
+        match schema_unwrap_optional(self.schema) {
+            (AvroSchema::Map(schema), optional) => Ok(MapSerializer::new(schema, len, optional)),
             _ => Err(AvroSerializerError::incompatible("map", self.schema)),
         }
     }
@@ -607,15 +661,17 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         name: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
-        match self.schema {
-            AvroSchema::Record(record_schema) if record_schema.fields.len() == len => {
-                Ok(StructSerializer::new(record_schema))
+        match schema_unwrap_optional(self.schema) {
+            (AvroSchema::Record(record_schema), optional) if record_schema.fields.len() == len => {
+                Ok(StructSerializer::new(record_schema, optional))
             }
-            AvroSchema::Record(record_schema) => Err(AvroSerializerError::wrong_number_of_fields(
-                &format!("struct {name}"),
-                record_schema.fields.len(),
-                len,
-            )),
+            (AvroSchema::Record(record_schema), _) => {
+                Err(AvroSerializerError::wrong_number_of_fields(
+                    &format!("struct {name}"),
+                    record_schema.fields.len(),
+                    len,
+                ))
+            }
             _ => Err(AvroSerializerError::incompatible(
                 &format!("struct {name}"),
                 self.schema,
@@ -705,6 +761,19 @@ mod test {
     { "name": "dec3", "type": {"type": "bytes", "logicalType": "decimal", "precision": 6, "scale": 3} }
   ]
 }"#;
+
+    // Serializer should be able to serialize non-nullable fields into nullable schema.
+    const SCHEMA_NUMERIC_OPTIONAL: &'static str = r#"{
+    "type": "record",
+    "name": "Numeric",
+    "fields": [
+      { "name": "float32", "type": ["float", "null"] },
+      { "name": "float64", "type": ["double", "null"] },
+      { "name": "dec1", "type": ["null", {"type": "bytes", "logicalType": "decimal", "precision": 4, "scale": 2}] },
+      { "name": "dec2", "type": ["null", {"type": "bytes", "logicalType": "decimal", "precision": 8, "scale": 0}] },
+      { "name": "dec3", "type": ["null", {"type": "bytes", "logicalType": "decimal", "precision": 6, "scale": 3}] }
+    ]
+  }"#;
 
     macro_rules! serializer_test {
         ($schema: expr, $record: ident, $avro: ident) => {
@@ -810,9 +879,52 @@ mod test {
             ),
         ]);
 
+        let avro_numeric_1_optional: AvroValue = AvroValue::Record(vec![
+            (
+                "float32".to_string(),
+                AvroValue::Union(0, Box::new(AvroValue::Float(123.45))),
+            ),
+            (
+                "float64".to_string(),
+                AvroValue::Union(0, Box::new(AvroValue::Double(12345E-5))),
+            ),
+            (
+                "dec1".to_string(),
+                AvroValue::Union(
+                    1,
+                    Box::new(AvroValue::Decimal(Decimal::from(
+                        &BigInt::from(1234).to_signed_bytes_be(),
+                    ))),
+                ),
+            ),
+            (
+                "dec2".to_string(),
+                AvroValue::Union(
+                    1,
+                    Box::new(AvroValue::Decimal(Decimal::from(
+                        &BigInt::from(1235).to_signed_bytes_be(),
+                    ))),
+                ),
+            ),
+            (
+                "dec3".to_string(),
+                AvroValue::Union(
+                    1,
+                    Box::new(AvroValue::Decimal(Decimal::from(
+                        &BigInt::from(123123).to_signed_bytes_be(),
+                    ))),
+                ),
+            ),
+        ]);
+
         serializer_test!(SCHEMA1, record1_1, avro1_1);
         serializer_test!(SCHEMA1, record1_2, avro1_2);
         serializer_test!(TestStruct2::avro_schema(), record2_1, avro2_1);
         serializer_test!(SCHEMA_NUMERIC, record_numeric_1, avro_numeric_1);
+        serializer_test!(
+            SCHEMA_NUMERIC_OPTIONAL,
+            record_numeric_1,
+            avro_numeric_1_optional
+        );
     }
 }
