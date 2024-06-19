@@ -6,7 +6,7 @@ use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
 
 use crate::{
     for_all_compare, for_all_int_compare, for_all_int_operator, for_all_numeric_compare,
-    some_existing_operator, some_operator,
+    for_all_numeric_operator, some_existing_operator, some_operator,
 };
 
 use rust_decimal::Decimal;
@@ -301,3 +301,23 @@ where
     let right = right?;
     div_null__(left, right)
 }
+
+#[inline(always)]
+fn max<T>(left: T, right: T) -> T
+where
+    T: Ord,
+{
+    left.max(right)
+}
+
+for_all_numeric_operator!(max);
+
+#[inline(always)]
+fn min<T>(left: T, right: T) -> T
+where
+    T: Ord,
+{
+    left.min(right)
+}
+
+for_all_numeric_operator!(min);
