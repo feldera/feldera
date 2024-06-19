@@ -394,35 +394,33 @@ def main():
                 if processed > last_processed:
                     before, after = ('\r', '') if os.isatty(1) else ('', '\n')
                     sys.stdout.write(f"{before}Pipeline {pipeline_name} processed {processed} records in {elapsed:.1f} seconds{after}")
-                    if elapsed - last_metrics > metricsinterval:
-                        last_metrics = elapsed
-                        metrics_list = [pipeline_name, elapsed, global_metrics["rss_bytes"], global_metrics["buffered_input_records"], global_metrics["total_input_records"], global_metrics["total_processed_records"]]
-                        disk_index = len(metrics_list)
-                        for i in range(11):
-                            metrics_list += [""]
-                        for s in stats["metrics"]:
-                            if s["key"] == "disk.total_files_created":
-                                metrics_list[disk_index] = s["value"]["Counter"]
-                            elif s["key"] == "disk.total_bytes_written":
-                                metrics_list[disk_index + 1] = s["value"]["Counter"]
-                            elif s["key"] == "disk.total_writes_success":
-                                metrics_list[disk_index + 2] = s["value"]["Counter"]
-                            elif s["key"] == "disk.buffer_cache_hit":
-                                metrics_list[disk_index + 3] = s["value"]["Counter"]
-                            elif s["key"] == "disk.write_latency" and s["value"]["Histogram"] is not None:
-                                print(str(s))
-                                metrics_list[disk_index + 4] = s["value"]["Histogram"]["count"]
-                                metrics_list[disk_index + 5] = s["value"]["Histogram"]["first"]
-                                metrics_list[disk_index + 6] = s["value"]["Histogram"]["middle"]
-                                metrics_list[disk_index + 7] = s["value"]["Histogram"]["last"]
-                                metrics_list[disk_index + 8] = s["value"]["Histogram"]["minimum"]
-                                metrics_list[disk_index + 9] = s["value"]["Histogram"]["maximum"]
-                                metrics_list[disk_index + 10] = s["value"]["Histogram"]["mean"]
-                        pipeline_metrics += [metrics_list]
-                    last_processed = processed
+                last_metrics = elapsed
+                metrics_list = [pipeline_name, elapsed, global_metrics["rss_bytes"], global_metrics["buffered_input_records"], global_metrics["total_input_records"], global_metrics["total_processed_records"]]
+                disk_index = len(metrics_list)
+                for i in range(11):
+                    metrics_list += [""]
+                for s in stats["metrics"]:
+                    if s["key"] == "disk.total_files_created":
+                        metrics_list[disk_index] = s["value"]["Counter"]
+                    elif s["key"] == "disk.total_bytes_written":
+                        metrics_list[disk_index + 1] = s["value"]["Counter"]
+                    elif s["key"] == "disk.total_writes_success":
+                        metrics_list[disk_index + 2] = s["value"]["Counter"]
+                    elif s["key"] == "disk.buffer_cache_hit":
+                        metrics_list[disk_index + 3] = s["value"]["Counter"]
+                    elif s["key"] == "disk.write_latency" and s["value"]["Histogram"] is not None:
+                        metrics_list[disk_index + 4] = s["value"]["Histogram"]["count"]
+                        metrics_list[disk_index + 5] = s["value"]["Histogram"]["first"]
+                        metrics_list[disk_index + 6] = s["value"]["Histogram"]["middle"]
+                        metrics_list[disk_index + 7] = s["value"]["Histogram"]["last"]
+                        metrics_list[disk_index + 8] = s["value"]["Histogram"]["minimum"]
+                        metrics_list[disk_index + 9] = s["value"]["Histogram"]["maximum"]
+                        metrics_list[disk_index + 10] = s["value"]["Histogram"]["mean"]
+                pipeline_metrics += [metrics_list]
+                last_processed = processed
                 if stats["global_metrics"]["pipeline_complete"]:
                     break
-            time.sleep(.1)
+            time.sleep(metricsinterval)
         if os.isatty(1):
             print()
         elapsed = "{:.1f}".format(time.time() - start)
