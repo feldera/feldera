@@ -102,11 +102,11 @@ class SQLContext:
         """
         Internal function used to create the DDL from the registered tables and views.
         """
-        types = "\n".join([type for type in self.types.values()])
-        tables = "\n".join([tbl.build_ddl() for tbl in self.tables.values()])
-        views = "\n".join([view for view in self.views.values()])
+        types = "\n\n".join([type for type in self.types.values()])
+        tables = "\n\n".join([tbl.build_ddl() for tbl in self.tables.values()])
+        views = "\n\n".join([view for view in self.views.values()])
 
-        self.ddl = types + "\n" + tables + "\n" + views
+        self.ddl = types + "\n\n" + tables + "\n\n" + views
 
     def __setup_pipeline(self):
         """
@@ -264,6 +264,7 @@ class SQLContext:
         :param ddl: The SQL DDL of the table.
         """
 
+        ddl = ddl.strip()
         if ddl[-1] != ';':
             ddl += ';'
 
@@ -309,6 +310,7 @@ class SQLContext:
         :param query: The query to be used to create the view.
         """
 
+        query = query.strip()
         if query[-1] != ';':
             query += ';'
 
@@ -323,6 +325,7 @@ class SQLContext:
         :param spec: Type definition.
         """
 
+        spec = spec.strip()
         if spec[-1] != ';':
             spec += ';'
 
