@@ -1,53 +1,9 @@
-import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
-import { nonNull } from '$lib/functions/common/function'
 import { discreteDerivative } from '$lib/functions/common/math'
 import { tuple } from '$lib/functions/common/tuple'
-import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
-import {
-  ControllerStatus,
-  GlobalMetrics,
-  GlobalMetricsTimestamp,
-  InputEndpointMetrics,
-  OutputEndpointMetrics,
-  PipelineStatus
-} from '$lib/types/pipeline'
-import { useState } from 'react'
-import invariant from 'tiny-invariant'
+import { pipelineManagerAggregateQuery } from '$lib/services/pipelineManagerAggregateQuery'
+import { GlobalMetrics, PipelineStatus } from '$lib/types/pipeline'
 
 import { useQuery } from '@tanstack/react-query'
-
-const emptyData = {
-  input: new Map<string, InputEndpointMetrics>(),
-  output: new Map<string, OutputEndpointMetrics>(),
-  global: [] as GlobalMetricsTimestamp[]
-}
-
-type PipelineMetrics = typeof emptyData
-
-/**
- * Accumulate metrics history, accounting for the desired time window, dropping the previous data if the new data overwrites it
- * @param keepMs Time window of metrics age to be kept
- */
-const reconcileHistoricData = (
-  oldData: GlobalMetricsTimestamp[],
-  newData: GlobalMetricsTimestamp,
-  refetchMs: number,
-  keepMs?: number
-) => {
-  const sliceAt = (() => {
-    if (!nonNull(keepMs)) {
-      return -oldData.length
-    }
-    const isOverwritingTimestamp = !!oldData.find(m => m.timeMs >= newData.timeMs)
-    if (isOverwritingTimestamp) {
-      // clear metrics history if we get a timestamp that overwrites existing data point
-      return oldData.length
-    }
-    // return one more element than needed to satisfy keepMs when applying discreteDerivative() to result data series
-    return -Math.ceil(keepMs / refetchMs)
-  })()
-  return [...oldData.slice(sliceAt), newData]
-}
 
 export function usePipelineMetrics(props: {
   pipelineName: string
@@ -55,43 +11,13 @@ export function usePipelineMetrics(props: {
   refetchMs: number
   keepMs?: number
 }) {
-  const pipelineManagerQuery = usePipelineManagerQuery()
-  const [lastTimestamp, setLastTimestamp] = useState<number>()
   const pipelineStatsQuery = useQuery({
-    ...pipelineManagerQuery.pipelineStats(props.pipelineName),
+    ...pipelineManagerAggregateQuery.pipelineMetrics(props.pipelineName, props.refetchMs, props.keepMs),
     enabled: props.status === PipelineStatus.RUNNING,
-    refetchInterval: props.refetchMs,
     refetchIntervalInBackground: true,
-    refetchOnWindowFocus: false,
-    structuralSharing: (oldData: any, newData: any) => {
-      invariant(((v: any): v is PipelineMetrics | undefined => true)(oldData))
-      invariant(((v: any): v is ControllerStatus | null => true)(newData))
-      if (!newData) {
-        setLastTimestamp(undefined)
-        return emptyData
-      }
-      const now = Date.now()
-      if (!lastTimestamp) {
-        setLastTimestamp(now)
-      }
-      const globalWithTimestamp = { ...newData.global_metrics, timeMs: lastTimestamp ? now - lastTimestamp : 0 }
-
-      return {
-        input: new Map(
-          newData.inputs.map(cs => tuple(normalizeCaseIndependentName({ name: cs.config.stream }), cs.metrics))
-        ),
-        output: new Map(
-          newData.outputs.map(cs => tuple(normalizeCaseIndependentName({ name: cs.config.stream }), cs.metrics))
-        ),
-        global: reconcileHistoricData(oldData?.global ?? [], globalWithTimestamp, props.refetchMs, props.keepMs)
-      } as any
-    }
+    refetchOnWindowFocus: false
   })
-
-  if (!pipelineStatsQuery.data) {
-    return emptyData
-  }
-  return pipelineStatsQuery.data as unknown as PipelineMetrics
+  return pipelineStatsQuery.data
 }
 
 export const calcPipelineThroughput = (metrics: { global: (GlobalMetrics & { timeMs: number })[] }) => {

@@ -1,6 +1,13 @@
 import { assertUnion } from '$lib/functions/common/array'
 import { compose } from '$lib/functions/common/function'
-import { getQueryData, invalidateQuery, mkQuery, mkQueryKey, setQueryData } from '$lib/functions/common/tanstack'
+import {
+  getQueryData,
+  invalidateQuery,
+  mkQuery,
+  mkQueryKey,
+  setQueriesData,
+  setQueryData
+} from '$lib/functions/common/tanstack'
 import { getCaseIndependentName } from '$lib/functions/felderaRelation'
 import { JSONXgressValue } from '$lib/functions/sqlValue'
 import {
@@ -127,7 +134,10 @@ const PipelineManagerApi = {
   ),
   pipelineConfig: PipelinesService.getPipelineConfig,
   pipelineStats: (pipelineName: string) =>
-    PipelinesService.pipelineStats(pipelineName) as unknown as CancelablePromise<ControllerStatus>,
+    PipelinesService.pipelineStats(pipelineName).then(status => ({
+      pipelineName,
+      status: status as ControllerStatus | null
+    })),
   pipelineLastRevision: PipelinesService.pipelineDeployed,
   pipelineValidate: PipelinesService.pipelineValidate,
   connectors: () => ConnectorsService.listConnectors(),
@@ -299,8 +309,12 @@ export const mutationShutdownPipeline = (queryClient: QueryClient) =>
     onSettled: (_data, _error, pipelineName) => {
       invalidatePipeline(queryClient, pipelineName)
     },
-    onSuccess: (_data, variables, _context) => {
-      setQueryData(queryClient, PipelineManagerQueryKey.pipelineStats(variables), null)
+    onSuccess: (_data, pipelineName, _context) => {
+      setQueryData(queryClient, PipelineManagerQueryKey.pipelineStats(pipelineName), {
+        pipelineName,
+        status: null
+      })
+      setQueriesData(queryClient, { queryKey: ['pipelineMetrics', pipelineName] }, { pipelineName, status: null })
     },
     onError: (_error, pipelineName) => {
       pipelineStatusQueryCacheUpdate(queryClient, pipelineName, 'current_status', PipelineStatus.PAUSED)
