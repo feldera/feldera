@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
+import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
@@ -29,6 +30,28 @@ public class RegresssionTests extends SqlIoTest {
                          ON example_a.id = example_b.id
                 );""";
         this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue1898() {
+        String sql = """
+                create table t(
+                    id bigint,
+                    part bigint
+                );
+                
+                create view v as
+                SELECT
+                    id,
+                    COUNT(DISTINCT id) FILTER (WHERE id > 100) OVER window_100 AS agg
+                FROM
+                    t
+                WINDOW
+                    window_100 AS (PARTITION BY part ORDER BY id RANGE BETWEEN 100 PRECEDING AND CURRENT ROW);""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.compileStatements(sql);
+        TestUtil.assertMessagesContain(compiler.messages, "OVER must be applied to aggregate function");
     }
 
     @Test
