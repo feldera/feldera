@@ -82,7 +82,7 @@ Key Concepts
 
          # Register Views based on your queries
          query = f"SELECT * FROM {tbl_name}"
-         sql.register_view(view_name, query)
+         sql.register_output_view(view_name, query)
 
          # name for this connector
          in_con = "delta_input_conn"

@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API: Demos are supplied by specifying a local directory rather than URLs,
   and the demos endpoint returns the demos directly.
   ([#1890](https://github.com/feldera/feldera/pull/1890))
+- [Python] Support for `register_local_view` and rename`register_view`
+  to `register_output_view` ([#1884](https://github.com/feldera/feldera/pull/1884))
 
 ## [0.18.0] - 2024-06-11
 
