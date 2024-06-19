@@ -20,6 +20,7 @@ export function httpOutputOptions(
   mode?: EgressMode | null,
   quantiles?: number | null,
   array?: boolean | null,
+  backpressure?: boolean | null,
   requestBody?: NeighborhoodQuery | null
 ) {
   return {
@@ -34,7 +35,8 @@ export function httpOutputOptions(
       query: query,
       mode: mode,
       quantiles: quantiles,
-      array: array
+      array: array,
+      backpressure: backpressure
     },
     body: requestBody,
     mediaType: 'application/json',

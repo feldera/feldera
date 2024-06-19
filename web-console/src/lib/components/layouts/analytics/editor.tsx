@@ -163,7 +163,12 @@ const useCreateProgramEffect = (
     if (!program.name || program.program_id) {
       return
     }
-    return createProgram({ ...program, config: undefined, code: program.code ?? '' })
+    return createProgram({
+      name: program.name,
+      description: program.description ?? '',
+      config: undefined,
+      code: program.code ?? ''
+    })
   }, SAVE_DELAY)
   useEffect(() => createProgramDebounced(), [program, createProgramDebounced])
 }

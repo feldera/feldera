@@ -127,6 +127,7 @@ const useInspectionTable = ({ pipeline, caseIndependentName }: InspectionTablePr
         EgressMode.WATCH,
         undefined,
         undefined,
+        undefined,
         neighborhood
       ],
       setRows,

@@ -12,6 +12,7 @@ export type NumberInputProps = {
   value?: number | null
   allowInvalidRange?: boolean
   optional?: boolean
+  multiplier?: number
 }
 
 /**
@@ -31,10 +32,13 @@ export const NumberInput = (props: TextFieldProps & NumberInputProps) => {
       if (/^-?\d+\.$/.test(text)) {
         return 'invalid'
       }
-      const value = Number(text)
-      if (Number.isNaN(value)) {
-        throw new Error()
-      }
+      const value = (() => {
+        const value = Number(text)
+        if (Number.isNaN(value)) {
+          throw new Error()
+        }
+        return value * (props.multiplier || 1)
+      })()
       if ((nonNull(props.min) && props.min > value) || (nonNull(props.max) && props.max < value)) {
         if (props.allowInvalidRange) {
           props.onChange?.({ target: { value } } as any)
@@ -44,7 +48,7 @@ export const NumberInput = (props: TextFieldProps & NumberInputProps) => {
       return { valid: value }
     },
     valueToText: (valid?: number | null) => {
-      return valid === null ? null : valid?.toString() ?? ''
+      return valid === null ? null : nonNull(valid) ? (valid / (props.multiplier || 1)).toString() : ''
     }
   }
   const valueObj = 'value' in props ? ({ value: props.value } as { value?: number | null }) : {}
