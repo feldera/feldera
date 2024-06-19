@@ -2136,16 +2136,17 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<RelDataTypeField> relFields = stat.relDataType.getFieldList();
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
         for (SqlNode def : Objects.requireNonNull(ct.attributeDefs)) {
-            DBSPType fieldType;
+            DBSPType fieldType = null;
             final SqlAttributeDefinition attributeDef =
                     (SqlAttributeDefinition) def;
             final SqlDataTypeSpec typeSpec = attributeDef.dataType;
             if (typeSpec.getTypeNameSpec() instanceof SqlUserDefinedTypeNameSpec) {
-                // Reference to another struct
+                // Assume it is a reference to another struct
                 SqlIdentifier identifier = typeSpec.getTypeNameSpec().getTypeName();
                 String referred = identifier.getSimple();
                 fieldType = this.compiler.getStructByName(referred);
-            } else {
+            }
+            if (fieldType == null) {
                 RelDataTypeField ft = relFields.get(index);
                 fieldType = this.convertType(ft.getType(), true);
             }

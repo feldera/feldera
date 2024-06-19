@@ -159,6 +159,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.globalTypes.register(type);
     }
 
+    @Nullable
     public DBSPTypeStruct getStructByName(String name) {
         return this.globalTypes.getStructByName(name);
     }
