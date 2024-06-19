@@ -9,6 +9,7 @@ pub mod compiler;
 pub mod config;
 pub mod db;
 pub mod db_notifier;
+pub mod demo;
 pub mod local_runner;
 pub mod logging;
 pub mod metrics;

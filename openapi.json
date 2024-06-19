@@ -264,18 +264,28 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "Get the list of demo URLs.",
+        "summary": "Get the list of demos.",
         "operationId": "get_demos",
         "responses": {
           "200": {
-            "description": "URLs to JSON objects that describe a set of demos",
+            "description": "List of demos.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/components/schemas/Demo"
                   }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Failed to read demos from the demos directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -3615,6 +3625,34 @@
         "additionalProperties": {
           "type": "string",
           "description": "Storage options for configuring backend object store.\n\nFor specific options available for different storage backends, see:\n* [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)\n* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)\n* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)"
+        }
+      },
+      "Demo": {
+        "type": "object",
+        "required": [
+          "title",
+          "description",
+          "prefix",
+          "steps"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Description of the demo."
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Demo prefix prepended to each of the entities."
+          },
+          "steps": {
+            "type": "array",
+            "items": {},
+            "description": "The steps which define the entities to create."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the demo."
+          }
         }
       },
       "EgressMode": {

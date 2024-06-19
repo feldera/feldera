@@ -1,7 +1,9 @@
 /// Configuration API to retrieve the current authentication configuration
+use crate::demo::{read_demos_from_directory, Demo};
 use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
 use log::debug;
 use serde::Serialize;
+use std::path::Path;
 use utoipa::ToSchema;
 
 use super::{ManagerError, ServerState};
@@ -34,14 +36,17 @@ async fn get_authentication_config(
     Ok(HttpResponse::Ok().json(&auth_config.provider))
 }
 
-/// Get the list of demo URLs.
+/// Get the list of demos.
 #[utoipa::path(
     path="/config/demos",
     responses(
         (status = OK
-            , description = "URLs to JSON objects that describe a set of demos"
+            , description = "List of demos."
             , content_type = "application/json"
-            , body = Vec<String>),
+            , body = Vec<Demo>),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Failed to read demos from the demos directory."
+            , body = ErrorResponse),
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -49,7 +54,12 @@ async fn get_authentication_config(
 )]
 #[get("/config/demos")]
 async fn get_demos(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
-    Ok(HttpResponse::Ok().json(&state._config.demos))
+    match &state._config.demos_dir {
+        None => Ok(HttpResponse::Ok().json(Vec::<Demo>::new())),
+        Some(demos_dir) => {
+            Ok(HttpResponse::Ok().json(read_demos_from_directory(Path::new(&demos_dir))?))
+        }
+    }
 }
 
 #[derive(Serialize, ToSchema)]

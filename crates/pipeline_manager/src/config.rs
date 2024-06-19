@@ -172,12 +172,13 @@ pub struct ApiServerConfig {
     #[arg(long)]
     pub dev_mode: bool,
 
-    /// Used for supplying clients like the UI with demos. Administrators
-    /// can use this option to set up environment-specific demos for users
-    /// (e.g., ones that connect to an internal data source).
+    /// Local directory in which demos are stored for supplying clients like the UI with
+    /// a set of demos to present to the user. Administrators can use this option to set
+    /// up environment-specific demos for users (e.g., ones that connect to an internal
+    /// data source).
     #[serde(default)]
-    #[arg(long, value_name = "HTTPS_URL")]
-    pub demos: Vec<String>,
+    #[arg(long)]
+    pub demos_dir: Option<String>,
 }
 
 impl ApiServerConfig {

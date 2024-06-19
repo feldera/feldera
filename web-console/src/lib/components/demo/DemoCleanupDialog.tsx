@@ -45,7 +45,7 @@ const DemoCleanupFormContent = ({
   }, [prefix, setProgress])
   const { refetch, ...cleanupScope } = useQuery({
     queryKey: ['demo/cleanup'],
-    queryFn: () => runDemoCleanup({ prefix: prefix, steps: props.demo.setup.steps })
+    queryFn: () => runDemoCleanup({ steps: props.demo.steps, prefix })
   })
   useEffect(() => {
     refetch()
@@ -73,7 +73,7 @@ const DemoCleanupFormContent = ({
       cleanupScope.data.related.programs.length
   return (
     <Box sx={{ width: 550 }}>
-      <DialogTitle>Clean up after {props.demo.name} demo</DialogTitle>
+      <DialogTitle>Clean up after {props.demo.title} demo</DialogTitle>
       <DialogContent>
         <DialogContentText>Every item with this prefix will be removed.</DialogContentText>
       </DialogContent>
@@ -162,12 +162,12 @@ const DemoCleanupFormContent = ({
   )
 }
 
-const DemoCleanupForm = (props: { demo: { name: string; setup: DemoSetup }; onClose: () => void }) => {
+const DemoCleanupForm = (props: { demo: DemoSetup; onClose: () => void }) => {
   const [progress, setProgress] = useState<DemoSetupProgress>()
   return (
     <FormContainer
       defaultValues={{
-        prefix: props.demo.setup.prefix
+        prefix: props.demo.prefix
       }}
       resolver={demoFormResolver}
     >
@@ -176,7 +176,7 @@ const DemoCleanupForm = (props: { demo: { name: string; setup: DemoSetup }; onCl
   )
 }
 
-export const DemoCleanupDialog = (props: { demo?: { name: string; setup: DemoSetup }; onClose: () => void }) => {
+export const DemoCleanupDialog = (props: { demo?: DemoSetup; onClose: () => void }) => {
   return (
     <Dialog
       open={!!props.demo}

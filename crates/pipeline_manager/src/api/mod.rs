@@ -65,6 +65,7 @@ use crate::runner::RunnerApi;
 use pipeline_types::config as pipeline_types_config;
 
 use crate::auth::TenantId;
+use crate::demo::Demo;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -277,7 +278,8 @@ request is rejected."
         compiler::ProgramConfig,
         config::CompilationProfile,
         pipeline_types_config::OutputBufferConfig,
-        pipeline_types_config::OutputEndpointConfig
+        pipeline_types_config::OutputEndpointConfig,
+        Demo,
     ),),
     tags(
         (name = "Manager", description = "Configure system behavior"),
