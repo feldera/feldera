@@ -5,8 +5,9 @@ import { GridItems } from '$lib/components/common/GridItems'
 import { DemoCleanupDialog } from '$lib/components/demo/DemoCleanupDialog'
 import { DemoSetupDialog } from '$lib/components/demo/DemoSetupDialog'
 import { usePipelineManagerQuery } from '$lib/compositions/usePipelineManagerQuery'
+import { Demo } from '$lib/services/manager'
 import { useRouter } from 'next/navigation'
-import { Suspense, use } from 'react'
+import { Suspense } from 'react'
 import { useHashPart } from 'src/lib/compositions/useHashPart'
 import { DemoSetup } from 'src/lib/types/demo'
 import { match } from 'ts-pattern'
@@ -45,7 +46,7 @@ const _fetchStaticDemoSetup = (demo: { import: string }) =>
 
 const fetchDemoSetup = (demo: { url: string }) => fetch(demo.url).then(r => r.json()) as Promise<DemoSetup>
 
-const fetchDemoByTitle = async (
+const _fetchDemoByTitle = async (
   demos: {
     url: string
     title: any
@@ -59,16 +60,16 @@ const fetchDemoByTitle = async (
   }
   const setup = await fetchDemoSetup(demo)
   return {
-    name: title,
+    title,
     setup
   }
 }
 
 const DemoActionDialogs = (props: {
   demos: {
-    url: string
-    title: any
-    description: any
+    body: Demo
+    title: string
+    description: string
   }[]
 }) => {
   const [hash, setWantedDemoAction] = useHashPart()
@@ -79,7 +80,7 @@ const DemoActionDialogs = (props: {
   if (!demoTitle || !action) {
     return <></>
   }
-  const demo = use(fetchDemoByTitle(props.demos, demoTitle))
+  const demo = props.demos.find(demo => demo.title === demoTitle)?.body
   return match(action)
     .with('setup', () => <DemoSetupDialog demo={demo} onClose={() => setWantedDemoAction('')}></DemoSetupDialog>)
     .with('cleanup', () => <DemoCleanupDialog demo={demo} onClose={() => setWantedDemoAction('')}></DemoCleanupDialog>)

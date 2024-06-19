@@ -18,6 +18,7 @@
 //! by individual pipelines have the same format.
 
 use crate::db::DBError;
+use crate::demo::DemoError;
 use crate::runner::RunnerError;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
@@ -58,6 +59,10 @@ pub enum ManagerError {
     DBError {
         #[serde(flatten)]
         db_error: DBError,
+    },
+    DemoError {
+        #[serde(flatten)]
+        demo_error: DemoError,
     },
     RunnerError {
         #[serde(flatten)]
@@ -166,6 +171,9 @@ impl Display for ManagerError {
                 write!(f, "Invalid pipeline action '{action}'; valid actions are: 'deploy', 'start', 'pause', or 'shutdown'")
             }
             Self::DBError { db_error } => db_error.fmt(f),
+            Self::DemoError { demo_error } => {
+                write!(f, "Demo configuration error: '{demo_error}'")
+            }
             Self::RunnerError { runner_error } => runner_error.fmt(f),
             Self::IoError {
                 context, io_error, ..
@@ -193,6 +201,7 @@ impl ResponseError for ManagerError {
             Self::InvalidNameParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidPipelineAction { .. } => StatusCode::BAD_REQUEST,
             Self::DBError { db_error } => db_error.status_code(),
+            Self::DemoError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerError { runner_error } => runner_error.status_code(),
             Self::IoError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidProgramSchema { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -216,6 +225,7 @@ impl DetailedError for ManagerError {
             Self::InvalidNameParam { .. } => Cow::from("InvalidNameParam"),
             Self::InvalidPipelineAction { .. } => Cow::from("InvalidPipelineAction"),
             Self::DBError { db_error } => db_error.error_code(),
+            Self::DemoError { .. } => Cow::from("DemoError"),
             Self::RunnerError { runner_error } => runner_error.error_code(),
             Self::IoError { .. } => Cow::from("ManagerIoError"),
             Self::InvalidProgramSchema { .. } => Cow::from("InvalidProgramSchema"),

@@ -17,6 +17,8 @@ import type {
 } from '$lib/services/manager'
 
 export type DemoSetup = {
+  title: string
+  description: string
   prefix: string
   steps: {
     name: string

@@ -149,12 +149,11 @@ const PipelineManagerApi = {
   getDemos: () =>
     ConfigurationService.getDemos().then(demos =>
       Promise.all(
-        demos.map(async url => {
-          const demoBody = await fetch(url).then(r => r.json())
+        demos.map(async body => {
           return {
-            url,
-            title: demoBody.title,
-            description: demoBody.description
+            body,
+            title: body.title,
+            description: body.description
           }
         })
       )

@@ -9,7 +9,7 @@ import {
 } from '$lib/services/manager'
 import { match } from 'ts-pattern'
 
-const relatedEntities = async ({ prefix, steps }: DemoSetup) => {
+const relatedEntities = async ({ prefix, steps }: Pick<DemoSetup, 'prefix' | 'steps'>) => {
   const partOfTheDemo = (target: Pipeline | ProgramDescr | ConnectorDescr) =>
     (name => !!steps.find(step => step.entities.find(entity => prefix + entity.name === name)))(
       'name' in target ? target.name : target.descriptor.name
@@ -28,7 +28,7 @@ const relatedEntities = async ({ prefix, steps }: DemoSetup) => {
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
-export const runDemoSetup = async ({ prefix, steps }: DemoSetup) => {
+export const runDemoSetup = async ({ prefix, steps }: Pick<DemoSetup, 'prefix' | 'steps'>) => {
   const { related } = await relatedEntities({ prefix, steps })
   return {
     entities: steps.flatMap(step =>
@@ -99,7 +99,7 @@ const cleanupDescription = {
   connectors: 'Cleaning up connectors'
 }
 
-export const runDemoCleanup = async ({ prefix, steps }: DemoSetup) => {
+export const runDemoCleanup = async ({ prefix, steps }: Pick<DemoSetup, 'prefix' | 'steps'>) => {
   const { related } = await relatedEntities({ prefix, steps })
   return {
     related,

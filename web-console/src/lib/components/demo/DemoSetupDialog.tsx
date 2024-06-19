@@ -49,7 +49,7 @@ const DemoSetupFormContent = ({
   }, [prefix, setProgress])
   const { refetch, ...setupScope } = useQuery({
     queryKey: ['demo/setup'],
-    queryFn: () => runDemoSetup({ prefix: prefix, steps: props.demo.setup.steps })
+    queryFn: () => runDemoSetup({ steps: props.demo.steps, prefix })
   })
   useEffect(() => {
     refetch()
@@ -72,7 +72,7 @@ const DemoSetupFormContent = ({
   const handleSubmit = useFormContext().handleSubmit(runOperation)
   const resultEntities = {
     pipeline: (() => {
-      const e = props.demo.setup.steps[0]?.entities.find(e => e.type === 'pipeline')
+      const e = props.demo.steps[0]?.entities.find(e => e.type === 'pipeline')
       if (!e) {
         return e
       }
@@ -83,7 +83,7 @@ const DemoSetupFormContent = ({
       }
     })(),
     program: (() => {
-      const e = props.demo.setup.steps[0]?.entities.find(e => e.type === 'program')
+      const e = props.demo.steps[0]?.entities.find(e => e.type === 'program')
       if (!e) {
         return e
       }
@@ -97,7 +97,7 @@ const DemoSetupFormContent = ({
   const hasConflict = (setupScope.data?.entities ?? []).some(e => e.exists)
   return (
     <Box sx={{ width: 550 }}>
-      <DialogTitle>Setup {props.demo.name} demo Pipeline</DialogTitle>
+      <DialogTitle>Setup {props.demo.title} demo Pipeline</DialogTitle>
       <DialogContent>
         <DialogContentText>This prefix will be added to the name of every item in the demo.</DialogContentText>
       </DialogContent>
@@ -214,12 +214,12 @@ const DemoSetupFormContent = ({
   )
 }
 
-const DemoSetupForm = (props: { demo: { name: string; setup: DemoSetup }; onClose: () => void }) => {
+const DemoSetupForm = (props: { demo: DemoSetup; onClose: () => void }) => {
   const [progress, setProgress] = useState<DemoSetupProgress>()
   return (
     <FormContainer
       defaultValues={{
-        prefix: props.demo.setup.prefix
+        prefix: props.demo.prefix
       }}
       resolver={demoFormResolver}
     >
@@ -228,7 +228,7 @@ const DemoSetupForm = (props: { demo: { name: string; setup: DemoSetup }; onClos
   )
 }
 
-export const DemoSetupDialog = (props: { demo?: { name: string; setup: DemoSetup }; onClose: () => void }) => {
+export const DemoSetupDialog = (props: { demo?: DemoSetup; onClose: () => void }) => {
   return (
     <Dialog
       open={!!props.demo}

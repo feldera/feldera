@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1855](https://github.com/feldera/feldera/pull/1855))
 - API: Support skipping the serialization of schema ID in Avro format.
   ([#1871](https://github.com/feldera/feldera/pull/1871))
+- API: Demos are supplied by specifying a local directory rather than URLs,
+  and the demos endpoint returns the demos directly.
+  ([#1890](https://github.com/feldera/feldera/pull/1890))
 
 ## [0.18.0] - 2024-06-11
 
