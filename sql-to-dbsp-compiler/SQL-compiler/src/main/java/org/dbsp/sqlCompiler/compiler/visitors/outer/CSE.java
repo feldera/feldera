@@ -105,7 +105,8 @@ public class CSE extends Repeat {
                 super.replace(operator);
                 return;
             }
-            this.map(operator, replacement, false);
+            DBSPOperator newReplacement = this.mapped(replacement);
+            this.map(operator, newReplacement, false);
         }
     }
 }
