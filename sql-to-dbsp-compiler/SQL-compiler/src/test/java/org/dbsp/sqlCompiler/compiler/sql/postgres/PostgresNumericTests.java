@@ -516,9 +516,7 @@ public class PostgresNumericTests extends SqlIoTest {
     public void testTwoViews(String intermediate, String last) {
         DBSPCompiler compiler = new DBSPCompiler(this.getOptions(true));
         this.prepareInputs(compiler);
-        compiler.generateOutputForNextView(false);
         compiler.compileStatement(intermediate);
-        compiler.generateOutputForNextView(true);
         compiler.compileStatement(last);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         InputOutputChange change = new InputOutputChange(
@@ -535,7 +533,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testAdd() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id as ID2, "  +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT t1.id AS ID1, t2.id as ID2, "  +
                 "CAST(t1.val + t2.val AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = """
@@ -548,7 +546,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testRoundAdd() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(round(t1.val + t2.val, 10) AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = """
@@ -561,7 +559,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testSubtraction() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(t1.val - t2.val AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = """
@@ -574,7 +572,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testRoundSubtraction() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(ROUND(t1.val - t2.val, 40) AS NUMERIC(" + WIDTH + ",10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = """
@@ -587,7 +585,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testMultiply() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(t1.val * t2.val AS NUMERIC(" + WIDTH + ",10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = """
@@ -600,7 +598,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testRoundMultiply() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(round(t1.val * t2.val, 30) AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2";
         String last = """
@@ -613,7 +611,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testDivision() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(t1.val / t2.val AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2\n" +
                 "    WHERE t2.val != 0";
@@ -627,7 +625,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testDivisionRound() {
-        String intermediate = "CREATE VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(round(t1.val / t2.val, 10) AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +
                 "    FROM num_data t1, num_data t2\n" +
                 "    WHERE t2.val != 0";
@@ -641,7 +639,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void squareRootTest() {
-        String intermediate = "CREATE VIEW num_result AS SELECT id AS ID1, 0 as ID2, CAST(SQRT(ABS(val)) AS NUMERIC(" +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT id AS ID1, 0 as ID2, CAST(SQRT(ABS(val)) AS NUMERIC(" +
                 WIDTH + ", 10)) AS results\n" +
                 "    FROM num_data\n";
         String last = """
@@ -654,7 +652,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void logarithmTest() {
-        String intermediate = "CREATE VIEW num_result AS SELECT id AS ID1, 0, CAST(LN(ABS(val)) AS NUMERIC(" +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT id AS ID1, 0, CAST(LN(ABS(val)) AS NUMERIC(" +
                 WIDTH + ", 10)) AS results\n" +
                 "    FROM num_data\n" +
                 "    WHERE val != '0.0'";
@@ -668,7 +666,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void logarithm10Test() {
-        String intermediate = "CREATE VIEW num_result AS SELECT id AS ID1, 0, CAST(LOG10(ABS(val)) AS NUMERIC(" +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT id AS ID1, 0, CAST(LOG10(ABS(val)) AS NUMERIC(" +
                 WIDTH + ", 10)) AS results\n" +
                 "    FROM num_data\n" +
                 "    WHERE val != '0.0'";
@@ -682,7 +680,7 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test @Ignore("This test fails because Postgres has higher precision than we support")
     public void power10Test() {
-        String intermediate = "CREATE VIEW num_result AS SELECT id AS ID1, 0, " +
+        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT id AS ID1, 0, " +
                 "CAST(POWER(10, LN(ABS(round(val,200)))) AS NUMERIC(" +
                 WIDTH + ", 10)) AS results\n" +
                 "    FROM num_data\n" +

@@ -621,11 +621,14 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void testViewLateness() {
         String query = """
-                LATENESS V.COL1 INTERVAL '1' HOUR;
+                LATENESS V.COL1 INTERVAL 1 HOUR;
+                -- no view called W
+                LATENESS W.COL2 INTERVAL 1 HOUR;
                 CREATE VIEW V AS SELECT T.COL1, T.COL2 FROM T;
                 CREATE VIEW V1 AS SELECT * FROM V;
                 """;
         DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;  // show warnings
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
         DBSPCircuit circuit = getCircuit(compiler);
@@ -644,6 +647,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
             }
         };
         visitor.apply(circuit);
+        TestUtil.assertMessagesContain(compiler.messages, "No view named 'W' found");
     }
 
     @Test

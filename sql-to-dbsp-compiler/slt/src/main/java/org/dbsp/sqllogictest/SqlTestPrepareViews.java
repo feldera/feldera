@@ -33,9 +33,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * A set of SQL statements create tables.
- */
+/** A set of SQL statements create tables. */
 public class SqlTestPrepareViews {
     public final Map<String, SltSqlStatement> viewDefinition = new LinkedHashMap<>();
     static final Pattern createRegex = Pattern.compile("^create\\s+view\\s+(\\w+)");

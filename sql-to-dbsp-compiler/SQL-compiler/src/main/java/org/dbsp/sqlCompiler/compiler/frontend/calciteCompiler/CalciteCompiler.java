@@ -111,7 +111,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlLatenessStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.LatenessStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.ICastable;
@@ -189,7 +189,6 @@ public class CalciteCompiler implements IWritesLogs {
         this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
         this.copySchema(source.rootSchema);
         this.rootSchema.add(this.calciteCatalog.schemaName, this.calciteCatalog);
-        this.generateOutputForNextView = false;
         this.addOperatorTable(this.createOperatorTable());
     }
 
@@ -207,10 +206,6 @@ public class CalciteCompiler implements IWritesLogs {
 
     public CustomFunctions getCustomFunctions() {
         return this.customFunctions;
-    }
-
-    public void generateOutputForNextView(boolean generate) {
-        this.generateOutputForNextView = generate;
     }
 
     public static final RelDataTypeSystem TYPE_SYSTEM = new RelDataTypeSystemImpl() {
@@ -947,7 +942,7 @@ public class CalciteCompiler implements IWritesLogs {
             case OTHER: {
                 if (node instanceof SqlLateness lateness) {
                     RexNode expr = this.getConverter().convertExpression(lateness.getLateness());
-                    return new SqlLatenessStatement(lateness, sqlStatement,
+                    return new LatenessStatement(lateness, sqlStatement,
                             lateness.getView(), lateness.getColumn(), expr);
                 }
                 break;
