@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -150,6 +151,65 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                 }
                 """;
         Assert.assertEquals(expected, str);
+    }
+
+    @Test
+    public void connectorPropertiesTest() throws JsonProcessingException {
+        String ddl = """
+               CREATE TABLE T (
+                  COL1 INT
+               ) WITH (
+                  'connector' = 'kafka',
+                  'url' = 'localhost'
+               );
+               CREATE VIEW V WITH (
+                  'connector' = 'file',
+                  'path' = '/tmp/x'
+               ) AS SELECT * FROM T;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(ddl);
+        JsonNode meta = compiler.getIOMetadataAsJson();
+        JsonNode inputs = meta.get("inputs");
+        Assert.assertNotNull(inputs);
+        Assert.assertTrue(inputs.isArray());
+        JsonNode c = inputs.get(0).get("connector");
+        Assert.assertNotNull(c);
+        String str = c.toPrettyString();
+        Assert.assertEquals("""
+               {
+                 "connector" : "kafka",
+                 "url" : "localhost"
+               }""", str);
+
+        JsonNode outputs = meta.get("outputs");
+        Assert.assertNotNull(inputs);
+        Assert.assertTrue(outputs.isArray());
+        c = outputs.get(0).get("connector");
+        Assert.assertNotNull(c);
+        str = c.toPrettyString();
+        Assert.assertEquals("""
+               {
+                 "connector" : "file",
+                 "path" : "/tmp/x"
+               }""", str);
+
+    }
+
+    @Test
+    public void illegalConnectorPropertiesTest() {
+        String ddl = """
+               CREATE TABLE T (
+                  COL1 INT
+               ) WITH (
+                  'connector' = 'kafka',
+                  'connector' = 'localhost'
+               );
+               CREATE VIEW V AS SELECT * FROM T;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.compileStatements(ddl);
+        TestUtil.assertMessagesContain(compiler.messages, "Duplicate key");
+        TestUtil.assertMessagesContain(compiler.messages, "Previous declaration");
     }
 
     @Test
@@ -701,7 +761,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
         Assert.assertEquals(message.exitCode, 0);
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
         String jsonContents  = Utilities.readFile(json.toPath());
@@ -714,35 +774,35 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                       "name" : "COL1",
                       "case_sensitive" : false,
                       "columntype" : {
-                        "type" : "INTEGER",
-                        "nullable" : false
+                        "nullable" : false,
+                        "type" : "INTEGER"
                       }
                     }, {
                       "name" : "COL2",
                       "case_sensitive" : false,
                       "columntype" : {
-                        "type" : "DOUBLE",
-                        "nullable" : false
+                        "nullable" : false,
+                        "type" : "DOUBLE"
                       }
                     }, {
                       "name" : "COL3",
                       "case_sensitive" : false,
                       "columntype" : {
-                        "type" : "VARCHAR",
                         "nullable" : true,
-                        "precision" : 3
+                        "precision" : 3,
+                        "type" : "VARCHAR"
                       }
                     }, {
                       "name" : "COL4",
                       "case_sensitive" : false,
                       "columntype" : {
-                        "type" : "ARRAY",
-                        "nullable" : true,
                         "component" : {
-                          "type" : "VARCHAR",
                           "nullable" : false,
-                          "precision" : 3
-                        }
+                          "precision" : 3,
+                          "type" : "VARCHAR"
+                        },
+                        "nullable" : true,
+                        "type" : "ARRAY"
                       }
                     } ],
                     "primary_key" : [ "COL3" ]
@@ -754,8 +814,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                       "name" : "xCol",
                       "case_sensitive" : false,
                       "columntype" : {
-                        "type" : "INTEGER",
-                        "nullable" : false
+                        "nullable" : false,
+                        "type" : "INTEGER"
                       }
                     } ]
                   }, {
@@ -765,8 +825,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                       "name" : "yCol",
                       "case_sensitive" : true,
                       "columntype" : {
-                        "type" : "INTEGER",
-                        "nullable" : false
+                        "nullable" : false,
+                        "type" : "INTEGER"
                       }
                     } ]
                   } ]
@@ -797,7 +857,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         CompilerMessages message = CompilerMain.execute(
                 "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
         Assert.assertEquals(message.exitCode, 0);
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
         String jsonContents  = Utilities.readFile(json.toPath());

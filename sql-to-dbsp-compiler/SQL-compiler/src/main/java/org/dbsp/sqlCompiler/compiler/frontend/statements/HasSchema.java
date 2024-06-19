@@ -5,8 +5,10 @@ import org.apache.calcite.rel.type.RelDataTypeField;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /** An object that has a schema */
 public class HasSchema implements IHasSchema {
@@ -47,5 +49,11 @@ public class HasSchema implements IHasSchema {
     @Override
     public List<RelColumnMetadata> getColumns() {
         return this.columns;
+    }
+
+    @Nullable
+    @Override
+    public Map<String, String> getConnectorProperties() {
+        return null;
     }
 }

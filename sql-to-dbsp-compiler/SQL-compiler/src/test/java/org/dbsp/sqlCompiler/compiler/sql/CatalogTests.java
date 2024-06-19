@@ -18,6 +18,16 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue1894() {
+        String sql = """
+                CREATE TYPE trans AS (
+                    category STRING
+                );
+                """;
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void issue1755() {
         String sql = """
                 CREATE TYPE CustomType AS (

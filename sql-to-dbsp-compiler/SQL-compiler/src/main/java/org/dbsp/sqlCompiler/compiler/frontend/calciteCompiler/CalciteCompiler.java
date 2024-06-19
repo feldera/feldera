@@ -57,6 +57,7 @@ import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.SqlBasicTypeNameSpec;
+import org.apache.calcite.sql.SqlCharStringLiteral;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlExplainFormat;
 import org.apache.calcite.sql.SqlExplainLevel;
@@ -72,7 +73,6 @@ import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
 import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
 import org.apache.calcite.sql.ddl.SqlColumnDeclaration;
-import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.ddl.SqlDropTable;
 import org.apache.calcite.sql.ddl.SqlKeyConstraint;
@@ -102,6 +102,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
@@ -128,6 +129,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.TreeMap;
 import java.util.function.Consumer;
 
 /**
@@ -243,8 +245,7 @@ public class CalciteCompiler implements IWritesLogs {
         @Override
         public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlDataTypeSpec type) {
             SqlTypeNameSpec typeNameSpec = type.getTypeNameSpec();
-            if (typeNameSpec instanceof SqlBasicTypeNameSpec) {
-                SqlBasicTypeNameSpec basic = (SqlBasicTypeNameSpec) typeNameSpec;
+            if (typeNameSpec instanceof SqlBasicTypeNameSpec basic) {
                 // I don't know how to get the SqlTypeName otherwise
                 RelDataType relDataType = CalciteCompiler.this.specToRel(type);
                 if (relDataType.getSqlTypeName() == SqlTypeName.DECIMAL) {
@@ -484,9 +485,8 @@ public class CalciteCompiler implements IWritesLogs {
     public RelDataType specToRel(SqlDataTypeSpec spec) {
         SqlTypeNameSpec typeName = spec.getTypeNameSpec();
         String name = "";
-        if (typeName instanceof SqlUserDefinedTypeNameSpec) {
-            SqlUserDefinedTypeNameSpec udt = (SqlUserDefinedTypeNameSpec) typeName;
-            SqlIdentifier identifier = udt.getTypeName();
+        if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
+            SqlIdentifier identifier = udtObject.getTypeName();
             name = identifier.getSimple();
             if (this.udt.containsKey(name))
                 return Utilities.getExists(this.udt, name);
@@ -495,13 +495,40 @@ public class CalciteCompiler implements IWritesLogs {
         Boolean nullable = spec.getNullable();
         if (nullable != null && nullable)
             result = this.typeFactory.createTypeWithNullability(result, true);
-        if (typeName instanceof SqlUserDefinedTypeNameSpec) {
-            SqlUserDefinedTypeNameSpec udt = (SqlUserDefinedTypeNameSpec) typeName;
+        if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
             if (result.isStruct()) {
-                RelStruct retval = new RelStruct(udt.getTypeName(), result.getFieldList(), result.isNullable());
+                RelStruct retval = new RelStruct(udtObject.getTypeName(), result.getFieldList(), result.isNullable());
                 Utilities.putNew(this.udt, name, retval);
                 return retval;
             }
+        }
+        return result;
+    }
+
+    @Nullable Map<String, String> createConnectorProperties(@Nullable SqlNodeList list) {
+        if (list == null)
+            return null;
+        // Keep keys sorted
+        Map<String, String> result = new TreeMap<>();
+        // For error reporting
+        Map<String, SqlNode> previous = new HashMap<>();
+        assert list.size() % 2 == 0;
+        for (int i = 0; i < list.size(); i += 2) {
+            SqlCharStringLiteral key = (SqlCharStringLiteral) list.get(i);
+            SqlCharStringLiteral value = (SqlCharStringLiteral) list.get(i+1);
+            String keyString = key.toValue();
+            assert keyString != null;
+            if (result.containsKey(keyString)) {
+                SqlNode prev = Utilities.getExists(previous, keyString);
+                this.errorReporter.reportError(new SourcePositionRange(key.getParserPosition()),
+                        "Duplicate key", "connector property " + Utilities.singleQuote(keyString) +
+                                " already declared");
+                this.errorReporter.reportError(new SourcePositionRange(prev.getParserPosition()),
+                        "Duplicate key", "Previous declaration");
+                continue;
+            }
+            Utilities.putNew(previous, keyString, key);
+            result.put(keyString, value.toValue());
         }
         return result;
     }
@@ -532,11 +559,10 @@ public class CalciteCompiler implements IWritesLogs {
                     throw new InternalCompilerError("Expected a list of columns", CalciteObject.create(operand));
                 }
                 for (SqlNode keyColumn : (SqlNodeList) operand) {
-                    if (!(keyColumn instanceof SqlIdentifier)) {
+                    if (!(keyColumn instanceof SqlIdentifier identifier)) {
                         throw new InternalCompilerError("Expected an identifier",
                                 CalciteObject.create(keyColumn));
                     }
-                    SqlIdentifier identifier = (SqlIdentifier) keyColumn;
                     String name = identifier.getSimple();
                     if (primaryKeys.containsKey(name)) {
                         this.errorReporter.reportError(new SourcePositionRange(identifier.getParserPosition()),
@@ -558,12 +584,10 @@ public class CalciteCompiler implements IWritesLogs {
             RexNode lateness = null;
             RexNode watermark = null;
             RexNode defaultValue = null;
-            if (col instanceof SqlColumnDeclaration) {
-                SqlColumnDeclaration cd = (SqlColumnDeclaration) col;
+            if (col instanceof SqlColumnDeclaration cd) {
                 name = cd.name;
                 typeSpec = cd.dataType;
-            } else if (col instanceof SqlExtendedColumnDeclaration) {
-                SqlExtendedColumnDeclaration cd = (SqlExtendedColumnDeclaration) col;
+            } else if (col instanceof SqlExtendedColumnDeclaration cd) {
                 name = cd.name;
                 typeSpec = cd.dataType;
                 if (cd.primaryKey && key != null) {
@@ -585,8 +609,7 @@ public class CalciteCompiler implements IWritesLogs {
                     watermark = converter.convertExpression(cd.watermark);
                 if (cd.defaultValue != null) {
                     // workaround for https://issues.apache.org/jira/browse/CALCITE-6129
-                    if (cd.defaultValue instanceof SqlLiteral) {
-                        SqlLiteral literal = (SqlLiteral) cd.defaultValue;
+                    if (cd.defaultValue instanceof SqlLiteral literal) {
                         if (literal.getTypeName() == SqlTypeName.NULL) {
                             RelDataType type = literal.createSqlType(converter.getCluster().getTypeFactory());
                             defaultValue = converter.getRexBuilder().makeLiteral(null, type);
@@ -800,25 +823,10 @@ public class CalciteCompiler implements IWritesLogs {
                 if (ct.ifNotExists)
                     throw new UnsupportedException("IF NOT EXISTS not supported", object);
                 String tableName = ct.name.getSimple();
-                List<RelColumnMetadata> cols;
-                if (ct.columnList != null) {
-                    cols = this.createTableColumnsMetadata(Objects.requireNonNull(ct.columnList));
-                } else {
-                    throw new UnimplementedException();
-                    /*
-                    if (ct.query == null)
-                        throw new UnsupportedException("CREATE TABLE cannot contain a query",
-                                CalciteObject.create(node));
-                    Logger.INSTANCE.belowLevel(this, 1)
-                            .append(ct.query.toString())
-                            .newline();
-                    RelRoot relRoot = converter.convertQuery(ct.query, true, true);
-                    cols = this.createColumnsMetadata(
-                            ct.name, false, relRoot, null);
-                     */
-                }
+                List<RelColumnMetadata> cols = this.createTableColumnsMetadata(Objects.requireNonNull(ct.columnList));
+                @Nullable Map<String, String> properties = this.createConnectorProperties(ct.connectorProperties);
                 CreateTableStatement table = new CreateTableStatement(
-                        node, sqlStatement, tableName, Utilities.identifierIsQuoted(ct.name), comment, cols);
+                        node, sqlStatement, tableName, Utilities.identifierIsQuoted(ct.name), comment, cols, properties);
                 boolean success = this.calciteCatalog.addTable(
                         tableName, table.getEmulatedTable(), this.errorReporter, table);
                 if (!success)
@@ -857,13 +865,14 @@ public class CalciteCompiler implements IWritesLogs {
                 RelRoot relRoot = converter.convertQuery(query, true, true);
                 List<RelColumnMetadata> columns = this.createColumnsMetadata(CalciteObject.create(node),
                         cv.name, true, relRoot, cv.columnList);
+                @Nullable Map<String, String> connectorProperties = this.createConnectorProperties(cv.connectorProperties);
                 RelNode optimized = this.optimize(relRoot.rel);
                 relRoot = relRoot.withRel(optimized);
                 String viewName = cv.name.getSimple();
                 CreateViewStatement view = new CreateViewStatement(
                         cv, sqlStatement,
                         cv.name.getSimple(), Utilities.identifierIsQuoted(cv.name),
-                        comment, columns, cv.query, relRoot);
+                        comment, columns, cv.query, relRoot, connectorProperties);
                 // From Calcite's point of view we treat this view just as another table.
                 boolean success = this.calciteCatalog.addTable(viewName, view.getEmulatedTable(), this.errorReporter, view);
                 if (!success)
@@ -907,9 +916,8 @@ public class CalciteCompiler implements IWritesLogs {
                 SqlToRelConverter converter = this.getConverter();
                 SqlInsert insert = (SqlInsert) node;
                 SqlNode table = insert.getTargetTable();
-                if (!(table instanceof SqlIdentifier))
+                if (!(table instanceof SqlIdentifier id))
                     throw new UnimplementedException(CalciteObject.create(table));
-                SqlIdentifier id = (SqlIdentifier) table;
                 TableModifyStatement stat = new TableModifyStatement(node, true, sqlStatement, id.toString(), insert.getSource(), comment);
                 RelRoot values = converter.convertQuery(stat.data, true, true);
                 values = values.withRel(this.optimize(values.rel));
@@ -919,12 +927,10 @@ public class CalciteCompiler implements IWritesLogs {
             case DELETE: {
                 // We expect this to be a REMOVE statement
                 SqlToRelConverter converter = this.getConverter();
-                if (node instanceof SqlRemove) {
-                    SqlRemove insert = (SqlRemove) node;
+                if (node instanceof SqlRemove insert) {
                     SqlNode table = insert.getTargetTable();
-                    if (!(table instanceof SqlIdentifier))
+                    if (!(table instanceof SqlIdentifier id))
                         throw new UnimplementedException(CalciteObject.create(table));
-                    SqlIdentifier id = (SqlIdentifier) table;
                     TableModifyStatement stat = new TableModifyStatement(node, false, sqlStatement, id.toString(), insert.getSource(), comment);
                     RelRoot values = converter.convertQuery(stat.data, true, true);
                     values = values.withRel(this.optimize(values.rel));
@@ -939,8 +945,7 @@ public class CalciteCompiler implements IWritesLogs {
                         CalciteObject.create(node));
             }
             case OTHER: {
-                if (node instanceof SqlLateness) {
-                    SqlLateness lateness = (SqlLateness) node;
+                if (node instanceof SqlLateness lateness) {
                     RexNode expr = this.getConverter().convertExpression(lateness.getLateness());
                     return new SqlLatenessStatement(lateness, sqlStatement,
                             lateness.getView(), lateness.getColumn(), expr);

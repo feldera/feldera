@@ -66,7 +66,6 @@ import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlRankFunction;
 import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
 import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
-import org.apache.calcite.sql.ddl.SqlCreateTable;
 import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
@@ -107,6 +106,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
@@ -2136,16 +2136,17 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<RelDataTypeField> relFields = stat.relDataType.getFieldList();
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
         for (SqlNode def : Objects.requireNonNull(ct.attributeDefs)) {
-            DBSPType fieldType;
+            DBSPType fieldType = null;
             final SqlAttributeDefinition attributeDef =
                     (SqlAttributeDefinition) def;
             final SqlDataTypeSpec typeSpec = attributeDef.dataType;
             if (typeSpec.getTypeNameSpec() instanceof SqlUserDefinedTypeNameSpec) {
-                // Reference to another struct
+                // Assume it is a reference to another struct
                 SqlIdentifier identifier = typeSpec.getTypeNameSpec().getTypeName();
                 String referred = identifier.getSimple();
                 fieldType = this.compiler.getStructByName(referred);
-            } else {
+            }
+            if (fieldType == null) {
                 RelDataTypeField ft = relFields.get(index);
                 fieldType = this.convertType(ft.getType(), true);
             }

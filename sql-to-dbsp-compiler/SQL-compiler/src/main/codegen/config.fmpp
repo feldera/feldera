@@ -19,6 +19,7 @@ data: {
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView"
+      "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable"
     ]
 
     # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is
