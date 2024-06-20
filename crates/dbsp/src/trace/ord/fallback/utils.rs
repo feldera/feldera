@@ -238,12 +238,12 @@ where
                     ),
                     Ordering::Greater => self.copy_time_diffs_if(cursor2, tmp1, value_filter, fuel),
                 }
-                while cursor1.val_valid() {
-                    self.copy_time_diffs_if(cursor1, tmp1, value_filter, fuel);
-                }
-                while cursor2.val_valid() {
-                    self.copy_time_diffs_if(cursor2, tmp2, value_filter, fuel);
-                }
+            }
+            while cursor1.val_valid() {
+                self.copy_time_diffs_if(cursor1, tmp1, value_filter, fuel);
+            }
+            while cursor2.val_valid() {
+                self.copy_time_diffs_if(cursor2, tmp2, value_filter, fuel);
             }
         }
         *fuel -= 1;
