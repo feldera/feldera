@@ -389,6 +389,7 @@ where
                     }
                     key_updates.consolidate();
                     builder.extend(key_updates.dyn_iter_mut());
+                    key_updates.truncate(0);
                 }
 
                 skip_key = false;
