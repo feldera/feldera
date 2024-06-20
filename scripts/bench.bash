@@ -14,6 +14,8 @@ NEXMARK_CSV_FILE='nexmark_results.csv'
 NEXMARK_DRAM_CSV_FILE='dram_nexmark_results.csv'
 NEXMARK_SQL_CSV_FILE='sql_nexmark_results.csv'
 NEXMARK_SQL_METRICS_CSV_FILE='sql_nexmark_metrics.csv'
+NEXMARK_SQL_STORAGE_CSV_FILE='sql_storage_nexmark_results.csv'
+NEXMARK_SQL_STORAGE_METRICS_CSV_FILE='sql_storage_nexmark_metrics.csv'
 NEXMARK_PERSISTENCE_CSV_FILE='persistence_nexmark_results.csv'
 GALEN_CSV_FILE='galen_results.csv'
 LDBC_CSV_FILE='ldbc_results.csv'
@@ -47,6 +49,11 @@ rpk topic -X brokers=$KAFKA_BROKER delete bid auction person
 cargo run  -p dbsp_nexmark --example generate --features with-kafka -- --max-events ${MAX_EVENTS} -O bootstrap.servers=$KAFKA_BROKER
 FELDERA_API=http://localhost:8080
 python3 benchmark/feldera-sql/run.py --api-url $FELDERA_API --kafka-broker $KAFKA_BROKER --csv crates/nexmark/${NEXMARK_SQL_CSV_FILE} --csv-metrics crates/nexmark/${NEXMARK_SQL_METRICS_CSV_FILE} --metrics-interval 1
+
+rpk topic -X brokers=$KAFKA_BROKER delete bid auction person
+cargo run  -p dbsp_nexmark --example generate --features with-kafka -- --max-events ${MAX_EVENTS} -O bootstrap.servers=$KAFKA_BROKER
+FELDERA_API=http://localhost:8080
+python3 benchmark/feldera-sql/run.py --storage --api-url $FELDERA_API --kafka-broker $KAFKA_BROKER --csv crates/nexmark/${NEXMARK_SQL_STORAGE_CSV_FILE} --csv-metrics crates/nexmark/${NEXMARK_SQL_STORAGE_METRICS_CSV_FILE} --metrics-interval 1
 
 # Run galen benchmark
 cargo bench --bench galen --features="with-csv" -- --workers 10 --csv ${GALEN_CSV_FILE}
