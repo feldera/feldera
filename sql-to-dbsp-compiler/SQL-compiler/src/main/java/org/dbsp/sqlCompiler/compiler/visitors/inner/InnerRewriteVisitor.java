@@ -56,6 +56,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
@@ -84,6 +85,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
@@ -314,6 +316,17 @@ public abstract class InnerRewriteVisitor
         DBSPType elementType = this.transform(type.getElementType());
         this.pop(type);
         DBSPType result = new DBSPTypeVec(elementType, type.mayBeNull);
+        this.map(type, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTypeMap type) {
+        this.push(type);
+        DBSPType keyType = this.transform(type.getKeyType());
+        DBSPType valueType = this.transform(type.getValueType());
+        this.pop(type);
+        DBSPType result = new DBSPTypeMap(keyType, valueType, type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -590,6 +603,23 @@ public abstract class InnerRewriteVisitor
             data = Linq.map(expression.data, this::transform);
         this.pop(expression);
         DBSPExpression result = new DBSPVecLiteral(expression.getNode(), type, data);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPMapLiteral expression) {
+        this.push(expression);
+        DBSPType type = this.transform(expression.getType());
+        List<DBSPExpression> keys = null;
+        List<DBSPExpression> values = null;
+        if (expression.keys != null) {
+            keys = Linq.map(expression.keys, this::transform);
+            assert expression.values != null;
+            values = Linq.map(expression.values, this::transform);
+        }
+        this.pop(expression);
+        DBSPExpression result = new DBSPMapLiteral(type.to(DBSPTypeMap.class), keys, values);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

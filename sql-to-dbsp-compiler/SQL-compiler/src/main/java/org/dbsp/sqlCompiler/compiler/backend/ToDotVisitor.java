@@ -79,7 +79,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         if (node.is(DBSPDelayOutputOperator.class))
             name = "delay";
         this.stream.append(node.getOutputName())
-                .append(" [ shape=box,label=\"")
+                .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
                 .append(node.getIdString())
                 .append(" ")
                 .append(name)

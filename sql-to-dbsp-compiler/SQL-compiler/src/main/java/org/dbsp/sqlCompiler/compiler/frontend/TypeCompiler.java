@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
@@ -212,8 +213,14 @@ public class TypeCompiler implements ICompilerComponent {
                 case ANY:
                     // Not sure whether this is right
                     return DBSPTypeAny.getDefault();
+                case MAP: {
+                    RelDataType kt = Objects.requireNonNull(dt.getKeyType());
+                    DBSPType keyType = this.convertType(kt, asStruct);
+                    RelDataType vt = Objects.requireNonNull(dt.getValueType());
+                    DBSPType valueType = this.convertType(vt, asStruct);
+                    return new DBSPTypeMap(keyType, valueType, dt.isNullable());
+                }
                 case MULTISET:
-                case MAP:
                 case DISTINCT:
                 case STRUCTURED:
                 case ROW:
@@ -240,13 +247,13 @@ public class TypeCompiler implements ICompilerComponent {
                 case INTERVAL_SECOND:
                     return new DBSPTypeMillisInterval(node, nullable);
                 case GEOMETRY:
-                    return new DBSPTypeGeoPoint(CalciteObject.EMPTY, nullable);
+                    return new DBSPTypeGeoPoint(node, nullable);
                 case TIMESTAMP:
-                    return new DBSPTypeTimestamp(CalciteObject.EMPTY, nullable);
+                    return new DBSPTypeTimestamp(node, nullable);
                 case DATE:
-                    return new DBSPTypeDate(CalciteObject.EMPTY, nullable);
+                    return new DBSPTypeDate(node, nullable);
                 case TIME:
-                    return new DBSPTypeTime(CalciteObject.EMPTY, nullable);
+                    return new DBSPTypeTime(node, nullable);
             }
         }
         throw new UnimplementedException(node);

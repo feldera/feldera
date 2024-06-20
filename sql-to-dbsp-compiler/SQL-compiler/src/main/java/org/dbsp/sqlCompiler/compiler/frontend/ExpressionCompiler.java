@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -73,6 +74,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
@@ -84,6 +86,7 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
@@ -1141,11 +1144,30 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 List<DBSPExpression> args = Linq.map(ops, o -> o.cast(elemType));
                 return new DBSPVecLiteral(node, type, args);
             }
+            case MAP_VALUE_CONSTRUCTOR: {
+                DBSPTypeMap map = type.to(DBSPTypeMap.class);
+                List<DBSPExpression> keys = DBSPMapLiteral.getKeys(ops);
+                keys = Linq.map(keys, o -> o.cast(map.getKeyType()));
+                List<DBSPExpression> values = DBSPMapLiteral.getValues(ops);
+                values = Linq.map(values, o -> o.cast(map.getValueType()));
+                return new DBSPMapLiteral(map, keys, values);
+            }
             case ITEM: {
                 if (call.operands.size() != 2)
                     throw new UnimplementedException(node);
-                return new DBSPBinaryExpression(node, type, DBSPOpcode.SQL_INDEX,
-                        ops.get(0), ops.get(1).cast(new DBSPTypeUSize(CalciteObject.EMPTY, false)));
+                DBSPType collectionType = ops.get(0).getType();
+                DBSPExpression index = ops.get(1);
+                if (collectionType.is(DBSPTypeVec.class)) {
+                    // index into a vector: cast to unsigned
+                    index = index.cast(new DBSPTypeUSize(CalciteObject.EMPTY, false));
+                } else if (collectionType.is(DBSPTypeMap.class)) {
+                    // index into a map
+                    DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
+                    index = index.cast(map.getKeyType());
+                } else {
+                    throw new UnsupportedException(node);
+                }
+                return new DBSPBinaryExpression(node, type, DBSPOpcode.SQL_INDEX, ops.get(0), index);
             }
             case TIMESTAMP_DIFF:
             case TRIM: {

@@ -193,7 +193,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                  "connector" : "file",
                  "path" : "/tmp/x"
                }""", str);
-
     }
 
     @Test

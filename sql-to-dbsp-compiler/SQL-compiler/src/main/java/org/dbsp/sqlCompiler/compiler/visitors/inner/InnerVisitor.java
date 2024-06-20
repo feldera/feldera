@@ -88,6 +88,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
@@ -145,6 +146,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
@@ -432,6 +434,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
         return this.preorder(node.to(DBSPTypeUser.class));
     }
 
+    public VisitDecision preorder(DBSPTypeMap node) {
+        return this.preorder(node.to(DBSPTypeUser.class));
+    }
+
     public VisitDecision preorder(DBSPTypeResult node) {
         return this.preorder(node.to(DBSPTypeUser.class));
     }
@@ -614,6 +620,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
     
     public VisitDecision preorder(DBSPVecLiteral node) {
+        return this.preorder(node.to(DBSPLiteral.class));
+    }
+
+    public VisitDecision preorder(DBSPMapLiteral node) {
         return this.preorder(node.to(DBSPLiteral.class));
     }
 
@@ -940,6 +950,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
         this.postorder(node.to(DBSPTypeUser.class));
     }
 
+    public void postorder(DBSPTypeMap node) {
+        this.postorder(node.to(DBSPTypeUser.class));
+    }
+
     public void postorder(DBSPTypeResult node) {
         this.postorder(node.to(DBSPTypeUser.class));
     }
@@ -1138,6 +1152,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     }
 
     public void postorder(DBSPVecLiteral node) {
+        this.postorder(node.to(DBSPLiteral.class));
+    }
+
+    public void postorder(DBSPMapLiteral node) {
         this.postorder(node.to(DBSPLiteral.class));
     }
 

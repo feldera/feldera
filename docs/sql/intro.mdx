@@ -20,7 +20,8 @@ Feldera is used in the following way:
 
 - users define a set of database tables in Feldera. These tables
   become *inputs* for DBSP.
-- users define a set of database views.  The views become *outputs* for DBSP.
+- users define a set of database views.  The views become *outputs* for DBSP
+  (unless they are declared as being `LOCAL`).
   The views can be defined either in Rust, using the DBSP library, or can be
   implemented in standard SQL, and compiled to Rust using the SQL to DBSP
   compiler.
@@ -81,11 +82,11 @@ Differences between DBSP and a database:
 Despite these limitations, DBSP offers a powerful set of features:
 
 - A rich set of data types, including the standard SQL datatypes,
-  dates, times, intervals, arrays
+  dates, times, intervals, arrays, maps, user-defined types
 
 - Arbitrary SQL queries, including the standard relational algebra,
   `GROUP BY`, aggregations, user-defined functions, joins of several
-  flavors, `UNNEST`, and window queries
+  flavors, `UNNEST`, streaming constructs, and window queries
 
 There are many good introductions to SQL on the Internet.  This
 document is not intended as a tutorial, but only as a specification of
