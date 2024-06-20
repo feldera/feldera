@@ -594,8 +594,12 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression div = ExpressionCompiler.makeBinaryExpression(
                 node, this.resultType, DBSPOpcode.DIV_NULL,
                 sub, denom).cast(sqrtType);
+        // Prevent sqrt from negative values if computations are unstable
+        DBSPExpression max = ExpressionCompiler.makeBinaryExpression(
+                node, sqrtType, DBSPOpcode.MAX,
+                div, sqrtType.to(IsNumericType.class).getZero());
         DBSPExpression sqrt = ExpressionCompiler.compilePolymorphicFunction(
-                "sqrt", node, sqrtType, Linq.list(div), 1);
+                "sqrt", node, sqrtType, Linq.list(max), 1);
         sqrt = sqrt.cast(this.resultType);
         DBSPClosureExpression post = new DBSPClosureExpression(node, sqrt, a.asParameter());
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);

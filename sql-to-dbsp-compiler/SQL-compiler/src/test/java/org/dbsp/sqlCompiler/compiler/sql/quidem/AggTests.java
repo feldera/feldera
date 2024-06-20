@@ -165,6 +165,16 @@ public class AggTests extends PostBaseTests {
     }
 
     @Test
+    public void issue1901() {
+        this.qs("""
+                select stddev(value) FROM (VALUES (.1e0), (.1e0), (.1e0)) t1(value) WHERE true;
+                result
+                ------
+                 0e0
+                (1 row)""");
+    }
+
+    @Test
     public void stddevTests() {
         this.qs("""
                 -- Our own test, for denominator of 0 in SAMP
