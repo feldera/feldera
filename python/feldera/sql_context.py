@@ -627,6 +627,10 @@ class SQLContext:
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
 
+        current_state = self.pipeline_status()
+        if current_state not in [PipelineStatus.NOT_FOUND, PipelineStatus.SHUTDOWN]:
+            raise RuntimeError(f"pipeline in state: {str(current_state.name)} cannot be started")
+
         self.__setup_pipeline()
 
         self.pause()
