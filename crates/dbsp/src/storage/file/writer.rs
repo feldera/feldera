@@ -10,7 +10,6 @@ use std::{
     mem::{replace, take},
     ops::Range,
     path::PathBuf,
-    rc::Rc,
 };
 
 use binrw::{
@@ -194,7 +193,7 @@ where
 }
 
 struct ColumnWriter {
-    parameters: Rc<Parameters>,
+    parameters: Arc<Parameters>,
     column_index: usize,
     rows: Range<u64>,
     data_block: DataBlockBuilder,
@@ -203,7 +202,7 @@ struct ColumnWriter {
 }
 
 impl ColumnWriter {
-    fn new(factories: &AnyFactories, parameters: &Rc<Parameters>, column_index: usize) -> Self {
+    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, column_index: usize) -> Self {
         ColumnWriter {
             parameters: parameters.clone(),
             column_index,
@@ -377,7 +376,7 @@ impl StrideBuilder {
 }
 
 struct DataBlockBuilder {
-    parameters: Rc<Parameters>,
+    parameters: Arc<Parameters>,
     raw: FBuf,
     value_offsets: Vec<usize>,
     value_offset_stride: StrideBuilder,
@@ -399,7 +398,7 @@ struct DataBlock<K: ?Sized> {
 }
 
 impl DataBlockBuilder {
-    fn new(factories: &AnyFactories, parameters: &Rc<Parameters>) -> Self {
+    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>) -> Self {
         let mut raw = FBuf::with_capacity(parameters.min_data_block);
         raw.resize(DataBlockHeader::LEN, 0);
         Self {
@@ -611,7 +610,7 @@ impl ContiguousRanges {
 }
 
 struct IndexBlockBuilder {
-    parameters: Rc<Parameters>,
+    parameters: Arc<Parameters>,
     column_index: usize,
     raw: FBuf,
     entries: Vec<IndexEntry>,
@@ -681,7 +680,7 @@ where
 impl IndexBlockBuilder {
     fn new(
         factories: &AnyFactories,
-        parameters: &Rc<Parameters>,
+        parameters: &Arc<Parameters>,
         column_index: usize,
         child_type: NodeType,
     ) -> Self {
@@ -921,7 +920,7 @@ impl Writer {
     ) -> Result<Self, StorageError> {
         assert_eq!(factories.len(), n_columns);
 
-        let parameters = Rc::new(parameters);
+        let parameters = Arc::new(parameters);
         let cws = factories
             .iter()
             .enumerate()

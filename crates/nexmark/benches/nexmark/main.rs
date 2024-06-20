@@ -233,7 +233,7 @@ fn create_ascii_table(config: &NexmarkConfig) -> AsciiTable {
             "Cache Hit Rate",
             "Cpcts",
             "Cpct Saving",
-            "Cpct Stall [s]",
+            "Cpct Stall",
         ]);
         max_width += 50;
     }
@@ -505,7 +505,7 @@ fn main() -> Result<()> {
                 ),
                 format!("{}", diff.total_compactions),
                 format!("{}", diff.compaction_savings),
-                format!("{}", diff.compaction_stall_time / 1000),
+                format!("{} s", diff.compaction_stall_time / 1000),
             ])
         }
         row
