@@ -5,28 +5,30 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 
 /** The monotone type of a closure expression */
 public class MonotoneClosureType implements IMaybeMonotoneType {
     private final IMaybeMonotoneType bodyType;
-    /** Parameter of the original closure whose monotonicity is represented */
-    private final DBSPParameter param;
-    /** Parameter of the projected closure, containing only fields that are known
+    /** Parameters of the original closure whose monotonicity is represented */
+    private final DBSPParameter[] params;
+    /** Parameters of the projected closure, containing only fields that are known
      * to be monotone in the input */
-    private final DBSPParameter projectedParameter;
+    private final DBSPParameter[] projectedParameters;
 
     public MonotoneClosureType(IMaybeMonotoneType bodyType,
-                               DBSPParameter param, DBSPParameter projectedParameter) {
+                               DBSPParameter[] params,
+                               DBSPParameter[] projectedParameters) {
         this.bodyType = bodyType;
-        this.param = param;
-        this.projectedParameter = projectedParameter;
+        this.params = params;
+        this.projectedParameters = projectedParameters;
     }
 
     @Override
     public DBSPType getType() {
-        return new DBSPTypeFunction(this.bodyType.getType(), this.param.type);
+        return new DBSPTypeFunction(this.bodyType.getType(), parameterTypes(this.params));
     }
 
     public IMaybeMonotoneType getBodyType() {
@@ -39,8 +41,11 @@ public class MonotoneClosureType implements IMaybeMonotoneType {
         DBSPType pBodyType = this.bodyType.getProjectedType();
         if (pBodyType == null)
             return null;
-        return new DBSPTypeFunction(
-                pBodyType, this.projectedParameter.type);
+        return new DBSPTypeFunction(pBodyType, parameterTypes(this.projectedParameters));
+    }
+
+    static DBSPType[] parameterTypes(DBSPParameter[] params) {
+        return Linq.map(params, p -> p.type, DBSPType.class);
     }
 
     @Override
@@ -55,6 +60,13 @@ public class MonotoneClosureType implements IMaybeMonotoneType {
 
     @Override
     public String toString() {
-        return "MonotoneClosure(|" + this.projectedParameter.type + "| -> " + this.bodyType + ")";
+        StringBuilder builder = new StringBuilder();
+        builder.append("MonotoneClosure(|");
+        for (DBSPParameter param: this.projectedParameters)
+            builder.append(param.type).append(",");
+        builder.append("| -> ")
+                .append(this.bodyType)
+                .append(")");
+        return builder.toString();
     }
 }

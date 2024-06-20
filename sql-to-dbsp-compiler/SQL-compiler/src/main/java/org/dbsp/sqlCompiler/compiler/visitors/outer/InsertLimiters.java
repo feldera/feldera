@@ -32,7 +32,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTransferFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateExpansion;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementExpansion;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -114,7 +113,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * @return Add an operator which computes the smallest legal value
      * for the output of an operator. */
     @Nullable
-    DBSPOperator addBounds(@Nullable DBSPOperator operatorFromExpansion, int input) {
+    DBSPApplyOperator addBounds(@Nullable DBSPOperator operatorFromExpansion, int input) {
         if (operatorFromExpansion == null)
             return null;
         MonotoneExpression monotone = this.expansionMonotoneValues.get(operatorFromExpansion);
@@ -123,7 +122,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPOperator source = operatorFromExpansion.inputs.get(input);  // Even for binary operators
         DBSPOperator boundSource = Utilities.getExists(this.bound, source);
         DBSPClosureExpression function = monotone.getReducedExpression().to(DBSPClosureExpression.class);
-        DBSPOperator bound = new DBSPApplyOperator(operatorFromExpansion.getNode(), function,
+        DBSPApplyOperator bound = new DBSPApplyOperator(operatorFromExpansion.getNode(), function,
                 function.getFunctionType().resultType, boundSource,
                 "(" + operatorFromExpansion.getDerivedFrom() + ")");
         this.getResult().addOperator(bound);  // insert directly into circuit
@@ -197,26 +196,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         AggregateExpansion ae = expanded.to(AggregateExpansion.class);
-        DBSPOperator limiter = this.addBounds(ae.integrator, 0);
+        DBSPOperator limiter = this.bound.get(aggregator.input());
         if (limiter == null) {
             super.postorder(aggregator);
             return;
         }
 
-        MonotoneExpression expression = this.expansionMonotoneValues.get(ae.integrator);
-        DBSPOperator filteredAggregator;
-        if (false) {
-            DBSPControlledFilterOperator filter =
-                    DBSPControlledFilterOperator.create(
-                            aggregator.getNode(), source, Monotonicity.getBodyType(expression), limiter);
-            this.addOperator(filter);
-            filteredAggregator = aggregator.withInputs(Linq.list(filter), false);
-        } else {
-            filteredAggregator = aggregator.withInputs(Linq.list(source), false);
-        }
-
-        // We use the input 1, coming from the integrator
-        DBSPOperator limiter2 = this.addBounds(ae.aggregator, 1);
+        DBSPOperator filteredAggregator = aggregator.withInputs(Linq.list(source), false);
+        // We use the input 0; input 1 comes from the integrator
+        DBSPOperator limiter2 = this.addBounds(ae.aggregator, 0);
         if (limiter2 == null) {
             this.map(aggregator, filteredAggregator);
             return;
@@ -225,26 +213,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.addOperator(filteredAggregator);
         MonotoneExpression monotoneValue2 = this.expansionMonotoneValues.get(ae.aggregator);
         IMaybeMonotoneType projection2 = Monotonicity.getBodyType(monotoneValue2);
-        // A second controlled filter for the output of the aggregator
-        if (false) {
-            DBSPOperator filter2 = DBSPControlledFilterOperator.create(
-                    aggregator.getNode(), filteredAggregator, projection2, limiter2);
-            this.markBound(aggregator, filter2);
-            this.map(aggregator, filter2);
-        } else {
-            // The before and after filters are actually identical for now.
-            DBSPIntegrateTraceRetainKeysOperator before = DBSPIntegrateTraceRetainKeysOperator.create(
-                    aggregator.getNode(), source, projection2, limiter2);
-            this.addOperator(before);
-            // output of 'before' is not used in the graph, but the DBSP Rust layer will use it
 
-            DBSPIntegrateTraceRetainKeysOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
-                    aggregator.getNode(), filteredAggregator, projection2, limiter2);
-            this.addOperator(after);
-            // output of 'after'' is not used in the graph, but the DBSP Rust layer will use it
+        // The before and after filters are actually identical for now.
+        DBSPIntegrateTraceRetainKeysOperator before = DBSPIntegrateTraceRetainKeysOperator.create(
+                aggregator.getNode(), source, projection2, limiter2);
+        this.addOperator(before);
+        // output of 'before' is not used in the graph, but the DBSP Rust layer will use it
 
-            this.map(aggregator, filteredAggregator, false);
-        }
+        DBSPIntegrateTraceRetainKeysOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
+                aggregator.getNode(), filteredAggregator, projection2, limiter2);
+        this.addOperator(after);
+        // output of 'after'' is not used in the graph, but the DBSP Rust layer will use it
+
+        this.map(aggregator, filteredAggregator, false);
     }
 
     @Override
@@ -287,7 +268,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         body = this.wrapTypedBox(body, true);
         DBSPClosureExpression closure = body.closure(var.asParameter());
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
-                this.errorReporter, operator, projection, true);
+                this.errorReporter, operator, true, projection);
         MonotoneExpression monotone = analyzer.applyAnalysis(closure);
         Objects.requireNonNull(monotone);
 
@@ -315,9 +296,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        JoinExpansion je = expanded.to(JoinExpansion.class);
-        DBSPOperator leftLimiter = this.addBounds(je.left, 0);
-        DBSPOperator rightLimiter = this.addBounds(je.right, 0);
+        DBSPOperator leftLimiter = this.bound.get(join.inputs.get(0));
+        DBSPOperator rightLimiter = this.bound.get(join.inputs.get(1));
         if (leftLimiter == null && rightLimiter == null) {
             super.postorder(join);
             return;
@@ -325,7 +305,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         DBSPOperator result = join.withInputs(Linq.list(left, right), false);
         if (leftLimiter != null) {
-            MonotoneExpression leftMonotone = this.expansionMonotoneValues.get(je.left);
+            MonotoneExpression leftMonotone = this.expansionMonotoneValues.get(join.inputs.get(0));
             // Yes, the limit of the left input is applied to the right one.
             IMaybeMonotoneType leftProjection = Monotonicity.getBodyType(leftMonotone);
             // Check if the "key" field is monotone
@@ -337,7 +317,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         if (rightLimiter != null) {
-            MonotoneExpression rightMonotone = this.expansionMonotoneValues.get(je.right);
+            MonotoneExpression rightMonotone = this.expansionMonotoneValues.get(join.inputs.get(1));
             // Yes, the limit of the right input is applied to the left one.
             IMaybeMonotoneType rightProjection = Monotonicity.getBodyType(rightMonotone);
             // Check if the "key" field is monotone
@@ -492,11 +472,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     operator, Objects.requireNonNull(expanded).replacement);
             if (replacement == operator) {
                 super.postorder(operator);
-                return;
             } else {
                 this.map(operator, replacement);
-                return;
             }
+            return;
         }
         // Treat like an identity function
         ReplacementExpansion expanded = this.getReplacement(operator);

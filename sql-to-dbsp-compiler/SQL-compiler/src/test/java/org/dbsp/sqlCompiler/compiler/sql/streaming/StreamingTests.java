@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.SQLException;
+import java.util.Arrays;
 import java.util.List;
 
 /** Tests that exercise streaming features. */
@@ -439,7 +440,7 @@ public class StreamingTests extends StreamingTest {
         File script = createInputScript(program);
         CompilerMessages messages = CompilerMain.execute(
                 "-o", BaseSQLTests.testFilePath, "--handles", "-i",
-                // "-TMonotoneAnalyzer=3",
+                "-TMonotoneAnalyzer=3",
                 script.getPath());
         System.out.println(messages);
         Assert.assertEquals(0, messages.errorCount());
@@ -492,7 +493,12 @@ public class StreamingTests extends StreamingTest {
         Long[] p0 = this.profile(ddl + query);
         Long[] p1 = this.profile(ddlLateness + query);
         // Memory consumption of program with lateness is expected to be higher
-        Assert.assertTrue(p0[1] > 1.5 * p1[1]);
+        if (p0[1] < 1.5 * p1[1]) {
+            System.err.println("Profile statistics without and with lateness:");
+            System.err.println(Arrays.toString(p0));
+            System.err.println(Arrays.toString(p1));
+            assert false;
+        }
     }
 
     @Test

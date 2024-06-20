@@ -1703,28 +1703,48 @@ public class CalciteToDBSPCompiler extends RelVisitor
             this.compiler.circuit.addOperator(integral);
 
             // Join the previous result with the aggregate
-            // First index the aggregate.
+
+            // Index the input
             DBSPTypeTuple currentTupleType = lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class);
             DBSPVariablePath previousRowRefVar = currentTupleType.ref().var("t");
             DBSPExpression partAndOrder = new DBSPTupleExpression(
                     partition.applyCloneIfNeeded(),
                     originalOrderField.applyCloneIfNeeded());
+            // Copy all the fields from the previousRowRefVar except the partition fields.
+            DBSPExpression[] fields = new DBSPExpression[currentTupleType.size() - partitionKeys.size()];
+            int fieldIndex = 0;
+            for (int i = 0; i < currentTupleType.size(); i++) {
+                if (partitionKeys.contains(i))
+                    continue;
+                fields[fieldIndex++] = previousRowRefVar.deepCopy().deref().field(i).applyCloneIfNeeded();
+            }
+            DBSPExpression copiedFields = new DBSPTupleExpression(fields);
             DBSPExpression indexedInput = new DBSPRawTupleExpression(
-                    partAndOrder, previousRowRefVar.deepCopy().deref().applyClone());
+                    partAndOrder, copiedFields);
             DBSPClosureExpression partAndOrderClo = indexedInput.closure(previousRowRefVar.asParameter());
-            // Index the input
+
             DBSPOperator indexInput = new DBSPMapIndexOperator(node, partAndOrderClo,
-                    makeIndexedZSet(partAndOrder.getType(), previousRowRefVar.getType().deref()),
+                    makeIndexedZSet(partAndOrder.getType(), copiedFields.getType()),
                     lastOperator.isMultiset, lastOperator);
             this.compiler.circuit.addOperator(indexInput);
 
             DBSPVariablePath key = partAndOrder.getType().ref().var("k");
-            DBSPVariablePath left = currentTupleType.ref().var("l");
+            DBSPVariablePath left = copiedFields.getType().ref().var("l");
             DBSPVariablePath right = aggResultType.ref().var("r");
             DBSPExpression[] allFields = new DBSPExpression[
                     currentTupleType.size() + aggResultType.size()];
-            for (int i = 0; i < currentTupleType.size(); i++)
-                allFields[i] = left.deref().field(i).applyCloneIfNeeded();
+            int indexField = 0;
+            for (int i = 0; i < currentTupleType.size(); i++) {
+                // If the field is in the index, use it from the index
+                if (partitionKeys.contains(i))
+                    allFields[i] = key
+                            .deref()
+                            .field(0) // partition part
+                            .field(indexField++)
+                            .applyCloneIfNeeded();
+                else
+                    allFields[i] = left.deref().field(i - indexField).applyCloneIfNeeded();
+            }
             for (int i = 0; i < aggResultType.size(); i++) {
                 // Calcite is very smart and sometimes infers non-nullable result types
                 // for these aggregates.  So we have to cast the results to whatever
