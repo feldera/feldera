@@ -85,6 +85,7 @@ import org.junit.Test;
 
 import javax.imageio.ImageIO;
 import javax.sql.DataSource;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.FilenameFilter;
@@ -621,11 +622,14 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void testViewLateness() {
         String query = """
-                LATENESS V.COL1 INTERVAL '1' HOUR;
+                LATENESS V.COL1 INTERVAL 1 HOUR;
+                -- no view called W
+                LATENESS W.COL2 INTERVAL 1 HOUR;
                 CREATE VIEW V AS SELECT T.COL1, T.COL2 FROM T;
                 CREATE VIEW V1 AS SELECT * FROM V;
                 """;
         DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;  // show warnings
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
         DBSPCircuit circuit = getCircuit(compiler);
@@ -644,6 +648,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
             }
         };
         visitor.apply(circuit);
+        TestUtil.assertMessagesContain(compiler.messages, "No view named 'W' found");
     }
 
     @Test
@@ -705,6 +710,27 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPOperator op = sink.inputs.get(0);
         // There is no optimization I can imagine which will remove the distinct
         Assert.assertTrue(op.is(DBSPStreamDistinctOperator.class));
+    }
+
+    @Test
+    public void testNoOutput() throws IOException, SQLException {
+        String[] statements = new String[]{
+                "CREATE TABLE T (\n" +
+                        "COL1 INT NOT NULL" +
+                        ", COL2 DOUBLE NOT NULL" +
+                        ")",
+                "CREATE VIEW V AS SELECT COL1 FROM T"
+        };
+        File file = createInputScript(statements);
+        // Redirect error stream
+        ByteArrayOutputStream os = new ByteArrayOutputStream();
+        PrintStream ps = new PrintStream(os);
+        PrintStream old = System.err;
+        System.setErr(ps);
+        CompilerMain.execute(file.getPath(), file.getPath());
+        // Restore error stream
+        System.setErr(old);
+        Assert.assertTrue(os.toString().contains("Did you forget to specify"));
     }
 
     @Test

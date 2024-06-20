@@ -67,7 +67,7 @@ public class CompilerMain {
         commander.usage();
     }
 
-    void parseOptions(String[] argv) {
+    int parseOptions(String[] argv) {
         JCommander commander = JCommander.newBuilder()
                 .addObject(this.options)
                 .build();
@@ -75,12 +75,17 @@ public class CompilerMain {
         try {
             commander.parse(argv);
         } catch (ParameterException ex) {
+            if (ex.getMessage().contains("Only one main parameter allowed")) {
+                if (this.options.ioOptions.outputFile.isEmpty()) {
+                    System.err.println("Did you forget to specify the output file with -o?");
+                }
+            }
             System.err.println(ex.getMessage());
-            System.exit(1);
+            return 1;
         }
         if (this.options.help) {
             this.usage(commander);
-            System.exit(1);
+            return 1;
         }
 
         for (Map.Entry<String, String> entry: options.ioOptions.loggingLevel.entrySet()) {
@@ -89,9 +94,11 @@ public class CompilerMain {
                 Logger.INSTANCE.setLoggingLevel(entry.getKey(), level);
             } catch (NumberFormatException ex) {
                 System.err.println("-T option must be followed by 'class=number'; could not parse " + entry);
-                System.exit(1);
+                return 1;
             }
         }
+
+        return 0;
     }
 
     PrintStream getOutputStream() throws IOException {
@@ -210,7 +217,13 @@ public class CompilerMain {
 
     public static CompilerMessages execute(String... argv) throws SQLException {
         CompilerMain main = new CompilerMain();
-        main.parseOptions(argv);
+        int exitCode = main.parseOptions(argv);
+        if (exitCode != 0) {
+            // return empty messages
+            CompilerMessages result = new CompilerMessages(new DBSPCompiler(new CompilerOptions()));
+            result.setExitCode(exitCode);
+            return result;
+        }
         return main.run();
     }
 

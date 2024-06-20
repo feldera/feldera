@@ -114,7 +114,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.HasSchema;
-import org.dbsp.sqlCompiler.compiler.frontend.statements.SqlLatenessStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.LatenessStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
@@ -2203,7 +2203,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     @Nullable
-    DBSPNode compileLateness(SqlLatenessStatement stat) {
+    DBSPNode compileLateness(LatenessStatement stat) {
         ExpressionCompiler compiler = new ExpressionCompiler(null, this.compiler);
         DBSPExpression lateness = compiler.compile(stat.value);
         ViewColumnMetadata vcm = new ViewColumnMetadata(
@@ -2248,8 +2248,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         } else if (statement.is(CreateFunctionStatement.class)) {
             CreateFunctionStatement stat = statement.to(CreateFunctionStatement.class);
             return this.compileCreateFunction(stat);
-        } else if (statement.is(SqlLatenessStatement.class)) {
-            SqlLatenessStatement stat = statement.to(SqlLatenessStatement.class);
+        } else if (statement.is(LatenessStatement.class)) {
+            LatenessStatement stat = statement.to(LatenessStatement.class);
             return this.compileLateness(stat);
         }
         throw new UnimplementedException(statement.getCalciteObject());

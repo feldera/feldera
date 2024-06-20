@@ -36,9 +36,7 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * Packages options for a compiler from SQL to Rust.
- */
+/** Packages options for a compiler from SQL to Rust. */
 @SuppressWarnings("CanBeFinal")
 // These fields cannot be final, since JCommander writes them through reflection.
 public class CompilerOptions implements IDiff<CompilerOptions> {
@@ -50,9 +48,7 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public boolean incrementalize = false;
         @Parameter(names = "-O", description = "Optimization level (0, 1, or 2)")
         public int optimizationLevel = 2;
-        /**
-         * Useful for development
-         */
+        /** Useful for development */
         public boolean throwOnError = false;
         @Parameter(names = "--alltables", description = "Generate an input for each CREATE TABLE, even if the table is not used by any view")
         public boolean generateInputForEveryTable = false;
@@ -145,9 +141,7 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
                 this.ioOptions.diff(other.ioOptions);
     }
 
-    /**
-     * Options related to input and output.
-     */
+    /** Options related to input and output. */
     @SuppressWarnings("CanBeFinal")
     public static class IO implements IDiff<IO> {
         @DynamicParameter(names = "-T",
