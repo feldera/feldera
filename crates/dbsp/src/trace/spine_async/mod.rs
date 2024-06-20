@@ -40,6 +40,9 @@ pub(crate) mod merger;
 #[cfg(test)]
 mod tests;
 
+/// Maximum amount of levels in the spine.
+pub(crate) const MAX_LEVELS: usize = 9;
+
 impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
     fn from(value: &Spine<B>) -> Self {
         let mut batches = vec![];
@@ -578,38 +581,48 @@ where
         value_filter: Option<Filter<B::Val>>,
         completed_merge_sender: Arc<Sender<MergeResult<B>>>,
     ) {
-        if let Ok(()) = sender.send(BackgroundOperation::Merge(Box::new(
-            move |mut fuel: isize| {
-                assert!(batches.len() > 1);
-                let start = Instant::now();
-                let mut current = batches.pop().unwrap();
-                let mut old_length = current.len();
-                while let Some(next) = batches.pop() {
-                    old_length += next.len();
+        assert_eq!(batches.len(), 2);
+        let a = batches.pop().unwrap();
+        let b = batches.pop().unwrap();
+        let mut merger = None;
 
-                    let mut merger = <B as Batch>::Merger::new_merger(&current, &next);
-                    merger.work(&current, &next, &key_filter, &value_filter, &mut fuel);
-                    current = Arc::new(merger.done());
-                    assert!(fuel > 0);
+        if let Ok(()) = sender.send(BackgroundOperation::Merge(Box::new(
+            move |fuel: &mut isize| {
+                let start = Instant::now();
+                if merger.is_none() {
+                    // We initialize this here because to ensure we create the new file we're
+                    // writing to on the background thread that's running the closure.
+                    merger = Some(<B as Batch>::Merger::new_merger(&a, &b));
+                }
+
+                merger
+                    .as_mut()
+                    .unwrap()
+                    .work(&a, &b, &key_filter, &value_filter, fuel);
+
+                if *fuel > 0 {
+                    let old_length = a.len() + b.len();
+                    let done_merger = merger.take().unwrap();
+                    let current = Arc::new(done_merger.done());
                     counter!(TOTAL_COMPACTIONS).increment(1);
-                }
-                histogram!(COMPACTION_SIZE).record(current.len() as f64);
-                counter!(COMPACTION_SIZE_SAVINGS).increment((old_length - current.len()) as u64);
-                histogram!(COMPACTION_DURATION).record(start.elapsed().as_secs_f64());
-                match completed_merge_sender.send(MergeResult::MergeCompleted(Ok((
-                    key,
-                    // unwrap is fine, we haven't shared the batch with anyone yet.
-                    Arc::into_inner(current).unwrap(),
-                )))) {
-                    Ok(()) => {
-                        // The merge was sent back successfully.
+                    histogram!(COMPACTION_SIZE).record(current.len() as f64);
+                    counter!(COMPACTION_SIZE_SAVINGS)
+                        .increment((old_length - current.len()) as u64);
+                    histogram!(COMPACTION_DURATION).record(start.elapsed().as_secs_f64());
+                    match completed_merge_sender.send(MergeResult::MergeCompleted(Ok((
+                        key,
+                        // unwrap is fine, we haven't shared the batch with anyone yet.
+                        Arc::into_inner(current).unwrap(),
+                    )))) {
+                        Ok(()) => {
+                            // The merge was sent back successfully.
+                        }
+                        Err(_e) => {
+                            // The receiver has been dropped, so the spine is no longer interested in this,
+                            // because it already exited.
+                        }
                     }
-                    Err(_e) => {
-                        // The receiver has been dropped, so the spine is no longer interested in this,
-                        // because it already exited.
-                    }
                 }
-                true
             },
         ))) {}
     }
@@ -795,16 +808,23 @@ where
             _ => {
                 // We send everything to the merge thread
                 // for consolidation into a single batch.
-                Self::enqueue(
-                    &self.merger_tx,
-                    BatchIdent::single(0, 0),
-                    batches,
-                    self.key_filter.clone(),
-                    self.value_filter.clone(),
-                    self.completion_tx.clone(),
-                );
-                let MergeResult::MergeCompleted(r) = self.completion_rx.recv().unwrap();
-                r.map(|(_, b)| b).ok()
+                // Currently self.enqueue needs `batches.len() == 2`
+                // so this happens in a loop until there is one batch left.
+                while batches.len() > 1 {
+                    let to_merge = vec![batches.pop().unwrap(), batches.pop().unwrap()];
+                    Self::enqueue(
+                        &self.merger_tx,
+                        BatchIdent::single(0, 0),
+                        to_merge,
+                        self.key_filter.clone(),
+                        self.value_filter.clone(),
+                        self.completion_tx.clone(),
+                    );
+                    let MergeResult::MergeCompleted(r) = self.completion_rx.recv().unwrap();
+                    batches.push(Arc::new(r.unwrap().1));
+                }
+                assert!(batches.len() == 1);
+                Arc::into_inner(batches.pop().unwrap())
             }
         }
     }
@@ -903,11 +923,9 @@ impl<B> Spine<B>
 where
     B: Batch,
 {
-    pub(crate) const MAX_LEVELS: usize = 9;
-
     /// Given a batch size figure out which level it should reside in.
     fn size_to_level(len: usize) -> usize {
-        debug_assert_eq!(Self::MAX_LEVELS, 9);
+        debug_assert_eq!(MAX_LEVELS, 9);
         match len {
             0..=9999 => 0,
             10_000..=99_999 => 1,
@@ -953,7 +971,7 @@ where
             factories: factories.clone(),
             lower: Antichain::from_elem(B::Time::minimum()),
             upper: Antichain::new(),
-            levels: (0..Self::MAX_LEVELS).map(|_| BTreeMap::new()).collect(),
+            levels: (0..MAX_LEVELS).map(|_| BTreeMap::new()).collect(),
             dirty: false,
             lower_key_bound: None,
             key_filter: None,
@@ -962,7 +980,7 @@ where
             merger_tx: Runtime::background_channel(),
             completion_tx: Arc::new(tx),
             completion_rx: rx,
-            outstanding: (0..Self::MAX_LEVELS).map(|_| 0).collect(),
+            outstanding: (0..MAX_LEVELS).map(|_| 0).collect(),
             strategy: CompactStrategy::default(),
         }
     }
@@ -1117,8 +1135,8 @@ where
     }
 
     /// Complete all in-progress merges (without starting any new ones).
-    fn complete_merges(&mut self) {
-        for level in 0..Self::MAX_LEVELS {
+    pub(crate) fn complete_merges(&mut self) {
+        for level in 0..MAX_LEVELS {
             let r = self.complete_merges_at(level);
             assert!(r.is_ok(), "We should not fail to complete merges");
         }

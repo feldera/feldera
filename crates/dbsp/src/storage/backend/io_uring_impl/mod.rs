@@ -404,7 +404,7 @@ impl Inner {
     ) -> Result<Arc<FBuf>, StorageError> {
         let end_offset = offset + block.len() as u64;
 
-        let fm = self.files.get_mut(&fd.0).unwrap();
+        let fm = self.files.get_mut(&fd.0).expect("File state for writing should exist. Accidentally shared a mutable file across threads?");
         fm.error()?;
         fm.size = fm.size.max(end_offset);
 
