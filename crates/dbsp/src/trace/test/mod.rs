@@ -402,6 +402,7 @@ proptest! {
             trace.insert(batch);
             trace.retain_keys(Box::new(move |x| *x.downcast_checked::<i32>() >= ((i * 20) as i32)));
 
+            trace.complete_merges();
             // FIXME: Change to 20000 after changing vtable types to pointers.
             assert!(trace.size_of().total_bytes() < /*20000*/ 180000);
         }
@@ -422,6 +423,7 @@ proptest! {
 
             trace.insert(batch);
             trace.retain_values(Box::new(move |x| *x.downcast_checked::<i32>() >= ((i * 20) as i32)));
+            trace.complete_merges();
             // FIXME: Change to 20000 after changing vtable types to pointers.
             assert!(trace.size_of().total_bytes() < /*20000*/180000);
         }
