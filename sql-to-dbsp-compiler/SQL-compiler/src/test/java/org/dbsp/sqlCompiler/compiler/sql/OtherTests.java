@@ -85,6 +85,7 @@ import org.junit.Test;
 
 import javax.imageio.ImageIO;
 import javax.sql.DataSource;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.FilenameFilter;
@@ -709,6 +710,27 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPOperator op = sink.inputs.get(0);
         // There is no optimization I can imagine which will remove the distinct
         Assert.assertTrue(op.is(DBSPStreamDistinctOperator.class));
+    }
+
+    @Test
+    public void testNoOutput() throws IOException, SQLException {
+        String[] statements = new String[]{
+                "CREATE TABLE T (\n" +
+                        "COL1 INT NOT NULL" +
+                        ", COL2 DOUBLE NOT NULL" +
+                        ")",
+                "CREATE VIEW V AS SELECT COL1 FROM T"
+        };
+        File file = createInputScript(statements);
+        // Redirect error stream
+        ByteArrayOutputStream os = new ByteArrayOutputStream();
+        PrintStream ps = new PrintStream(os);
+        PrintStream old = System.err;
+        System.setErr(ps);
+        CompilerMain.execute(file.getPath(), file.getPath());
+        // Restore error stream
+        System.setErr(old);
+        Assert.assertTrue(os.toString().contains("Did you forget to specify"));
     }
 
     @Test
