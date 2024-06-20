@@ -9,9 +9,10 @@ Working wth pandas DataFrames in Feldera is fairly straight forward.
 You can use :meth:`.SQLContext.connect_source_pandas` to connect a 
 DataFrame to a feldera table as the data source. 
 
-To listen for response from feldera, in the form of DataFrames, it is necessary
-to to call :meth:`.SQLContext.listen` before you call 
-:meth:`.SQLContext.start` or :meth:`.SQLContext.run_to_completion`.
+To listen for response from feldera, in the form of DataFrames
+call :meth:`.SQLContext.listen`.
+To ensure all data is received start listening before calling
+:meth:`.SQLContext.start`.
 
 .. highlight:: python
 .. code-block:: python
@@ -57,7 +58,7 @@ to to call :meth:`.SQLContext.listen` before you call
 
     # run this to completion
     # note that if the source is a stream, this will run indefinitely
-    sql.run_to_completion()
+    sql.wait_for_completion(shutdown=True)
 
     # finally, convert the output to a pandas Dataframe
     df = out.to_pandas()
@@ -115,7 +116,7 @@ Here the only notable difference is:
 More on Kafka as the output connector at: https://www.feldera.com/docs/connectors/sinks/kafka
 
 .. warning::
-    Kafka is a streaming data source, therefore running: :meth:`.SQLContext.run_to_completion` will run forever.
+    Kafka is a streaming data source, therefore running: :meth:`.SQLContext.wait_for_completion` will block forever.
 
 .. highlight:: python
 .. code-block:: python
@@ -192,7 +193,7 @@ More on the HTTP GET connector at: https://www.feldera.com/docs/connectors/sourc
 
     out = sql.listen(VIEW_NAME)
 
-    sql.run_to_completion()
+    sql.wait_for_completion(shutdown=True)
 
     df = out.to_pandas()
 
