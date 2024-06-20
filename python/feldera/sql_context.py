@@ -14,6 +14,7 @@ from feldera.rest.program import Program
 from feldera.rest.pipeline import Pipeline
 from feldera.rest.connector import Connector
 from feldera._sql_table import SQLTable
+from feldera._sql_view import SQLView
 from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
@@ -67,7 +68,7 @@ class SQLContext:
         # In the SQL DDL declaration, the order of the tables and views is important.
         # From python 3.7 onwards, the order of insertion is preserved in dictionaries.
         # https://softwaremaniacs.org/blog/2020/02/05/dicts-ordered/en/
-        self.views: Dict[str, str] = {}
+        self.views: Dict[str, SQLView] = {}
         self.tables: Dict[str, SQLTable] = {}
         self.types: Dict[str, str] = {}
 
@@ -104,7 +105,7 @@ class SQLContext:
         """
         types = "\n\n".join([type for type in self.types.values()])
         tables = "\n\n".join([tbl.build_ddl() for tbl in self.tables.values()])
-        views = "\n\n".join([view for view in self.views.values()])
+        views = "\n\n".join([view.build_ddl() for view in self.views.values()])
 
         self.ddl = types + "\n\n" + tables + "\n\n" + views
 
@@ -319,11 +320,7 @@ class SQLContext:
         :param query: The query to be used to create the view.
         """
 
-        query = query.strip()
-        if query[-1] != ';':
-            query += ';'
-
-        self.views[name] = f"CREATE LOCAL VIEW {name} AS {query}"
+        self.views[name] = SQLView(name, True, query)
 
     def register_output_view(self, name: str, query: str):
         """
@@ -334,11 +331,7 @@ class SQLContext:
         :param query: The query to be used to create the view.
         """
 
-        query = query.strip()
-        if query[-1] != ';':
-            query += ';'
-
-        self.views[name] = f"CREATE VIEW {name} AS {query}"
+        self.views[name] = SQLView(name, False, query)
 
     def register_type(self, name: str, spec: str):
         """
@@ -354,6 +347,22 @@ class SQLContext:
             spec += ';'
 
         self.types[name] = f"CREATE TYPE {name} AS {spec}"
+
+    def add_lateness(self, view: str, timestamp_column: str, lateness_expr: str):
+        """
+        Add a lateness annotation to a view.
+        Lateness annotations are SQL statements of the form
+        'LATENESS <view>.<timstamp_column> <lateness_expr>;', e.g.,
+        'LATENESS V.COL1 INTERVAL '1' HOUR;'
+
+        :param view: View name.
+        :param timestamp_column: Timestamp column to associate lateness with.
+        :param lateness_expr: SQL expression that defines lateness.
+        """
+
+        view = self.views.get(view)
+
+        view.add_lateness(timestamp_column, lateness_expr)
 
     def listen(self, view_name: str) -> OutputHandler:
         """
