@@ -298,7 +298,7 @@ hfeature = sql.listen("feature")
 
 # Process full snapshot of the input tables and compute a dataset
 # with feature vectors for use in model training and testing.
-sql.run_to_completion()
+sql.wait_for_completion(shutdown=True)
 
 features_pd = hfeature.to_pandas()
 print(f"Computed {len(features_pd)} feature vectors")

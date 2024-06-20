@@ -64,9 +64,11 @@ Key Concepts
         the name used in both Feldera Program and Pipeline.
       - The second parameter here is :class:`.FelderaClient` that we created above.
 
-* :meth:`.SQLContext.run_to_completion`
-   - Runs this Feldera pipeline to completion. Normally this means until the EoF
+* :meth:`.SQLContext.wait_for_completion`
+   - Blocks this Feldera pipeline until completion. Normally this means until the EoF
      has been reached for this input source.
+
+   - Takes a parameter ``shutdown``, when set shuts the pipeline down after completion.
 
    - Example:
 
@@ -100,7 +102,7 @@ Key Concepts
 
          sql.connect_sink_delta_table(view_name, out_con, out_cfg)
 
-         sql.run_to_completion()
+         sql.wait_for_completion(shutdown=True)
 
       - Here, we register a data table which receives data from input sources.
       - Then, we register a view that performs operations on this input data. 

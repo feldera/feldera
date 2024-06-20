@@ -35,7 +35,7 @@ class TestWireframes(unittest.TestCase):
 
         out = sql.listen(view_name)
 
-        sql.run_to_completion()
+        sql.wait_for_completion(True)
 
         df = out.to_pandas()
 
@@ -70,11 +70,10 @@ class TestWireframes(unittest.TestCase):
         sql.connect_source_pandas(TBL_NAMES[0], df_students, flush=True)
         sql.connect_source_pandas(TBL_NAMES[1], df_grades, flush=True)
 
-        sql.wait_for_completion()
+        sql.wait_for_completion(True)
 
         df = out.to_pandas()
 
-        sql.shutdown()
         sql.delete()
         assert df.shape[0] == 100
 
@@ -107,8 +106,8 @@ class TestWireframes(unittest.TestCase):
         out = sql.listen(VIEW_NAMES[0])
         out2 = sql2.listen(VIEW_NAMES[1])
 
-        sql.run_to_completion()
-        sql2.run_to_completion()
+        sql.wait_for_completion(True)
+        sql2.wait_for_completion(True)
 
         df = out.to_pandas()
         df2 = out2.to_pandas()
@@ -145,9 +144,7 @@ class TestWireframes(unittest.TestCase):
         sql.connect_source_pandas(TBL_NAMES[1], df_grades)
 
         sql.foreach_chunk(view_name, callback)
-
-        sql.run_to_completion()
-
+        sql.wait_for_completion(True)
         sql.delete()
 
     def test_df_without_columns(self):
@@ -173,7 +170,7 @@ class TestWireframes(unittest.TestCase):
         _ = sql.listen("s")
 
         with self.assertRaises(Exception):
-            sql.run_to_completion()
+            sql.wait_for_completion(True)
 
         sql.client.delete_program(sql.program_name)
 
@@ -266,7 +263,7 @@ class TestWireframes(unittest.TestCase):
 
         out = sql.listen(VIEW_NAME)
 
-        sql.run_to_completion()
+        sql.wait_for_completion(True)
 
         df = out.to_pandas()
 
@@ -318,7 +315,7 @@ class TestWireframes(unittest.TestCase):
 
         sql.connect_sink_kafka(VIEW_NAME, "out_avro_kafka", sink_config, avro_format)
 
-        sql.run_to_completion()
+        sql.wait_for_completion(True)
 
         consumer = KafkaConsumer(
             TOPIC,
@@ -366,7 +363,7 @@ class TestWireframes(unittest.TestCase):
 
         out = sql.listen(VIEW_NAME)
 
-        sql.run_to_completion()
+        sql.wait_for_completion(True)
 
         df = out.to_pandas()
 
@@ -395,7 +392,7 @@ class TestWireframes(unittest.TestCase):
 
         out = sql.listen(VIEW_NAME)
 
-        sql.run_to_completion()
+        sql.wait_for_completion(True)
 
         df = out.to_pandas()
 

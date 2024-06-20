@@ -225,7 +225,7 @@ class SQLContext:
 
         except FelderaAPIError as err:
             if err.status_code == 404:
-                return PipelineStatus.UNINITIALIZED
+                return PipelineStatus.NOT_FOUND
             else:
                 raise err
 
@@ -367,9 +367,6 @@ class SQLContext:
         Listens to the output of the provided view so that it is available in the notebook / python code.
 
         :param view_name: The name of the view to listen to.
-
-        .. note::
-            - This method must be called before calling :meth:`.run_to_completion`, or :meth:`.start`.
         """
 
         queue: Optional[Queue] = None
@@ -458,7 +455,6 @@ class SQLContext:
 
         .. note::
             - The callback must be thread-safe as it will be run in a separate thread.
-            - This method must be called before calling :meth:`.run_to_completion`, or :meth:`.start`.
 
         """
 
@@ -590,10 +586,12 @@ class SQLContext:
         else:
             self.input_connectors_buffer[table_name] = [connector]
 
-    def wait_for_completion(self):
+    def wait_for_completion(self, shutdown: bool = False):
         """
         Blocks until the pipeline has completed processing all input records.
         Will block indefinitely if the source is streaming.
+
+        :param shutdown: If True, the pipeline will be shutdown after completion. False by default.
 
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
@@ -617,42 +615,8 @@ class SQLContext:
 
             time.sleep(1)
 
-    def run_to_completion(self):
-        """
-        .. _run_to_completion:
-
-        Runs the pipeline to completion, waiting for all input records to be processed.
-        Will block indefinitely if the source is streaming.
-
-        :raises RuntimeError: If the pipeline returns unknown metrics.
-        """
-
-        self.__setup_pipeline()
-
-        # start the pipeline in the paused state
-        # so that we can start listening to the output
-        # before the pipeline consumes input
-        # ensuring that we don't miss any output
-        self.pause()
-
-        # set up the output listeners
-        self.__setup_output_listeners()
-
-        # resume the pipeline operations
-        self.resume()
-
-        self.__push_http_inputs()
-
-        self.wait_for_completion()
-
-        for view_queue in self.views_tx:
-            for view_name, queue in view_queue.items():
-                # sends a message to the callback runner to stop listening
-                queue.put(_CallbackRunnerInstruction.RanToCompletion)
-                # block until the callback runner has been stopped
-                queue.join()
-
-        self.shutdown()
+        if shutdown:
+            self.shutdown()
 
     def start(self):
         """
@@ -747,6 +711,13 @@ class SQLContext:
         """
         Shuts down the pipeline.
         """
+        
+        for view_queue in self.views_tx:
+            for view_name, queue in view_queue.items():
+                # sends a message to the callback runner to stop listening
+                queue.put(_CallbackRunnerInstruction.RanToCompletion)
+                # block until the callback runner has been stopped
+                queue.join()
 
         self.client.shutdown_pipeline(self.pipeline_name)
 
