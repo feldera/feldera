@@ -132,8 +132,9 @@ public final class DBSPMapLiteral extends DBSPLiteral {
                     .append(this.type)
                     .append(")")
                     .append("null");
-        builder.append("HashMap::from([")
+        builder.append("BTreeMap::from([")
                 .increase();
+        assert this.values != null;
         for (int i = 0; i < keys.size(); i++) {
             builder.append(this.keys.get(i))
                     .append(", ")

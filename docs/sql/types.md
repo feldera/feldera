@@ -24,7 +24,7 @@ The compiler supports the following SQL data types:
 | `DATE`                      | A date value.                                                                                                                                                      |                            |
 | `GEOMETRY`                  | A geographic data type (only rudimentary support at this point).                                                                                                   |                            |
 | `ARRAY`                     | An array with element of the specified type. Used as a suffix for another type (e.g., `INT ARRAY`)                                                                 |                            |
-| `MAP`                       | A map with string keys and values of the specified type. Used as a suffix for another type (e.g., `INT MAP`)                                                       |                            |
+| `MAP`                       | A map with keys and values of specified types. The syntax is `MAP<KEYTYPE, VALUETYPE>`                                                                             |                            |
 
 - For `DECIMAL` types: 23.456 has a precision of 5 and a scale of 3.
   If scale is missing it is assumed to be 0.
