@@ -48,6 +48,7 @@ use ordered_float::OrderedFloat;
 use pipeline_types::config::PipelineConfig;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use psutil::process::{Process, ProcessError};
+use rand::{seq::index::sample, thread_rng};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     cmp::min,
@@ -283,14 +284,25 @@ pub enum MetricValue {
 
 #[derive(Serialize)]
 pub struct HistogramValue {
+    /// Number of values in the hsitogram.
     count: usize,
-    first: f64,
-    middle: f64,
-    last: f64,
+
+    /// A sample of the values in the histogram, paired with their indexes in
+    /// `0..count`, ordered by index.
+    sample: Vec<(usize, f64)>,
+
+    /// The smallest value in the histogram (which might not have been sampled).
     minimum: f64,
+
+    /// The largest value in the histogram (which might not have been sampled).
     maximum: f64,
+
+    /// The mean of the values in the histogram.
     mean: f64,
 }
+
+/// The maximum number of samples provided in [`HistogramValue::sample`].
+pub const HISTOGRAM_SAMPLE_SIZE: usize = 100;
 
 impl From<DebugValue> for MetricValue {
     fn from(source: DebugValue) -> Self {
@@ -302,9 +314,19 @@ impl From<DebugValue> for MetricValue {
                 if !values.is_empty() {
                     Some(HistogramValue {
                         count: values.len(),
-                        first: values[0].0,
-                        middle: values[values.len() / 2].0,
-                        last: values[values.len() - 1].0,
+                        sample: {
+                            let mut indexes = sample(
+                                &mut thread_rng(),
+                                values.len(),
+                                min(HISTOGRAM_SAMPLE_SIZE, values.len()),
+                            )
+                            .into_vec();
+                            indexes.sort();
+                            indexes
+                                .into_iter()
+                                .map(|index| (index, values[index].0))
+                                .collect()
+                        },
                         minimum: values.iter().min().unwrap().0,
                         maximum: values.iter().max().unwrap().0,
                         mean: values.iter().sum::<OrderedFloat<f64>>().0 / (values.len() as f64),
