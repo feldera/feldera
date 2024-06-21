@@ -254,7 +254,7 @@ where
         self.file.n_rows(1) as usize
     }
 
-    fn byte_size(&self) -> usize {
+    fn approximate_byte_size(&self) -> usize {
         self.file.byte_size().unwrap() as usize
     }
 

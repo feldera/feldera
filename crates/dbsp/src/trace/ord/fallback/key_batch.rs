@@ -247,10 +247,10 @@ where
     }
 
     #[inline]
-    fn byte_size(&self) -> usize {
+    fn approximate_byte_size(&self) -> usize {
         match &self.inner {
-            Inner::Vec(vec) => vec.byte_size(),
-            Inner::File(file) => file.byte_size(),
+            Inner::Vec(vec) => vec.approximate_byte_size(),
+            Inner::File(file) => file.approximate_byte_size(),
         }
     }
 

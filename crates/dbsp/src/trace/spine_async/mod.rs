@@ -342,8 +342,8 @@ where
         self.fold_batches(0, |acc, batch| acc + batch.len())
     }
 
-    fn byte_size(&self) -> usize {
-        self.fold_batches(0, |acc, batch| acc + batch.byte_size())
+    fn approximate_byte_size(&self) -> usize {
+        self.fold_batches(0, |acc, batch| acc + batch.approximate_byte_size())
     }
 
     fn lower(&self) -> AntichainRef<'_, Self::Time> {

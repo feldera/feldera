@@ -333,7 +333,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
     }
 
     #[inline]
-    fn byte_size(&self) -> usize {
+    fn approximate_byte_size(&self) -> usize {
         self.size_of().total_bytes()
     }
 

@@ -1165,7 +1165,7 @@ where
         self.data.len()
     }
 
-    fn byte_size(&self) -> usize {
+    fn approximate_byte_size(&self) -> usize {
         self.size_of().total_bytes()
     }
 

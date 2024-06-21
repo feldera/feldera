@@ -363,9 +363,9 @@ where
             0 => true,
             usize::MAX => false,
             min_storage_bytes => {
-                let size1 = batch1.byte_size();
+                let size1 = batch1.approximate_byte_size();
                 size1 >= min_storage_bytes || {
-                    let size2 = batch2.byte_size();
+                    let size2 = batch2.approximate_byte_size();
                     size1 + size2 >= min_storage_bytes
                 }
             }

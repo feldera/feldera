@@ -368,7 +368,7 @@ where
         <VecValBatchLayer<K, V, T, R, O> as Trie>::tuples(&self.layer)
     }
 
-    fn byte_size(&self) -> usize {
+    fn approximate_byte_size(&self) -> usize {
         self.size_of().total_bytes()
     }
 
