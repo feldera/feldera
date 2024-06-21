@@ -3,16 +3,29 @@ from feldera import SQLContext, FelderaClient, SQLSchema
 import pandas as pd
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
 import numpy as np
 import argparse
 from argparse import RawTextHelpFormatter
 import time
+import dash
+from dash.dependencies import Output, Input
+from dash import dcc, html
+import plotly.graph_objs as go
+import threading
+import os
+import signal
 
 DEFAULT_API_URL = "http://localhost:8080"
 
 # How long to run the inference pipeline for.
-INFERENCE_TIME_SECONDS = 60
+INFERENCE_TIME_SECONDS = 30
+
+accuracies = []
+PRECISION_LIST = []
+RECALL_LIST = []
+F1_LIST = []
+CHUNK_NO = []
 
 def main():
     parser = argparse.ArgumentParser(
@@ -142,7 +155,7 @@ specifying an AWS access key and region.
     print("Testing the trained model")
 
     y_pred = trained_model.predict(X_test)
-    eval_metrics(y_test, y_pred)
+    eval_metrics(y_test, y_pred, print_metrics = True)
 
     print(f"\nRunning the inference pipeline for {INFERENCE_TIME_SECONDS} seconds")
 
@@ -186,17 +199,39 @@ specifying an AWS access key and region.
             | s3_credentials,
         )
 
-    sql.foreach_chunk("feature", lambda df, chunk : inference(trained_model, df))
+    sql.foreach_chunk("feature", lambda df, chunk_no : infer_collect_metrics(trained_model, df, chunk_no, accuracies))
 
     # Start the pipeline to continuously process the input stream of credit card
     # transactions and output newly computed feature vectors to a Delta table.
 
-    sql.start()
+    def queries_inf():
+        global completed
+        completed = False
+        sql.start()
 
-    time.sleep(INFERENCE_TIME_SECONDS)
+        time.sleep(INFERENCE_TIME_SECONDS)
 
-    print(f"Shutting down the inference pipeline after {INFERENCE_TIME_SECONDS} seconds")
-    sql.shutdown()
+        print(f"Shutting down the inference pipeline after {INFERENCE_TIME_SECONDS} seconds")
+        sql.shutdown()
+        print(f"Pipeline successfully shut down")
+        completed = True
+
+    # # version without script termination
+    # def queries_inf():
+    #     sql.start()
+
+    #     time.sleep(INFERENCE_TIME_SECONDS)
+
+    #     print(f"Shutting down the inference pipeline after {INFERENCE_TIME_SECONDS} seconds")
+
+    #     sql.shutdown()
+
+    #     print(f"Pipeline successfully shut down")
+
+    sql_thread = threading.Thread(target = queries_inf)
+    sql_thread.start()
+
+    app.run_server(debug=True, use_reloader=False)
 
 def build_program(client, pipeline_name):
     sql = SQLContext(pipeline_name, client).get_or_create()
@@ -281,7 +316,6 @@ def build_program(client, pipeline_name):
     sql.register_output_view("FEATURE", query)
     return sql
 
-# Split input dataframe into train and test sets
 def get_train_test_data(dataframe, feature_cols, target_col, train_test_split_ratio, random_seed):
     X = dataframe[feature_cols]
     y = dataframe[target_col]
@@ -310,23 +344,27 @@ def train_model(dataframe, config):
     model.fit(X_train, y_train.values.ravel())
     return model, X_test, y_test
 
-# Evaluate prediction accuracy against ground truth.
-def eval_metrics(y, predictions):
-    cm = confusion_matrix(y, predictions)
-    print("Confusion matrix:")
-    print(cm)
+def eval_metrics(y, predictions, print_metrics=False):
 
-    if len(cm) < 2 or cm[1][1] == 0:  # checking if there are no true positives
+    labels = [0, 1]
+    cm = confusion_matrix(y, predictions, labels=labels)
+
+    if len(cm) < 2 or cm[1][1]==0:  # checking if there are no true positives
         print('No fraudulent transaction to evaluate')
         return
     else:
-        precision = cm[1][1] / (cm[1][1] + cm[0][1])
-        recall = cm[1][1] / (cm[1][1] + cm[1][0])
-        f1 = (2 * (precision * recall) / (precision + recall))
+        precision = precision_score(y, predictions, pos_label=1)
+        recall = recall_score(y, predictions, pos_label=1)
+        f1 = f1_score(y, predictions, pos_label=1)
 
-    print(f"Precision: {precision * 100:.2f}%")
-    print(f"Recall: {recall * 100:.2f}%")
-    print(f"F1 Score: {f1 * 100:.2f}%")
+    if print_metrics:
+        print("Confusion matrix:")
+        print(cm)
+        print(f"Precision: {precision * 100:.2f}%")
+        print(f"Recall: {recall * 100:.2f}%")
+        print(f"F1 Score: {f1 * 100:.2f}%")
+
+    return precision*100, recall*100, f1*100
 
 def inference(trained_model, df):
     print(f"\nReceived {len(df)} feature vectors.")
@@ -338,7 +376,76 @@ def inference(trained_model, df):
     y_inf = df["is_fraud"].values
     predictions_inf = trained_model.predict(X_inf)
 
-    eval_metrics(y_inf, predictions_inf)
+    return eval_metrics(y_inf, predictions_inf)
+
+def infer_collect_metrics(trained_model, df, chunk_no, accuracies):
+    metrics = inference(trained_model, df)
+    if metrics is not None:
+        precision, recall, f1 = metrics
+        accuracies.append((chunk_no, precision, recall, f1))
+
+        PRECISION_LIST.append(precision)
+        RECALL_LIST.append(recall)
+        F1_LIST.append(f1)
+        CHUNK_NO.append(chunk_no)
+
+        # Sleep to simulate the delay
+        time.sleep(0.2)
+
+app = dash.Dash(__name__)
+
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=CHUNK_NO,
+    y=PRECISION_LIST,
+    name='Precision',
+    line=dict(color='green', width=4),
+    mode='lines+markers'
+))
+fig.add_trace(go.Scatter(
+    x=CHUNK_NO,
+    y=RECALL_LIST,
+    name='Recall',
+    line=dict(color='blue', width=4),
+    mode='lines+markers'
+))
+fig.add_trace(go.Scatter(
+    x=CHUNK_NO,
+    y=F1_LIST,
+    name='F1 Score',
+    line=dict(color='red', width=4),
+    mode='lines+markers'
+))
+
+app.layout = html.Div(
+    [
+        dcc.Graph(id='live-graph', animate=False),
+        dcc.Interval(
+            id='graph-update',
+            interval=800  # Interval in milliseconds
+        ),
+    ]
+    )
+
+@app.callback(Output('live-graph', 'figure'),
+                [Input('graph-update', 'n_intervals')]
+)
+def update_graph_scatter(n):
+    # Exit if the pipeline has completed running
+    if completed == True:
+        os.kill(os.getpid(), signal.SIGTERM)
+    else:
+        fig.update_traces(selector=dict(line_color='green'), x=CHUNK_NO, y=PRECISION_LIST)
+        fig.update_traces(selector=dict(line_color='blue'), x=CHUNK_NO, y=RECALL_LIST)
+        fig.update_traces(selector=dict(line_color='red'), x=CHUNK_NO, y=F1_LIST)
+        return fig
+    
+    # # version without script termination
+    # def update_graph_scatter(n):
+    #     fig.update_traces(selector=dict(line_color='green'), x=CHUNK_NO, y=PRECISION_LIST)
+    #     fig.update_traces(selector=dict(line_color='blue'), x=CHUNK_NO, y=RECALL_LIST)
+    #     fig.update_traces(selector=dict(line_color='red'), x=CHUNK_NO, y=F1_LIST)
+    #     return fig
 
 if __name__ == "__main__":
     main()
