@@ -104,11 +104,13 @@ where
     }
 }
 
+#[derive(SizeOf)]
 pub struct FallbackWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackWSetFactories<K, R>,
     inner: Inner<K, R>,
 }
@@ -127,6 +129,7 @@ where
     }
 }
 
+#[derive(SizeOf)]
 #[allow(clippy::large_enum_variant)]
 enum Inner<K, R>
 where
@@ -385,15 +388,18 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct FallbackWSetMerger<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackWSetFactories<K, R>,
     inner: MergerInner<K, R>,
 }
 
+#[derive(SizeOf)]
 enum MergerInner<K, R>
 where
     K: DataTrait + ?Sized,
@@ -500,31 +506,19 @@ where
     }
 }
 
-impl<K, R> SizeOf for FallbackWSetMerger<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        match &self.inner {
-            MergerInner::AllFile(file) => file.size_of_children(context),
-            MergerInner::AllVec(vec) => vec.size_of_children(context),
-            MergerInner::ToFile(merger) => merger.size_of_children(context),
-            MergerInner::ToVec(merger) => merger.size_of_children(context),
-        }
-    }
-}
-
 /// A builder for batches from ordered update tuples.
+#[derive(SizeOf)]
 pub struct FallbackWSetBuilder<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackWSetFactories<K, R>,
     inner: BuilderInner<K, R>,
 }
 
+#[derive(SizeOf)]
 #[allow(clippy::large_enum_variant)]
 enum BuilderInner<K, R>
 where
@@ -662,34 +656,6 @@ where
                     Inner::Vec(vec.done())
                 }
             },
-        }
-    }
-}
-
-impl<K, R> SizeOf for FallbackWSetBuilder<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        match &self.inner {
-            BuilderInner::File(file) => file.size_of_children(context),
-            BuilderInner::Vec(vec) | BuilderInner::Threshold { vec, .. } => {
-                vec.size_of_children(context)
-            }
-        }
-    }
-}
-
-impl<K, R> SizeOf for FallbackWSet<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        match &self.inner {
-            Inner::Vec(vec) => vec.size_of_children(context),
-            Inner::File(file) => file.size_of_children(context),
         }
     }
 }

@@ -20,6 +20,7 @@ use crate::{
 /// [`GenericMerger`] uses this to save and restore positions in the batches
 /// it's merging, since it can't keep a cursor around from one run to another
 /// because of lifetime issues.
+#[derive(SizeOf)]
 enum Position<K>
 where
     K: DataTrait + ?Sized,
@@ -64,6 +65,7 @@ where
     }
 }
 
+#[derive(SizeOf)]
 pub(super) struct GenericMerger<K, V, T, R, O>
 where
     K: DataTrait + ?Sized,
@@ -316,20 +318,6 @@ where
         *fuel -= 1;
         cursor1.step_val();
         cursor2.step_val();
-    }
-}
-
-impl<K, V, T, R, O> SizeOf for GenericMerger<K, V, T, R, O>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-    O: Batch + BatchReader<Key = K, Val = V, R = R, Time = T>,
-    O::Builder: TimedBuilder<O>,
-{
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        self.builder.size_of_children(context)
     }
 }
 

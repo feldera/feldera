@@ -109,6 +109,7 @@ where
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
+#[derive(SizeOf)]
 pub struct FallbackValBatch<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -116,10 +117,12 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackValBatchFactories<K, V, T, R>,
     inner: Inner<K, V, T, R>,
 }
 
+#[derive(SizeOf)]
 enum Inner<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -324,6 +327,7 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct FallbackValMerger<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -331,10 +335,12 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackValBatchFactories<K, V, T, R>,
     inner: MergerInner<K, V, T, R>,
 }
 
+#[derive(SizeOf)]
 enum MergerInner<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -446,19 +452,8 @@ where
     }
 }
 
-impl<K, V, T, R> SizeOf for FallbackValMerger<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
-    }
-}
-
 /// A builder for creating layers from unsorted update tuples.
+#[derive(SizeOf)]
 pub struct FallbackValBuilder<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -466,10 +461,12 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackValBatchFactories<K, V, T, R>,
     inner: BuilderInner<K, V, T, R>,
 }
 
+#[derive(SizeOf)]
 enum BuilderInner<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -610,30 +607,6 @@ where
                 }
             },
         }
-    }
-}
-
-impl<K, V, T, R> SizeOf for FallbackValBuilder<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
-    }
-}
-
-impl<K, V, T, R> SizeOf for FallbackValBatch<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
     }
 }
 

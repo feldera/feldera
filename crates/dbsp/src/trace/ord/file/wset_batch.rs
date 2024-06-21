@@ -127,12 +127,15 @@ where
 ///
 /// Each tuple in `FileWSet<K, R>` has key type `K`, value type `()`, weight
 /// type `R`, and time type `()`.
+#[derive(SizeOf)]
 pub struct FileWSet<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileWSetFactories<K, R>,
+    #[size_of(skip)]
     file: Reader<(&'static K, &'static R, ())>,
     lower_bound: usize,
 }
@@ -439,11 +442,13 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct FileWSetMerger<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileWSetFactories<K, R>,
 
     // Position in first batch.
@@ -452,6 +457,7 @@ where
     lower2: usize,
 
     // Output so far.
+    #[size_of(skip)]
     writer: Writer1<K, R>,
 }
 
@@ -753,12 +759,15 @@ where
 }
 
 /// A builder for creating layers from unsorted update tuples.
+#[derive(SizeOf)]
 pub struct FileWSetBuilder<K, R>
 where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileWSetFactories<K, R>,
+    #[size_of(skip)]
     writer: Writer1<K, R>,
 }
 
@@ -830,35 +839,5 @@ where
 
     fn done_with_bounds(self, _lower: Antichain<()>, _upper: Antichain<()>) -> FileWSet<K, R> {
         self.done()
-    }
-}
-
-impl<K, R> SizeOf for FileWSetBuilder<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
-    }
-}
-
-impl<K, R> SizeOf for FileWSetMerger<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
-    }
-}
-
-impl<K, R> SizeOf for FileWSet<K, R>
-where
-    K: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
     }
 }

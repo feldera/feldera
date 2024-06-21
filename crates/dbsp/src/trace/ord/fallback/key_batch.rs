@@ -109,16 +109,19 @@ where
 ///
 /// Each tuple in `FallbackKeyBatch<K, T, R>` has key type `K`, value type `()`,
 /// weight type `R`, and time type `R`.
+#[derive(SizeOf)]
 pub struct FallbackKeyBatch<K, T, R>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackKeyBatchFactories<K, T, R>,
     inner: Inner<K, T, R>,
 }
 
+#[derive(SizeOf)]
 enum Inner<K, T, R>
 where
     K: DataTrait + ?Sized,
@@ -314,16 +317,19 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct FallbackKeyMerger<K, T, R>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackKeyBatchFactories<K, T, R>,
     inner: MergerInner<K, T, R>,
 }
 
+#[derive(SizeOf)]
 enum MergerInner<K, T, R>
 where
     K: DataTrait + ?Sized,
@@ -430,33 +436,20 @@ where
     }
 }
 
-impl<K, T, R> SizeOf for FallbackKeyMerger<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        match &self.inner {
-            MergerInner::AllFile(file) => file.size_of_children(context),
-            MergerInner::AllVec(vec) => vec.size_of_children(context),
-            MergerInner::ToFile(merger) => merger.size_of_children(context),
-            MergerInner::ToVec(merger) => merger.size_of_children(context),
-        }
-    }
-}
-
 /// A builder for creating layers from unsorted update tuples.
+#[derive(SizeOf)]
 pub struct FallbackKeyBuilder<K, T, R>
 where
     K: DataTrait + ?Sized,
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackKeyBatchFactories<K, T, R>,
     inner: BuilderInner<K, T, R>,
 }
 
+#[derive(SizeOf)]
 enum BuilderInner<K, T, R>
 where
     K: DataTrait + ?Sized,
@@ -601,28 +594,6 @@ where
                 }
             },
         }
-    }
-}
-
-impl<K, T, R> SizeOf for FallbackKeyBuilder<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
-    }
-}
-
-impl<K, T, R> SizeOf for FallbackKeyBatch<K, T, R>
-where
-    K: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
     }
 }
 
