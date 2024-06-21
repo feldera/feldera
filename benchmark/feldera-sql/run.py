@@ -373,7 +373,7 @@ def main():
 
     # Run the pipelines
     results = []
-    histogram_values = ["count", "first", "middle", "last", "minimum", "maximum", "mean"]
+    histogram_values = ["count", "sample", "minimum", "maximum", "mean"]
     pipeline_metrics = []
     metrics_seen = {"name", "elapsed_seconds"}
     for pipeline_name in queries:
