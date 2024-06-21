@@ -268,9 +268,18 @@ def write_results(results, outfile):
     writer.writerow(['when', 'runner', 'mode', 'language', 'name', 'num_cores', 'num_events', 'elapsed', 'peak_memory_bytes'])
     writer.writerows(results)
     
-def write_metrics(results, outfile):
+def write_metrics(keys, results, outfile):
     writer = csv.writer(outfile)
-    writer.writerows(results)
+    sorted_keys = sorted(keys)
+    writer.writerow(sorted_keys)
+    for row_dict in results:
+        row_list = []
+        for key in sorted_keys:
+            if key in row_dict:
+                row_list += [row_dict[key]]
+            else:
+                row_list += [""]
+        writer.writerow(row_list)
 
 def main():
     # Command-line arguments
@@ -364,14 +373,9 @@ def main():
 
     # Run the pipelines
     results = []
-    pipeline_metric_names = ["name", "elapsed_seconds", "rss_bytes", "buffered_input_records", "total_input_records", "total_processed_records"]
-    disk_metric_names = ["total_files_created", "total_bytes_written", "total_writes_success", "buffer_cache_hit"]
-    disk_write_latency_names = ["count", "first", "middle", "last", "minimum", "maximum", "mean"]
-    for s in disk_metric_names:
-        pipeline_metric_names += ["disk_" + s] 
-    for s in disk_write_latency_names:
-        pipeline_metric_names += ["disk_write_latency_histogram_" + s] 
-    pipeline_metrics = [pipeline_metric_names]
+    histogram_values = ["count", "first", "middle", "last", "minimum", "maximum", "mean"]
+    pipeline_metrics = []
+    metrics_seen = {"name", "elapsed_seconds"}
     for pipeline_name in queries:
         start = time.time()
 
@@ -395,28 +399,26 @@ def main():
                     before, after = ('\r', '') if os.isatty(1) else ('', '\n')
                     sys.stdout.write(f"{before}Pipeline {pipeline_name} processed {processed} records in {elapsed:.1f} seconds{after}")
                 last_metrics = elapsed
-                metrics_list = [pipeline_name, elapsed, global_metrics["rss_bytes"], global_metrics["buffered_input_records"], global_metrics["total_input_records"], global_metrics["total_processed_records"]]
-                disk_index = len(metrics_list)
-                for i in range(11):
-                    metrics_list += [""]
+                metrics_dict = {"name":pipeline_name, "elapsed_seconds":elapsed}
+                for key, value in global_metrics.items():
+                    metrics_seen.add(key)
+                    metrics_dict[key] = value
                 for s in stats["metrics"]:
-                    if s["key"] == "disk.total_files_created":
-                        metrics_list[disk_index] = s["value"]["Counter"]
-                    elif s["key"] == "disk.total_bytes_written":
-                        metrics_list[disk_index + 1] = s["value"]["Counter"]
-                    elif s["key"] == "disk.total_writes_success":
-                        metrics_list[disk_index + 2] = s["value"]["Counter"]
-                    elif s["key"] == "disk.buffer_cache_hit":
-                        metrics_list[disk_index + 3] = s["value"]["Counter"]
-                    elif s["key"] == "disk.write_latency" and s["value"]["Histogram"] is not None:
-                        metrics_list[disk_index + 4] = s["value"]["Histogram"]["count"]
-                        metrics_list[disk_index + 5] = s["value"]["Histogram"]["first"]
-                        metrics_list[disk_index + 6] = s["value"]["Histogram"]["middle"]
-                        metrics_list[disk_index + 7] = s["value"]["Histogram"]["last"]
-                        metrics_list[disk_index + 8] = s["value"]["Histogram"]["minimum"]
-                        metrics_list[disk_index + 9] = s["value"]["Histogram"]["maximum"]
-                        metrics_list[disk_index + 10] = s["value"]["Histogram"]["mean"]
-                pipeline_metrics += [metrics_list]
+                    key = s["key"].replace(".", "_")
+                    value = s["value"]
+                    if "Counter" in value and value["Counter"] is not None:
+                        metrics_seen.add(key)
+                        metrics_dict[key] = value["Counter"]
+                    elif "Gauge" in value and value["Gauge"] is not None:
+                        metrics_seen.add(key)
+                        metrics_dict[key] = value["Gauge"]
+                        
+                    if "Histogram" in value and value["Histogram"] is not None:
+                        for v in histogram_values:
+                            k = key + "_histogram_" + v
+                            metrics_seen.add(k)
+                            metrics_dict[k] = value["Histogram"][v]
+                pipeline_metrics += [metrics_dict]
                 last_processed = processed
                 if stats["global_metrics"]["pipeline_complete"]:
                     break
@@ -436,7 +438,7 @@ def main():
     if csvfile is not None:
         write_results(results, open(csvfile, 'w', newline=''))
     if csvmetricsfile is not None:
-        write_metrics(pipeline_metrics, open(csvmetricsfile, 'w', newline=''))
+        write_metrics(metrics_seen, pipeline_metrics, open(csvmetricsfile, 'w', newline=''))
 
 if __name__ == "__main__":
     main()
