@@ -284,7 +284,7 @@ pub enum MetricValue {
 
 #[derive(Serialize)]
 pub struct HistogramValue {
-    /// Number of values in the hsitogram.
+    /// Number of values in the histogram.
     count: usize,
 
     /// A sample of the values in the histogram, paired with their indexes in
