@@ -934,7 +934,7 @@ inherits = "release"
     }
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 enum Stage {
     Sql,
     Rust,
@@ -1086,6 +1086,10 @@ impl CompilationJob {
         let exit_status = self.compiler_process.wait().await.map_err(|e| {
             ManagerError::io_error("waiting for the compiler process".to_string(), e)
         })?;
+        debug!(
+            "{:?} compiler terminated with exit status {exit_status:?}",
+            self.stage
+        );
         Ok(exit_status)
         // doesn't update status
     }
