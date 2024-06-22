@@ -460,7 +460,12 @@ integration-tests:
                 --compose docker-compose.yml \
                 --service pipeline-manager \
                 --load itest:latest=+integration-test-container
-        RUN sleep 15 && docker run --env-file .env --network default_default itest:latest
+        # Output pipeline manager logs if tests fail. Without this we don't have
+        # a way to see what went wrong in the manager.
+        RUN sleep 15 && docker run --env-file .env --network default_default itest:latest; \
+            status=$?; \
+            [ $status -ne 0 ] && docker logs default-pipeline-manager-1; \
+            exit $status
     END
 
 ui-playwright-container:
