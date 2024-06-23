@@ -820,7 +820,7 @@ where
                 (source2, lower2, upper2),
                 key_filter,
                 value_filter,
-                usize::max_value(),
+                usize::MAX,
             );
             // TODO: account for filtered out keys.
             effort = (self.vals.keys() - starting_updates) as isize;

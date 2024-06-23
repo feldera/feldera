@@ -591,7 +591,10 @@ where
             local_node_id: self.local_node_id,
             origin_node_id: self.origin_node_id.clone(),
             circuit: self.circuit.clone(),
-            val: std::mem::transmute(self.val.clone()),
+            val: std::mem::transmute::<
+                Rc<UnsafeCell<StreamValue<D>>>,
+                Rc<UnsafeCell<StreamValue<D2>>>,
+            >(self.val.clone()),
         }
     }
 }

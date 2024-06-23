@@ -703,7 +703,7 @@ where
 
     fn consolidate(mut self) -> Option<B> {
         // Merge batches until there is nothing left to merge.
-        let mut fuel = isize::max_value();
+        let mut fuel = isize::MAX;
         while !self.reduced() {
             self.exert(&mut fuel);
         }
@@ -1150,7 +1150,7 @@ where
     fn complete_merges(&mut self) {
         for merge_state in self.merging.iter_mut() {
             if merge_state.is_inprogress() {
-                let mut fuel = isize::max_value();
+                let mut fuel = isize::MAX;
                 merge_state.work(&self.key_filter, &self.value_filter, &mut fuel);
             }
         }
@@ -1346,7 +1346,7 @@ where
         key_filter: &Option<Filter<B::Key>>,
         value_filter: &Option<Filter<B::Val>>,
     ) -> Option<B> {
-        let mut fuel = isize::max_value();
+        let mut fuel = isize::MAX;
         self.work(key_filter, value_filter, &mut fuel);
         if let MergeVariant::Complete(batch) = self {
             batch
