@@ -433,7 +433,7 @@ where
 
     /// Merges `self` with `other` by running merger to completion.
     fn merge(&self, other: &Self) -> Self {
-        let mut fuel = isize::max_value();
+        let mut fuel = isize::MAX;
         let mut merger = Self::Merger::new_merger(self, other);
         merger.work(self, other, &None, &None, &mut fuel);
         merger.done()
