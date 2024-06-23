@@ -72,7 +72,7 @@ impl BatchMerger {
                 self.in_progress.retain_mut(|f| {
                     let mut fuel = 100_000isize; // Chosen arbitrarily. Might need some tuning.
                     f(&mut fuel);
-                    fuel == 0
+                    fuel <= 0
                 });
 
                 if self.in_progress.len() < Self::CONCURRENT_MERGES && self.receiver.is_ready() {
