@@ -18,13 +18,13 @@ use crate::storage::{checkpoint_path, write_commit_metadata};
 use crate::trace::spine_async::merger::{BackgroundOperation, MergeResult};
 use crate::trace::spine_fueled::CommittedSpine;
 use crate::trace::Merger;
-use crossbeam::channel::{unbounded, Receiver, Sender, TryRecvError};
 use metrics::{counter, histogram};
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{channel, Receiver, Sender, SyncSender, TryRecvError};
 use std::sync::Arc;
 use std::time::Instant;
 use std::{
@@ -213,7 +213,7 @@ where
     value_filter: Option<Filter<B::Val>>,
     /// The channel where we send merge requests to the compactor thread.
     #[size_of(skip)]
-    merger_tx: Arc<Sender<BackgroundOperation>>,
+    merger_tx: Arc<SyncSender<BackgroundOperation>>,
     /// The closure of the compactor thread uses this channel to send completed
     /// merges back to us.
     #[size_of(skip)]
@@ -574,7 +574,7 @@ where
 
     /// Starts a new merge.
     fn enqueue(
-        sender: &Arc<Sender<BackgroundOperation>>,
+        sender: &Arc<SyncSender<BackgroundOperation>>,
         key: BatchIdent,
         mut batches: Vec<Arc<B>>,
         key_filter: Option<Filter<B::Key>>,
@@ -966,7 +966,7 @@ where
     /// The `effort` parameter is that multiplier. This value should be at
     /// least one for the merging to happen; a value of zero is not helpful.
     pub fn with_effort(factories: &B::Factories, _effort: usize) -> Self {
-        let (tx, rx) = unbounded();
+        let (tx, rx) = channel();
         Spine {
             factories: factories.clone(),
             lower: Antichain::from_elem(B::Time::minimum()),
