@@ -13,12 +13,12 @@ use crate::{
     },
     DetailedError,
 };
-use crossbeam::channel::{bounded, Receiver, Sender};
 use crossbeam_utils::sync::{Parker, Unparker};
 use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use pipeline_types::config::StorageCacheConfig;
 use serde::Serialize;
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::{
     backtrace::Backtrace,
     borrow::Cow,
@@ -327,7 +327,7 @@ fn mk_background_thread(
     runtime: Option<Runtime>,
     worker_index: usize,
     bg_work_receiver: Receiver<BackgroundOperation>,
-    init_sender: Option<Sender<(Unparker, Arc<AtomicBool>)>>,
+    init_sender: Option<SyncSender<(Unparker, Arc<AtomicBool>)>>,
 ) -> JoinHandle<()> {
     Builder::new()
         .name(thread_name)
@@ -451,8 +451,8 @@ impl Runtime {
         let mut background_handles = Vec::with_capacity(nworkers);
         background_handles.extend(workers.clone().map(|worker_index| {
             let cloned_runtime = runtime.clone();
-            let (init_sender, init_receiver) = bounded(1);
-            let (bg_work_sender, bg_work_receiver) = bounded(BatchMerger::RX_QUEUE_SIZE);
+            let (init_sender, init_receiver) = sync_channel(1);
+            let (bg_work_sender, bg_work_receiver) = sync_channel(BatchMerger::RX_QUEUE_SIZE);
             let join_handle = mk_background_thread(
                 format!("dbsp-background-{}", worker_index),
                 Some(cloned_runtime),
@@ -479,7 +479,7 @@ impl Runtime {
             let runtime = runtime.clone();
             let build_circuit = circuit.clone();
 
-            let (init_sender, init_receiver) = bounded(1);
+            let (init_sender, init_receiver) = sync_channel(1);
             let join_handle = Builder::new()
                 .name(format!("dbsp-worker-{worker_index}"))
                 .spawn(move || {
@@ -524,7 +524,7 @@ impl Runtime {
     ///
     /// This is currently only used for file compaction but could be extended for
     /// more generic background work in the future.
-    pub(crate) fn background_channel() -> Arc<Sender<BackgroundOperation>> {
+    pub(crate) fn background_channel() -> Arc<SyncSender<BackgroundOperation>> {
         let worker_index = Runtime::worker_index();
         if let Some(rt) = Runtime::runtime() {
             rt.local_store()
@@ -532,7 +532,7 @@ impl Runtime {
                 .unwrap()
                 .clone()
         } else {
-            let (bg_work_sender, bg_work_receiver) = bounded(BatchMerger::RX_QUEUE_SIZE);
+            let (bg_work_sender, bg_work_receiver) = sync_channel(BatchMerger::RX_QUEUE_SIZE);
             let _join_handle = mk_background_thread(
                 String::from("dbsp-background-no-runtime"),
                 None,
@@ -880,7 +880,7 @@ impl TypedMapKey<LocalStoreMarker> for WorkerId {
 struct BackgroundChannel(usize);
 
 impl TypedMapKey<LocalStoreMarker> for BackgroundChannel {
-    type Value = Arc<Sender<BackgroundOperation>>;
+    type Value = Arc<SyncSender<BackgroundOperation>>;
 }
 
 #[derive(Hash, PartialEq, Eq)]

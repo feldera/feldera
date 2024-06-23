@@ -196,11 +196,11 @@ pub enum StorageError {
 
     /// Unable to receive a message from the thread that does storage compaction.
     #[error("Unable to receive a message from the merge-thread.")]
-    TryRx(#[from] crossbeam::channel::TryRecvError),
+    TryRx(#[from] std::sync::mpsc::TryRecvError),
 
     /// Error when sending a message to the thread that merges batches.
     #[error("Unable to receive a message from the compactor-thread.")]
-    Rx(#[from] crossbeam::channel::RecvError),
+    Rx(#[from] std::sync::mpsc::RecvError),
 
     /// The thread that merges batches exited unexpectedly.
     #[error("Compactor Thread exited unexpectedly.")]

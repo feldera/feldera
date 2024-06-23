@@ -1,13 +1,10 @@
 //! A compactor thread that merges the batches for the spine-fueled trace.
 
-use crate::storage::backend::metrics::COMPACTION_QUEUE_LENGTH;
 use crate::storage::backend::StorageError as Error;
 use crate::trace::spine_async::{BatchIdent, MAX_LEVELS};
 use crate::trace::Batch;
 use crate::Runtime;
-use crossbeam::channel::internal::SelectHandle;
-use crossbeam::channel::{Receiver, RecvError};
-use metrics::gauge;
+use std::sync::mpsc::{Receiver, RecvError};
 
 pub(crate) enum BackgroundOperation {
     /// This is a closure that will be called by the compactor thread which ultimately
@@ -49,9 +46,7 @@ impl BatchMerger {
     }
 
     pub(crate) fn run(&mut self) {
-        let label = vec![("compactor", Runtime::background_index().to_string())];
         while !Runtime::kill_in_progress() {
-            gauge!(COMPACTION_QUEUE_LENGTH, &label).set(self.receiver.len() as f64);
             let op: Result<BackgroundOperation, RecvError> = self.receiver.recv();
             match op {
                 Ok(BackgroundOperation::Merge(merge_fun)) => {
@@ -75,8 +70,13 @@ impl BatchMerger {
                     fuel <= 0
                 });
 
-                if self.in_progress.len() < Self::CONCURRENT_MERGES && self.receiver.is_ready() {
-                    break;
+                if self.in_progress.len() < Self::CONCURRENT_MERGES {
+                    self.in_progress.extend(
+                        self.receiver
+                            .try_iter()
+                            .take(Self::CONCURRENT_MERGES - self.in_progress.len())
+                            .map(|BackgroundOperation::Merge(merge_fun)| merge_fun),
+                    );
                 }
             }
         }
