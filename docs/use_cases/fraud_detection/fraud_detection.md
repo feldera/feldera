@@ -1,21 +1,8 @@
 # Use Case: Real-time Feature Engineering for Credit Card Fraud Detection
 
-Feature engineering is the process of transforming raw data into features that
-better represent the underlying problem to an Machine Learning (ML) model. While
-raw data typically represents individual events such as device sensor readings,
-features summarize many raw events, e.g., average readings collected over a
-period of time. In practice, features are usually expressed as queries over raw
-data, stored in a database or data lake.
-
-When raw input data arrives continuously in real-time, feature computation must
-also be performed in real-time in order to supply the ML model with up-to-date
-inputs. For instance, predicting an IoT device failure requires analyzing its
-latest readings with the latency of a few seconds. Another classic example is
-predicting that a user is about to abandon their online shopping cart, which
-requires looking at their most recent clickstream events.
-
-In this article, we show how Feldera solves the real-time feature computation
-problem by using it to build a real-time credit card fraud detection system.  We
+In this article, we use Feldera to build a real-time credit card fraud detection system. This falls under the umbrella
+of real-time feature engineering, where we transform raw data (credit card and user activity) into features that better
+represent the underlying problem to an ML model. We
 will go through the following steps of building the application:
 
 * Writing SQL queries that define several interesting features, based on data
@@ -27,7 +14,7 @@ will go through the following steps of building the application:
 * Using the same queries to compute feature vectors over a real-time stream of
   credit card transaction data. **By simply connecting new data sources and
 sinks, the SQL queries used for training the model on batch inputs work
-seamlessly on streaming data.**
+seamlessly on streaming data for real-time inference.**
 
 The entire use case is implemented as a Python script written using the Feldera
 [Python SDK](https://www.feldera.com/python/).  It is available from our [github
