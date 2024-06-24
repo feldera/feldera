@@ -454,7 +454,7 @@ impl Controller {
                 .pipeline_config
                 .global
                 .min_storage_bytes
-                .unwrap_or(1_000_000)
+                .unwrap_or(1024 * 1024)
         } else {
             usize::MAX
         };
