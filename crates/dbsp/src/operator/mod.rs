@@ -16,7 +16,6 @@ pub(crate) mod inspect;
 
 mod condition;
 mod count;
-#[cfg(feature = "with-csv")]
 mod csv;
 mod delta0;
 mod differentiate;
@@ -46,7 +45,6 @@ mod semijoin;
 pub mod time_series;
 mod trace;
 
-#[cfg(feature = "with-csv")]
 pub use self::csv::CsvSource;
 pub use apply::Apply;
 pub use condition::Condition;
