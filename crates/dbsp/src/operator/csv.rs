@@ -1,5 +1,4 @@
 //! Source operator that reads data from a CSV file.
-#![cfg(feature = "with-serde")]
 
 // TODO:
 // - Error handling (currently we just panic on reader error or deserialization

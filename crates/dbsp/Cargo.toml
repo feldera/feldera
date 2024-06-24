@@ -20,9 +20,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 # Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
 # main.yml and coverage.yml:
-default = ["with-serde", "with-csv"]
-with-serde = []
-with-csv = []
+default = []
 
 [dependencies]
 num = "0.4.0"
