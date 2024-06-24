@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -57,6 +58,27 @@ public class ArrayTests extends BaseSQLTests {
 
     private void testQuery(String statements, String query) {
         this.testQuery(statements, query, new InputOutputChangeStream());
+    }
+
+    @Test
+    public void issue1922() {
+        String statements = """
+                CREATE TYPE foo_struct AS (
+                        id bigint NOT NULL
+                    );
+                
+                create table bar (
+                        vals foo_struct ARRAY
+                    );""";
+        String query = "SELECT * FROM bar, UNNEST(bar.vals)";
+        DBSPTypeVec vecType = new DBSPTypeVec(new DBSPTypeTuple(
+                new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false)
+        ), true);
+        // null vector
+        Change input = new Change(new DBSPZSetLiteral(new DBSPTupleExpression(new DBSPVecLiteral(vecType, true))));
+        Change output = new Change();
+        InputOutputChangeStream stream = new InputOutputChangeStream().addPair(input, output);
+        this.testQuery(statements, query, stream);
     }
 
     @Test

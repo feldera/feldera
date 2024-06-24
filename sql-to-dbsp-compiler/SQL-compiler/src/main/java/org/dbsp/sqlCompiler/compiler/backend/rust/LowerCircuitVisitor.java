@@ -122,7 +122,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
         DBSPExpression arrayExpression;
         if (arrayType.mayBeNull) {
-            DBSPExpression condition = statement.getVarReference().is_null();
+            DBSPExpression condition = statement.getVarReference().deref().is_null();
             DBSPExpression empty = new DBSPVecLiteral(flatmap.getNode(), arrayType.setMayBeNull(false), Linq.list());
             DBSPExpression contents = statement.getVarReference().deref().applyClone().unwrap();
             arrayExpression = new DBSPIfExpression(flatmap.getNode(), condition, empty, contents);

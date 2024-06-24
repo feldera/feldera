@@ -215,9 +215,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         return true;
     }
 
-    /**
-     * Convert a description of the data in the SLT format to a ZSet.
-     */
+    /** Convert a description of the data in the SLT format to a ZSet. */
     @Nullable public static DBSPZSetLiteral convert(@Nullable List<String> data, DBSPTypeZSet outputType) {
         if (data == null)
             return null;
@@ -226,7 +224,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPType elementType = outputType.elementType;
         if (elementType.is(DBSPTypeVec.class)) {
             elementType = elementType.to(DBSPTypeVec.class).getElementType();
-            DBSPVecLiteral vec = new DBSPVecLiteral(elementType);
+            DBSPVecLiteral vec = DBSPVecLiteral.emptyWithElementType(elementType, false);
             container = vec;
             result = new DBSPZSetLiteral(vec);
         } else {
