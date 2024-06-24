@@ -74,7 +74,7 @@ arrow = { version = "52.0.0", features = ["chrono-tz"] }
 serde_arrow = { version = "0.11.6", features = ["arrow-52"] }
 bytes = "1.5.0"
 # `datafusion` must be enabled for the writer to implement the `Invariant` feature.
-deltalake = { version = "0.18.0", features = ["datafusion", "s3", "gcs", "azure"], optional = true }
+deltalake = { version = "=0.18.1", features = ["datafusion", "s3", "gcs", "azure"], optional = true }
 apache-avro = { version = "0.16.0", optional = true }
 schema_registry_converter = { version = "4.0.0", features = ["avro", "blocking"], optional = true }
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
