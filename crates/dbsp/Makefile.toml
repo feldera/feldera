@@ -1,5 +1,5 @@
 [tasks.build]
-args = ["build", "--features", "with-serde with-csv"]
+args = ["build"]
 
 [tasks.test]
-args = ["test", "--features", "with-serde with-csv"]
+args = ["test"]
