@@ -192,6 +192,9 @@ test-nexmark:
     FROM +build-nexmark
     ENV RUST_BACKTRACE 1
     DO rust+CARGO --args="test  --package dbsp_nexmark"
+    # Perform a smoke test for nexmark with and without storage
+    DO rust+CARGO --args="bench --bench nexmark -- --max-events=1000000 --cpu-cores 8 --num-event-generators 8"
+    DO rust+CARGO --args="bench --bench nexmark -- --max-events=1000000 --cpu-cores 8 --num-event-generators 8 --storage 10000"
 
 test-adapters:
     FROM +build-adapters
