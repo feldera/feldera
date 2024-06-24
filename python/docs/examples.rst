@@ -1,12 +1,12 @@
 Examples
 ========
 
-Pandas
-*******
+Using Pandas DataFrames as Input / Output
+*******************************************
 
 
 Working wth pandas DataFrames in Feldera is fairly straight forward. 
-You can use :meth:`.SQLContext.connect_source_pandas` to connect a 
+You can use :meth:`.SQLContext.input_pandas` to connect a
 DataFrame to a feldera table as the data source. 
 
 To listen for response from feldera, in the form of DataFrames
@@ -48,15 +48,18 @@ To ensure all data is received start listening before calling
     query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
     sql.register_output_view(view_name, query)
 
-    # connect the source (a pandas Dataframe in this case) to the tables
-    sql.connect_source_pandas(TBL_NAMES[0], df_students)
-    sql.connect_source_pandas(TBL_NAMES[1], df_grades)
-
     # listen for the output of the view here in the notebook
     # you do not need to call this if you are forwarding the data to a sink
     out = sql.listen(view_name)
 
-    # run this to completion
+    # start the pipeline
+    sql.start()
+
+    # connect the source (a pandas Dataframe in this case) to the tables
+    sql.input_pandas(TBL_NAMES[0], df_students)
+    sql.input_pandas(TBL_NAMES[1], df_grades)
+
+    # wait for the pipeline to complete
     # note that if the source is a stream, this will run indefinitely
     sql.wait_for_completion(shutdown=True)
 
@@ -67,8 +70,8 @@ To ensure all data is received start listening before calling
     print(df)
 
 
-Kafka
-******
+Using Kafka as Data Source / Sink
+***********************************
 
 To setup Kafka as the source use :meth:`.SQLContext.connect_source_kafka` and as the sink use
 :meth:`.SQLContext.connect_sink_kafka`.
@@ -157,8 +160,8 @@ More on Kafka as the output connector at: https://www.feldera.com/docs/connector
     df = out.to_pandas()
 
 
-HTTP GET
-*********
+Ingesting data from a URL
+**************************
 
 
 Feldera can ingest data from a user-provided URL into a SQL table.
@@ -193,6 +196,7 @@ More on the HTTP GET connector at: https://www.feldera.com/docs/connectors/sourc
 
     out = sql.listen(VIEW_NAME)
 
+    sql.start()
     sql.wait_for_completion(shutdown=True)
 
     df = out.to_pandas()
