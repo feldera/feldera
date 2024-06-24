@@ -822,15 +822,19 @@ impl RuntimeHandle {
             .map(|h| h.join_handle.join())
             .collect();
 
-        // The `local_store.clear()` is important because it will drop the last references to
-        // the communication channel with the background threads and so ensures they error
-        // out during blocking receive
-        self.runtime.local_store().clear();
+        // Dropping the background channels here is important because it will drop the
+        // last references the communication channel with the background threads and
+        // so ensures they error out during blocking receive
+        self.runtime.local_store().retain(|kv| {
+            kv.downcast_key_ref::<BackgroundChannel>()
+                .map_or_else(|| true, |_| false)
+        });
         let _background_results: Vec<ThreadResult<()>> = self
             .background_workers
             .into_iter()
             .map(|h| h.join_handle.join())
             .collect();
+        self.runtime.local_store().clear();
 
         let did_runtime_panic = results.iter().any(|r| r.is_err());
         RuntimeHandle::cleanup_storage_dir(&storage, did_runtime_panic);
