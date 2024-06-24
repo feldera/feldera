@@ -121,6 +121,7 @@ specifying an AWS access key and region.
 
     # Process full snapshot of the input tables and compute a dataset
     # with feature vectors for use in model training and testing.
+    sql.start()
     sql.wait_for_completion(shutdown=True)
 
     features_pd = hfeature.to_pandas()

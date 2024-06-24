@@ -71,11 +71,6 @@ class SQLContext:
         self.tables: Dict[str, SQLTable] = {}
         self.types: Dict[str, str] = {}
 
-        # TODO: to be used for schema inference
-        self.todo_tables: Dict[str, Optional[SQLTable]] = {}
-
-        self.http_input_buffer: list[Dict[str, pd.DataFrame]] = []
-
         # buffer that stores all input connectors to be created
         # this is a Mapping[table_name -> list[Connector]]
         self.input_connectors_buffer: Dict[str, list[Connector]] = {}
@@ -167,28 +162,6 @@ class SQLContext:
                 # block until the callback runner is ready
                 queue.join()
 
-    def __push_http_inputs(self):
-        """
-        Internal function used to push the input data to the pipeline.
-
-        :meta private:
-        """
-
-        for input_buffer in self.http_input_buffer:
-            for tbl_name, data in input_buffer.items():
-                for datum in chunk_dataframe(data):
-                    self.client.push_to_pipeline(
-                        self.pipeline_name,
-                        tbl_name,
-                        "json",
-                        datum.to_json(orient='records', date_format='epoch'),
-                        json_flavor='pandas',
-                        array=True,
-                        serialize=False
-                    )
-
-        self.http_input_buffer.clear()
-
     def create(self) -> Self:
         """
         Sets the build mode to CREATE, meaning that the pipeline will be created from scratch.
@@ -253,8 +226,6 @@ class SQLContext:
 
         if schema:
             self.tables[table_name] = SQLTable(table_name, schema=schema)
-        else:
-            self.todo_tables[table_name] = None
 
     def register_table_from_sql(self, ddl: str):
         """
@@ -272,33 +243,46 @@ class SQLContext:
 
         self.tables[name] = SQLTable(name, ddl)
 
-    def connect_source_pandas(self, table_name: str, df: pandas.DataFrame, flush: bool = False):
+    def input_pandas(self, table_name: str, df: pandas.DataFrame, force: bool = False):
         """
         Adds a pandas DataFrame to the input buffer of the SQLContext, to be pushed to the pipeline.
         Note that if the pipeline is running, the data will not be pushed if `flush` is False.
 
         :param table_name: The name of the table.
         :param df: The pandas DataFrame to be pushed to the pipeline.
-        :param flush: If True, the data will be pushed to the pipeline immediately. Defaults to False.
+        :param force: `True` to push data even if the pipeline is paused. `False` by default.
         """
 
-        if flush and self.pipeline_status() != PipelineStatus.RUNNING:
-            raise RuntimeError("Pipeline must be running to flush the data")
+        status = self.pipeline_status()
+        if status not in [
+            PipelineStatus.RUNNING,
+            PipelineStatus.PAUSED,
+        ]:
+            raise RuntimeError("Pipeline must be running or paused to push data")
+
+        if not force and status == PipelineStatus.PAUSED:
+            raise RuntimeError("Pipeline is paused, set force=True to push data")
 
         ensure_dataframe_has_columns(df)
 
         tbl = self.tables.get(table_name)
 
-        if tbl:
-            # tbl.validate_schema(df)   TODO: something like this would be nice
-            self.http_input_buffer.append({tbl.name: df})
-            if flush:
-                self.__push_http_inputs()
-            return
-
-        # TODO: handle schema inference
         if tbl is None:
-            raise ValueError(f"Cannot push to table {table_name} as it is not registered yet")
+            raise ValueError(f"Cannot push to table '{table_name}' as it is not registered yet")
+        else:
+            # tbl.validate_schema(df)   TODO: something like this would be nice
+            for datum in chunk_dataframe(df):
+                self.client.push_to_pipeline(
+                    self.pipeline_name,
+                    table_name,
+                    "json",
+                    datum.to_json(orient='records', date_format='epoch'),
+                    json_flavor='pandas',
+                    array=True,
+                    serialize=False,
+                    force=force,
+                )
+            return
 
     def register_local_view(self, name: str, query: str):
         """
@@ -639,8 +623,6 @@ class SQLContext:
 
         self.resume()
 
-        self.__push_http_inputs()
-
     def wait_for_idle(
             self,
             idle_interval_s: float = 5.0,
@@ -740,7 +722,12 @@ class SQLContext:
         :param delete_connectors: If True, also deletes the connectors associated with the pipeline. False by default.
         """
 
-        if self.pipeline_status() != PipelineStatus.SHUTDOWN:
+        current_status = self.pipeline_status()
+
+        if current_status == PipelineStatus.NOT_FOUND:
+            raise RuntimeError("Attempting to delete a pipeline that hasn't been created yet")
+
+        if current_status not in [PipelineStatus.SHUTDOWN, PipelineStatus.FAILED]:
             raise RuntimeError("Pipeline must be shutdown before deletion")
 
         self.client.delete_pipeline(self.pipeline_name)

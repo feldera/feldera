@@ -1,4 +1,3 @@
-import time
 import unittest
 import pandas as pd
 from kafka import KafkaProducer, KafkaConsumer
@@ -29,11 +28,12 @@ class TestWireframes(unittest.TestCase):
 
         query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
         sql.register_output_view(view_name, query)
-
-        sql.connect_source_pandas(TBL_NAMES[0], df_students)
-        sql.connect_source_pandas(TBL_NAMES[1], df_grades)
-
         out = sql.listen(view_name)
+
+        sql.start()
+
+        sql.input_pandas(TBL_NAMES[0], df_students)
+        sql.input_pandas(TBL_NAMES[1], df_grades)
 
         sql.wait_for_completion(True)
 
@@ -61,14 +61,13 @@ class TestWireframes(unittest.TestCase):
         }))
 
         query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-        sql.register_view(view_name, query)
+        sql.register_output_view(view_name, query)
 
         sql.start()
-
         out = sql.listen(view_name)
 
-        sql.connect_source_pandas(TBL_NAMES[0], df_students, flush=True)
-        sql.connect_source_pandas(TBL_NAMES[1], df_grades, flush=True)
+        sql.input_pandas(TBL_NAMES[0], df_students)
+        sql.input_pandas(TBL_NAMES[1], df_grades)
 
         sql.wait_for_completion(True)
 
@@ -100,11 +99,14 @@ class TestWireframes(unittest.TestCase):
         sql.register_output_view(VIEW_NAMES[0], f"SELECT * FROM {TBL_NAMES[0]}")
         sql2.register_output_view(VIEW_NAMES[1], f"SELECT * FROM {TBL_NAMES[1]}")
 
-        sql.connect_source_pandas(TBL_NAMES[0], df_students)
-        sql2.connect_source_pandas(TBL_NAMES[1], df_grades)
-
         out = sql.listen(VIEW_NAMES[0])
         out2 = sql2.listen(VIEW_NAMES[1])
+
+        sql.start()
+        sql2.start()
+
+        sql.input_pandas(TBL_NAMES[0], df_students)
+        sql2.input_pandas(TBL_NAMES[1], df_grades)
 
         sql.wait_for_completion(True)
         sql2.wait_for_completion(True)
@@ -140,15 +142,16 @@ class TestWireframes(unittest.TestCase):
         query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
         sql.register_output_view(view_name, query)
 
-        sql.connect_source_pandas(TBL_NAMES[0], df_students)
-        sql.connect_source_pandas(TBL_NAMES[1], df_grades)
-
+        sql.start()
         sql.foreach_chunk(view_name, callback)
+
+        sql.input_pandas(TBL_NAMES[0], df_students)
+        sql.input_pandas(TBL_NAMES[1], df_grades)
+
         sql.wait_for_completion(True)
         sql.delete()
 
     def test_df_without_columns(self):
-
         sql = SQLContext('df_without_columns', TEST_CLIENT).get_or_create()
         TBL_NAME = "student"
 
@@ -157,20 +160,23 @@ class TestWireframes(unittest.TestCase):
         sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
         sql.register_output_view("s", f"SELECT * FROM {TBL_NAME}")
 
+        sql.start()
+
         with self.assertRaises(ValueError):
-            sql.connect_source_pandas(TBL_NAME, df)
+            sql.input_pandas(TBL_NAME, df)
+
+        sql.shutdown()
+        sql.delete()
 
     def test_sql_error(self):
         sql = SQLContext('sql_error', TEST_CLIENT).get_or_create()
         TBL_NAME = "student"
-        df = pd.DataFrame([(1, "a"), (2, "b"), (3, "c")], columns=["id", "name"])
         sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
         sql.register_output_view("s", f"SELECT FROM blah")
-        sql.connect_source_pandas(TBL_NAME, df)
         _ = sql.listen("s")
 
         with self.assertRaises(Exception):
-            sql.wait_for_completion(True)
+            sql.start()
 
         sql.client.delete_program(sql.program_name)
 
@@ -263,6 +269,7 @@ class TestWireframes(unittest.TestCase):
 
         out = sql.listen(VIEW_NAME)
 
+        sql.start()
         sql.wait_for_completion(True)
 
         df = out.to_pandas()
@@ -296,8 +303,6 @@ class TestWireframes(unittest.TestCase):
         sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
         sql.register_output_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
 
-        sql.connect_source_pandas(TBL_NAME, df)
-
         sink_config = {
             "topic": TOPIC,
             "bootstrap.servers": KAFKA_URL_FROM_PIPELINE,
@@ -315,6 +320,8 @@ class TestWireframes(unittest.TestCase):
 
         sql.connect_sink_kafka(VIEW_NAME, "out_avro_kafka", sink_config, avro_format)
 
+        sql.start()
+        sql.input_pandas(TBL_NAME, df)
         sql.wait_for_completion(True)
 
         consumer = KafkaConsumer(
@@ -363,6 +370,7 @@ class TestWireframes(unittest.TestCase):
 
         out = sql.listen(VIEW_NAME)
 
+        sql.start()
         sql.wait_for_completion(True)
 
         df = out.to_pandas()
@@ -388,10 +396,10 @@ class TestWireframes(unittest.TestCase):
             pd.Timestamp.now(), pd.Timestamp.now(), pd.Timestamp.now()
         ]})
 
-        sql.connect_source_pandas(TBL_NAME, df)
-
         out = sql.listen(VIEW_NAME)
 
+        sql.start()
+        sql.input_pandas(TBL_NAME, df)
         sql.wait_for_completion(True)
 
         df = out.to_pandas()

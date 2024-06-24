@@ -169,7 +169,7 @@ class AvroFormat(Format):
             self,
             config: Optional[dict] = None,
             schema: Optional[str] = None,
-            skip_schema_id: Optional[bool] = None,
+            skip_schema_id: Optional[bool] = False,
             registry_urls: Optional[list[str]] = None,
             registry_headers: Optional[Mapping[str, str]] = None,
             registry_proxy: Optional[str] = None,
