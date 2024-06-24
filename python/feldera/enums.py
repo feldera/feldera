@@ -7,16 +7,24 @@ class CompilationProfile(Enum):
     """
 
     SERVER_DEFAULT = None
-    "The compiler server default compilation profile."
+    """
+    The compiler server default compilation profile.
+    """
 
     DEV = "dev"
-    "The development compilation profile."
+    """
+    The development compilation profile.
+    """
 
     UNOPTIMIZED = "unoptimized"
-    "The unoptimized compilation profile."
+    """
+    The unoptimized compilation profile.
+    """
 
     OPTIMIZED = "optimized"
-    "The optimized compilation profile, the default for this API."
+    """
+    The optimized compilation profile, the default for this API.
+    """
 
 
 class BuildMode(Enum):
