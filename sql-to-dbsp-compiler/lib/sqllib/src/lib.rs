@@ -705,10 +705,7 @@ where
 
 #[inline(always)]
 pub fn wrap_bool(b: Option<bool>) -> bool {
-    match b {
-        Some(x) => x,
-        _ => false,
-    }
+    b.unwrap_or_default()
 }
 
 #[inline(always)]
