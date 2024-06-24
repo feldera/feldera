@@ -259,7 +259,7 @@ public class AggregateCompiler implements ICompilerComponent {
         boolean ignoreNulls = this.call.ignoreNulls();
         boolean distinct = this.call.isDistinct();
         DBSPType elementType = this.resultType.to(DBSPTypeVec.class).getElementType();
-        DBSPExpression zero = new DBSPVecLiteral(elementType);
+        DBSPExpression zero = DBSPVecLiteral.emptyWithElementType(elementType, false);
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         DBSPVariablePath accumulator = this.resultType.var(this.genAccumulatorName());
         String functionName;

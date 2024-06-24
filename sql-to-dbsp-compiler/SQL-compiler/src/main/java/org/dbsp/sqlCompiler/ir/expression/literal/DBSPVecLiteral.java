@@ -46,10 +46,8 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
     public final List<DBSPExpression> data;
     public final DBSPTypeVec vecType;
 
-    public DBSPVecLiteral(DBSPType elementType) {
-        super(CalciteObject.EMPTY, new DBSPTypeVec(elementType, false), false);
-        this.data = new ArrayList<>();
-        this.vecType = this.getType().to(DBSPTypeVec.class);
+    public static DBSPVecLiteral emptyWithElementType(DBSPType elementType, boolean mayBeNull) {
+        return new DBSPVecLiteral(CalciteObject.EMPTY, new DBSPTypeVec(elementType, mayBeNull), Linq.list());
     }
 
     public DBSPVecLiteral(DBSPType vectorType, boolean isNull) {
