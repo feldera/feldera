@@ -674,7 +674,9 @@ async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> S
         "name":  "test",
         "description": "desc",
         "program_name": Some("test".to_string()),
-        "config": {},
+        "config": {
+            "storage": true,
+        },
         "connectors": null
     });
     let req = config.post("/v0/pipelines", &pipeline_request).await;
