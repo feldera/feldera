@@ -547,18 +547,12 @@ where
     R: WeightTrait + ?Sized,
 {
     /// We ran out of the bytes threshold for `BuilderInner::Threshold`. Spill
-    /// to storage.
-    fn over_threshold(&mut self) {
-        let new_inner =
-            BuilderInner::File(FileWSetBuilder::with_capacity(&self.factories.file, (), 0));
-        let BuilderInner::Threshold { vec, .. } = replace(&mut self.inner, new_inner) else {
-            unreachable!()
-        };
-        let BuilderInner::File(file) = &mut self.inner else {
-            unreachable!()
-        };
-
-        copy_to_builder(file, vec.done().cursor());
+    /// to storage as `BuilderInner::File`, writing `vec` as the initial
+    /// contents.
+    fn spill(&mut self, vec: VecWSet<K, R>) {
+        let mut file = FileWSetBuilder::with_capacity(&self.factories.file, (), 0);
+        copy_to_builder(&mut file, vec.cursor());
+        self.inner = BuilderInner::File(file);
     }
 }
 
@@ -604,7 +598,12 @@ where
                 let size = item.size_of().total_bytes();
                 vec.push(item);
                 if size > *remaining {
-                    self.over_threshold();
+                    let vec = replace(
+                        vec,
+                        VecWSetBuilder::with_capacity(&self.factories.vec, (), 0),
+                    )
+                    .done();
+                    self.spill(vec);
                 } else {
                     *remaining -= size;
                 }
@@ -621,7 +620,12 @@ where
                 let size = (key, weight).size_of().total_bytes();
                 vec.push_refs(key, val, weight);
                 if size > *remaining {
-                    self.over_threshold();
+                    let vec = replace(
+                        vec,
+                        VecWSetBuilder::with_capacity(&self.factories.vec, (), 0),
+                    )
+                    .done();
+                    self.spill(vec);
                 } else {
                     *remaining -= size;
                 }
@@ -638,7 +642,12 @@ where
                 let size = (key as &K, weight as &R).size_of().total_bytes();
                 vec.push_vals(key, val, weight);
                 if size > *remaining {
-                    self.over_threshold();
+                    let vec = replace(
+                        vec,
+                        VecWSetBuilder::with_capacity(&self.factories.vec, (), 0),
+                    )
+                    .done();
+                    self.spill(vec);
                 } else {
                     *remaining -= size;
                 }
