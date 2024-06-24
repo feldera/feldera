@@ -11,7 +11,6 @@ use std::{
     str::FromStr,
 };
 
-#[cfg(feature = "with-serde")]
 use serde::{Deserialize, Serialize};
 
 macro_rules! float {
@@ -22,8 +21,8 @@ macro_rules! float {
             #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
             #[repr(transparent)]
             #[size_of(skip_all)]
-            #[cfg_attr(feature = "with-serde", derive(Serialize, Deserialize))]
-            #[cfg_attr(feature = "with-serde", serde(transparent))]
+            #[derive(Serialize, Deserialize)]
+            #[serde(transparent)]
             #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
             #[archive(compare(PartialEq, PartialOrd))]
             pub struct $outer(OrderedFloat<$inner>);
