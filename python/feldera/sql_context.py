@@ -164,7 +164,7 @@ class SQLContext:
 
     def create(self) -> Self:
         """
-        Sets the build mode to CREATE, meaning that the pipeline will be created from scratch.
+        Set the build mode to CREATE, meaning that the pipeline will be created from scratch.
         """
 
         self.build_mode = BuildMode.CREATE
@@ -172,7 +172,7 @@ class SQLContext:
 
     def get(self) -> Self:
         """
-        Sets the build mode to GET, meaning that an existing pipeline will be used.
+        Set the build mode to GET, meaning that an existing pipeline will be used.
         """
 
         self.build_mode = BuildMode.GET
@@ -180,7 +180,7 @@ class SQLContext:
 
     def get_or_create(self) -> Self:
         """
-        Sets the build mode to GET_OR_CREATE, meaning that an existing pipeline will be used if it exists,
+        Set the build mode to GET_OR_CREATE, meaning that an existing pipeline will be used if it exists,
         else a new one will be created.
         """
 
@@ -189,7 +189,7 @@ class SQLContext:
 
     def pipeline_status(self) -> PipelineStatus:
         """
-        Returns the current state of the pipeline.
+        Return the current state of the pipeline.
         """
 
         try:
@@ -204,7 +204,7 @@ class SQLContext:
 
     def register_table(self, table_name: str, schema: Optional[SQLSchema] = None, ddl: str = None):
         """
-        Registers a table with the SQLContext. The table can be registered with a schema or with the SQL DDL.
+        Register a table with the SQLContext. The table can be registered with a schema or with the SQL DDL.
         One of the two must be provided, but not both.
         Auto inserts the trailing semicolon if not present.
         In the future, schema will be inferred from the data provided from applicable sources.
@@ -229,7 +229,7 @@ class SQLContext:
 
     def register_table_from_sql(self, ddl: str):
         """
-        Registers a table with the provided SQL DDL.
+        Register a table with the provided SQL DDL.
         Auto inserts the trailing semicolon if not present.
 
         :param ddl: The SQL DDL of the table.
@@ -245,10 +245,9 @@ class SQLContext:
 
     def input_pandas(self, table_name: str, df: pandas.DataFrame, force: bool = False):
         """
-        Adds a pandas DataFrame to the input buffer of the SQLContext, to be pushed to the pipeline.
-        Note that if the pipeline is running, the data will not be pushed if `flush` is False.
+        Push all rows in a pandas DataFrame to the pipeline.
 
-        :param table_name: The name of the table.
+        :param table_name: The name of the table to insert data into.
         :param df: The pandas DataFrame to be pushed to the pipeline.
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
         """
@@ -286,7 +285,7 @@ class SQLContext:
 
     def register_local_view(self, name: str, query: str):
         """
-        Registers a local view with the SQLContext.
+        Register a local view with the SQLContext.
         Local views are not exposed to the outside world as an output of the computation.
         This is useful for modularizing the SQL code, by declaring intermediate views
         that are used in the implementation of other views.
@@ -306,7 +305,7 @@ class SQLContext:
 
     def register_output_view(self, name: str, query: str):
         """
-        Registers a Feldera View based on the provided query.
+        Register a Feldera View based on the provided query.
         Auto inserts the trailing semicolon if not present.
 
         :param name: The name of the view.
@@ -317,7 +316,7 @@ class SQLContext:
 
     def register_type(self, name: str, spec: str):
         """
-        Registers a SQL type.
+        Register a SQL type.
         Auto inserts the trailing semicolon if not present.
 
         :param name: The name of the type.
@@ -348,7 +347,7 @@ class SQLContext:
 
     def listen(self, view_name: str) -> OutputHandler:
         """
-        Listens to the output of the provided view so that it is available in the notebook / python code.
+        Listen to the output of the provided view so that it is available in the notebook / python code.
 
         :param view_name: The name of the view to listen to.
         """
@@ -366,7 +365,7 @@ class SQLContext:
 
     def connect_source_delta_table(self, table_name: str, connector_name: str, config: dict):
         """
-        Tells feldera to read the data from the specified delta table.
+        Tell Feldera to read the data from the specified delta table.
 
         :param table_name: The name of the table.
         :param connector_name: The unique name for this connector.
@@ -397,7 +396,7 @@ class SQLContext:
 
     def connect_sink_delta_table(self, view_name: str, connector_name: str, config: dict):
         """
-        Tells feldera to write the data to the specified delta table.
+        Tell Feldera to write the data to the specified delta table.
 
         :param view_name: The name of the view whose output is sent to delta table.
         :param connector_name: The unique name for this connector.
@@ -424,7 +423,7 @@ class SQLContext:
 
     def foreach_chunk(self, view_name: str, callback: Callable[[pandas.DataFrame, int], None]):
         """
-        Runs the given callback on each chunk of the output of the specified view.
+        Run the given callback on each chunk of the output of the specified view.
 
         :param view_name: The name of the view.
         :param callback: The callback to run on each chunk. The callback should take two arguments:
@@ -459,7 +458,7 @@ class SQLContext:
         fmt: JSONFormat | CSVFormat
     ):
         """
-        Associates the specified kafka topics on the specified Kafka server as input source for the specified table in
+        Associate the specified kafka topics on the specified Kafka server as input source for the specified table in
         Feldera. The table is populated with changes from the specified kafka topics.
 
         :param table_name: The name of the table.
@@ -500,7 +499,7 @@ class SQLContext:
         fmt: JSONFormat | CSVFormat | AvroFormat
     ):
         """
-        Associates the specified kafka topic on the specified Kafka server as output sink for the specified view in
+        Associate the specified Kafka topic on the specified Kafka server as output sink for the specified view in
         Feldera. The topic is populated with changes in the specified view.
 
         :param view_name: The name of the view whose changes are sent to kafka topic.
@@ -541,7 +540,7 @@ class SQLContext:
         fmt: JSONFormat | CSVFormat
     ):
         """
-        Associates the specified URL as input source for the specified table in Feldera.
+        Associate the specified URL as input source for the specified table in Feldera.
         Feldera will make a GET request to the specified URL to read the data and populate the table.
 
         :param table_name: The name of the table.
@@ -572,8 +571,17 @@ class SQLContext:
 
     def wait_for_completion(self, shutdown: bool = False):
         """
-        Blocks until the pipeline has completed processing all input records.
-        Will block indefinitely if the source is streaming.
+        Block until the pipeline has completed processing all input records.
+
+        This method blocks until (1) all input connectors attached to the pipeline
+        have finished reading their input data sources and issued end-of-input
+        notifications to the pipeline, and (2) all inputs received from these
+        connectors have been fully processed and corresponding outputs have been
+        sent out through the output connectors.
+
+        This method will block indefinitely if at least one of the input
+        connectors attached to the pipeline is a streaming connector, such as
+        Kafka, that does not issue the end-of-input notification.
 
         :param shutdown: If True, the pipeline will be shutdown after completion. False by default.
 
@@ -606,7 +614,7 @@ class SQLContext:
         """
         .. _start:
 
-        Starts the pipeline.
+        Start the pipeline.
 
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
@@ -630,7 +638,7 @@ class SQLContext:
             poll_interval_s: float = 0.2
     ):
         """
-        Waits for the pipeline to become idle and then returns.
+        Wait for the pipeline to become idle and then returns.
 
         Idle is defined as a sufficiently long interval in which the number of
         input and processed records reported by the pipeline do not change, and
@@ -688,16 +696,16 @@ class SQLContext:
 
     def pause(self):
         """
-        Pauses the pipeline.
+        Pause the pipeline.
         """
 
         self.client.pause_pipeline(self.pipeline_name)
 
     def shutdown(self):
         """
-        Shuts down the pipeline.
+        Shut down the pipeline.
         """
-        
+
         for view_queue in self.views_tx:
             for view_name, queue in view_queue.items():
                 # sends a message to the callback runner to stop listening
@@ -716,7 +724,7 @@ class SQLContext:
 
     def delete(self, delete_program: bool = True, delete_connectors: bool = False):
         """
-        Deletes the pipeline.
+        Delete the pipeline.
 
         :param delete_program: If True, also deletes the program associated with the pipeline. True by default.
         :param delete_connectors: If True, also deletes the connectors associated with the pipeline. False by default.
