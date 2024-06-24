@@ -65,7 +65,7 @@ Key Concepts
       - The second parameter here is :class:`.FelderaClient` that we created above.
 
 * :meth:`.SQLContext.wait_for_completion`
-   - Blocks this Feldera pipeline until completion. Normally this means until the EoF
+   - Blocks this Feldera pipeline until completion. Normally this means until the end-of-file (EOF)
      has been reached for this input source.
 
    - Takes a parameter ``shutdown``, when set shuts the pipeline down after completion.

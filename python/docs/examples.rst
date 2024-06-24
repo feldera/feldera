@@ -5,7 +5,6 @@ Using Pandas DataFrames as Input / Output
 *******************************************
 
 
-Working wth pandas DataFrames in Feldera is fairly straight forward. 
 You can use :meth:`.SQLContext.input_pandas` to connect a
 DataFrame to a feldera table as the data source. 
 
