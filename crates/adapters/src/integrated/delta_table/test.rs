@@ -11,6 +11,8 @@ use crate::{Controller, ControllerError, InputFormat};
 use anyhow::anyhow;
 use arrow::datatypes::Schema as ArrowSchema;
 use chrono::{DateTime, NaiveDate};
+#[cfg(feature = "delta-s3-test")]
+use dbsp::typed_batch::DynBatchReader;
 use dbsp::typed_batch::TypedBatch;
 use dbsp::utils::Tup2;
 use dbsp::{DBData, OrdZSet, ZSet};
