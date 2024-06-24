@@ -456,10 +456,10 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    // In-memory.
+    /// In-memory.
     Vec(VecKeyBuilder<K, T, R>),
 
-    // On-storage.
+    /// On-storage.
     File(FileKeyBuilder<K, T, R>),
 
     /// In-memory as long as we don't exceed a maximum threshold size.
