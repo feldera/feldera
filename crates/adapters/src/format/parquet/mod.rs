@@ -289,6 +289,9 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
                 c.fields.as_ref().unwrap(),
                 delta_lake,
             )),
+            SqlType::Map => {
+                panic!("SQL MAP type conversion to Parquet data type is not yet implemented");
+            }
         }
     }
 

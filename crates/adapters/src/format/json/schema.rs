@@ -236,6 +236,11 @@ mod kafka_connect_json_converter {
                     .map(field_schema)
                     .collect::<Vec<_>>(),
             },
+            SqlType::Map => {
+                panic!(
+                    "SQL MAP type conversion to JSON representation schema is not yet implemented"
+                );
+            }
             SqlType::Interval(_) => RepresentationType::String,
             SqlType::Null => RepresentationType::String,
         }

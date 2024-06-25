@@ -5411,6 +5411,13 @@
           },
           {
             "type": "string",
+            "description": "SQL `MAP` type.",
+            "enum": [
+              "MAP"
+            ]
+          },
+          {
+            "type": "string",
             "description": "SQL `NULL` type.",
             "enum": [
               "NULL"

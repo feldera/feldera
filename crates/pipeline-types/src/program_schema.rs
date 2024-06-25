@@ -252,6 +252,9 @@ pub enum SqlType {
     /// A complex SQL struct type (`CREATE TYPE x ...`).
     #[serde(rename = "STRUCT")]
     Struct,
+    /// SQL `MAP` type.
+    #[serde(rename = "MAP")]
+    Map,
     /// SQL `NULL` type.
     #[serde(rename = "NULL")]
     Null,
@@ -294,6 +297,7 @@ impl<'de> Deserialize<'de> for SqlType {
             "timestamp" => Ok(SqlType::Timestamp),
             "array" => Ok(SqlType::Array),
             "struct" => Ok(SqlType::Struct),
+            "map" => Ok(SqlType::Map),
             "null" => Ok(SqlType::Null),
             _ => Err(serde::de::Error::custom(format!(
                 "Unknown SQL type: {}",
@@ -324,6 +328,7 @@ impl From<SqlType> for &'static str {
             SqlType::Interval(_) => "INTERVAL",
             SqlType::Array => "ARRAY",
             SqlType::Struct => "STRUCT",
+            SqlType::Map => "MAP",
             SqlType::Null => "NULL",
         }
     }
