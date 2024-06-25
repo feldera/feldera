@@ -245,7 +245,12 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
           <Grid item xs={12} sm={4} alignSelf={'start'}>
             <Box sx={{ display: 'flex', flexDirection: 'column', justifyItems: 'start', height: '100%' }}>
               <Label disabled={props.disabled}>Storage (spill to disk)</Label>
-              <SwitchElement name='storage' label='' sx={{ mb: 'auto' }}></SwitchElement>
+              <SwitchElement
+                name='storage'
+                label=''
+                sx={{ mb: 'auto' }}
+                switchProps={{ inputProps: { 'data-testid': 'input-enable-storage' } as any }}
+              ></SwitchElement>
             </Box>
           </Grid>
           <Grid item xs={12} sm={4} alignSelf={'start'}>
@@ -311,7 +316,7 @@ export const PipelineResourcesForm = (props: { disabled?: boolean }) => {
         <Typography color='gray' sx={{ pl: 8 }}>
           For running pipelines, changes only take effect upon restart.
         </Typography>
-        <Button type={'submit'} disabled={props.disabled} variant='contained'>
+        <Button type={'submit'} disabled={props.disabled} variant='contained' data-testid='button-apply'>
           Apply
         </Button>
       </DialogActions>

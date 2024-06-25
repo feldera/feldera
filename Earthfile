@@ -512,7 +512,7 @@ ui-playwright-container:
     # Install zip to prepare test artifacts for export
     RUN apt-get install -y zip
 
-ui-playwright-tests:
+ui-playwright-tests-e2e:
     FROM +ui-playwright-container
     ENV FELDERA_VERSION=latest
 
@@ -521,15 +521,31 @@ ui-playwright-tests:
                     --compose ../docker-compose.yml \
                     --service pipeline-manager
             # We zip artifacts regardless of test success or error, and then we complete the command preserving test's exit_code
-            RUN if yarn playwright test; then exit_code=0; else exit_code=$?; fi \
+            RUN sleep 10 && if yarn playwright test -c playwright-e2e.config.ts; then exit_code=0; else exit_code=$?; fi \
                 && cd /dbsp \
-                && zip -r playwright-report.zip playwright-report \
-                && zip -r test-results.zip test-results \
+                && zip -r playwright-report-e2e.zip playwright-report-e2e \
+                && zip -r test-results-e2e.zip test-results-e2e \
                 && exit $exit_code
         END
     FINALLY
-        SAVE ARTIFACT --if-exists /dbsp/playwright-report.zip AS LOCAL ./playwright-artifacts/
-        SAVE ARTIFACT --if-exists /dbsp/test-results.zip      AS LOCAL ./playwright-artifacts/
+        SAVE ARTIFACT --if-exists /dbsp/playwright-report-e2e.zip AS LOCAL ./playwright-artifacts/
+        SAVE ARTIFACT --if-exists /dbsp/test-results-e2e.zip      AS LOCAL ./playwright-artifacts/
+    END
+
+ui-playwright-tests-ct:
+    FROM +ui-playwright-container
+    ENV FELDERA_VERSION=latest
+
+    TRY
+        # We zip artifacts regardless of test success or error, and then we complete the command preserving test's exit_code
+        RUN if yarn playwright test -c playwright-ct.config.ts; then exit_code=0; else exit_code=$?; fi \
+        && cd /dbsp \
+        && zip -r playwright-report-ct.zip playwright-report-ct \
+        && zip -r test-results-ct.zip test-results-ct \
+        && exit $exit_code
+    FINALLY
+        SAVE ARTIFACT --if-exists /dbsp/playwright-report-ct.zip AS LOCAL ./playwright-artifacts/
+        SAVE ARTIFACT --if-exists /dbsp/test-results-ct.zip      AS LOCAL ./playwright-artifacts/
     END
 
 benchmark:
@@ -573,7 +589,8 @@ all-tests:
     BUILD +openapi-checker
     BUILD +test-sql
     BUILD +integration-tests
-    # BUILD +ui-playwright-tests
+    BUILD +ui-playwright-tests-ct
+    BUILD +ui-playwright-tests-e2e
     BUILD +test-docker-compose
     # BUILD +test-docker-compose-stable
     BUILD +test-debezium-mysql

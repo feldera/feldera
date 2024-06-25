@@ -1,18 +1,21 @@
 # Web Console testing
 
-Regression UI testing is performed in the form of end-to-end integration tests using Playwright framework.
-
-### e2e testing with Playwright
-Existing Playwright tests are executed during CI
-and can be run manually within provided devcontainer environment.
-
-### Running tests
-
-Run `yarn test`
-to execute all tests on all supported platforms in background, or run `yarn test:ui` to open a UI to run tests interactively.
+Regression UI testing is performed using Playwright framework.
+The repository contains end-to-end (e2e) tests that are to be executed against a clean Feldera instance,
+and standalone unit (ct) tests that include UI component tests and TypeScript function tests.
+Existing Playwright tests are executed during CI and can be run manually within provided devcontainer environment.
 Add environment variable `CI=true` when executing tests in CI setting.
+
+### Running e2e tests
+
+Run `yarn test-e2e` to execute all e2e tests on all supported platforms in background, or run `yarn test-e2e-ui` to open a UI to run tests interactively.
 Tests should be executed against a running Pipeline Manager instance.
 As an artificial limitation of scope, currently no services for Kafka, Debezium, Snowflake and other similar connector types are available for tests in the CI, so only HTTP connectors and API is available along with the UI itself.
+
+### Running ct tests
+
+Run `yarn test-ct` to execute all ct tests on all supported platforms in background, or run `yarn test-ct-ui` to open a UI to run tests interactively.
+Unit tests do not need Feldera instance to run because they run against individual ESM modules compiled on-demand for the test.
 
 ### Contributing tests
 
@@ -26,14 +29,18 @@ When committing new tests or updating screenshots for existing tests, `PLAYWRIGH
 When testing locally, you need to manually clone `playwright-snapshots` and checkout the correct commit hash, e.g.:
 
 ```
-cd web-console
-npm i -g degit
-degit feldera/playwright-snapshots#2adf778
+cd web-console && yarn test-prepare
 ```
 OR
 ```
 cd web-console
-git clone https://github.com/feldera/playwright-snapshots && git checkout 2adf778
+npm i -g degit
+degit feldera/playwright-snapshots#{commit_hash}
+```
+OR
+```
+cd web-console
+git clone https://github.com/feldera/playwright-snapshots && git checkout {commit_hash}
 ```
 
 
