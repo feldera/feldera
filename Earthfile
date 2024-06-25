@@ -99,6 +99,7 @@ install-python-deps:
     RUN pip install wheel
     COPY demo/demo_notebooks/requirements.txt requirements.txt
     RUN pip wheel -r requirements.txt --wheel-dir=wheels
+    RUN pip install python/ pytest
     SAVE ARTIFACT wheels /wheels
 
 install-python:
@@ -276,7 +277,6 @@ test-python:
             (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=unoptimized &) && \
             sleep 5 && \
             docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 redpanda start --smp 2 \
-            pip install python/ pytest && \
             python3 -m pytest -n 4 python/tests && \
             python3 demo/simple-join/run.py --api-url http://localhost:8080 && \
             cd demo/demo_notebooks && jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
