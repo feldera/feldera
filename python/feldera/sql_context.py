@@ -460,7 +460,8 @@ class SQLContext:
         table_name: str,
         connector_name: str,
         config: dict,
-        fmt: JSONFormat | CSVFormat
+        fmt: JSONFormat | CSVFormat,
+        max_queued_records: Optional[int] = None
     ):
         """
         Associate the specified kafka topics on the specified Kafka server as input source for the specified table in
@@ -470,6 +471,7 @@ class SQLContext:
         :param connector_name: The unique name for this connector.
         :param config: The configuration for the kafka connector.
         :param fmt: The format of the data in the kafka topic.
+        :param max_queue_records:  Maximal number of records queued by the endpoint before the endpoint is paused by the backpressure mechanism.
         """
 
         if config.get("bootstrap.servers") is None:
@@ -480,15 +482,20 @@ class SQLContext:
 
         validate_connector_input_format(fmt)
 
+        config={
+            "transport": {
+                "name": "kafka_input",
+                "config": config,
+            },
+            "format": fmt.to_dict()
+        }
+
+        if max_queued_records is not None:
+            config["max_queued_records"] = max_queued_records
+
         connector = Connector(
             name=connector_name,
-            config={
-                "transport": {
-                    "name": "kafka_input",
-                    "config": config,
-                },
-                "format": fmt.to_dict(),
-            }
+            config=config
         )
 
         if table_name in self.input_connectors_buffer:
