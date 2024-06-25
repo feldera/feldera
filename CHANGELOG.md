@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2024-06-25
+
 - [SQL] Preliminary support for MAP-typed values
   ([#1905](https://github.com/feldera/feldera/pull/1905))
 - [avro] Allow serializing non-nullable SQL columns into nullable Avro columns
