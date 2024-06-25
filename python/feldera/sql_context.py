@@ -336,7 +336,7 @@ class SQLContext:
 
         .. code-block:: sql
 
-            LATENESS <view>.<timstamp_column> <lateness_expr>;
+            LATENESS <view>.<timestamp_column> <lateness_expr>;
             -- example:
             LATENESS V.COL1 INTERVAL '1' HOUR;
 
