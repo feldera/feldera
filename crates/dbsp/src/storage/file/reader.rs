@@ -1201,6 +1201,15 @@ where {
     pub fn path(&self) -> PathBuf {
         self.0.file.as_ref().path.clone()
     }
+
+    /// Returns the size of the underlying file in bytes.
+    pub fn byte_size(&self) -> Result<u64, Error> {
+        Ok(self
+            .0
+            .file
+            .cache
+            .get_size(self.0.file.file_handle.as_ref().unwrap())?)
+    }
 }
 
 impl<T> Clone for Reader<T> {

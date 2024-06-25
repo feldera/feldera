@@ -183,6 +183,7 @@ type RawValCursor<'s, K, V, T, R> = FileCursor<
 
 /// An immutable collection of update tuples, from a contiguous interval of
 /// logical times.
+#[derive(SizeOf)]
 pub struct FileValBatch<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -190,7 +191,9 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileValBatchFactories<K, V, T, R>,
+    #[size_of(skip)]
     pub file: RawValBatch<K, V, T, R>,
     pub lower_bound: usize,
     pub lower: Antichain<T>,
@@ -276,6 +279,10 @@ where
 
     fn len(&self) -> usize {
         self.file.n_rows(1) as usize
+    }
+
+    fn approximate_byte_size(&self) -> usize {
+        self.file.byte_size().unwrap() as usize
     }
 
     fn lower(&self) -> AntichainRef<'_, T> {
@@ -407,6 +414,7 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct FileValMerger<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -414,7 +422,9 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileValBatchFactories<K, V, T, R>,
+    #[size_of(skip)]
     result: Option<RawValBatch<K, V, T, R>>,
     lower: Antichain<T>,
     upper: Antichain<T>,
@@ -699,18 +709,6 @@ where
         if self.result.is_none() {
             self.result = Some(self.merge(source1, source2, key_filter, value_filter));
         }
-    }
-}
-
-impl<K, V, T, R> SizeOf for FileValMerger<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
     }
 }
 
@@ -1016,6 +1014,7 @@ where
 }
 
 /// A builder for creating layers from unsorted update tuples.
+#[derive(SizeOf)]
 pub struct FileValBuilder<K, V, T, R>
 where
     K: DataTrait + ?Sized,
@@ -1023,8 +1022,10 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FileValBatchFactories<K, V, T, R>,
     time: T,
+    #[size_of(skip)]
     writer: Writer2<K, DynUnit, V, DynWeightedPairs<DynDataTyped<T>, R>>,
     cur_key: Box<DynOpt<K>>,
 }
@@ -1133,18 +1134,6 @@ where
     }
 }
 
-impl<K, V, T, R> SizeOf for FileValBuilder<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
-    }
-}
-
 /*
 pub struct FileValConsumer<K, V, T, R> {
     __type: PhantomData<(K, V, T, R)>,
@@ -1193,18 +1182,6 @@ impl<'a, K, V, T, R> ValueConsumer<'a, V, R, T> for FileValValueConsumer<'a, K, 
     }
 }
 */
-
-impl<K, V, T, R> SizeOf for FileValBatch<K, V, T, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    T: Timestamp,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, _context: &mut size_of::Context) {
-        // XXX
-    }
-}
 
 impl<K, V, T, R> Archive for FileValBatch<K, V, T, R>
 where

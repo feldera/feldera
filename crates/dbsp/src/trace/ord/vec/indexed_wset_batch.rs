@@ -439,6 +439,11 @@ where
     }
 
     #[inline]
+    fn approximate_byte_size(&self) -> usize {
+        self.size_of().total_bytes()
+    }
+
+    #[inline]
     fn lower(&self) -> AntichainRef<'_, ()> {
         AntichainRef::new(&[()])
     }

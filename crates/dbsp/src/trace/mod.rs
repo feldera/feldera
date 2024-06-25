@@ -319,6 +319,19 @@ where
     /// The number of updates in the batch.
     fn len(&self) -> usize;
 
+    /// The memory or storage size of the batch in bytes.
+    ///
+    /// This can be an approximation, such as the size of an on-disk file for a
+    /// stored batch.
+    ///
+    /// Implementations of this function can be expensive because they might
+    /// require iterating through all the data in a batch.  Currently this is
+    /// only used to decide whether to keep the result of a merge in memory or
+    /// on storage.  For this case, the merge will visit and copy all the data
+    /// in the batch. The batch will be discarded afterward, which means that
+    /// the implementation need not attempt to cache the return value.
+    fn approximate_byte_size(&self) -> usize;
+
     /// True if the batch is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0

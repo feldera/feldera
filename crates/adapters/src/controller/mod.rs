@@ -447,21 +447,21 @@ impl Controller {
             -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>,
     {
         let mut start: Option<Instant> = None;
-        let min_storage_rows = if controller.status.pipeline_config.global.storage {
+        let min_storage_bytes = if controller.status.pipeline_config.global.storage {
             // This reduces the files stored on disk to a reasonable number.
             controller
                 .status
                 .pipeline_config
                 .global
-                .min_storage_rows
-                .unwrap_or(1000)
+                .min_storage_bytes
+                .unwrap_or(1024 * 1024)
         } else {
             usize::MAX
         };
         let config = CircuitConfig {
             layout: Layout::new_solo(controller.status.pipeline_config.global.workers as usize),
             storage: controller.status.pipeline_config.storage_config.clone(),
-            min_storage_rows,
+            min_storage_bytes,
             init_checkpoint: Uuid::nil(),
         };
         let mut circuit = match circuit_factory(config) {

@@ -18,16 +18,16 @@ use crate::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, FileIndexedWSet,
         FileIndexedWSetFactories, Filter, Merger, WeightedItem,
     },
-    DBData, DBWeight, NumEntries, Runtime,
+    DBData, DBWeight, NumEntries,
 };
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 use std::fmt::{self, Debug};
-use std::path::Path;
+use std::{mem::replace, path::Path};
 use std::{ops::Neg, path::PathBuf};
 
-use super::utils::GenericMerger;
+use super::utils::{copy_to_builder, BuildTo, GenericMerger, MergeTo};
 
 pub struct FallbackIndexedWSetFactories<K, V, R>
 where
@@ -107,16 +107,19 @@ where
     }
 }
 
+#[derive(SizeOf)]
 pub struct FallbackIndexedWSet<K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackIndexedWSetFactories<K, V, R>,
     inner: Inner<K, V, R>,
 }
 
+#[derive(SizeOf)]
 #[allow(clippy::large_enum_variant)]
 enum Inner<K, V, R>
 where
@@ -327,6 +330,14 @@ where
     }
 
     #[inline]
+    fn approximate_byte_size(&self) -> usize {
+        match &self.inner {
+            Inner::File(file) => file.approximate_byte_size(),
+            Inner::Vec(vec) => vec.approximate_byte_size(),
+        }
+    }
+
+    #[inline]
     fn lower(&self) -> AntichainRef<'_, ()> {
         AntichainRef::new(&[()])
     }
@@ -389,16 +400,19 @@ where
 }
 
 /// State for an in-progress merge.
+#[derive(SizeOf)]
 pub struct FallbackIndexedWSetMerger<K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackIndexedWSetFactories<K, V, R>,
     inner: MergerInner<K, V, R>,
 }
 
+#[derive(SizeOf)]
 enum MergerInner<K, V, R>
 where
     K: DataTrait + ?Sized,
@@ -426,27 +440,22 @@ where
     ) -> Self {
         Self {
             factories: batch1.factories.clone(),
-            inner: if batch1.len() + batch2.len() < Runtime::min_storage_rows() {
-                match (&batch1.inner, &batch2.inner) {
-                    (Inner::Vec(vec1), Inner::Vec(vec2)) => {
-                        MergerInner::AllVec(VecIndexedWSetMerger::new_merger(vec1, vec2))
-                    }
-                    _ => MergerInner::ToVec(GenericMerger::new(
-                        &batch1.factories.vec,
-                        batch1,
-                        batch2,
-                    )),
+            inner: match (
+                MergeTo::from((batch1, batch2)),
+                &batch1.inner,
+                &batch2.inner,
+            ) {
+                (MergeTo::Memory, Inner::Vec(vec1), Inner::Vec(vec2)) => {
+                    MergerInner::AllVec(VecIndexedWSetMerger::new_merger(vec1, vec2))
                 }
-            } else {
-                match (&batch1.inner, &batch2.inner) {
-                    (Inner::File(file1), Inner::File(file2)) => {
-                        MergerInner::AllFile(FileIndexedWSetMerger::new_merger(file1, file2))
-                    }
-                    _ => MergerInner::ToFile(GenericMerger::new(
-                        &batch1.factories.file,
-                        batch1,
-                        batch2,
-                    )),
+                (MergeTo::Memory, _, _) => {
+                    MergerInner::ToVec(GenericMerger::new(&batch1.factories.vec, batch1, batch2))
+                }
+                (MergeTo::Storage, Inner::File(file1), Inner::File(file2)) => {
+                    MergerInner::AllFile(FileIndexedWSetMerger::new_merger(file1, file2))
+                }
+                (MergeTo::Storage, _, _) => {
+                    MergerInner::ToFile(GenericMerger::new(&batch1.factories.file, batch1, batch2))
                 }
             },
         }
@@ -516,33 +525,20 @@ where
     }
 }
 
-impl<K, V, R> SizeOf for FallbackIndexedWSetMerger<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        match &self.inner {
-            MergerInner::AllFile(file) => file.size_of_children(context),
-            MergerInner::AllVec(vec) => vec.size_of_children(context),
-            MergerInner::ToFile(merger) => merger.size_of_children(context),
-            MergerInner::ToVec(merger) => merger.size_of_children(context),
-        }
-    }
-}
-
 /// A builder for batches from ordered update tuples.
+#[derive(SizeOf)]
 pub struct FallbackIndexedWSetBuilder<K, V, R>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    #[size_of(skip)]
     factories: FallbackIndexedWSetFactories<K, V, R>,
     inner: BuilderInner<K, V, R>,
 }
 
+#[derive(SizeOf)]
 #[allow(clippy::large_enum_variant)]
 enum BuilderInner<K, V, R>
 where
@@ -550,8 +546,36 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    File(FileIndexedWSetBuilder<K, V, R>),
+    /// In-memory.
     Vec(VecIndexedWSetBuilder<K, V, R, usize>),
+
+    /// On-storage.
+    File(FileIndexedWSetBuilder<K, V, R>),
+
+    /// In-memory as long as we don't exceed a maximum threshold size.
+    Threshold {
+        vec: VecIndexedWSetBuilder<K, V, R, usize>,
+
+        /// Bytes left to add until the threshold is exceeded.
+        remaining: usize,
+    },
+}
+
+impl<K, V, R> FallbackIndexedWSetBuilder<K, V, R>
+where
+    Self: SizeOf,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// We ran out of the bytes threshold for `BuilderInner::Threshold`. Spill
+    /// to storage as `BuilderInner::File`, writing `vec` as the initial
+    /// contents.
+    fn spill(&mut self, vec: VecIndexedWSet<K, V, R, usize>) {
+        let mut file = FileIndexedWSetBuilder::with_capacity(&self.factories.file, (), 0);
+        copy_to_builder(&mut file, vec.cursor());
+        self.inner = BuilderInner::File(file);
+    }
 }
 
 impl<K, V, R> Builder<FallbackIndexedWSet<K, V, R>> for FallbackIndexedWSetBuilder<K, V, R>
@@ -574,18 +598,17 @@ where
     ) -> Self {
         Self {
             factories: factories.clone(),
-            inner: if capacity < Runtime::min_storage_rows() {
-                BuilderInner::Vec(VecIndexedWSetBuilder::with_capacity(
-                    &factories.vec,
-                    time,
-                    capacity,
-                ))
-            } else {
-                BuilderInner::File(FileIndexedWSetBuilder::with_capacity(
-                    &factories.file,
-                    time,
-                    capacity,
-                ))
+            inner: match BuildTo::for_capacity(
+                &factories.vec,
+                &factories.file,
+                time,
+                capacity,
+                VecIndexedWSetBuilder::with_capacity,
+                FileIndexedWSetBuilder::with_capacity,
+            ) {
+                BuildTo::Memory(vec) => BuilderInner::Vec(vec),
+                BuildTo::Storage(file) => BuilderInner::File(file),
+                BuildTo::Threshold(vec, remaining) => BuilderInner::Threshold { vec, remaining },
             },
         }
     }
@@ -593,27 +616,66 @@ where
     #[inline]
     fn reserve(&mut self, _additional: usize) {}
 
-    #[inline]
     fn push(&mut self, item: &mut DynPair<DynPair<K, V>, R>) {
         match &mut self.inner {
             BuilderInner::File(file) => file.push(item),
             BuilderInner::Vec(vec) => vec.push(item),
+            BuilderInner::Threshold { vec, remaining } => {
+                let size = item.size_of().total_bytes();
+                vec.push(item);
+                if size > *remaining {
+                    let vec = replace(
+                        vec,
+                        VecIndexedWSetBuilder::with_capacity(&self.factories.vec, (), 0),
+                    )
+                    .done();
+                    self.spill(vec);
+                } else {
+                    *remaining -= size;
+                }
+            }
         }
     }
 
-    #[inline]
     fn push_refs(&mut self, key: &K, val: &V, weight: &R) {
         match &mut self.inner {
             BuilderInner::File(file) => file.push_refs(key, val, weight),
             BuilderInner::Vec(vec) => vec.push_refs(key, val, weight),
+            BuilderInner::Threshold { vec, remaining } => {
+                let size = (key, val, weight).size_of().total_bytes();
+                vec.push_refs(key, val, weight);
+                if size > *remaining {
+                    let vec = replace(
+                        vec,
+                        VecIndexedWSetBuilder::with_capacity(&self.factories.vec, (), 0),
+                    )
+                    .done();
+                    self.spill(vec);
+                } else {
+                    *remaining -= size;
+                }
+            }
         }
     }
 
-    #[inline]
     fn push_vals(&mut self, key: &mut K, val: &mut V, weight: &mut R) {
         match &mut self.inner {
             BuilderInner::File(file) => file.push_vals(key, val, weight),
             BuilderInner::Vec(vec) => vec.push_vals(key, val, weight),
+            BuilderInner::Threshold { vec, remaining } => {
+                let size = (key as &K, val as &V, weight as &R).size_of().total_bytes();
+                vec.push_vals(key, val, weight);
+                if size > *remaining {
+                    let vec = replace(
+                        vec,
+                        VecIndexedWSetBuilder::with_capacity(&self.factories.vec, (), 0),
+                    )
+                    .done();
+                    self.spill(vec);
+                } else {
+                    *remaining -= size;
+                }
+            }
         }
     }
 
@@ -623,36 +685,10 @@ where
             factories: self.factories,
             inner: match self.inner {
                 BuilderInner::File(file) => Inner::File(file.done()),
-                BuilderInner::Vec(vec) => Inner::Vec(vec.done()),
+                BuilderInner::Vec(vec) | BuilderInner::Threshold { vec, .. } => {
+                    Inner::Vec(vec.done())
+                }
             },
-        }
-    }
-}
-
-impl<K, V, R> SizeOf for FallbackIndexedWSetBuilder<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        match &self.inner {
-            BuilderInner::File(file) => file.size_of_children(context),
-            BuilderInner::Vec(vec) => vec.size_of_children(context),
-        }
-    }
-}
-
-impl<K, V, R> SizeOf for FallbackIndexedWSet<K, V, R>
-where
-    K: DataTrait + ?Sized,
-    V: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
-{
-    fn size_of_children(&self, context: &mut size_of::Context) {
-        match &self.inner {
-            Inner::Vec(vec) => vec.size_of_children(context),
-            Inner::File(file) => file.size_of_children(context),
         }
     }
 }

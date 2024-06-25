@@ -368,6 +368,10 @@ where
         <VecValBatchLayer<K, V, T, R, O> as Trie>::tuples(&self.layer)
     }
 
+    fn approximate_byte_size(&self) -> usize {
+        self.size_of().total_bytes()
+    }
+
     fn lower(&self) -> AntichainRef<'_, T> {
         self.lower.as_ref()
     }

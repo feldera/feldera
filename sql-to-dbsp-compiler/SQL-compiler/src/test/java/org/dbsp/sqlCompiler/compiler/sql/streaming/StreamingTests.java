@@ -401,7 +401,7 @@ public class StreamingTests extends StreamingTest {
                          CircuitConfig {
                              layout: Layout::new_solo(2),
                              storage: None,
-                             min_storage_rows: usize::MAX,
+                             min_storage_bytes: usize::MAX,
                              init_checkpoint: Uuid::nil(),
                          }).expect("could not build circuit");
                     let start = SystemTime::now();

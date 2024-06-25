@@ -1165,6 +1165,10 @@ where
         self.data.len()
     }
 
+    fn approximate_byte_size(&self) -> usize {
+        self.size_of().total_bytes()
+    }
+
     fn lower(&self) -> AntichainRef<'_, Self::Time> {
         todo!()
     }
