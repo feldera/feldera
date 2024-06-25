@@ -28,10 +28,10 @@ use crate::serde_with_context::serde_config::DecimalFormat;
 use crate::serde_with_context::SqlSerdeConfig;
 use rust_decimal::Decimal;
 use serde::{
-    ser::{SerializeSeq, SerializeTuple},
+    ser::{SerializeMap, SerializeSeq, SerializeTuple},
     Serialize, Serializer,
 };
-use std::marker::PhantomData;
+use std::{collections::BTreeMap, marker::PhantomData};
 
 /// Similar to [`Serialize`], but takes an extra `context` argument and
 /// threads it through all nested structures.
@@ -168,6 +168,26 @@ where
         }
 
         seq.end()
+    }
+}
+
+impl<C, K, V> SerializeWithContext<C> for BTreeMap<K, V>
+where
+    K: SerializeWithContext<C> + Ord,
+    V: SerializeWithContext<C>,
+{
+    fn serialize_with_context<S>(&self, serializer: S, context: &C) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(self.len()))?;
+        for (k, v) in self {
+            map.serialize_entry(
+                &SerializationContext::new(context, k),
+                &SerializationContext::new(context, v),
+            )?;
+        }
+        map.end()
     }
 }
 
