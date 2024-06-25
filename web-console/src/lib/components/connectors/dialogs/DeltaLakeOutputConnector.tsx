@@ -100,6 +100,10 @@ export const DeltaLakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
       setActiveTab('optionsTab')
       return
     }
+    if (errors.max_output_buffer_time_millis || errors.max_output_buffer_size_records) {
+      setActiveTab('bufferTab')
+      return
+    }
     throw new Error(JSONbig.stringify(errors))
   }
 

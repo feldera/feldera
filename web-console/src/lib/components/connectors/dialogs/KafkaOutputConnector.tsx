@@ -119,6 +119,8 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
       setActiveTab('authTab')
     } else if (format?.format_name || format?.json_array) {
       setActiveTab('formatTab')
+    } else if (errors.max_output_buffer_time_millis || errors.max_output_buffer_size_records) {
+      setActiveTab('bufferTab')
     } else {
       throw new Error(JSONbig.stringify(errors))
     }

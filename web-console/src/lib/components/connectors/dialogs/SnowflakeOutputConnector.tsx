@@ -20,6 +20,7 @@ import {
   parseSnowflakeOutputSchemaConfig,
   prepareDataWith
 } from '$lib/functions/connectors'
+import { outputBufferConfigSchema, outputBufferConfigValidation } from '$lib/functions/connectors/outputBuffer'
 import { authFields, authParamsSchema, defaultLibrdkafkaAuthOptions } from '$lib/functions/kafka/authParamsSchema'
 import { useConnectorRequest } from '$lib/services/connectors/dialogs/SubmitHandler'
 import { Direction } from '$lib/types/connectors'
@@ -32,30 +33,36 @@ import * as va from 'valibot'
 import { valibotResolver } from '@hookform/resolvers/valibot'
 import Box from '@mui/material/Box'
 
-const schema = va.object({
-  name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
-  description: va.optional(va.string(), ''),
-  transport: va.intersect([
-    va.object(
-      {
-        bootstrap_servers: va.optional(
-          va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
-            va.minLength(1, 'Specify at least one server')
-          ])
+const schema = va.merge(
+  [
+    va.object({
+      name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
+      description: va.optional(va.string(), ''),
+      transport: va.intersect([
+        va.object(
+          {
+            bootstrap_servers: va.optional(
+              va.array(va.string([va.minLength(1, 'Specify at least one server')]), [
+                va.minLength(1, 'Specify at least one server')
+              ])
+            ),
+            topic: va.nonOptional(va.string([va.minLength(1, 'Topic name should not be empty')])),
+            preset_service: va.optional(va.string([va.toCustom(s => (s === '' ? undefined! : s))]))
+          },
+          // Allow configurations options not mentioned in the schema
+          va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
         ),
-        topic: va.nonOptional(va.string([va.minLength(1, 'Topic name should not be empty')])),
-        preset_service: va.optional(va.string([va.toCustom(s => (s === '' ? undefined! : s))]))
-      },
-      // Allow configurations options not mentioned in the schema
-      va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
-    ),
-    authParamsSchema
-  ]),
-  format: va.object({
-    format_name: va.nonOptional(va.picklist(['json', 'avro'])),
-    update_format: va.literal('snowflake')
-  })
-})
+        authParamsSchema
+      ]),
+      format: va.object({
+        format_name: va.nonOptional(va.picklist(['json', 'avro'])),
+        update_format: va.literal('snowflake')
+      })
+    }),
+    outputBufferConfigSchema
+  ],
+  [outputBufferConfigValidation()]
+)
 export type SnowflakeOutputSchema = va.Input<typeof schema>
 
 export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
@@ -111,6 +118,8 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
       setActiveTab('authTab')
     } else if (format?.format_name) {
       setActiveTab('formatTab')
+    } else if (errors.max_output_buffer_time_millis || errors.max_output_buffer_size_records) {
+      setActiveTab('bufferTab')
     } else {
       throw new Error(JSONbig.stringify(errors))
     }
