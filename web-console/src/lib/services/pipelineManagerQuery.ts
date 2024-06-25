@@ -617,7 +617,7 @@ export const pipelineQueryCacheUpdate = (
       }
     } satisfies Pipeline
   }
-  console.log('pipelineQueryCacheUpdate', pipelineName, newData)
+
   setQueryData(queryClient, PipelineManagerQueryKey.pipelineStatus(pipelineName), updateCache)
 
   setQueryData(queryClient, PipelineManagerQueryKey.pipelines(), oldDatas =>
