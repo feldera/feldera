@@ -3,7 +3,7 @@ import invariant from 'tiny-invariant'
 import { faker } from '@faker-js/faker'
 import { expect, test } from '@playwright/test'
 
-import { apiOrigin, appOrigin } from '../../playwright.config'
+import { apiOrigin, appOrigin } from '../../playwright-e2e.config'
 import { deletePipeline, deleteProgram } from '../util'
 import demoAccrualSql from './demoAccrual.sql'
 
@@ -18,6 +18,7 @@ test('Accrual demo test', async ({ page, request }) => {
     await page.getByTestId('button-vertical-nav-sql-programs').click()
     await page.getByTestId('button-add-sql-program').first().click()
     await page.getByTestId('input-program-name').fill(programName)
+    await page.getByTestId('box-save-saved').waitFor()
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').waitFor({ state: 'attached' })
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').fill(demoAccrualSql)
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').blur()
@@ -35,6 +36,19 @@ test('Accrual demo test', async ({ page, request }) => {
     await page.getByTestId('box-builder-program-options').getByRole('option', { name: programName }).click()
     await page.getByTestId('box-save-saved').waitFor()
 
+    // Ensure storage is disabled
+    await page.getByTestId('button-configure-resources').click()
+    if (await page.getByTestId('input-enable-storage').inputValue() === 'false') {
+      // Double switch to force `false` value from an undefined state
+    await page.waitForTimeout(200)
+      await page.getByTestId('input-enable-storage').click()
+    }
+    await page.waitForTimeout(200)
+    await page.getByTestId('input-enable-storage').click()
+    await page.waitForTimeout(200)
+    await expect(page).toHaveScreenshot('2-1.png')
+    await page.getByTestId('button-apply').click()
+
     await page.getByTestId('button-breadcrumb-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).waitFor()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).getByTestId('button-edit').click()
@@ -45,6 +59,7 @@ test('Accrual demo test', async ({ page, request }) => {
   })
 
   await test.step('Start the pipeline', async () => {
+    await page.getByTestId('box-resources-thumb').waitFor()
     await page.getByTestId('button-breadcrumb-pipelines').click()
     await page.getByTestId(`box-pipeline-actions-${pipelineName}`).waitFor()
     await expect(page).toHaveScreenshot('3-1-compiling-program-binary.png')
@@ -199,8 +214,9 @@ test('Accrual demo test', async ({ page, request }) => {
       await page.getByTestId('box-relation-options').getByTestId(`button-option-relation-${relation}`).click()
       await page.getByTestId('button-expand-relations').hover() // Prevent the cursor causing flakes by tooltip popups
       await page.getByTestId('box-relation-options').waitFor({ state: 'hidden' })
-      await page.getByTestId('box-relation-row').first().waitFor()
-      await page.waitForTimeout(50)
+      await page.getByTestId('box-relation-row').nth(2).waitFor()
+      await page.waitForLoadState('domcontentloaded')
+      await page.waitForTimeout(1000)
       await expect(page).toHaveScreenshot(`5-1-relation ${relation}.png`)
     }
   })

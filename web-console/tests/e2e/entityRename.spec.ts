@@ -1,14 +1,8 @@
-import invariant from 'tiny-invariant'
-
-import { faker } from '@faker-js/faker'
 import { expect, test } from '@playwright/test'
 
-import { apiOrigin, appOrigin } from '../../playwright.config'
+import { appOrigin } from '../../playwright-e2e.config'
 import { deleteConnectors, deletePipeline, deleteProgram } from '../util'
-import demoAccrualSql from './demoAccrual.sql'
 import felderaBasicsTutorialSql from './felderaBasicsTutorial.sql'
-
-const codeEditorScrollbarFadeTimeout = 1000
 
 /**
  * The usage of API entity names as identifiers introduces more complex UI states when editing the names.
@@ -28,14 +22,12 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').waitFor({ state: 'attached' })
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').fill(felderaBasicsTutorialSql)
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').blur()
-    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('1-2-create-program1.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
 
     await page.getByTestId('input-program-name').fill('program1_1')
     await page.getByTestId('box-save-saved').waitFor()
-    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await page.getByTestId('box-compile-status-success').waitFor()
     await expect(page).toHaveScreenshot('1-3-create-program1.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
@@ -44,7 +36,6 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('input-program-name').fill('program1_2')
     await page.getByTestId('box-save-saved').waitFor()
     await page.getByTestId('box-compile-status-success').waitFor()
-    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('1-4-create-program1.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -61,15 +52,14 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('button-add-sql-program').first().click()
 
     await page.getByTestId('input-program-name').fill('program1_2')
-    await expect(page).toHaveScreenshot('2-1-saved-program2.png')
 
+    await expect(page).toHaveScreenshot('2-1-saved-program2.png')
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').waitFor({ state: 'attached' })
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').fill(felderaBasicsTutorialSql)
     await page.getByTestId('box-program-code-wrapper').getByRole('textbox').blur()
 
     await page.getByTestId('input-program-name').fill('program2_0')
     await page.getByTestId('box-save-saved').waitFor()
-    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('2-2-saved-program2.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -88,7 +78,6 @@ test('Entity rename test', async ({ page, request }) => {
 
     await page.getByTestId('input-program-name').fill('program2_1')
     await page.getByTestId('box-save-saved').waitFor()
-    await page.waitForTimeout(codeEditorScrollbarFadeTimeout)
     await expect(page).toHaveScreenshot('2-5-saved-program2.png', {
       mask: ['box-spinner'].map(id => page.getByTestId(id))
     })
@@ -238,6 +227,7 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('input-topic').fill('preferred_vendor')
     await page.getByTestId('button-tab-auth').click()
     await page.getByTestId('button-next').click()
+    await page.getByTestId('button-next').click()
     await page.getByTestId('button-create').click()
     await page
       .getByTestId('box-handle-output-' + 'preferred_vendor-redpanda')
@@ -263,6 +253,7 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('button-confirm-delete').click()
     await expect(page).toHaveScreenshot('a-4-edit-pipeline2.png')
     await page.getByTestId('input-pipeline-name').fill('pipeline2')
+    await page.getByTestId('box-error-name').waitFor({state: 'detached'})
     await expect(page).toHaveScreenshot('a-5-edit-pipeline2.png')
     await page.getByTestId('box-save-saved').waitFor()
     await expect(page).toHaveScreenshot('a-6-edit-pipeline2.png')

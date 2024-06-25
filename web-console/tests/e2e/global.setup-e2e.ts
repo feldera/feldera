@@ -1,20 +1,20 @@
 import { Page, test as setup } from '@playwright/test'
 
-import { appOrigin } from '../playwright.config'
+import { appOrigin } from '../../playwright-e2e.config'
 
-const deleteRows = async (page: Page, regex: RegExp) => {
+const rowsAction = async (page: Page, regex: RegExp, actionTestId: string, postProcedure = async () => {}) => {
   while (true) {
     try {
       // Wait for at least one row, if timed out - no rows left
       await page.getByTestId(regex).waitFor({ timeout: 2000 })
     } catch {}
-    const buttonDelete = await page.getByTestId(regex).first().getByTestId('button-delete')
+    const buttonDelete = await page.getByTestId(regex).first().getByTestId(actionTestId)
     if (!(await buttonDelete.isVisible())) {
       // Exit if no more rows left
       break
     }
     await buttonDelete.click()
-    await page.getByTestId('button-confirm-delete').click()
+    await postProcedure()
   }
 }
 
@@ -34,18 +34,20 @@ setup('Global prepare', async ({ page, request }) => {
   await setup.step('Prepare: Delete pipelines', async () => {
     await page.getByTestId('button-vertical-nav-pipelines').click()
 
-    await deleteRows(page, /box-pipeline-actions-/)
+    await rowsAction(page, /box-pipeline-actions-/, 'button-shutdown')
+    await page.waitForTimeout(4000)
+    await rowsAction(page, /box-pipeline-actions-/, 'button-delete', () => page.getByTestId('button-confirm-delete').click())
   })
 
   await setup.step('Prepare: Delete connectors', async () => {
     await page.getByTestId('button-vertical-nav-connectors').click()
 
-    await deleteRows(page, /box-connector-actions-/)
+    await rowsAction(page, /box-connector-actions-/, 'button-delete', () => page.getByTestId('button-confirm-delete').click())
   })
 
   await setup.step('Prepare: Delete programs', async () => {
     await page.getByTestId('button-vertical-nav-sql-programs').click()
 
-    await deleteRows(page, /box-program-actions-/)
+    await rowsAction(page, /box-program-actions-/, 'button-delete', () => page.getByTestId('button-confirm-delete').click())
   })
 })

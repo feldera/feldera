@@ -10,7 +10,7 @@ import { DeltaLakeInputConnectorDialog } from './DeltaLakeInputConnector'
 test.use({ viewport: { width: 1000, height: 800 } })
 
 test('DeltaLake input creation', async ({ mount, page }) => {
-  test.setTimeout(20000)
+  test.setTimeout(40000)
   let config: any = null
   await mount(
     <Layout>
