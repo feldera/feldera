@@ -333,8 +333,13 @@ class SQLContext:
         """
         Add a lateness annotation to a view.
         Lateness annotations are SQL statements of the form
-        'LATENESS <view>.<timstamp_column> <lateness_expr>;', e.g.,
-        'LATENESS V.COL1 INTERVAL '1' HOUR;'
+
+        .. code-block:: sql
+
+            LATENESS <view>.<timstamp_column> <lateness_expr>;
+            -- example:
+            LATENESS V.COL1 INTERVAL '1' HOUR;
+
 
         :param view: View name.
         :param timestamp_column: Timestamp column to associate lateness with.
