@@ -98,7 +98,8 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
   )
 
   // If there is an error, switch to the earliest tab with an error
-  const handleErrors = ({ name, description, transport, format }: FieldErrors<SnowflakeOutputSchema>) => {
+  const handleErrors = (errors: FieldErrors<SnowflakeOutputSchema>) => {
+    const { name, description, transport, format } = errors
     if (!props.show) {
       return
     }
@@ -110,6 +111,8 @@ export const SnowflakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
       setActiveTab('authTab')
     } else if (format?.format_name) {
       setActiveTab('formatTab')
+    } else {
+      throw new Error(JSONbig.stringify(errors))
     }
   }
 

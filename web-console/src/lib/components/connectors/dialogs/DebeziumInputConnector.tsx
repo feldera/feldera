@@ -112,7 +112,8 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
   )
 
   // If there is an error, switch to the earliest tab with an error
-  const handleErrors = ({ name, description, transport, format }: FieldErrors<DebeziumInputSchema>) => {
+  const handleErrors = (errors: FieldErrors<DebeziumInputSchema>) => {
+    const { name, description, transport, format } = errors
     if (!props.show) {
       return
     }
@@ -129,6 +130,8 @@ export const DebeziumInputConnectorDialog = (props: ConnectorDialogProps) => {
       setActiveTab('authTab')
     } else if (format?.format_name || format?.update_format) {
       setActiveTab('formatTab')
+    } else {
+      throw new Error(JSONbig.stringify(errors))
     }
   }
   const [editorDirty, setEditorDirty] = useState<'dirty' | 'clean' | 'error'>('clean')

@@ -27,6 +27,7 @@ import Typography from '@mui/material/Typography'
 
 import { TabGenericInputFormatDetails } from './tabs/generic/TabGenericInputFormatDetails'
 import Transition from './tabs/Transition'
+import JSONbig from 'true-json-bigint'
 
 const schema = va.object({
   name: va.nonOptional(va.string([va.minLength(1, 'Specify connector name')])),
@@ -102,7 +103,8 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
   const onSubmit = useConnectorRequest(props.connector, prepareData, props.onSuccess, handleClose)
 
   // If there is an error, switch to the earliest tab with an error
-  const handleErrors = ({ name, description, transport, format }: FieldErrors<UrlSchema>) => {
+  const handleErrors = (errors: FieldErrors<UrlSchema>) => {
+    const { name, description, transport, format } = errors
     if (!props.show) {
       return
     }
@@ -110,6 +112,8 @@ export const UrlConnectorDialog = (props: ConnectorDialogProps) => {
       setActiveTab('detailsTab')
     } else if (format?.format_name || format?.json_array || format?.update_format) {
       setActiveTab('formatTab')
+    } else {
+      throw new Error(JSONbig.stringify(errors))
     }
   }
   const tabFooter = <TabFooter submitButton={props.submitButton} {...{ activeTab, setActiveTab, tabs }} />

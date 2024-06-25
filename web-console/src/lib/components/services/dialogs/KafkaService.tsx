@@ -87,7 +87,8 @@ export const KafkaServiceDialog = (props: ServiceDialogProps) => {
       }
 
   // If there is an error, switch to the earliest tab with an error
-  const handleErrors = ({ name, description, config }: FieldErrors<KafkaServiceSchema>) => {
+  const handleErrors = (errors: FieldErrors<KafkaServiceSchema>) => {
+    const { name, description, config } = errors
     if (!props.show) {
       return
     }
@@ -97,6 +98,8 @@ export const KafkaServiceDialog = (props: ServiceDialogProps) => {
       setActiveTab('authTab')
     } else if (config) {
       setActiveTab('configTab')
+    } else {
+      throw new Error(JSONbig.stringify(errors))
     }
   }
 

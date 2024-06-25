@@ -87,7 +87,8 @@ export const DeltaLakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
     handleClose
   )
 
-  const handleErrors = ({ name, description, transport }: FieldErrors<DeltaLakeOutputSchema>) => {
+  const handleErrors = (errors: FieldErrors<DeltaLakeOutputSchema>) => {
+    const { name, description, transport } = errors
     if (!props.show) {
       return
     }
@@ -99,6 +100,7 @@ export const DeltaLakeOutputConnectorDialog = (props: ConnectorDialogProps) => {
       setActiveTab('optionsTab')
       return
     }
+    throw new Error(JSONbig.stringify(errors))
   }
 
   return (
