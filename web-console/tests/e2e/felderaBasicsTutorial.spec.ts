@@ -2,7 +2,7 @@ import invariant from 'tiny-invariant'
 
 import { expect, Page, test } from '@playwright/test'
 
-import { apiOrigin, appOrigin } from '../../playwright.config'
+import { apiOrigin, appOrigin } from '../../playwright-e2e.config'
 import { deleteConnectors, deletePipeline, deleteProgram } from '../util'
 import felderaBasicsTutorialSql from './felderaBasicsTutorial.sql'
 

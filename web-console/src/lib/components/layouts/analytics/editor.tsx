@@ -295,7 +295,15 @@ export const ProgramEditorImpl = ({
           wrapperProps={{
             'data-testid': 'box-program-code-wrapper'
           }}
-          options={isMonacoEditorDisabled(status === 'isLoading')}
+          options={{
+            ...isMonacoEditorDisabled(status === 'isLoading'),
+            overviewRulerLanes: 0,
+            hideCursorInOverviewRuler: true,
+            overviewRulerBorder: false,
+            scrollbar: {
+              vertical: 'visible'
+            }
+          }}
         />
       </CardContent>
       <Divider sx={{ m: '0 !important' }} />

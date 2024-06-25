@@ -13,7 +13,10 @@ export const appOrigin = process.env.PLAYWRIGHT_APP_ORIGIN!
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
-  testDir: './tests',
+  testDir: './tests/e2e',
+  /* The base directory, relative to the config file, for snapshot files created with toMatchSnapshot and toHaveScreenshot. */
+  snapshotDir: 'playwright-snapshots/e2e',
+  outputDir: 'test-results-e2e',
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
@@ -23,8 +26,7 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : 1 /* undefined */,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
-  snapshotDir: 'playwright-snapshots',
+  reporter: [['html', { outputFolder: 'playwright-report-e2e' }]],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
@@ -39,7 +41,7 @@ export default defineConfig({
   projects: [
     {
       name: 'setup',
-      testMatch: /global\.setup\.ts/,
+      testMatch: /global\.setup-e2e\.ts/,
     },
     {
       name: 'chromium',

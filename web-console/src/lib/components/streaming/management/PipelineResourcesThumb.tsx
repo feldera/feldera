@@ -14,7 +14,7 @@ export const PipelineResourcesThumb = (props: { pipelineName: string }) => {
   }
   const res = configQuery.data.resources
   return (
-    <Box sx={{ display: 'flex', flexWrap: 'wrap', width: '100%' }}>
+    <Box sx={{ display: 'flex', flexWrap: 'wrap', width: '100%' }} data-testid='box-resources-thumb'>
       <Box sx={{ whiteSpace: 'nowrap' }}>{configQuery.data.workers} workers |&nbsp;</Box>
       <Box sx={{ whiteSpace: 'nowrap' }}>
         CPU: {printRange(res?.cpu_cores_min, res?.cpu_cores_max, 'cores', 'default')} |&nbsp;
