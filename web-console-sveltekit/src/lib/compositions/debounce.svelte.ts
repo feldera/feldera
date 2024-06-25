@@ -1,4 +1,3 @@
-
 export const useDebounce = () => {
   let timeout = $state<ReturnType<typeof setTimeout>>()
   return <Args extends any[]>(callback: (...args: Args) => void, wait = 300) => {

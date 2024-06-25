@@ -1,8 +1,8 @@
 <script lang="ts">
   import { localStore } from '$lib/compositions/localStore.svelte'
-  import TabQueryData from '$lib/components/pipelines/TabQueryData.svelte'
-  import TabPerformance from '$lib/components/pipelines/TabPerformance.svelte'
-  import TabDBSPGraph from '$lib/components/pipelines/TabDBSPGraph.svelte'
+  import TabQueryData from '$lib/components/pipelines/editor/TabQueryData.svelte'
+  import TabPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
+  import TabDBSPGraph from '$lib/components/pipelines/editor/TabDBSPGraph.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
   let { pipelineName } = $props<{ pipelineName: string }>()

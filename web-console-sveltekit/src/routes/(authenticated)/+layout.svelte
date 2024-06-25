@@ -1,7 +1,10 @@
 <script lang="ts">
   import Drawer from '$lib/components/layout/Drawer.svelte'
+  import GlobalModal from '$lib/components/layout/GlobalModal.svelte'
   import VerticalMenu from '$lib/components/layout/VerticalMenu.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  import type { Snippet } from 'svelte'
+  let { children } = $props<{ children: Snippet }>()
   let { darkMode, toggleDarkMode } = useDarkMode()
   let showDrawer = $state(false)
 </script>
@@ -22,11 +25,13 @@
         <div class="flex">
           <button
             onclick={toggleDarkMode}
-            class={'btn-icon preset-tonal-surface text-[24px] ' +
-              (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}></button>
+            class={'btn-icon text-[24px] preset-tonal-surface ' +
+              (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}
+          ></button>
         </div>
       </div>
-      <slot></slot>
+      {@render children()}
     </div>
   </div>
 </div>
+<GlobalModal></GlobalModal>

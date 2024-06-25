@@ -27,12 +27,12 @@
     side,
     children,
     class: _class
-  } = $props<{
+  }: {
     open: boolean
     side: keyof typeof classNames
     children: Snippet
     class: string
-  }>()
+  } = $props()
 </script>
 
 <div role="presentation" class="relative z-10" onclick={() => (open = !open)}>
@@ -40,8 +40,8 @@
     class={'fixed inset-0 bg-gray-500 bg-opacity-75 transition-all ' +
       (open
         ? 'visible opacity-100 duration-300 ease-in-out'
-        : 'invisible opacity-0 duration-300 ease-in-out')}
-  ></div>
+        : 'invisible opacity-0 duration-300 ease-in-out')}>
+  </div>
   <div class={open ? 'fixed inset-0 overflow-hidden' : ''}>
     <div class="absolute inset-0 overflow-hidden">
       <div class={'pointer-events-none fixed max-w-full ' + classNames[side]}>
@@ -52,8 +52,7 @@
           onclick={(event) => {
             event.preventDefault()
             event.stopPropagation()
-          }}
-        >
+          }}>
           <div role="dialog" aria-modal="true" class={'flex h-full flex-col shadow-xl ' + _class}>
             {@render children()}
           </div>

@@ -3,22 +3,29 @@
 
   import ModalDrawer from '$lib/components/layout/ModalDrawer.svelte'
   import { listen } from 'svelte-mq-store'
+  import { MediaQuery } from 'runed'
   import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
+  try {
+  } catch (e) {
+    console.log(e)
+  }
   const isMobile = listen('(max-width: 1200px)')
+  // const isMobile = new MediaQuery('(max-width: 1200px)')
 
   let {
     open = $bindable(),
     side,
     children
-  } = $props<{
+  }: {
     open: boolean
     side: 'right' | 'left' | 'top' | 'bottom'
     children: Snippet
-  }>()
+  } = $props()
 </script>
 
+<!-- {#if isMobile.matches} -->
 {#if $isMobile}
-  <ModalDrawer bind:open {side} class="bg-surface-50 dark:bg-surface-950" {children}></ModalDrawer>
+  <ModalDrawer {open} {side} {children} class="bg-surface-50 dark:bg-surface-950"></ModalDrawer>
 {:else}
   <InlineDrawer {open} {side} {children}></InlineDrawer>
 {/if}

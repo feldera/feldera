@@ -5,11 +5,6 @@ export class LocalStore {
   value = $state(/** @type {T} */ (/** @type {unknown} */ undefined))
   key = ''
 
-  get value2 () { return this.value }
-  set value2 (value) {
-    this.value = value
-  }
-
   /**
    * @param {string} key
    * @param {T} value
