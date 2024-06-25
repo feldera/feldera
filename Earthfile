@@ -99,6 +99,7 @@ install-python-deps:
     RUN pip install wheel
     COPY demo/demo_notebooks/requirements.txt requirements.txt
     RUN pip wheel -r requirements.txt --wheel-dir=wheels
+    COPY --dir python ./
     RUN pip install python/ pytest
     SAVE ARTIFACT wheels /wheels
 
