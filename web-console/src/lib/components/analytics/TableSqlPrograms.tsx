@@ -148,7 +148,7 @@ export const TableSqlPrograms = () => {
       editable: true
     },
     {
-      flex: 0.15,
+      width: 145,
       field: 'status',
       headerName: 'Status',
       display: 'flex',
@@ -156,7 +156,7 @@ export const TableSqlPrograms = () => {
         const { tooltip, ...statusChipProps } = getStatusChipProps(params.row.status)
         return (
           <Tooltip title={tooltip}>
-            <CustomChip rounded size='small' skin='light' {...statusChipProps} sx={{ width: 120 }} />
+            <CustomChip rounded size='small' skin='light' {...statusChipProps} sx={{ width: 125 }} />
           </Tooltip>
         )
       }

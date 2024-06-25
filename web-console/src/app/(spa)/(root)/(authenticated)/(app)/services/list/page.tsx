@@ -21,6 +21,7 @@ import { ServiceType } from '$lib/types/xgressServices'
 import { ServiceProps } from '$lib/types/xgressServices/ServiceDialog'
 import { useEffect } from 'react'
 import invariant from 'tiny-invariant'
+import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
 
 import { Box, Button, Card, Chip, IconButton } from '@mui/material'
@@ -32,7 +33,7 @@ const getServiceConfigThumb = ({ config }: ServiceDescr) => {
     const suffix = config.kafka.bootstrap_servers.length > 1 ? ', ...' : ''
     return config.kafka.bootstrap_servers[0] + suffix
   }
-  invariant(false, 'getServiceThumb: Unexpected service config type: ' + JSON.stringify(config))
+  invariant(false, 'getServiceThumb: Unexpected service config type: ' + JSONbig.stringify(config))
 }
 const ServiceActions = ({ row: service }: { row: ServiceDescr }) => {
   const { showDeleteDialog } = useDeleteDialog()

@@ -106,7 +106,8 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
   )
 
   // If there is an error, switch to the earliest tab with an error
-  const handleErrors = ({ name, description, transport, format }: FieldErrors<KafkaOutputSchema>) => {
+  const handleErrors = (errors: FieldErrors<KafkaOutputSchema>) => {
+    const { name, description, transport, format } = errors
     if (!props.show) {
       return
     }
@@ -118,6 +119,10 @@ export const KafkaOutputConnectorDialog = (props: ConnectorDialogProps) => {
       setActiveTab('authTab')
     } else if (format?.format_name || format?.json_array) {
       setActiveTab('formatTab')
+    } else if (errors.max_output_buffer_time_millis || errors.max_output_buffer_size_records) {
+      setActiveTab('bufferTab')
+    } else {
+      throw new Error(JSONbig.stringify(errors))
     }
   }
 

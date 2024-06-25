@@ -407,7 +407,10 @@ export default () => {
     initialData: defaultPipelineData,
     refetchOnWindowFocus: false
   })
-  const pipeline = pipelineQuery.data?.descriptor
+  // Sometimes a temporary state exists where query cache for a pipeline is undefined
+  // (usually collision between optimistic cache update and a premature fetch elsewhere)
+  // for these cases we use constant default data, which is fine for a temporary state
+  const pipeline = pipelineQuery.data?.descriptor ?? defaultPipelineData.descriptor
   invariant(pipeline, 'Pipeline should be initialized with a default value')
 
   useEffect(() => {
