@@ -695,8 +695,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     /** Implement a LogicalAggregate.  The LogicalAggregate can contain a rollup,
      * described by a set of groups.  The aggregate is computed for each group,
-     * and the results are combined.
-     */
+     * and the results are combined. */
     void visitAggregate(LogicalAggregate aggregate) {
         CalciteObject node = CalciteObject.create(aggregate);
         List<ImmutableBitSet> plan = this.planGroups(
@@ -1926,7 +1925,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, topK);
             this.circuit.addOperator(integral);
             // If we ignore ORDER BY this is the result.
-            if (this.options.languageOptions.ignoreOrderBy) {
+            boolean done = this.options.languageOptions.ignoreOrderBy;
+            // We can also ignore the order by for some ancestors
+            if (!this.ancestors.isEmpty()) {
+                RelNode last = Utilities.last(this.ancestors);
+                if (last instanceof LogicalAggregate ||
+                    last instanceof LogicalProject) {
+                    done = true;
+                }
+            }
+            if (done) {
                 // We must drop the index we built.
                 DBSPDeindexOperator deindex = new DBSPDeindexOperator(node, integral);
                 this.assignOperator(sort, deindex);
