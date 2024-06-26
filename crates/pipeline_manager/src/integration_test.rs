@@ -120,7 +120,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         compilation_profile: crate::config::CompilationProfile::Unoptimized,
         precompile: true,
         binary_ref_host: "127.0.0.1".to_string(),
-        binary_ref_port: 9090,
+        binary_ref_port: 8085,
     }
     .canonicalize()
     .unwrap();
