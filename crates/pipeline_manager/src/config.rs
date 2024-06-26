@@ -45,7 +45,7 @@ fn default_db_connection_string() -> String {
 }
 
 fn default_binary_ref_port() -> u16 {
-    9090
+    8085
 }
 
 fn default_compilation_profile() -> CompilationProfile {
