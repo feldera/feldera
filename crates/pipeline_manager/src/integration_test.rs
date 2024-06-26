@@ -1094,6 +1094,65 @@ not_a_number,true,ΑαΒβΓγΔδ
         .await;
 }
 
+// Table with column of type MAP.
+#[actix_web::test]
+#[serial]
+async fn map_column() {
+    let config = setup().await;
+    let id = deploy_pipeline_without_connectors(
+        &config,
+        "create table t1(c1 integer, c2 bool, c3 MAP<varchar, varchar>); create view v1 as select * from t1;",
+    )
+    .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/test/start"))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
+        .await;
+
+    // Push some data using default json config.
+    let req = config
+        .post_json(
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
+            r#"{"c1": 10, "c2": true, "c3": {"foo": "1", "bar": "2"}}
+            {"c1": 20}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let quantiles = config.quantiles_json("test", "T1").await;
+    assert_eq!(quantiles, "[{\"insert\":{\"c1\":10,\"c2\":true,\"c3\":{\"bar\":\"2\",\"foo\":\"1\"}}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":null}}]");
+
+    let hood = config
+        .neighborhood_json(
+            &id,
+            "T1",
+            Some(json!({"c1":10,"c2":true,"c3": {"foo": "1", "bar": "2"}})),
+            10,
+            10,
+        )
+        .await;
+    assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"c1\":10,\"c2\":true,\"c3\":{\"bar\":\"2\",\"foo\":\"1\"}}}},{\"insert\":{\"index\":1,\"key\":{\"c1\":20,\"c2\":null,\"c3\":null}}}]");
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+}
+
 #[actix_web::test]
 #[serial]
 async fn parse_datetime() {

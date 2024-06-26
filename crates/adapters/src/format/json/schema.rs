@@ -95,18 +95,27 @@ mod kafka_connect_json_converter {
         Bytes,
         // not supported by the Debezium JDBC sink connector
         #[serde(rename = "array")]
-        Array { items: Box<Type> },
+        Array { items: Box<TypeSchema> },
         // not supported by the Debezium JDBC sink connector
         #[serde(rename = "map")]
-        Map { keys: Box<Type>, values: Box<Type> },
+        Map {
+            keys: Box<TypeSchema>,
+            values: Box<TypeSchema>,
+        },
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct TypeSchema {
+        #[serde(flatten)]
+        typ: Type,
+        optional: bool,
     }
 
     #[derive(Serialize, Deserialize)]
     struct JsonField {
         field: String,
         #[serde(flatten)]
-        typ: Type,
-        optional: bool,
+        schema: TypeSchema,
     }
 
     pub fn debezium_value_schema_str(schema: &Relation) -> String {
@@ -123,16 +132,20 @@ mod kafka_connect_json_converter {
                 fields: vec![
                     JsonField {
                         field: "after".to_string(),
-                        typ: relation_schema(schema),
-                        optional: true,
+                        schema: TypeSchema {
+                            typ: relation_schema(schema),
+                            optional: true,
+                        },
                     },
                     JsonField {
                         field: "op".to_string(),
-                        typ: Type {
-                            representation_type: RepresentationType::String,
-                            logical_type: None,
+                        schema: TypeSchema {
+                            typ: Type {
+                                representation_type: RepresentationType::String,
+                                logical_type: None,
+                            },
+                            optional: false,
                         },
-                        optional: false,
                     },
                 ],
             },
@@ -169,15 +182,17 @@ mod kafka_connect_json_converter {
     fn field_schema(schema: &Field) -> JsonField {
         JsonField {
             field: schema.name.clone(),
-            typ: type_schema(&schema.columntype),
-            optional: schema.columntype.nullable,
+            schema: type_schema(&schema.columntype),
         }
     }
 
-    fn type_schema(schema: &ColumnType) -> Type {
-        Type {
-            representation_type: representation_type_schema(schema),
-            logical_type: logical_type_schema(schema),
+    fn type_schema(schema: &ColumnType) -> TypeSchema {
+        TypeSchema {
+            typ: Type {
+                representation_type: representation_type_schema(schema),
+                logical_type: logical_type_schema(schema),
+            },
+            optional: schema.nullable,
         }
     }
 
@@ -237,9 +252,12 @@ mod kafka_connect_json_converter {
                     .collect::<Vec<_>>(),
             },
             SqlType::Map => {
-                panic!(
-                    "SQL MAP type conversion to JSON representation schema is not yet implemented"
-                );
+                let key_type = schema.key.as_ref().unwrap();
+                let val_type = schema.value.as_ref().unwrap();
+                RepresentationType::Map {
+                    keys: Box::new(type_schema(key_type)),
+                    values: Box::new(type_schema(val_type)),
+                }
             }
             SqlType::Interval(_) => RepresentationType::String,
             SqlType::Null => RepresentationType::String,
@@ -350,7 +368,23 @@ mod kafka_connect_json_converter {
         ],
         "nullable": false
       }
-    } ],
+    }, {
+      "name": "f12",
+      "case_sensitive": false,
+      "columntype":  {
+        "type": "MAP",
+        "key": {
+          "type" : "BIGINT",
+          "nullable" : false
+        },
+        "value": {
+          "type" : "TIMESTAMP",
+          "nullable" : true,
+          "precision" : 0
+        },
+        "nullable": false
+      }
+    }],
     "primary_key" : [ "id" ]
 }"#,
             )
@@ -433,6 +467,20 @@ mod kafka_connect_json_converter {
             { "field": "f11_0", "type": "boolean", "optional": false },
             { "field": "f11_1", "type": "struct", "optional": false, "fields": [ { "field": "f11_1_0", "type": "boolean", "optional": false } ] }
           ]
+        },
+        {
+          "field": "f12",
+          "type": "map",
+          "keys": {
+            "type": "int64",
+            "optional": false
+          },
+          "values": {
+            "type": "int64",
+            "name": "org.apache.kafka.connect.data.Timestamp",
+            "optional": true
+          },
+          "optional": false
         }
       ],
       "optional": true

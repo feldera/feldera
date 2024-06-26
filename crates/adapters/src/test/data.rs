@@ -1,13 +1,15 @@
 use arrow::array::{
-    ArrayRef, BooleanArray, Date32Array, Int64Array, StringArray, StructArray,
-    TimestampMicrosecondArray,
+    ArrayRef, BooleanArray, Date32Array, Int64Array, Int64Builder, MapBuilder, StringArray,
+    StringBuilder, StructArray, TimestampMicrosecondArray,
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
 use pipeline_types::program_schema::{ColumnType, Field, SqlType};
+use prop::sample::SizeRange;
 use proptest::{collection, prelude::*};
 use proptest_derive::Arbitrary;
 use size_of::SizeOf;
+use std::collections::BTreeMap;
 use std::string::ToString;
 use std::sync::Arc;
 
@@ -55,6 +57,8 @@ impl TestStruct {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -67,6 +71,8 @@ impl TestStruct {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -79,6 +85,8 @@ impl TestStruct {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -91,6 +99,8 @@ impl TestStruct {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
         ]
@@ -245,8 +255,7 @@ deserialize_table_record!(EmbeddedStruct["EmbeddedStruct", 1] {
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct TestStruct2 {
     #[serde(rename = "id")]
     pub field: i64,
@@ -263,6 +272,8 @@ pub struct TestStruct2 {
     // pub field_4: Time,
     #[serde(rename = "es")]
     pub field_5: EmbeddedStruct,
+    #[serde(rename = "m")]
+    pub field_6: BTreeMap<String, i64>,
 }
 
 impl Arbitrary for TestStruct2 {
@@ -279,8 +290,14 @@ impl Arbitrary for TestStruct2 {
             0u32..100_000,
             // (0u64..24 * 60 * 60 * 1_000_000),
             EmbeddedStruct::arbitrary_with(()),
+            // Generate small maps, otherwise proptests take forever.
+            BTreeMap::<String, i64>::arbitrary_with((
+                SizeRange::from(0..2),
+                Default::default(),
+                Default::default(),
+            )),
         )
-            .prop_map(|(f, f0, f1, f2, f3, /*f4,*/ f5)| TestStruct2 {
+            .prop_map(|(f, f0, f1, f2, f3, /*f4,*/ f5, f6)| TestStruct2 {
                 field: f,
                 field_0: if f1 { Some(f0) } else { None },
                 field_1: f1,
@@ -288,6 +305,7 @@ impl Arbitrary for TestStruct2 {
                 field_3: Date::new(f3 as i32),
                 // field_4: Time::new(f4 * 1000),
                 field_5: f5,
+                field_6: f6,
             })
             .boxed()
     }
@@ -304,6 +322,7 @@ impl TestStruct2 {
                 field_3: Date::new(1),
                 // field_4: Time::new(1),
                 field_5: EmbeddedStruct { field: false },
+                field_6: BTreeMap::from([("foo".to_string(), 100), ("bar".to_string(), 200)]),
             },
             TestStruct2 {
                 field: 2,
@@ -313,6 +332,7 @@ impl TestStruct2 {
                 field_3: Date::new(12),
                 // field_4: Time::new(1_000_000_000),
                 field_5: EmbeddedStruct { field: true },
+                field_6: BTreeMap::new(),
             },
         ]
     }
@@ -334,6 +354,14 @@ impl TestStruct2 {
                 DataType::Struct(arrow::datatypes::Fields::from(vec![
                     arrow::datatypes::Field::new("a", DataType::Boolean, false),
                 ])),
+                false,
+            ),
+            arrow::datatypes::Field::new_map(
+                "m",
+                "entries",
+                arrow::datatypes::Field::new("keys", DataType::Utf8, false),
+                arrow::datatypes::Field::new("values", DataType::Int64, false),
+                false,
                 false,
             ),
         ]))
@@ -359,6 +387,14 @@ impl TestStruct2 {
                                 { "name": "a", "type": "boolean" }
                             ]
                         }
+                },
+                {
+                    "name": "m",
+                    "type":
+                        {
+                            "type": "map",
+                            "values": "long"
+                        }
                 }
             ]
         }"#
@@ -376,6 +412,8 @@ impl TestStruct2 {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -388,6 +426,8 @@ impl TestStruct2 {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -400,6 +440,8 @@ impl TestStruct2 {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -412,6 +454,8 @@ impl TestStruct2 {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -424,6 +468,8 @@ impl TestStruct2 {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             /*Field {
@@ -457,8 +503,26 @@ impl TestStruct2 {
                             scale: None,
                             component: None,
                             fields: None,
+                            key: None,
+                            value: None,
                         },
                     }]),
+                    key: None,
+                    value: None,
+                },
+            },
+            Field {
+                name: "m".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: SqlType::Map,
+                    nullable: false,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                    key: Some(Box::new(ColumnType::varchar(false))),
+                    value: Some(Box::new(ColumnType::bigint(false))),
                 },
             },
         ]
@@ -481,6 +545,21 @@ impl TestStruct2 {
         let row6: Vec<bool> = data.iter().map(|r| r.field_5.field).collect();
         let row6_booleans = Arc::new(BooleanArray::from(row6));
 
+        let string_builder = StringBuilder::new();
+        let int_builder = Int64Builder::new();
+
+        let mut map_builder = MapBuilder::new(None, string_builder, int_builder).with_values_field(
+            arrow::datatypes::Field::new("values", DataType::Int64, false),
+        );
+        for x in data.iter() {
+            for (key, val) in x.field_6.iter() {
+                map_builder.keys().append_value(key);
+                map_builder.values().append_value(*val);
+            }
+            map_builder.append(true).unwrap()
+        }
+        let map_array = map_builder.finish();
+
         vec![
             Arc::new(Int64Array::from(row0)),
             Arc::new(StringArray::from(row1)),
@@ -492,28 +571,31 @@ impl TestStruct2 {
                 row6_field,
                 row6_booleans as ArrayRef,
             )])),
+            Arc::new(map_array),
         ]
     }
 }
 
-serialize_table_record!(TestStruct2[6]{
+serialize_table_record!(TestStruct2[7]{
     r#field["id"]: i64,
     r#field_0["name"]: Option<String>,
     r#field_1["b"]: bool,
     r#field_2["ts"]: Timestamp,
     r#field_3["dt"]: Date,
     // r#field_4["t"]: Time,
-    r#field_5["es"]: EmbeddedStruct
+    r#field_5["es"]: EmbeddedStruct,
+    r#field_6["m"]: Map<String, i64>
 });
 
-deserialize_table_record!(TestStruct2["TestStruct", 6] {
+deserialize_table_record!(TestStruct2["TestStruct", 7   ] {
     (r#field, "id", false, i64, None),
     (r#field_0, "name", false, Option<String>, Some(None)),
     (r#field_1, "b", false, bool, None),
     (r#field_2, "ts", false, Timestamp, None),
     (r#field_3, "dt", false, Date, None),
     // (r#field_4, "t", false, Time, None),
-    (r#field_5, "es", false, EmbeddedStruct, None)
+    (r#field_5, "es", false, EmbeddedStruct, None),
+    (r#field_6, "m", false, BTreeMap<String, i64>, None)
 });
 
 /// Record in the databricks people dataset.
@@ -559,6 +641,8 @@ impl DatabricksPeople {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -571,6 +655,8 @@ impl DatabricksPeople {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -583,6 +669,8 @@ impl DatabricksPeople {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -595,6 +683,8 @@ impl DatabricksPeople {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -607,6 +697,8 @@ impl DatabricksPeople {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -619,6 +711,8 @@ impl DatabricksPeople {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -631,6 +725,8 @@ impl DatabricksPeople {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
             Field {
@@ -643,6 +739,8 @@ impl DatabricksPeople {
                     scale: None,
                     component: None,
                     fields: None,
+                    key: None,
+                    value: None,
                 },
             },
         ]
