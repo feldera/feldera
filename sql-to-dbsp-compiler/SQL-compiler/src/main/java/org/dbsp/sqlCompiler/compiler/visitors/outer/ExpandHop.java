@@ -39,7 +39,7 @@ public class ExpandHop extends CircuitCloneVisitor {
 
         DBSPTypeTuple type = operator.getOutputZSetElementType().to(DBSPTypeTuple.class);
         DBSPTypeTuple inputRowType = source.getOutputZSetElementType().to(DBSPTypeTuple.class);
-        DBSPVariablePath row = inputRowType.ref().var("t");
+        DBSPVariablePath row = inputRowType.ref().var();
         int timestampIndex = operator.timestampIndex;
         DBSPExpression interval = operator.interval;
         @Nullable DBSPExpression start = operator.start;
@@ -66,9 +66,9 @@ public class ExpandHop extends CircuitCloneVisitor {
         this.addOperator(map);
 
         // Flatmap flattens the array
-        DBSPVariablePath data = new DBSPVariablePath("data", mapBody.getType().ref());
+        DBSPVariablePath data = new DBSPVariablePath(mapBody.getType().ref());
         // This is not the timestamp type, since e can never be null.
-        DBSPVariablePath e = new DBSPVariablePath("e", hopType);
+        DBSPVariablePath e = new DBSPVariablePath(hopType);
         DBSPExpression collectionExpression = data.deref().field(nextIndex).borrow();
 
         List<DBSPStatement> statements = new ArrayList<>();

@@ -92,7 +92,7 @@ public final class DBSPLetStatement extends DBSPStatement implements IDBSPDeclar
     }
 
     public DBSPVariablePath getVarReference() {
-        return this.type.var(this.variable);
+        return new DBSPVariablePath(this.variable, this.type);
     }
 
     @Override
@@ -129,5 +129,10 @@ public final class DBSPLetStatement extends DBSPStatement implements IDBSPDeclar
             builder.append(" = ")
                     .append(this.initializer);
         return builder;
+    }
+
+    @Override
+    public DBSPType getType() {
+        return this.type;
     }
 }

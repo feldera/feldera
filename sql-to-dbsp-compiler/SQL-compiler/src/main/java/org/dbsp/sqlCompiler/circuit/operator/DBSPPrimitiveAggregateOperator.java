@@ -12,20 +12,18 @@ import java.util.List;
 
 /** This is a primitive operator that corresponds to the Rust AggregateIncremental node. */
 @NonCoreIR
-public final class DBSPPrimitiveAggregateOperator extends DBSPOperator {
+public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
     public DBSPPrimitiveAggregateOperator(
             CalciteObject node, @Nullable DBSPExpression function, DBSPType outputType,
             DBSPOperator delta, DBSPOperator integral) {
-        super(node, "AggregateIncremental", function, outputType, false);
-        this.addInput(delta);
-        this.addInput(integral);
+        super(node, "AggregateIncremental", function, outputType, false, delta, integral);
         assert delta.getOutputIndexedZSetType().sameType(integral.getOutputIndexedZSetType());
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPrimitiveAggregateOperator(this.getNode(), expression,
-                outputType, this.inputs.get(0), this.inputs.get(1));
+                outputType, this.left(), this.right());
     }
 
     @Override

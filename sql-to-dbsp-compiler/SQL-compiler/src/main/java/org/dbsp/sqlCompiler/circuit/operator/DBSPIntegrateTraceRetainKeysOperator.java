@@ -15,13 +15,11 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPOperator {
+public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPBinaryOperator {
     public DBSPIntegrateTraceRetainKeysOperator(
             CalciteObject node, DBSPExpression expression,
             DBSPOperator data, DBSPOperator control) {
-        super(node, "integrate_trace_retain_keys", expression, data.getType(), data.isMultiset);
-        this.addInput(data);
-        this.addInput(control);
+        super(node, "integrate_trace_retain_keys", expression, data.getType(), data.isMultiset, data, control);
     }
 
     public static DBSPIntegrateTraceRetainKeysOperator create(
@@ -33,10 +31,10 @@ public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPOperator {
 
         DBSPParameter param;
         DBSPExpression compare;
-        DBSPVariablePath controlArg = new DBSPVariablePath("c", controlType.ref());
+        DBSPVariablePath controlArg = new DBSPVariablePath(controlType.ref());
         if (data.outputType.is(DBSPTypeIndexedZSet.class)) {
             DBSPType keyType = data.getOutputIndexedZSetType().keyType;
-            DBSPVariablePath dataArg = new DBSPVariablePath("d", keyType);
+            DBSPVariablePath dataArg = new DBSPVariablePath(keyType);
             param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
             DBSPExpression project = dataProjection
                     .to(PartiallyMonotoneTuple.class)
@@ -46,7 +44,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPOperator {
                     project, controlArg.deref().field(0));
         } else {
             DBSPType keyType = data.getOutputZSetElementType();
-            DBSPVariablePath dataArg = new DBSPVariablePath("d", keyType);
+            DBSPVariablePath dataArg = new DBSPVariablePath(keyType);
             param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
             DBSPExpression project = dataProjection.projectExpression(dataArg);
             compare = DBSPControlledFilterOperator.generateTupleCompare(
@@ -60,7 +58,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPIntegrateTraceRetainKeysOperator(
                 this.getNode(), Objects.requireNonNull(expression),
-                this.inputs.get(0), this.inputs.get(1));
+                this.left(), this.right());
     }
 
     @Override

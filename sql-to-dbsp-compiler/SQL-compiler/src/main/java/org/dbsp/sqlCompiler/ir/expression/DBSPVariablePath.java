@@ -37,6 +37,8 @@ import org.dbsp.util.Utilities;
  * More convenient that using always Paths. */
 public final class DBSPVariablePath extends DBSPExpression {
     public final String variable;
+    static long crtId = 0;
+    static final String uniquePrefix = "t_";
 
     public DBSPVariablePath(String variable, DBSPType type) {
         super(type.getNode(), type);
@@ -44,8 +46,18 @@ public final class DBSPVariablePath extends DBSPExpression {
         assert Utilities.isLegalRustIdentifier(variable);
     }
 
+    /** Allocate a likely new variable name */
+    public DBSPVariablePath(DBSPType type) {
+        this(uniquePrefix + crtId++, type);
+    }
+
     public DBSPParameter asParameter() {
         return new DBSPParameter(this.variable, this.getType());
+    }
+
+    // Do not call this method, it is only used for testing
+    public static void reset() {
+        crtId = 0;
     }
 
     @Override

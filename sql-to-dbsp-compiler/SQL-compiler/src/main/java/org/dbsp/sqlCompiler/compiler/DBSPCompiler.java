@@ -140,7 +140,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.sources = new SourceFileContents();
         this.circuit = null;
         this.typeCompiler = new TypeCompiler(this);
-        this.weightVar = new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER, "Weight", false).var("w");
+        this.weightVar = new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER, "Weight", false)
+                .var();
     }
 
     public boolean hasWarnings() {

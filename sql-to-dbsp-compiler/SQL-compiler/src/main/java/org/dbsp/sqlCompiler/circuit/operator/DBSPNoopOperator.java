@@ -37,7 +37,7 @@ import java.util.List;
  * but sometimes it's useful to have in intermediate representations. */
 public final class DBSPNoopOperator extends DBSPUnaryOperator {
     static DBSPClosureExpression getClosure(DBSPType rowType) {
-        DBSPVariablePath var = rowType.ref().var("i");
+        DBSPVariablePath var = rowType.ref().var();
         return var.deref().applyClone().closure(var.asParameter());
     }
 

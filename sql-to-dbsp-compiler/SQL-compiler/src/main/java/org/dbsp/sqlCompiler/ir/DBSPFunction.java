@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
@@ -85,7 +86,7 @@ public final class DBSPFunction extends DBSPNode implements IHasType, IDBSPDecla
     }
 
     public DBSPExpression getReference() {
-        return this.type.var(this.name);
+        return new DBSPVariablePath(this.name, this.type);
     }
 
     public DBSPExpression call(DBSPExpression... arguments) {

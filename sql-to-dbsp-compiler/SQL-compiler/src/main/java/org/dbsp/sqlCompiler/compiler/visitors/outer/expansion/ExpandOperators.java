@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOutputOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctIncrementalOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
@@ -67,6 +68,11 @@ public class ExpandOperators extends CircuitCloneVisitor {
         super.replace(operator);
         DBSPOperator replacement = this.mapped(operator);
         this.addExpansion(operator, new ReplacementExpansion(replacement));
+    }
+
+    @Override
+    public void postorder(DBSPSumOperator operator) {
+        this.identity(operator);
     }
 
     @Override
@@ -174,7 +180,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
             DBSPOperator input = this.mapped(operator.input());
             DBSPExpression function = operator.getAggregate().combineLinear();
             DBSPTypeIndexedZSet ix = input.getOutputIndexedZSetType();
-            DBSPVariablePath arg = new DBSPVariablePath("kv",
+            DBSPVariablePath arg = new DBSPVariablePath(
                     new DBSPTypeTuple(ix.keyType.ref(), ix.elementType.ref()));
             DBSPExpression body = function.call(arg.field(1));
             DBSPExpression closure = body.closure(arg.asParameter());
@@ -218,38 +224,17 @@ public class ExpandOperators extends CircuitCloneVisitor {
         DBSPOperator input = this.mapped(operator.input());
         DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getNode(), input);
         this.addOperator(integrator);
-        DBSPStreamDistinctOperator distinct = new DBSPStreamDistinctOperator(operator.getNode(), integrator);
+        DBSPDistinctIncrementalOperator distinct =
+                new DBSPDistinctIncrementalOperator(operator.getNode(), integrator, input);
         this.addExpansion(operator, new DistinctExpansion(integrator, distinct));
         this.map(operator, distinct);
     }
 
     @Override
     public void postorder(DBSPPartitionedRollingAggregateOperator operator) {
+        // This is not true, but we don't care here about the internal structure
         this.identity(operator);
     }
-
-    /*
-    @Override
-    public void postorder(DBSPPartitionedTreeAggregateOperator operator) {
-        DBSPOperator input = this.mapped(operator.input());
-
-        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), input);
-        this.addOperator(integral);
-        DBSPDelayOutputOperator delayOutput = new DBSPDelayOutputOperator(
-                operator.getNode(), operator.outputType, false, operator.comment);
-        this.addOperator(delayOutput);
-        DBSPOperator result = new DBSPPartitionedRadixTreeAggregateOperator(
-                operator.getNode(), operator.function, operator.aggregate, input, integral, delayOutput);
-        this.map(operator, result);
-
-        // These two collectively make a delayed integrator operator
-        DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), result, delayOutput);
-        this.addOperator(sum);
-        DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), sum, delayOutput);
-        this.addOperator(delay);
-        // TODO: add expansion
-    }
-     */
 
     @Override
     public void postorder(DBSPUpsertFeedbackOperator operator) {
@@ -271,6 +256,11 @@ public class ExpandOperators extends CircuitCloneVisitor {
         DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), sum, delayOutput);
         this.addOperator(delay);
         this.addExpansion(operator, new UpsertExpansion(delayOutput, upsert, sum, delay));
+    }
+
+    @Override
+    public void postorder(DBSPStreamJoinOperator operator) {
+        this.identity(operator);
     }
 
     @Override

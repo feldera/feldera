@@ -109,7 +109,7 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
                         .append("!=")
                         .append(other.ignoreOrderBy)
                         .append(System.lineSeparator());
-            if (this.outputsAreSets == other.outputsAreSets)
+            if (this.outputsAreSets != other.outputsAreSets)
                 result.append(", outputsAreSets=")
                         .append(this.outputsAreSets)
                         .append("!=")

@@ -45,11 +45,9 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Function;
 
 public class Utilities {
     private Utilities() {}
@@ -81,14 +79,6 @@ public class Utilities {
             offset += Character.charCount(c);
         }
         return builder.toString();
-    }
-
-    public static <K, V, W> LinkedHashMap<K, W> mapValues(Map<K, V> map, Function<V, W> transform) {
-        LinkedHashMap<K, W> result = new LinkedHashMap<>();
-        for (Map.Entry<K, V> entry: map.entrySet()) {
-            result.put(entry.getKey(), transform.apply(entry.getValue()));
-        }
-        return result;
     }
 
     /** Escape special characters in a string. */

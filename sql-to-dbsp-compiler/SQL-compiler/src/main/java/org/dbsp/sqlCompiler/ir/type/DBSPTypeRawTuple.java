@@ -115,7 +115,7 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
         DBSPTypeRawTuple tuple = to.to(DBSPTypeRawTuple.class);
         if (tuple.size() != this.size())
             return super.caster(to);  // throw
-        DBSPVariablePath var = new DBSPVariablePath("x", this.ref());
+        DBSPVariablePath var = this.ref().var();
         DBSPExpression[] casts = new DBSPExpression[this.tupFields.length];
         for (int i = 0; i < this.tupFields.length; i++) {
             casts[i] = this.tupFields[i].caster(tuple.tupFields[i]);

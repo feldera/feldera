@@ -22,7 +22,7 @@ public final class DBSPDeindexOperator extends DBSPUnaryOperator {
 
     static DBSPExpression function(DBSPType inputType) {
         DBSPTypeIndexedZSet ix = inputType.to(DBSPTypeIndexedZSet.class);
-        DBSPVariablePath t = new DBSPVariablePath("t", ix.getKVRefType());
+        DBSPVariablePath t = new DBSPVariablePath(ix.getKVRefType());
         return t.field(1).deref().applyClone().closure(t.asParameter());
     }
 

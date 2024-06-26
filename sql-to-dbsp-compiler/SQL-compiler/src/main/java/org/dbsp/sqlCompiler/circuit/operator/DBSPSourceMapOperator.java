@@ -95,6 +95,9 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
                 keyIndexes++;
             } else {
                 DBSPType fieldType = field.type;
+                // We need here an explicit Option type, because
+                // fieldType may be nullable.  The resulting Rust type will
+                // actually be Option<Option<Type>>.
                 DBSPType some = new DBSPTypeOption(fieldType);
                 fields.add(new DBSPTypeStruct.Field(
                         field.getNode(), field.name, current, some, field.nameIsQuoted));
@@ -106,7 +109,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
 
     /** Return a closure that describes the key function. */
     public DBSPExpression getKeyFunc() {
-        DBSPVariablePath var = new DBSPVariablePath("t", this.getOutputIndexedZSetType().elementType.ref());
+        DBSPVariablePath var = new DBSPVariablePath(this.getOutputIndexedZSetType().elementType.ref());
         DBSPExpression[] fields = new DBSPExpression[this.keyFields.size()];
         int insertAt = 0;
         for (int index: this.keyFields) {
@@ -118,7 +121,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
 
     /** Return a closure that describes the key function when applied to upsertStructType.toTuple(). */
     public DBSPExpression getUpdateKeyFunc(DBSPTypeStruct upsertStructType) {
-        DBSPVariablePath var = new DBSPVariablePath("t", upsertStructType.toTupleDeep().ref());
+        DBSPVariablePath var = new DBSPVariablePath(upsertStructType.toTupleDeep().ref());
         DBSPExpression[] fields = new DBSPExpression[this.keyFields.size()];
         int insertAt = 0;
         for (int index: this.keyFields) {

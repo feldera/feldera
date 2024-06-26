@@ -2,10 +2,12 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
@@ -16,7 +18,8 @@ import java.util.List;
  * must differentiate its input, and integrate its output. */
 public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregateOperatorBase {
     public final DBSPExpression partitioningFunction;
-    public final DBSPExpression window;
+    public final DBSPWindowBoundExpression lower;
+    public final DBSPWindowBoundExpression upper;
 
     // TODO: support the linear version of this operator.
     public DBSPPartitionedRollingAggregateOperator(
@@ -26,13 +29,15 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
             // After lowering 'aggregate' is not null, and 'function' has its expected shape
             @Nullable DBSPExpression function,
             @Nullable DBSPAggregate aggregate,
-            DBSPExpression window,
-            // The output type of partitioned_rolling_aggregate cannot actually be represented using the current IR,
-            // so this type is a lie.
+            DBSPWindowBoundExpression lower,
+            DBSPWindowBoundExpression upper,
+            // The output type of partitioned_rolling_aggregate cannot actually be represented using
+            // the current IR, so this type is a lie.
             DBSPTypeIndexedZSet outputType,
             DBSPOperator input) {
         super(node, "partitioned_rolling_aggregate", outputType, function, aggregate, true, input, false);
-        this.window = window;
+        this.lower = lower;
+        this.upper = upper;
         this.partitioningFunction = partitioningFunction;
         assert partitioningFunction.is(DBSPClosureExpression.class);
     }
@@ -41,7 +46,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPartitionedRollingAggregateOperator(
                 this.getNode(), this.partitioningFunction,
-                expression, this.aggregate, this.window,
+                expression, this.aggregate, this.lower, this.upper,
                 outputType.to(DBSPTypeIndexedZSet.class),
                 this.input());
     }
@@ -50,8 +55,8 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPartitionedRollingAggregateOperator(
-                    this.getNode(), this.partitioningFunction, this.function, this.aggregate, this.window,
-                    this.getOutputIndexedZSetType(),
+                    this.getNode(), this.partitioningFunction, this.function, this.aggregate,
+                    this.lower, this.upper, this.getOutputIndexedZSetType(),
                     newInputs.get(0));
         return this;
     }
@@ -64,7 +69,10 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
         if (otherOperator == null)
             return false;
         return this.partitioningFunction.equivalent(otherOperator.partitioningFunction) &&
-                this.window.equivalent(otherOperator.window);
+                EquivalenceContext.equiv(this.aggregate, otherOperator.aggregate) &&
+                EquivalenceContext.equiv(this.function, otherOperator.function) &&
+                this.lower.equivalent(otherOperator.lower) &&
+                this.upper.equivalent(otherOperator.upper);
     }
 
     @Override

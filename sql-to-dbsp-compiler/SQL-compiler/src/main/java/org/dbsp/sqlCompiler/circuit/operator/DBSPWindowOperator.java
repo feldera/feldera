@@ -16,12 +16,10 @@ import java.util.List;
  * elements in the left input are compared with the two scalars
  * in the pair; when they fall between the two limits,
  * they are emitted to the output ZSet. */
-public final class DBSPWindowOperator extends DBSPOperator {
+public final class DBSPWindowOperator extends DBSPBinaryOperator {
     public DBSPWindowOperator(
             CalciteObject node, DBSPOperator data, DBSPOperator control) {
-        super(node, "window", null, data.getType(), data.isMultiset);
-        this.addInput(data);
-        this.addInput(control);
+        super(node, "window", null, data.getType(), data.isMultiset, data, control);
         // Check that the left input and output are indexed ZSets
         this.getOutputIndexedZSetType();
     }

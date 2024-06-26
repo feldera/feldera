@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.DeclarationValue;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.RepeatedExpressions;
@@ -16,6 +17,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -23,6 +25,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
@@ -30,31 +33,61 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
+import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Given a function (ClosureExpression) and the
  * monotonicity information of its parameters, this visitor
  * computes a MonotoneExpression corresponding to the function. */
 public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpression> {
+    /** Description of the type of the argument of the analyzed function */
+    public enum ArgumentKind {
+        /** The argument represents a value in a ZSet.
+         * The parameter type will be &k */
+        ZSet,
+        /** The argument represents a value in an IndexedZSet.
+         * The parameter type will be (&k, &v) */
+        IndexedZSet,
+        /** The argument is used for join function.
+         * The parameter type will be (&k, &l, &r). */
+        Join;
+
+        public static ArgumentKind fromType(DBSPType type) {
+            if (type.is(DBSPTypeZSet.class))
+                return ZSet;
+            if (type.is(DBSPTypeIndexedZSet.class))
+                return IndexedZSet;
+            throw new UnsupportedException(type.getNode());
+        }
+    };
+
     IMaybeMonotoneType[] parameterTypes;
     /** Maps each declaration to its current value. */
     final DeclarationValue<MonotoneExpression> variables;
+    /** Ids of expressions which are guaranteed to have constant values */
+    final Set<Long> constantExpressions;
+    /** Ids of expressions which are guaranteed to have constant and positive values
+     * (They all must have numeric types) */
+    final Set<Long> positiveExpressions;
     final ResolveReferences resolver;
-    /** True iff the closure we analyze has a parameter of the form
-     * (&k, &v).  Otherwise, each parameter is of the form &k. */
-    final boolean indexedSet;
+    final ArgumentKind argumentKind;
     /** Operator where the analyzed closure originates from.
      * Only used for debugging. */
     final DBSPOperator operator;
@@ -65,20 +98,21 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
      * @param parameterTypes Monotonicity information for the function parameters.
      *                      This information comes from the operator that is
      *                      a source for this function.
-     * @param indexedSet    True if the operator's input data is an IndexedZSet.
-     *                      In this case the parameter is a two-tuple. */
+     * @param argumentKind  Describes the arguments of the analyzed function. */
     public MonotoneTransferFunctions(IErrorReporter reporter,
                                      DBSPOperator operator,
-                                     boolean indexedSet,
+                                     ArgumentKind argumentKind,
                                      IMaybeMonotoneType... parameterTypes) {
         super(reporter);
         this.operator = operator;
         this.parameterTypes = parameterTypes;
         for (IMaybeMonotoneType p: parameterTypes)
             assert !p.is(MonotoneClosureType.class);
-        this.indexedSet = indexedSet;
+        this.argumentKind = argumentKind;
         this.variables = new DeclarationValue<>();
         this.resolver = new ResolveReferences(reporter, false);
+        this.constantExpressions = new HashSet<>();
+        this.positiveExpressions = new HashSet<>();
     }
 
     @Override
@@ -92,31 +126,40 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 Objects.requireNonNull(this.parameterTypes), IMaybeMonotoneType::getProjectedType, DBSPType.class);
 
         DBSPParameter[] projectedParameters;
-        if (this.indexedSet) {
-            // Functions that iterate over IndexedZSets have the signature: |t: (&key, &value)| body.
-            assert this.parameterTypes.length == 1;
-            PartiallyMonotoneTuple tuple = this.parameterTypes[0].to(PartiallyMonotoneTuple.class);
-            List<IMaybeMonotoneType> fields = Linq.map(tuple.fields, MonotoneRefType::new);
-            this.parameterTypes = new IMaybeMonotoneType[] { new PartiallyMonotoneTuple(fields, tuple.raw) };
-            DBSPType paramType;
-            DBSPType[] tupleFields = Linq.map(projectedTypes[0].to(DBSPTypeTupleBase.class).tupFields,
-                    DBSPType::ref, DBSPType.class);
-            if (tuple.raw) {
-                paramType = new DBSPTypeRawTuple(tupleFields);
-            } else {
-                paramType = new DBSPTypeTuple(tupleFields);
+        switch (this.argumentKind) {
+            case IndexedZSet: {
+                // Functions that iterate over IndexedZSets have the signature: |t: (&key, &value)| body.
+                assert this.parameterTypes.length == 1;
+                PartiallyMonotoneTuple tuple = this.parameterTypes[0].to(PartiallyMonotoneTuple.class);
+                List<IMaybeMonotoneType> fields = Linq.map(tuple.fields, MonotoneRefType::new);
+                this.parameterTypes =  new IMaybeMonotoneType[] { new PartiallyMonotoneTuple(fields, tuple.raw, tuple.mayBeNull) };
+                DBSPType paramType;
+                DBSPType[] tupleFields = Linq.map(projectedTypes[0].to(DBSPTypeTupleBase.class).tupFields,
+                        DBSPType::ref, DBSPType.class);
+                if (tuple.raw) {
+                    paramType = new DBSPTypeRawTuple(tupleFields);
+                } else {
+                    paramType = new DBSPTypeTuple(tupleFields);
+                }
+                projectedParameters = new DBSPParameter[] {
+                        new DBSPParameter(expression.parameters[0].getName(), paramType)
+                };
+                break;
             }
-            projectedParameters = new DBSPParameter[] {
-                    new DBSPParameter(expression.parameters[0].getName(), paramType)
-            };
-        } else {
-            // Functions with one parameter that iterate over ZSets have the
-            // signature |t: &value| body.
-            this.parameterTypes = Linq.map(this.parameterTypes, MonotoneRefType::new, IMaybeMonotoneType.class);
-            projectedParameters = new DBSPParameter[projectedTypes.length];
-            for (int i = 0; i < projectedTypes.length; i++)
-                projectedParameters[i] = new DBSPParameter(
-                        expression.parameters[i].getName(), projectedTypes[i].ref());
+            case Join:
+            case ZSet: {
+                // Functions with one on or more parameters that iterate over ZSets have the
+                // signature |p0: &type0, p1: &type1| body.
+                this.parameterTypes = Linq.map(this.parameterTypes, MonotoneRefType::new, IMaybeMonotoneType.class);
+                projectedParameters = new DBSPParameter[projectedTypes.length];
+                for (int i = 0; i < projectedTypes.length; i++)
+                    projectedParameters[i] = new DBSPParameter(
+                            expression.parameters[i].getName(), projectedTypes[i].ref());
+                break;
+            }
+            default: {
+                throw new UnimplementedException();
+            }
         }
 
         for (int i = 0; i < projectedTypes.length; i++) {
@@ -138,36 +181,71 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             // compute the associated monotone value.
             DBSPParameter[] applyParameters;
             DBSPExpression applyBody = bodyValue.getReducedExpression();
-            if (this.indexedSet) {
-                // The "apply" DBSP node that computes the limit values does not have the type (&K, &V),
-                // but &(K, V).  So we generate this code:
-                // |a: &(K, V)| -> R {
-                //    let t = (&(*a).0, &(*a).1);  // t has type (&K, &V), as expected by the previous body
-                //    <previous body using t>
-                // }
-                PartiallyMonotoneTuple tuple = this.parameterTypes[0].to(PartiallyMonotoneTuple.class);
-                DBSPParameter applyParameter = new DBSPParameter("a", projectedTypes[0].ref());
-                List<DBSPExpression> parameterFieldsToKeep = new ArrayList<>();
-                int index = 0;
-                // However, not all fields of the "a" parameter may be monotone, so we only
-                // include the ones that are.
-                if (tuple.getField(0).mayBeMonotone()) {
-                    parameterFieldsToKeep.add(applyParameter.asVariable().deref().field(index).borrow());
-                    index++;
+            switch (this.argumentKind) {
+                case IndexedZSet: {
+                    // The "apply" DBSP node that computes the limit values does not have the type (&K, &V),
+                    // but &(K, V).  So we generate this code:
+                    // |a: &(K, V)| -> R {
+                    //    let t = (&(*a).0, &(*a).1);  // t has type (&K, &V), as expected by the previous body
+                    //    <previous body using t>
+                    // }
+                    PartiallyMonotoneTuple tuple = this.parameterTypes[0].to(PartiallyMonotoneTuple.class);
+                    DBSPParameter applyParameter = new DBSPParameter("a", projectedTypes[0].ref());
+                    List<DBSPExpression> parameterFieldsToKeep = new ArrayList<>();
+                    int index = 0;
+                    // However, not all fields of the "a" parameter may be monotone, so we only
+                    // include the ones that are.
+                    if (tuple.getField(0).mayBeMonotone()) {
+                        parameterFieldsToKeep.add(applyParameter.asVariable().deref().field(index).borrow());
+                        index++;
+                    }
+                    if (tuple.getField(1).mayBeMonotone()) {
+                        parameterFieldsToKeep.add(applyParameter.asVariable().deref().field(index).borrow());
+                    }
+                    assert !parameterFieldsToKeep.isEmpty();
+                    applyBody = new DBSPBlockExpression(
+                            Linq.list(
+                                    new DBSPLetStatement(expression.parameters[0].getName(),
+                                            new DBSPRawTupleExpression(parameterFieldsToKeep))
+                            ),
+                            applyBody
+                    );
+                    applyParameters = new DBSPParameter[] { applyParameter };
+                    break;
                 }
-                if (tuple.getField(1).mayBeMonotone()) {
-                    parameterFieldsToKeep.add(applyParameter.asVariable().deref().field(index).borrow());
+                case Join: {
+                    // The "apply" DBSP node that computes the limit values
+                    // will have type a: &(K, L, R).  But the function generated so
+                    // far has type |k: &K, l: &L, r: &R|.
+                    //
+                    // So we generate this code:
+                    // |a: &(K, L, R)| -> R {
+                    //    let k = (*a).0;
+                    //    let l = (*a).1;
+                    //    let r = (*a).2;
+                    //    <previous body using k, l, r>
+                    // }
+                    assert this.parameterTypes.length == 3;
+                    DBSPParameter applyParameter = new DBSPParameter("a",
+                            new DBSPTypeRawTuple(projectedTypes[0], projectedTypes[1], projectedTypes[2]).ref());
+                    List<DBSPStatement> statements = new ArrayList<>();
+                    for (int i = 0; i < 3; i++)
+                        statements.add(new DBSPLetStatement(expression.parameters[i].getName(),
+                                        applyParameter.asVariable().deref().field(i)));
+                    applyBody = new DBSPBlockExpression(
+                            statements,
+                            applyBody
+                    );
+                    applyParameters = new DBSPParameter[] { applyParameter };
+                    break;
                 }
-                assert !parameterFieldsToKeep.isEmpty();
-                applyBody = new DBSPBlockExpression(
-                        Linq.list(
-                                new DBSPLetStatement(expression.parameters[0].getName(),
-                                        new DBSPRawTupleExpression(parameterFieldsToKeep))),
-                        applyBody
-                );
-                applyParameters = new DBSPParameter[] { applyParameter };
-            } else {
-                applyParameters = projectedParameters;
+                case ZSet: {
+                    applyParameters = projectedParameters;
+                    break;
+                }
+                default: {
+                    throw new UnimplementedException();
+                }
             }
             DBSPClosureExpression closure = applyBody.closure(applyParameters);
             MonotoneClosureType cloType = new MonotoneClosureType(bodyValue.type,
@@ -175,7 +253,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     applyParameters);
             MonotoneExpression result = new MonotoneExpression(expression, cloType, closure);
             this.set(expression, result);
-            Logger.INSTANCE.belowLevel(this, 2)
+            Logger.INSTANCE.belowLevel(this, 1)
                     .append("MonotoneExpression for " + expression + " is " + result)
                     .newline();
         }
@@ -187,6 +265,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         IDBSPDeclaration declaration = this.resolver.reference.getDeclaration(var);
         MonotoneExpression value = this.variables.get(declaration);
         this.maybeSet(var, value);
+        assert value == null || value.expression.getType().sameType(var.getType())
+                : "Variable " + var.variable + " type " + var.getType() +
+                " does not match expected type in expression " + value.expression.getType();
     }
 
     @Override
@@ -218,7 +299,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     public void postorder(DBSPBaseTupleExpression expression) {
         MonotoneExpression[] fields = Linq.map(expression.fields, this::get, MonotoneExpression.class);
         IMaybeMonotoneType[] types = Linq.map(fields, MonotoneExpression::getMonotoneType, IMaybeMonotoneType.class);
-        PartiallyMonotoneTuple tuple = new PartiallyMonotoneTuple(Linq.list(types), expression.isRaw());
+        PartiallyMonotoneTuple tuple = new PartiallyMonotoneTuple(
+                Linq.list(types), expression.isRaw(), expression.getType().mayBeNull);
         DBSPExpression reduced = null;
         if (tuple.mayBeMonotone()) {
             MonotoneExpression[] monotoneFields = Linq.where(
@@ -228,7 +310,12 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     monotoneFields, MonotoneExpression::getReducedExpression, DBSPExpression.class);
             reduced = expression.isRaw() ?
                     new DBSPRawTupleExpression(monotoneComponents) :
-                    new DBSPTupleExpression(monotoneComponents);
+                    new DBSPTupleExpression(
+                            expression.getNode(), expression.getType().mayBeNull, monotoneComponents);
+        }
+        boolean allConstant = Linq.all(fields, f -> this.constantExpressions.contains(f.id));
+        if (allConstant) {
+            this.constantExpressions.add(expression.id);
         }
         MonotoneExpression result = new MonotoneExpression(expression, tuple, reduced);
         this.set(expression, result);
@@ -238,14 +325,54 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     public void postorder(DBSPLiteral expression) {
         MonotoneExpression result = new MonotoneExpression(
                 expression, new MonotoneType(expression.getType()), expression);
+        this.constantExpressions.add(expression.id);
+        if (expression.is(IsNumericLiteral.class)) {
+            if (!expression.to(DBSPLiteral.class).isNull &&
+                    expression.to(IsNumericLiteral.class).gt0())
+                this.positiveExpressions.add(expression.id);
+        }
         this.set(expression, result);
     }
 
     @Override
     public void postorder(DBSPExpression expression) {
         // All other cases: result is not monotone.
+        DBSPType type = expression.getType();
+        IMaybeMonotoneType nmt = NonMonotoneType.nonMonotone(type);
+        MonotoneExpression result = new MonotoneExpression(expression, nmt, null);
+        this.set(expression, result);
+    }
+
+    @Override
+    public void postorder(DBSPCloneExpression expression) {
+        MonotoneExpression source = this.get(expression.expression);
+        DBSPExpression reduced = null;
+
+        if (source.mayBeMonotone()) {
+            reduced = new DBSPCloneExpression(expression.getNode(), source.getReducedExpression());
+        }
+        if (this.positiveExpressions.contains(source.id))
+            this.positiveExpressions.add(expression.id);
+        if (this.constantExpressions.contains(source.id))
+            this.constantExpressions.add(expression.id);
+        MonotoneExpression result = new MonotoneExpression(expression, source.getMonotoneType(), reduced);
+        this.set(expression, result);
+    }
+
+    @Override
+    public void postorder(DBSPSomeExpression expression) {
+        MonotoneExpression source = this.get(expression.expression);
+        DBSPExpression reduced = null;
+
+        if (source.mayBeMonotone()) {
+            reduced = new DBSPSomeExpression(expression.getNode(), source.getReducedExpression());
+        }
+        if (this.positiveExpressions.contains(source.id))
+            this.positiveExpressions.add(expression.id);
+        if (this.constantExpressions.contains(source.id))
+            this.constantExpressions.add(expression.id);
         MonotoneExpression result = new MonotoneExpression(
-                expression, new NonMonotoneType(expression.getType()), null);
+                expression, source.getMonotoneType().setMaybeNull(true), reduced);
         this.set(expression, result);
     }
 
@@ -254,6 +381,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         MonotoneExpression result;
         if (expression.lastExpression != null) {
             result = this.get(expression.lastExpression);
+            if (this.constantExpressions.contains(expression.lastExpression.id))
+                this.constantExpressions.add(expression.id);
+            if (this.positiveExpressions.contains(expression.lastExpression.id))
+                this.positiveExpressions.add(expression.id);
         } else {
             result = new MonotoneExpression(expression, new NonMonotoneType(expression.type), null);
         }
@@ -278,6 +409,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         MonotoneExpression left = this.get(expression.left);
         MonotoneExpression right = this.get(expression.right);
         DBSPExpression reduced = null;
+        if (this.constantExpressions.contains(expression.left.id) &&
+            this.constantExpressions.contains(expression.right.id))
+            this.constantExpressions.add(expression.id);
+
         // Assume type is not monotone
         IMaybeMonotoneType resultType = new NonMonotoneType(expression.type);
         if (left.mayBeMonotone() && right.mayBeMonotone() &&
@@ -289,8 +424,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         // Some expressions are monotone if some of their operands are constant
         if (left.mayBeMonotone() && expression.operation == DBSPOpcode.SUB) {
             // Subtracting a constant from a monotone expression produces a monotone result
-            if (expression.right.is(DBSPLiteral.class)) {
-                assert right.getReducedExpression() == expression.right;
+            if (this.constantExpressions.contains(expression.right.id)) {
                 resultType = left.copyMonotonicity(expression.type);
                 reduced = expression.replaceSources(
                         left.getReducedExpression(), right.getReducedExpression());
@@ -302,7 +436,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             // a positive constant produces a monotone result
             // TODO: multiplication is commutative.
             if (expression.right.is(DBSPLiteral.class)) {
-                if (expression.right.is(IsNumericLiteral.class)) {
+                if (this.positiveExpressions.contains(expression.right.id)) {
                     if (expression.right.to(IsNumericLiteral.class).gt0()) {
                         assert right.getReducedExpression() == expression.right;
                         resultType = left.copyMonotonicity(expression.type);
@@ -324,6 +458,11 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
         }
+        if (this.positiveExpressions.contains(expression.source.id) &&
+                expression.type.is(IsNumericType.class))
+            this.positiveExpressions.add(expression.id);
+        if (this.constantExpressions.contains(expression.source.id))
+            this.constantExpressions.add(expression.id);
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.copyMonotonicity(expression.getType()), reduced);
         this.set(expression, result);
@@ -336,6 +475,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
         }
+        this.positiveExpressions.add(expression.id);
+        if (this.constantExpressions.contains(expression.source.id))
+            this.constantExpressions.add(expression.id);
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.copyMonotonicity(expression.getType()), reduced);
         this.set(expression, result);
@@ -348,6 +490,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
         }
+        if (this.constantExpressions.contains(expression.source.id))
+            this.constantExpressions.add(expression.id);
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.copyMonotonicity(expression.getType()), reduced);
         this.set(expression, result);
@@ -361,7 +505,11 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 expression.operation == DBSPOpcode.TYPEDBOX) &&
             source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
+            if (this.positiveExpressions.contains(expression.source.id))
+                this.positiveExpressions.add(expression.id);
         }
+        if (this.constantExpressions.contains(expression.source.id))
+            this.constantExpressions.add(expression.id);
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.copyMonotonicity(expression.getType()), reduced);
         this.set(expression, result);
@@ -421,6 +569,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     @Override
     public String toString() {
         return super.toString() + ": " + this.operator + " " +
+                this.argumentKind + " " +
                 Arrays.toString(this.parameterTypes);
     }
 }

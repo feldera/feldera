@@ -44,6 +44,6 @@ public final class NoExpression extends DBSPExpression {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("[NO]");
+        return builder.append("[NO]:").append(this.type);
     }
 }

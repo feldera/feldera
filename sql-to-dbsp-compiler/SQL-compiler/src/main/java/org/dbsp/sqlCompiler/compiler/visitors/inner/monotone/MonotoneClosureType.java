@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -10,7 +11,9 @@ import org.dbsp.util.Linq;
 import javax.annotation.Nullable;
 
 /** The monotone type of a closure expression */
-public class MonotoneClosureType implements IMaybeMonotoneType {
+public class MonotoneClosureType
+        extends BaseMonotoneType
+        implements IMaybeMonotoneType {
     private final IMaybeMonotoneType bodyType;
     /** Parameters of the original closure whose monotonicity is represented */
     private final DBSPParameter[] params;
@@ -51,6 +54,21 @@ public class MonotoneClosureType implements IMaybeMonotoneType {
     @Override
     public DBSPExpression projectExpression(DBSPExpression source) {
         throw new InternalCompilerError("Projecting a closure");
+    }
+
+    @Override
+    public IMaybeMonotoneType setMaybeNull(boolean maybeNull) {
+        throw new UnsupportedException(this.getType().getNode());
+    }
+
+    @Override
+    public IMaybeMonotoneType union(IMaybeMonotoneType other) {
+        throw new InternalCompilerError("'union' called on a MonotoneClosureType");
+    }
+
+    @Override
+    public IMaybeMonotoneType intersection(IMaybeMonotoneType other) {
+        throw new InternalCompilerError("'intersection' called on a MonotoneClosureType");
     }
 
     @Override

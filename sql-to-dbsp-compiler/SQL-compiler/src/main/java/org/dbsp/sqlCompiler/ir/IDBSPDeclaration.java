@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.ir;
 
-public interface IDBSPDeclaration extends IDBSPNode {
+import org.dbsp.sqlCompiler.ir.type.IHasType;
+
+public interface IDBSPDeclaration extends IDBSPNode, IHasType {
     String getName();
 }

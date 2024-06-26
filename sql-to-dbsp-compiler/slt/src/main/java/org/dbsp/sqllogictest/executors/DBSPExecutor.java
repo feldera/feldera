@@ -499,7 +499,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     elementType = oType.elementType;
                 }
                 DBSPExpression zset_to_strings = new DBSPQualifyTypeExpression(
-                        DBSPTypeAny.getDefault().var(functionProducingStrings),
+                        new DBSPVariablePath(functionProducingStrings, DBSPTypeAny.getDefault()),
                         elementType
                 );
                 list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
@@ -524,7 +524,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                             columnTypes,
                             sort)));
             list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
-                    new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false).var("_hash"),
+                    new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false).var(),
                     new DBSPStringLiteral(description.hash)).toStatement());
         }
         DBSPExpression body = new DBSPBlockExpression(list, null);

@@ -68,6 +68,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -154,6 +155,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.IHasId;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -162,17 +164,23 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Depth-first traversal of an DBSPInnerNode hierarchy.
- */
+/** Depth-first traversal of an DBSPInnerNode hierarchy. */
 @SuppressWarnings({"SameReturnValue, EmptyMethod", "unused"})
-public abstract class InnerVisitor implements IRTransform, IWritesLogs {
+public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
+    final long id;
+    static long crtId = 0;
     protected final IErrorReporter errorReporter;
     protected final List<IDBSPInnerNode> context;
 
     public InnerVisitor(IErrorReporter reporter) {
+        this.id = crtId++;
         this.errorReporter = reporter;
         this.context = new ArrayList<>();
+    }
+
+    @Override
+    public long getId() {
+        return this.id;
     }
 
     public void push(IDBSPInnerNode node) {
@@ -193,9 +201,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
         return Utilities.last(this.context);
     }
 
-    /**
-     * Override to initialize before visiting any node.
-     */
+    /** Override to initialize before visiting any node. */
     public void startVisit(IDBSPInnerNode node) {
         Logger.INSTANCE.belowLevel(this, 4)
                 .append("Starting ")
@@ -204,9 +210,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
                 .append(node);
     }
 
-    /**
-     * Override to finish after visiting all nodes.
-     */
+    /** Override to finish after visiting all nodes. */
     public void endVisit() {}
 
     public void traverse(IDBSPInnerNode node) {
@@ -609,6 +613,8 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
     public VisitDecision preorder(DBSPUnsignedWrapExpression node) { return this.preorder(node.to(DBSPExpression.class)); }
 
     public VisitDecision preorder(DBSPUnsignedUnwrapExpression node) { return this.preorder(node.to(DBSPExpression.class)); }
+
+    public VisitDecision preorder(DBSPWindowBoundExpression node) { return this.preorder(node.to(DBSPExpression.class)); }
 
     // Literals
     public VisitDecision preorder(DBSPLiteral node) {
@@ -1126,6 +1132,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
         this.postorder(node.to(DBSPExpression.class));
     }
 
+    public void postorder(DBSPWindowBoundExpression node) {
+        this.postorder(node.to(DBSPExpression.class));
+    }
+
     // Literals
     public void postorder(DBSPLiteral node) {
         this.postorder(node.to(DBSPExpression.class));
@@ -1257,7 +1267,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs {
 
     @Override
     public String toString() {
-        return this.getClass().getSimpleName();
+        return this.id + " " + this.getClass().getSimpleName();
     }
 
     @Override

@@ -229,7 +229,7 @@ public class ExternalFunction extends SqlFunction {
             DBSPExpression toStruct = new DBSPApplyExpression("try_json_as", structType.setMayBeNull(true), json.getVarReference());
             DBSPLetStatement strct = new DBSPLetStatement("strct", toStruct);
             statements.add(strct);
-            DBSPVariablePath var = new DBSPVariablePath("x", DBSPTypeAny.getDefault());
+            DBSPVariablePath var = new DBSPVariablePath(DBSPTypeAny.getDefault());
             DBSPExpression into = new DBSPApplyMethodExpression("into", var.getType(), var).closure(var.asParameter());
             DBSPExpression retval = new DBSPApplyMethodExpression("map", returnType, strct.getVarReference(), into);
             DBSPExpression body = new DBSPBlockExpression(statements, retval);
