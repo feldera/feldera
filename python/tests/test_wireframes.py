@@ -1,3 +1,4 @@
+import os
 import unittest
 import pandas as pd
 from kafka import KafkaProducer, KafkaConsumer
@@ -184,6 +185,15 @@ class TestWireframes(unittest.TestCase):
         import json
 
         KAFKA_SERVER = "localhost:19092"
+        PIPELINE_TO_KAFKA_SERVER = "redpanda:9092"
+
+        # if the Kafka URL is set in the environment, use it
+        # useful for running tests in CI
+        KAFKA_URL = os.environ.get("KAFKA_URL")
+
+        if KAFKA_URL:
+            KAFKA_SERVER = KAFKA_URL
+            PIPELINE_TO_KAFKA_SERVER = KAFKA_URL
 
         print("(Re-)creating topics...")
         admin_client = KafkaAdminClient(
@@ -224,7 +234,6 @@ class TestWireframes(unittest.TestCase):
         sql.register_table(TABLE_NAME, SQLSchema({"id": "INT NOT NULL PRIMARY KEY"}))
         sql.register_output_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
 
-        PIPELINE_TO_KAFKA_SERVER = "redpanda:9092"
 
         source_config = {
             "topics": [INPUT_TOPIC],
@@ -284,6 +293,14 @@ class TestWireframes(unittest.TestCase):
         KAFKA_URL_FROM_PIPELINE = "redpanda:9092"
         KAFKA_SERVER = "localhost:19092"
         TOPIC = "test_avro_format"
+
+        # if the Kafka URL is set in the environment, use it
+        # useful for running tests in CI
+        KAFKA_URL = os.environ.get("KAFKA_URL")
+
+        if KAFKA_URL:
+            KAFKA_SERVER = KAFKA_URL
+            KAFKA_URL_FROM_PIPELINE = KAFKA_URL
 
         admin_client = KafkaAdminClient(
             bootstrap_servers=KAFKA_SERVER,
