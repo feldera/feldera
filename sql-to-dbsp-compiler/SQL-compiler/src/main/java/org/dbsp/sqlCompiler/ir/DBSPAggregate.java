@@ -34,7 +34,9 @@ import java.util.Objects;
 
 /** Description of an aggregate.
  * In general an aggregate performs multiple simple aggregates simultaneously. */
-public final class DBSPAggregate extends DBSPNode implements IDBSPInnerNode, IDBSPDeclaration {
+public final class DBSPAggregate extends DBSPNode
+        implements IDBSPInnerNode, IDBSPDeclaration // Declares the row variable
+{
     public final DBSPVariablePath rowVar;
     public final Implementation[] components;
     public final boolean isWindowAggregate;
@@ -121,7 +123,7 @@ public final class DBSPAggregate extends DBSPNode implements IDBSPInnerNode, IDB
         }
         DBSPType[] accumulatorTypes = Linq.map(closures, c -> c.parameters[0].getType(), DBSPType.class);
         List<DBSPType> flatAccumTypes = Linq.flatMap(accumulatorTypes, this::flatten);
-        DBSPVariablePath accumParam = new DBSPTypeTuple(flatAccumTypes).var("a");
+        DBSPVariablePath accumParam = new DBSPTypeTuple(flatAccumTypes).var();
         DBSPParameter accumulator = accumParam.asParameter();
         DBSPParameter row;
         DBSPParameter weight;
@@ -138,7 +140,6 @@ public final class DBSPAggregate extends DBSPNode implements IDBSPInnerNode, IDB
         int start = 0;
         for (int i = 0; i < closures.length; i++) {
             DBSPClosureExpression closure = closures[i];
-            String tmp = "tmp" + i;
             // Must package together several accumulator fields if the original type was a tuple
             DBSPType accumulatorType = accumulatorTypes[i];
             DBSPTypeTupleBase tuple = accumulatorType.as(DBSPTypeTupleBase.class);
@@ -154,8 +155,8 @@ public final class DBSPAggregate extends DBSPNode implements IDBSPInnerNode, IDB
             }
             DBSPExpression init = closure.call(
                     accumulatorArgs, row.asVariable(), weight.asVariable());
-            DBSPLetStatement stat = new DBSPLetStatement(tmp, init);
-            DBSPVariablePath tmpI = new DBSPVariablePath(tmp, init.getType());
+            DBSPVariablePath tmpI = init.getType().var();
+            DBSPLetStatement stat = new DBSPLetStatement(tmpI.variable, init);
             tmpVars.addAll(DBSPTypeTupleBase.flatten(tmpI));
             body.add(stat);
         }
@@ -192,6 +193,11 @@ public final class DBSPAggregate extends DBSPNode implements IDBSPInnerNode, IDB
     @Override
     public String getName() {
         return this.rowVar.variable;
+    }
+
+    @Override
+    public DBSPType getType() {
+        return this.rowVar.getType();
     }
 
     /**
@@ -288,7 +294,7 @@ public final class DBSPAggregate extends DBSPNode implements IDBSPInnerNode, IDB
             if (this.postProcess != null)
                 return this.postProcess;
             // If it is not set return the identity function
-            DBSPVariablePath var = new DBSPVariablePath("x", Objects.requireNonNull(this.increment.getResultType()));
+            DBSPVariablePath var = new DBSPVariablePath(Objects.requireNonNull(this.increment.getResultType()));
             return var.closure(var.asParameter());
         }
 
@@ -424,10 +430,10 @@ public final class DBSPAggregate extends DBSPNode implements IDBSPInnerNode, IDB
         }
 
         DBSPTypeTuple accumulatorType = new DBSPTypeTuple(accumulatorTypes);
-        DBSPVariablePath accumulator = accumulatorType.ref(true).var("a");
-        DBSPVariablePath postAccumulator = accumulatorType.var("a");
+        DBSPVariablePath accumulator = accumulatorType.ref(true).var();
+        DBSPVariablePath postAccumulator = accumulatorType.var();
 
-        DBSPVariablePath weightVar = new DBSPVariablePath("w", Objects.requireNonNull(weightType));
+        DBSPVariablePath weightVar = new DBSPVariablePath(Objects.requireNonNull(weightType));
         for (int i = 0; i < parts; i++) {
             DBSPExpression accumulatorField = accumulator.deref().field(i);
             DBSPExpression expr = increments[i].call(

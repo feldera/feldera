@@ -132,10 +132,8 @@ public abstract class DBSPNode
             log.add(this);
     }
 
-    /**
-     * Do not call this method!
-     * It is only used for testing.
-     */
+    /** Do not call this method!
+     * It is only used for testing. */
     public static void reset() {
         crtId = 0;
     }

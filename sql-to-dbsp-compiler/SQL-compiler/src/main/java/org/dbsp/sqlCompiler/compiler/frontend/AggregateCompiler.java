@@ -137,10 +137,6 @@ public class AggregateCompiler implements ICompilerComponent {
         return !(this.aggregateNode instanceof LogicalAggregate);
     }
 
-    public String genAccumulatorName() {
-        return this.generator.nextName();
-    }
-
     <T> boolean process(SqlAggFunction function, Class<T> clazz, Consumer<T> method) {
         T value = ICastable.as(function, clazz);
         if (value != null) {
@@ -171,7 +167,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
         DBSPExpression increment;
         DBSPExpression aggregatedValue = this.getAggregatedValue();
-        DBSPVariablePath accumulator = this.nullableResultType.var(this.genAccumulatorName());
+        DBSPVariablePath accumulator = this.nullableResultType.var();
 
         DBSPOpcode opcode = switch (function.getKind()) {
             case BIT_OR -> DBSPOpcode.AGG_OR;
@@ -204,7 +200,7 @@ public class AggregateCompiler implements ICompilerComponent {
             mask <<= 1;
         }
         DBSPExpression increment = new DBSPI64Literal(result).cast(this.nullableResultType);
-        DBSPVariablePath accumulator = this.nullableResultType.var(this.genAccumulatorName());
+        DBSPVariablePath accumulator = this.nullableResultType.var();
         DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
                 false, accumulator.getType());
         this.setFoldingFunction(new DBSPAggregate.Implementation(
@@ -229,7 +225,7 @@ public class AggregateCompiler implements ICompilerComponent {
 
         @Nullable
         DBSPClosureExpression linear = argument.closure(this.v.asParameter());
-        DBSPVariablePath accumulator = this.resultType.var(this.genAccumulatorName());
+        DBSPVariablePath accumulator = this.resultType.var();
         if (this.isDistinct) {
             linear = null;
             increment = this.aggregateOperation(
@@ -261,7 +257,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPType elementType = this.resultType.to(DBSPTypeVec.class).getElementType();
         DBSPExpression zero = DBSPVecLiteral.emptyWithElementType(elementType, false);
         DBSPExpression aggregatedValue = this.getAggregatedValue();
-        DBSPVariablePath accumulator = this.resultType.var(this.genAccumulatorName());
+        DBSPVariablePath accumulator = this.resultType.var();
         String functionName;
         DBSPExpression[] arguments;
         if (ignoreNulls && elementType.mayBeNull) {
@@ -302,7 +298,7 @@ public class AggregateCompiler implements ICompilerComponent {
         // Accumulator is a pair of fields.
         DBSPExpression zero = new DBSPTupleExpression(
                 tuple.fields[0].getType().nullValue(), tuple.fields[1].getType().nullValue());
-        DBSPVariablePath accumulator = tuple.getType().var(this.genAccumulatorName());
+        DBSPVariablePath accumulator = tuple.getType().var();
         DBSPClosureExpression linear = null;  // not linear
         DBSPExpression ge = new DBSPBinaryExpression(
                 node, DBSPTypeBool.create(false), compare,
@@ -360,7 +356,7 @@ public class AggregateCompiler implements ICompilerComponent {
             default -> throw new UnimplementedException(node);
         };
         DBSPExpression aggregatedValue = this.getAggregatedValue();
-        DBSPVariablePath accumulator = this.nullableResultType.var(this.genAccumulatorName());
+        DBSPVariablePath accumulator = this.nullableResultType.var();
         DBSPExpression increment = this.aggregateOperation(
                 node, call, this.nullableResultType, accumulator, aggregatedValue, this.filterArgument());
         DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, semigroupName, false, accumulator.getType());
@@ -373,7 +369,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
         DBSPExpression increment;
         DBSPExpression aggregatedValue = this.getAggregatedValue();
-        DBSPVariablePath accumulator = this.nullableResultType.var(this.genAccumulatorName());
+        DBSPVariablePath accumulator = this.nullableResultType.var();
 
         if (this.isDistinct) {
             increment = this.aggregateOperation(
@@ -398,7 +394,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression zero = this.resultType.to(IsNumericType.class).getZero();
         DBSPExpression increment;
         DBSPExpression aggregatedValue = this.getAggregatedValue();
-        DBSPVariablePath accumulator = this.resultType.var(this.genAccumulatorName());
+        DBSPVariablePath accumulator = this.resultType.var();
 
         @Nullable
         DBSPClosureExpression linear = null;
@@ -436,7 +432,7 @@ public class AggregateCompiler implements ICompilerComponent {
             //aggregatedValue = new DBSPBinaryExpression(node, aggregatedValue.type,
             //        DBSPOpcode.IF_SELECTED, aggregatedValue, this.v.field(this.filterArgument));
         }
-        DBSPVariablePath accumulator = this.nullableResultType.var(this.genAccumulatorName());
+        DBSPVariablePath accumulator = this.nullableResultType.var();
         // Single is supposed to be applied to a single value, and should return a runtime
         // error otherwise.  We approximate this behavior by returning the last value seen.
         DBSPExpression increment = aggregatedValue;
@@ -457,7 +453,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 DBSPLiteral.none(intermediateResultType), DBSPLiteral.none(intermediateResultType));
         DBSPType pairType = zero.getType();
         DBSPExpression count, sum;
-        DBSPVariablePath accumulator = pairType.var(this.genAccumulatorName());
+        DBSPVariablePath accumulator = pairType.var();
         final int sumIndex = 0;
         final int countIndex = 1;
         DBSPExpression countAccumulator = accumulator.field(countIndex);
@@ -493,7 +489,7 @@ public class AggregateCompiler implements ICompilerComponent {
         }
         DBSPExpression increment = new DBSPTupleExpression(sum, count);
 
-        DBSPVariablePath a = pairType.var(this.genAccumulatorName());
+        DBSPVariablePath a = pairType.var();
         DBSPExpression divide = ExpressionCompiler.makeBinaryExpression(
                 node, this.resultType, DBSPOpcode.DIV,
                 a.field(sumIndex), a.field(countIndex));
@@ -522,7 +518,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 DBSPLiteral.none(intermediateResultType));
         DBSPType tripleType = zero.getType();
         DBSPExpression count, sum, sumSquares;
-        DBSPVariablePath accumulator = tripleType.var(this.genAccumulatorName());
+        DBSPVariablePath accumulator = tripleType.var();
         final int sumIndex = 0;
         final int countIndex = 1;
         final int sumSquaresIndex = 2;
@@ -574,7 +570,7 @@ public class AggregateCompiler implements ICompilerComponent {
         }
         DBSPExpression increment = new DBSPTupleExpression(sum, count, sumSquares);
 
-        DBSPVariablePath a = tripleType.var(this.genAccumulatorName());
+        DBSPVariablePath a = tripleType.var();
         DBSPExpression sumSquared = ExpressionCompiler.makeBinaryExpression(
                 node, this.resultType, DBSPOpcode.MUL,
                 a.field(sumIndex), a.field(sumIndex));

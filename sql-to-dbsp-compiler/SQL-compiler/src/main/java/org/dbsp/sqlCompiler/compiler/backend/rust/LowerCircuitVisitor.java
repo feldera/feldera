@@ -57,11 +57,11 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         //            Tuple3::new(x0.clone(), x1.clone(), e)
         //        }
         //     })
-        DBSPVariablePath rowVar = new DBSPVariablePath("x", flatmap.inputElementType.ref());
+        DBSPVariablePath rowVar = new DBSPVariablePath(flatmap.inputElementType.ref());
         DBSPType eType = flatmap.collectionElementType;
         if (flatmap.collectionIndexType != null)
             eType = new DBSPTypeRawTuple(new DBSPTypeUSize(CalciteObject.EMPTY, false), eType);
-        DBSPVariablePath elem = new DBSPVariablePath("e", eType);
+        DBSPVariablePath elem = new DBSPVariablePath(eType);
         List<DBSPStatement> statements = new ArrayList<>();
         List<DBSPExpression> resultColumns = new ArrayList<>();
         for (int i = 0; i < flatmap.leftCollectionIndexes.size(); i++) {
@@ -69,7 +69,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             // let x0: Vec<i32> = x.0.clone();
             // let x1: x.1.clone();
             DBSPExpression field = rowVar.deref().field(index).applyCloneIfNeeded();
-            DBSPVariablePath fieldClone = new DBSPVariablePath("x" + index, field.getType());
+            DBSPVariablePath fieldClone = new DBSPVariablePath(field.getType());
             DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
             statements.add(stat);
             resultColumns.add(fieldClone.applyClone());
@@ -213,7 +213,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPAggregate.Implementation impl = node.getAggregate().combine(this.errorReporter);
         DBSPExpression function = impl.asFold();
         DBSPOperator result = new DBSPPartitionedRollingAggregateOperator(node.getNode(),
-                node.partitioningFunction, function, null, node.window,
+                node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(), this.mapped(node.input()));
         this.map(node, result);
     }
@@ -227,9 +227,9 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPAggregate.Implementation impl = node.aggregate.combine(this.errorReporter);
         DBSPExpression function = impl.asFold();
         DBSPOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getNode(),
-                node.partitioningFunction, function, null, node.window,
+                node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(),
-                this.mapped(node.inputs.get(0)), this.mapped(node.inputs.get(1)));
+                this.mapped(node.left()), this.mapped(node.right()));
         this.map(node, result);
     }
 }

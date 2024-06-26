@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -9,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -21,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.SQLException;
+import java.util.Arrays;
 import java.util.List;
 
 /** Tests that exercise streaming features. */
@@ -43,6 +46,81 @@ public class StreamingTests extends StreamingTest {
         compiler.compileStatements(sql);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase("hoppingTest", ccs);
+    }
+
+    @Test
+    public void smallTaxiTest() {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 1);
+        String sql = """
+                CREATE TABLE green_tripdata
+                (
+                  lpep_pickup_datetime TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
+                  pickup_location_id BIGINT NOT NULL
+                );
+                
+                CREATE VIEW V AS
+                SELECT
+                *,
+                COUNT(*) OVER(
+                   PARTITION BY  pickup_location_id
+                   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
+                   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip
+                FROM green_tripdata;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("smallTaxiTest", ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int rolling_waterline = 0;
+            int integrate_trace = 0;
+
+            @Override
+            public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator operator) {
+                this.rolling_waterline++;
+            }
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.rolling_waterline);
+                Assert.assertEquals(2, this.integrate_trace);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
+    public void unionTest() {
+        // Tests the monotone analyzer for the sum and distinct operators
+        String sql = """
+                CREATE TABLE series (
+                    pickup TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
+                );
+                CREATE VIEW V AS SELECT DISTINCT * FROM
+                ((SELECT * FROM series) UNION ALL
+                 (SELECT pickup + INTERVAL 5 MINUTES FROM series));""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("unionTest", ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int count = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.count++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.count);
+            }
+        };
+        visitor.apply(ccs.circuit);
     }
 
     @Test
@@ -492,7 +570,12 @@ public class StreamingTests extends StreamingTest {
         Long[] p0 = this.profile(ddl + query);
         Long[] p1 = this.profile(ddlLateness + query);
         // Memory consumption of program with lateness is expected to be higher
-        Assert.assertTrue(p0[1] > 1.5 * p1[1]);
+        if (p0[1] < 1.5 * p1[1]) {
+            System.err.println("Profile statistics without and with lateness:");
+            System.err.println(Arrays.toString(p0));
+            System.err.println(Arrays.toString(p1));
+            assert false;
+        }
     }
 
     @Test

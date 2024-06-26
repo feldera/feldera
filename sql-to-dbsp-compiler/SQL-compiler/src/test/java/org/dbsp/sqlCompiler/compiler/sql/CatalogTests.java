@@ -54,7 +54,6 @@ public class CatalogTests extends BaseSQLTests {
                     address ADDRESS
                 );
                 
-                
                 CREATE TABLE Data (
                     id BIGINT not null primary key,
                     msg CustomType

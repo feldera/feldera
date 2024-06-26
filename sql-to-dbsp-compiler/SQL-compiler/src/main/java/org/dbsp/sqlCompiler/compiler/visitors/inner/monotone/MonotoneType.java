@@ -6,7 +6,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 
 /** A type which is completely monotone (all fields are monotone) */
-public class MonotoneType extends BaseMonotoneType {
+public class MonotoneType extends ScalarMonotoneType {
     public MonotoneType(DBSPType type) {
         super(type);
     }
@@ -29,6 +29,21 @@ public class MonotoneType extends BaseMonotoneType {
     @Override
     public DBSPExpression projectExpression(DBSPExpression source) {
         return source;
+    }
+
+    @Override
+    public IMaybeMonotoneType setMaybeNull(boolean maybeNull) {
+        return new MonotoneType(this.type.setMayBeNull(true));
+    }
+
+    @Override
+    public IMaybeMonotoneType union(IMaybeMonotoneType other) {
+        return this;
+    }
+
+    @Override
+    public IMaybeMonotoneType intersection(IMaybeMonotoneType other) {
+        return other;
     }
 
     @Override

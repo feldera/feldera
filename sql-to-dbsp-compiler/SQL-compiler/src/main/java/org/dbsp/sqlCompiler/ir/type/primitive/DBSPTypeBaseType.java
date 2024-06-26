@@ -46,7 +46,7 @@ public abstract class DBSPTypeBaseType extends DBSPType {
 
     @Override
     public DBSPExpression caster(DBSPType to) {
-        DBSPVariablePath var = new DBSPVariablePath("x", this);
+        DBSPVariablePath var = this.var();
         return var.cast(to).applyCloneIfNeeded().closure(var.asParameter());
     }
 

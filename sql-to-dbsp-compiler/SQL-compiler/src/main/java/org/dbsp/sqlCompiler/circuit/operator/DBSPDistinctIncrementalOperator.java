@@ -10,25 +10,11 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 
-/** Primitive Upsert operator.
- * Used to implement the UpsertFeedback operator. */
 @NonCoreIR
-public final class DBSPUpsertOperator extends DBSPBinaryOperator {
-    public DBSPUpsertOperator(CalciteObject node, DBSPOperator delta, DBSPOperator integral) {
-        super(node, "primitive_upsert", null, delta.outputType, false, delta, integral);
-    }
-
-    @Override
-    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return this;
-    }
-
-    @Override
-    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
-        assert newInputs.size() == 2 : "Expected 2 inputs";
-        if (force || this.inputsDiffer(newInputs))
-            return new DBSPUpsertOperator(this.getNode(), newInputs.get(0), newInputs.get(1));
-        return this;
+public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator {
+    // In the DBSP paper this operator was called H
+    public DBSPDistinctIncrementalOperator(CalciteObject node, DBSPOperator integral, DBSPOperator delta) {
+        super(node, "distinct_incremental", null, delta.outputType, false, integral, delta);
     }
 
     @Override
@@ -38,5 +24,19 @@ public final class DBSPUpsertOperator extends DBSPBinaryOperator {
         if (!decision.stop())
             visitor.postorder(this);
         visitor.pop(this);
+    }
+
+    @Override
+    public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
+        return this;
+    }
+
+    @Override
+    public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
+        assert newInputs.size() == 2;
+        if (force || this.inputsDiffer(newInputs))
+            return new DBSPDistinctIncrementalOperator(
+                    this.getNode(), newInputs.get(0), newInputs.get(1));
+        return this;
     }
 }

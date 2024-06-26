@@ -73,8 +73,8 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
     }
 
     public void postorder(DBSPStreamJoinOperator join) {
-        DBSPOperator left = this.mapped(join.inputs.get(0));
-        DBSPOperator right = this.mapped(join.inputs.get(1));
+        DBSPOperator left = this.mapped(join.left());
+        DBSPOperator right = this.mapped(join.right());
         // join(distinct) = distinct(join)
         if (left.is(DBSPStreamDistinctOperator.class) &&
             right.is(DBSPStreamDistinctOperator.class)) {

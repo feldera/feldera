@@ -28,7 +28,7 @@ public class MonotoneExpression {
         DBSPType expressionType = expression.getType();
         DBSPType monotoneType = type.getType();
         assert expressionType.sameType(monotoneType):
-            "Types differ " + expressionType + " and " + monotoneType;
+            "Types differ\n" + expressionType + " and\n" + monotoneType;
     }
 
     public DBSPExpression getReducedExpression() {

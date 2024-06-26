@@ -57,8 +57,7 @@ import java.math.BigDecimal;
  * Test end-to-end by compiling some DDL statements and view
  * queries by compiling them to rust and executing them
  * by inserting data in the input tables and reading data
- * from the declared views.
- */
+ * from the declared views. */
 public class EndToEndTests extends BaseSQLTests {
     public static final String E2E_TABLE = """
             CREATE TABLE T (

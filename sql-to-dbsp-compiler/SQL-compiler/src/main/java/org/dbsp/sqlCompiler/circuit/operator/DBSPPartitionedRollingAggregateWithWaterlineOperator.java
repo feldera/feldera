@@ -30,17 +30,20 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
-public final class DBSPPartitionedRollingAggregateWithWaterlineOperator extends DBSPOperator {
+public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
+        extends DBSPBinaryOperator {
     @Nullable
     public final DBSPAggregate aggregate;
     public final DBSPExpression partitioningFunction;
-    public final DBSPExpression window;
+    public final DBSPWindowBoundExpression lower;
+    public final DBSPWindowBoundExpression upper;
 
     // TODO: support the linear version of this operator.
     public DBSPPartitionedRollingAggregateWithWaterlineOperator(
@@ -50,7 +53,8 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator extends 
             // After lowering 'aggregate' is not null, and 'function' has its expected shape
             @Nullable DBSPExpression function,
             @Nullable DBSPAggregate aggregate,
-            DBSPExpression window,
+            DBSPWindowBoundExpression lower,
+            DBSPWindowBoundExpression upper,
             // The output type of partitioned_rolling_aggregate_with_waterline cannot actually be represented
             // using the current IR, so this type is a lie.
             // See DBSPPartitionedRollingAggregateOperator.
@@ -58,11 +62,10 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator extends 
             DBSPOperator dataInput,
             DBSPOperator waterlineInput) {
         super(node, "partitioned_rolling_aggregate_with_waterline",
-                function, outputType, true);
-        this.addInput(dataInput);
-        this.addInput(waterlineInput);
+                function, outputType, true, dataInput, waterlineInput);
         this.aggregate = aggregate;
-        this.window = window;
+        this.lower = lower;
+        this.upper = upper;
         this.partitioningFunction = partitioningFunction;
         assert partitioningFunction.is(DBSPClosureExpression.class);
     }
@@ -72,9 +75,9 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator extends 
         return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
                 this.getNode(),
                 this.partitioningFunction,
-                expression, this.aggregate, this.window,
+                expression, this.aggregate, this.lower, this.upper,
                 outputType.to(DBSPTypeIndexedZSet.class),
-                this.inputs.get(0), this.inputs.get(1));
+                this.left(), this.right());
     }
 
     @Override
@@ -83,8 +86,8 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator extends 
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
                     this.getNode(),
-                    this.partitioningFunction, this.function, this.aggregate, this.window,
-                    this.getOutputIndexedZSetType(),
+                    this.partitioningFunction, this.function, this.aggregate,
+                    this.lower, this.upper, this.getOutputIndexedZSetType(),
                     newInputs.get(0), newInputs.get(1));
         return this;
     }
@@ -97,8 +100,10 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator extends 
         if (otherOperator == null)
             return false;
         return EquivalenceContext.equiv(this.aggregate, otherOperator.aggregate) &&
+                EquivalenceContext.equiv(this.function, otherOperator.function) &&
                 this.partitioningFunction.equivalent(otherOperator.partitioningFunction) &&
-                this.window.equivalent(otherOperator.window);
+                this.lower.equivalent(otherOperator.lower) &&
+                this.upper.equivalent(otherOperator.upper);
     }
 
     @Override

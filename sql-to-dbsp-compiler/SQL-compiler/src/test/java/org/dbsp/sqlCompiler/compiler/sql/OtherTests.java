@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.sql;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -35,6 +34,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -130,6 +130,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
         NameGen.reset();
         DBSPNode.reset();
+        DBSPVariablePath.reset();
         String query = "CREATE VIEW V AS SELECT T.COL3 FROM T";
         DBSPCompiler compiler = this.compileDef();
         compiler.compileStatement(query);
@@ -144,7 +145,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                     // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
                     let stream39 = T();
                     // DBSPMapOperator 61
-                    let stream61: stream<WSet<Tup1<b>>> = stream39.map((|t: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t).2), )));
+                    let stream61: stream<WSet<Tup1<b>>> = stream39.map((|t_1: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t_1).2), )));
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
@@ -155,7 +156,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     }
 
     @Test
-    public void connectorPropertiesTest() throws JsonProcessingException {
+    public void connectorPropertiesTest() {
         String ddl = """
                CREATE TABLE T (
                   COL1 INT
@@ -703,10 +704,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         compiler.compileStatements(query);
         compiler.optimize();
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
-        DBSPOperator sink = circuit.circuit.getSink("V");
+        DBSPSinkOperator sink = circuit.circuit.getSink("V");
         Assert.assertNotNull(sink);
-        Assert.assertEquals(1, sink.inputs.size());
-        DBSPOperator op = sink.inputs.get(0);
+        DBSPOperator op = sink.input();
         // There is no optimization I can imagine which will remove the distinct
         Assert.assertTrue(op.is(DBSPStreamDistinctOperator.class));
     }
@@ -769,12 +769,14 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void testSchema() throws IOException, SQLException {
         String[] statements = new String[]{
-                "CREATE TABLE T (\n" +
-                        "COL1 INT NOT NULL" +
-                        ", COL2 DOUBLE NOT NULL" +
-                        ", COL3 VARCHAR(3) PRIMARY KEY" +
-                        ", COL4 VARCHAR(3) ARRAY" +
-                        ")",
+                """
+                CREATE TABLE T (
+                COL1 INT NOT NULL
+                , COL2 DOUBLE NOT NULL
+                , COL3 VARCHAR(3) PRIMARY KEY
+                , COL4 VARCHAR(3) ARRAY
+                , COL5 MAP<INT, INT>
+                )""",
                 "CREATE VIEW V AS SELECT COL1 AS \"xCol\" FROM T",
                 "CREATE VIEW V1 (\"yCol\") AS SELECT COL1 FROM T"
         };
@@ -828,6 +830,21 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         },
                         "nullable" : true,
                         "type" : "ARRAY"
+                      }
+                    }, {
+                      "name" : "COL5",
+                      "case_sensitive" : false,
+                      "columntype" : {
+                        "key" : {
+                          "nullable" : false,
+                          "type" : "INTEGER"
+                        },
+                        "nullable" : true,
+                        "type" : "MAP",
+                        "value" : {
+                          "nullable" : false,
+                          "type" : "INTEGER"
+                        }
                       }
                     } ],
                     "primary_key" : [ "COL3" ]

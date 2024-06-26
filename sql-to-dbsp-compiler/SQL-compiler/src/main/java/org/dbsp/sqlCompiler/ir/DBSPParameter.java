@@ -44,9 +44,7 @@ public final class DBSPParameter extends DBSPNode implements
         this.type = type;
     }
 
-    /**
-     * Return a variable that refers to the parameter.
-     */
+    /** Return a variable that refers to the parameter. */
     public DBSPVariablePath asVariable() {
         return new DBSPVariablePath(this.name, this.type);
     }

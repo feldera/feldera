@@ -92,6 +92,8 @@ public class RustSqlRuntimeLibrary {
         this.dateFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
         this.dateFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
         this.dateFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
+        this.dateFunctions.put("min", DBSPOpcode.MIN);
+        this.dateFunctions.put("max", DBSPOpcode.MAX);
 
         this.stringFunctions.put("concat", DBSPOpcode.CONCAT);
         this.stringFunctions.put("eq", DBSPOpcode.EQ);

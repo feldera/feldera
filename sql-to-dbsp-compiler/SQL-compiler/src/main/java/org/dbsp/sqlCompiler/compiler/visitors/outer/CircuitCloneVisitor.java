@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.operator.*;
@@ -132,7 +133,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
         this.visited.add(operator);
         List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
         if (!Linq.same(sources, operator.inputs)) {
-            Logger.INSTANCE.belowLevel(this, 1)
+            Logger.INSTANCE.belowLevel(this, 2)
                     .append(this.toString())
                     .append(" replacing inputs of ")
                     .increase()
@@ -163,9 +164,6 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public void postorder(DBSPNoopOperator operator) { this.replace(operator); }
-
-    @Override
-    public void postorder(DBSPPartitionedTreeAggregateOperator operator) { this.replace(operator); }
 
     @Override
     public void postorder(DBSPWeighOperator operator) { this.replace(operator); }
@@ -324,6 +322,11 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public void postorder(DBSPDistinctOperator operator) {
+        this.replace(operator);
+    }
+
+    @Override
+    public void postorder(DBSPDistinctIncrementalOperator operator) {
         this.replace(operator);
     }
 
