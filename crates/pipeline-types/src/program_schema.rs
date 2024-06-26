@@ -132,6 +132,8 @@ impl<'de> Deserialize<'de> for Field {
                     scale: helper.scale,
                     component: helper.component,
                     fields: Some(fields),
+                    key: None,
+                    value: None,
                 }
             } else if let Some(serde_json::Value::Object(obj)) = helper.fields {
                 serde_json::from_value(serde_json::Value::Object(obj))
@@ -144,6 +146,8 @@ impl<'de> Deserialize<'de> for Field {
                     scale: helper.scale,
                     component: helper.component,
                     fields: None,
+                    key: None,
+                    value: None,
                 }
             };
 
@@ -397,6 +401,92 @@ pub struct ColumnType {
     /// ```
     #[cfg_attr(feature = "testing", proptest(value = "Some(Vec::new())"))]
     pub fields: Option<Vec<Field>>,
+    /// Key type; must be set when `type == "MAP"`.
+    #[cfg_attr(feature = "testing", proptest(value = "None"))]
+    pub key: Option<Box<ColumnType>>,
+    /// Value type; must be set when `type == "MAP"`.
+    #[cfg_attr(feature = "testing", proptest(value = "None"))]
+    pub value: Option<Box<ColumnType>>,
+}
+
+impl ColumnType {
+    pub fn boolean(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Boolean,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn tinyint(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::TinyInt,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn smallint(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::SmallInt,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn int(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Int,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn bigint(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::BigInt,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn varchar(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Varchar,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
 }
 
 #[cfg(test)]

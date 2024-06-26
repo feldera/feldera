@@ -3242,6 +3242,14 @@
             "description": "The fields of the type (if available).\n\nFor example this would specify the fields of a `CREATE TYPE` construct.\n\n```sql\nCREATE TYPE person_typ AS (\nfirstname       VARCHAR(30),\nlastname        VARCHAR(30),\naddress         ADDRESS_TYP\n);\n```\n\nWould lead to the following `fields` value:\n\n```sql\n[\nColumnType { name: \"firstname, ... },\nColumnType { name: \"lastname\", ... },\nColumnType { name: \"address\", fields: [ ... ] }\n]\n```",
             "nullable": true
           },
+          "key": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ColumnType"
+              }
+            ],
+            "nullable": true
+          },
           "nullable": {
             "type": "boolean",
             "description": "Does the type accept NULL values?"
@@ -3260,6 +3268,14 @@
           },
           "type": {
             "$ref": "#/components/schemas/SqlType"
+          },
+          "value": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ColumnType"
+              }
+            ],
+            "nullable": true
           }
         }
       },

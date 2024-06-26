@@ -290,7 +290,29 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
                 delta_lake,
             )),
             SqlType::Map => {
-                panic!("SQL MAP type conversion to Parquet data type is not yet implemented");
+                let key_type = c.key.as_ref().unwrap();
+                let val_type = c.value.as_ref().unwrap();
+
+                DataType::Map(
+                    Arc::new(ArrowField::new_struct(
+                        "entries",
+                        [
+                            Arc::new(ArrowField::new(
+                                "keys",
+                                columntype_to_datatype(key_type, delta_lake),
+                                key_type.nullable,
+                            )),
+                            Arc::new(ArrowField::new(
+                                "values",
+                                columntype_to_datatype(val_type, delta_lake),
+                                val_type.nullable,
+                            )),
+                        ]
+                        .as_slice(),
+                        false,
+                    )),
+                    false,
+                )
             }
         }
     }
