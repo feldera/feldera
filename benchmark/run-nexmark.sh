@@ -473,7 +473,7 @@ case $runner:$language in
 	CARGO=$(find_program cargo)
 	run_log feldera-sql/run.py \
 	    --api-url="$api_url" \
-	    --kafka-broker="${kafka_from_feldera:-${kafka_broker}}" \
+	    -O bootstrap.servers="${kafka_from_feldera:-${kafka_broker}}" \
 	    --cores $cores \
 	    --input-topic-suffix "-$events" \
 	    --csv results.csv \
