@@ -40,7 +40,10 @@ create table vulnerability (
     vulnerability_reference_id varchar not null,
     severity int,
     priority varchar
-);
+)
+  -- Instruct Feldera to store the snapshot of the table, allowing the
+  -- user to browse it via the UI or API.
+  with ('materialized' = 'true');
 
 -- K8s clusters.
 create table k8scluster (

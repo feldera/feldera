@@ -44,6 +44,7 @@ impl Catalog {
             ))
         })
     }
+
     /// Add an input stream of Z-sets to the catalog.
     ///
     /// Adds a `DeCollectionHandle` to the catalog, which will deserialize
@@ -78,6 +79,37 @@ impl Catalog {
         self.register_output_zset(stream, schema);
     }
 
+    /// Like `register_input_zset`, but additionally materializes the integral
+    /// of the stream and makes it queryable.
+    pub fn register_materialized_input_zset<Z, D>(
+        &mut self,
+        stream: Stream<RootCircuit, Z>,
+        handle: ZSetHandle<Z::Key>,
+        schema: &str,
+    ) where
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<Z::Key>
+            + Clone
+            + Debug
+            + Send
+            + 'static,
+        Z: ZSet + Debug + Send + Sync,
+        Z::InnerBatch: Send,
+        Z::Key: Sync + From<D>,
+    {
+        let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
+
+        self.register_input_collection_handle(InputCollectionHandle::new(
+            relation_schema,
+            DeZSetHandle::new(handle),
+        ))
+        .unwrap();
+
+        // Inputs are also outputs.
+        self.register_materialized_output_zset(stream, schema);
+    }
+
     /// Add an input stream created using `add_input_set` to catalog.
     ///
     /// Adds a `DeCollectionHandle` to the catalog, which will deserialize
@@ -110,6 +142,37 @@ impl Catalog {
 
         // Inputs are also outputs.
         self.register_output_zset(stream, schema);
+    }
+
+    /// Like `register_input_set`, but additionally materializes the integral
+    /// of the stream and makes it queryable.
+    pub fn register_materialized_input_set<Z, D>(
+        &mut self,
+        stream: Stream<RootCircuit, Z>,
+        handle: SetHandle<Z::Key>,
+        schema: &str,
+    ) where
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<Z::Key>
+            + Clone
+            + Debug
+            + Send
+            + 'static,
+        Z: ZSet + Debug + Send + Sync,
+        Z::InnerBatch: Send,
+        Z::Key: Sync + From<D>,
+    {
+        let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
+
+        self.register_input_collection_handle(InputCollectionHandle::new(
+            relation_schema,
+            DeSetHandle::new(handle),
+        ))
+        .unwrap();
+
+        // Inputs are also outputs.
+        self.register_materialized_output_zset(stream, schema);
     }
 
     /// Register an input handle created using `add_input_map`.
@@ -173,9 +236,93 @@ impl Catalog {
         self.register_output_map(stream, value_key_func, schema);
     }
 
+    /// Like `register_input_map`, but additionally materializes the integral
+    /// of the stream and makes it queryable.
+    pub fn register_materialized_input_map<K, KD, V, VD, U, UD, VF, UF>(
+        &mut self,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        handle: MapHandle<K, V, U>,
+        value_key_func: VF,
+        update_key_func: UF,
+        schema: &str,
+    ) where
+        VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
+        UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<K>
+            + Send
+            + 'static,
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<V>
+            + Clone
+            + Debug
+            + Default
+            + Send
+            + 'static,
+        UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<U>
+            + Send
+            + 'static,
+        K: DBData + Sync + From<KD>,
+        V: DBData + Sync + From<VD>,
+        U: DBData + Sync + From<UD>,
+    {
+        let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
+
+        self.register_input_collection_handle(InputCollectionHandle::new(
+            relation_schema,
+            DeMapHandle::new(handle, value_key_func.clone(), update_key_func.clone()),
+        ))
+        .unwrap();
+
+        // Inputs are also outputs.
+        self.register_materialized_output_map(stream, value_key_func, schema);
+    }
+
     /// Add an output stream of Z-sets to the catalog.
     pub fn register_output_zset<Z, D>(&mut self, stream: Stream<RootCircuit, Z>, schema: &str)
     where
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<Z::Key>
+            + Clone
+            + Debug
+            + Send
+            + 'static,
+        Z: ZSet + Debug + Send + Sync,
+        Z::InnerBatch: Send,
+        Z::Key: Sync + From<D>,
+    {
+        let schema: Relation = Self::parse_relation_schema(schema).unwrap();
+
+        // Create handle for the stream itself.
+        let delta_handle = stream.output();
+
+        let handles = OutputCollectionHandles {
+            schema,
+            delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
+                as Box<dyn SerCollectionHandle>,
+
+            neighborhood_descr_handle: None,
+            neighborhood_handle: None,
+            neighborhood_snapshot_handle: None,
+            num_quantiles_handle: None,
+            quantiles_handle: None,
+        };
+
+        self.register_output_batch_handles(handles).unwrap();
+    }
+
+    /// Like `register_output_zset`, but additionally materializes the integral
+    /// of the stream and makes it queryable.
+    pub fn register_materialized_output_zset<Z, D>(
+        &mut self,
+        stream: Stream<RootCircuit, Z>,
+        schema: &str,
+    ) where
         D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
@@ -287,6 +434,49 @@ impl Catalog {
     /// streams contain values only.  Clients, e.g., the web console, can
     /// work with maps and z-sets in the same way.
     pub fn register_output_map<K, KD, V, VD, F>(
+        &mut self,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        _key_func: F,
+        schema: &str,
+    ) where
+        F: Fn(&V) -> K + Clone + Send + Sync + 'static,
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<K>,
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<V>
+            + Default
+            + Debug
+            + Clone
+            + Send
+            + 'static,
+        K: DBData + Send + Sync + From<KD> + Default,
+        V: DBData + Send + Sync + From<VD> + Default,
+    {
+        let schema: Relation = Self::parse_relation_schema(schema).unwrap();
+
+        // Create handle for the stream itself.
+        let delta_handle = stream.map(|(_k, v)| v.clone()).output();
+
+        let handles = OutputCollectionHandles {
+            schema,
+            delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
+                as Box<dyn SerCollectionHandle>,
+
+            neighborhood_descr_handle: None,
+            neighborhood_handle: None,
+            neighborhood_snapshot_handle: None,
+            num_quantiles_handle: None,
+            quantiles_handle: None,
+        };
+
+        self.register_output_batch_handles(handles).unwrap();
+    }
+
+    /// Like `register_output_map`, but additionally materializes the integral
+    /// of the stream and makes it queryable.
+    pub fn register_materialized_output_map<K, KD, V, VD, F>(
         &mut self,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
         key_func: F,
@@ -493,7 +683,7 @@ mod test {
 
             let (input, hinput) = circuit.add_input_map::<u32, TestStruct, TestStruct, _>(|v, u| *v = u.clone());
 
-            catalog.register_input_map::<u32, u32, TestStruct, TestStruct, TestStruct, TestStruct, _, _>(
+            catalog.register_materialized_input_map::<u32, u32, TestStruct, TestStruct, TestStruct, TestStruct, _, _>(
                 input.clone(),
                 hinput,
                 |test_struct| test_struct.id,

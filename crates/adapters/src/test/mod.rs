@@ -160,8 +160,8 @@ where
         let output_schema =
             serde_json::to_string(&Relation::new("test_output1", false, schema)).unwrap();
 
-        catalog.register_input_zset(input.clone(), hinput, &input_schema);
-        catalog.register_output_zset(input, &output_schema);
+        catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
+        catalog.register_materialized_output_zset(input, &output_schema);
 
         Ok(catalog)
     })
