@@ -143,7 +143,7 @@ CREATE VIEW low_price                                    \n
     FROM price                                           \n
     GROUP BY price.part;                                 \n
                                                          \n
-CREATE VIEW preferred_vendor                             \n
+CREATE MATERIALIZED VIEW preferred_vendor                \n
     (part_id, part_name, vendor_id, vendor_name, price)  \n
     AS                                                   \n
     SELECT                                               \n

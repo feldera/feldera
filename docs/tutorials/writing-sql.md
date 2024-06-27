@@ -12,7 +12,7 @@ CREATE TABLE Person
     age     INT,
     present BOOLEAN
 );
-CREATE VIEW Adult AS SELECT Person.name, Person.age FROM Person WHERE Person.age > 18;
+CREATE MATERIALIZED VIEW Adult AS SELECT Person.name, Person.age FROM Person WHERE Person.age > 18;
 ```
 
 Statements need to be separated by semicolons.
@@ -27,7 +27,7 @@ formed by a query on other tables or views.
 For example, the following query defines a view:
 
 ```sql
-CREATE VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18
+CREATE MATERIALIZED VIEW Adult AS SELECT Person.name FROM Person WHERE Person.age > 18
 ```
 
 In order to interpret this query the compiler needs to have been given
