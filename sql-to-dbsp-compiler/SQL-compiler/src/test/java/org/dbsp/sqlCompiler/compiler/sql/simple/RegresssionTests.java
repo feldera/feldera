@@ -6,8 +6,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -135,6 +138,24 @@ public class RegresssionTests extends SqlIoTest {
         String sql = """
                 create table TRANSACTION (unix_time BIGINT LATENESS 0);
                 """;
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue1957() {
+        String sql = """
+                CREATE TABLE warehouse (
+                   id INT PRIMARY KEY,
+                   parentId INT
+                );
+                
+                CREATE VIEW V AS SELECT\s
+                  id,
+                  (SELECT ARRAY_AGG(id) FROM (
+                    SELECT id FROM warehouse WHERE parentId = warehouse.id
+                    ORDER BY id LIMIT 10
+                  )) AS first_children
+                FROM warehouse;""";
         this.compileRustTestCase(sql);
     }
 

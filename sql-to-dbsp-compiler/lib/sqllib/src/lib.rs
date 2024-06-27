@@ -30,6 +30,7 @@ use dbsp::{
     utils::*,
     DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
 };
+use itertools::Itertools;
 use num::{PrimInt, Signed, ToPrimitive};
 use num_traits::{Pow, Zero};
 use rust_decimal::{Decimal, MathematicalOps};
@@ -705,10 +706,10 @@ pub struct ConcatSemigroup<V>(PhantomData<V>);
 
 impl<V> Semigroup<Vec<V>> for ConcatSemigroup<Vec<V>>
 where
-    V: Clone,
+    V: Clone + Ord,
 {
     fn combine(left: &Vec<V>, right: &Vec<V>) -> Vec<V> {
-        left.iter().chain(right).cloned().collect()
+        left.iter().merge(right).cloned().collect()
     }
 }
 
