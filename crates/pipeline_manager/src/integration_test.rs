@@ -755,7 +755,7 @@ async fn deploy_pipeline() {
     let config = setup().await;
     let _ = deploy_pipeline_without_connectors(
         &config,
-        "create table t1(c1 integer); create view v1 as select * from t1;",
+        "create table t1(c1 integer) with ('materialized' = 'true'); create view v1 as select * from t1;",
     )
     .await;
 
@@ -930,7 +930,7 @@ async fn json_ingress() {
     let config = setup().await;
     let id = deploy_pipeline_without_connectors(
         &config,
-        "create table t1(c1 integer, c2 bool, c3 varchar); create view v1 as select * from t1;",
+        "create table t1(c1 integer, c2 bool, c3 varchar) with ('materialized' = 'true'); create materialized view v1 as select * from t1;",
     )
     .await;
 
@@ -1101,7 +1101,7 @@ async fn map_column() {
     let config = setup().await;
     let id = deploy_pipeline_without_connectors(
         &config,
-        "create table t1(c1 integer, c2 bool, c3 MAP<varchar, varchar>); create view v1 as select * from t1;",
+        "create table t1(c1 integer, c2 bool, c3 MAP<varchar, varchar>) with ('materialized' = 'true'); create view v1 as select * from t1;",
     )
     .await;
 
@@ -1159,7 +1159,7 @@ async fn parse_datetime() {
     let config = setup().await;
     let _ = deploy_pipeline_without_connectors(
         &config,
-        "create table t1(t TIME, ts TIMESTAMP, d DATE);",
+        "create table t1(t TIME, ts TIMESTAMP, d DATE) with ('materialized' = 'true');",
     )
     .await;
 
@@ -1208,7 +1208,7 @@ async fn quoted_columns() {
     let config = setup().await;
     let _ = deploy_pipeline_without_connectors(
         &config,
-        r#"create table t1("c1" integer not null, "C2" bool not null, "😁❤" varchar not null, "αβγ" boolean not null, ΔΘ boolean not null)"#,
+        r#"create table t1("c1" integer not null, "C2" bool not null, "😁❤" varchar not null, "αβγ" boolean not null, ΔΘ boolean not null) with ('materialized' = 'true')"#,
     )
     .await;
 
@@ -1258,7 +1258,7 @@ async fn primary_keys() {
     let config = setup().await;
     let _ = deploy_pipeline_without_connectors(
         &config,
-        r#"create table t1(id bigint not null, s varchar not null, primary key (id))"#,
+        r#"create table t1(id bigint not null, s varchar not null, primary key (id)) with ('materialized' = 'true')"#,
     )
     .await;
 
@@ -1371,8 +1371,8 @@ async fn case_sensitive_tables() {
         &config,
         r#"create table "TaBle1"(id bigint not null);
 create table table1(id bigint);
-create view "V1" as select * from "TaBle1";
-create view "v1" as select * from table1;"#,
+create materialized view "V1" as select * from "TaBle1";
+create materialized view "v1" as select * from table1;"#,
     )
     .await;
 

@@ -27,7 +27,7 @@ class TestWireframes(unittest.TestCase):
         }))
 
         query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-        sql.register_output_view(view_name, query)
+        sql.register_view(view_name, query)
         out = sql.listen(view_name)
 
         sql.start()
@@ -61,7 +61,7 @@ class TestWireframes(unittest.TestCase):
         }))
 
         query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-        sql.register_output_view(view_name, query)
+        sql.register_view(view_name, query)
 
         sql.start()
         out = sql.listen(view_name)
@@ -96,8 +96,8 @@ class TestWireframes(unittest.TestCase):
             "art": "INT"
         }))
 
-        sql.register_output_view(VIEW_NAMES[0], f"SELECT * FROM {TBL_NAMES[0]}")
-        sql2.register_output_view(VIEW_NAMES[1], f"SELECT * FROM {TBL_NAMES[1]}")
+        sql.register_view(VIEW_NAMES[0], f"SELECT * FROM {TBL_NAMES[0]}")
+        sql2.register_view(VIEW_NAMES[1], f"SELECT * FROM {TBL_NAMES[1]}")
 
         out = sql.listen(VIEW_NAMES[0])
         out2 = sql2.listen(VIEW_NAMES[1])
@@ -140,7 +140,7 @@ class TestWireframes(unittest.TestCase):
         }))
 
         query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-        sql.register_output_view(view_name, query)
+        sql.register_view(view_name, query)
 
         sql.start()
         sql.foreach_chunk(view_name, callback)
@@ -158,7 +158,7 @@ class TestWireframes(unittest.TestCase):
         df = pd.DataFrame([(1, "a"), (2, "b"), (3, "c")])
 
         sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-        sql.register_output_view("s", f"SELECT * FROM {TBL_NAME}")
+        sql.register_view("s", f"SELECT * FROM {TBL_NAME}")
 
         sql.start()
 
@@ -172,7 +172,7 @@ class TestWireframes(unittest.TestCase):
         sql = SQLContext('sql_error', TEST_CLIENT).get_or_create()
         TBL_NAME = "student"
         sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-        sql.register_output_view("s", f"SELECT FROM blah")
+        sql.register_view("s", f"SELECT FROM blah")
         _ = sql.listen("s")
 
         with self.assertRaises(Exception):
@@ -222,7 +222,7 @@ class TestWireframes(unittest.TestCase):
 
         sql = SQLContext('kafka_test', TEST_CLIENT).get_or_create()
         sql.register_table(TABLE_NAME, SQLSchema({"id": "INT NOT NULL PRIMARY KEY"}))
-        sql.register_output_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
+        sql.register_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
 
         PIPELINE_TO_KAFKA_SERVER = "redpanda:9092"
 
@@ -260,7 +260,7 @@ class TestWireframes(unittest.TestCase):
 
         sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
 
-        sql.register_output_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
 
         path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
 
@@ -301,7 +301,7 @@ class TestWireframes(unittest.TestCase):
         VIEW_NAME = "s"
 
         sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-        sql.register_output_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
 
         sink_config = {
             "topic": TOPIC,
@@ -361,7 +361,7 @@ class TestWireframes(unittest.TestCase):
 
         sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
 
-        sql.register_output_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
 
         path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
 
@@ -390,7 +390,7 @@ class TestWireframes(unittest.TestCase):
         # backend doesn't support TIMESTAMP of format: "2024-06-06T18:06:28.443"
         sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING", "birthdate": "TIMESTAMP"}))
 
-        sql.register_output_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
 
         df = pd.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"], "birthdate": [
             pd.Timestamp.now(), pd.Timestamp.now(), pd.Timestamp.now()
