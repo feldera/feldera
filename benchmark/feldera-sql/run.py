@@ -214,12 +214,8 @@ def add_connector(connector_name, relation_name, is_input):
             "transport": {
                 "name": transport_type,
                 "config": {
-                    "auto.offset.reset": "earliest",
-                    "bootstrap.servers": kafka_broker,
-                    "enable.ssl.certificate.verification": "true",
-                    "sasl.mechanism": "PLAIN",
-                    "security.protocol": "PLAINTEXT",
-                }
+                    "auto.offset.reset": "earliest"
+                } | kafka_options
             },
             "format": {
                 "name": "csv",
@@ -233,7 +229,7 @@ def add_connector(connector_name, relation_name, is_input):
         config["topics"] = [connector_name]
     else:
         config["topic"] = connector_name
-    requests.put(f"{api_url}/v0/connectors/{connector_name}", json=json).raise_for_status()
+    requests.put(f"{api_url}/v0/connectors/{connector_name}", headers=headers, json=json).raise_for_status()
     return {
         "connector_name": connector_name,
         "is_input": is_input,
@@ -248,18 +244,18 @@ def add_output_connector(connector_name, relation_name):
     return add_connector(connector_name, relation_name, False)
 
 def stop_pipeline(pipeline_name, wait):
-    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
+    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown", headers=headers).raise_for_status()
     if wait:
         return wait_for_status(pipeline_name, "Shutdown")
 
 def start_pipeline(pipeline_name, wait):
-    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start").raise_for_status()
+    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start", headers=headers).raise_for_status()
     if wait:
         return wait_for_status(pipeline_name, "Running")
 
 def wait_for_status(pipeline_name, status):
     start = time.time()
-    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != status:
+    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}", headers=headers).json()["state"]["current_status"] != status:
         time.sleep(.1)
     return time.time() - start
 
@@ -287,7 +283,9 @@ def main():
         description='Nexmark benchmark demo'
     )
     parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
-    parser.add_argument("--kafka-broker", required=True, help="Kafka broker (e.g., localhost:9092 )")
+    parser.add_argument("--api-key", required=False, help="Feldera API key (e.g., \"apikey:0123456789ABCDEF\")")
+    parser.add_argument("-O", "--option", action='append', required=True,
+                        help="Kafka options passed as -O option=value, e.g., -O bootstrap.servers=localhost:9092")
     parser.add_argument("--cores", type=int, help="Number of cores to use for workers (default: 16)")
     parser.add_argument('--lateness', action=argparse.BooleanOptionalAction, help='whether to use lateness for GC to save memory (default: --lateness)')
     parser.add_argument('--merge', action=argparse.BooleanOptionalAction, help='whether to merge all the queries into one program (default: --no-merge)')
@@ -300,9 +298,14 @@ def main():
     parser.add_argument('--metrics-interval', help='How often metrics should be sampled, in seconds (default: 1)')
     parser.set_defaults(lateness=True, merge=False, storage=False, cores=16, metrics_interval=1)
     
-    global api_url, kafka_broker
+    global api_url, kafka_options, headers
     api_url = parser.parse_args().api_url
-    kafka_broker = parser.parse_args().kafka_broker
+    api_key = parser.parse_args().api_key
+    headers = {} if api_key is None else {"authorization": f"Bearer {api_key}"}
+    kafka_options = {}
+    for option_value in parser.parse_args().option:
+        option, value = option_value.split("=")
+        kafka_options[option] = value
     with_lateness = parser.parse_args().lateness
     merge = parser.parse_args().merge
     queries = sort_queries(parse_queries(parser.parse_args().query))
@@ -327,20 +330,23 @@ def main():
     for program_name in queries:
         # Create program
         program_sql = table_sql(with_lateness) + QUERY_SQL[program_name]
-        response = requests.put(f"{api_url}/v0/programs/{program_name}", json={
+        response = requests.put(f"{api_url}/v0/programs/{program_name}", headers=headers, json={
             "description": f"Nexmark benchmark: {program_name}",
-            "code": program_sql
+            "code": program_sql,
+            "config": {
+                "profile": "optimized"
+            }
         })
         response.raise_for_status()
         program_version = response.json()["version"]
 
         # Compile program
-        requests.post(f"{api_url}/v0/programs/{program_name}/compile", json={"version": program_version}).raise_for_status()
         
+        requests.post(f"{api_url}/v0/programs/{program_name}/compile", headers=headers, json={"version": program_version}).raise_for_status()
     print(f"Compiling program(s)...")
     for program_name in queries:
         while True:
-            status = requests.get(f"{api_url}/v0/programs/{program_name}").json()["status"]
+            status = requests.get(f"{api_url}/v0/programs/{program_name}", headers=headers).json()["status"]
             print(f"Program {program_name} status: {status}")
             if status == "Success":
                 break
@@ -357,9 +363,21 @@ def main():
     print("Creating pipeline(s)...")
     for program_name in queries:
         pipeline_name = program_name
-        requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
+        requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", headers=headers, json={
             "description": "",
-            "config": {"workers": cores, "storage": storage, "min_storage_rows": min_storage_rows},
+            "config": {
+                "workers": cores,
+                "storage": storage,
+                "min_storage_rows": min_storage_rows,
+                "resources": {
+                    # "cpu_cores_min": 0,
+                    # "cpu_cores_max": 16,
+                    # "memory_mb_min": 100,
+                    # "memory_mb_max": 32000,
+                    # "storage_mb_max": 128000,
+                    # "storage_class": "..."
+                }
+            },
             "program_name": program_name,
             "connectors": input_connectors + [output_connectors[s] for s in program_name.split(',')],
         }).raise_for_status()
@@ -389,7 +407,7 @@ def main():
         last_metrics = 0
         peak_memory = 0
         while True:
-            stats = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}/stats").json()
+            stats = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}/stats", headers=headers).json()
             elapsed = time.time() - start
             if "global_metrics" in stats:
                 global_metrics = stats["global_metrics"]

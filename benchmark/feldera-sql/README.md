@@ -98,5 +98,5 @@ This step has the following sub-steps:
 To run the benchmark itself, run:
 
 ```
-python3 benchmark/feldera-sql/run.py --api-url $FELDERA_API --kafka-broker $KAFKA_FROM_FELDERA
+python3 benchmark/feldera-sql/run.py --api-url $FELDERA_API -O bootstrap.servers=$KAFKA_FROM_FELDERA
 ```
