@@ -6,7 +6,7 @@ Using Pandas DataFrames as Input / Output
 
 
 You can use :meth:`.SQLContext.input_pandas` to connect a
-DataFrame to a feldera table as the data source. 
+DataFrame to a feldera table as the data source.
 
 To listen for response from feldera, in the form of DataFrames
 call :meth:`.SQLContext.listen`.
@@ -45,7 +45,7 @@ To ensure all data is received start listening before calling
     # here, we provide a query, that gets registered as a view in feldera
     # this query will be executed on the data in the table
     query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-    sql.register_output_view(view_name, query)
+    sql.register_view(view_name, query)
 
     # listen for the output of the view here in the notebook
     # you do not need to call this if you are forwarding the data to a sink
@@ -132,7 +132,7 @@ More on Kafka as the output connector at: https://www.feldera.com/docs/connector
 
     sql = SQLContext('kafka', 'http://localhost:8080').get_or_create()
     sql.register_table(TABLE_NAME, SQLSchema({"id": "INT NOT NULL PRIMARY KEY"}))
-    sql.register_output_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
+    sql.register_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
 
     source_config = {
         "topics": ["example_topic"],
@@ -186,7 +186,7 @@ More on the HTTP GET connector at: https://www.feldera.com/docs/connectors/sourc
 
     sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
 
-    sql.register_output_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+    sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
 
     path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
 

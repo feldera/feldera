@@ -4898,6 +4898,9 @@
               "$ref": "#/components/schemas/Field"
             }
           },
+          "materialized": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           }

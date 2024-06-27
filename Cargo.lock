@@ -8811,6 +8811,7 @@ dependencies = [
  "geo",
  "geo-types",
  "hex",
+ "itertools 0.13.0",
  "lazy_static",
  "like",
  "num",

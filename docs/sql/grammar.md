@@ -150,6 +150,9 @@ keyword can be used to indicate that the declared view is not exposed
 to the outside world as an output of the computation.  This is useful
 for modularizing the SQL code, by declaring intermediate views that
 are used in the implementation of other views.
+The `MATERIALIZED` keyword instructs Feldera to maintain a full copy
+of the view's output in addition to producing the
+stream of changes.
 
 ```
 createViewStatement
@@ -254,10 +257,6 @@ exprOrList
 
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.
-
-If a view is marked as `MATERIALIZED`, the implementation will
-maintain a full copy of the view's output in addition to producing the
-expected changes.
 
 ### Aggregate queries
 

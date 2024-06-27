@@ -97,7 +97,7 @@ where
 {
     let input_handle = <MockDeZSet<T, U>>::new();
     // Input parsers don't care about schema yet.
-    let schema = Relation::new("mock_schema", false, vec![]);
+    let schema = Relation::new("mock_schema", false, vec![], false);
     let consumer = MockInputConsumer::from_handle(
         &InputCollectionHandle::new(schema, input_handle.clone()),
         config,
@@ -155,10 +155,11 @@ where
         let (input, hinput) = circuit.add_input_zset::<T>();
 
         let input_schema =
-            serde_json::to_string(&Relation::new("test_input1", false, schema.clone())).unwrap();
+            serde_json::to_string(&Relation::new("test_input1", false, schema.clone(), false))
+                .unwrap();
 
         let output_schema =
-            serde_json::to_string(&Relation::new("test_output1", false, schema)).unwrap();
+            serde_json::to_string(&Relation::new("test_output1", false, schema, false)).unwrap();
 
         catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
         catalog.register_materialized_output_zset(input, &output_schema);
@@ -196,7 +197,7 @@ where
     let buffer = MockDeZSet::<T, T>::new();
 
     // Input parsers don't care about schema yet.
-    let schema = Relation::new("mock_schema", false, vec![]);
+    let schema = Relation::new("mock_schema", false, vec![], false);
 
     let mut parser = format
         .new_parser(

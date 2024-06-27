@@ -494,7 +494,7 @@ mod test {
         let mut encoder = JsonEncoder::new(
             Box::new(consumer),
             config,
-            &Relation::new("TestStruct", false, TestStruct::schema()),
+            &Relation::new("TestStruct", false, TestStruct::schema(), false),
         );
         let zsets = batches
             .iter()
@@ -671,7 +671,7 @@ mod test {
         let mut encoder = JsonEncoder::new(
             Box::new(consumer),
             config,
-            &Relation::new("TestStruct", false, TestStruct::schema()),
+            &Relation::new("TestStruct", false, TestStruct::schema(), false),
         );
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 

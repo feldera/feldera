@@ -138,7 +138,7 @@ create view k8scluster_vulnerability (
 -- Per-cluster statistics:
 -- * Number of vulnerabilities.
 -- * Most severe vulnerability.
-create view k8scluster_vulnerability_stats (
+create materialized view k8scluster_vulnerability_stats (
     k8scluster_id,
     k8scluster_name,
     total_vulnerabilities,

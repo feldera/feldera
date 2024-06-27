@@ -14,7 +14,7 @@ from feldera.rest.program import Program
 from feldera.rest.pipeline import Pipeline
 from feldera.rest.connector import Connector
 from feldera._sql_table import SQLTable
-from feldera._sql_view import SQLView
+from feldera._sql_view import SQLView, ViewKind
 from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
@@ -301,9 +301,9 @@ class SQLContext:
         :param query: The query to be used to create the view.
         """
 
-        self.views[name] = SQLView(name, True, query)
+        self.views[name] = SQLView(name, ViewKind.LOCAL, query)
 
-    def register_output_view(self, name: str, query: str):
+    def register_view(self, name: str, query: str):
         """
         Register a Feldera View based on the provided query.
         Auto inserts the trailing semicolon if not present.
@@ -312,7 +312,18 @@ class SQLContext:
         :param query: The query to be used to create the view.
         """
 
-        self.views[name] = SQLView(name, False, query)
+        self.views[name] = SQLView(name, ViewKind.DEFAULT, query)
+
+    def register_materialized_view(self, name: str, query: str):
+        """
+        Register a Feldera materialized View based on the provided query.
+        Auto inserts the trailing semicolon if not present.
+
+        :param name: The name of the view.
+        :param query: The query to be used to create the view.
+        """
+
+        self.views[name] = SQLView(name, ViewKind.MATERIALIZED, query)
 
     def register_type(self, name: str, spec: str):
         """

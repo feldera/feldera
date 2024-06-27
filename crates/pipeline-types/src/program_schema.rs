@@ -50,14 +50,17 @@ pub struct Relation {
     pub case_sensitive: bool,
     #[cfg_attr(feature = "testing", proptest(value = "Vec::new()"))]
     pub fields: Vec<Field>,
+    #[serde(default)]
+    pub materialized: bool,
 }
 
 impl Relation {
-    pub fn new(name: &str, case_sensitive: bool, fields: Vec<Field>) -> Self {
+    pub fn new(name: &str, case_sensitive: bool, fields: Vec<Field>, materialized: bool) -> Self {
         Self {
             name: name.to_string(),
             case_sensitive,
             fields,
+            materialized,
         }
     }
 
