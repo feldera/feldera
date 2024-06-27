@@ -497,13 +497,6 @@ impl TestConfig {
         println!("Waiting for compilation");
         let mut last_wait_println = Instant::now();
         loop {
-            if last_wait_println.elapsed().as_secs() >= 60 {
-                println!(
-                    "Waiting for compilation since {} seconds",
-                    start.elapsed().as_secs()
-                );
-                last_wait_println = Instant::now();
-            }
             std::thread::sleep(time::Duration::from_secs(1));
             if start.elapsed().as_secs() > 480 {
                 panic!("Compilation timeout");
@@ -523,6 +516,14 @@ impl TestConfig {
                     let status = status.to_string().replace("\\n", "\n");
                     panic!("Compilation failed with status {}", status);
                 }
+            }
+            if last_wait_println.elapsed().as_secs() >= 60 {
+                println!(
+                    "Waiting for compilation since {} seconds, status: {}",
+                    start.elapsed().as_secs(),
+                    status
+                );
+                last_wait_println = Instant::now();
             }
         }
     }
@@ -1835,11 +1836,12 @@ async fn pipeline_start_without_compiling() {
         let val: Value = resp.json().await.unwrap();
 
         let status = val["status"].clone();
+        println!("Program status is: {status:?}");
+
         if status == json!("None") || status == json!("Pending") || status == json!("CompilingSql")
         {
             continue;
         }
-        println!("Program status is: {status:?}");
         break;
     }
     // Start the program
