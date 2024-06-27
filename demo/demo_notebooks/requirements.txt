@@ -3,7 +3,7 @@ nbclient==0.7.2
 gdown==4.6.0
 geopy==2.3.0
 pandas==1.5.3
-scikit_learn==1.2.1
+scikit_learn==1.5.0
 numpy<2
 xgboost==1.7.3
 # Used by the snowflake demo
