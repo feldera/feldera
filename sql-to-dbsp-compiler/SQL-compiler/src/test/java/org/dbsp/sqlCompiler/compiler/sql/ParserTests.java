@@ -57,6 +57,7 @@ public class ParserTests {
                 ")";
         String ddl1 = "CREATE VIEW V AS SELECT * FROM T";
         String ddl2 = "CREATE LOCAL VIEW V2 AS SELECT * FROM T";
+        String ddl3 = "CREATE MATERIALIZED VIEW V3 AS SELECT * FROM T";
 
         SqlNode node = calcite.parse(ddl);
         Assert.assertNotNull(node);
@@ -73,7 +74,12 @@ public class ParserTests {
         node = calcite.parse(ddl2);
         Assert.assertNotNull(node);
         Assert.assertTrue(node instanceof SqlCreateLocalView);
-        Assert.assertTrue(((SqlCreateLocalView) node).isLocal);
+        Assert.assertSame(SqlCreateLocalView.ViewKind.LOCAL, ((SqlCreateLocalView) node).kind);
+
+        node = calcite.parse(ddl3);
+        Assert.assertNotNull(node);
+        Assert.assertTrue(node instanceof SqlCreateLocalView);
+        Assert.assertSame(SqlCreateLocalView.ViewKind.MATERIALIZED, ((SqlCreateLocalView) node).kind);
     }
 
     @Test

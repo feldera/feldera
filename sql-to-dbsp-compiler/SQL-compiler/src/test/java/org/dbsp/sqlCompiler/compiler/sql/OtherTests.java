@@ -174,7 +174,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         JsonNode inputs = meta.get("inputs");
         Assert.assertNotNull(inputs);
         Assert.assertTrue(inputs.isArray());
-        JsonNode c = inputs.get(0).get("connector");
+        JsonNode c = inputs.get(0).get("properties");
         Assert.assertNotNull(c);
         String str = c.toPrettyString();
         Assert.assertEquals("""
@@ -186,7 +186,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         JsonNode outputs = meta.get("outputs");
         Assert.assertNotNull(inputs);
         Assert.assertTrue(outputs.isArray());
-        c = outputs.get(0).get("connector");
+        c = outputs.get(0).get("properties");
         Assert.assertNotNull(c);
         str = c.toPrettyString();
         Assert.assertEquals("""
@@ -846,7 +846,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         }
                       }
                     } ],
-                    "primary_key" : [ "COL3" ]
+                    "primary_key" : [ "COL3" ],
+                    "materialized" : false
                   } ],
                   "outputs" : [ {
                     "name" : "V",
@@ -858,7 +859,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         "nullable" : false,
                         "type" : "INTEGER"
                       }
-                    } ]
+                    } ],
+                    "materialized" : false
                   }, {
                     "name" : "V1",
                     "case_sensitive" : false,
@@ -869,7 +871,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         "nullable" : false,
                         "type" : "INTEGER"
                       }
-                    } ]
+                    } ],
+                    "materialized" : false
                   } ]
                 }""", jsonContents);
     }

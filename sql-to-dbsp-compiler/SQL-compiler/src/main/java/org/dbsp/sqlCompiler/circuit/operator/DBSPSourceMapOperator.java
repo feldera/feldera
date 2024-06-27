@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
+import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -24,19 +24,20 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
      * Create a DBSP operator that is a source to the dataflow graph.
      * The table has a primary key, so the data forms a set.
      * The data is represented as an indexed zset, hence the name "MapOperator".
-     * @param node        Calcite node for the statement creating the table
-     *                    that this node is created from.
-     * @param sourceName  Calcite node for the identifier naming the table.
-     * @param outputType  Type of output produced.
-     * @param keyFields   Fields of the input row which compose the key.
-     * @param comment     A comment describing the operator.
-     * @param name        The name of the table that this operator is created from.
+     *
+     * @param node       Calcite node for the statement creating the table
+     *                   that this node is created from.
+     * @param sourceName Calcite node for the identifier naming the table.
+     * @param keyFields  Fields of the input row which compose the key.
+     * @param outputType Type of output produced.
+     * @param name       The name of the table that this operator is created from.
+     * @param comment    A comment describing the operator.
      */
     public DBSPSourceMapOperator(
             CalciteObject node, CalciteObject sourceName, List<Integer> keyFields,
-            DBSPTypeIndexedZSet outputType, DBSPTypeStruct originalRowType, @Nullable String comment,
-            InputTableMetadata metadata, String name) {
-        super(node, sourceName, outputType, originalRowType, false, comment, metadata, name);
+            DBSPTypeIndexedZSet outputType, DBSPTypeStruct originalRowType,
+            TableMetadata metadata, String name, @Nullable String comment) {
+        super(node, sourceName, outputType, originalRowType, false, metadata, name, comment);
         this.keyFields = keyFields;
     }
 
@@ -53,7 +54,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return new DBSPSourceMapOperator(this.getNode(), this.sourceName,
                 this.keyFields, outputType.to(DBSPTypeIndexedZSet.class), this.originalRowType,
-                this.comment, this.metadata, this.tableName);
+                this.metadata, this.tableName, this.comment);
     }
 
     @Override
@@ -61,7 +62,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSourceMapOperator(this.getNode(), this.sourceName,
                     this.keyFields, this.getOutputIndexedZSetType(), this.originalRowType,
-                    this.comment, this.metadata, this.tableName);
+                    this.metadata, this.tableName, this.comment);
         return this;
     }
 

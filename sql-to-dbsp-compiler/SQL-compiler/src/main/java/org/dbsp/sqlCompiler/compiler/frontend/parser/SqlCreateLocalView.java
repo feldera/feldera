@@ -20,8 +20,17 @@ import java.util.Objects;
 // but the constructor isn't public.
 // We just need an extra 'local' field.
 public class SqlCreateLocalView extends SqlCreate {
+    public enum ViewKind {
+        /** For materialized views the DBSP program will keep the full contents */
+        MATERIALIZED,
+        /** Local views are not program outputs */
+        LOCAL,
+        /** Standard views only produce deltas */
+        STANDARD,
+    }
+
     public final SqlIdentifier name;
-    public final boolean isLocal;
+    public final ViewKind kind;
     public final @Nullable SqlNodeList columnList;
     public final SqlNode query;
     @Nullable public final SqlNodeList connectorProperties;
@@ -29,14 +38,14 @@ public class SqlCreateLocalView extends SqlCreate {
     private static final SqlOperator OPERATOR =
             new SqlSpecialOperator("CREATE VIEW", SqlKind.CREATE_VIEW);
 
-    public SqlCreateLocalView(SqlParserPos pos, boolean replace, boolean local, SqlIdentifier name,
+    public SqlCreateLocalView(SqlParserPos pos, boolean replace, ViewKind kind, SqlIdentifier name,
                               @Nullable SqlNodeList columnList, @Nullable SqlNodeList connectorProperties,
                               SqlNode query) {
         super(OPERATOR, pos, replace, false);
         this.name = Objects.requireNonNull(name, "name");
         this.columnList = columnList; // may be null
         this.query = Objects.requireNonNull(query, "query");
-        this.isLocal = local;
+        this.kind = kind;
         this.connectorProperties = connectorProperties;
     }
 
@@ -51,8 +60,15 @@ public class SqlCreateLocalView extends SqlCreate {
         } else {
             writer.keyword("CREATE");
         }
-        if (this.isLocal) {
-            writer.keyword("LOCAL");
+        switch (this.kind) {
+            case LOCAL:
+                writer.keyword("LOCAL");
+                break;
+            case MATERIALIZED:
+                writer.keyword("MATERIALIZED");
+                break;
+            default:
+                break;
         }
         writer.keyword("VIEW");
         name.unparse(writer, leftPrec, rightPrec);

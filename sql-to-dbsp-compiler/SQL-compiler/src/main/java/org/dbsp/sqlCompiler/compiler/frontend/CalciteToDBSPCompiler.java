@@ -97,15 +97,17 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
+import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
@@ -749,12 +751,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPType rowType = originalRowType.toTuple();
                 HasSchema withSchema = new HasSchema(CalciteObject.EMPTY, tableName, false, tableRowType);
                 this.metadata.addTable(withSchema);
-                InputTableMetadata tableMeta = new InputTableMetadata(
-                        Linq.map(withSchema.getColumns(), this::convertMetadata));
+                TableMetadata tableMeta = new TableMetadata(
+                        Linq.map(withSchema.getColumns(), this::convertMetadata), false);
                 source = new DBSPSourceMultisetOperator(
                         node, CalciteObject.EMPTY,
                         this.makeZSet(rowType), originalRowType,
-                        null, tableMeta, tableName);
+                        tableMeta, tableName, null);
                 this.circuit.addOperator(source);
                 Utilities.putNew(this.nodeOperator, scan, source);
             }
@@ -2120,23 +2122,24 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
 
-        if (this.generateOutputForNextView && !view.local) {
+        ViewMetadata meta = new ViewMetadata(additionalMetadata, view.kind);
+        if (this.generateOutputForNextView && view.kind != SqlCreateLocalView.ViewKind.LOCAL) {
             this.metadata.addView(view);
             // Create two operators chained, a ViewOperator and a SinkOperator.
             DBSPViewOperator vo = new DBSPViewOperator(
                     view.getCalciteObject(), view.relationName, view.statement,
-                    struct, additionalMetadata, op);
+                    struct, meta, op);
             this.circuit.addOperator(vo);
             o = new DBSPSinkOperator(
                     view.getCalciteObject(), view.relationName,
-                    view.statement, struct, additionalMetadata, vo);
+                    view.statement, struct, meta, vo);
+            this.circuit.addOperator(o);
         } else {
             // We may already have a node for this output
             DBSPOperator previous = this.circuit.getView(view.relationName);
             if (previous != null)
                 return previous;
-            o = new DBSPViewOperator(view.getCalciteObject(), view.relationName, view.statement,
-                    struct, additionalMetadata, op);
+            o = new DBSPViewOperator(view.getCalciteObject(), view.relationName, view.statement, struct, meta, op);
         }
         this.circuit.addOperator(o);
         return o;
@@ -2232,10 +2235,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
             identifier = CalciteObject.create(sct.name);
         }
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
-        InputTableMetadata tableMeta = new InputTableMetadata(metadata);
+        boolean materialized = create.isMaterialized();
+        TableMetadata tableMeta = new TableMetadata(metadata, materialized);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
-                def.statement, tableMeta, tableName);
+                tableMeta, tableName, def.statement);
         this.circuit.addOperator(result);
         this.metadata.addTable(create);
         return null;
