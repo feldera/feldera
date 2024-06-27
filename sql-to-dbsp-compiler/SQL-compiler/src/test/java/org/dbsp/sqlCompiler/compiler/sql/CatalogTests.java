@@ -62,6 +62,15 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue1941() {
+        String sql = """
+                CREATE TABLE Data (
+                    map MAP<INT, INT>
+                );""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void testSanitizeNames() {
         String statements = """
                 create table t1(
