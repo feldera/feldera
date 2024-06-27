@@ -516,7 +516,7 @@ public class CalciteCompiler implements IWritesLogs {
             if (result.containsKey(keyString)) {
                 SqlNode prev = Utilities.getExists(previous, keyString);
                 this.errorReporter.reportError(new SourcePositionRange(key.getParserPosition()),
-                        "Duplicate key", "connector property " + Utilities.singleQuote(keyString) +
+                        "Duplicate key", "property " + Utilities.singleQuote(keyString) +
                                 " already declared");
                 this.errorReporter.reportError(new SourcePositionRange(prev.getParserPosition()),
                         "Duplicate key", "Previous declaration");

@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 
@@ -35,7 +37,22 @@ public class CreateTableStatement extends CreateRelationStatement {
     public CreateTableStatement(SqlNode node, String statement,
                                 String tableName, boolean nameIsQuoted,
                                 List<RelColumnMetadata> columns,
-                                @Nullable Map<String, String> connectorProperties) {
-        super(node, statement, tableName, nameIsQuoted, columns, connectorProperties);
+                                @Nullable Map<String, String> properties) {
+        super(node, statement, tableName, nameIsQuoted, columns, properties);
+    }
+
+    public boolean isMaterialized() {
+        String mat = this.getPropertyValue("materialized");
+        if (mat == null)
+            return false;
+        return mat.equalsIgnoreCase("true");
+    }
+
+    @Override
+    public JsonNode asJson() {
+        JsonNode node = super.asJson();
+        ObjectNode object = (ObjectNode) node;
+        object.put("materialized", this.isMaterialized());
+        return object;
     }
 }

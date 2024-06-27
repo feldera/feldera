@@ -55,7 +55,7 @@ public class AvroSchemaWrapper implements IHasSchema {
 
     @Nullable
     @Override
-    public Map<String, String> getConnectorProperties() {
+    public Map<String, String> getProperties() {
         return null;
     }
 

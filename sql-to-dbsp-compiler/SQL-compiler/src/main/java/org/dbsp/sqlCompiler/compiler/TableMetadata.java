@@ -7,11 +7,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 /** Metadata describing an input table. */
-public class InputTableMetadata {
+public class TableMetadata {
     final LinkedHashMap<String, InputColumnMetadata> columnMetadata;
+    public final boolean materialized;
 
-    public InputTableMetadata(List<InputColumnMetadata> columns) {
+    public TableMetadata(List<InputColumnMetadata> columns, boolean materialized) {
         this.columnMetadata = new LinkedHashMap<>();
+        this.materialized = materialized;
         for (InputColumnMetadata meta: columns) {
             Utilities.putNew(this.columnMetadata, meta.name, meta);
         }

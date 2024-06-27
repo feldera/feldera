@@ -28,6 +28,7 @@ data: {
       "DISCARD"
       "IF"
       "LATENESS"
+      "MATERIALIZED"
       "WATERMARK"
       "PLANS"
       "REMOVE"

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- [SQL] Added `MATERIALIZED` views
+  ([#1959](https://github.com/feldera/feldera/pull/1959))
+
 ## [0.19.0] - 2024-06-25
 
 - [SQL] Preliminary support for MAP-typed values

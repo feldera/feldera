@@ -8,7 +8,7 @@ form.
 - Uppercase words (`FUNCTION`) and single-quoted text (`')'`) indicate
   grammar terminals.
 - Parentheses `()` are used for grouping productions together.
-- The vertical bar `|` indicates alternation.
+- The vertical bar `|` indicates choice between two constructs.
 
 ```
 statementList:
@@ -21,38 +21,33 @@ statement
   |   createTypeStatement
   |   latenessStatement
 
+columnDecl
+  :   column generalType
+```
+
+## Creating user-defined types
+
+```
 generalType
   :   type [NOT NULL]
-
-createFunctionStatement
-  :   CREATE FUNCTION name '(' [ columnDecl [, columnDecl ]* ] ')' RETURNS generalType
-
-latenessStatement
-  :   LATENESS view '.' column expression
-
-createTableStatement
-  :   CREATE TABLE name
-      '(' tableElement [, tableElement ]* ')'
-      [ 'WITH' keyValueList ]
 
 createTypeStatement
   :   CREATE TYPE name AS '(' typedef ')'
 
-keyValueList
-  : '(' keyValue ( ',' keyValue )* ')'
-
-keyValue
-  : stringLiteral '=' stringLiteral
-
 typedef
   : generalType
   | name generalType [, name type ]*
+```
 
-createViewStatement
-  :   CREATE [ LOCAL ] VIEW name
-      [ '(' columnName [, columnName ]* ')' ]
+See [user-defined structures](types.md#user-defined-structures)
+
+## Creating tables
+
+```
+createTableStatement
+  :   CREATE TABLE name
+      '(' tableElement [, tableElement ]* ')'
       [ 'WITH' keyValueList ]
-      AS query
 
 tableElement
   :   columnName generalType ( columnConstraint )*
@@ -66,9 +61,6 @@ columnConstraint
   |   WATERMARK expression
   |   DEFAULT expression
 
-parensColumnList
-  :   '(' columnName [, columnName ]* ')'
-
 tableConstraint
   :   [ CONSTRAINT name ]
       {
@@ -76,6 +68,95 @@ tableConstraint
       |   PRIMARY KEY parensColumnList
       }
   |   FOREIGN KEY parensColumnList REFERENCES identifier parensColumnList
+
+parensColumnList
+  :   '(' columnName [, columnName ]* ')'
+
+keyValueList
+  : '(' keyValue ( ',' keyValue )* ')'
+
+keyValue
+  : stringLiteral '=' stringLiteral
+```
+
+Note: `FOREIGN KEY` information is parsed, but it is not validated,
+and is currently ignored.
+
+`CREATE TABLE` is used to declare tables.  Tables correspond to input
+data sources.  A table declaration must list the table columns and
+their types.  Here is an example:
+
+```sql
+CREATE TABLE empsalary (
+    depname varchar,
+    empno bigint,
+    salary int,
+    enroll_date date
+);
+```
+
+A table declaration can have an optional `WITH` clause which is used
+to specify properties of the connector that provides the source data.
+The properties are specified as key-value pairs, each written as a
+string.  Here is an example:
+
+```sql
+CREATE TABLE empsalary (
+    depname varchar,
+    empno bigint,
+    salary int,
+    enroll_date date
+) WITH (
+    'source' = 'kafka',
+    'url' = 'localhost:8080',
+    'materialized' = 'false'
+);
+```
+
+Unlike a database, Feldera does normally not maintain the contents of
+tables; it will only store as much data as necessary to compute future
+outputs.  By specifying the property `'materialized' = 'true'` a user
+instructs Feldera to also maintain the complete contents of a table.
+The contents of the table can be queried using the `http`-based API
+described elsewhere.
+
+### LATENESS
+
+```
+latenessStatement
+  :   LATENESS view '.' column expression
+```
+
+See [Streaming SQL Extensions](streaming.md#lateness-expressions)
+
+### WATERMARKS
+
+See [Streaming SQL Extensions](streaming.md#watermark-expressions)
+
+## Creating user-defined functions.
+
+`CREATE FUNCTION` is used to declare [user-defined functions](udf.md).
+
+```
+createFunctionStatement
+  :   CREATE FUNCTION name '(' [ columnDecl [, columnDecl ]* ] ')' RETURNS generalType
+      [ AS expression ]
+```
+
+## Creating views
+
+`CREATE VIEW` is used to declare a view.  The optional `LOCAL`
+keyword can be used to indicate that the declared view is not exposed
+to the outside world as an output of the computation.  This is useful
+for modularizing the SQL code, by declaring intermediate views that
+are used in the implementation of other views.
+
+```
+createViewStatement
+  :   CREATE [ LOCAL | MATERIALIZED ] VIEW name
+      [ '(' columnName [, columnName ]* ')' ]
+      [ 'WITH' keyValueList ]
+      AS query
 
 query
   :   values
@@ -92,6 +173,11 @@ query
       [ LIMIT { count | ALL } ]
 
 
+withItem
+  :   name
+      [ '(' column [, column ]* ')' ]
+      AS '(' query ')'
+
 values
   :   { VALUES | VALUE } expression [, expression ]*
 
@@ -104,8 +190,7 @@ select
       [ HAVING booleanExpression ]
 
 tablePrimary
-  :   [ [ catalogName . ] schemaName . ] tableName
-      '(' TABLE [ [ catalogName . ] schemaName . ] tableName ')'
+  :   tableName '(' TABLE tableName ')'
   |   tablePrimary '(' columnDecl [, columnDecl ]* ')'
   |   UNNEST '(' expression ')' [ WITH ORDINALITY ]
   |   TABLE '(' functionName '(' expression [, expression ]* ')' ')'
@@ -117,17 +202,9 @@ groupItem:
   |   CUBE '(' expression [, expression ]* ')'
   |   ROLLUP '(' expression [, expression ]* ')'
 
-columnDecl
-  :   column generalType
-
 selectWithoutFrom
   :   SELECT [ ALL | DISTINCT ]
           { * | projectItem [, projectItem ]* }
-
-withItem
-  :   name
-      [ '(' column [, column ]* ')' ]
-      AS '(' query ')'
 
 orderItem
   :   expression [ ASC | DESC ] [ NULLS FIRST | NULLS LAST ]
@@ -175,20 +252,14 @@ exprOrList
   |   '(' expr [, expr ]* ')'
 ```
 
-Note: `FOREIGN KEY` information is parsed, but it is not validated,
-and is currently ignored.
-
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.
 
-SQL `CREATE FUNCTION` can be used to declare [user-defined
-functions](udf.md).
+If a view is marked as `MATERIALIZED`, the implementation will
+maintain a full copy of the view's output in addition to producing the
+expected changes.
 
-SQL `CREATE VIEW` is used to declare a view.  The optional `LOCAL`
-keyword can be used to indicate that the declared view is not exposed
-to the outside world as an output of the computation.  This is useful
-for modularizing the SQL code, by declaring intermediate views that
-are used in the implementation of other views.
+### Aggregate queries
 
 An aggregate query is a query that contains a `GROUP BY` or a `HAVING`
 clause, or aggregate functions in the `SELECT` clause. In the
@@ -200,6 +271,8 @@ functions. Aggregate and grouping functions may only appear in an
 aggregate query, and only in a `SELECT`, `HAVING` or `ORDER BY`
 clause.  Aggregate functions are described in [this
 section](aggregates.md#standard-aggregate-operations).
+
+## Sub-queries
 
 A scalar sub-query is a sub-query used as an expression. If the
 sub-query returns no rows, the value is `NULL`; if it returns more
@@ -267,7 +340,7 @@ group by cube(deptno, job);
 +--------+-----------+----+---+---+---+
 ```
 
-### Window aggregates
+## Window aggregates
 
 One type of expression that can appear in a `SELECT` statement is a
 window aggregate.  The grammar for window aggregates is:
@@ -301,15 +374,7 @@ on aggregation](aggregates.md#window-aggregate-functions).
 Currently we require window ranges to have constant values.  This
 precludes ranges such as `INTERVAL 1 YEAR`, which have variable sizes.
 
-### LATENESS
-
-See [Streaming SQL Extensions](streaming.md#lateness-expressions)
-
-### WATERMARKS
-
-See [Streaming SQL Extensions](streaming.md#watermark-expressions)
-
-### Table functions
+## Table functions
 
 Table functions are invoked using the syntax `TABLE(function(arguments))`.
 

@@ -299,16 +299,17 @@ SqlCreate SqlCreateView(Span s, boolean replace) :
     final SqlIdentifier id;
     SqlNodeList columnList = null;
     final SqlNode query;
-    boolean local = false;
+    SqlCreateLocalView.ViewKind kind = SqlCreateLocalView.ViewKind.STANDARD;
     SqlNodeList connector = null;
 }
 {
-    [ <LOCAL> { local = true; } ]
+    [ <LOCAL> { kind = SqlCreateLocalView.ViewKind.LOCAL; }
+    | <MATERIALIZED> { kind = SqlCreateLocalView.ViewKind.MATERIALIZED; } ]
     <VIEW> id = CompoundIdentifier()
     [ columnList = ParenthesizedSimpleIdentifierList() ]
     [ <WITH> connector = KeyValueList() ]
     <AS> query = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY) {
-        return new SqlCreateLocalView(s.end(this), replace, local, id, columnList, connector, query);
+        return new SqlCreateLocalView(s.end(this), replace, kind, id, columnList, connector, query);
     }
 }
 

@@ -47,7 +47,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
-import org.dbsp.sqlCompiler.compiler.InputTableMetadata;
+import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -228,7 +228,7 @@ public class ToRustVisitor extends CircuitVisitor {
      * @param metadata  Metadata for the input columns (null for an output view).
      */
     protected void generateRenameMacro(DBSPTypeStruct type,
-                                       @Nullable InputTableMetadata metadata) {
+                                       @Nullable TableMetadata metadata) {
         this.builder.append("deserialize_table_record!(");
         this.builder.append(type.sanitizedName)
                 .append("[")
@@ -468,7 +468,7 @@ public class ToRustVisitor extends CircuitVisitor {
         item.accept(this.innerVisitor);
     }
 
-    void generateStructHelpers(DBSPTypeStruct type, @Nullable InputTableMetadata metadata) {
+    void generateStructHelpers(DBSPTypeStruct type, @Nullable TableMetadata metadata) {
         List<DBSPTypeStruct> nested = new ArrayList<>();
         findNestedStructs(type, nested);
         for (DBSPTypeStruct s: nested) {
@@ -499,7 +499,11 @@ public class ToRustVisitor extends CircuitVisitor {
         zsetType.elementType.accept(this.innerVisitor);
         this.builder.append(">();").newline();
         if (!this.useHandles) {
-            this.builder.append("catalog.register_input_zset::<_, ");
+            String registerFunction = operator.metadata.materialized ?
+                    "register_materialized_input_zset" : "register_input_zset";
+            this.builder.append("catalog.")
+                    .append(registerFunction)
+                    .append("::<_, ");
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
             DBSPStrLiteral json = new DBSPStrLiteral(tableDescription.asJson().toString(), false, true);
             operator.originalRowType.accept(this.innerVisitor);
@@ -581,7 +585,11 @@ public class ToRustVisitor extends CircuitVisitor {
         if (!this.useHandles) {
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
             DBSPStrLiteral json = new DBSPStrLiteral(tableDescription.asJson().toString(), false, true);
-            this.builder.append("catalog.register_input_map::<");
+            String registerFunction = operator.metadata.materialized ?
+                    "register_materialized_input_map" : "register_input_map";
+            this.builder.append("catalog.")
+                    .append(registerFunction)
+                    .append("::<");
             keyStructType.toTuple().accept(this.innerVisitor);
             this.builder.append(", ");
             keyStructType.accept(this.innerVisitor);
@@ -723,7 +731,14 @@ public class ToRustVisitor extends CircuitVisitor {
         if (!this.useHandles) {
             IHasSchema description = this.metadata.getViewDescription(operator.viewName);
             DBSPStrLiteral json = new DBSPStrLiteral(description.asJson().toString(), false, true);
-            this.builder.append("catalog.register_output_zset::<_, ");
+            String registerFunction = switch (operator.metadata.viewKind) {
+                case MATERIALIZED -> "register_materialized_output_zset";
+                case LOCAL -> throw new InternalCompilerError("Sink operator for local view " + operator);
+                case STANDARD -> "register_output_zset";
+            };
+            this.builder.append("catalog.")
+                    .append(registerFunction)
+                    .append("::<_, ");
             operator.originalRowType.accept(this.innerVisitor);
             this.builder.append(">(")
                     .append(operator.input().getOutputName())
