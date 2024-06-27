@@ -49,9 +49,11 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: earthly/actions/setup-earthly@v1
+      - name: Install earthly
+        uses: earthly/actions-setup@v1
         with:
-          version: v0.8.6
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version: 0.8.14
       - uses: actions/checkout@v3
         # By default a merge commit is checked out. If you look at the SHA that
         # is checked out, it doesn't match your local commit SHA. Rather it's
