@@ -288,6 +288,7 @@ def main():
                         help="Kafka options passed as -O option=value, e.g., -O bootstrap.servers=localhost:9092")
     parser.add_argument("--cores", type=int, help="Number of cores to use for workers (default: 16)")
     parser.add_argument('--lateness', action=argparse.BooleanOptionalAction, help='whether to use lateness for GC to save memory (default: --lateness)')
+    parser.add_argument('--output', action=argparse.BooleanOptionalAction, help='whether to write query output back to Kafka (default: --no-output)')
     parser.add_argument('--merge', action=argparse.BooleanOptionalAction, help='whether to merge all the queries into one program (default: --no-merge)')
     parser.add_argument('--storage', action=argparse.BooleanOptionalAction, help='whether to enable storage (default: --no-storage)')
     parser.add_argument('--min-storage-rows', type=int, help='If storage is enabled, the minimum number of rows to write a batch to storage.')
@@ -296,7 +297,7 @@ def main():
     parser.add_argument('--csv', help='File to write results in .csv format')
     parser.add_argument('--csv-metrics', help='File to write pipeline metrics (memory, disk) in .csv format')
     parser.add_argument('--metrics-interval', help='How often metrics should be sampled, in seconds (default: 1)')
-    parser.set_defaults(lateness=True, merge=False, storage=False, cores=16, metrics_interval=1)
+    parser.set_defaults(lateness=True, output=False, merge=False, storage=False, cores=16, metrics_interval=1)
     
     global api_url, kafka_options, headers
     api_url = parser.parse_args().api_url
@@ -307,6 +308,7 @@ def main():
         option, value = option_value.split("=")
         kafka_options[option] = value
     with_lateness = parser.parse_args().lateness
+    save_output = parser.parse_args().output
     merge = parser.parse_args().merge
     queries = sort_queries(parse_queries(parser.parse_args().query))
     cores = int(parser.parse_args().cores)
@@ -355,14 +357,19 @@ def main():
             time.sleep(5)
 
     input_connectors = [add_input_connector(s + suffix, s) for s in ("auction", "bid", "person")]
-    output_connectors = {}
-    for name in output_connector_names:
-        output_connectors[name] = add_output_connector(name, name)
+    if save_output:
+        output_connectors = {}
+        for name in output_connector_names:
+            output_connectors[name] = add_output_connector(name, name)
 
     # Create pipelines
     print("Creating pipeline(s)...")
     for program_name in queries:
         pipeline_name = program_name
+        if save_output:
+            connectors = input_connectors + [output_connectors[s] for s in program_name.split(',')]
+        else:
+            connectors = input_connectors
         requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", headers=headers, json={
             "description": "",
             "config": {
@@ -379,7 +386,7 @@ def main():
                 }
             },
             "program_name": program_name,
-            "connectors": input_connectors + [output_connectors[s] for s in program_name.split(',')],
+            "connectors": connectors
         }).raise_for_status()
 
     # Stop pipelines
