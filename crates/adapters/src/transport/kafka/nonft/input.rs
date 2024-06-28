@@ -18,6 +18,10 @@ use rdkafka::{
     error::{KafkaError, KafkaResult},
     ClientConfig, ClientContext, Message,
 };
+use std::num::NonZeroUsize;
+use std::sync::atomic::AtomicBool;
+use std::sync::mpsc::{channel, Sender};
+use std::thread::{available_parallelism, JoinHandle};
 use std::{
     collections::HashSet,
     sync::{
@@ -115,6 +119,40 @@ struct KafkaInputReaderInner {
 }
 
 impl KafkaInputReaderInner {
+    /// Tries to read a message from this Kafka consumer. If successful, passes
+    /// it to `consumer`. If there's a problem or an EOF, sends it to
+    /// `feedback`.
+    fn poll(
+        self: &Arc<Self>,
+        consumer: &mut Box<dyn InputConsumer>,
+        feedback: &Sender<HelperFeedback>,
+    ) {
+        match self.kafka_consumer.poll(POLL_TIMEOUT) {
+            None => (),
+            Some(Err(KafkaError::PartitionEOF(p))) => {
+                feedback.send(HelperFeedback::PartitionEOF(p)).unwrap()
+            }
+            Some(Err(e)) => {
+                // println!("poll returned error");
+                let (fatal, e) = self.refine_error(e);
+                consumer.error(fatal, e);
+                if fatal {
+                    feedback.send(HelperFeedback::FatalError).unwrap();
+                }
+            }
+            Some(Ok(message)) => {
+                // println!("received {} bytes", message.payload().unwrap().len());
+                // message.payload().map(|payload| consumer.input(payload));
+
+                if let Some(payload) = message.payload() {
+                    // Leave it to the controller to handle errors.  There is noone we can
+                    // forward the error to upstream.
+                    let _ = consumer.input_chunk(payload);
+                }
+            }
+        }
+    }
+
     fn push_error(&self, error: KafkaError, reason: &str) {
         // `force_push` makes the queue operate as a circular buffer.
         self.errors.force_push((error, reason.to_string()));
@@ -271,15 +309,28 @@ impl KafkaInputReader {
         }
 
         let endpoint_clone = inner.clone();
-        spawn(move || KafkaInputReader::worker_thread(endpoint_clone, consumer));
+        spawn(move || KafkaInputReader::poller_thread(endpoint_clone, consumer));
         Ok(KafkaInputReader(inner))
     }
 
-    fn worker_thread(endpoint: Arc<KafkaInputReaderInner>, mut consumer: Box<dyn InputConsumer>) {
+    /// The main poller thread for a Kafka input. Polls `endpoint` as long as
+    /// the pipeline is running, and passes the data to `consumer`.
+    fn poller_thread(endpoint: Arc<KafkaInputReaderInner>, mut consumer: Box<dyn InputConsumer>) {
+        // Figure out the number of threads based on configuration, defaults,
+        // and system resources.
+        let max_threads = available_parallelism().map_or(16, NonZeroUsize::get);
+        let n_threads = endpoint
+            .config
+            .poller_threads
+            .unwrap_or(3)
+            .clamp(1, max_threads);
+
         let mut actual_state = PipelineState::Paused;
         let mut partition_eofs = HashSet::new();
+        let (feedback_sender, feedback_receiver) = channel();
+        let should_exit = Arc::new(AtomicBool::new(false));
+        let mut threads = Vec::with_capacity(n_threads - 1);
         loop {
-            // endpoint.debug_consumer();
             match endpoint.state() {
                 PipelineState::Paused if actual_state != PipelineState::Paused => {
                     actual_state = PipelineState::Paused;
@@ -288,6 +339,7 @@ impl KafkaInputReader {
                         consumer.error(true, e);
                         return;
                     }
+                    threads.clear();
                 }
                 PipelineState::Running if actual_state != PipelineState::Running => {
                     actual_state = PipelineState::Running;
@@ -296,6 +348,18 @@ impl KafkaInputReader {
                         consumer.error(true, e);
                         return;
                     };
+
+                    // Create the rest of threads (start from 1 instead of 0
+                    // because we're one of the threads).
+                    should_exit.store(false, Ordering::Release);
+                    for _ in 1..n_threads {
+                        threads.push(HelperThread::new(
+                            Arc::clone(&endpoint),
+                            consumer.fork(),
+                            Arc::clone(&should_exit),
+                            feedback_sender.clone(),
+                        ));
+                    }
                 }
                 PipelineState::Terminated => return,
                 _ => {}
@@ -304,48 +368,28 @@ impl KafkaInputReader {
             // Keep polling even while the consumer is paused as `BaseConsumer`
             // processes control messages (including rebalancing and errors)
             // within the polling thread.
-            //
-            // `POLL_TIMEOUT` makes sure that the thread will periodically
-            // check for termination and pause commands.
-            match endpoint.kafka_consumer.poll(POLL_TIMEOUT) {
-                None => {
-                    // println!("poll returned None");
-                }
-                Some(Err(KafkaError::PartitionEOF(p))) => {
-                    partition_eofs.insert(p);
+            endpoint.poll(&mut consumer, &feedback_sender);
 
-                    // If all the partitions we're subscribed to have received
-                    // an EOF, then we're done.
-                    if endpoint
-                        .kafka_consumer
-                        .assignment()
-                        .unwrap_or_default()
-                        .elements()
-                        .iter()
-                        .map(|tpl| tpl.partition())
-                        .all(|p| partition_eofs.contains(&p))
-                    {
-                        consumer.eoi();
-                        return;
+            for feedback in feedback_receiver.try_iter() {
+                match feedback {
+                    HelperFeedback::PartitionEOF(p) => {
+                        // If all the partitions we're subscribed to have received
+                        // an EOF, then we're done.
+                        partition_eofs.insert(p);
+                        if endpoint
+                            .kafka_consumer
+                            .assignment()
+                            .unwrap_or_default()
+                            .elements()
+                            .iter()
+                            .map(|tpl| tpl.partition())
+                            .all(|p| partition_eofs.contains(&p))
+                        {
+                            consumer.eoi();
+                            return;
+                        }
                     }
-                }
-                Some(Err(e)) => {
-                    // println!("poll returned error");
-                    let (fatal, e) = endpoint.refine_error(e);
-                    consumer.error(fatal, e);
-                    if fatal {
-                        return;
-                    }
-                }
-                Some(Ok(message)) => {
-                    // println!("received {} bytes", message.payload().unwrap().len());
-                    // message.payload().map(|payload| consumer.input(payload));
-
-                    if let Some(payload) = message.payload() {
-                        // Leave it to the controller to handle errors.  There is noone we can
-                        // forward the error to upstream.
-                        let _ = consumer.input_chunk(payload);
-                    }
+                    HelperFeedback::FatalError => return,
                 }
             }
 
@@ -360,6 +404,58 @@ impl KafkaInputReader {
             }
         }
     }
+}
+
+/// A thread that will help the main poller thread by processing messages
+/// received from Kafka.
+struct HelperThread {
+    /// Used by the poller thread to tell us to exit.
+    should_exit: Arc<AtomicBool>,
+
+    /// Our own join handle so we can wait when dropped.
+    join_handle: Option<JoinHandle<()>>,
+}
+
+impl HelperThread {
+    fn new(
+        endpoint: Arc<KafkaInputReaderInner>,
+        mut consumer: Box<dyn InputConsumer>,
+        should_exit: Arc<AtomicBool>,
+        feedback_sender: Sender<HelperFeedback>,
+    ) -> Self {
+        Self {
+            should_exit: Arc::clone(&should_exit),
+            join_handle: {
+                Some(spawn(move || {
+                    while !should_exit.load(Ordering::Acquire) {
+                        endpoint.poll(&mut consumer, &feedback_sender);
+                    }
+                }))
+            },
+        }
+    }
+}
+impl Drop for HelperThread {
+    /// When we're dropped, make the thread exit.
+    ///
+    /// *Careful*: `should_exit` is shared with all the helper threads, so if
+    /// one gets dropped, the others will exit too. Currently this is OK because
+    /// we always drop all of them together. It is in fact desirable because if
+    /// they had separate `should_exit` flags then we'd have to block up to
+    /// `POLL_TIMEOUT` per thread whereas since it is shared we will only block
+    /// that long once.
+    fn drop(&mut self) {
+        self.should_exit.store(true, Ordering::Release);
+        let _ = self.join_handle.take().map(|handle| handle.join());
+    }
+}
+
+enum HelperFeedback {
+    /// Helper delivered a fatal error to the consumer.
+    FatalError,
+
+    /// Helper received [`KafkaError::PartitionEOF`] on partition `p`.
+    PartitionEOF(i32),
 }
 
 impl InputEndpoint for KafkaInputEndpoint {

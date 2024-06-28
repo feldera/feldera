@@ -826,6 +826,7 @@
                           "group_join_timeout_secs": 10,
                           "kafka_service": null,
                           "log_level": null,
+                          "poller_threads": null,
                           "topics": [
                             "test_input1"
                           ]
@@ -3932,6 +3933,12 @@
               }
             ],
             "nullable": true
+          },
+          "poller_threads": {
+            "type": "integer",
+            "description": "Set to 1 or more to fix the number of threads used to poll\n`rdkafka`. Multiple threads can increase performance with small Kafka\nmessages; for large messages, one thread is enough. In either case, too\nmany threads can harm performance. If unset, the default is 3, which\nhelps with small messages but will not harm performance with large\nmessagee",
+            "nullable": true,
+            "minimum": 0
           },
           "topics": {
             "type": "array",
