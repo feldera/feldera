@@ -1,3 +1,5 @@
+use std::{thread::sleep, time::Duration};
+
 use clap::Parser;
 use csv::WriterBuilder;
 use dbsp_nexmark::{config::GeneratorOptions, NexmarkSource};
@@ -5,7 +7,9 @@ use env_logger::Env;
 use indicatif::ProgressBar;
 use rdkafka::{
     config::FromClientConfig,
+    error::KafkaError,
     producer::{base_producer::ThreadedProducer, BaseRecord, DefaultProducerContext, Producer},
+    types::RDKafkaErrorCode,
     util::Timeout,
     ClientConfig,
 };
@@ -17,22 +21,22 @@ struct BufferedTopic<'a> {
     producer: &'a ThreadedProducer<DefaultProducerContext>,
     topic: String,
     buffer: Vec<u8>,
+    record_size: usize,
 }
-
-/// Maximum size of a record to send to the Kafka broker.  This shouldn't be
-/// increased beyond 1_000_000, which is the default maximum in a couple of
-/// places in the Kafka broker that has to be increased in multiple places (see
-/// https://stackoverflow.com/questions/21020347/how-can-i-send-large-messages-with-kafka-over-15mb).
-const MAX_LEN: usize = 512 * 1024;
 
 impl<'a> BufferedTopic<'a> {
     /// Creates a new `BufferedTopic` to output to `topic` via `producer`.  The
-    /// buffer is flushed whenever it reaches `MAX_LEN` bytes.
-    pub fn new(producer: &'a ThreadedProducer<DefaultProducerContext>, topic: String) -> Self {
+    /// buffer is flushed whenever it reaches `record_size` bytes.
+    pub fn new(
+        producer: &'a ThreadedProducer<DefaultProducerContext>,
+        topic: String,
+        record_size: usize,
+    ) -> Self {
         Self {
             producer,
             topic,
             buffer: Vec::new(),
+            record_size,
         }
     }
 
@@ -46,16 +50,29 @@ impl<'a> BufferedTopic<'a> {
             .from_writer(Vec::new());
         writer.serialize(record).unwrap();
         let s = writer.into_inner().unwrap();
-        if self.buffer.len() + s.len() > MAX_LEN {
+        if self.buffer.len() + s.len() > self.record_size && !self.buffer.is_empty() {
             self.flush();
         }
         self.buffer.extend_from_slice(&s[..]);
+        if self.buffer.len() >= self.record_size {
+            self.flush();
+        }
     }
 
     pub fn flush(&mut self) {
         if !self.buffer.is_empty() {
-            let record: BaseRecord<(), _> = BaseRecord::to(&self.topic).payload(&self.buffer);
-            self.producer.send(record).unwrap();
+            loop {
+                let record: BaseRecord<(), _> = BaseRecord::to(&self.topic).payload(&self.buffer);
+                match self.producer.send(record) {
+                    Ok(()) => break,
+                    Err((KafkaError::MessageProduction(RDKafkaErrorCode::QueueFull), _)) => {
+                        // The `ThreadedProducer` can't necessarily keep up if
+                        // we're using a small record size.  Give it a chance.
+                        sleep(Duration::from_millis(1))
+                    }
+                    Err((e, _)) => panic!("{e}"),
+                }
+            }
             self.buffer.clear();
         }
     }
@@ -114,6 +131,17 @@ struct Options {
     #[clap(long, default_value = "bid")]
     bid_topic: String,
 
+    /// Kafka broker message size.  Messages will ordinarily be `SIZE` bytes or
+    /// less, but if `SIZE` is less than the length of an individual record,
+    /// then each record will be sent in its own message.
+    ///
+    /// `SIZE` shouldn't be increased beyond 1_000_000, which is the default
+    /// maximum in a couple of places in the Kafka broker that has to be
+    /// increased in multiple places (see
+    /// https://stackoverflow.com/questions/21020347/how-can-i-send-large-messages-with-kafka-over-15mb).
+    #[clap(long, default_value_t = 512 * 1024, value_name = "SIZE")]
+    record_size: usize,
+
     /// Disable progress bar.
     #[clap(long = "no-progress", default_value_t = true, action = clap::ArgAction::SetFalse)]
     pub progress: bool,
@@ -145,9 +173,21 @@ fn main() {
         client_config.set(key, value);
     }
     let producer = ThreadedProducer::from_config(&client_config).unwrap();
-    let mut persons = BufferedTopic::new(&producer, options.topic(&options.person_topic));
-    let mut auctions = BufferedTopic::new(&producer, options.topic(&options.auction_topic));
-    let mut bids = BufferedTopic::new(&producer, options.topic(&options.bid_topic));
+    let mut persons = BufferedTopic::new(
+        &producer,
+        options.topic(&options.person_topic),
+        options.record_size,
+    );
+    let mut auctions = BufferedTopic::new(
+        &producer,
+        options.topic(&options.auction_topic),
+        options.record_size,
+    );
+    let mut bids = BufferedTopic::new(
+        &producer,
+        options.topic(&options.bid_topic),
+        options.record_size,
+    );
     for event in &mut source {
         match event {
             dbsp_nexmark::model::Event::Person(person) => persons.write(person),
