@@ -30,10 +30,12 @@ public class TestUtil {
 
     /**
      * Check that the messsages contain the specified substring.
-     * @param messages  Compiler messages.
+     * @param compiler  Compiler.
      * @param contents  Substring that we expect to find.
      */
-    public static void assertMessagesContain(CompilerMessages messages, String contents) {
+    public static void assertMessagesContain(DBSPCompiler compiler, String contents) {
+        compiler.runAllCompilerStages();
+        CompilerMessages messages = compiler.messages;
         String text = messages.toString();
         if (text.contains(contents))
             return;

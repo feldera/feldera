@@ -14,7 +14,7 @@ public class CreateTypeStatement extends FrontEndStatement {
 
     public CreateTypeStatement(SqlNode node, String statement,
                                SqlCreateType createType, String typeName, RelDataType relDataType) {
-        super(node, statement, null);
+        super(node, statement);
         this.createType = createType;
         this.typeName = typeName;
         this.relDataType = relDataType;

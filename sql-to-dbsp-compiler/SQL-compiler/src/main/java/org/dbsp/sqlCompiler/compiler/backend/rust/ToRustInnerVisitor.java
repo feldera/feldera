@@ -718,6 +718,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPConditionalAggregateExpression expression) {
         RustSqlRuntimeLibrary.FunctionDescription implementation = RustSqlRuntimeLibrary.INSTANCE.getImplementation(
+                expression.getNode(),
                 expression.opcode, expression.getType(), expression.left.getType(), expression.right.getType());
         this.builder.append(implementation.function);
         if (expression.condition != null)
@@ -794,6 +795,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return VisitDecision.STOP;
         }
         RustSqlRuntimeLibrary.FunctionDescription function = RustSqlRuntimeLibrary.INSTANCE.getImplementation(
+                expression.getNode(),
                 expression.operation,
                 expression.getType(),
                 expression.left.getType(),

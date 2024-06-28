@@ -66,7 +66,8 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
                 source.is(DBSPDifferentiateOperator.class) ||
                 source.is(DBSPDelayOperator.class) ||
                 source.is(DBSPNegateOperator.class) ||
-                source.is(DBSPSumOperator.class) ||
+                // source.is(DBSPSumOperator.class) ||  // swapping with sum is not sound
+                // since it may apply operations like div by 0 to tuples that may never appear
                 source.is(DBSPNoopOperator.class)) {
             // For all such operators we can swap them with the map
             List<DBSPOperator> newSources = new ArrayList<>();

@@ -2125,18 +2125,18 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Create two operators chained, a ViewOperator and a SinkOperator.
             DBSPViewOperator vo = new DBSPViewOperator(
                     view.getCalciteObject(), view.relationName, view.statement,
-                    struct, additionalMetadata, view.comment, op);
+                    struct, additionalMetadata, op);
             this.circuit.addOperator(vo);
             o = new DBSPSinkOperator(
                     view.getCalciteObject(), view.relationName,
-                    view.statement, struct, additionalMetadata, view.comment, vo);
+                    view.statement, struct, additionalMetadata, vo);
         } else {
             // We may already have a node for this output
             DBSPOperator previous = this.circuit.getView(view.relationName);
             if (previous != null)
                 return previous;
             o = new DBSPViewOperator(view.getCalciteObject(), view.relationName, view.statement,
-                    struct, additionalMetadata, view.comment, op);
+                    struct, additionalMetadata, op);
         }
         this.circuit.addOperator(o);
         return o;

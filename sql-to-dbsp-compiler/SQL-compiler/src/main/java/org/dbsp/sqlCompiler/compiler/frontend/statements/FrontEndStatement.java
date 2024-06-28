@@ -37,13 +37,10 @@ public abstract class FrontEndStatement implements ICastable {
     public final SqlNode node;
     /** Original statement compiled. */
     public final String statement;
-    @Nullable
-    public final String comment;
 
-    protected FrontEndStatement(SqlNode node, String statement, @Nullable String comment) {
+    protected FrontEndStatement(SqlNode node, String statement) {
         this.node = node;
         this.statement = statement;
-        this.comment = comment;
     }
 
     public CalciteObject getCalciteObject() {

@@ -23,12 +23,14 @@
 
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.*;
@@ -147,7 +149,7 @@ public class RustSqlRuntimeLibrary {
         }
     }
 
-    public FunctionDescription getImplementation(
+    public FunctionDescription getImplementation(CalciteObject node,
             DBSPOpcode opcode, @Nullable DBSPType expectedReturnType,
             DBSPType ltype, @Nullable DBSPType rtype) {
         if (ltype.is(DBSPTypeAny.class) || (rtype != null && rtype.is(DBSPTypeAny.class)))
@@ -164,8 +166,12 @@ public class RustSqlRuntimeLibrary {
             if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD) {
                 if (ltype.is(DBSPTypeTimestamp.class) || ltype.is(DBSPTypeDate.class)) {
                     assert expectedReturnType != null;
+                    assert rtype != null;
                     returnType = expectedReturnType;
                     suffixReturn = "_" + returnType.baseTypeWithSuffix();
+                    if (rtype.is(IsNumericType.class))
+                        throw new CompilationError("Cannot apply operation " + Utilities.singleQuote(opcode.toString()) +
+                                " to arguments of type " + ltype.asSqlString() + " and " + rtype.asSqlString(), node);
                 }
             }
         } else if (ltype.is(IsNumericType.class)) {

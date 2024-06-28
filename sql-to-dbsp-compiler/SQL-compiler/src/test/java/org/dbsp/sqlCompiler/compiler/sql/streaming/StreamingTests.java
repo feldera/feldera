@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -28,6 +27,59 @@ import java.util.List;
 
 /** Tests that exercise streaming features. */
 public class StreamingTests extends StreamingTest {
+    @Test
+    public void issue1963() {
+        String sql = """
+                CREATE TABLE event(
+                    id  BIGINT,
+                    start   TIMESTAMP NOT NULL LATENESS INTERVAL '1' HOURS
+                );
+                
+                CREATE VIEW event_duration AS SELECT DISTINCT
+                    start,
+                    id
+                FROM event;
+                
+                CREATE VIEW filtered_events AS
+                SELECT DISTINCT * FROM event_duration;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue1964() {
+        String sql = """
+                CREATE TABLE event(
+                    start   TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS
+                );
+                
+                LATENESS slotted_events.start 96;
+                
+                CREATE VIEW slotted_events AS
+                SELECT start
+                FROM event;""";
+        this.statementsFailingInCompilation(sql, "Cannot apply operation '-'");
+    }
+
+    @Test
+    public void issue1965() {
+        String sql = """
+                CREATE TABLE event(
+                    eve_key     VARCHAR,
+                    eve_start   TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS
+                );
+                
+                CREATE VIEW filtered_events AS
+                SELECT DISTINCT * FROM event
+                WHERE eve_key IN ('foo', 'bar');
+                
+                CREATE VIEW slotted_events AS
+                SELECT eve_start, eve_key
+                FROM filtered_events;
+                
+                LATENESS slotted_events.eve_start INTERVAL 96 MINUTES;""";
+        this.compileRustTestCase(sql);
+    }
+
     @Test
     public void hoppingTest() {
         String sql = """
@@ -50,7 +102,7 @@ public class StreamingTests extends StreamingTest {
 
     @Test
     public void smallTaxiTest() {
-        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 1);
+        // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 1);
         String sql = """
                 CREATE TABLE green_tripdata
                 (

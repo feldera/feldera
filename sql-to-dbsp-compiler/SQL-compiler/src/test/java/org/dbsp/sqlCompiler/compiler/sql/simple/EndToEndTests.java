@@ -714,6 +714,13 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void divTest2() {
+        String query = "SELECT 5 / COUNT(*) - COUNT(*) FROM T";
+        this.testQuery(query, new DBSPZSetLiteral(
+                new DBSPTupleExpression(new DBSPI64Literal(0))));
+    }
+
+    @Test
     public void divZeroTest() {
         String query = "SELECT 1 / 0";
         this.runtimeConstantFail(query, "attempt to divide by zero");
