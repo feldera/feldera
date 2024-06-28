@@ -14,13 +14,11 @@ use std::{
 use crc32c::crc32c;
 use metrics::counter;
 
+use crate::circuit::metrics::{BUFFER_CACHE_HIT, BUFFER_CACHE_MISS};
 use crate::storage::backend::Backend;
 use crate::storage::file::reader::{CorruptionError, Error};
 use crate::{
-    storage::backend::{
-        metrics::{BUFFER_CACHE_HIT, BUFFER_CACHE_MISS},
-        FileHandle, ImmutableFileHandle, Storage, StorageError,
-    },
+    storage::backend::{FileHandle, ImmutableFileHandle, Storage, StorageError},
     storage::buffer_cache::FBuf,
     Runtime,
 };

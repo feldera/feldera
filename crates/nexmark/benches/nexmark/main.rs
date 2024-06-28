@@ -5,12 +5,12 @@
 use anyhow::{anyhow, Result};
 use ascii_table::AsciiTable;
 use clap::Parser;
-use dbsp::circuit::{CircuitConfig, StorageCacheConfig, StorageConfig};
-use dbsp::storage::backend::metrics::{
+use dbsp::circuit::metrics::{
     BUFFER_CACHE_HIT, BUFFER_CACHE_MISS, COMPACTION_SIZE_SAVINGS, COMPACTION_STALL_TIME,
     FILES_CREATED, READS_SUCCESS, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, TOTAL_COMPACTIONS,
     WRITES_SUCCESS,
 };
+use dbsp::circuit::{CircuitConfig, StorageCacheConfig, StorageConfig};
 use dbsp::storage::backend::tempdir_for_thread;
 use dbsp::utils::Tup2;
 use dbsp::{

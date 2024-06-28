@@ -29,8 +29,6 @@ use uuid::Uuid;
 
 use crate::storage::buffer_cache::FBuf;
 
-pub mod metrics;
-
 #[cfg(target_os = "linux")]
 pub mod io_uring_impl;
 pub mod memory_impl;

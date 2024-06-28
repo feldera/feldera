@@ -97,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
     let _prober = tokio::spawn(async move {
         run_prober(&prober_config, db_clone).await.unwrap();
     });
-    pipeline_manager::metrics::create_endpoint(registry).await;
+    pipeline_manager::metrics::create_endpoint(registry, db.clone()).await;
     // The api-server blocks forever
     pipeline_manager::api::run(db, api_config).await.unwrap();
     Ok(())

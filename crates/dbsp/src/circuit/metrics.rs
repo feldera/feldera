@@ -58,7 +58,7 @@ pub const COMPACTION_DURATION: &str = "file.compaction_duration";
 pub const COMPACTION_STALL_TIME: &str = "file.compaction_stall_time";
 
 /// Adds descriptions for the metrics we expose.
-pub(super) fn describe_disk_metrics() {
+pub(crate) fn describe_metrics() {
     // Storage backend metrics.
     describe_counter!(FILES_CREATED, "total number of files created");
     describe_counter!(FILES_DELETED, "total number of files deleted");
