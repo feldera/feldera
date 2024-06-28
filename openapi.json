@@ -873,7 +873,6 @@
                   },
                   "storage": false,
                   "storage_config": null,
-                  "tcp_metrics_exporter": false,
                   "workers": 8
                 }
               }
@@ -4446,10 +4445,6 @@
                 "type": "boolean",
                 "description": "Should persistent storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory data-structures.\nThis is useful if the pipeline is ephemeral and does not need to be recovered\nafter a restart. The pipeline will most likely run faster since it does not\nneed to read from, or write to disk\n\n- If `true`, the pipeline state is stored in the specified location,\nis persisted across restarts, and can be checkpointed and recovered.\nThis feature is currently experimental."
               },
-              "tcp_metrics_exporter": {
-                "type": "boolean",
-                "description": "Enable the TCP metrics exporter.\n\nThis is used for development purposes only.\nIf enabled, the `metrics-observer` CLI tool\ncan be used to inspect metrics from the pipeline.\n\nBecause of how Rust metrics work, this is only honored for the first\npipeline to be instantiated within a given process."
-              },
               "workers": {
                 "type": "integer",
                 "format": "int32",
@@ -4988,10 +4983,6 @@
           "storage": {
             "type": "boolean",
             "description": "Should persistent storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory data-structures.\nThis is useful if the pipeline is ephemeral and does not need to be recovered\nafter a restart. The pipeline will most likely run faster since it does not\nneed to read from, or write to disk\n\n- If `true`, the pipeline state is stored in the specified location,\nis persisted across restarts, and can be checkpointed and recovered.\nThis feature is currently experimental."
-          },
-          "tcp_metrics_exporter": {
-            "type": "boolean",
-            "description": "Enable the TCP metrics exporter.\n\nThis is used for development purposes only.\nIf enabled, the `metrics-observer` CLI tool\ncan be used to inspect metrics from the pipeline.\n\nBecause of how Rust metrics work, this is only honored for the first\npipeline to be instantiated within a given process."
           },
           "workers": {
             "type": "integer",

@@ -7,6 +7,7 @@ use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
 use hashbrown::HashMap;
 use itertools::Either;
+use metrics::counter;
 pub use pipeline_types::config::{StorageCacheConfig, StorageConfig};
 use std::{
     collections::HashSet,
@@ -602,6 +603,7 @@ impl DBSPHandle {
 
     /// Evaluate the circuit for one clock cycle.
     pub fn step(&mut self) -> Result<(), DBSPError> {
+        counter!("feldera.dbsp.step").increment(1);
         self.step_id += 1;
         self.broadcast_command(Command::Step, |_, _| {})
     }

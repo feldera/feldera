@@ -3,6 +3,7 @@ use crate::{
     Controller,
 };
 use anyhow::{Error as AnyError, Result as AnyResult};
+use metrics_exporter_prometheus::PrometheusHandle;
 use prometheus::{Encoder, IntGauge, Opts, Registry, TextEncoder};
 use std::{collections::BTreeMap, sync::atomic::Ordering};
 
@@ -11,17 +12,27 @@ use std::{collections::BTreeMap, sync::atomic::Ordering};
 /// The primary metrics are stored in `controller.status` and are mirrored
 /// to Prometheus metrics on demand.
 pub(crate) struct PrometheusMetrics {
+    pipeline_name: String,
     registry: Registry,
     input_metrics: BTreeMap<EndpointId, InputMetrics>,
     output_metrics: BTreeMap<EndpointId, OutputMetrics>,
+    handle: PrometheusHandle,
 }
 
 impl PrometheusMetrics {
     pub(crate) fn new(controller: &Controller) -> AnyResult<Self> {
+        let pipeline_name = controller
+            .status()
+            .pipeline_config
+            .name
+            .as_ref()
+            .map_or_else(|| "unnamed".to_string(), |n| n.clone());
         let mut result = Self {
+            pipeline_name,
             registry: Registry::new(),
             input_metrics: BTreeMap::new(),
             output_metrics: BTreeMap::new(),
+            handle: controller.metrics(),
         };
 
         let status = controller.status();
@@ -161,6 +172,7 @@ impl PrometheusMetrics {
     /// Extract metrics in the format expected by the Prometheus server.
     pub(crate) fn metrics(&self, controller: &Controller) -> AnyResult<Vec<u8>> {
         let status = controller.status();
+        let dbsp_metrics = self.handle.render();
 
         for (endpoint_id, endpoint_status) in status.input_status().iter() {
             self.update_input_metrics(*endpoint_id, endpoint_status)?;
@@ -170,7 +182,7 @@ impl PrometheusMetrics {
             self.update_output_metrics(*endpoint_id, endpoint_status)?;
         }
 
-        let mut buffer = vec![];
+        let mut buffer = dbsp_metrics.into();
         let encoder = TextEncoder::new();
         let metric_families = self.registry.gather();
         encoder.encode(&metric_families, &mut buffer)?;
@@ -179,7 +191,9 @@ impl PrometheusMetrics {
     }
 
     fn create_gauge(&self, name: &str, endpoint: &str) -> AnyResult<IntGauge> {
-        let opts = Opts::new(name, name).const_label("endpoint", endpoint);
+        let opts = Opts::new(name, name)
+            .const_label("pipeline", &self.pipeline_name)
+            .const_label("endpoint", endpoint);
         let gauge = IntGauge::with_opts(opts)?;
         self.registry.register(Box::new(gauge.clone()))?;
 

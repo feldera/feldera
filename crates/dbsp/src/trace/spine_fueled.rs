@@ -94,8 +94,8 @@ use crate::{
     Error, NumEntries,
 };
 
+use crate::circuit::metrics::{COMPACTION_DURATION, COMPACTION_SIZE, TOTAL_COMPACTIONS};
 use crate::dynamic::{ClonableTrait, DeserializableDyn};
-use crate::storage::backend::metrics::{COMPACTION_DURATION, COMPACTION_SIZE, TOTAL_COMPACTIONS};
 use crate::storage::file::to_bytes;
 use crate::storage::{checkpoint_path, write_commit_metadata};
 use metrics::{counter, histogram};

@@ -52,6 +52,7 @@ use crossbeam::{
 };
 use dbsp::circuit::{CircuitConfig, Layout};
 use metrics::set_global_recorder;
+use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use metrics_util::{
     debugging::{DebuggingRecorder, Snapshotter},
     layers::FanoutBuilder,
@@ -712,6 +713,10 @@ impl Controller {
             parker.park();
         }
     }
+
+    pub(crate) fn metrics(&self) -> PrometheusHandle {
+        self.inner.prometheus_handle.clone()
+    }
 }
 
 /// State tracked by the controller for each input endpoint.
@@ -949,6 +954,7 @@ pub struct ControllerInner {
     error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
     step: AtomicStep,
     metrics_snapshotter: Arc<Snapshotter>,
+    prometheus_handle: PrometheusHandle,
 
     /// The lowest-numbered input step not known to have committed yet.
     ///
@@ -967,8 +973,14 @@ impl ControllerInner {
         backpressure_thread_unparker: Unparker,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
     ) -> Self {
+        let pipeline_name = config
+            .name
+            .as_ref()
+            .map_or_else(|| "unnamed".to_string(), |n| n.clone());
         let status = Arc::new(ControllerStatus::new(config));
         let dump_profile_request = AtomicBool::new(false);
+        let (metrics_snapshotter, prometheus_handle) =
+            Self::install_metrics_recorder(pipeline_name);
 
         Self {
             status,
@@ -981,35 +993,32 @@ impl ControllerInner {
             backpressure_thread_unparker,
             error_cb,
             step: AtomicStep::new(0),
-            metrics_snapshotter: Self::install_metrics_recorder(config.global.tcp_metrics_exporter),
+            metrics_snapshotter,
+            prometheus_handle,
             uncommitted_step: Mutex::new(0),
             step_committed: Condvar::new(),
         }
     }
 
-    /// Sets the global metrics recorder and returns a `Snapshotter`.  If
-    /// `support_tcp_metrics` is true, enables export of metrics via TCP.
-    fn install_metrics_recorder(support_tcp_metrics: bool) -> Arc<Snapshotter> {
-        static SNAPSHOTTER: OnceLock<Arc<Snapshotter>> = OnceLock::new();
-        SNAPSHOTTER
+    /// Sets the global metrics recorder and returns a `Snapshotter` and
+    /// a `PrometheusHandle` to get metrics in a prometheus compatible format.
+    fn install_metrics_recorder(pipeline_name: String) -> (Arc<Snapshotter>, PrometheusHandle) {
+        static METRIC_HANDLES: OnceLock<(Arc<Snapshotter>, PrometheusHandle)> = OnceLock::new();
+        METRIC_HANDLES
             .get_or_init(|| {
-                let mut builder = FanoutBuilder::default();
-
-                if support_tcp_metrics {
-                    builder = builder.add_recorder(
-                        metrics_exporter_tcp::TcpBuilder::new()
-                            .build()
-                            .expect("failed to build TCP metrics exporter"),
-                    );
-                }
-
                 let debugging_recorder = DebuggingRecorder::new();
                 let snapshotter = debugging_recorder.snapshotter();
-                let builder = builder.add_recorder(debugging_recorder);
+                let prometheus_recorder = PrometheusBuilder::new()
+                    .add_global_label("pipeline", pipeline_name)
+                    .build_recorder();
+                let prometheus_handle = prometheus_recorder.handle();
+                let builder = FanoutBuilder::default()
+                    .add_recorder(debugging_recorder)
+                    .add_recorder(prometheus_recorder);
 
                 set_global_recorder(builder.build()).expect("failed to install metrics exporter");
 
-                Arc::new(snapshotter)
+                (Arc::new(snapshotter), prometheus_handle)
             })
             .clone()
     }

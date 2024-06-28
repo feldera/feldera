@@ -7,11 +7,11 @@ use crate::{
     Error, NumEntries, Runtime,
 };
 
-use crate::dynamic::{ClonableTrait, DeserializableDyn};
-use crate::storage::backend::metrics::{
+use crate::circuit::metrics::{
     COMPACTION_DURATION, COMPACTION_SIZE, COMPACTION_SIZE_SAVINGS, COMPACTION_STALL_TIME,
     TOTAL_COMPACTIONS,
 };
+use crate::dynamic::{ClonableTrait, DeserializableDyn};
 use crate::storage::backend::StorageError;
 use crate::storage::file::to_bytes;
 use crate::storage::{checkpoint_path, write_commit_metadata};

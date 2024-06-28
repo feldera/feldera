@@ -17,18 +17,17 @@ use libc::{c_void, iovec};
 use metrics::{counter, histogram};
 use pipeline_types::config::StorageCacheConfig;
 
+use crate::circuit::metrics::{
+    FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS, READ_LATENCY, TOTAL_BYTES_READ,
+    TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
+};
 use crate::storage::backend::{
-    metrics::{
-        FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS, READ_LATENCY, TOTAL_BYTES_READ,
-        TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
-    },
     AtomicIncrementOnlyI64, FileHandle, ImmutableFile, ImmutableFileHandle, ImmutableFiles,
     Storage, IMMUTABLE_FILE_METADATA, NEXT_FILE_HANDLE,
 };
 use crate::storage::buffer_cache::FBuf;
 use crate::storage::init;
 
-use super::metrics::describe_disk_metrics;
 use super::{StorageCacheFlags, StorageError};
 
 #[cfg(test)]
@@ -533,7 +532,6 @@ impl IoUringBackend {
         immutable_files: Arc<ImmutableFiles>,
     ) -> Result<Self, IoError> {
         init();
-        describe_disk_metrics();
         Ok(Self {
             base: base.as_ref().to_path_buf(),
             cache,

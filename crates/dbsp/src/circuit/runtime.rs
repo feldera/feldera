@@ -2,6 +2,7 @@
 //! fashion.
 
 use crate::circuit::checkpointer::Checkpointer;
+use crate::circuit::metrics::describe_metrics;
 use crate::error::Error as DBSPError;
 use crate::trace::spine_async::merger::{BackgroundOperation, BatchMerger};
 use crate::{
@@ -430,6 +431,7 @@ impl Runtime {
             },
         );
         let storage = storage?;
+        describe_metrics();
 
         let runtime = Self(Arc::new(RuntimeInner::new(
             config,

@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [SQL] Added `MATERIALIZED` views
   ([#1959](https://github.com/feldera/feldera/pull/1959))
 - [WebConsole] Drop Data Services functionality (#1945)
+- Pipeline manager metrics endpoint now includes metrics of all
+  running pipelines ([#1969](https://github.com/feldera/feldera/pull/1969)).
 
 ## [0.19.0] - 2024-06-25
 
@@ -75,7 +77,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#1767](https://github.com/feldera/feldera/pull/1767))
 - Python SDK for Feldera
   ([#1745](https://github.com/feldera/feldera/pull/1745))
-
 
 ## [0.16.0] - 2024-05-15
 

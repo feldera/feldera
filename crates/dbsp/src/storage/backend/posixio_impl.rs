@@ -16,18 +16,16 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 
-use crate::storage::{backend::NEXT_FILE_HANDLE, buffer_cache::FBuf, init};
-
 use super::{
-    append_to_path,
-    metrics::{
-        describe_disk_metrics, FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS,
-        READ_LATENCY, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
-    },
-    tempdir_for_thread, AtomicIncrementOnlyI64, FileHandle, ImmutableFile, ImmutableFileHandle,
-    ImmutableFiles, Storage, StorageCacheFlags, StorageError, IMMUTABLE_FILE_METADATA,
-    MUTABLE_EXTENSION,
+    append_to_path, tempdir_for_thread, AtomicIncrementOnlyI64, FileHandle, ImmutableFile,
+    ImmutableFileHandle, ImmutableFiles, Storage, StorageCacheFlags, StorageError,
+    IMMUTABLE_FILE_METADATA, MUTABLE_EXTENSION,
 };
+use crate::circuit::metrics::{
+    FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS, READ_LATENCY, TOTAL_BYTES_READ,
+    TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
+};
+use crate::storage::{backend::NEXT_FILE_HANDLE, buffer_cache::FBuf, init};
 
 /// Meta-data we keep per file we created.
 struct FileMetaData {
@@ -115,7 +113,6 @@ impl PosixBackend {
         immutable_files: Arc<ImmutableFiles>,
     ) -> Self {
         init();
-        describe_disk_metrics();
         Self {
             base: base.as_ref().to_path_buf(),
             files: RefCell::new(HashMap::new()),

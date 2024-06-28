@@ -389,12 +389,6 @@ fn main() {
         create_dir_all(&args.path).expect("failed to create directory");
     }
 
-    #[cfg(feature = "metrics-exporter-tcp")]
-    {
-        let builder = metrics_exporter_tcp::TcpBuilder::new();
-        builder.install().expect("failed to install TCP exporter");
-    }
-
     let br = match args.backend {
         Backend::Posix => posixio_main(args.clone()),
         Backend::IoUring => io_uring_main(args.clone()),

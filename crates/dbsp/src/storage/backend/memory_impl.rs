@@ -11,15 +11,12 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::storage::{backend::NEXT_FILE_HANDLE, buffer_cache::FBuf};
-
-use super::{
-    metrics::{
-        describe_disk_metrics, FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS,
-        TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN, WRITES_SUCCESS,
-    },
-    AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, StorageError,
+use super::{AtomicIncrementOnlyI64, FileHandle, ImmutableFileHandle, Storage, StorageError};
+use crate::circuit::metrics::{
+    FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS, TOTAL_BYTES_READ,
+    TOTAL_BYTES_WRITTEN, WRITES_SUCCESS,
 };
+use crate::storage::{backend::NEXT_FILE_HANDLE, buffer_cache::FBuf};
 
 /// Meta-data we keep per file we created.
 #[derive(Default)]
@@ -45,7 +42,6 @@ impl MemoryBackend {
     ///   Note that in case we use a global buffer cache, this counter should be
     ///   shared among all instances of the backend.
     pub fn new(next_file_id: Arc<AtomicIncrementOnlyI64>) -> Self {
-        describe_disk_metrics();
         Self {
             files: RwLock::new(HashMap::new()),
             next_file_id,
