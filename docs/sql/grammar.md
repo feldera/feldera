@@ -108,17 +108,16 @@ CREATE TABLE empsalary (
     enroll_date date
 ) WITH (
     'source' = 'kafka',
-    'url' = 'localhost:8080',
-    'materialized' = 'false'
+    'url' = 'localhost:8080'
 );
 ```
 
-Unlike a database, Feldera does normally not maintain the contents of
+Unlike a database, Feldera does not normally maintain the contents of
 tables; it will only store as much data as necessary to compute future
 outputs.  By specifying the property `'materialized' = 'true'` a user
-instructs Feldera to also maintain the complete contents of a table.
-The contents of the table can be queried using the `http`-based API
-described elsewhere.
+instructs Feldera to also maintain the complete contents of the table.
+Such materialized tables can be browsed and queried at runtime.
+See [Materialized Tables and Views](materialized.md) for more details.
 
 ### LATENESS
 
@@ -153,6 +152,8 @@ are used in the implementation of other views.
 The `MATERIALIZED` keyword instructs Feldera to maintain a full copy
 of the view's output in addition to producing the
 stream of changes.
+Such materialized views can be browsed and queried at runtime.
+See [Materialized Tables and Views](materialized.md) for more details.
 
 ```
 createViewStatement

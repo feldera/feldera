@@ -201,6 +201,7 @@ const sidebars = {
                 'sql/array',
                 'sql/map',
                 'sql/datetime',
+                'sql/materialized',
                 'sql/streaming',
                 'sql/udf'
               ]
