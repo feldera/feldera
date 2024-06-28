@@ -12,10 +12,10 @@ import { useSearchParams } from 'next/navigation'
 import { useEffect } from 'react'
 import { nonNull } from 'src/lib/functions/common/function'
 
-import { useHash } from '@mantine/hooks'
 import { Alert, AlertTitle, Autocomplete, Box, FormControl, Link, MenuItem, TextField } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { useQuery } from '@tanstack/react-query'
+import { useHashPart } from 'src/lib/compositions/useHashPart'
 
 const TablesBreadcrumb = (props: {
   pipeline: Pipeline
@@ -24,10 +24,10 @@ const TablesBreadcrumb = (props: {
   tables: Relation[]
   views: Relation[]
 }) => {
-  const [tab] = useHash()
+  const [tab] = useHashPart()
   const options = props.tables
-    .map(relation => ({ type: 'Tables', name: getCaseIndependentName(relation) }))
-    .concat(props.views.map(relation => ({ type: 'Views', name: getCaseIndependentName(relation) })))
+    .map(relation => ({ type: 'Tables', name: getCaseIndependentName(relation), relation }))
+    .concat(props.views.map(relation => ({ type: 'Views', name: getCaseIndependentName(relation), relation })))
   return (
     <Box sx={{ mb: '-1rem' }}>
       <FormControl sx={{ mt: '-1rem' }}>
@@ -42,14 +42,18 @@ const TablesBreadcrumb = (props: {
           slotProps={{ popupIndicator: { 'data-testid': 'button-expand-relations' } as any }}
           ListboxProps={{ 'data-testid': 'box-relation-options' } as any}
           renderInput={params => <TextField {...params} value={props.caseIndependentName} label='Tables and Views' />}
-          value={{ name: props.caseIndependentName, type: props.relationType === 'table' ? 'Tables' : 'Views' }}
+          value={{
+            name: props.caseIndependentName,
+            type: props.relationType === 'table' ? 'Tables' : 'Views',
+            relation: undefined!
+          }}
           renderOption={(_props, item) => (
             <MenuItem
               key={item.name}
               value={item.name}
               {...{
                 component: Link,
-                href: `?pipeline_name=${props.pipeline.descriptor.name}&relation=${item.name}${tab}`
+                href: `?pipeline_name=${props.pipeline.descriptor.name}&relation=${item.name}${item.relation.materialized ? '#' + tab : '#insert'}`
               }}
               data-testid={`button-option-relation-${item.name}`}
             >
@@ -63,7 +67,7 @@ const TablesBreadcrumb = (props: {
 }
 
 export default () => {
-  const [tab, setTab] = (([tab, setTab]) => [tab.slice(1) || 'browse', setTab])(useHash())
+  const [tab, setTab] = (([tab, setTab]) => [tab || 'browse', setTab])(useHashPart())
 
   // Parse config, view, tab arguments from router query
   const query = useSearchParams()

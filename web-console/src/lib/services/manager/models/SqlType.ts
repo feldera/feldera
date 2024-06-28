@@ -27,4 +27,5 @@ export type SqlType =
     }
   | 'ARRAY'
   | 'STRUCT'
+  | 'MAP'
   | 'NULL'
