@@ -34,9 +34,8 @@ import java.util.Map;
 public class CreateTableStatement extends CreateRelationStatement {
     public CreateTableStatement(SqlNode node, String statement,
                                 String tableName, boolean nameIsQuoted,
-                                @Nullable String comment,
                                 List<RelColumnMetadata> columns,
                                 @Nullable Map<String, String> connectorProperties) {
-        super(node, statement, tableName, nameIsQuoted, comment, columns, connectorProperties);
+        super(node, statement, tableName, nameIsQuoted, columns, connectorProperties);
     }
 }

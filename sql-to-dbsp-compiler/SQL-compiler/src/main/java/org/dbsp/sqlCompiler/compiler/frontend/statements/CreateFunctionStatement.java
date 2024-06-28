@@ -8,7 +8,7 @@ public class CreateFunctionStatement extends FrontEndStatement {
     public final ExternalFunction function;
 
     public CreateFunctionStatement(SqlNode node, String statement, ExternalFunction function) {
-        super(node, statement, null);
+        super(node, statement);
         this.function = function;
     }
 }

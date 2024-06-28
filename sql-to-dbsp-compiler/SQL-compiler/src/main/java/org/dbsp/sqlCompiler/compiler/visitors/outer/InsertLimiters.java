@@ -82,7 +82,7 @@ import java.util.Objects;
 public class InsertLimiters extends CircuitCloneVisitor {
     /** For each operator in the expansion of the operators of this circuit
      * the list of its monotone output columns */
-    public final Map<DBSPOperator, MonotoneExpression> expansionMonotoneValues;
+    public final Monotonicity.MonotonicityInformation expansionMonotoneValues;
     /** Circuit that contains the expansion of the circuit we are modifying */
     public final DBSPCircuit expandedCircuit;
     /** Maps each original operator to the set of operators it was expanded to */
@@ -94,7 +94,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     public InsertLimiters(IErrorReporter reporter,
                           DBSPCircuit expandedCircuit,
-                          Map<DBSPOperator, MonotoneExpression> expansionMonotoneValues,
+                          Monotonicity.MonotonicityInformation expansionMonotoneValues,
                           Map<DBSPOperator, OperatorExpansion> expandedInto) {
         super(reporter, false);
         this.expandedCircuit = expandedCircuit;
@@ -142,7 +142,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     void nonMonotone(DBSPOperator operator) {
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Not monotone: ")
-                .append(operator.getIdString())
+                .append(operator.toString())
                 .newline();
     }
 
@@ -222,7 +222,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         this.addOperator(filteredAggregator);
         MonotoneExpression monotoneValue2 = this.expansionMonotoneValues.get(ae.aggregator);
-        IMaybeMonotoneType projection2 = Monotonicity.getBodyType(monotoneValue2);
+        IMaybeMonotoneType projection2 = Monotonicity.getBodyType(Objects.requireNonNull(monotoneValue2));
 
         // The before and after filters are actually identical for now.
         DBSPIntegrateTraceRetainKeysOperator before = DBSPIntegrateTraceRetainKeysOperator.create(
@@ -351,13 +351,14 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         DBSPOperator result = operator.withInputs(Linq.list(source), false);
-        MonotoneExpression sourceMonotone = this.expansionMonotoneValues.get(operator.input());
-        IMaybeMonotoneType projection = Monotonicity.getBodyType(sourceMonotone);
+        MonotoneExpression sourceMonotone = this.expansionMonotoneValues.get(expansion.distinct.right());
+        IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(sourceMonotone));
         DBSPIntegrateTraceRetainKeysOperator r = DBSPIntegrateTraceRetainKeysOperator.create(
                         operator.getNode(), source, projection, sourceLimiter);
         this.addOperator(r);
         // Same limiter as the source
         this.markBound(expansion.distinct, sourceLimiter);
+        this.markBound(operator, sourceLimiter);
         this.map(operator, result, true);
     }
 
@@ -385,7 +386,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (leftLimiter != null) {
             MonotoneExpression leftMonotone = this.expansionMonotoneValues.get(join.inputs.get(0));
             // Yes, the limit of the left input is applied to the right one.
-            IMaybeMonotoneType leftProjection = Monotonicity.getBodyType(leftMonotone);
+            IMaybeMonotoneType leftProjection = Monotonicity.getBodyType(Objects.requireNonNull(leftMonotone));
             // Check if the "key" field is monotone
             if (leftProjection.to(PartiallyMonotoneTuple.class).getField(0).mayBeMonotone()) {
                 DBSPIntegrateTraceRetainKeysOperator r = DBSPIntegrateTraceRetainKeysOperator.create(
@@ -397,7 +398,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (rightLimiter != null) {
             MonotoneExpression rightMonotone = this.expansionMonotoneValues.get(join.inputs.get(1));
             // Yes, the limit of the right input is applied to the left one.
-            IMaybeMonotoneType rightProjection = Monotonicity.getBodyType(rightMonotone);
+            IMaybeMonotoneType rightProjection = Monotonicity.getBodyType(Objects.requireNonNull(rightMonotone));
             // Check if the "key" field is monotone
             if (rightProjection.to(PartiallyMonotoneTuple.class).getField(0).mayBeMonotone()) {
                 DBSPIntegrateTraceRetainKeysOperator l = DBSPIntegrateTraceRetainKeysOperator.create(
@@ -833,7 +834,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             }
             limiters.add(limiter);
             MonotoneExpression me = this.expansionMonotoneValues.get(input);
-            mono.add(Objects.requireNonNull(Monotonicity.getBodyType(me)));
+            mono.add(Objects.requireNonNull(Monotonicity.getBodyType(Objects.requireNonNull(me))));
         }
 
         IMaybeMonotoneType out = Monotonicity.getBodyType(monotoneValue);
@@ -877,10 +878,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
         // Treat like an identity function
         ReplacementExpansion expanded = this.getReplacement(operator);
-        if (expanded != null)
-            this.addBounds(expanded.replacement, 0);
-        else
+        if (expanded != null) {
+            DBSPApplyOperator bound = this.addBounds(expanded.replacement, 0);
+            if (bound != null && operator != expanded.replacement)
+                this.markBound(operator, bound);
+        } else {
             this.nonMonotone(operator);
+        }
         super.postorder(operator);
     }
 }

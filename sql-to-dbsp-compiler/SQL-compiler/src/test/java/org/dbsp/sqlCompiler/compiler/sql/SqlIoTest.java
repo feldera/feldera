@@ -131,7 +131,6 @@ public abstract class SqlIoTest extends BaseSQLTests {
         compiler.compileStatement("CREATE VIEW VV AS " + query);
         if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
-        compiler.optimize();
         InputOutputChange iochange = new InputOutputChange(
                 this.getPreparedInputs(compiler),
                 new Change(expected)
@@ -211,7 +210,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);
         compiler.compileStatements(statements);
-        compiler.optimize();
+        getCircuit(compiler);
         Assert.assertTrue(compiler.messages.exitCode != 0);
         String message = compiler.messages.toString();
         boolean contains = message.contains(messageFragment);
@@ -225,11 +224,10 @@ public abstract class SqlIoTest extends BaseSQLTests {
     public void queryFailingInCompilation(String query, String messageFragment, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         compiler.options.languageOptions.throwOnError = false;
+        compiler.options.languageOptions.optimizationLevel = optimize ? 2 : 0;
         this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
-        if (optimize) {
-            compiler.optimize();
-        }
+        getCircuit(compiler);
         Assert.assertTrue(compiler.messages.exitCode != 0);
         String message = compiler.messages.toString();
         Assert.assertTrue(message.contains(messageFragment));
@@ -245,7 +243,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         compiler.options.languageOptions.throwOnError = false;
         this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
-        compiler.optimize();
+        getCircuit(compiler);
         Assert.assertTrue(compiler.hasWarnings);
         String warnings = compiler.messages.messages.stream().filter(error -> error.warning).toList().toString();
         Assert.assertTrue(warnings.contains(messageFragment));

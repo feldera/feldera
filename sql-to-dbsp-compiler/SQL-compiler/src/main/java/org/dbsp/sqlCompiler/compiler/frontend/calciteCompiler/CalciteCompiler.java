@@ -777,7 +777,7 @@ public class CalciteCompiler implements IWritesLogs {
             SqlNodeList list = clone.parseStatements(sql);
             FrontEndStatement statement = null;
             for (SqlNode node: list) {
-                statement = clone.compile(node.toString(), node, null);
+                statement = clone.compile(node.toString(), node);
             }
 
             CreateViewStatement view = Objects.requireNonNull(statement).as(CreateViewStatement.class);
@@ -793,13 +793,11 @@ public class CalciteCompiler implements IWritesLogs {
 
     /** Compile a SQL statement.
      * @param node         Compiled version of the SQL statement.
-     * @param sqlStatement SQL statement as a string to compile.
-     * @param comment      Additional information about the compiled statement. */
+     * @param sqlStatement SQL statement as a string to compile. */
     @Nullable
     public FrontEndStatement compile(
             String sqlStatement,
-            SqlNode node,
-            @Nullable String comment) {
+            SqlNode node) {
         CalciteObject object = CalciteObject.create(node);
         Logger.INSTANCE.belowLevel(this, 3)
                 .append("Compiling ")
@@ -811,7 +809,7 @@ public class CalciteCompiler implements IWritesLogs {
                 SqlDropTable dt = (SqlDropTable) node;
                 String tableName = dt.name.getSimple();
                 this.calciteCatalog.dropTable(tableName);
-                return new DropTableStatement(node, sqlStatement, tableName, comment);
+                return new DropTableStatement(node, sqlStatement, tableName);
             }
             case CREATE_TABLE: {
                 SqlCreateTable ct = (SqlCreateTable) node;
@@ -821,7 +819,7 @@ public class CalciteCompiler implements IWritesLogs {
                 List<RelColumnMetadata> cols = this.createTableColumnsMetadata(Objects.requireNonNull(ct.columnList));
                 @Nullable Map<String, String> properties = this.createConnectorProperties(ct.connectorProperties);
                 CreateTableStatement table = new CreateTableStatement(
-                        node, sqlStatement, tableName, Utilities.identifierIsQuoted(ct.name), comment, cols, properties);
+                        node, sqlStatement, tableName, Utilities.identifierIsQuoted(ct.name), cols, properties);
                 boolean success = this.calciteCatalog.addTable(
                         tableName, table.getEmulatedTable(), this.errorReporter, table);
                 if (!success)
@@ -867,7 +865,7 @@ public class CalciteCompiler implements IWritesLogs {
                 CreateViewStatement view = new CreateViewStatement(
                         cv, sqlStatement,
                         cv.name.getSimple(), Utilities.identifierIsQuoted(cv.name),
-                        comment, columns, cv.query, relRoot, connectorProperties);
+                        columns, cv.query, relRoot, connectorProperties);
                 // From Calcite's point of view we treat this view just as another table.
                 boolean success = this.calciteCatalog.addTable(viewName, view.getEmulatedTable(), this.errorReporter, view);
                 if (!success)
@@ -913,7 +911,7 @@ public class CalciteCompiler implements IWritesLogs {
                 SqlNode table = insert.getTargetTable();
                 if (!(table instanceof SqlIdentifier id))
                     throw new UnimplementedException(CalciteObject.create(table));
-                TableModifyStatement stat = new TableModifyStatement(node, true, sqlStatement, id.toString(), insert.getSource(), comment);
+                TableModifyStatement stat = new TableModifyStatement(node, true, sqlStatement, id.toString(), insert.getSource());
                 RelRoot values = converter.convertQuery(stat.data, true, true);
                 values = values.withRel(this.optimize(values.rel));
                 stat.setTranslation(values.rel);
@@ -926,7 +924,7 @@ public class CalciteCompiler implements IWritesLogs {
                     SqlNode table = insert.getTargetTable();
                     if (!(table instanceof SqlIdentifier id))
                         throw new UnimplementedException(CalciteObject.create(table));
-                    TableModifyStatement stat = new TableModifyStatement(node, false, sqlStatement, id.toString(), insert.getSource(), comment);
+                    TableModifyStatement stat = new TableModifyStatement(node, false, sqlStatement, id.toString(), insert.getSource());
                     RelRoot values = converter.convertQuery(stat.data, true, true);
                     values = values.withRel(this.optimize(values.rel));
                     stat.setTranslation(values.rel);

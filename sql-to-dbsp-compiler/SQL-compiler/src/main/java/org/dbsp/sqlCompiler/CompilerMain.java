@@ -120,8 +120,6 @@ public class CompilerMain {
         }
     }
 
-    static int schemaCount = 0;
-
     /** Run compiler, return exit code. */
     CompilerMessages run() throws SQLException {
         DBSPCompiler compiler = new DBSPCompiler(this.options);
@@ -151,6 +149,10 @@ public class CompilerMain {
         compiler.compileInput();
         if (compiler.hasErrors())
             return compiler.messages;
+        // The following runs all compilation stages
+        DBSPCircuit dbsp = compiler.getFinalCircuit(this.options.ioOptions.functionName);
+        if (compiler.hasErrors())
+            return compiler.messages;
         if (this.options.ioOptions.emitJsonSchema != null) {
             try {
                 PrintStream outputStream = new PrintStream(
@@ -165,8 +167,6 @@ public class CompilerMain {
             }
         }
 
-        compiler.optimize();
-        DBSPCircuit dbsp = compiler.getFinalCircuit(this.options.ioOptions.functionName);
         String dotFormat = (this.options.ioOptions.emitJpeg ? "jpg"
                             : this.options.ioOptions.emitPng ? "png"
                             : null);

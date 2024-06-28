@@ -42,11 +42,11 @@ public class CreateViewStatement extends CreateRelationStatement {
     public final boolean local;
 
     public CreateViewStatement(SqlCreateLocalView node, String statement, String tableName,
-                               boolean nameIsQuoted, @Nullable String comment,
+                               boolean nameIsQuoted,
                                List<RelColumnMetadata> columns, SqlNode query,
                                RelRoot compiled,
                                @Nullable Map<String, String> connectorProperties) {
-        super(node, statement, tableName, nameIsQuoted, comment, columns, connectorProperties);
+        super(node, statement, tableName, nameIsQuoted, columns, connectorProperties);
         this.local = node.isLocal;
         this.query = query;
         this.compiled = compiled;

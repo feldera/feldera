@@ -31,8 +31,8 @@ public class DropTableStatement extends FrontEndStatement {
     public final String tableName;
 
     public DropTableStatement(SqlNode node, String statement,
-                              String tableName, @Nullable String comment) {
-        super(node, statement, comment);
+                              String tableName) {
+        super(node, statement);
         this.tableName = tableName;
     }
 }

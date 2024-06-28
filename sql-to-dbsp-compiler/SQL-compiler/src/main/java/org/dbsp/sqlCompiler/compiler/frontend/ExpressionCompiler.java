@@ -396,7 +396,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 right = right.cast(commonBase.setMayBeNull(rightType.mayBeNull));
         }
         // TODO: we don't need the whole function here, just the result type.
-        RustSqlRuntimeLibrary.FunctionDescription function = RustSqlRuntimeLibrary.INSTANCE.getImplementation(
+        RustSqlRuntimeLibrary.FunctionDescription function =
+                RustSqlRuntimeLibrary.INSTANCE.getImplementation(node,
                 opcode, type, left.getType(), right.getType());
         DBSPExpression call = new DBSPBinaryExpression(node, function.returnType, opcode, left, right);
         return call.cast(type);

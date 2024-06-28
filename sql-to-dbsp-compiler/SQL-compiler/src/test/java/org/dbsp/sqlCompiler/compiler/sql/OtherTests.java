@@ -134,7 +134,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String query = "CREATE VIEW V AS SELECT T.COL3 FROM T";
         DBSPCompiler compiler = this.compileDef();
         compiler.compileStatement(query);
-        compiler.optimize();
         // Deterministically name the circuit function.
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
         String str = circuit.toString();
@@ -149,7 +148,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let stream131: stream<WSet<Tup1<b>>> = stream61;
+                    let stream130: stream<WSet<Tup1<b>>> = stream61;
                 }
                 """;
         Assert.assertEquals(expected, str);
@@ -170,6 +169,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                ) AS SELECT * FROM T;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
+        getCircuit(compiler);
         JsonNode meta = compiler.getIOMetadataAsJson();
         JsonNode inputs = meta.get("inputs");
         Assert.assertNotNull(inputs);
@@ -209,8 +209,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatements(ddl);
-        TestUtil.assertMessagesContain(compiler.messages, "Duplicate key");
-        TestUtil.assertMessagesContain(compiler.messages, "Previous declaration");
+        TestUtil.assertMessagesContain(compiler, "Duplicate key");
+        TestUtil.assertMessagesContain(compiler, "Previous declaration");
     }
 
     @Test
@@ -220,7 +220,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String query = "CREATE VIEW V AS SELECT '1_000'::INT4";
         compiler.compileStatement(query);
         getCircuit(compiler);  // invokes optimizer
-        TestUtil.assertMessagesContain(compiler.messages, "String '1_000' cannot be interpreted as a number");
+        TestUtil.assertMessagesContain(compiler, "String '1_000' cannot be interpreted as a number");
     }
 
     // Test the ability to redirect logging streams.
@@ -648,7 +648,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
             }
         };
         visitor.apply(circuit);
-        TestUtil.assertMessagesContain(compiler.messages, "No view named 'W' found");
+        TestUtil.assertMessagesContain(compiler, "No view named 'W' found");
     }
 
     @Test
@@ -702,7 +702,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String query = "CREATE VIEW V AS SELECT T.COL1 FROM T";
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
-        compiler.optimize();
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
         DBSPSinkOperator sink = circuit.circuit.getSink("V");
         Assert.assertNotNull(sink);

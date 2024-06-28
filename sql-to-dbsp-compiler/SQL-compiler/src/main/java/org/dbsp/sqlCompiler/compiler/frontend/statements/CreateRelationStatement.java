@@ -42,10 +42,10 @@ public abstract class CreateRelationStatement
     @Nullable final Map<String, String> connectorProperties;
 
     protected CreateRelationStatement(SqlNode node, String statement, String relationName,
-                                      boolean nameIsQuoted, @Nullable String comment,
+                                      boolean nameIsQuoted,
                                       List<RelColumnMetadata> columns,
                                       @Nullable Map<String, String> connectorProperties) {
-        super(node, statement, comment);
+        super(node, statement);
         this.nameIsQuoted = nameIsQuoted;
         this.relationName = relationName;
         this.columns = columns;

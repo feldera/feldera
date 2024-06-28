@@ -6,11 +6,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
-import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -54,7 +51,7 @@ public class RegresssionTests extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatements(sql);
-        TestUtil.assertMessagesContain(compiler.messages, "OVER must be applied to aggregate function");
+        TestUtil.assertMessagesContain(compiler, "OVER must be applied to aggregate function");
     }
 
     @Test

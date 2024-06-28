@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctIncrementalOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
@@ -20,6 +21,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
@@ -29,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTransferFun
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
+import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -53,9 +56,11 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Outer visitor for monotonicity dataflow analysis.
@@ -64,17 +69,45 @@ import java.util.Objects;
  * Monotonicity is computed on the expanded operator graph.
  * See the ExpandOperators class. */
 public class Monotonicity extends CircuitVisitor {
-    /** For each operator the list of its output monotone columns. */
-    public final Map<DBSPOperator, MonotoneExpression> monotonicity;
+    public static class MonotonicityInformation {
+        /** For each operator the list of its output monotone columns. */
+        final Map<DBSPOperator, MonotoneExpression> monotonicity;
+        /** List of operators in the expanded graph. */
+        final Set<DBSPOperator> expandedGraph;
+
+        MonotonicityInformation() {
+            this.monotonicity = new HashMap<>();
+            this.expandedGraph = new HashSet<>();
+        }
+
+        void setCircuit(DBSPCircuit circuit) {
+            for (DBSPOperator op: circuit.circuit.getAllOperators())
+                this.expandedGraph.add(op);
+        }
+
+        void put(DBSPOperator operator, MonotoneExpression expression) {
+            assert this.expandedGraph.contains(operator);
+            Utilities.putNew(this.monotonicity, operator, expression);
+        }
+
+        @Nullable
+        MonotoneExpression get(DBSPOperator operator) {
+            if (!this.expandedGraph.contains(operator))
+                throw new InternalCompilerError("Querying operator that is not in the expanded graph " + operator);
+            return this.monotonicity.get(operator);
+        }
+    }
+
+    MonotonicityInformation info;
 
     @Nullable
     public MonotoneExpression getMonotoneExpression(DBSPOperator operator) {
-        return this.monotonicity.get(operator);
+        return this.info.get(operator);
     }
 
     public Monotonicity(IErrorReporter errorReporter) {
         super(errorReporter);
-        monotonicity = new HashMap<>();
+        this.info = new MonotonicityInformation();
     }
 
     void set(DBSPOperator operator, @Nullable MonotoneExpression value) {
@@ -87,7 +120,7 @@ public class Monotonicity extends CircuitVisitor {
                 .append(" => ")
                 .append(value.toString())
                 .newline();
-        Utilities.putNew(this.monotonicity, operator, value);
+        this.info.put(operator, value);
     }
 
     @Nullable
@@ -504,5 +537,11 @@ public class Monotonicity extends CircuitVisitor {
                 this.errorReporter, node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, inputProjection);
         MonotoneExpression result = analyzer.applyAnalysis(closure);
         this.set(node, Objects.requireNonNull(result));
+    }
+
+    @Override
+    public void startVisit(IDBSPOuterNode node) {
+        super.startVisit(node);
+        this.info.setCircuit(node.to(DBSPCircuit.class));
     }
 }

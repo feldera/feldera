@@ -22,8 +22,8 @@ public abstract class DBSPViewBaseOperator extends DBSPUnaryOperator {
             CalciteObject node, String operation, @Nullable DBSPExpression function,
             String viewName, String query, DBSPTypeStruct originalRowType,
             List<ViewColumnMetadata> metadata,
-            @Nullable String comment, DBSPOperator input) {
-        super(node, operation, function, input.outputType, input.isMultiset, input, comment);
+            DBSPOperator input) {
+        super(node, operation, function, input.outputType, input.isMultiset, input);
         this.metadata = metadata;
         this.query = query;
         this.viewName = viewName;
