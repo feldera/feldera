@@ -477,7 +477,7 @@ case $runner:$language in
 	    --cores $cores \
 	    --input-topic-suffix "-$events" \
 	    --csv results.csv \
-	    --query $query
+	    --query $(if test $query = all; then echo all; else echo q$query; fi)
 	;;
 
     flink:*)
