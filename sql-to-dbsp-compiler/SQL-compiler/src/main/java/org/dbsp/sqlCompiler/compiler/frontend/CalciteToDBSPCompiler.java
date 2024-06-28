@@ -587,7 +587,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType localGroupType = localKeyExpression.getType();
         DBSPTypeIndexedZSet localGroupAndInput = makeIndexedZSet(localGroupType, inputRowType);
         DBSPOperator createIndex = new DBSPMapIndexOperator(
-                node, makeKeys, localGroupAndInput, false, opInput);
+                node, makeKeys, localGroupAndInput, opInput);
         this.circuit.addOperator(createIndex);
         DBSPTypeIndexedZSet aggregateType = makeIndexedZSet(localGroupType, typeFromAggregate);
 

@@ -73,6 +73,10 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         this.edgesLabeled = new HashSet<>();
     }
 
+    static String isMultiset(DBSPOperator operator) {
+        return operator.isMultiset ? "" : "*";
+    }
+
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
         String name = node.tableName;
@@ -81,6 +85,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         this.stream.append(node.getOutputName())
                 .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
                 .append(node.getIdString())
+                .append(isMultiset(node))
                 .append(" ")
                 .append(name)
                 .append("\" ]")
@@ -93,6 +98,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         this.stream.append(node.getOutputName())
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
+                .append(isMultiset(node))
                 .append(" ")
                 .append(getFunction(node))
                 .append("\" ]")
@@ -136,6 +142,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         this.stream.append(node.getOutputName())
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
+                .append(isMultiset(node))
                 .append(" ")
                 .append(node.viewName)
                 .append("\"")
@@ -205,6 +212,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(this.getColor(node))
                 .append(" label=\"")
                 .append(node.getIdString())
+                .append(isMultiset(node))
                 .append(" ")
                 .append(node.operation)
                 .append(node.comment != null ? node.comment : "");
