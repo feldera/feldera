@@ -10,7 +10,7 @@ import { ErrorBoundary } from 'react-error-boundary'
 import TabContext from '@mui/lab/TabContext'
 import TabList from '@mui/lab/TabList'
 import TabPanel from '@mui/lab/TabPanel'
-import { Alert, AlertTitle } from '@mui/material'
+import { Alert, AlertTitle, Box, Tooltip } from '@mui/material'
 import Tab from '@mui/material/Tab'
 
 type Tab = 'browse' | 'insert'
@@ -65,11 +65,28 @@ export const TableInspectionTab = ({
         onChange={(_e, tab) => setTab(tab)}
         aria-label='tabs to insert and browse relations'
       >
-        <Tab value='browse' label={`Browse ${caseIndependentName}`} data-testid='button-tab-browse' />
+        {relation.materialized ? (
+          <Tab value='browse' label={`Browse ${caseIndependentName}`} data-testid='button-tab-browse' />
+        ) : (
+          <Tooltip
+            slotProps={{ tooltip: { sx: { fontSize: 14 } } }}
+            title={
+              relation.materialized
+                ? undefined
+                : `Use 'CREATE TABLE (..) WITH ('materialized'='true')' syntax to enable browsing the table`
+            }
+          >
+            <Box
+              sx={{ display: 'flex', flexGrow: 1, flexShrink: 1, flexBasis: '0px', justifyContent: 'center', px: 4 }}
+            >
+              <Tab disabled label={`Browse ${caseIndependentName}`} data-testid='button-tab-browse' />
+            </Box>
+          </Tooltip>
+        )}
         <Tab value='insert' label='Insert New Rows' data-testid='button-tab-insert' />
       </TabList>
       <TabPanel value='browse'>
-        <ViewInspectionTab pipeline={pipeline} caseIndependentName={caseIndependentName} />
+        {!!relation.materialized && <ViewInspectionTab pipeline={pipeline} caseIndependentName={caseIndependentName} />}
       </TabPanel>
       <TabPanel value='insert'>
         {pipeline.state.current_status === PipelineStatus.RUNNING ? (

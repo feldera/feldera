@@ -22,7 +22,7 @@
     "lint": "eslint --max-warnings 0 --fix \"src/**/*.{js,jsx,ts,tsx}\"",
     "format": "prettier --write \"{src,tests}/**/*.{js,jsx,ts,tsx}\"",
     "format-check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\"",
-    "generate-openapi": "openapi --input ../openapi.json --request ./src/lib/services/manager/core/request.ts --output ./src/lib/services/manager && yarn format && patch -p2 < openapi-fixes.patch",
+    "generate-openapi": "openapi --input ../openapi.json --request ./src/lib/services/manager/customRequest.ts --output ./src/lib/services/manager && yarn format && patch -p2 < openapi-fixes.patch",
     "build-openapi": "cd .. && cargo run --bin pipeline-manager -- --dump-openapi",
     "test": "PLAYWRIGHT_API_ORIGIN=http://localhost:8080/ PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/ DISPLAY= yarn playwright test",
     "test-ui": "PLAYWRIGHT_API_ORIGIN=http://localhost:8080/ PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/ DISPLAY= yarn playwright test --ui-host=0.0.0.0",

@@ -119,6 +119,7 @@ const getDefaultRngMethodName = (sqlType: ColumnType): string => {
     .with({ type: 'VARBINARY' }, () => 'VARBINARY type not implemented')
     .with({ type: { Interval: P._ } }, () => 'INTERVAL type not supported')
     .with({ type: 'STRUCT' }, () => 'STRUCT type not supported')
+    .with({ type: 'MAP' }, () => 'MAP type not supported')
     .with({ type: 'NULL' }, () => 'NULL type not supported')
     .exhaustive()
 }
@@ -192,7 +193,7 @@ export const columnTypeToRngOptions = (type: ColumnType): IRngGenMethod[] => {
         invariant(type.component)
         return transformToArrayGenerator(type, columnTypeToRngOptions(type.component))
       })
-      .with({ Interval: P._ }, 'BINARY', 'VARBINARY', 'STRUCT', 'NULL', () => UNSUPPORTED_TYPE_GENERATORS)
+      .with({ Interval: P._ }, 'BINARY', 'VARBINARY', 'STRUCT', 'NULL', 'MAP', () => UNSUPPORTED_TYPE_GENERATORS)
       .exhaustive()
       .map(({ generator, ...rng }) => ({
         ...rng,

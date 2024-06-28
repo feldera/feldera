@@ -221,6 +221,10 @@ export const SQLValueInput = ({
           type: 'string',
           ...props
         }))
+        .with('MAP', () => ({
+          type: 'string',
+          ...props
+        }))
         .with('NULL', () => ({
           type: 'string',
           ...props,

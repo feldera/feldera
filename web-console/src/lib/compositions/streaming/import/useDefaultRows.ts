@@ -23,6 +23,7 @@ export const getDefaultValue = (columntype: ColumnType): SQLValueJS =>
     .with({ type: 'VARBINARY' }, () => invariant(false, 'VARBINARY not implemented') as never)
     .with({ type: { Interval: P._ } }, () => invariant(false, 'INTERVAL not supported for ingress') as never)
     .with({ type: 'STRUCT' }, () => new Map())
+    .with({ type: 'MAP' }, () => new Map())
     .with({ type: 'NULL' }, () => invariant(false, 'NULL not supported for ingress') as never)
     .exhaustive()
 
