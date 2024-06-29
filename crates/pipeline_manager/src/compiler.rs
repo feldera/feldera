@@ -3,18 +3,14 @@ use crate::config::{CompilationProfile, CompilerConfig};
 use crate::db::storage::Storage;
 use crate::db::{DBError, ProgramDescr, ProgramId, ProjectDB, Version};
 use crate::error::ManagerError;
+use crate::metrics::{COMPILE_LATENCY_RUST, COMPILE_LATENCY_SQL};
 use crate::probe::Probe;
 use actix_files::NamedFile;
 use actix_web::{get, web, HttpRequest, HttpServer, Responder};
 use futures_util::join;
 use log::warn;
 use log::{debug, error, info, trace};
-use once_cell::sync::Lazy;
-use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
-use prometheus_client::metrics::counter::Counter;
-use prometheus_client::metrics::family::Family;
-use prometheus_client::metrics::histogram::Histogram;
-use prometheus_client::registry::{Registry, Unit};
+use metrics::histogram;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Instant;
@@ -126,68 +122,6 @@ pub struct ProgramConfig {
     /// Compilation profile.
     /// If none is specified, the compiler default compilation profile is used.
     pub profile: Option<CompilationProfile>,
-}
-
-static METRICS: Lazy<CompilerMetrics> = Lazy::new(init_metrics);
-
-/// Compiler metrics to track the number of invocations and the latency, broken
-/// down by label, which is a pair of phase (SQL vs Rust) and status
-/// (success/error).
-pub struct CompilerMetrics {
-    invocations: Family<MetricLabel, Counter>,
-    latency: Family<MetricLabel, Histogram>,
-}
-
-/// We break down metrics in this file by the compiler phase and exit status
-/// These types need to implement EncodeLabelSet to allow the registry to render
-/// them for metrics scrape endpoints
-#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
-struct MetricLabel {
-    stage: StageType,
-    status: Status,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelValue)]
-enum StageType {
-    Sql,
-    Rust,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelValue)]
-enum Status {
-    Success,
-    Error,
-}
-
-fn init_metrics() -> CompilerMetrics {
-    CompilerMetrics {
-        invocations: Family::<MetricLabel, Counter>::default(),
-        latency: Family::<MetricLabel, Histogram>::new_with_constructor(|| {
-            // These are latency buckets for measuring SQL and rust compilation times.
-            let buckets = [1.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 400.0];
-            Histogram::new(buckets.into_iter())
-        }),
-    }
-}
-
-pub fn register_metrics(registry: &mut Registry) {
-    registry.register(
-        "stage_invocations",
-        "Number of compiler invocations by stage (SQL vs Rust) and status (success vs error)",
-        METRICS.invocations.clone(),
-    );
-    registry.register_with_unit(
-        "latency",
-        "Compilation latency by stage (SQL vs Rust) and status (success vs error)",
-        Unit::Seconds,
-        METRICS.latency.clone(),
-    );
-}
-
-fn record(stage: StageType, status: Status, elapsed: f64) {
-    let label = MetricLabel { stage, status };
-    METRICS.invocations.get_or_create(&label).inc();
-    METRICS.latency.get_or_create(&label).observe(elapsed);
 }
 
 pub struct Compiler {}
@@ -830,7 +764,7 @@ inherits = "release"
 
                     match exit_status {
                         Ok(status) if status.success() && job.as_ref().unwrap().is_sql() => {
-                            record(StageType::Sql, Status::Success, elapsed);
+                            histogram!(COMPILE_LATENCY_SQL, "status" => "success").record(elapsed);
                             // Read the schema so we can store it in the DB.
                             // We trust the compiler that it put the file
                             // there if it succeeded.
@@ -867,7 +801,7 @@ inherits = "release"
                             db.set_program_status_guarded(tenant_id, program_id, version, ProgramStatus::Success).await?;
                             info!("Successfully invoked rust compiler for program {program_id} version {version} (tenant {tenant_id}).");
                             debug!("Set ProgramStatus::Success '{program_id}', version '{version}'");
-                            record(StageType::Rust, Status::Success, elapsed);
+                            histogram!(COMPILE_LATENCY_RUST, "status" => "success").record(elapsed);
                             job = None;
                         }
                         Ok(status) => {
@@ -879,12 +813,12 @@ inherits = "release"
                             } else if let Ok(messages) = serde_json::from_str(&output) {
                                 // If we can parse the SqlCompilerMessages
                                 // as JSON, we assume the compiler worked:
-                                record(StageType::Sql, Status::Error, elapsed);
+                                histogram!(COMPILE_LATENCY_SQL, "status" => "error").record(elapsed);
                                 ProgramStatus::SqlError(messages)
                             } else {
                                 // Otherwise something unexpected happened
                                 // and we return a system error:
-                                record(StageType::Sql, Status::Error, elapsed);
+                                histogram!(COMPILE_LATENCY_SQL, "status" => "error").record(elapsed);
                                 ProgramStatus::SystemError(format!("{output}\nexit code: {status}"))
                             };
                             db.set_program_status_guarded(tenant_id, program_id, version, status).await?;
@@ -892,10 +826,10 @@ inherits = "release"
                         }
                         Err(e) => {
                             let status = if job.unwrap().is_rust() {
-                                record(StageType::Rust, Status::Error, elapsed);
+                                histogram!(COMPILE_LATENCY_RUST, "status" => "error").record(elapsed);
                                 ProgramStatus::SystemError(format!("I/O error with rustc: {e}"))
                             } else {
-                                record(StageType::Sql, Status::Error, elapsed);
+                                histogram!(COMPILE_LATENCY_SQL, "status" => "error").record(elapsed);
                                 ProgramStatus::SystemError(format!("I/O error with sql-to-dbsp: {e}"))
                             };
                             db.set_program_status_guarded(tenant_id, program_id, version, status).await?;

@@ -64,8 +64,7 @@ async fn main() -> anyhow::Result<()> {
     let local_runner_config = local_runner_config.canonicalize()?;
     let prober_config = prober_config.canonicalize()?;
 
-    let mut registry = pipeline_manager::metrics::init();
-    pipeline_manager::compiler::register_metrics(&mut registry);
+    let metrics_handle = pipeline_manager::metrics::init();
     if compiler_config.precompile {
         Compiler::precompile_dependencies(&compiler_config).await?;
         return Ok(());
@@ -97,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
     let _prober = tokio::spawn(async move {
         run_prober(&prober_config, db_clone).await.unwrap();
     });
-    pipeline_manager::metrics::create_endpoint(registry, db.clone()).await;
+    pipeline_manager::metrics::create_endpoint(metrics_handle, db.clone()).await;
     // The api-server blocks forever
     pipeline_manager::api::run(db, api_config).await.unwrap();
     Ok(())
