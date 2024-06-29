@@ -13,7 +13,7 @@ public abstract class ScalarMonotoneType
     protected ScalarMonotoneType(DBSPType type) {
         super();
         assert !type.is(DBSPTypeTupleBase.class) :
-            "Type is expected to be scalar " + type;
+            "Type should have been scalar " + type;
         this.type = type;
     }
 

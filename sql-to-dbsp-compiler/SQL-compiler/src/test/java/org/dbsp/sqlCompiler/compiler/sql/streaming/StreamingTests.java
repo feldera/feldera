@@ -102,22 +102,20 @@ public class StreamingTests extends StreamingTest {
 
     @Test
     public void smallTaxiTest() {
-        // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 1);
         String sql = """
-                CREATE TABLE green_tripdata
-                (
-                  lpep_pickup_datetime TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
-                  pickup_location_id BIGINT NOT NULL
+                CREATE TABLE tripdata (
+                  t TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
+                  location INT NOT NULL
                 );
                 
                 CREATE VIEW V AS
                 SELECT
                 *,
                 COUNT(*) OVER(
-                   PARTITION BY  pickup_location_id
-                   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
-                   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip
-                FROM green_tripdata;""";
+                   PARTITION BY  location
+                   ORDER BY  t
+                   RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 MINUTE PRECEDING ) AS c
+                FROM tripdata;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
@@ -139,10 +137,45 @@ public class StreamingTests extends StreamingTest {
             @Override
             public void endVisit() {
                 Assert.assertEquals(1, this.rolling_waterline);
-                Assert.assertEquals(2, this.integrate_trace);
+                Assert.assertEquals(3, this.integrate_trace);
             }
         };
         visitor.apply(ccs.circuit);
+    }
+
+    @Test
+    public void taxiTest() {
+        String sql = """
+                CREATE TABLE green_tripdata
+                (
+                        lpep_pickup_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
+                        lpep_dropoff_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
+                        pickup_location_id BIGINT NOT NULL,
+                        dropoff_location_id BIGINT NOT NULL,
+                        trip_distance DOUBLE PRECISION,
+                        fare_amount DOUBLE PRECISION
+                );
+                CREATE VIEW V AS SELECT
+                *,
+                COUNT(*) OVER(
+                   PARTITION BY  pickup_location_id
+                   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
+                   -- 1 hour is 3600  seconds
+                   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip,
+                AVG(fare_amount) OVER(
+                   PARTITION BY  pickup_location_id
+                   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
+                   -- 1 hour is 3600  seconds
+                   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS mean_fare_window_1h_pickup_zip,
+                COUNT(*) OVER(
+                   PARTITION BY  dropoff_location_id
+                   ORDER BY  extract (EPOCH from  CAST (lpep_dropoff_datetime AS TIMESTAMP) )
+                   -- 0.5 hour is 1800  seconds
+                   RANGE BETWEEN 1800  PRECEDING AND 1 PRECEDING ) AS count_trips_window_30m_dropoff_zip,
+                case when extract (ISODOW from  CAST (lpep_dropoff_datetime AS TIMESTAMP))  > 5
+                     then 1 else 0 end as dropoff_is_weekend
+                FROM green_tripdata""";
+        this.compileRustTestCase(sql);
     }
 
     @Test
@@ -745,7 +778,6 @@ public class StreamingTests extends StreamingTest {
 
     @Test
     public void testJoinFilter() {
-        // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         // Join two streams with lateness, and filter based on lateness column
         String script = """
             CREATE TABLE series (

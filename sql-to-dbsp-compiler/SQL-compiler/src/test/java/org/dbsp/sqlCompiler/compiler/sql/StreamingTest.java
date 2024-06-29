@@ -9,7 +9,7 @@ public class StreamingTest extends SqlIoTest {
         CompilerOptions options = super.testOptions(incremental, optimize);
         options.languageOptions.incrementalize = true;
         options.languageOptions.outputsAreSets = true;
-        options.languageOptions.throwOnError = false;
+        options.languageOptions.throwOnError = true;
         return options;
     }
 }

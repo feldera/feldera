@@ -56,17 +56,15 @@ import java.io.PrintWriter;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * This visitor dumps the circuit to a dot file, so it can be visualized.
- * A utility method can create a jpg or png or other format supported by dot.
- */
+/** This visitor dumps the circuit to a dot file, so it can be visualized.
+ * A utility method creates a jpg or png or other format supported by dot. */
 public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
-    private final IndentStream stream;
-    // If true show code, otherwise just topology
-    private final boolean details;
-    private final Set<DBSPOperator> edgesLabeled;
+    protected final IndentStream stream;
+    // A higher value -> more details
+    protected final int details;
+    protected final Set<DBSPOperator> edgesLabeled;
 
-    public ToDotVisitor(IErrorReporter reporter, IndentStream stream, boolean details) {
+    public ToDotVisitor(IErrorReporter reporter, IndentStream stream, int details) {
         super(reporter);
         this.stream = stream;
         this.details = details;
@@ -106,14 +104,18 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         return VisitDecision.STOP;
     }
 
+    public String getEdgeLabel(DBSPOperator source) {
+        return source.getOutputRowType().toString();
+    }
+
     void addInputs(DBSPOperator node) {
-        for (DBSPOperator input: node.inputs) {
+        for (DBSPOperator input : node.inputs) {
             this.stream.append(input.getOutputName())
                     .append(" -> ")
                     .append(node.getOutputName());
-            if (this.details && !this.edgesLabeled.contains(input)) {
-                this.stream.append(" [label=")
-                        .append(Utilities.doubleQuote(input.getOutputRowType().toString()))
+            if (this.details >= 2 && !this.edgesLabeled.contains(input)) {
+                this.stream.append(" [xlabel=")
+                        .append(Utilities.doubleQuote(this.getEdgeLabel(input)))
                         .append("]");
                 this.edgesLabeled.add(input);
             }
@@ -186,7 +188,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         return switch (operator.operation) {
             case "waterline_monotonic" -> " style=filled fillcolor=lightgreen";
             case "controlled_filter" -> " style=filled fillcolor=cyan";
-            case "apply" -> " style=filled fillcolor=yellow";
+            case "apply", "apply2" -> " style=filled fillcolor=yellow";
             case "integrate_trace_retain_keys", "integrate_trace_retain_values" -> " style=filled fillcolor=pink";
             // stateful operators
             case "distinct",
@@ -216,7 +218,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(" ")
                 .append(node.operation)
                 .append(node.comment != null ? node.comment : "");
-        if (this.details) {
+        if (this.details > 3) {
             this.stream
                     .append("(")
                     .append(this.getFunction(node))
@@ -241,6 +243,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     public VisitDecision preorder(DBSPPartialCircuit circuit) {
         this.stream.append("{")
                 .increase();
+        this.stream.append("ordering=\"in\"").newline();
         return VisitDecision.CONTINUE;
     }
 
@@ -251,8 +254,13 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .newline();
     }
 
-    public static void toDot(IErrorReporter reporter, String fileName, boolean details,
-                             @Nullable String outputFormat, DBSPCircuit circuit) {
+    public interface VisitorConstructor {
+        CircuitVisitor create(IndentStream stream);
+    }
+
+    public static void toDot(IErrorReporter reporter, String fileName, int details,
+                      @Nullable String outputFormat, DBSPCircuit circuit, VisitorConstructor constructor) {
+        System.out.println("Writing circuit to " + fileName);
         Logger.INSTANCE.belowLevel("ToDotVisitor", 1)
                 .append("Writing circuit to ")
                 .append(fileName)
@@ -263,7 +271,8 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             tmp.deleteOnExit();
             PrintWriter writer = new PrintWriter(tmp.getAbsolutePath());
             IndentStream stream = new IndentStream(writer);
-            circuit.accept(new ToDotVisitor(reporter, stream, details));
+            CircuitVisitor visitor = constructor.create(stream);
+            circuit.accept(visitor);
             writer.close();
             if (outputFormat != null)
                 Utilities.runProcess(".", "dot", "-T", outputFormat,
@@ -278,5 +287,10 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             }
             throw new RuntimeException(ex);
         }
+    }
+
+    public static void toDot(IErrorReporter reporter, String fileName, int details,
+                             @Nullable String outputFormat, DBSPCircuit circuit) {
+        toDot(reporter, fileName, details, outputFormat, circuit, stream -> new ToDotVisitor(reporter, stream, details));
     }
 }

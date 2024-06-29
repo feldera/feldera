@@ -84,7 +84,10 @@ public final class DBSPApplyMethodExpression extends DBSPApplyBaseExpression {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append(this.self)
+        return builder
+                .append("(")
+                .append(this.self)
+                .append(")")
                 .append(".")
                 .append(this.function)
                 .append("(")
@@ -96,6 +99,10 @@ public final class DBSPApplyMethodExpression extends DBSPApplyBaseExpression {
     public DBSPExpression deepCopy() {
         return new DBSPApplyMethodExpression(this.function.deepCopy(), this.getType(),
                 this.self.deepCopy(), Linq.map(this.arguments, DBSPExpression::deepCopy, DBSPExpression.class));
+    }
+
+    public DBSPApplyMethodExpression replaceArguments(DBSPExpression self, DBSPExpression... arguments) {
+        return new DBSPApplyMethodExpression(this.function, this.type, self, arguments);
     }
 
     @Override

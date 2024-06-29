@@ -48,6 +48,6 @@ public class MonotoneType extends ScalarMonotoneType {
 
     @Override
     public String toString() {
-        return "Monotone(" + this.type + ")";
+        return "M(" + this.type + ")";
     }
 }

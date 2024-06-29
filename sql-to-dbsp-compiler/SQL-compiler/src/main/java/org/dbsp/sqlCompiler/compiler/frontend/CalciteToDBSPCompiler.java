@@ -519,6 +519,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     /** Generate a list of the groupings that have to be evaluated for all aggregates */
+    @SuppressWarnings("unused")
     List<ImmutableBitSet> planGroups(
             ImmutableBitSet groupSet,
             ImmutableList<ImmutableBitSet> groupSets) {
@@ -1015,7 +1016,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath t = new DBSPVariablePath(lr.getType().ref());
             DBSPExpression[] casts = new DBSPExpression[lr.size()];
             for (int index = 0; index < lr.size(); index++) {
-                casts[index] = t.deref().field(index).applyCloneIfNeeded().cast(resultType.getFieldType(index));
+                casts[index] = t.deepCopy().deref().field(index).applyCloneIfNeeded().cast(resultType.getFieldType(index));
             }
             DBSPTupleExpression allFields = new DBSPTupleExpression(casts);
             this.circuit.addOperator(joinResult);
@@ -1732,14 +1733,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         originalOrderField.applyCloneIfNeeded());
                 lastPartAndOrderType = partAndOrder.getType();
                 // Copy all the fields from the previousRowRefVar except the partition fields.
-                DBSPExpression[] fields = new DBSPExpression[lastTupleType.size() - partitionKeys.size()];
-                int fieldIndex = 0;
+                List<DBSPExpression> fields = new ArrayList<>();
                 for (int i = 0; i < lastTupleType.size(); i++) {
                     if (partitionKeys.contains(i))
                         continue;
-                    fields[fieldIndex++] = previousRowRefVar.deepCopy().deref().field(i).applyCloneIfNeeded();
+                    if (orderColumnIndex == i)
+                        continue;
+                    fields.add(previousRowRefVar.deepCopy().deref().field(i).applyCloneIfNeeded());
                 }
-                DBSPExpression copiedFields = new DBSPTupleExpression(fields);
+                DBSPExpression copiedFields = new DBSPTupleExpression(fields, false);
                 lastCopiedFieldsType = copiedFields.getType();
                 DBSPExpression indexedInput = new DBSPRawTupleExpression(partAndOrder, copiedFields);
                 DBSPClosureExpression partAndOrderClo = indexedInput.closure(previousRowRefVar.asParameter());
@@ -1759,15 +1761,25 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         lastTupleType.size() + aggResultType.size()];
                 int indexField = 0;
                 for (int i = 0; i < lastTupleType.size(); i++) {
-                    // If the field is in the index, use it from the index
-                    if (partitionKeys.contains(i))
+                    if (partitionKeys.contains(i)) {
+                        int keyIndex = partitionKeys.indexOf(i);
+                        // If the field is in the index, use it from the index
                         allFields[i] = key.deepCopy()
                                 .deref()
                                 .field(0) // partition part
-                                .field(indexField++)
+                                .field(keyIndex)
                                 .applyCloneIfNeeded();
-                    else
+                        indexField++;
+                    } else if (orderColumnIndex == i) {
+                        // If the field is the order key, use it from the index too
+                        allFields[i] = key.deepCopy()
+                                .deref()
+                                .field(1)
+                                .applyCloneIfNeeded();
+                        indexField++;
+                    } else {
                         allFields[i] = left.deepCopy().deref().field(i - indexField).applyCloneIfNeeded();
+                    }
                 }
                 for (int i = 0; i < aggResultType.size(); i++) {
                     // Calcite is very smart and sometimes infers non-nullable result types

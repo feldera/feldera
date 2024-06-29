@@ -43,7 +43,8 @@ public class CompilerMessages {
 
         Error(Throwable e) {
             this(SourcePositionRange.INVALID, false,
-                    "This is a bug in the compiler (please report it to the developers)", e.getMessage());
+                    "This is a bug in the compiler (please report it to the developers)",
+                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
         }
 
         Error(BaseCompilerException e) {

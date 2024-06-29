@@ -436,9 +436,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         DBSPCircuit result = this.circuit.rename(name);
         this.circuit = null;
         if (this.getDebugLevel() > 0 && !result.name.equals("tmp")) {
-            boolean verboseDot = this.getDebugLevel() > 1;
-            System.out.println("Writing circuit to file 'final.png'");
-            ToDotVisitor.toDot(this, "final.png", verboseDot, "png", result);
+            ToDotVisitor.toDot(
+                    this, "final.png", this.getDebugLevel(), "png", result);
         }
         return result;
     }
