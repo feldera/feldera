@@ -40,47 +40,49 @@ where
         TS: Checkpoint + DataTrait + ?Sized,
         Box<TS>: Clone + SizeOf + NumEntries + Rkyv,
     {
-        let local_waterline = self.stream_fold(init(), move |old_waterline, batch| {
-            let mut new_waterline = clone_box(old_waterline.as_ref());
-            let mut cursor = batch.cursor();
-            cursor.fast_forward_keys();
-            match cursor.get_key() {
-                Some(key) => {
-                    waterline_func(key, &mut new_waterline);
-                    max(old_waterline, new_waterline)
+        self.circuit().region("waterline_monotonic", || {
+            let local_waterline = self.stream_fold(init(), move |old_waterline, batch| {
+                let mut new_waterline = clone_box(old_waterline.as_ref());
+                let mut cursor = batch.cursor();
+                cursor.fast_forward_keys();
+                match cursor.get_key() {
+                    Some(key) => {
+                        waterline_func(key, &mut new_waterline);
+                        max(old_waterline, new_waterline)
+                    }
+                    None => old_waterline,
                 }
-                None => old_waterline,
+            });
+
+            if let Some(runtime) = Runtime::runtime() {
+                let num_workers = runtime.num_workers();
+                if num_workers == 1 {
+                    return local_waterline;
+                }
+
+                let (sender, receiver) = new_exchange_operators(
+                    &runtime,
+                    Runtime::worker_index(),
+                    Some(Location::caller()),
+                    init,
+                    move |waterline: Box<TS>, waterlines: &mut Vec<Box<TS>>| {
+                        for _ in 0..num_workers {
+                            waterlines.push(clone_box(waterline.as_ref()));
+                        }
+                    },
+                    |result, waterline| {
+                        if &waterline > result {
+                            *result = waterline;
+                        }
+                    },
+                );
+
+                self.circuit()
+                    .add_exchange(sender, receiver, &local_waterline)
+            } else {
+                local_waterline
             }
-        });
-
-        if let Some(runtime) = Runtime::runtime() {
-            let num_workers = runtime.num_workers();
-            if num_workers == 1 {
-                return local_waterline;
-            }
-
-            let (sender, receiver) = new_exchange_operators(
-                &runtime,
-                Runtime::worker_index(),
-                Some(Location::caller()),
-                init,
-                move |waterline: Box<TS>, waterlines: &mut Vec<Box<TS>>| {
-                    for _ in 0..num_workers {
-                        waterlines.push(clone_box(waterline.as_ref()));
-                    }
-                },
-                |result, waterline| {
-                    if &waterline > result {
-                        *result = waterline;
-                    }
-                },
-            );
-
-            self.circuit()
-                .add_exchange(sender, receiver, &local_waterline)
-        } else {
-            local_waterline
-        }
+        })
     }
 }
 
@@ -100,53 +102,55 @@ where
         TS: Checkpoint + DataTrait + ?Sized,
         Box<TS>: Clone + SizeOf + NumEntries + Rkyv,
     {
-        let least_upper_bound_clone = least_upper_bound.fork();
+        self.circuit().region("waterline", || {
+            let least_upper_bound_clone = least_upper_bound.fork();
 
-        let local_waterline = self.stream_fold(init(), move |mut old_waterline, batch| {
-            let mut ts = clone_box(old_waterline.as_ref());
-            let mut new_waterline = clone_box(old_waterline.as_ref());
+            let local_waterline = self.stream_fold(init(), move |mut old_waterline, batch| {
+                let mut ts = clone_box(old_waterline.as_ref());
+                let mut new_waterline = clone_box(old_waterline.as_ref());
 
-            let mut cursor = batch.cursor();
+                let mut cursor = batch.cursor();
 
-            while cursor.key_valid() {
-                while cursor.val_valid() {
-                    extract_ts(cursor.key(), cursor.val(), &mut ts);
-                    least_upper_bound_clone(&old_waterline, &mut ts, &mut new_waterline);
-                    new_waterline.clone_to(&mut old_waterline);
-                    cursor.step_val();
-                }
-                cursor.step_key();
-            }
-            new_waterline
-        });
-
-        if let Some(runtime) = Runtime::runtime() {
-            let num_workers = runtime.num_workers();
-            if num_workers == 1 {
-                return local_waterline;
-            }
-
-            let (sender, receiver) = new_exchange_operators(
-                &runtime,
-                Runtime::worker_index(),
-                Some(Location::caller()),
-                init,
-                move |waterline: Box<TS>, waterlines: &mut Vec<Box<TS>>| {
-                    for _ in 0..num_workers {
-                        waterlines.push(waterline.clone());
+                while cursor.key_valid() {
+                    while cursor.val_valid() {
+                        extract_ts(cursor.key(), cursor.val(), &mut ts);
+                        least_upper_bound_clone(&old_waterline, &mut ts, &mut new_waterline);
+                        new_waterline.clone_to(&mut old_waterline);
+                        cursor.step_val();
                     }
-                },
-                move |result, waterline| {
-                    let old_result = clone_box(result);
-                    least_upper_bound(&old_result, &waterline, result.as_mut());
-                },
-            );
+                    cursor.step_key();
+                }
+                new_waterline
+            });
 
-            self.circuit()
-                .add_exchange(sender, receiver, &local_waterline)
-        } else {
-            local_waterline
-        }
+            if let Some(runtime) = Runtime::runtime() {
+                let num_workers = runtime.num_workers();
+                if num_workers == 1 {
+                    return local_waterline;
+                }
+
+                let (sender, receiver) = new_exchange_operators(
+                    &runtime,
+                    Runtime::worker_index(),
+                    Some(Location::caller()),
+                    init,
+                    move |waterline: Box<TS>, waterlines: &mut Vec<Box<TS>>| {
+                        for _ in 0..num_workers {
+                            waterlines.push(waterline.clone());
+                        }
+                    },
+                    move |result, waterline| {
+                        let old_result = clone_box(result);
+                        least_upper_bound(&old_result, &waterline, result.as_mut());
+                    },
+                );
+
+                self.circuit()
+                    .add_exchange(sender, receiver, &local_waterline)
+            } else {
+                local_waterline
+            }
+        })
     }
 }
 
