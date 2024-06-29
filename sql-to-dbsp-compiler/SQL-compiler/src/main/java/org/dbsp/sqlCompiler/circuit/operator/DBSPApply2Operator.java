@@ -14,13 +14,10 @@ import java.util.Objects;
 /** Equivalent to the apply2 operator from DBSP
  * which applies an arbitrary function to its 2 inputs.
  * The inputs and outputs do not have to be Z-sets or indexed Z-sets. */
-public final class DBSPApply2Operator extends DBSPOperator {
+public final class DBSPApply2Operator extends DBSPBinaryOperator {
     public DBSPApply2Operator(CalciteObject node, DBSPClosureExpression function,
-                              DBSPType outputType, DBSPOperator left, DBSPOperator right,
-                              @Nullable String comment) {
-        super(node, "apply", function, outputType, false, comment);
-        this.addInput(left);
-        this.addInput(right);
+                              DBSPType outputType, DBSPOperator left, DBSPOperator right) {
+        super(node, "apply2", function, outputType, false, left, right);
         assert function.parameters.length == 2: "Expected 2 parameters for function " + function;
         DBSPType param0Type = function.parameters[0].getType().deref();
         assert left.outputType.sameType(param0Type):
@@ -34,7 +31,7 @@ public final class DBSPApply2Operator extends DBSPOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPApply2Operator(
                 this.getNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
-                outputType, this.inputs.get(0), this.inputs.get(1), this.comment);
+                outputType, this.left(), this.right());
     }
 
     @Override
@@ -43,7 +40,7 @@ public final class DBSPApply2Operator extends DBSPOperator {
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApply2Operator(
                     this.getNode(), this.getFunction().to(DBSPClosureExpression.class),
-                    this.getType(), newInputs.get(0), newInputs.get(1), this.comment);
+                    this.getType(), newInputs.get(0), newInputs.get(1));
         }
         return this;
     }

@@ -1,11 +1,11 @@
 Introduction
 ============
 
-The Feldera Python SDK is meant to provide an easy and convenient way of 
-interacting with Feldera. 
+The Feldera Python SDK is meant to provide an easy and convenient way of
+interacting with Feldera.
 
 
-Please submit any feature request / bug reports to: 
+Please submit any feature request / bug reports to:
 https://github.com/feldera/feldera
 
 
@@ -30,7 +30,7 @@ Key Concepts
 ************
 
 * :class:`.FelderaClient`
-   - This is the actual HTTP client used to make requests to your Feldera 
+   - This is the actual HTTP client used to make requests to your Feldera
      instance.
    - creating an instance of :class:`.FelderaClient` is usually the first thing you
      will do while working with Feldera.
@@ -42,13 +42,13 @@ Key Concepts
          from feldera import FelderaClient
 
          client = FelderaClient("https://try.feldera.com", api_key="YOUR_API_KEY")
-   
+
       - The API key may not be required if you are running Feldera locally.
 
 
 
 * :class:`.SQLContext`
-   - This represents the current context of your SQL program, data sources 
+   - This represents the current context of your SQL program, data sources
      and sinks. In Feldera terminology, this represents both a Program and a
      Pipeline.
 
@@ -73,7 +73,7 @@ Key Concepts
    - Example:
 
       .. code-block:: python
-         
+
          from feldera import SQLSchema
 
          tbl_name = "user_data"
@@ -84,7 +84,7 @@ Key Concepts
 
          # Register Views based on your queries
          query = f"SELECT * FROM {tbl_name}"
-         sql.register_output_view(view_name, query)
+         sql.register_view(view_name, query)
 
          # name for this connector
          in_con = "delta_input_conn"
@@ -105,12 +105,12 @@ Key Concepts
          sql.wait_for_completion(shutdown=True)
 
       - Here, we register a data table which receives data from input sources.
-      - Then, we register a view that performs operations on this input data. 
+      - Then, we register a view that performs operations on this input data.
         You can also register other views on top of existing views.
       - Then, we connect a source delta table to the previously defined table.
       - Then, we connect a sink delta table to the previously defined view.
       - Finally, we run the pipeline to completion. Feldera will fetch data from
-        the source, perform the query you supplied and passes this data to the 
+        the source, perform the query you supplied and passes this data to the
         sink delta table.
 
    .. warning::
@@ -122,7 +122,7 @@ Key Concepts
    - Example:
 
       .. code-block:: python
-         
+
          sql.start()
 
       - This tells Feldera to go ahead and start processing the data.

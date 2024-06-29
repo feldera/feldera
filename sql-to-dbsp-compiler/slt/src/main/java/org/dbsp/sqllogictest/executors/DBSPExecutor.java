@@ -131,7 +131,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
 
     public TableValue[] getInputSets(DBSPCompiler compiler) throws SQLException {
         for (SltSqlStatement statement : this.inputPreparation.statements)
-            compiler.compileStatement(statement.statement, null);
+            compiler.compileStatement(statement.statement);
         TableContents tables = compiler.getTableContents();
         TableValue[] tableValues = new TableValue[tables.tablesCreated.size()];
         for (int i = 0; i < tableValues.length; i++) {
@@ -285,13 +285,12 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                         + dbspQuery + "\n", 2);
         compiler.generateOutputForNextView(false);
         for (SltSqlStatement view: viewPreparation.definitions()) {
-            compiler.compileStatement(view.statement, view.statement);
+            compiler.compileStatement(view.statement);
             compiler.throwIfErrorsOccurred();
         }
         compiler.generateOutputForNextView(true);
-        compiler.compileStatement(dbspQuery, "" /* testQuery.getName() */);
+        compiler.compileStatement(dbspQuery);
         compiler.throwIfErrorsOccurred();
-        compiler.optimize();
         DBSPCircuit dbsp = compiler.getFinalCircuit("gen" + suffix);
         DBSPNode.done();
 
@@ -329,7 +328,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     void createTables(DBSPCompiler compiler) {
         for (SltSqlStatement statement : this.tablePreparation.statements) {
             String stat = statement.statement;
-            compiler.compileStatement(stat, stat);
+            compiler.compileStatement(stat);
         }
     }
 
@@ -499,7 +498,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                     elementType = oType.elementType;
                 }
                 DBSPExpression zset_to_strings = new DBSPQualifyTypeExpression(
-                        DBSPTypeAny.getDefault().var(functionProducingStrings),
+                        new DBSPVariablePath(functionProducingStrings, DBSPTypeAny.getDefault()),
                         elementType
                 );
                 list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
@@ -518,14 +517,14 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             if (description.hash == null)
                 throw new RuntimeException("Expected hash to be supplied");
             String hash = isVector ? "hash_vectors" : "hash";
-            list.add(new DBSPLetStatement("_hash",
+            DBSPVariablePath var = new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false).var();
+            list.add(new DBSPLetStatement(var.variable,
                     new DBSPApplyExpression(hash, new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false),
                             outputStatement.getVarReference().borrow(),
                             columnTypes,
                             sort)));
             list.add(new DBSPApplyExpression("assert_eq!", new DBSPTypeVoid(),
-                    new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, false).var("_hash"),
-                    new DBSPStringLiteral(description.hash)).toStatement());
+                    var, new DBSPStringLiteral(description.hash)).toStatement());
         }
         DBSPExpression body = new DBSPBlockExpression(list, null);
         DBSPFunction function = new DBSPFunction(name, new ArrayList<>(), new DBSPTypeVoid(), body, Linq.list("#[test]"));

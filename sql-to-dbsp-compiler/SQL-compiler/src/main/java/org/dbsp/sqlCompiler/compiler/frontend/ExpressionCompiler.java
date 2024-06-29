@@ -396,7 +396,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 right = right.cast(commonBase.setMayBeNull(rightType.mayBeNull));
         }
         // TODO: we don't need the whole function here, just the result type.
-        RustSqlRuntimeLibrary.FunctionDescription function = RustSqlRuntimeLibrary.INSTANCE.getImplementation(
+        RustSqlRuntimeLibrary.FunctionDescription function =
+                RustSqlRuntimeLibrary.INSTANCE.getImplementation(node,
                 opcode, type, left.getType(), right.getType());
         DBSPExpression call = new DBSPBinaryExpression(node, function.returnType, opcode, left, right);
         return call.cast(type);
@@ -640,7 +641,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
         if (!argElemType.sameType(expectedType)) {
             // Apply a cast to every element of the vector
-            DBSPVariablePath var = new DBSPVariablePath("v", argElemType.ref());
+            DBSPVariablePath var = argElemType.ref().var();
             DBSPExpression cast = var.deref().cast(expectedType).closure(var.asParameter());
             arg = new DBSPApplyExpression("map", expectedVecType, arg.borrow(), cast);
         }

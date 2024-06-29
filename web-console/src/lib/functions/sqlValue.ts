@@ -125,6 +125,9 @@ export const sqlValueToXgressJSON = (type: ColumnType, value: SQLValueJS): JSONX
     .with({ type: 'NULL' }, () => {
       invariant(false, 'NULL type is not supported for ingress')
     })
+    .with({ type: 'MAP' }, () => {
+      invariant(false, 'MAP type is not supported for ingress')
+    })
     .exhaustive()
 }
 
@@ -210,6 +213,9 @@ export const xgressJSONToSQLValue = (type: ColumnType, value: JSONXgressValue): 
     .with({ type: 'NULL' }, () => {
       invariant(false, 'NULL type is not supported for ingress')
     })
+    .with({ type: 'MAP' }, () => {
+      invariant(false, 'MAP type is not supported for ingress')
+    })
     .exhaustive()
 }
 
@@ -272,6 +278,7 @@ export const numericRange = (sqlType: ColumnType) =>
       { type: { Interval: P._ } },
       { type: 'STRUCT' },
       { type: 'NULL' },
+      { type: 'MAP' },
       () => {
         throw new Error(`Not a numeric type: ${sqlType.type}`)
       }
@@ -304,6 +311,7 @@ export const dateTimeRange = (sqlType: ColumnType): Dayjs[] =>
       'ARRAY',
       'STRUCT',
       'NULL',
+      'MAP',
       () => {
         throw new Error('Not a date/time type')
       }
@@ -345,6 +353,7 @@ export const sqlValueComparator = (sqlType: ColumnType) => {
     .with('VARBINARY', () => () => 0)
     .with('STRUCT', () => () => 0)
     .with('NULL', () => () => 0)
+    .with('MAP', () => () => 0)
     .exhaustive()
 
   return (a: SQLValueJS, b: SQLValueJS) => {

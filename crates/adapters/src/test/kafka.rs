@@ -245,7 +245,7 @@ impl BufferConsumer {
         let buffer = MockDeZSet::new();
 
         // Input parsers don't care about schema yet.
-        let schema = Relation::new("mock_schema", false, vec![]);
+        let schema = Relation::new("mock_schema", false, vec![], false);
 
         let mut parser = format
             .new_parser(

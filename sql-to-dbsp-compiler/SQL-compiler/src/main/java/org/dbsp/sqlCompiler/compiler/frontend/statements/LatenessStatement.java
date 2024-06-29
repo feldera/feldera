@@ -12,7 +12,7 @@ public class LatenessStatement extends FrontEndStatement {
     public LatenessStatement(SqlNode node, String statement,
                              SqlIdentifier view, SqlIdentifier column,
                              RexNode value) {
-        super(node, statement, null);
+        super(node, statement);
         this.view = view;
         this.column = column;
         this.value = value;

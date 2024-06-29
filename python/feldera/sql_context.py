@@ -14,7 +14,7 @@ from feldera.rest.program import Program
 from feldera.rest.pipeline import Pipeline
 from feldera.rest.connector import Connector
 from feldera._sql_table import SQLTable
-from feldera._sql_view import SQLView
+from feldera._sql_view import SQLView, ViewKind
 from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
@@ -301,9 +301,9 @@ class SQLContext:
         :param query: The query to be used to create the view.
         """
 
-        self.views[name] = SQLView(name, True, query)
+        self.views[name] = SQLView(name, ViewKind.LOCAL, query)
 
-    def register_output_view(self, name: str, query: str):
+    def register_view(self, name: str, query: str):
         """
         Register a Feldera View based on the provided query.
         Auto inserts the trailing semicolon if not present.
@@ -312,7 +312,18 @@ class SQLContext:
         :param query: The query to be used to create the view.
         """
 
-        self.views[name] = SQLView(name, False, query)
+        self.views[name] = SQLView(name, ViewKind.DEFAULT, query)
+
+    def register_materialized_view(self, name: str, query: str):
+        """
+        Register a Feldera materialized View based on the provided query.
+        Auto inserts the trailing semicolon if not present.
+
+        :param name: The name of the view.
+        :param query: The query to be used to create the view.
+        """
+
+        self.views[name] = SQLView(name, ViewKind.MATERIALIZED, query)
 
     def register_type(self, name: str, spec: str):
         """
@@ -333,8 +344,13 @@ class SQLContext:
         """
         Add a lateness annotation to a view.
         Lateness annotations are SQL statements of the form
-        'LATENESS <view>.<timstamp_column> <lateness_expr>;', e.g.,
-        'LATENESS V.COL1 INTERVAL '1' HOUR;'
+
+        .. code-block:: sql
+
+            LATENESS <view>.<timestamp_column> <lateness_expr>;
+            -- example:
+            LATENESS V.COL1 INTERVAL '1' HOUR;
+
 
         :param view: View name.
         :param timestamp_column: Timestamp column to associate lateness with.
@@ -455,7 +471,8 @@ class SQLContext:
         table_name: str,
         connector_name: str,
         config: dict,
-        fmt: JSONFormat | CSVFormat
+        fmt: JSONFormat | CSVFormat,
+        max_queued_records: Optional[int] = None
     ):
         """
         Associate the specified kafka topics on the specified Kafka server as input source for the specified table in
@@ -465,6 +482,7 @@ class SQLContext:
         :param connector_name: The unique name for this connector.
         :param config: The configuration for the kafka connector.
         :param fmt: The format of the data in the kafka topic.
+        :param max_queue_records:  Maximal number of records queued by the endpoint before the endpoint is paused by the backpressure mechanism.
         """
 
         if config.get("bootstrap.servers") is None:
@@ -475,15 +493,20 @@ class SQLContext:
 
         validate_connector_input_format(fmt)
 
+        config={
+            "transport": {
+                "name": "kafka_input",
+                "config": config,
+            },
+            "format": fmt.to_dict()
+        }
+
+        if max_queued_records is not None:
+            config["max_queued_records"] = max_queued_records
+
         connector = Connector(
             name=connector_name,
-            config={
-                "transport": {
-                    "name": "kafka_input",
-                    "config": config,
-                },
-                "format": fmt.to_dict(),
-            }
+            config=config
         )
 
         if table_name in self.input_connectors_buffer:

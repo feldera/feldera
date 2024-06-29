@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -35,10 +35,10 @@ import java.util.List;
 public final class DBSPSinkOperator extends DBSPViewBaseOperator {
     public DBSPSinkOperator(CalciteObject node, String viewName, String query,
                             DBSPTypeStruct originalRowType,
-                            List<ViewColumnMetadata> metadata,
-                            @Nullable String comment, DBSPOperator input) {
+                            ViewMetadata metadata,
+                            DBSPOperator input) {
         super(node, "inspect", null, viewName, query,
-                originalRowType, metadata, comment, input);
+                originalRowType, metadata, input);
     }
 
     @Override
@@ -55,7 +55,7 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSinkOperator(
                     this.getNode(), this.viewName, this.query, this.originalRowType,
-                    this.metadata, this.comment, newInputs.get(0));
+                    this.metadata, newInputs.get(0));
         return this;
     }
 }

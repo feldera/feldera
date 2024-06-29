@@ -54,10 +54,18 @@ public class CatalogTests extends BaseSQLTests {
                     address ADDRESS
                 );
                 
-                
                 CREATE TABLE Data (
                     id BIGINT not null primary key,
                     msg CustomType
+                );""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue1941() {
+        String sql = """
+                CREATE TABLE Data (
+                    map MAP<INT, INT>
                 );""";
         this.compileRustTestCase(sql);
     }
@@ -264,16 +272,32 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
-    public void updateTest() {
+    public void primaryKeyTest2() {
         String sql = """
                 create table t1(
-                            id1 bigint not null,
-                            id2 bigint,
-                            str1 varchar not null,
-                            str2 varchar,
-                            int1 bigint not null,
-                            int2 bigint,
-                            primary key(id1, id2))""";
+                   id1 bigint not null,
+                   id2 bigint,
+                   str1 varchar not null,
+                   str2 varchar,
+                   int1 bigint not null,
+                   int2 bigint,
+                   primary key(id1, id2)
+                )""";
+        DBSPCompiler compiler = testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase(sql, ccs);
+    }
+
+    @Test
+    public void materializedTest2() {
+        String sql = """
+                create table T(
+                   I int not null
+                ) with (
+                   'materialized' = 'true'
+                );
+                create materialized view V as SELECT * FROM T;""";
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(sql);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);

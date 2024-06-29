@@ -11,10 +11,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 
-/**
- * Resolves the variable references by pointing each variable reference
- * to a declaration that introduced the variable.
- */
+/** Resolves the variable references by pointing each variable reference
+ * to a declaration that introduced the variable. */
 public class ResolveReferences extends InnerVisitor {
     private final Scopes<String, IDBSPDeclaration> substitutionContext;
     public final ReferenceMap reference;

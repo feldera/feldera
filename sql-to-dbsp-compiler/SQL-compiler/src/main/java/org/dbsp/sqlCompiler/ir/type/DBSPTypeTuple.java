@@ -117,10 +117,8 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         visitor.postorder(this);
     }
 
-    /**
-     * Returns a lambda which casts every field of a tuple
-     * to the corresponding field of this type.
-     */
+    /** Returns a lambda which casts every field of a tuple
+     * to the corresponding field of this type. */
     @Override
     public DBSPExpression caster(DBSPType to) {
         if (!to.is(DBSPTypeTuple.class))
@@ -128,7 +126,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         DBSPTypeTuple tuple = to.to(DBSPTypeTuple.class);
         if (tuple.size() != this.size())
             return super.caster(to);  // throw
-        DBSPVariablePath var = new DBSPVariablePath("x", this.ref());
+        DBSPVariablePath var = this.ref().var();
         DBSPExpression[] casts = new DBSPExpression[this.tupFields.length];
         for (int i = 0; i < this.tupFields.length; i++) {
             casts[i] = this.tupFields[i].caster(tuple.tupFields[i]);

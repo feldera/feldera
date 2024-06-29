@@ -48,7 +48,7 @@ public class InstrumentDump extends CircuitCloneVisitor {
         DBSPOperator input = operator.withInputs(inputs, false);
         this.addOperator(input);
         DBSPTypeZSet zset = type.to(DBSPTypeZSet.class);
-        DBSPVariablePath row = new DBSPVariablePath("v", zset.elementType.ref());
+        DBSPVariablePath row = new DBSPVariablePath(zset.elementType.ref());
         DBSPExpression dump = new DBSPApplyExpression(operator.getNode(), "dump", zset.elementType,
                 new DBSPStringLiteral(Long.toString(operator.id)), row);
         DBSPExpression function = dump.closure(row.asParameter());

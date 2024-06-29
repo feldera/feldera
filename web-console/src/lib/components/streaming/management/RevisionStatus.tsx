@@ -18,6 +18,7 @@ import {
   useRef,
   useState
 } from 'react'
+import JSONbig from 'true-json-bigint'
 
 import { ThemeColor } from '@core/layouts/types'
 import { DiffEditor, MonacoDiffEditor } from '@monaco-editor/react'
@@ -257,8 +258,8 @@ export const PipelineRevisionStatusChip = (props: { pipeline: Pipeline }) => {
       !curPipelineConfigQuery.isError
     ) {
       const configDiffResult = diffLines(
-        JSON.stringify(pipelineRevisionQuery.data.config, null, 2),
-        JSON.stringify(curPipelineConfigQuery.data, null, 2)
+        JSONbig.stringify(pipelineRevisionQuery.data.config, null, 2),
+        JSONbig.stringify(curPipelineConfigQuery.data, null, 2)
       ).filter(line => line.added || line.removed)
 
       // Distinguish the case where the program is not set in the pipeline
@@ -298,8 +299,8 @@ export const PipelineRevisionStatusChip = (props: { pipeline: Pipeline }) => {
         show={show}
         setShow={setShow}
         diffCount={diffCount}
-        origConfig={JSON.stringify(pipelineRevisionQuery.data?.config || '', null, 2)}
-        newConfig={JSON.stringify(curPipelineConfigQuery.data || '', null, 2)}
+        origConfig={JSONbig.stringify(pipelineRevisionQuery.data?.config || '', null, 2)}
+        newConfig={JSONbig.stringify(curPipelineConfigQuery.data || '', null, 2)}
         origProgram={pipelineRevisionQuery.data?.program.code || ''}
         newProgram={curProgramQuery.data?.code || ''}
         validationError={validationError}

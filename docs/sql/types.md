@@ -1,4 +1,4 @@
-# Supported Data Types
+# Built-in Data Types
 
 The compiler supports the following SQL data types:
 
@@ -56,7 +56,7 @@ value.
 ## User-defined structures
 
 Users can declare new structure types.  Such types can be used for
-columns, record fields, user-defined function parameters or result.
+columns, record fields, user-defined function parameters or results.
 
 For example, we can declare types `address_typ` and `employee_typ`:
 

@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.sql;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -35,6 +34,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -130,10 +130,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
 
         NameGen.reset();
         DBSPNode.reset();
+        DBSPVariablePath.reset();
         String query = "CREATE VIEW V AS SELECT T.COL3 FROM T";
         DBSPCompiler compiler = this.compileDef();
         compiler.compileStatement(query);
-        compiler.optimize();
         // Deterministically name the circuit function.
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
         String str = circuit.toString();
@@ -144,18 +144,18 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                     // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
                     let stream39 = T();
                     // DBSPMapOperator 61
-                    let stream61: stream<WSet<Tup1<b>>> = stream39.map((|t: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t).2), )));
+                    let stream61: stream<WSet<Tup1<b>>> = stream39.map((|t_1: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t_1).2), )));
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let stream131: stream<WSet<Tup1<b>>> = stream61;
+                    let stream130: stream<WSet<Tup1<b>>> = stream61;
                 }
                 """;
         Assert.assertEquals(expected, str);
     }
 
     @Test
-    public void connectorPropertiesTest() throws JsonProcessingException {
+    public void connectorPropertiesTest() {
         String ddl = """
                CREATE TABLE T (
                   COL1 INT
@@ -169,11 +169,12 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                ) AS SELECT * FROM T;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
+        getCircuit(compiler);
         JsonNode meta = compiler.getIOMetadataAsJson();
         JsonNode inputs = meta.get("inputs");
         Assert.assertNotNull(inputs);
         Assert.assertTrue(inputs.isArray());
-        JsonNode c = inputs.get(0).get("connector");
+        JsonNode c = inputs.get(0).get("properties");
         Assert.assertNotNull(c);
         String str = c.toPrettyString();
         Assert.assertEquals("""
@@ -185,7 +186,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         JsonNode outputs = meta.get("outputs");
         Assert.assertNotNull(inputs);
         Assert.assertTrue(outputs.isArray());
-        c = outputs.get(0).get("connector");
+        c = outputs.get(0).get("properties");
         Assert.assertNotNull(c);
         str = c.toPrettyString();
         Assert.assertEquals("""
@@ -208,8 +209,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatements(ddl);
-        TestUtil.assertMessagesContain(compiler.messages, "Duplicate key");
-        TestUtil.assertMessagesContain(compiler.messages, "Previous declaration");
+        TestUtil.assertMessagesContain(compiler, "Duplicate key");
+        TestUtil.assertMessagesContain(compiler, "Previous declaration");
     }
 
     @Test
@@ -219,7 +220,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String query = "CREATE VIEW V AS SELECT '1_000'::INT4";
         compiler.compileStatement(query);
         getCircuit(compiler);  // invokes optimizer
-        TestUtil.assertMessagesContain(compiler.messages, "String '1_000' cannot be interpreted as a number");
+        TestUtil.assertMessagesContain(compiler, "String '1_000' cannot be interpreted as a number");
     }
 
     // Test the ability to redirect logging streams.
@@ -647,7 +648,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
             }
         };
         visitor.apply(circuit);
-        TestUtil.assertMessagesContain(compiler.messages, "No view named 'W' found");
+        TestUtil.assertMessagesContain(compiler, "No view named 'W' found");
     }
 
     @Test
@@ -701,12 +702,10 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String query = "CREATE VIEW V AS SELECT T.COL1 FROM T";
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
-        compiler.optimize();
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
-        DBSPOperator sink = circuit.circuit.getSink("V");
+        DBSPSinkOperator sink = circuit.circuit.getSink("V");
         Assert.assertNotNull(sink);
-        Assert.assertEquals(1, sink.inputs.size());
-        DBSPOperator op = sink.inputs.get(0);
+        DBSPOperator op = sink.input();
         // There is no optimization I can imagine which will remove the distinct
         Assert.assertTrue(op.is(DBSPStreamDistinctOperator.class));
     }
@@ -769,12 +768,14 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void testSchema() throws IOException, SQLException {
         String[] statements = new String[]{
-                "CREATE TABLE T (\n" +
-                        "COL1 INT NOT NULL" +
-                        ", COL2 DOUBLE NOT NULL" +
-                        ", COL3 VARCHAR(3) PRIMARY KEY" +
-                        ", COL4 VARCHAR(3) ARRAY" +
-                        ")",
+                """
+                CREATE TABLE T (
+                COL1 INT NOT NULL
+                , COL2 DOUBLE NOT NULL
+                , COL3 VARCHAR(3) PRIMARY KEY
+                , COL4 VARCHAR(3) ARRAY
+                , COL5 MAP<INT, INT>
+                )""",
                 "CREATE VIEW V AS SELECT COL1 AS \"xCol\" FROM T",
                 "CREATE VIEW V1 (\"yCol\") AS SELECT COL1 FROM T"
         };
@@ -829,8 +830,24 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         "nullable" : true,
                         "type" : "ARRAY"
                       }
+                    }, {
+                      "name" : "COL5",
+                      "case_sensitive" : false,
+                      "columntype" : {
+                        "key" : {
+                          "nullable" : false,
+                          "type" : "INTEGER"
+                        },
+                        "nullable" : true,
+                        "type" : "MAP",
+                        "value" : {
+                          "nullable" : false,
+                          "type" : "INTEGER"
+                        }
+                      }
                     } ],
-                    "primary_key" : [ "COL3" ]
+                    "primary_key" : [ "COL3" ],
+                    "materialized" : false
                   } ],
                   "outputs" : [ {
                     "name" : "V",
@@ -842,7 +859,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         "nullable" : false,
                         "type" : "INTEGER"
                       }
-                    } ]
+                    } ],
+                    "materialized" : false
                   }, {
                     "name" : "V1",
                     "case_sensitive" : false,
@@ -853,7 +871,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                         "nullable" : false,
                         "type" : "INTEGER"
                       }
-                    } ]
+                    } ],
+                    "materialized" : false
                   } ]
                 }""", jsonContents);
     }

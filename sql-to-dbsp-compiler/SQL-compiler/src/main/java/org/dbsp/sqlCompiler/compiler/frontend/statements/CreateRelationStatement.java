@@ -39,17 +39,17 @@ public abstract class CreateRelationStatement
     public final String relationName;
     public final boolean nameIsQuoted;
     public final List<RelColumnMetadata> columns;
-    @Nullable final Map<String, String> connectorProperties;
+    @Nullable final Map<String, String> properties;
 
     protected CreateRelationStatement(SqlNode node, String statement, String relationName,
-                                      boolean nameIsQuoted, @Nullable String comment,
+                                      boolean nameIsQuoted,
                                       List<RelColumnMetadata> columns,
-                                      @Nullable Map<String, String> connectorProperties) {
-        super(node, statement, comment);
+                                      @Nullable Map<String, String> properties) {
+        super(node, statement);
         this.nameIsQuoted = nameIsQuoted;
         this.relationName = relationName;
         this.columns = columns;
-        this.connectorProperties = connectorProperties;
+        this.properties = properties;
     }
 
     public AbstractTable getEmulatedTable() {
@@ -64,7 +64,14 @@ public abstract class CreateRelationStatement
         return this.columns;
     }
 
-    @Nullable public Map<String, String> getConnectorProperties() { return this.connectorProperties; }
+    @Nullable public Map<String, String> getProperties() { return this.properties; }
+
+    @Nullable
+    public String getPropertyValue(String property) {
+        if (this.properties == null)
+            return null;
+        return this.properties.get(property);
+    }
 
     @Override
     public String toString() {

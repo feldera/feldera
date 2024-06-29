@@ -34,14 +34,12 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-public final class DBSPStreamJoinOperator extends DBSPOperator {
+public final class DBSPStreamJoinOperator extends DBSPBinaryOperator {
     public DBSPStreamJoinOperator(CalciteObject node, DBSPTypeZSet outputType,
                                   // Closure from key, valueLeft, valueRight to result type
                                   DBSPExpression function, boolean isMultiset,
                                   DBSPOperator left, DBSPOperator right) {
-        super(node, "stream_join", function, outputType, isMultiset);
-        this.addInput(left);
-        this.addInput(right);
+        super(node, "stream_join", function, outputType, isMultiset, left, right);
         DBSPType elementResultType = this.getOutputZSetElementType();
         this.checkResultType(function, elementResultType);
     }
@@ -60,7 +58,7 @@ public final class DBSPStreamJoinOperator extends DBSPOperator {
         return new DBSPStreamJoinOperator(
                 this.getNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression),
-                this.isMultiset, this.inputs.get(0), this.inputs.get(1));
+                this.isMultiset, this.left(), this.right());
     }
 
     @Override

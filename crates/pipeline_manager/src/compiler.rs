@@ -1183,7 +1183,7 @@ mod test {
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
-            binary_ref_port: 9090,
+            binary_ref_port: 8085,
         };
 
         let (db, _temp) = crate::db::test::setup_pg().await;
@@ -1248,7 +1248,7 @@ mod test {
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
-            binary_ref_port: 9090,
+            binary_ref_port: 8085,
         };
 
         let (db, _temp) = crate::db::test::setup_pg().await;
@@ -1294,7 +1294,7 @@ mod test {
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
-            binary_ref_port: 9090,
+            binary_ref_port: 8085,
         };
 
         let (db, _temp) = crate::db::test::setup_pg().await;

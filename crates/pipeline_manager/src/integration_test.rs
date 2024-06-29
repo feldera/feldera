@@ -120,7 +120,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         compilation_profile: crate::config::CompilationProfile::Unoptimized,
         precompile: true,
         binary_ref_host: "127.0.0.1".to_string(),
-        binary_ref_port: 9090,
+        binary_ref_port: 8085,
     }
     .canonicalize()
     .unwrap();
@@ -497,13 +497,6 @@ impl TestConfig {
         println!("Waiting for compilation");
         let mut last_wait_println = Instant::now();
         loop {
-            if last_wait_println.elapsed().as_secs() >= 60 {
-                println!(
-                    "Waiting for compilation since {} seconds",
-                    start.elapsed().as_secs()
-                );
-                last_wait_println = Instant::now();
-            }
             std::thread::sleep(time::Duration::from_secs(1));
             if start.elapsed().as_secs() > 480 {
                 panic!("Compilation timeout");
@@ -523,6 +516,14 @@ impl TestConfig {
                     let status = status.to_string().replace("\\n", "\n");
                     panic!("Compilation failed with status {}", status);
                 }
+            }
+            if last_wait_println.elapsed().as_secs() >= 60 {
+                println!(
+                    "Waiting for compilation since {} seconds, status: {}",
+                    start.elapsed().as_secs(),
+                    status
+                );
+                last_wait_println = Instant::now();
             }
         }
     }
@@ -755,7 +756,7 @@ async fn deploy_pipeline() {
     let config = setup().await;
     let _ = deploy_pipeline_without_connectors(
         &config,
-        "create table t1(c1 integer); create view v1 as select * from t1;",
+        "create table t1(c1 integer) with ('materialized' = 'true'); create view v1 as select * from t1;",
     )
     .await;
 
@@ -930,7 +931,7 @@ async fn json_ingress() {
     let config = setup().await;
     let id = deploy_pipeline_without_connectors(
         &config,
-        "create table t1(c1 integer, c2 bool, c3 varchar); create view v1 as select * from t1;",
+        "create table t1(c1 integer, c2 bool, c3 varchar) with ('materialized' = 'true'); create materialized view v1 as select * from t1;",
     )
     .await;
 
@@ -1094,13 +1095,72 @@ not_a_number,true,ΑαΒβΓγΔδ
         .await;
 }
 
+// Table with column of type MAP.
+#[actix_web::test]
+#[serial]
+async fn map_column() {
+    let config = setup().await;
+    let id = deploy_pipeline_without_connectors(
+        &config,
+        "create table t1(c1 integer, c2 bool, c3 MAP<varchar, varchar>) with ('materialized' = 'true'); create view v1 as select * from t1;",
+    )
+    .await;
+
+    // Start the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/test/start"))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
+        .await;
+
+    // Push some data using default json config.
+    let req = config
+        .post_json(
+            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
+            r#"{"c1": 10, "c2": true, "c3": {"foo": "1", "bar": "2"}}
+            {"c1": 20}"#
+                .to_string(),
+        )
+        .await;
+    assert!(req.status().is_success());
+
+    let quantiles = config.quantiles_json("test", "T1").await;
+    assert_eq!(quantiles, "[{\"insert\":{\"c1\":10,\"c2\":true,\"c3\":{\"bar\":\"2\",\"foo\":\"1\"}}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":null}}]");
+
+    let hood = config
+        .neighborhood_json(
+            &id,
+            "T1",
+            Some(json!({"c1":10,"c2":true,"c3": {"foo": "1", "bar": "2"}})),
+            10,
+            10,
+        )
+        .await;
+    assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"c1\":10,\"c2\":true,\"c3\":{\"bar\":\"2\",\"foo\":\"1\"}}}},{\"insert\":{\"index\":1,\"key\":{\"c1\":20,\"c2\":null,\"c3\":null}}}]");
+
+    // Shutdown the pipeline
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/test/shutdown"))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+}
+
 #[actix_web::test]
 #[serial]
 async fn parse_datetime() {
     let config = setup().await;
     let _ = deploy_pipeline_without_connectors(
         &config,
-        "create table t1(t TIME, ts TIMESTAMP, d DATE);",
+        "create table t1(t TIME, ts TIMESTAMP, d DATE) with ('materialized' = 'true');",
     )
     .await;
 
@@ -1149,7 +1209,7 @@ async fn quoted_columns() {
     let config = setup().await;
     let _ = deploy_pipeline_without_connectors(
         &config,
-        r#"create table t1("c1" integer not null, "C2" bool not null, "😁❤" varchar not null, "αβγ" boolean not null, ΔΘ boolean not null)"#,
+        r#"create table t1("c1" integer not null, "C2" bool not null, "😁❤" varchar not null, "αβγ" boolean not null, ΔΘ boolean not null) with ('materialized' = 'true')"#,
     )
     .await;
 
@@ -1199,7 +1259,7 @@ async fn primary_keys() {
     let config = setup().await;
     let _ = deploy_pipeline_without_connectors(
         &config,
-        r#"create table t1(id bigint not null, s varchar not null, primary key (id))"#,
+        r#"create table t1(id bigint not null, s varchar not null, primary key (id)) with ('materialized' = 'true')"#,
     )
     .await;
 
@@ -1312,8 +1372,8 @@ async fn case_sensitive_tables() {
         &config,
         r#"create table "TaBle1"(id bigint not null);
 create table table1(id bigint);
-create view "V1" as select * from "TaBle1";
-create view "v1" as select * from table1;"#,
+create materialized view "V1" as select * from "TaBle1";
+create materialized view "v1" as select * from table1;"#,
     )
     .await;
 
@@ -1776,11 +1836,12 @@ async fn pipeline_start_without_compiling() {
         let val: Value = resp.json().await.unwrap();
 
         let status = val["status"].clone();
+        println!("Program status is: {status:?}");
+
         if status == json!("None") || status == json!("Pending") || status == json!("CompilingSql")
         {
             continue;
         }
-        println!("Program status is: {status:?}");
         break;
     }
     // Start the program

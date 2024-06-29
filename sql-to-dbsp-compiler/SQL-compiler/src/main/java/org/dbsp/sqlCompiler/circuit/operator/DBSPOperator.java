@@ -185,8 +185,8 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
         if (argType.is(DBSPTypeAny.class))
             return;
         if (!sourceElementType.sameType(argType))
-            throw new InternalCompilerError("Expected function to accept " + sourceElementType +
-                    " as argument " + arg + " but it expects " + funcType.argumentTypes[arg], this);
+            throw new InternalCompilerError("Expected function to accept\n" + sourceElementType +
+                    " as argument " + arg + " but it expects\n" + funcType.argumentTypes[arg], this);
     }
 
     protected void addInput(DBSPOperator node) {

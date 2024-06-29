@@ -7,6 +7,7 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogTitle from '@mui/material/DialogTitle'
+import { Box, IconButton } from '@mui/material'
 
 const MissingSchemaDialog = (props: {
   open: boolean
@@ -26,12 +27,21 @@ const MissingSchemaDialog = (props: {
       aria-labelledby='alert-dialog-title'
       aria-describedby='alert-dialog-description'
       onClose={(event, reason) => {
-        if (reason !== 'backdropClick') {
-          handleClose()
+        if (reason === 'backdropClick') {
+          return props.setOpen(false)
         }
+        handleClose()
       }}
     >
-      <DialogTitle>Missing Schema?</DialogTitle>
+      <Box sx={{ width: '100%', display: 'flex', justifyContent: 'space-between' }}>
+        <DialogTitle>Missing Schema?</DialogTitle>
+        <Box>
+          <IconButton onClick={() => props.setOpen(false)}>
+            <i className='bx bx-x'></i>
+          </IconButton>
+        </Box>
+      </Box>
+
       <DialogContent>
         <DialogContentText>
           We didn't find the schema for the program of the config you are trying to load. Either the program has not

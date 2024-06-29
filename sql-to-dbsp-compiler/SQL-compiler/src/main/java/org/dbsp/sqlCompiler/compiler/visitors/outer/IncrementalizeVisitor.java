@@ -26,12 +26,10 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 
-/**
- * This visitor converts a DBSPCircuit into a new circuit which
+/** This visitor converts a DBSPCircuit into a new circuit which
  * computes the incremental version of the same query.
  * The generated circuit is not efficient, though, it should be
- * further optimized.
- */
+ * further optimized. */
 public class IncrementalizeVisitor extends CircuitCloneVisitor {
     public IncrementalizeVisitor(IErrorReporter reporter) {
         super(reporter, false);
@@ -60,7 +58,7 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
         DBSPOperator source = this.mapped(operator.input());
         DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getNode(), source);
         DBSPSinkOperator sink = new DBSPSinkOperator(operator.getNode(), operator.viewName,
-                operator.query, operator.originalRowType, operator.metadata, operator.comment, diff);
+                operator.query, operator.originalRowType, operator.metadata, diff);
         this.addOperator(diff);
         this.map(operator, sink);
     }

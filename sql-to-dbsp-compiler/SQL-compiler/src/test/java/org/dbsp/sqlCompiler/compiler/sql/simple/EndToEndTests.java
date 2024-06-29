@@ -57,8 +57,7 @@ import java.math.BigDecimal;
  * Test end-to-end by compiling some DDL statements and view
  * queries by compiling them to rust and executing them
  * by inserting data in the input tables and reading data
- * from the declared views.
- */
+ * from the declared views. */
 public class EndToEndTests extends BaseSQLTests {
     public static final String E2E_TABLE = """
             CREATE TABLE T (
@@ -712,6 +711,13 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPTupleExpression(DBSPLiteral.none(
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))),
                 new DBSPTupleExpression(new DBSPI32Literal(1, true))));
+    }
+
+    @Test
+    public void divTest2() {
+        String query = "SELECT 5 / COUNT(*) - COUNT(*) FROM T";
+        this.testQuery(query, new DBSPZSetLiteral(
+                new DBSPTupleExpression(new DBSPI64Literal(0))));
     }
 
     @Test

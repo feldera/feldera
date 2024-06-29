@@ -45,7 +45,7 @@ public class TableValue {
     public DBSPExpression generateReadDbCall(String connectionString) {
         // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tup type>) invocation
         DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
-        DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType.ref());
+        DBSPVariablePath rowVariable = sqliteRowType.ref().var();
         DBSPTypeTuple tupleType = this.contents.elementType.to(DBSPTypeTuple.class);
         final List<DBSPExpression> rowGets = new ArrayList<>(tupleType.tupFields.length);
         for (int i = 0; i < tupleType.tupFields.length; i++) {

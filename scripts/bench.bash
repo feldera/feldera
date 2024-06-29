@@ -48,15 +48,15 @@ KAFKA_BROKER=localhost:9092
 rpk topic -X brokers=$KAFKA_BROKER delete bid auction person
 cargo run  -p dbsp_nexmark --example generate --features with-kafka -- --max-events ${MAX_EVENTS} -O bootstrap.servers=$KAFKA_BROKER
 FELDERA_API=http://localhost:8080
-python3 benchmark/feldera-sql/run.py --api-url $FELDERA_API --kafka-broker $KAFKA_BROKER --csv crates/nexmark/${NEXMARK_SQL_CSV_FILE} --csv-metrics crates/nexmark/${NEXMARK_SQL_METRICS_CSV_FILE} --metrics-interval 1
+python3 benchmark/feldera-sql/run.py --api-url $FELDERA_API -O bootstrap.servers=$KAFKA_BROKER --csv crates/nexmark/${NEXMARK_SQL_CSV_FILE} --csv-metrics crates/nexmark/${NEXMARK_SQL_METRICS_CSV_FILE} --metrics-interval 1
 
 rpk topic -X brokers=$KAFKA_BROKER delete bid auction person
 cargo run  -p dbsp_nexmark --example generate --features with-kafka -- --max-events ${MAX_EVENTS} -O bootstrap.servers=$KAFKA_BROKER
 FELDERA_API=http://localhost:8080
-python3 benchmark/feldera-sql/run.py --storage --api-url $FELDERA_API --kafka-broker $KAFKA_BROKER --csv crates/nexmark/${NEXMARK_SQL_STORAGE_CSV_FILE} --csv-metrics crates/nexmark/${NEXMARK_SQL_STORAGE_METRICS_CSV_FILE} --metrics-interval 1
+python3 benchmark/feldera-sql/run.py --storage --api-url $FELDERA_API -O bootstrap.servers=$KAFKA_BROKER --csv crates/nexmark/${NEXMARK_SQL_STORAGE_CSV_FILE} --csv-metrics crates/nexmark/${NEXMARK_SQL_STORAGE_METRICS_CSV_FILE} --metrics-interval 1
 
 # Run galen benchmark
-cargo bench --bench galen --features="with-csv" -- --workers 10 --csv ${GALEN_CSV_FILE}
+cargo bench --bench galen -- --workers 10 --csv ${GALEN_CSV_FILE}
 
 # Run ldbc benchmarks
 DATASET_SMALL='graph500-22'
@@ -65,10 +65,10 @@ if [ "$SMOKE" != "" ]; then
     DATASET_SMALL='wiki-Talk'
     DATASET_MEDIUM='kgs'
 fi
-#cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
-#cargo bench --bench ldbc-graphalytics --features="with-csv" -- bfs ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
-#cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
-#cargo bench --bench ldbc-graphalytics --features="with-csv" -- pagerank ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
+#cargo bench --bench ldbc-graphalytics -- bfs ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
+#cargo bench --bench ldbc-graphalytics -- bfs ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
+#cargo bench --bench ldbc-graphalytics -- pagerank ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
+#cargo bench --bench ldbc-graphalytics -- pagerank ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
 
 # Run nexmark benchmark with persistence
 EVENT_RATE=5000000

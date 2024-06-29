@@ -229,34 +229,54 @@ const DetailPanelContent = (props: { row: Pipeline }) => {
         headerName: 'Action',
         flex: 0.15,
         display: 'flex',
-        renderCell: params => (
-          <Box data-testid={`box-relation-actions-${params.row.relation.name}`}>
-            <Tooltip title={direction === 'input' ? 'Inspect Table' : 'Inspect View'}>
-              <IconButton
-                size='small'
-                href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${getCaseIndependentName(
-                  params.row.relation
-                )}`}
-                data-testid='button-inspect'
+        renderCell: params => {
+          const materialized = params.row.relation.materialized
+          return (
+            <Box data-testid={`box-relation-actions-${params.row.relation.name}`}>
+              <Tooltip
+                slotProps={{ tooltip: { sx: { fontSize: 14 } } }}
+                title={
+                  direction === 'input'
+                    ? materialized
+                      ? 'Inspect Table'
+                      : `Use 'CREATE TABLE (..) WITH ('materialized'='true')' syntax to enable browsing the table`
+                    : materialized
+                      ? 'Inspect View'
+                      : `Use 'CREATE MATERIALIZED VIEW' syntax to enable browsing the view`
+                }
               >
-                <i className={`bx bx-show`} style={{ fontSize: 24 }} />
-              </IconButton>
-            </Tooltip>
-            {direction === 'input' && state.current_status == PipelineStatus.RUNNING && (
-              <Tooltip title='Import Data'>
                 <IconButton
                   size='small'
-                  href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${getCaseIndependentName(
-                    params.row.relation
-                  )}#insert`}
-                  data-testid='button-import'
+                  disableRipple={!materialized}
+                  sx={materialized ? {} : { cursor: 'default', color: 'text.disabled' }}
+                  href={
+                    materialized
+                      ? `/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${getCaseIndependentName(
+                          params.row.relation
+                        )}`
+                      : ''
+                  }
+                  data-testid='button-inspect'
                 >
-                  <i className={`bx bx-download`} style={{ fontSize: 24 }} />
+                  <i className={'bx ' + (materialized ? 'bx-show' : 'bx-hide')} style={{ fontSize: 24 }} />
                 </IconButton>
               </Tooltip>
-            )}
-          </Box>
-        )
+              {direction === 'input' && state.current_status == PipelineStatus.RUNNING && (
+                <Tooltip slotProps={{ tooltip: { sx: { fontSize: 14 } } }} title='Import Data'>
+                  <IconButton
+                    size='small'
+                    href={`/streaming/inspection/?pipeline_name=${descriptor.name}&relation=${getCaseIndependentName(
+                      params.row.relation
+                    )}#insert`}
+                    data-testid='button-import'
+                  >
+                    <i className={`bx bx-download`} style={{ fontSize: 24 }} />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
+          )
+        }
       }
     ]
   }

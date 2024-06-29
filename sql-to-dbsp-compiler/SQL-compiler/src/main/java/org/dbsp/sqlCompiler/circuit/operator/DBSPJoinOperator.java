@@ -35,14 +35,12 @@ import java.util.List;
 import java.util.Objects;
 
 /** Corresponds to a DBSP join operator, which may include multiple integrators. */
-public final class DBSPJoinOperator extends DBSPOperator {
+public final class DBSPJoinOperator extends DBSPBinaryOperator {
     public DBSPJoinOperator(
             CalciteObject node, DBSPTypeZSet outputType,
             DBSPExpression function, boolean isMultiset,
             DBSPOperator left, DBSPOperator right) {
-        super(node, "join", function, outputType, isMultiset);
-        this.addInput(left);
-        this.addInput(right);
+        super(node, "join", function, outputType, isMultiset, left, right);
         this.checkResultType(function, this.getOutputZSetElementType());
     }
 
@@ -51,7 +49,7 @@ public final class DBSPJoinOperator extends DBSPOperator {
         return new DBSPJoinOperator(
                 this.getNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression),
-                this.isMultiset, this.inputs.get(0), this.inputs.get(1));
+                this.isMultiset, this.left(), this.right());
     }
 
     @Override

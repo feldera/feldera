@@ -35,6 +35,7 @@ export type ColumnType = {
    * ```
    */
   fields?: Array<Field> | null
+  key?: ColumnType | null
   /**
    * Does the type accept NULL values?
    */
@@ -58,4 +59,5 @@ export type ColumnType = {
    */
   scale?: number | null
   type: SqlType
+  value?: ColumnType | null
 }

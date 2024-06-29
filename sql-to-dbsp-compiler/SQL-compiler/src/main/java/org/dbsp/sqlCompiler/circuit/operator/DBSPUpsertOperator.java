@@ -13,17 +13,14 @@ import java.util.List;
 /** Primitive Upsert operator.
  * Used to implement the UpsertFeedback operator. */
 @NonCoreIR
-public final class DBSPUpsertOperator extends DBSPOperator {
+public final class DBSPUpsertOperator extends DBSPBinaryOperator {
     public DBSPUpsertOperator(CalciteObject node, DBSPOperator delta, DBSPOperator integral) {
-        super(node, "primitive_upsert", null, delta.outputType, false);
-        this.addInput(delta);
-        this.addInput(integral);
+        super(node, "primitive_upsert", null, delta.outputType, false, delta, integral);
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        assert expression == null : "Unexpected function for upsert";
-        return new DBSPUpsertOperator(this.getNode(), this.inputs.get(0), this.inputs.get(1));
+        return this;
     }
 
     @Override

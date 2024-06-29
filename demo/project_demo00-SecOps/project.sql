@@ -40,7 +40,10 @@ create table vulnerability (
     vulnerability_reference_id varchar not null,
     severity int,
     priority varchar
-);
+)
+  -- Instruct Feldera to store the snapshot of the table, allowing the
+  -- user to browse it via the UI or API.
+  with ('materialized' = 'true');
 
 -- K8s clusters.
 create table k8scluster (
@@ -135,7 +138,7 @@ create view k8scluster_vulnerability (
 -- Per-cluster statistics:
 -- * Number of vulnerabilities.
 -- * Most severe vulnerability.
-create view k8scluster_vulnerability_stats (
+create materialized view k8scluster_vulnerability_stats (
     k8scluster_id,
     k8scluster_name,
     total_vulnerabilities,

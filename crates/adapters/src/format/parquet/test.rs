@@ -115,7 +115,7 @@ fn parquet_output() {
     let mut encoder = ParquetEncoder::new(
         Box::new(consumer),
         config,
-        Relation::new("TestStruct2", false, TestStruct2::schema()),
+        Relation::new("TestStruct2", false, TestStruct2::schema(), false),
     )
     .expect("Can't create encoder");
     let zset = OrdZSet::from_keys(

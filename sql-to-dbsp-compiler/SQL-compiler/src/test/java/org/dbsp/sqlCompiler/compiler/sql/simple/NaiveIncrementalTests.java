@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.junit.Test;
 
 // Runs the EndToEnd tests but on an input stream with 3 elements each and
 // using an incremental non-optimized circuit.
@@ -72,5 +73,11 @@ public class NaiveIncrementalTests extends EndToEndTests {
                         .addPair(input, new Change(firstOutput))    // Add first input
                         .addPair(new Change(empty), secondOutput)  // Add an empty input
                         .addPair(new Change(input.getSet(0).negate()), thirdOutput));  // Subtract the first input
+    }
+
+    @Test
+    public void divTest2() {
+        // Do not run this test in incremental mode, since it produces
+        // a division by 0 on an empty input.
     }
 }

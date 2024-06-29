@@ -9,8 +9,8 @@ CREATE TABLE Person
     name    VARCHAR,
     age     INT,
     present BOOLEAN
-);
-CREATE VIEW Adult AS SELECT Person.name, Person.age FROM Person WHERE Person.age > 18;
+) with ('materialized' = 'true');
+CREATE MATERIALIZED VIEW Adult AS SELECT Person.name, Person.age FROM Person WHERE Person.age > 18;
 ```
 
 Enter the code in the SQL editor. Once the program compiled successfully, (as
@@ -39,7 +39,7 @@ data is generated for every field by opening the `RNG Settings`:
 Once you are happy with the generated rows (you can edit them after generation
 by double clicking the cells in the table), press `INSERT ROWS` which persists
 the your rows in the table. Switch the tab from `INSERT NEW ROWS` to `BROWSE
-USERS` to see the content you just added in the table. If you have multiple
+PERSON` to see the content you just added in the table. If you have multiple
 tables in the program, you can repeat this process until you filled all tables
 with content.
 

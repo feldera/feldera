@@ -164,6 +164,7 @@ public class BaseSQLTests {
     public void testNegativeQuery(String query, String messageFragment) {
         DBSPCompiler compiler = this.noThrowCompiler();
         compiler.compileStatement("CREATE VIEW VV AS " + query);
+        compiler.getFinalCircuit("tmp");
         Assert.assertTrue(compiler.messages.exitCode != 0);
         String message = compiler.messages.toString();
         Assert.assertTrue(message.contains(messageFragment));
@@ -247,7 +248,6 @@ public class BaseSQLTests {
     }
 
     public static DBSPCircuit getCircuit(DBSPCompiler compiler) {
-        compiler.optimize();
         String name = "circuit" + testsToRun.size();
         return compiler.getFinalCircuit(name);
     }

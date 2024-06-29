@@ -5,8 +5,9 @@ use num::PrimInt;
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
 
 use crate::{
-    for_all_compare, for_all_int_compare, for_all_int_operator, for_all_numeric_compare,
-    for_all_numeric_operator, some_existing_operator, some_operator,
+    for_all_comparable_operator, for_all_compare, for_all_int_compare, for_all_int_operator,
+    for_all_numeric_compare, for_all_numeric_operator, some_existing_operator, some_operator, Date,
+    LongInterval, ShortInterval, Time, Timestamp,
 };
 
 use rust_decimal::Decimal;
@@ -310,7 +311,7 @@ where
     left.max(right)
 }
 
-for_all_numeric_operator!(max);
+for_all_comparable_operator!(max);
 
 #[inline(always)]
 fn min<T>(left: T, right: T) -> T
@@ -320,4 +321,4 @@ where
     left.min(right)
 }
 
-for_all_numeric_operator!(min);
+for_all_comparable_operator!(min);

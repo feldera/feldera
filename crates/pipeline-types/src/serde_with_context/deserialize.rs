@@ -45,10 +45,10 @@
 
 use rust_decimal::Decimal;
 use serde::{
-    de::{DeserializeSeed, SeqAccess, Visitor},
+    de::{DeserializeSeed, MapAccess, SeqAccess, Visitor},
     Deserialize, Deserializer, Serialize,
 };
-use std::{fmt, marker::PhantomData};
+use std::{collections::BTreeMap, fmt, marker::PhantomData};
 
 /// Similar to [`Deserialize`], but takes an extra `context` argument and
 /// threads it through all nested structures.
@@ -182,6 +182,61 @@ where
         }
 
         deserializer.deserialize_seq(VecVisitor::new(context))
+    }
+}
+
+impl<'de, C, K, V> DeserializeWithContext<'de, C> for BTreeMap<K, V>
+where
+    K: DeserializeWithContext<'de, C> + Ord,
+    V: DeserializeWithContext<'de, C>,
+{
+    fn deserialize_with_context<D>(deserializer: D, context: &'de C) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct MapVisitor<'de, C, K, V> {
+            context: &'de C,
+            phantom: PhantomData<(K, V)>,
+        }
+
+        impl<'de, C, K, V> MapVisitor<'de, C, K, V> {
+            fn new(context: &'de C) -> Self {
+                Self {
+                    context,
+                    phantom: PhantomData,
+                }
+            }
+        }
+
+        impl<'de, C, K, V> Visitor<'de> for MapVisitor<'de, C, K, V>
+        where
+            K: DeserializeWithContext<'de, C> + Ord,
+            V: DeserializeWithContext<'de, C>,
+        {
+            type Value = BTreeMap<K, V>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "a map")
+            }
+
+            fn visit_map<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut result = BTreeMap::new();
+
+                while let Some((key, value)) = seq.next_entry_seed(
+                    DeserializationContext::new(self.context),
+                    DeserializationContext::new(self.context),
+                )? {
+                    result.insert(key, value);
+                }
+
+                Ok(result)
+            }
+        }
+
+        deserializer.deserialize_map(MapVisitor::new(context))
     }
 }
 

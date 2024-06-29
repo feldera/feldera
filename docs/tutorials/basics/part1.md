@@ -49,7 +49,7 @@ create table VENDOR (
     id bigint not null primary key,
     name varchar,
     address varchar
-);
+) with ('materialized' = 'true');
 
 create table PART (
     id bigint not null primary key,
@@ -74,6 +74,10 @@ could arrive from a Kafka stream, a database, or an HTTP request.  Below we will
 see how our SQL program can be instantiated with any of these data sources, or
 even multiple data sources connected to the same table.
 
+Finally, note the `'materialized' = 'true'` attribute on the `VENDOR`
+table.  This annotation instructs Feldera to store the entire contents of the table,
+so that the user can browse it at any time.
+
 ## Step 2. Write queries
 
 We would like to compute the lowest price for each part
@@ -88,7 +92,7 @@ create view LOW_PRICE (
     select part, MIN(price) as price from PRICE group by part;
 
 -- Lowest available price for each part along with part and vendor details.
-create view PREFERRED_VENDOR (
+create materialized view PREFERRED_VENDOR (
     part_id,
     part_name,
     vendor_id,
@@ -117,6 +121,11 @@ In Feldera we write queries as SQL views.  Views can be defined in terms of
 tables and other views, making it possible to express deeply nested queries.  In
 this example, the `PREFERRED_VENDOR` view is expressed in terms of the
 `LOW_PRICE` view.
+
+We declare `PREFERRED_VENDOR` as a **materialized** view, instructing Feldera to
+store the entire contents of the view, so that the user can browse it at any time.
+This is in contrast to regular views, for which the user can only observe a stream
+of **changes** to the view, but cannot inspect its current contents.
 
 ## Step 3. Run the program
 

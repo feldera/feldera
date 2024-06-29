@@ -53,6 +53,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
 
     @Test
     public void viewLateness() {
+        // Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
         String sql = """
                 create table TRANSACTION (
                     trans_date_trans_time TIMESTAMP,
@@ -92,37 +93,37 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 LATENESS TRANSACTION_DEMOGRAPHICS.unix_time 0;
                 
                 CREATE VIEW FEATURE AS
-                        SELECT
-                           cc_num,
-                           dayofweek(trans_date_trans_time) as d,
-                           CASE
-                             WHEN dayofweek(trans_date_trans_time) IN(6, 7) THEN true
-                             ELSE false
-                           END AS is_weekend,
-                           hour(trans_date_trans_time) as hour_of_day,
-                           CASE
-                             WHEN hour(trans_date_trans_time) <= 6 THEN true
-                             ELSE false
-                           END AS is_night,
-                           -- Average spending per day, per week, and per month.
-                           AVG(amt) OVER window_1_day AS avg_spend_pd,
-                           AVG(amt) OVER window_7_day AS avg_spend_pw,
-                           AVG(amt) OVER window_30_day AS avg_spend_pm,
-                           -- Average spending over the last three months for the same day of the week.
-                           COALESCE(
-                            AVG(amt) OVER (
-                              PARTITION BY cc_num, EXTRACT(DAY FROM trans_date_trans_time)
-                              ORDER BY unix_time
-                              RANGE BETWEEN 7776000 PRECEDING and CURRENT ROW
-                            ), 0) AS avg_spend_p3m_over_d,
-                           -- Number of transactions in the last 24 hours.
-                           COUNT(*) OVER window_1_day AS trans_freq_24,
-                           amt, unix_time, zip, city_pop, is_fraud
-                        FROM transaction_demographics
-                        WINDOW
-                          window_1_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 86400 PRECEDING AND CURRENT ROW),
-                          window_7_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 604800 PRECEDING AND CURRENT ROW),
-                          window_30_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 2592000 PRECEDING AND CURRENT ROW);
+                SELECT
+                   cc_num,
+                   dayofweek(trans_date_trans_time) as d,
+                   CASE
+                     WHEN dayofweek(trans_date_trans_time) IN(6, 7) THEN true
+                     ELSE false
+                   END AS is_weekend,
+                   hour(trans_date_trans_time) as hour_of_day,
+                   CASE
+                     WHEN hour(trans_date_trans_time) <= 6 THEN true
+                     ELSE false
+                   END AS is_night,
+                   -- Average spending per day, per week, and per month.
+                   AVG(amt) OVER window_1_day AS avg_spend_pd,
+                   AVG(amt) OVER window_7_day AS avg_spend_pw,
+                   AVG(amt) OVER window_30_day AS avg_spend_pm,
+                   -- Average spending over the last three months for the same day of the week.
+                   COALESCE(
+                    AVG(amt) OVER (
+                      PARTITION BY cc_num, EXTRACT(DAY FROM trans_date_trans_time)
+                      ORDER BY unix_time
+                      RANGE BETWEEN 7776000 PRECEDING and CURRENT ROW
+                    ), 0) AS avg_spend_p3m_over_d,
+                   -- Number of transactions in the last 24 hours.
+                   COUNT(*) OVER window_1_day AS trans_freq_24,
+                   amt, unix_time, zip, city_pop, is_fraud
+                FROM transaction_demographics
+                WINDOW
+                  window_1_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 86400 PRECEDING AND CURRENT ROW),
+                  window_7_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 604800 PRECEDING AND CURRENT ROW),
+                  window_30_day AS (PARTITION BY cc_num ORDER BY unix_time RANGE BETWEEN 2592000 PRECEDING AND CURRENT ROW);
                       ;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.incrementalize = true;

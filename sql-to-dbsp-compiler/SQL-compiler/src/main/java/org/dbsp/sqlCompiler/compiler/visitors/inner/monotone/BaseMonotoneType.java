@@ -1,20 +1,15 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
 
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
-
 /** Base class for monotone type information */
 public abstract class BaseMonotoneType implements IMaybeMonotoneType {
-    final DBSPType type;
+    static long nextId = 0;
+    final long id;
 
-    protected BaseMonotoneType(DBSPType type) {
-        this.type = type;
+    protected BaseMonotoneType() {
+        this.id = nextId++;
     }
 
-    @Override
-    public DBSPType getType() {
-        return this.type;
+    public long getId() {
+        return this.id;
     }
-
-    /** Copy the monotonicity of the current type */
-    public abstract IMaybeMonotoneType copyMonotonicity(DBSPType type);
 }

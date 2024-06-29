@@ -13,12 +13,9 @@ pub mod timestamp;
 
 use casts::cast_to_decimal_decimal;
 pub use geopoint::GeoPoint;
-pub use interval::LongInterval;
-pub use interval::ShortInterval;
+pub use interval::{LongInterval, ShortInterval};
 pub use source::{SourcePosition, SourcePositionRange};
-pub use timestamp::Date;
-pub use timestamp::Time;
-pub use timestamp::Timestamp;
+pub use timestamp::{Date, Time, Timestamp};
 
 use dbsp::algebra::{OrdIndexedZSetFactories, OrdZSetFactories, UnsignedPrimInt};
 use dbsp::dynamic::{DowncastTrait, DynData, Erase};
@@ -33,6 +30,7 @@ use dbsp::{
     utils::*,
     DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
 };
+use itertools::Itertools;
 use num::{PrimInt, Signed, ToPrimitive};
 use num_traits::{Pow, Zero};
 use rust_decimal::{Decimal, MathematicalOps};
@@ -644,6 +642,18 @@ macro_rules! for_all_numeric_operator {
     };
 }
 
+#[macro_export]
+macro_rules! for_all_comparable_operator {
+    ($func_name: ident) => {
+        for_all_numeric_operator!($func_name);
+        some_operator!($func_name, Timestamp, Timestamp, Timestamp);
+        some_operator!($func_name, Date, Date, Date);
+        some_operator!($func_name, Time, Time, Time);
+        some_operator!($func_name, ShortInterval, ShortInterval, ShortInterval);
+        some_operator!($func_name, LongInterval, LongInterval, LongInterval);
+    };
+}
+
 impl<T> Semigroup<Option<T>> for DefaultOptSemigroup<T>
 where
     T: SemigroupValue,
@@ -696,10 +706,10 @@ pub struct ConcatSemigroup<V>(PhantomData<V>);
 
 impl<V> Semigroup<Vec<V>> for ConcatSemigroup<Vec<V>>
 where
-    V: Clone,
+    V: Clone + Ord,
 {
     fn combine(left: &Vec<V>, right: &Vec<V>) -> Vec<V> {
-        left.iter().chain(right).cloned().collect()
+        left.iter().merge(right).cloned().collect()
     }
 }
 

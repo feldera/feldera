@@ -14,7 +14,7 @@ Welcome to feldera's documentation!
    examples
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 4
    :caption: API Reference:
    
    modules
@@ -24,4 +24,3 @@ Indices and tables
 
 * :ref:`genindex`
 * :ref:`modindex`
-* :ref:`search`

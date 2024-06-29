@@ -11,6 +11,7 @@ import { Chunk, HttpInputOutputService, OpenAPI, Relation } from '$lib/services/
 import { getHeaders } from '$lib/services/manager/core/request'
 import { Arguments } from '$lib/types/common/function'
 import { Dispatch, SetStateAction, useCallback, useMemo } from 'react'
+import JSONbig from 'true-json-bigint'
 
 function useQuantiles() {
   const utf8Decoder = useMemo(() => new TextDecoder('utf-8'), [])
@@ -57,7 +58,7 @@ function useQuantiles() {
 
       try {
         for await (const line of readLineFromStream(response)) {
-          const obj: Chunk = JSON.parse(line)
+          const obj: Chunk = JSONbig.parse(line)
           if (!obj.json_data) {
             continue
           }

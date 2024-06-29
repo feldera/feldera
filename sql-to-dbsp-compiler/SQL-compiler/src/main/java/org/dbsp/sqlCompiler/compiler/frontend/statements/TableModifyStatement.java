@@ -38,9 +38,8 @@ public class TableModifyStatement extends FrontEndStatement {
     /** True for insert, false for remove */
     public final boolean insert;
 
-    public TableModifyStatement(SqlNode node, boolean insert, String statement, String tableName,
-                                SqlNode data, @Nullable String comment) {
-        super(node, statement, comment);
+    public TableModifyStatement(SqlNode node, boolean insert, String statement, String tableName, SqlNode data) {
+        super(node, statement);
         this.insert = insert;
         this.tableName = tableName;
         this.data = data;

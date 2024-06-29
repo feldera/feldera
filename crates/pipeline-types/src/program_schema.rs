@@ -50,14 +50,17 @@ pub struct Relation {
     pub case_sensitive: bool,
     #[cfg_attr(feature = "testing", proptest(value = "Vec::new()"))]
     pub fields: Vec<Field>,
+    #[serde(default)]
+    pub materialized: bool,
 }
 
 impl Relation {
-    pub fn new(name: &str, case_sensitive: bool, fields: Vec<Field>) -> Self {
+    pub fn new(name: &str, case_sensitive: bool, fields: Vec<Field>, materialized: bool) -> Self {
         Self {
             name: name.to_string(),
             case_sensitive,
             fields,
+            materialized,
         }
     }
 
@@ -132,6 +135,8 @@ impl<'de> Deserialize<'de> for Field {
                     scale: helper.scale,
                     component: helper.component,
                     fields: Some(fields),
+                    key: None,
+                    value: None,
                 }
             } else if let Some(serde_json::Value::Object(obj)) = helper.fields {
                 serde_json::from_value(serde_json::Value::Object(obj))
@@ -144,6 +149,8 @@ impl<'de> Deserialize<'de> for Field {
                     scale: helper.scale,
                     component: helper.component,
                     fields: None,
+                    key: None,
+                    value: None,
                 }
             };
 
@@ -252,6 +259,9 @@ pub enum SqlType {
     /// A complex SQL struct type (`CREATE TYPE x ...`).
     #[serde(rename = "STRUCT")]
     Struct,
+    /// SQL `MAP` type.
+    #[serde(rename = "MAP")]
+    Map,
     /// SQL `NULL` type.
     #[serde(rename = "NULL")]
     Null,
@@ -294,6 +304,7 @@ impl<'de> Deserialize<'de> for SqlType {
             "timestamp" => Ok(SqlType::Timestamp),
             "array" => Ok(SqlType::Array),
             "struct" => Ok(SqlType::Struct),
+            "map" => Ok(SqlType::Map),
             "null" => Ok(SqlType::Null),
             _ => Err(serde::de::Error::custom(format!(
                 "Unknown SQL type: {}",
@@ -324,6 +335,7 @@ impl From<SqlType> for &'static str {
             SqlType::Interval(_) => "INTERVAL",
             SqlType::Array => "ARRAY",
             SqlType::Struct => "STRUCT",
+            SqlType::Map => "MAP",
             SqlType::Null => "NULL",
         }
     }
@@ -392,6 +404,92 @@ pub struct ColumnType {
     /// ```
     #[cfg_attr(feature = "testing", proptest(value = "Some(Vec::new())"))]
     pub fields: Option<Vec<Field>>,
+    /// Key type; must be set when `type == "MAP"`.
+    #[cfg_attr(feature = "testing", proptest(value = "None"))]
+    pub key: Option<Box<ColumnType>>,
+    /// Value type; must be set when `type == "MAP"`.
+    #[cfg_attr(feature = "testing", proptest(value = "None"))]
+    pub value: Option<Box<ColumnType>>,
+}
+
+impl ColumnType {
+    pub fn boolean(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Boolean,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn tinyint(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::TinyInt,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn smallint(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::SmallInt,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn int(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Int,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn bigint(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::BigInt,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn varchar(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::Varchar,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
 }
 
 #[cfg(test)]

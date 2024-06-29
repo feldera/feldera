@@ -20,9 +20,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 # Note: If you add a feature, adjust the ALMOST_ALL_FEATURES environment variable in
 # main.yml and coverage.yml:
-default = ["with-serde"]
-with-serde = []
-with-csv = ["csv"]
+default = []
 
 [dependencies]
 num = "0.4.0"
@@ -33,7 +31,7 @@ crossbeam-utils = "0.8.6"
 once_cell = "1.9.0"
 priority-queue = "1.3.2"
 hashbrown = "0.14.2"
-csv = { version = "1.2.2", optional = true }
+csv = { version = "1.2.2" }
 impl-trait-for-tuples = "0.2"
 itertools = "0.10.5"
 textwrap = "0.15.0"
@@ -111,12 +109,10 @@ ijson = { git = "https://github.com/abhizer/ijson.git" }
 [[bench]]
 name = "galen"
 harness = false
-required-features = ["with-csv"]
 
 #[[bench]]
 #name = "fraud"
 #harness = false
-#required-features = ["with-csv", "with-serde"]
 
 [[bench]]
 name = "path"
@@ -128,7 +124,6 @@ harness = false
 
 #[[bench]]
 #name = "ldbc-graphalytics"
-#required-features = ["with-csv"]
 #harness = false
 
 [[bench]]

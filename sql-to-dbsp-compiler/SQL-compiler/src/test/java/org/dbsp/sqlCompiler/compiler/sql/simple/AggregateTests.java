@@ -23,7 +23,40 @@ public class AggregateTests extends SqlIoTest {
                    (0, 0, 0, 0, 0, 0, 0, '0'),
                    (1, 1, 1, 1, 1, 1, 1, '1'),
                    (2, 2, 2, 2, 2, 2, 2, '2');
+                CREATE TABLE warehouse (
+                   id INT PRIMARY KEY,
+                   parentId INT
+                );
+                INSERT INTO warehouse VALUES
+                   (10, 20),
+                   (20, 20),
+                   (30, 20),
+                   (5,  5),
+                   (1,  5),
+                   (3,  3);
                 """);
+    }
+
+    @Test
+    public void testIssue1957() {
+        // validated using Postgres
+        this.qs("""
+                SELECT
+                  id,
+                  (SELECT ARRAY_AGG(id) FROM (
+                    SELECT id FROM warehouse WHERE parentId = warehouse.id
+                    ORDER BY id LIMIT 2
+                  )) AS first_children
+                FROM warehouse;
+                 id |  array
+                ---------------
+                 1  | { 3, 5 }
+                 3  | { 3, 5 }
+                 5  | { 3, 5 }
+                 10 | { 3, 5 }
+                 20 | { 3, 5 }
+                 30 | { 3, 5 }
+                (2 rows)""");
     }
 
     @Test

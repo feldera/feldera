@@ -24,9 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: earthly/actions/setup-earthly@v1
+      - name: Install earthly
+        uses: earthly/actions-setup@v1
         with:
-          version: v0.8.6
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version: 0.8.14
 
       - name: MUIX license
         run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-console/.env && cat web-console/.env

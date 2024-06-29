@@ -32,7 +32,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         expanded = monotonicity.apply(expanded);
 
         InsertLimiters limiters = new InsertLimiters(
-                this.reporter, expanded, monotonicity.monotonicity, expander.expansion);
+                this.reporter, expanded, monotonicity.info, expander.expansion);
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
         DBSPCircuit result = limiters.apply(circuit);
 

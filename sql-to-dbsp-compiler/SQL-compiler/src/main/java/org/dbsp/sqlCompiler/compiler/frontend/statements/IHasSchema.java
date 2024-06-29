@@ -32,7 +32,7 @@ public interface IHasSchema extends IHasCalciteObject {
     List<RelColumnMetadata> getColumns();
     /** Properties describing the connector attached to this object */
     @Nullable
-    Map<String, String> getConnectorProperties();
+    Map<String, String> getProperties();
 
     /** Return the index of the specified column. */
     default int getColumnIndex(SqlIdentifier id) {
@@ -73,13 +73,13 @@ public interface IHasSchema extends IHasCalciteObject {
         }
         if (hasKey)
             result.set("primary_key", keyFields);
-        Map<String, String> props = this.getConnectorProperties();
+        Map<String, String> props = this.getProperties();
         if (props != null) {
             ObjectNode properties = mapper.createObjectNode();
             for (Map.Entry<String, String> entry: props.entrySet()) {
                 properties.put(entry.getKey(), entry.getValue());
             }
-            result.set("connector", properties);
+            result.set("properties", properties);
         }
         return result;
     }

@@ -41,7 +41,8 @@ import {
   UpdateProgramRequest,
   UpdateProgramResponse,
   UpdateServiceRequest,
-  UpdateServiceResponse
+  UpdateServiceResponse,
+  Pipeline as RawPipeline
 } from '$lib/services/manager'
 import { Arguments } from '$lib/types/common/function'
 import { ControllerStatus, Pipeline, PipelineStatus } from '$lib/types/pipeline'
@@ -63,6 +64,11 @@ const toClientPipelineStatus = (status: RawPipelineStatus) => {
     .with(RawPipelineStatus.FAILED, () => PipelineStatus.FAILED)
     .exhaustive()
 }
+
+const toClientPipeline = (p: RawPipeline) => ({
+  ...p,
+  state: { ...p.state, current_status: toClientPipelineStatus(p.state.current_status) }
+})
 
 /**
  * Consolidate local STARTING | PAUSING | SHUTTING_DOWN status with remote PROVISIONING status
@@ -122,13 +128,7 @@ const PipelineManagerApi = {
   programs: () => ProgramsService.getPrograms(),
   programCode: (programName: string) => ProgramsService.getProgram(programName, true),
   programStatus: (programName: string) => ProgramsService.getProgram(programName, false),
-  pipelines: () =>
-    PipelinesService.listPipelines().then(ps =>
-      ps.map(p => ({
-        ...p,
-        state: { ...p.state, current_status: toClientPipelineStatus(p.state.current_status) }
-      }))
-    ),
+  pipelines: () => PipelinesService.listPipelines().then(ps => ps.map(toClientPipeline)),
   pipelineStatus: compose(PipelinesService.getPipeline, p =>
     p.then(p => ({ ...p, state: { ...p.state, current_status: toClientPipelineStatus(p.state.current_status) } }))
   ),
@@ -617,6 +617,7 @@ export const pipelineQueryCacheUpdate = (
       }
     } satisfies Pipeline
   }
+
   setQueryData(queryClient, PipelineManagerQueryKey.pipelineStatus(pipelineName), updateCache)
 
   setQueryData(queryClient, PipelineManagerQueryKey.pipelines(), oldDatas =>

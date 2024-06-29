@@ -128,7 +128,7 @@ changing. The view of the running pipeline should look something like this:
 
 ![Running pipeline](running-pipeline.png)
 
-Each row that lists a SQL table or view includes, in addition to names
+Rows for materialized tables and view includes, in addition to names
 and metrics, an eye icon <icon icon="bx:show" /> for an action to view data
 received or sent through the connector. Click on the eye for some
 row to see how it works:

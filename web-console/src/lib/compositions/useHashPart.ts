@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 // https://stackoverflow.com/questions/69343932/how-to-detect-change-in-the-url-hash-in-next-js
 export const useHashPart = <T extends string>() => {
-  const [hash, setHash] = useState(('window' in globalThis && window.location.hash) || '')
+  const [hash, setHash] = useState(('window' in globalThis && window.location.hash.slice(1)) || '')
 
   // https://github.com/vercel/next.js/discussions/49465#discussioncomment-5845312
   const params = useParams()

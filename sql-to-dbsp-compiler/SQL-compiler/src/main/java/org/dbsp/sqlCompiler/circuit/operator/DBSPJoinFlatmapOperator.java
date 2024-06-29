@@ -14,14 +14,12 @@ import java.util.Objects;
 /** We use join_flatmap to implement a join followed by a filter.
  * The function returns None for dropping a value, and Some(result)
  * for keeping a result. */
-public final class DBSPJoinFlatmapOperator extends DBSPOperator {
+public final class DBSPJoinFlatmapOperator extends DBSPBinaryOperator {
     public DBSPJoinFlatmapOperator(
             CalciteObject node, DBSPTypeZSet outputType,
             DBSPExpression function, boolean isMultiset,
             DBSPOperator left, DBSPOperator right) {
-        super(node, "join_flatmap", function, outputType, isMultiset);
-        this.addInput(left);
-        this.addInput(right);
+        super(node, "join_flatmap", function, outputType, isMultiset, left, right);
     }
 
     @Override
@@ -29,7 +27,7 @@ public final class DBSPJoinFlatmapOperator extends DBSPOperator {
         return new DBSPJoinFlatmapOperator(
                 this.getNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression),
-                this.isMultiset, this.inputs.get(0), this.inputs.get(1));
+                this.isMultiset, this.left(), this.right());
     }
 
     @Override

@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.sql.SqlNode;
@@ -39,15 +41,15 @@ public class CreateViewStatement extends CreateRelationStatement {
     /** Compiled and optimized query. */
     private final RelRoot compiled;
     public final SqlNode query;
-    public final boolean local;
+    public final SqlCreateLocalView.ViewKind kind;
 
     public CreateViewStatement(SqlCreateLocalView node, String statement, String tableName,
-                               boolean nameIsQuoted, @Nullable String comment,
+                               boolean nameIsQuoted,
                                List<RelColumnMetadata> columns, SqlNode query,
                                RelRoot compiled,
-                               @Nullable Map<String, String> connectorProperties) {
-        super(node, statement, tableName, nameIsQuoted, comment, columns, connectorProperties);
-        this.local = node.isLocal;
+                               @Nullable Map<String, String> properties) {
+        super(node, statement, tableName, nameIsQuoted, columns, properties);
+        this.kind = node.kind;
         this.query = query;
         this.compiled = compiled;
     }
@@ -58,5 +60,13 @@ public class CreateViewStatement extends CreateRelationStatement {
 
     public RelRoot getRoot() {
         return this.compiled;
+    }
+
+    @Override
+    public JsonNode asJson() {
+        JsonNode node = super.asJson();
+        ObjectNode object = (ObjectNode) node;
+        object.put("materialized", kind == SqlCreateLocalView.ViewKind.MATERIALIZED);
+        return object;
     }
 }

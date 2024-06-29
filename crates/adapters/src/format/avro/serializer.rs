@@ -708,6 +708,7 @@ mod test {
     use rust_decimal_macros::dec;
     use serde::Serialize;
     use sqllib::{Date, Timestamp};
+    use std::collections::{BTreeMap, HashMap};
     use std::str::FromStr;
 
     #[derive(Serialize)]
@@ -837,6 +838,7 @@ mod test {
             field_2: Timestamp::new(1713597703),
             field_3: Date::new(19833),
             field_5: EmbeddedStruct { field: true },
+            field_6: BTreeMap::from([("foo".to_string(), 1), ("bar".to_string(), 2)]),
         };
 
         let avro2_1: AvroValue = AvroValue::Record(vec![
@@ -851,6 +853,13 @@ mod test {
             (
                 "es".to_string(),
                 AvroValue::Record(vec![("a".to_string(), AvroValue::Boolean(true))]),
+            ),
+            (
+                "m".to_string(),
+                AvroValue::Map(HashMap::from([
+                    ("foo".to_string(), AvroValue::Long(1)),
+                    ("bar".to_string(), AvroValue::Long(2)),
+                ])),
             ),
         ]);
 

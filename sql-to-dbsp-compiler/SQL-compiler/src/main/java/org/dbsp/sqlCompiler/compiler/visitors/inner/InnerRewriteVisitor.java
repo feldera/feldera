@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
@@ -1000,6 +1001,17 @@ public abstract class InnerRewriteVisitor
         this.pop(expression);
         DBSPExpression result = new DBSPUnaryExpression(expression.getNode(), type,
                     expression.operation, source);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPWindowBoundExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.representation);
+        this.pop(expression);
+        DBSPExpression result = new DBSPWindowBoundExpression(expression.getNode(),
+                expression.isPreceding, source);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

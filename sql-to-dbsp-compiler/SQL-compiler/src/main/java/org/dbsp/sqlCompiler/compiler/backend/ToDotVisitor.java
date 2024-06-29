@@ -73,6 +73,10 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         this.edgesLabeled = new HashSet<>();
     }
 
+    static String isMultiset(DBSPOperator operator) {
+        return operator.isMultiset ? "" : "*";
+    }
+
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
         String name = node.tableName;
@@ -81,6 +85,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         this.stream.append(node.getOutputName())
                 .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
                 .append(node.getIdString())
+                .append(isMultiset(node))
                 .append(" ")
                 .append(name)
                 .append("\" ]")
@@ -93,6 +98,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         this.stream.append(node.getOutputName())
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
+                .append(isMultiset(node))
                 .append(" ")
                 .append(getFunction(node))
                 .append("\" ]")
@@ -136,6 +142,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         this.stream.append(node.getOutputName())
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
+                .append(isMultiset(node))
                 .append(" ")
                 .append(node.viewName)
                 .append("\"")
@@ -182,13 +189,18 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             case "apply" -> " style=filled fillcolor=yellow";
             case "integrate_trace_retain_keys", "integrate_trace_retain_values" -> " style=filled fillcolor=pink";
             // stateful operators
-            case "distinct", "stream_distinct",
+            case "distinct",
+                 // all aggregates require an upsert, which is stateful, even the ones that are linear
                  "aggregate", "partitioned_rolling_aggregate", "aggregate_linear",
                  "stream_aggregate", "stream_aggregate_linear", "partitioned_rolling_aggregate_with_waterline",
                  "partitioned_tree_aggregate",
-                 "join", "stream_join", "join_flatmap",
-                 "delay_trace", "delay", "differentiate", "topK", "integrate",
-                 "lag_custom_order", "upsert" -> " style=filled fillcolor=red";
+                 // some joins require integrators
+                 "join", "join_flatmap",
+                 // delays contain state
+                 "delay_trace", "delay", "differentiate",
+                 // group operators
+                 "topK", "lag_custom_order", "upsert",
+                 "integrate" -> " style=filled fillcolor=red";
             default -> "";
         };
     }
@@ -200,6 +212,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(this.getColor(node))
                 .append(" label=\"")
                 .append(node.getIdString())
+                .append(isMultiset(node))
                 .append(" ")
                 .append(node.operation)
                 .append(node.comment != null ? node.comment : "");

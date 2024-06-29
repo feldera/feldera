@@ -11,5 +11,6 @@ import type { Field } from './Field'
 export type Relation = {
   case_sensitive?: boolean
   fields: Array<Field>
+  materialized?: boolean
   name: string
 }

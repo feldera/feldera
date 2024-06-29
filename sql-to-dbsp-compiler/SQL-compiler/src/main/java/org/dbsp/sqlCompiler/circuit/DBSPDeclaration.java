@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.circuit.operator;
+package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;

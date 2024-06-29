@@ -38,13 +38,42 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
     public void postorder(DBSPStreamDistinctOperator distinct) {
         // distinct (distinct) = distinct
         DBSPOperator input = this.mapped(distinct.input());
-        if (input.is(DBSPStreamDistinctOperator.class)) {
+        if (input.is(DBSPStreamDistinctOperator.class) ||
+            input.is(DBSPDistinctOperator.class) ||
+            !input.isMultiset) {
             this.map(distinct, input, false);
             return;
         }
         if (input.is(DBSPStreamJoinOperator.class) ||
             input.is(DBSPMapOperator.class) ||
             input.is(DBSPSumOperator.class)) {
+            boolean allDistinct = Linq.all(input.inputs, i -> i.is(DBSPStreamDistinctOperator.class));
+            if (allDistinct) {
+                // distinct(map(distinct)) = distinct(map)
+                List<DBSPOperator> newInputs = Linq.map(input.inputs, i -> i.inputs.get(0));
+                DBSPOperator newInput = input.withInputs(newInputs, false);
+                this.addOperator(newInput);
+                DBSPOperator newDistinct = distinct.withInputs(Linq.list(newInput), false);
+                this.map(distinct, newDistinct);
+                return;
+            }
+        }
+        super.postorder(distinct);
+    }
+
+    @Override
+    public void postorder(DBSPDistinctOperator distinct) {
+        // distinct (distinct) = distinct
+        DBSPOperator input = this.mapped(distinct.input());
+        if (input.is(DBSPStreamDistinctOperator.class) ||
+            input.is(DBSPDistinctOperator.class) ||
+            !input.isMultiset) {
+            this.map(distinct, input, false);
+            return;
+        }
+        if (input.is(DBSPStreamJoinOperator.class) ||
+                input.is(DBSPMapOperator.class) ||
+                input.is(DBSPSumOperator.class)) {
             boolean allDistinct = Linq.all(input.inputs, i -> i.is(DBSPStreamDistinctOperator.class));
             if (allDistinct) {
                 // distinct(map(distinct)) = distinct(map)
@@ -73,8 +102,8 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
     }
 
     public void postorder(DBSPStreamJoinOperator join) {
-        DBSPOperator left = this.mapped(join.inputs.get(0));
-        DBSPOperator right = this.mapped(join.inputs.get(1));
+        DBSPOperator left = this.mapped(join.left());
+        DBSPOperator right = this.mapped(join.right());
         // join(distinct) = distinct(join)
         if (left.is(DBSPStreamDistinctOperator.class) &&
             right.is(DBSPStreamDistinctOperator.class)) {

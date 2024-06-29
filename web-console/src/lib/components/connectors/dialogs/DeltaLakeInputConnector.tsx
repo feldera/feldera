@@ -118,6 +118,8 @@ export const DeltaLakeInputConnectorDialog = (props: ConnectorDialogProps) => {
       setActiveTab('optionsTab')
       return
     }
+
+    throw new Error(JSONbig.stringify(errors))
   }
 
   return (

@@ -62,9 +62,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         builder.append(type);
     }
 
-    /**
-     * This is like 'equals', but it always takes a DBSPType.
-     */
+    /** This is like 'equals', but it always takes a DBSPType. */
     public abstract boolean sameType(DBSPType other);
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
@@ -115,8 +113,8 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         return new DBSPTypeRef(this, mutable, false);
     }
 
-    public DBSPVariablePath var(String variable) {
-        return new DBSPVariablePath(variable, this);
+    public DBSPVariablePath var() {
+        return new DBSPVariablePath(this);
     }
 
     public DBSPPathExpression path(DBSPPath path) {

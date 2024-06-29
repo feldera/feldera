@@ -22,7 +22,7 @@ import java.util.List;
 public final class DBSPDelayOutputOperator extends DBSPSourceBaseOperator {
     public DBSPDelayOutputOperator(CalciteObject node, DBSPType outputType, boolean isMultiset,
                                    @Nullable String comment) {
-        super(node, outputType, isMultiset, comment, new NameGen("delay").nextName());
+        super(node, outputType, isMultiset, new NameGen("delay").nextName(), comment);
     }
 
     @Override

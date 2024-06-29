@@ -1,9 +1,16 @@
+from enum import Enum
 from typing import List
 
+class ViewKind(Enum):
+    DEFAULT = 1
+    LOCAL = 2
+    MATERIALIZED = 3
+
+
 class SQLView:
-    def __init__(self, name: str, local: bool, query: str):
+    def __init__(self, name: str, kind: ViewKind, query: str):
         self.name: str = name
-        self.local = local
+        self.kind = kind
 
         query = query.strip()
         if query[-1] != ';':
@@ -16,7 +23,13 @@ class SQLView:
         self.lateness.append(f"LATENESS {self.name}.{timestamp_column} {lateness_expr};")
 
     def build_ddl(self):
-        local = " LOCAL" if self.local else ""
-        view = f"CREATE{local} VIEW {self.name} AS {self.query}"
+        match self.kind:
+            case ViewKind.DEFAULT:
+                kind = ""
+            case ViewKind.LOCAL:
+                kind = " LOCAL"
+            case ViewKind.MATERIALIZED:
+                kind = " MATERIALIZED"
+        view = f"CREATE{kind} VIEW {self.name} AS {self.query}"
         statements = self.lateness + [view]
         return "\n".join(statements)

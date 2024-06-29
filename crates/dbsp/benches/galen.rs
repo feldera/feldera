@@ -8,6 +8,7 @@ use dbsp::{
     mimalloc::MiMalloc,
     monitor::TraceMonitor,
     operator::CsvSource,
+    typed_batch::DynBatchReader,
     utils::{Tup2, Tup3},
     Circuit, OrdZSet, RootCircuit, Runtime, Stream,
 };
@@ -247,12 +248,12 @@ fn main() -> Result<()> {
                     },
                 )
                 .unwrap();
-            outp.unspill().gather(0).inspect(|zs: &OrdZSet<_>| {
+            outp.gather(0).inspect(|zs: &OrdZSet<_>| {
                 if Runtime::worker_index() == 0 {
                     assert_eq!(zs.len(), 7560179);
                 }
             });
-            outq.unspill().gather(0).inspect(|zs: &OrdZSet<_>| {
+            outq.gather(0).inspect(|zs: &OrdZSet<_>| {
                 if Runtime::worker_index() == 0 {
                     assert_eq!(zs.len(), 16595494);
                 }

@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class RegresssionTests extends SqlIoTest {
@@ -51,7 +52,7 @@ public class RegresssionTests extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
         compiler.compileStatements(sql);
-        TestUtil.assertMessagesContain(compiler.messages, "OVER must be applied to aggregate function");
+        TestUtil.assertMessagesContain(compiler, "OVER must be applied to aggregate function");
     }
 
     @Test
@@ -135,6 +136,47 @@ public class RegresssionTests extends SqlIoTest {
         String sql = """
                 create table TRANSACTION (unix_time BIGINT LATENESS 0);
                 """;
+        this.compileRustTestCase(sql);
+    }
+
+    @Test @Ignore("Calcite decorrelator fails")
+    public void issue1956() {
+        String sql = """
+                CREATE TABLE auctions (
+                  id INT PRIMARY KEY,
+                  seller INT,
+                  item TEXT
+                );
+                
+                CREATE TABLE bids (
+                  id INT PRIMARY KEY,
+                  buyer INT,
+                  auction_id INT,
+                  amount INT
+                );
+                
+                CREATE VIEW V AS SELECT id, (SELECT array_agg(buyer) FROM (
+                  SELECT buyer FROM bids WHERE auction_id = auctions.id
+                  ORDER BY buyer LIMIT 10
+                )) FROM auctions;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue1957() {
+        String sql = """
+                CREATE TABLE warehouse (
+                   id INT PRIMARY KEY,
+                   parentId INT
+                );
+                
+                CREATE VIEW V AS SELECT\s
+                  id,
+                  (SELECT ARRAY_AGG(id) FROM (
+                    SELECT id FROM warehouse WHERE parentId = warehouse.id
+                    ORDER BY id LIMIT 10
+                  )) AS first_children
+                FROM warehouse;""";
         this.compileRustTestCase(sql);
     }
 

@@ -862,8 +862,8 @@ async fn versioning() {
             tenant_id,
             program_id,
             ProgramSchema {
-                inputs: vec![Relation::new("t1", false, vec![])],
-                outputs: vec![Relation::new("v1", false, vec![])],
+                inputs: vec![Relation::new("t1", false, vec![], false)],
+                outputs: vec![Relation::new("v1", false, vec![], false)],
             },
         )
         .await
@@ -941,10 +941,10 @@ async fn versioning() {
             program_id,
             ProgramSchema {
                 inputs: vec![
-                    Relation::new("t1", false, vec![]),
-                    Relation::new("t2", false, vec![]),
+                    Relation::new("t1", false, vec![], false),
+                    Relation::new("t2", false, vec![], false),
                 ],
-                outputs: vec![Relation::new("v1", false, vec![])],
+                outputs: vec![Relation::new("v1", false, vec![], false)],
             },
         )
         .await
@@ -963,8 +963,8 @@ async fn versioning() {
             tenant_id,
             program_id,
             ProgramSchema {
-                inputs: vec![Relation::new("tnew1", false, vec![])],
-                outputs: vec![Relation::new("vnew1", false, vec![])],
+                inputs: vec![Relation::new("tnew1", false, vec![], false)],
+                outputs: vec![Relation::new("vnew1", false, vec![], false)],
             },
         )
         .await

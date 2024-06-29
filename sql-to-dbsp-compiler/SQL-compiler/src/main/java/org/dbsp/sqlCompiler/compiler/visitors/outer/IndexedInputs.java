@@ -44,8 +44,7 @@ public class IndexedInputs extends CircuitCloneVisitor {
         DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(node.getNode(), keyType, inputType.elementType);
         DBSPSourceMapOperator set = new DBSPSourceMapOperator(
                 node.getNode(), node.sourceName, keyColumnFields,
-                ix, node.originalRowType, node.comment,
-                node.metadata, node.tableName);
+                ix, node.originalRowType, node.metadata, node.tableName, node.comment);
         this.addOperator(set);
         DBSPDeindexOperator deindex = new DBSPDeindexOperator(node.getNode(), set);
         this.map(node, deindex);

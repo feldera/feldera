@@ -39,8 +39,7 @@ import java.util.Objects;
 public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
     /** Create an MapIndexOperator
      * @param node            Corresponding Calcite node.
-     * @param indexFunction   Function that indexes.  The function has the shape
-     *                        |row| (key(row), value(row)).
+     * @param indexFunction   Function that indexes.
      * @param outputType      Type of output stream element.
      * @param input           Source operator. */
     public DBSPMapIndexOperator(CalciteObject node, DBSPExpression indexFunction,

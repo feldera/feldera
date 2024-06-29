@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.IHasWatermark;
-import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.ViewMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -25,16 +25,15 @@ public final class DBSPViewOperator
     public DBSPViewOperator(
             CalciteObject node,
             String viewName, String query, DBSPTypeStruct originalRowType,
-            List<ViewColumnMetadata> metadata,
-            @Nullable String comment, DBSPOperator input) {
+            ViewMetadata metadata, DBSPOperator input) {
         super(node, "map", DBSPClosureExpression.id(), viewName, query,
-                originalRowType, metadata, comment, input);
+                originalRowType, metadata, input);
         assert metadata.size() == originalRowType.fields.size();
     }
 
     /** True if any column has LATENESS information */
     public boolean hasLateness() {
-        return Linq.any(this.metadata, m -> m.lateness != null);
+        return this.metadata.hasLateness();
     }
 
     @Override
@@ -49,7 +48,7 @@ public final class DBSPViewOperator
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression ignoredFunction, DBSPType ignoredType) {
         return new DBSPViewOperator(this.getNode(), this.viewName, this.query, this.originalRowType,
-                this.metadata, this.comment, this.input());
+                this.metadata, this.input());
     }
 
     @Override
@@ -57,13 +56,13 @@ public final class DBSPViewOperator
         if (force || this.inputsDiffer(newInputs))
             return new DBSPViewOperator(
                     this.getNode(), this.viewName, this.query, this.originalRowType,
-                    this.metadata, this.comment, newInputs.get(0));
+                    this.metadata, newInputs.get(0));
         return this;
     }
 
     @Override
     public Iterable<? extends IHasLateness> getLateness() {
-        return this.metadata;
+        return this.metadata.columns;
     }
 
     @Override
