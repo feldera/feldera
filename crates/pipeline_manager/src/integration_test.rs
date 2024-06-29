@@ -1452,7 +1452,7 @@ create materialized view "v1" as select * from table1;"#,
 
 #[actix_web::test]
 #[serial]
-async fn distinct_outputs() {
+async fn duplicate_outputs() {
     let config = setup().await;
     let _ = deploy_pipeline_without_connectors(
         &config,
@@ -1513,8 +1513,7 @@ async fn distinct_outputs() {
         )
         .await;
 
-    // Push more records that will create duplicate outputs, which should be
-    // suppressed by the `outputsAreSets` SQL compiler switch.
+    // Push more records that will create duplicate outputs.
     let req = config
         .post_json(
             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
@@ -1525,13 +1524,13 @@ async fn distinct_outputs() {
         .await;
     assert!(req.status().is_success());
 
-    let delta = config
-        .read_response_json(&mut response, Duration::from_millis(10_000))
-        .await
-        .unwrap();
-
-    // Use assert_eq, so we get to see the unexpected output on error.
-    assert_eq!(delta, None);
+    config
+        .read_expected_response_json(
+            &mut response,
+            Duration::from_millis(10_000),
+            &[json!({"insert": {"s":"1"}}), json!({"insert":{"s":"2"}})],
+        )
+        .await;
 
     // Shutdown the pipeline
     let resp = config

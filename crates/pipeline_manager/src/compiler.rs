@@ -1017,7 +1017,6 @@ impl CompilationJob {
             .arg("-i")
             .arg("-je")
             .arg("--alltables")
-            .arg("--outputsAreSets")
             .arg("--ignoreOrder")
             .arg("--unquotedCasing")
             .arg("lower")
