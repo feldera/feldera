@@ -59,13 +59,9 @@ public class Passes implements IWritesLogs, CircuitTransform {
 
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
-        boolean details = this.getDebugLevel() >= 4;
+        int details = this.getDebugLevel();
         if (this.getDebugLevel() >= 3) {
             String name = String.format("%02d-", dumped++) + "before.png";
-            Logger.INSTANCE.belowLevel(this, 3)
-                    .append("Writing circuit to ")
-                    .append(name)
-                    .newline();
             ToDotVisitor.toDot(this.errorReporter, name, details, "png", circuit);
         }
         for (CircuitTransform pass: this.passes) {
@@ -76,10 +72,6 @@ public class Passes implements IWritesLogs, CircuitTransform {
             circuit = pass.apply(circuit);
             if (this.getDebugLevel() >= 3) {
                 String name = String.format("%02d-", dumped++) + pass.toString().replace(" ", "_") + ".png";
-                Logger.INSTANCE.belowLevel(this, 3)
-                        .append("Writing circuit to ")
-                        .append(name)
-                        .newline();
                 ToDotVisitor.toDot(this.errorReporter, name, details, "png", circuit);
             }
         }

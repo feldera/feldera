@@ -106,7 +106,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     void markBound(DBSPOperator operator, DBSPOperator bound) {
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Bound for ")
-                .append(operator.getIdString())
+                .append(operator.toString())
                 .append(" computed by ")
                 .append(bound.toString())
                 .newline();
@@ -187,10 +187,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
         ReplacementExpansion expanded = this.getReplacement(operator);
-        if (expanded != null)
-            this.addBounds(expanded.replacement, 0);
-        else
+        if (expanded != null) {
+            DBSPOperator bound = this.addBounds(expanded.replacement, 0);
+            if (operator != expanded.replacement && bound != null)
+                this.markBound(operator, bound);
+        } else {
             this.nonMonotone(operator);
+        }
         super.postorder(operator);
     }
 
@@ -384,7 +387,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         DBSPOperator result = join.withInputs(Linq.list(left, right), false);
         if (leftLimiter != null) {
-            MonotoneExpression leftMonotone = this.expansionMonotoneValues.get(join.inputs.get(0));
+            MonotoneExpression leftMonotone = this.expansionMonotoneValues.get(
+                    expansion.leftIntegrator.input());
             // Yes, the limit of the left input is applied to the right one.
             IMaybeMonotoneType leftProjection = Monotonicity.getBodyType(Objects.requireNonNull(leftMonotone));
             // Check if the "key" field is monotone
@@ -396,7 +400,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         if (rightLimiter != null) {
-            MonotoneExpression rightMonotone = this.expansionMonotoneValues.get(join.inputs.get(1));
+            MonotoneExpression rightMonotone = this.expansionMonotoneValues.get(
+                    expansion.rightIntegrator.input());
             // Yes, the limit of the right input is applied to the left one.
             IMaybeMonotoneType rightProjection = Monotonicity.getBodyType(Objects.requireNonNull(rightMonotone));
             // Check if the "key" field is monotone
@@ -410,7 +415,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.processStreamJoin(expansion.leftDelta);
         this.processStreamJoin(expansion.rightDelta);
         this.processStreamJoin(expansion.both);
-        this.process(expansion.sum);
+        this.processSum(expansion.sum);
 
         this.map(join, result, true);
     }
@@ -730,10 +735,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
     public void postorder(DBSPSumOperator operator) {
         // Treat like an identity function
         ReplacementExpansion expanded = this.getReplacement(operator);
-        if (expanded != null)
-            this.process(expanded.replacement.to(DBSPSumOperator.class));
-        else
+        if (expanded != null) {
+            DBSPOperator bound = this.processSum(expanded.replacement.to(DBSPSumOperator.class));
+            if (bound != null && expanded.replacement != operator)
+                this.markBound(operator, bound);
+        } else {
             this.nonMonotone(operator);
+        }
         super.postorder(operator);
     }
 
@@ -814,12 +822,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
         return result;
     }
 
-    void process(DBSPSumOperator expanded) {
+    @Nullable
+    DBSPOperator processSum(DBSPSumOperator expanded) {
         String comment = "(" + expanded.getDerivedFrom() + ")";
         MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(expanded);
         if (monotoneValue == null || !monotoneValue.mayBeMonotone()) {
             this.nonMonotone(expanded);
-            return;
+            return null;
         }
 
         // Create a projection for each input
@@ -830,7 +839,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPOperator limiter = this.bound.get(input);
             if (limiter == null) {
                 this.nonMonotone(expanded);
-                return;
+                return null;
             }
             limiters.add(limiter);
             MonotoneExpression me = this.expansionMonotoneValues.get(input);
@@ -860,6 +869,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         this.markBound(expanded, current);
+        return current;
     }
 
     @Override

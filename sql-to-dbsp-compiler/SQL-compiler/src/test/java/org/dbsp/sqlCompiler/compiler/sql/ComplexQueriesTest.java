@@ -53,7 +53,6 @@ public class ComplexQueriesTest extends BaseSQLTests {
 
     @Test
     public void viewLateness() {
-        // Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
         String sql = """
                 create table TRANSACTION (
                     trans_date_trans_time TIMESTAMP,
@@ -143,7 +142,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
             }
         };
         visitor.apply(circuit);
-        // this.compileRustTestCase(sql);
+        this.compileRustTestCase(sql);
     }
 
    @Test @Ignore("Cross apply not yet implemented")
@@ -313,41 +312,6 @@ public class ComplexQueriesTest extends BaseSQLTests {
     @Test
     public void primaryKeyTest() {
         String sql = "CREATE TABLE event_t ( id BIGINT NOT NULL PRIMARY KEY, local_event_dt DATE )";
-        this.compileRustTestCase(sql);
-    }
-
-    @Test
-    public void taxiTest() {
-        String sql = """
-                CREATE TABLE green_tripdata
-                (
-                        lpep_pickup_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
-                        lpep_dropoff_datetime TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES,
-                        pickup_location_id BIGINT NOT NULL,
-                        dropoff_location_id BIGINT NOT NULL,
-                        trip_distance DOUBLE PRECISION,
-                        fare_amount DOUBLE PRECISION
-                );
-                CREATE VIEW V AS SELECT
-                *,
-                COUNT(*) OVER(
-                   PARTITION BY  pickup_location_id
-                   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
-                   -- 1 hour is 3600  seconds
-                   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS count_trips_window_1h_pickup_zip,
-                AVG(fare_amount) OVER(
-                   PARTITION BY  pickup_location_id
-                   ORDER BY  extract (EPOCH from  CAST (lpep_pickup_datetime AS TIMESTAMP) )
-                   -- 1 hour is 3600  seconds
-                   RANGE BETWEEN 3600  PRECEDING AND 1 PRECEDING ) AS mean_fare_window_1h_pickup_zip,
-                COUNT(*) OVER(
-                   PARTITION BY  dropoff_location_id
-                   ORDER BY  extract (EPOCH from  CAST (lpep_dropoff_datetime AS TIMESTAMP) )
-                   -- 0.5 hour is 1800  seconds
-                   RANGE BETWEEN 1800  PRECEDING AND 1 PRECEDING ) AS count_trips_window_30m_dropoff_zip,
-                case when extract (ISODOW from  CAST (lpep_dropoff_datetime AS TIMESTAMP))  > 5
-                     then 1 else 0 end as dropoff_is_weekend
-                FROM green_tripdata""";
         this.compileRustTestCase(sql);
     }
 

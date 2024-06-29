@@ -204,6 +204,8 @@ public class BaseSQLTests {
     public void addRustTestCase(
             String name, CompilerCircuitStream ccs) {
         ccs.compiler.messages.show(System.err);
+        if (ccs.compiler.messages.exitCode != 0)
+            throw new RuntimeException("Compilation failed");
         ccs.compiler.messages.clear();
         TestCase test = new TestCase(name, this.currentTestInformation, ccs, null);
         testsToRun.add(test);

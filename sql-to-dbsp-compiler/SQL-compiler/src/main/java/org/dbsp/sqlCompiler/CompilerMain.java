@@ -176,8 +176,8 @@ public class CompilerMain {
                         "Must specify an output file when outputting jpeg or png");
                 return compiler.messages;
             }
-            boolean verboseDot = this.options.ioOptions.verbosity > 1;
-            ToDotVisitor.toDot(compiler, this.options.ioOptions.outputFile, verboseDot, dotFormat, dbsp);
+            ToDotVisitor.toDot(compiler, this.options.ioOptions.outputFile,
+                    this.options.ioOptions.verbosity, dotFormat, dbsp);
             return compiler.messages;
         }
         try {

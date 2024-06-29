@@ -52,6 +52,12 @@ impl ShortInterval {
     }
 }
 
+impl ToWindowBound<u128> for ShortInterval {
+    fn to_bound(&self) -> u128 {
+        (self.milliseconds / 1000 / 86400) as u128
+    }
+}
+
 // This trait is used when converting to DATE offets
 // In this case we convert the number to days
 impl ToWindowBound<u64> for ShortInterval {

@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -220,9 +221,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     //
                     // So we generate this code:
                     // |a: &(K, L, R)| -> R {
-                    //    let k = (*a).0;
-                    //    let l = (*a).1;
-                    //    let r = (*a).2;
+                    //    let k = &(*a).0;
+                    //    let l = &(*a).1;
+                    //    let r = &(*a).2;
                     //    <previous body using k, l, r>
                     // }
                     assert this.parameterTypes.length == 3;
@@ -231,7 +232,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     List<DBSPStatement> statements = new ArrayList<>();
                     for (int i = 0; i < 3; i++)
                         statements.add(new DBSPLetStatement(expression.parameters[i].getName(),
-                                        applyParameter.asVariable().deref().field(i)));
+                                        applyParameter.asVariable().deref().field(i).borrow()));
                     applyBody = new DBSPBlockExpression(
                             statements,
                             applyBody
@@ -516,13 +517,40 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     }
 
     @Override
+    public void postorder(DBSPApplyMethodExpression expression) {
+        DBSPExpression reduced = null;
+        MonotoneExpression[] arguments = Linq.map(expression.arguments, this::get, MonotoneExpression.class);
+        MonotoneExpression self = this.get(expression.self);
+        IMaybeMonotoneType resultType = NonMonotoneType.nonMonotone(expression.getType());
+        boolean allArgsMonotone = Linq.all(arguments, MonotoneExpression::mayBeMonotone);
+        if (allArgsMonotone && self.mayBeMonotone()) {
+            DBSPExpression reducedSelf = self.getReducedExpression();
+            if (expression.function.is(DBSPPathExpression.class)) {
+                DBSPPathExpression path = expression.function.to(DBSPPathExpression.class);
+                String name = path.toString();
+                if (name.equals("to_bound")) {
+                    // No arguments, and self is supposed to be a constant
+                    resultType = new MonotoneType(expression.getType());
+                    reduced = expression.replaceArguments(reducedSelf);
+                    if (this.constantExpressions.contains(expression.self.id)) {
+                        this.constantExpressions.add(expression.id);
+                    }
+                }
+            }
+        }
+
+        MonotoneExpression result = new MonotoneExpression(expression, resultType, reduced);
+        this.set(expression, result);
+    }
+
+    @Override
     public void postorder(DBSPApplyExpression expression) {
         // Monotone functions applied to monotone arguments.
         MonotoneExpression[] arguments = Linq.map(expression.arguments, this::get, MonotoneExpression.class);
-        boolean isMonotone = Linq.all(arguments, MonotoneExpression::mayBeMonotone);
+        boolean allArgsMonotone = Linq.all(arguments, MonotoneExpression::mayBeMonotone);
         DBSPExpression reduced = null;
         IMaybeMonotoneType resultType = new NonMonotoneType(expression.getType());
-        if (isMonotone) {
+        if (allArgsMonotone) {
             DBSPExpression[] reducedArgs = Linq.map(
                     arguments, MonotoneExpression::getReducedExpression, DBSPExpression.class);
             if (expression.function.is(DBSPPathExpression.class)) {

@@ -76,6 +76,6 @@ public class NonMonotoneType extends ScalarMonotoneType {
 
     @Override
     public String toString() {
-        return "NotMonotone(" + this.type + ")";
+        return this.type.toString();
     }
 }
