@@ -142,13 +142,13 @@ where
         Z: IndexedZSet + Send,
     {
         let circuit = self.circuit();
-        let stream = self.dyn_shard(&factories.input_factories);
+        circuit.region("distinct", || {
+            let stream = self.dyn_shard(&factories.input_factories);
 
-        circuit
-            .cache_get_or_insert_with(
-                DistinctIncrementalId::new(stream.origin_node_id().clone()),
-                || {
-                    circuit.region("distinct", || {
+            circuit
+                .cache_get_or_insert_with(
+                    DistinctIncrementalId::new(stream.origin_node_id().clone()),
+                    || {
                         if circuit.root_scope() == 0 {
                             // Use an implementation optimized to work in the root scope.
                             circuit.add_binary_operator(
@@ -180,10 +180,10 @@ where
                         }
                         .mark_sharded()
                         .mark_distinct()
-                    })
-                },
-            )
-            .clone()
+                    },
+                )
+                .clone()
+        })
     }
 }
 
