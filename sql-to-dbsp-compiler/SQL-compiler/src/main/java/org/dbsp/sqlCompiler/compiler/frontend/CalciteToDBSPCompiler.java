@@ -2133,7 +2133,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
             o = new DBSPSinkOperator(
                     view.getCalciteObject(), view.relationName,
                     view.statement, struct, meta, vo);
-            this.circuit.addOperator(o);
         } else {
             // We may already have a node for this output
             DBSPOperator previous = this.circuit.getView(view.relationName);
