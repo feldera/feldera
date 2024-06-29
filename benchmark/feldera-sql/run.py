@@ -376,6 +376,7 @@ def main():
                 "workers": cores,
                 "storage": storage,
                 "min_storage_rows": min_storage_rows,
+                "cpu_profiler": True,
                 "resources": {
                     # "cpu_cores_min": 0,
                     # "cpu_cores_max": 16,
@@ -386,7 +387,7 @@ def main():
                 }
             },
             "program_name": program_name,
-            "connectors": connectors
+            "connectors": input_connectors + [output_connectors[s] for s in program_name.split(',')]
         }).raise_for_status()
 
     # Stop pipelines
