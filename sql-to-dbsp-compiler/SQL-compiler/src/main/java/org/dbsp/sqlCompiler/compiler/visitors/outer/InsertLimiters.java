@@ -238,6 +238,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.addOperator(after);
         // output of 'after'' is not used in the graph, but the DBSP Rust layer will use it
 
+        DBSPApplyOperator limiter3 = this.addBounds(ae.upsert, 0);
+        this.markBound(aggregator, Objects.requireNonNull(limiter3));
+
         this.map(aggregator, filteredAggregator, false);
     }
 

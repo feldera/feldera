@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
@@ -425,6 +426,11 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPDistinctOperator node) {
+        this.identity(node);
+    }
+
+    @Override
+    public void postorder(DBSPUpsertFeedbackOperator node) {
         this.identity(node);
     }
 
