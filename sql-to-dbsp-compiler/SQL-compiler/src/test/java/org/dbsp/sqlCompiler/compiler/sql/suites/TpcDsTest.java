@@ -16,7 +16,6 @@ public class TpcDsTest extends BaseSQLTests {
         CompilerOptions options = this.testOptions(true, true);
         DBSPCompiler compiler = new DBSPCompiler(options);
         options.languageOptions.ignoreOrderBy = true;
-        options.languageOptions.outputsAreSets = true;
         compiler.compileStatements(tpch);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.showErrors();

@@ -28,6 +28,42 @@ import java.util.List;
 /** Tests that exercise streaming features. */
 public class StreamingTests extends StreamingTest {
     @Test
+    public void issue1973() {
+        String sql = """
+                create table t (
+                    id bigint not null,
+                    ts bigint not null LATENESS 0
+                );
+                
+                CREATE VIEW v1 AS
+                SELECT ts, COUNT(*)
+                FROM t
+                GROUP BY ts;
+                
+                CREATE VIEW v2 as
+                select ts, count(*) from v1
+                group by ts;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("hoppingTest", ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int integrate_trace = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(4, this.integrate_trace);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
     public void issue1963() {
         String sql = """
                 CREATE TABLE event(
@@ -93,7 +129,6 @@ public class StreamingTests extends StreamingTest {
                     DESCRIPTOR(pickup),
                     INTERVAL '2' MINUTE,
                     INTERVAL '5' MINUTE));""";
-
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
@@ -137,7 +172,7 @@ public class StreamingTests extends StreamingTest {
             @Override
             public void endVisit() {
                 Assert.assertEquals(1, this.rolling_waterline);
-                Assert.assertEquals(3, this.integrate_trace);
+                Assert.assertEquals(2, this.integrate_trace);
             }
         };
         visitor.apply(ccs.circuit);

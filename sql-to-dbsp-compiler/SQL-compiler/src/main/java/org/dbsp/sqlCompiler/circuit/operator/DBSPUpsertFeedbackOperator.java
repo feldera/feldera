@@ -7,16 +7,14 @@ import org.dbsp.sqlCompiler.ir.NonCoreIR;
 
 import java.util.List;
 
-/**
- * This operator operates only on IndexedZSets.
+/** This operator operates only on IndexedZSets.
  * It contains an integrator inside.  It takes a positive update
  * to the indexed collection and produces a corresponding retraction
- * for the pre-existing key.
- */
+ * for the pre-existing key. */
 @NonCoreIR
 public final class DBSPUpsertFeedbackOperator extends DBSPUnaryOperator {
     public DBSPUpsertFeedbackOperator(CalciteObject node, DBSPOperator source) {
-        super(node, "upsert", null, source.outputType, source.isMultiset, source);
+        super(node, "upsert_feedback", null, source.outputType, source.isMultiset, source);
         source.getOutputIndexedZSetType();  // assert that the type is right
     }
 
