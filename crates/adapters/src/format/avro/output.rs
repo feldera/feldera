@@ -5,7 +5,6 @@ use actix_web::HttpRequest;
 use anyhow::{anyhow, bail, Result as AnyResult};
 use apache_avro::{to_avro_datum, Schema as AvroSchema};
 use erased_serde::Serialize as ErasedSerialize;
-use log::{debug, error};
 use pipeline_types::format::avro::AvroEncoderConfig;
 use pipeline_types::program_schema::Relation;
 use schema_registry_converter::avro_common::get_supplied_schema;
@@ -16,6 +15,7 @@ use serde_yaml::Value as YamlValue;
 use std::borrow::Cow;
 use std::str::FromStr;
 use std::time::Duration;
+use tracing::{debug, error};
 
 // TODOs:
 // - This connector currently only supports raw Avro format, i.e., deletes cannot be represented.
@@ -312,11 +312,11 @@ mod test {
     use crate::{Encoder, SerBatch};
     use dbsp::utils::Tup2;
     use dbsp::{DBData, OrdZSet};
-    use log::trace;
     use pipeline_types::serde_with_context::{SerializeWithContext, SqlSerdeConfig};
     use proptest::proptest;
     use serde::Deserialize;
     use std::sync::Arc;
+    use tracing::trace;
 
     fn test_avro<T>(avro_schema: &str, batches: Vec<Vec<Tup2<T, i64>>>)
     where

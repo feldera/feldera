@@ -19,7 +19,6 @@ use deltalake::operations::transaction::{CommitBuilder, TableReference};
 use deltalake::operations::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::DeltaTable;
-use log::{debug, error, info, trace};
 use pipeline_types::transport::delta_table::DeltaTableWriteMode;
 use pipeline_types::{program_schema::Relation, transport::delta_table::DeltaTableWriterConfig};
 use serde_arrow::schema::SerdeArrowSchema;
@@ -27,6 +26,7 @@ use serde_arrow::ArrayBuilder;
 use std::cmp::min;
 use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tracing::{debug, error, info, trace};
 
 struct DeltaTableWriterInner {
     endpoint_id: EndpointId,

@@ -104,7 +104,7 @@ impl DeferredLogging {
         *self.0.lock().unwrap() = Some(Vec::new());
         let r = f();
         for (level, fac, message) in self.0.lock().unwrap().take().unwrap().drain(..) {
-            log::info!("{level:?} {fac} {message}");
+            tracing::info!("{level:?} {fac} {message}");
         }
         r
     }
@@ -151,19 +151,19 @@ impl DeferredLogging {
             | RDKafkaLogLevel::Alert
             | RDKafkaLogLevel::Critical
             | RDKafkaLogLevel::Error => {
-                log::error!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+                tracing::error!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
             }
             RDKafkaLogLevel::Warning => {
-                log::warn!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+                tracing::warn!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
             }
             RDKafkaLogLevel::Notice => {
-                log::info!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+                tracing::info!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
             }
             RDKafkaLogLevel::Info => {
-                log::info!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+                tracing::info!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
             }
             RDKafkaLogLevel::Debug => {
-                log::debug!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+                tracing::debug!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
             }
         }
     }

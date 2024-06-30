@@ -7,7 +7,6 @@ use anyhow::{anyhow, bail, Result as AnyResult};
 use csv::WriterBuilder as CsvWriterBuilder;
 use futures::executor::block_on;
 use lazy_static::lazy_static;
-use log::{error, info};
 use pipeline_types::program_schema::Relation;
 use pipeline_types::transport::kafka::default_redpanda_server;
 use rdkafka::message::BorrowedMessage;
@@ -29,6 +28,7 @@ use std::{
     thread::{sleep, JoinHandle},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use tracing::{error, info};
 
 static MAX_TOPIC_PROBE_TIMEOUT: Duration = Duration::from_millis(20_000);
 

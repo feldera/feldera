@@ -25,7 +25,6 @@ use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
 use env_logger::Env;
-use log::{debug, info, trace};
 use parquet::file::reader::Length;
 use pipeline_types::config::PipelineConfig;
 use pipeline_types::program_schema::{Field, Relation};
@@ -52,6 +51,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::{tempdir, NamedTempFile, TempDir};
 use tokio::time::sleep;
+use tracing::{debug, info, trace};
 use uuid::Uuid;
 
 fn delta_output_serde_config() -> SqlSerdeConfig {

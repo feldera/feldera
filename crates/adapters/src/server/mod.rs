@@ -21,7 +21,6 @@ use colored::Colorize;
 use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
-use log::{debug, error, info, warn};
 use pipeline_types::{format::json::JsonFlavor, transport::http::EgressMode};
 use pipeline_types::{query::OutputQuery, transport::http::SERVER_PORT_FILE};
 use serde::Deserialize;
@@ -41,6 +40,7 @@ use tokio::{
     spawn,
     sync::mpsc::{channel, Sender},
 };
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 pub mod error;
@@ -966,8 +966,8 @@ mod test_with_kafka {
             .unwrap()
             .current();
 
-        //let _ = log::set_logger(&TEST_LOGGER);
-        //log::set_max_level(LevelFilter::Debug);
+        //let _ = tracing::set_logger(&TEST_LOGGER);
+        //tracing::set_max_level(LevelFilter::Debug);
 
         // Create topics.
         let kafka_resources = KafkaResources::create_topics(&[

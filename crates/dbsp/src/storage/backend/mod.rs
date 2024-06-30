@@ -20,11 +20,11 @@ use std::{
     },
 };
 
-use log::{trace, warn};
 use pipeline_types::config::StorageCacheConfig;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use tempfile::TempDir;
 use thiserror::Error;
+use tracing::{trace, warn};
 use uuid::Uuid;
 
 use crate::storage::buffer_cache::FBuf;

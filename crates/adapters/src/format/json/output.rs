@@ -386,12 +386,12 @@ mod test {
         test::{generate_test_batches_with_weights, MockOutputConsumer, TestStruct},
     };
     use dbsp::{utils::Tup2, OrdZSet};
-    use log::trace;
     use pipeline_types::format::json::JsonUpdateFormat;
     use pipeline_types::program_schema::Relation;
     use proptest::prelude::*;
     use serde::Deserialize;
     use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
+    use tracing::trace;
 
     trait OutputUpdate: Debug + for<'de> Deserialize<'de> + Eq + Ord {
         type Val;
