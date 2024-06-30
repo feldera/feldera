@@ -3,7 +3,6 @@ use crate::transport::secret_resolver::MaybeSecret;
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
-use log::debug;
 use pipeline_types::secret_ref::MaybeSecretRef;
 use pipeline_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::message::OwnedHeaders;
@@ -15,6 +14,7 @@ use rdkafka::{
     ClientConfig, ClientContext,
 };
 use std::{sync::RwLock, time::Duration};
+use tracing::debug;
 
 const OUTPUT_POLLING_INTERVAL: Duration = Duration::from_millis(100);
 

@@ -7,7 +7,7 @@ use awc::{error::PayloadError, ClientRequest};
 use csv::ReaderBuilder as CsvReaderBuilder;
 use csv::WriterBuilder as CsvWriterBuilder;
 use futures::{Stream, StreamExt};
-use log::trace;
+use tracing::trace;
 
 pub struct TestHttpSender;
 pub struct TestHttpReceiver;

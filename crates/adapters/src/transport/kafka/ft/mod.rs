@@ -16,7 +16,6 @@ mod output;
 
 use crate::transport::kafka::refine_kafka_error;
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
-use log::{debug, error, info, warn};
 use pipeline_types::transport::kafka::{default_redpanda_server, KafkaLogLevel};
 use rdkafka::{
     client::Client as KafkaClient,
@@ -38,6 +37,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 pub use input::Endpoint as KafkaFtInputEndpoint;

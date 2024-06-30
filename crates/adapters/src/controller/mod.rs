@@ -51,8 +51,6 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use dbsp::circuit::{CircuitConfig, Layout};
-use log::trace;
-use log::{debug, error, info};
 use metrics::set_global_recorder;
 use metrics_util::{
     debugging::{DebuggingRecorder, Snapshotter},
@@ -70,6 +68,7 @@ use std::{
     thread::{spawn, JoinHandle},
     time::{Duration, Instant},
 };
+use tracing::{debug, error, info, trace};
 use uuid::Uuid;
 
 mod error;

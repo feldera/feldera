@@ -3,8 +3,6 @@ use actix_web::{http::header::ContentType, web::Bytes, HttpResponse};
 use anyhow::{anyhow, bail, Result as AnyResult};
 use async_stream::stream;
 use crossbeam::sync::ShardedLock;
-use log::debug;
-use log::error;
 use serde::{ser::SerializeStruct, Serializer};
 use serde_json::value::RawValue;
 use std::{
@@ -18,6 +16,8 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::timeout,
 };
+use tracing::debug;
+use tracing::error;
 
 // TODO: make this configurable via endpoint config.
 const MAX_BUFFERS: usize = 100;

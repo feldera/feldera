@@ -7,7 +7,6 @@ use crate::{
     Controller, PipelineConfig,
 };
 use env_logger::Env;
-use log::info;
 use parquet::data_type::AsBytes;
 use proptest::prelude::*;
 use rdkafka::message::{BorrowedMessage, Header, Headers};
@@ -21,6 +20,7 @@ use std::{
     thread::sleep,
     time::Duration,
 };
+use tracing::info;
 
 /// Wait to receive all records in `data` in the same order.
 fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[Vec<TestStruct>]) {

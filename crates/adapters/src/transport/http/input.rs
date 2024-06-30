@@ -9,7 +9,6 @@ use actix_web::{web::Payload, HttpResponse};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use circular_queue::CircularQueue;
 use futures_util::StreamExt;
-use log::debug;
 use num_traits::FromPrimitive;
 use serde::Deserialize;
 use std::{
@@ -20,6 +19,7 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::watch, time::timeout};
+use tracing::debug;
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) enum HttpIngressMode {

@@ -3647,8 +3647,7 @@ dependencies = [
  "itertools 0.10.5",
  "lazy_static",
  "libc",
- "log",
- "metrics",
+ "metrics 0.23.0",
  "mimalloc-rust-sys",
  "nix 0.27.1",
  "num",
@@ -3685,6 +3684,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
+ "tracing",
  "typedmap",
  "uuid",
  "xxhash-rust",
@@ -3728,8 +3728,7 @@ dependencies = [
  "futures-util",
  "jemalloc_pprof",
  "lazy_static",
- "log",
- "metrics",
+ "metrics 0.22.3",
  "metrics-exporter-tcp",
  "metrics-util",
  "mime",
@@ -3766,6 +3765,7 @@ dependencies = [
  "tempfile",
  "test_bin",
  "tokio",
+ "tracing",
  "url",
  "utoipa",
  "uuid",
@@ -3785,7 +3785,7 @@ dependencies = [
  "env_logger 0.10.2",
  "hdrhist",
  "indicatif",
- "metrics",
+ "metrics 0.22.3",
  "metrics-util",
  "mimalloc-rust-sys",
  "num-format",
@@ -5873,6 +5873,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "metrics"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "884adb57038347dfbaf2d5065887b6cf4312330dc8e94bc30a1a839bd79d3261"
+dependencies = [
+ "ahash 0.8.11",
+ "portable-atomic",
+]
+
+[[package]]
 name = "metrics-exporter-tcp"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5881,7 +5891,7 @@ dependencies = [
  "bytes",
  "crossbeam-channel",
  "home",
- "metrics",
+ "metrics 0.22.3",
  "mio",
  "prost 0.12.6",
  "prost-build",
@@ -5900,7 +5910,7 @@ dependencies = [
  "crossbeam-utils",
  "hashbrown 0.14.5",
  "indexmap 2.2.6",
- "metrics",
+ "metrics 0.22.3",
  "num_cpus",
  "ordered-float 4.2.0",
  "quanta",

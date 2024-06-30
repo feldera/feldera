@@ -26,7 +26,6 @@ use deltalake::table::PeekCommit;
 use deltalake::{datafusion, DeltaTable, DeltaTableBuilder, Path};
 use env_logger::builder;
 use futures_util::StreamExt;
-use log::{debug, error, info, trace};
 use pipeline_types::config::{InputEndpointConfig, TransportConfigVariant};
 use pipeline_types::format::json::JsonFlavor;
 use pipeline_types::program_schema::Relation;
@@ -42,6 +41,7 @@ use tokio::select;
 use tokio::sync::mpsc;
 use tokio::sync::watch::{channel, Receiver, Sender};
 use tokio::time::sleep;
+use tracing::{debug, error, info, trace};
 use url::Url;
 use utoipa::ToSchema;
 
