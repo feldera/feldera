@@ -1,4 +1,5 @@
 pub mod aggregate;
+pub mod asof_join;
 mod communication;
 mod consolidate;
 pub mod count;
