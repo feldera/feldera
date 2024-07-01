@@ -1,3 +1,4 @@
+import os
 import unittest
 import pandas as pd
 from kafka import KafkaProducer, KafkaConsumer
@@ -184,6 +185,13 @@ class TestWireframes(unittest.TestCase):
         import json
 
         KAFKA_SERVER = "localhost:19092"
+        PIPELINE_TO_KAFKA_SERVER = "redpanda:9092"
+
+        in_ci = os.environ.get("IN_CI")
+
+        if in_ci == "1":
+            # if running in CI, skip the test
+            return
 
         print("(Re-)creating topics...")
         admin_client = KafkaAdminClient(
@@ -224,7 +232,6 @@ class TestWireframes(unittest.TestCase):
         sql.register_table(TABLE_NAME, SQLSchema({"id": "INT NOT NULL PRIMARY KEY"}))
         sql.register_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
 
-        PIPELINE_TO_KAFKA_SERVER = "redpanda:9092"
 
         source_config = {
             "topics": [INPUT_TOPIC],
@@ -281,9 +288,15 @@ class TestWireframes(unittest.TestCase):
     def test_avro_format(self):
         from feldera.formats import AvroFormat
 
-        KAFKA_URL_FROM_PIPELINE = "redpanda:9092"
+        PIPELINE_TO_KAFKA_SERVER = "redpanda:9092"
         KAFKA_SERVER = "localhost:19092"
         TOPIC = "test_avro_format"
+
+        in_ci = os.environ.get("IN_CI")
+
+        if in_ci == "1":
+            # if running in CI, skip the test
+            return
 
         admin_client = KafkaAdminClient(
             bootstrap_servers=KAFKA_SERVER,
@@ -305,7 +318,7 @@ class TestWireframes(unittest.TestCase):
 
         sink_config = {
             "topic": TOPIC,
-            "bootstrap.servers": KAFKA_URL_FROM_PIPELINE,
+            "bootstrap.servers": PIPELINE_TO_KAFKA_SERVER,
             "auto.offset.reset": "earliest",
         }
 

@@ -98,14 +98,22 @@ install-python-deps:
     FROM +install-deps
     RUN pip install wheel
     COPY demo/demo_notebooks/requirements.txt requirements.txt
+    COPY --dir python ./
+    RUN pip install --upgrade pip
     RUN pip wheel -r requirements.txt --wheel-dir=wheels
+    RUN pip wheel -r python/tests/requirements.txt --wheel-dir=wheels
+    RUN pip wheel python/ --wheel-dir=wheels
     SAVE ARTIFACT wheels /wheels
 
 install-python:
     FROM +install-deps
     COPY +install-python-deps/wheels wheels
     COPY demo/demo_notebooks/requirements.txt requirements.txt
+    COPY --dir python ./
+    RUN pip install --upgrade pip # remove after upgrading to ubuntu 24
     RUN pip install --user -v --no-index --find-links=wheels -r requirements.txt
+    RUN pip install --user -v --no-index --find-links=wheels -r python/tests/requirements.txt
+    RUN pip install --user -v --no-index --find-links=wheels feldera
     SAVE ARTIFACT /root/.local/lib/python3.10
     SAVE ARTIFACT /root/.local/bin
 
@@ -258,6 +266,7 @@ test-python:
 
     COPY demo/demo_notebooks demo/demo_notebooks
     COPY demo/simple-join demo/simple-join
+    COPY python/tests tests
 
     # Reuse `Cargo.lock` to ensure consistent crate versions.
     RUN mkdir -p /working-dir/cargo_workspace
@@ -270,11 +279,13 @@ test-python:
     ENV RUST_LOG=error
     ENV WITH_POSTGRES=1
     ENV IN_CI=1
+    ENV KAFKA_URL="localhost:9092"
     WITH DOCKER --pull postgres
         RUN docker run --shm-size=512MB -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/dev/shm -d postgres && \
             sleep 10 && \
             (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=unoptimized &) && \
             sleep 5 && \
+            cd tests && python3 -m pytest . && cd .. && \
             python3 demo/simple-join/run.py --api-url http://localhost:8080 && \
             cd demo/demo_notebooks && jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
     END
