@@ -46,8 +46,7 @@ const schema = va.merge(
                 va.minLength(1, 'Specify at least one server')
               ])
             ),
-            topic: va.optional(va.string(), ''),
-            preset_service: va.optional(va.string([va.toCustom(s => (s === '' ? undefined! : s))]))
+            topic: va.optional(va.string(), '')
           },
           // Allow configurations options not mentioned in the schema
           va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
