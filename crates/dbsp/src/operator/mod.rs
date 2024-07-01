@@ -29,6 +29,7 @@ mod sum;
 mod z1;
 
 mod aggregate;
+mod asof_join;
 mod average;
 mod consolidate;
 mod distinct;
