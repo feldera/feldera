@@ -1061,9 +1061,8 @@ export const toLibrdkafkaConfig = (formFields: Partial<Record<string, Librdkafka
   return config
 }
 
-export const toKafkaConfig = ({ preset_service, ...formFields }: Record<string, LibrdkafkaOptionType>) =>
+export const toKafkaConfig = (formFields: Record<string, LibrdkafkaOptionType>) =>
   ({
-    kafka_service: preset_service,
     ...toLibrdkafkaConfig(formFields)
   }) as ReturnType<typeof toLibrdkafkaConfig>
 
@@ -1102,9 +1101,8 @@ export const fromLibrdkafkaConfig = (config: Record<string, string | string[]>) 
   return formFields
 }
 
-export const fromKafkaConfig = ({ kafka_service, ...config }: Record<string, string | string[]>) => {
+export const fromKafkaConfig = (config: Record<string, string | string[]>) => {
   return {
-    ...(kafka_service ? { preset_service: kafka_service } : {}),
     ...fromLibrdkafkaConfig(config)
   } as ReturnType<typeof fromLibrdkafkaConfig>
 }

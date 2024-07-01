@@ -1,6 +1,5 @@
 import { LibrdkafkaOptionsElement } from '$lib/components/services/dialogs/elements/LibrdkafkaOptionsElement'
 import { librdkafkaAuthOptions, LibrdkafkaOptions, librdkafkaOptions } from '$lib/functions/kafka/librdkafkaOptions'
-import { useWatch } from 'react-hook-form-mui'
 
 const fieldOptions = librdkafkaOptions
   .filter(o => o.scope === '*' || o.scope === 'P')
@@ -8,9 +7,7 @@ const fieldOptions = librdkafkaOptions
   .reduce((acc, o) => ((acc[o.name.replaceAll('.', '_')] = o), acc), {} as Record<string, LibrdkafkaOptions>)
 
 export const TabKafkaOutputDetails = (props: { disabled?: boolean; parentName: string }) => {
-  const preset = useWatch({ name: props.parentName + '.preset_service' })
-
-  const requiredFields = [preset ? [] : ['bootstrap_servers'], 'topic'].flat()
+  const requiredFields = ['bootstrap_servers', 'topic']
   return (
     <LibrdkafkaOptionsElement
       parentName={props.parentName}

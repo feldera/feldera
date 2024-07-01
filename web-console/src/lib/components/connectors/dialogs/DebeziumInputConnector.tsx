@@ -54,8 +54,7 @@ const schema = va.object({
           va.array(va.string([va.minLength(1, 'Topic name should not be empty')]), [
             va.minLength(1, 'Provide at least one topic')
           ])
-        ),
-        preset_service: va.optional(va.string([va.toCustom(s => (s === '' ? undefined! : s))]))
+        )
       },
       // Allow configurations options not mentioned in the schema
       va.union([va.string(), va.number(), va.boolean(), va.array(va.string()), va.any()])
