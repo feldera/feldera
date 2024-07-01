@@ -387,7 +387,7 @@ def main():
                 }
             },
             "program_name": program_name,
-            "connectors": input_connectors + [output_connectors[s] for s in program_name.split(',')]
+            "connectors": connectors
         }).raise_for_status()
 
     # Stop pipelines
