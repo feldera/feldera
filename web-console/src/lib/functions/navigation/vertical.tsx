@@ -23,46 +23,20 @@ const navigation = (props: { showSettings: boolean }): VerticalNavItemsType => {
     {
       sectionTitle: 'Analytics'
     },
-    // {
-    //   title: 'SQL Editor',
-    //   path: '/analytics/editor',
-    //   icon: 'bx:dock-top'
-    // },
     {
       title: 'SQL Programs',
       path: ['/analytics/programs', '/analytics/editor'],
       icon: <i className='bx bx-align-left' />,
       testid: 'button-vertical-nav-sql-programs'
     },
-    // {
-    //   title: 'Pipeline Builder',
-    //   path: '/streaming/builder',
-    //   icon: 'gridicons:create'
-    // },
     {
-      title: 'Pipelines', // 'Pipeline Management',
+      title: 'Pipelines',
       path: ['/streaming/management', '/streaming/builder'],
       icon: <i className='bx bx-git-repo-forked' />,
       testid: 'button-vertical-nav-pipelines'
     },
-    //{
-    //title: 'Data Inspection',
-    //path: '/streaming/inspection',
-    //icon: 'bx:chart'
-    //},
     {
       sectionTitle: 'Input & Output'
-    },
-    // {
-    //   title: 'Connector Creator',
-    //   path: '/connectors/create',
-    //   icon: 'bx:coin-stack'
-    // },
-    {
-      title: 'Data Services',
-      path: ['/services/list', '/services/create'],
-      icon: <i className='bx bx-server' />,
-      testid: 'button-vertical-nav-services'
     },
     {
       title: 'Connectors',
@@ -70,11 +44,6 @@ const navigation = (props: { showSettings: boolean }): VerticalNavItemsType => {
       icon: <i className='bx bx-unite' />,
       testid: 'button-vertical-nav-connectors'
     },
-    //{
-    //title: 'Data Browser',
-    //path: '/connectors/browser',
-    //icon: 'bx:table'
-    //}
     {
       sectionTitle: 'Platform'
     },
