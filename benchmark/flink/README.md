@@ -58,14 +58,14 @@ following, or follow these instructions to do them by hand:
 1. Start the containers:
 
    ```
-   docker compose -p nexmark up --build --force-recreate --renew-anon-volume
+   docker compose -p nexmark up --build --force-recreate --renew-anon-volumes
    ```
 
    To reduce output spew, add `-d` (but sometimes that output can be
    informative):
 
    ```
-   docker compose -p nexmark up --build --force-recreate --renew-anon-volume -d
+   docker compose -p nexmark up --build --force-recreate --renew-anon-volumes -d
    ```
 
 2. Run tests.  You might want to do this from a separate terminal,
