@@ -12,6 +12,7 @@ use crate::{
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use arrow::array::RecordBatch;
 use arrow::datatypes::Schema as ArrowSchema;
+use dbsp::circuit::tokio::TOKIO;
 use deltalake::kernel::{Action, DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::transaction;
@@ -108,12 +109,7 @@ impl DeltaTableWriter {
 
         // Start tokio runtime.
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .build()
-                .expect("Could not create Tokio runtime");
-            rt.block_on(async {
+            TOKIO.block_on(async {
                 let _ = Self::worker_task(inner_clone, command_receiver, response_sender).await;
             })
         });

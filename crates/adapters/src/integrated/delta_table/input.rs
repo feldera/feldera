@@ -7,6 +7,7 @@ use crate::{
     TransportInputEndpoint,
 };
 use anyhow::{anyhow, Result as AnyResult};
+use dbsp::circuit::tokio::TOKIO;
 use dbsp::InputHandle;
 use deltalake::datafusion::common::Column;
 use deltalake::datafusion::dataframe::DataFrame;
@@ -116,12 +117,7 @@ impl DeltaTableInputReader {
             .configure_arrow_deserializer(delta_input_serde_config())?;
 
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .build()
-                .expect("Could not create tokio runtime");
-            rt.block_on(async {
+            TOKIO.block_on(async {
                 let _ = Self::worker_task(
                     endpoint_clone,
                     input_stream,

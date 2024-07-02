@@ -8,6 +8,7 @@ use tokio::sync::{
 use tracing::error;
 
 use crate::{InputConsumer, InputReader, PipelineState, TransportInputEndpoint};
+use dbsp::circuit::tokio::TOKIO;
 #[cfg(test)]
 use mockall::automock;
 
@@ -156,12 +157,7 @@ impl S3InputReader {
         let config_clone = config.clone();
         let receiver_clone = receiver.clone();
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .build()
-                .expect("Could not create Tokio runtime");
-            rt.block_on(async {
+            TOKIO.block_on(async {
                 let _ =
                     Self::worker_task(s3_client, config_clone, &mut consumer, receiver_clone).await;
             })

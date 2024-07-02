@@ -9,6 +9,7 @@ use crate::{
     circuit::{
         metadata::OperatorLocation,
         operator_traits::{Operator, SinkOperator, SourceOperator},
+        tokio::TOKIO,
         Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
     },
     circuit_cache_key,
@@ -17,7 +18,7 @@ use crate::{
 };
 use crossbeam_utils::CachePadded;
 use futures::{future, prelude::*};
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::OnceCell;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -37,14 +38,10 @@ use tarpc::{
     tokio_util::sync::{CancellationToken, DropGuard},
 };
 use tokio::{
-    runtime::Runtime as TokioRuntime,
     sync::{Notify, OnceCell as TokioOnceCell},
     time::sleep,
 };
 use typedmap::TypedMapKey;
-
-// All circuits can share a single Tokio runtime.
-static TOKIO: Lazy<TokioRuntime> = Lazy::new(|| TokioRuntime::new().unwrap());
 
 // We use the `Runtime::local_store` mechanism to connect multiple workers
 // to an `Exchange` instance.  During circuit construction, each worker
