@@ -86,7 +86,7 @@ const navigation = (props: { showSettings: boolean }): VerticalNavItemsType => {
       openInNewTab: true,
       testid: 'button-vertical-nav-slack'
     }
-  ].flat() as VerticalNavItemsType
+  ].flat(2) as VerticalNavItemsType
 }
 
 export default navigation

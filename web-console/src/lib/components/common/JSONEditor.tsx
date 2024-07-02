@@ -139,8 +139,11 @@ export function JSONEditor<T>(props: {
       defaultLanguage='yaml'
       options={{
         ...isMonacoEditorDisabled(props.disabled),
+        overviewRulerLanes: 0,
+        hideCursorInOverviewRuler: true,
+        overviewRulerBorder: false,
         scrollbar: {
-          vertical: 'hidden'
+          vertical: 'visible'
         }
       }}
       value={props.valueToText(props.value)}

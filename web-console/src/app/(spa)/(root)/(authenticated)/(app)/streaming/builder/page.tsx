@@ -303,7 +303,12 @@ const PipelineBuilderPage = ({
                 </Box>
               )}
               {pipeline.name && (
-                <Button sx={{ flex: 'none' }} onClick={() => setShow(true)} variant='outlined'>
+                <Button
+                  sx={{ flex: 'none' }}
+                  onClick={() => setShow(true)}
+                  variant='outlined'
+                  data-testid='button-configure-resources'
+                >
                   Configure resources
                 </Button>
               )}
