@@ -8,9 +8,12 @@ use crate::{
     },
     dynamic::{
         ClonableTrait, DataTrait, DowncastTrait, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
-        Factory, LeanVec, WithFactory,
+        Factory, LeanVec, WeightTrait, WithFactory,
     },
-    trace::{cursor::CursorPair, BatchFactories, BatchReaderFactories, Cursor},
+    trace::{
+        cursor::{CursorEmpty, CursorPair},
+        BatchFactories, BatchReaderFactories, Cursor,
+    },
     Circuit, DBData, DynZWeight, RootCircuit, Scope, Stream, ZWeight,
 };
 
@@ -83,7 +86,6 @@ where
         factories: &AsofJoinFactories<TS, I1, I2, OrdZSet<V>>,
         other: &Stream<RootCircuit, I2>,
         ts_func1: Box<dyn Fn(&I1::Val, &mut TS)>,
-        ts_func2: Box<dyn Fn(&I2::Val, &mut TS)>,
         tscmp_func: Box<dyn Fn(&I1::Val, &I2::Val) -> Ordering>,
         valts_cmp_func: Box<dyn Fn(&I1::Val, &TS) -> Ordering>,
         join_func: Box<AsofJoinFunc<I1::Key, I1::Val, I2::Val, V, DynUnit>>,
@@ -97,7 +99,6 @@ where
             factories,
             other,
             ts_func1,
-            ts_func2,
             tscmp_func,
             valts_cmp_func,
             join_func,
@@ -111,7 +112,6 @@ where
         factories: &AsofJoinFactories<TS, I1, I2, OrdIndexedZSet<K, V>>,
         other: &Stream<RootCircuit, I2>,
         ts_func1: Box<dyn Fn(&I1::Val, &mut TS)>,
-        ts_func2: Box<dyn Fn(&I2::Val, &mut TS)>,
         tscmp_func: Box<dyn Fn(&I1::Val, &I2::Val) -> Ordering>,
         valts_cmp_func: Box<dyn Fn(&I1::Val, &TS) -> Ordering>,
         join_func: Box<AsofJoinFunc<I1::Key, I1::Val, I2::Val, K, V>>,
@@ -126,7 +126,6 @@ where
             factories,
             other,
             ts_func1,
-            ts_func2,
             tscmp_func,
             valts_cmp_func,
             join_func,
@@ -140,7 +139,6 @@ where
         factories: &AsofJoinFactories<TS, I1, I2, Z>,
         other: &Stream<RootCircuit, I2>,
         ts_func1: Box<dyn Fn(&I1::Val, &mut TS)>,
-        ts_func2: Box<dyn Fn(&I2::Val, &mut TS)>,
         tscmp_func: Box<dyn Fn(&I1::Val, &I2::Val) -> Ordering>,
         valts_cmp_func: Box<dyn Fn(&I1::Val, &TS) -> Ordering>,
         join_func: Box<AsofJoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>>,
@@ -197,7 +195,6 @@ where
     valts_cmp_func: Box<dyn Fn(&I1::Val, &TS) -> Ordering>,
     join_func: Box<AsofJoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>>,
     location: &'static Location<'static>,
-    ts: Box<TS>,
     phantom: PhantomData<(I1, T1, I2, T2, Z)>,
 }
 
@@ -206,7 +203,7 @@ where
     TS: DataTrait + ?Sized,
     I1: IndexedZSet,
     T1: ZTrace,
-    I2: IndexedZSet,
+    I2: IndexedZSet<Key = I1::Key>,
     T2: ZTrace,
     Z: IndexedZSet,
 {
@@ -218,8 +215,6 @@ where
         join_func: Box<AsofJoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>>,
         location: &'static Location<'static>,
     ) -> Self {
-        let ts = factories.timestamp_factory.default_box();
-
         Self {
             factories,
             ts_func1,
@@ -227,20 +222,38 @@ where
             valts_cmp_func,
             join_func,
             location,
-            ts,
             phantom: PhantomData,
         }
     }
 
-    fn compute_affected_times<DC1, C2>(
+    fn try_seek<'a, C, K, V, T, R>(cursor: &'a mut C, key: &K) -> Option<&'a mut C>
+    where
+        K: DataTrait + ?Sized,
+        V: DataTrait + ?Sized,
+        R: WeightTrait + ?Sized,
+        C: Cursor<K, V, T, R>,
+    {
+        cursor.seek_key(key);
+        if cursor.get_key() == Some(key) {
+            Some(cursor)
+        } else {
+            None
+        }
+    }
+
+    /// Compute all timestamps affected by the changes.  We will
+    /// update the value of the asof-join for these timestamps.
+    fn compute_affected_times<DC1, DC2, ZC1, C2>(
         &mut self,
-        delta1: &mut I1::Cursor<'_>,
-        delta2: &mut I2::Cursor<'_>,
-        delayed_cursor1: &mut DC1,
+        delta1: &mut DC1,
+        delta2: &mut DC2,
+        delayed_cursor1: &mut Option<&mut ZC1>,
         cursor2: &mut C2,
         affected_times: &mut DynVec<TS>,
     ) where
         DC1: ZCursor<I1::Key, I1::Val, ()>,
+        DC2: ZCursor<I2::Key, I2::Val, ()>,
+        ZC1: ZCursor<I1::Key, I1::Val, ()>,
         C2: ZCursor<I2::Key, I2::Val, ()>,
     {
         affected_times.clear();
@@ -253,37 +266,57 @@ where
 
         debug_assert!(affected_times.is_sorted_by(&|ts1, ts2| ts1.cmp(ts2)));
 
-        while delta2.val_valid() {
-            delayed_cursor1
-                .seek_val_with(&|v| (self.tscmp_func)(v, delta2.val()) != Ordering::Less);
+        // For `delta2`, we want to determine all timestamps in `delayed_cursor1`
+        // that could potentially be affected by changes in `delta2` (we don't care
+        // about timestamps in `cursor1` that are not in `delayed_cursor1`, since
+        // they are already accounted for in `delta1`).
+        if let Some(delayed_cursor1) = delayed_cursor1 {
+            while delta2.val_valid() {
+                // Find the first value in `delayed_cursor1` following the current
+                // timestamp in `delta2`.
+                delayed_cursor1
+                    .seek_val_with(&|v| (self.tscmp_func)(v, delta2.val()) != Ordering::Less);
 
-            cursor2.seek_val_with(&|v| v > delta2.val());
+                // Find the next timestamp in `cursor2`.
+                cursor2.seek_val_with(&|v| v > delta2.val());
 
-            while delayed_cursor1.val_valid()
-                && (!cursor2.val_valid()
-                    || (self.tscmp_func)(delayed_cursor1.val(), cursor2.val()) == Ordering::Less)
-            {
-                affected_times.push_with(&mut |ts| (self.ts_func1)(delayed_cursor1.val(), ts));
-                delayed_cursor1.step_val();
+                // Enumerate all timestamps in `delayed_cursor1` preceding the current
+                // positin of `cursor2`.
+                while delayed_cursor1.val_valid()
+                    && (!cursor2.val_valid()
+                        || (self.tscmp_func)(delayed_cursor1.val(), cursor2.val())
+                            == Ordering::Less)
+                {
+                    affected_times.push_with(&mut |ts| (self.ts_func1)(delayed_cursor1.val(), ts));
+                    delayed_cursor1.step_val();
+                }
+
+                if !cursor2.val_valid() {
+                    break;
+                }
+                if !delayed_cursor1.val_valid() {
+                    break;
+                }
+                delta2.seek_val(cursor2.val());
             }
 
-            if !cursor2.val_valid() {
-                break;
-            }
-            if !delayed_cursor1.val_valid() {
-                break;
-            }
-            delta2.seek_val(cursor2.val());
+            affected_times.sort();
         }
 
-        affected_times.sort();
         affected_times.dedup();
     }
 
+    /// Compute asof-join for the given timestamp.
+    ///
+    /// Assumes that, if `ts` is present in `cursor1`, then `cursor1` can reverse-seek
+    /// to it (i.e., it hasn't passed the timestamp yet).  Assumes the same for `cursor2`.
+    ///
+    /// By setting `multiplier` to +1 or -1, we get this function to produce
+    /// insertions and retractions respectively.
     fn eval_val<C1, C2>(
         &mut self,
         ts: &TS,
-        cursor1: &mut C1,
+        cursor1: &mut Option<&mut C1>,
         cursor2: &mut C2,
         multiplier: ZWeight,
         output_tuples: &mut DynWeightedPairs<DynPair<Z::Key, Z::Val>, DynZWeight>,
@@ -291,41 +324,50 @@ where
         C1: ZCursor<I1::Key, I1::Val, ()>,
         C2: ZCursor<I2::Key, I2::Val, ()>,
     {
-        cursor1.seek_val_with_reverse(&|v| (self.valts_cmp_func)(v, ts) != Ordering::Less);
-
-        if !cursor1.val_valid() || ts != self.ts.as_ref() {
+        let Some(cursor1) = cursor1 else {
             return;
-        }
-
-        cursor2
-            .seek_val_with_reverse(&|v| (self.tscmp_func)(cursor1.val(), v) != Ordering::Greater);
-
-        let w1 = **cursor1.weight();
-        let w2 = if cursor2.val_valid() {
-            **cursor2.weight()
-        } else {
-            1
         };
 
-        let w = w1 * w2 * multiplier;
+        cursor1.seek_val_with_reverse(&|v| (self.valts_cmp_func)(v, ts) != Ordering::Less);
 
-        (self.join_func)(cursor1.key(), cursor1.val(), cursor2.get_val(), &|k, v| {
-            output_tuples.push_with(&mut move |tup| {
-                let (kv, neww) = tup.split_mut();
-                let (newk, newv) = kv.split_mut();
-                k.move_to(newk);
-                v.move_to(newv);
-                *unsafe { neww.downcast_mut() } = w;
+        // Iterate over all values with the same timestamp in `cursor1`.
+        while cursor1.val_valid() && (self.valts_cmp_func)(cursor1.val(), ts) == Ordering::Equal {
+            cursor2
+                .seek_val_with_reverse(&|v| (self.tscmp_func)(cursor1.val(), v) != Ordering::Less);
+
+            // The weight of the result is the product of input weights.
+            // If there is no matching RHS value, then asof-join behaves like
+            // the left join: we pass `None` to the join function with weight 1.
+            let w1 = **cursor1.weight();
+            let w2 = if cursor2.val_valid() {
+                **cursor2.weight()
+            } else {
+                1
+            };
+
+            let w = w1 * w2 * multiplier;
+
+            (self.join_func)(cursor1.key(), cursor1.val(), cursor2.get_val(), &|k, v| {
+                output_tuples.push_with(&mut move |tup| {
+                    let (kv, neww) = tup.split_mut();
+                    let (newk, newv) = kv.split_mut();
+                    k.move_to(newk);
+                    v.move_to(newv);
+                    *unsafe { neww.downcast_mut() } = w;
+                });
             });
-        });
+
+            cursor1.step_val_reverse();
+        }
     }
 
-    fn eval_key<DC1, DC2, C1, C2>(
+    /// Evaluate operator for the current key.
+    fn eval_key<DC1, DC2, ZC1, ZC2, C1, C2>(
         &mut self,
-        delta1: &mut I1::Cursor<'_>,
-        delta2: &mut I2::Cursor<'_>,
-        delayed_cursor1: &mut DC1,
-        delayed_cursor2: &mut DC2,
+        delta1: &mut DC1,
+        delta2: &mut DC2,
+        delayed_cursor1: &mut ZC1,
+        delayed_cursor2: &mut ZC2,
         cursor1: &mut C1,
         cursor2: &mut C2,
         affected_times: &mut DynVec<TS>,
@@ -333,38 +375,80 @@ where
     ) where
         DC1: ZCursor<I1::Key, I1::Val, ()>,
         DC2: ZCursor<I2::Key, I2::Val, ()>,
+        ZC1: ZCursor<I1::Key, I1::Val, ()>,
+        ZC2: ZCursor<I2::Key, I2::Val, ()>,
         C1: ZCursor<I1::Key, I1::Val, ()>,
         C2: ZCursor<I2::Key, I2::Val, ()>,
     {
-        self.compute_affected_times(delta1, delta2, delayed_cursor1, cursor2, affected_times);
+        let key = if delta1.key_valid() {
+            delta1.key()
+        } else {
+            delta2.key()
+        };
 
-        cursor1.fast_forward_vals();
-        cursor2.fast_forward_vals();
-        delayed_cursor1.fast_forward_vals();
-        delayed_cursor2.fast_forward_vals();
+        // Make sure that all cursors point to the same key or are None.
+        let mut delayed_cursor1 = Self::try_seek(delayed_cursor1, key);
+        let mut delayed_cursor2 = Self::try_seek(delayed_cursor2, key);
+        let mut cursor1 = Self::try_seek(cursor1, key);
+        let mut cursor2 = Self::try_seek(cursor2, key);
+
+        let mut empty_cursor = CursorEmpty::new(WithFactory::<ZWeight>::FACTORY);
+
+        if let Some(cursor2) = &mut cursor2 {
+            self.compute_affected_times(
+                delta1,
+                delta2,
+                &mut delayed_cursor1,
+                *cursor2,
+                affected_times,
+            );
+        } else {
+            self.compute_affected_times(
+                delta1,
+                delta2,
+                &mut delayed_cursor1,
+                &mut empty_cursor,
+                affected_times,
+            );
+        }
+
+        // We iterate in reverse when computing asof join, because we
+        // cannot use forward iteration to get cursor2 to stop at the last
+        // value <=cursor1.
+        cursor1.as_mut().map(|c| c.fast_forward_vals());
+        cursor2.as_mut().map(|c| c.fast_forward_vals());
+        delayed_cursor1.as_mut().map(|c| c.fast_forward_vals());
+        delayed_cursor2.as_mut().map(|c| c.fast_forward_vals());
 
         for i in (0..affected_times.len()).rev() {
             let ts = unsafe { affected_times.index_unchecked(i) };
 
             // Retract old values.
-            self.eval_val(ts, delayed_cursor1, delayed_cursor2, -1, output_tuples);
+            if let Some(delayed_cursor2) = &mut delayed_cursor2 {
+                self.eval_val(
+                    ts,
+                    &mut delayed_cursor1,
+                    *delayed_cursor2,
+                    -1,
+                    output_tuples,
+                );
+            } else {
+                self.eval_val(
+                    ts,
+                    &mut delayed_cursor1,
+                    &mut empty_cursor,
+                    -1,
+                    output_tuples,
+                );
+            }
 
             // Insert new values.
-            self.eval_val(ts, cursor1, cursor2, 1, output_tuples);
+            if let Some(cursor2) = &mut cursor2 {
+                self.eval_val(ts, &mut cursor1, *cursor2, 1, output_tuples);
+            } else {
+                self.eval_val(ts, &mut cursor1, &mut empty_cursor, 1, output_tuples);
+            }
         }
-
-        // Affected values:
-        // - All values in delta1.
-        // - For each value in delta2, all following values in delayed_trace1
-        //   until the next timestamp present in delayed_trace2.
-
-        // For each affected value x
-        // - Find x in delayed_trace1: w1.
-        // - Find matching value y, in delayed_trace2: w2.
-        // - Retract: f(x, y) with weight -w1*w2.
-        // - Find x in trace1: w1.
-        // - Find matching value y in trace2: w2.
-        // - Insert f(x, y) with weight w1*w2.
     }
 }
 
@@ -454,7 +538,8 @@ where
             .weighted_items_factory()
             .default_box();
 
-        // Timestamps that need to be recomputed, kept here for allocation reuse.
+        // Timestamps that need to be recomputed for each key, created here for allocation
+        // reuse across keys.
         let mut affected_times = self.factories.timestamps_factory.default_box();
 
         // Iterate over keys in delta1 and delta2.
@@ -463,7 +548,7 @@ where
                 Ordering::Less => {
                     self.eval_key(
                         &mut delta1_cursor,
-                        &mut delta2_cursor,
+                        &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
                         &mut delayed_trace1_cursor,
                         &mut delayed_trace2_cursor,
                         &mut trace1_cursor,
@@ -489,7 +574,7 @@ where
                 }
                 Ordering::Greater => {
                     self.eval_key(
-                        &mut delta1_cursor,
+                        &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
                         &mut delta2_cursor,
                         &mut delayed_trace1_cursor,
                         &mut delayed_trace2_cursor,
@@ -506,7 +591,7 @@ where
         while delta1_cursor.key_valid() {
             self.eval_key(
                 &mut delta1_cursor,
-                &mut delta2_cursor,
+                &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
                 &mut delayed_trace1_cursor,
                 &mut delayed_trace2_cursor,
                 &mut trace1_cursor,
@@ -519,7 +604,7 @@ where
 
         while delta2_cursor.key_valid() {
             self.eval_key(
-                &mut delta1_cursor,
+                &mut CursorEmpty::new(WithFactory::<ZWeight>::FACTORY),
                 &mut delta2_cursor,
                 &mut delayed_trace1_cursor,
                 &mut delayed_trace2_cursor,
