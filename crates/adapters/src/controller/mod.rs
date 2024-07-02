@@ -45,7 +45,6 @@ use crate::{
 };
 use crate::{create_integrated_output_endpoint, DbspCircuitHandle};
 use anyhow::Error as AnyError;
-use crossbeam::channel::{self, Sender};
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
@@ -59,6 +58,8 @@ use metrics_util::{
 };
 use pipeline_types::query::OutputQuery;
 use std::collections::HashMap;
+use std::sync::mpsc::sync_channel;
+use std::sync::mpsc::SyncSender;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::OnceLock,
@@ -179,7 +180,7 @@ impl Controller {
             // implement `Send`.  So we need this channel to communicate circuit
             // initialization status back to this thread.
             let (init_status_sender, init_status_receiver) =
-                channel::bounded::<Result<(), ControllerError>>(0);
+                sync_channel::<Result<(), ControllerError>>(0);
             let handle = spawn(move || {
                 Self::circuit_thread(
                     circuit_factory,
@@ -438,7 +439,7 @@ impl Controller {
         circuit_factory: F,
         controller: Arc<ControllerInner>,
         parker: Parker,
-        init_status_sender: Sender<Result<(), ControllerError>>,
+        init_status_sender: SyncSender<Result<(), ControllerError>>,
     ) -> Result<(), ControllerError>
     where
         F: FnOnce(
