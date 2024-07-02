@@ -74,6 +74,7 @@ libc = "0.2.153"
 static_assertions = "1.1.0"
 lazy_static = "1.4.0"
 dashmap = "5"
+zip = "0.6.2"
 
 [dependencies.time]
 version = "0.3.20"
@@ -91,7 +92,6 @@ proptest-state-machine = { version = "0.1.0" }
 futures = { version = "0.3.30", features = ["executor"] }
 pretty_assertions = { version = "1.4" }
 csv = "1.2.2"
-zip = "0.6.2"
 tar = "0.4.38"
 zstd = "0.12.0"
 criterion = "0.5.1"

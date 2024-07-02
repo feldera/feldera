@@ -11,9 +11,10 @@ use crate::{
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
     get,
+    http::header,
     middleware::Logger,
-    post, rt, web,
-    web::{Data as WebData, Json, Payload, Query},
+    post, rt,
+    web::{self, Data as WebData, Json, Payload, Query},
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use clap::Parser;
@@ -38,7 +39,10 @@ use std::{
 };
 use tokio::{
     spawn,
-    sync::mpsc::{channel, Sender},
+    sync::{
+        mpsc::{channel, Sender},
+        oneshot,
+    },
 };
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -530,13 +534,23 @@ async fn heap_profile() -> impl Responder {
 
 #[get("/dump_profile")]
 async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
+    let (sender, receiver) = oneshot::channel();
     match &*state.controller.lock().unwrap() {
+        None => return Err(missing_controller_error(&state)),
         Some(controller) => {
-            controller.dump_profile();
-            Ok(HttpResponse::Ok().json("Profile dump initiated"))
+            controller.start_graph_profile(Box::new(move |profile| {
+                if sender.send(profile).is_err() {
+                    error!("`/dump_profile` result could not be sent");
+                }
+            }));
         }
-        None => Err(missing_controller_error(&state)),
-    }
+    };
+    let profile = receiver.await.unwrap()?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(header::ContentType("application/zip".parse().unwrap()))
+        .insert_header(header::ContentDisposition::attachment("profile.zip"))
+        .body(profile.as_zip()))
 }
 
 #[get("/shutdown")]

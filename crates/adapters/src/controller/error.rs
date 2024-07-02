@@ -545,6 +545,9 @@ pub enum ControllerError {
 
     /// Panic inside the DBSP controller.
     ControllerPanic,
+
+    /// Controller terminated before profile ran.
+    ControllerExit,
 }
 
 fn serialize_io_error<S>(
@@ -634,6 +637,7 @@ impl DetailedError for ControllerError {
             Self::DbspError { error } => error.error_code(),
             Self::DbspPanic => Cow::from("DbspPanic"),
             Self::ControllerPanic => Cow::from("ControllerPanic"),
+            Self::ControllerExit => Cow::from("ControllerExit"),
         }
     }
 }
@@ -717,6 +721,9 @@ impl Display for ControllerError {
             }
             Self::ControllerPanic => {
                 write!(f, "Panic inside the DBSP controller")
+            }
+            ControllerError::ControllerExit => {
+                write!(f, "Controller exited without running profile")
             }
         }
     }

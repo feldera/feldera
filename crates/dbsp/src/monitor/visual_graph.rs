@@ -1,16 +1,23 @@
 //! Intermediate representation of a circuit graph suitable for
 //! conversion to a visual format like dot.
 
-use std::fmt::{self, Write};
+use std::fmt::{self, Debug, Write};
 
 type Id = String;
 
 /// Visual representation of a circuit graph.
 ///
 /// The graph consists of a tree of cluster nodes populated with simple nodes.
+#[derive(Clone, Default)]
 pub struct Graph {
     nodes: ClusterNode,
     edges: Vec<Edge>,
+}
+
+impl Debug for Graph {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Graph {{ \"{}\" }}", self.to_dot())
+    }
 }
 
 impl Graph {
@@ -37,6 +44,7 @@ impl Graph {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct SimpleNode {
     id: Id,
     label: String,
@@ -56,6 +64,7 @@ impl SimpleNode {
 // TODO:
 // * Visually distinguish subcircuits from regions (e.g., dashed vs solid
 //   boundaries).
+#[derive(Clone, Default)]
 pub(super) struct ClusterNode {
     id: Id,
     label: String,
@@ -86,6 +95,7 @@ impl ClusterNode {
     }
 }
 
+#[derive(Clone)]
 pub(super) enum Node {
     Simple(SimpleNode),
     Cluster(ClusterNode),
@@ -107,6 +117,7 @@ impl Node {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct Edge {
     from_node: Id,
     // Is `from_node` a cluster?
