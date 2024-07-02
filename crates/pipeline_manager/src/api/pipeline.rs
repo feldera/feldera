@@ -667,8 +667,8 @@ pub(crate) async fn pipeline_delete(
 #[utoipa::path(
     responses(
     (status = OK
-    , description = "Profile dump initiated."
-    , content_type = "application/json"
+    , description = "Obtains a circuit performance profile."
+    , content_type = "application/zip"
     , body = Object),
     (status = BAD_REQUEST
     , description = "Specified pipeline id is not a valid uuid."

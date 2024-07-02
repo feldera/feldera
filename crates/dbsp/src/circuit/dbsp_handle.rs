@@ -1,4 +1,5 @@
 use crate::circuit::checkpointer::{CheckpointMetadata, Checkpointer};
+use crate::monitor::visual_graph::Graph;
 use crate::{
     circuit::runtime::RuntimeHandle, profile::Profiler, Error as DBSPError, RootCircuit, Runtime,
     RuntimeError, SchedulerError,
@@ -13,7 +14,6 @@ use std::{
     collections::HashSet,
     error::Error as StdError,
     fmt::{self, Debug, Display, Error as FmtError, Formatter},
-    fs::{self, create_dir_all},
     iter::empty,
     net::SocketAddr,
     ops::Range,
@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 #[cfg(doc)]
 use crate::circuit::circuit_builder::Stream;
-use crate::profile::{DbspProfile, WorkerProfile};
+use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
 
 use super::runtime::WorkerPanicInfo;
 
@@ -483,7 +483,7 @@ enum Command {
 #[derive(Debug)]
 enum Response {
     Unit,
-    ProfileDump(String),
+    ProfileDump(Graph),
     Profile(WorkerProfile),
     CheckpointCreated,
     CheckpointRestored,
@@ -722,23 +722,25 @@ impl DBSPHandle {
     /// memory usage information; otherwise only memory usage details are
     /// reported.
     pub fn dump_profile<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<PathBuf, DBSPError> {
-        let elapsed = self.start_time.elapsed().as_micros();
-        let mut profiles = vec![Default::default(); self.status_receivers.len()];
+        Ok(self.graph_profile()?.dump(dir_path)?)
+    }
 
-        let dir_path = dir_path.as_ref().join(elapsed.to_string());
-        create_dir_all(&dir_path)?;
-
+    /// Returns an array of worker profiles in graphviz `.dot` format.  Each
+    /// array element corresponds to the profile of the corresponding worker.
+    /// If CPU profiling was enabled (see [`Self::enable_cpu_profiler`]), the
+    /// profile will contain both CPU and memory usage information; otherwise
+    /// only memory usage details are reported.
+    pub fn graph_profile(&mut self) -> Result<GraphProfile, DBSPError> {
+        let mut worker_graphs = vec![Default::default(); self.status_receivers.len()];
         self.broadcast_command(Command::DumpProfile, |worker, resp| {
             if let Response::ProfileDump(prof) = resp {
-                profiles[worker] = prof;
+                worker_graphs[worker] = prof;
             }
         })?;
-
-        for (worker, profile) in profiles.into_iter().enumerate() {
-            fs::write(dir_path.join(format!("{worker}.dot")), profile)?;
-        }
-
-        Ok(dir_path)
+        Ok(GraphProfile {
+            elapsed_time: self.start_time.elapsed(),
+            worker_graphs,
+        })
     }
 
     pub fn retrieve_profile(&mut self) -> Result<DbspProfile, DBSPError> {

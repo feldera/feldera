@@ -180,7 +180,7 @@ export class PipelinesService {
   /**
    * Initiate profile dump.
    * @param pipelineName Unique pipeline name
-   * @returns any Profile dump initiated.
+   * @returns any Obtains a circuit performance profile.
    * @throws ApiError
    */
   public static dumpProfile(pipelineName: string): CancelablePromise<Record<string, any>> {

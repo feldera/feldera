@@ -1265,9 +1265,9 @@
         ],
         "responses": {
           "200": {
-            "description": "Profile dump initiated.",
+            "description": "Obtains a circuit performance profile.",
             "content": {
-              "application/json": {
+              "application/zip": {
                 "schema": {
                   "type": "object"
                 }

@@ -6,11 +6,20 @@ use crate::{
         metadata::{MetaItem, OperatorMeta},
         GlobalNodeId,
     },
-    monitor::TraceMonitor,
+    monitor::{visual_graph::Graph, TraceMonitor},
     RootCircuit,
 };
 use size_of::HumanBytes;
-use std::{borrow::Cow, collections::HashMap, fmt::Write};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::Write,
+    fs::{self, create_dir_all},
+    io::{Cursor as IoCursor, Error as IoError, Write as _},
+    path::{Path, PathBuf},
+    time::Duration,
+};
+use zip::{write::FileOptions, ZipWriter};
 
 mod cpu;
 use crate::circuit::metadata::{
@@ -167,12 +176,76 @@ impl WorkerProfile {
     }
 }
 
+/// Profile in graphviz format collected from all DBSP worker threads.
+#[derive(Debug)]
+pub struct GraphProfile {
+    pub elapsed_time: Duration,
+    pub worker_graphs: Vec<Graph>,
+}
+
+impl GraphProfile {
+    const MAKEFILE: &'static str = r#"# Run `make` to easily convert the `.dot` files into PDF files for viewing.
+# Run as, e.g. `make FORMATS='pdf svg png'` to convert into additional
+# formats supported by `dot`.
+
+DOTS = $(wildcard *.dot)
+FORMATS = pdf
+
+all: $(FORMATS)
+
+define format_template
+$(1): $(DOTS:.dot=.$(1))
+%.$(1): %.dot
+	dot -T$(1) $$< -o$$@
+clean:
+	rm -f $(DOTS:.dot=.$$(1))
+endef
+
+$(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
+
+.PHONY: all clean $(FORMATS)
+"#;
+    /// Writes the profile as `.dot` files under `dir_path`.
+    pub fn dump<P: AsRef<Path>>(&self, dir_path: P) -> Result<PathBuf, IoError> {
+        let dir_path = dir_path
+            .as_ref()
+            .join(self.elapsed_time.as_micros().to_string());
+        create_dir_all(&dir_path)?;
+        for (worker, graph) in self.worker_graphs.iter().enumerate() {
+            fs::write(dir_path.join(format!("{worker}.dot")), graph.to_dot())?;
+        }
+        fs::write(dir_path.join("Makefile"), Self::MAKEFILE)?;
+        Ok(dir_path)
+    }
+
+    /// Returns a Zip archive containing all the profile `.dot` files.
+    pub fn as_zip(&self) -> Vec<u8> {
+        let mut zip = ZipWriter::new(IoCursor::new(Vec::with_capacity(65536)));
+        let elapsed = self.elapsed_time.as_micros();
+        for (worker, graph) in self.worker_graphs.iter().enumerate() {
+            zip.start_file(
+                format!("profile/{elapsed}/{worker}.dot"),
+                FileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(graph.to_dot().as_bytes()).unwrap();
+        }
+        zip.start_file(
+            format!("profile/{elapsed}/Makefile"),
+            FileOptions::default(),
+        )
+        .unwrap();
+        zip.write_all(Self::MAKEFILE.as_bytes()).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+}
+
 /// Runtime profiles collected from all DBSP worker threads.
 pub struct DbspProfile {
     pub worker_profiles: Vec<WorkerProfile>,
 }
 
-impl crate::profile::DbspProfile {
+impl DbspProfile {
     pub fn new(worker_profiles: Vec<WorkerProfile>) -> Self {
         Self { worker_profiles }
     }
@@ -397,10 +470,10 @@ impl Profiler {
     }
 
     /// Dump profile in graphviz format.
-    pub fn dump_profile(&self) -> String {
+    pub fn dump_profile(&self) -> Graph {
         let profile = self.profile();
 
-        let graph = self.monitor.visualize_circuit_annotate(|node_id| {
+        self.monitor.visualize_circuit_annotate(|node_id| {
             let mut output = String::with_capacity(1024);
             let meta = profile.metadata.get(node_id).cloned().unwrap_or_default();
 
@@ -411,8 +484,6 @@ impl Profiler {
             }
 
             output
-        });
-
-        graph.to_dot()
+        })
     }
 }

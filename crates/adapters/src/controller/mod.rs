@@ -50,6 +50,7 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use dbsp::circuit::{CircuitConfig, Layout};
+use dbsp::profile::GraphProfile;
 use metrics::set_global_recorder;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use metrics_util::{
@@ -58,8 +59,10 @@ use metrics_util::{
 };
 use pipeline_types::query::OutputQuery;
 use std::collections::HashMap;
+use std::sync::mpsc::channel;
 use std::sync::mpsc::sync_channel;
 use std::sync::mpsc::SyncSender;
+use std::sync::mpsc::{Receiver, Sender};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::OnceLock,
@@ -110,6 +113,9 @@ pub struct Controller {
     backpressure_thread_handle: JoinHandle<()>,
 }
 
+/// Type of the callback argumen to [`Controller::start_graph_profile`].
+pub type GraphProfileCallbackFn = Box<dyn FnOnce(Result<GraphProfile, ControllerError>) + Send>;
+
 impl Controller {
     /// Create a new I/O controller for a circuit.
     ///
@@ -159,11 +165,13 @@ impl Controller {
         let backpressure_thread_parker = Parker::new();
         let backpressure_thread_unparker = backpressure_thread_parker.unparker().clone();
 
+        let (profile_request_sender, profile_request_receiver) = channel();
         let inner = Arc::new(ControllerInner::new(
             config,
             circuit_thread_unparker,
             backpressure_thread_unparker,
             error_cb,
+            profile_request_sender,
         ));
 
         let backpressure_thread_handle = {
@@ -187,6 +195,7 @@ impl Controller {
                     inner,
                     circuit_thread_parker,
                     init_status_sender,
+                    profile_request_receiver,
                 )
             });
             // If `recv` fails, it indicates that the circuit thread panicked
@@ -395,9 +404,31 @@ impl Controller {
         &self.inner.catalog
     }
 
+    /// Triggers a dump of the circuit's performance profile to the file system.
+    /// The profile will be written asynchronously, probably after this function
+    /// returns.
     pub fn dump_profile(&self) {
         debug!("Generating DBSP profile dump");
-        self.inner.dump_profile();
+        self.start_graph_profile(Box::new(|profile| {
+            match profile.map(|profile| {
+                profile
+                    .dump("profile")
+                    .map_err(|e| ControllerError::io_error(String::from("dumping profile"), e))
+            }) {
+                Ok(Ok(path)) => info!("Dumped DBSP profile to {}", path.display()),
+                Ok(Err(e)) | Err(e) => error!("Failed to write circuit profile: {e}"),
+            }
+        }));
+    }
+
+    /// Triggers a profiling operation in the running pipeline. `cb` will be
+    /// called with the profile when it is ready, probably after this function
+    /// returns.
+    ///
+    /// The callback-based nature of this function makes it useful in
+    /// asynchronous contexts.
+    pub fn start_graph_profile(&self, cb: GraphProfileCallbackFn) {
+        self.inner.graph_profile(cb)
     }
 
     /// Terminate the controller, stop all input endpoints and destroy the
@@ -440,6 +471,7 @@ impl Controller {
         controller: Arc<ControllerInner>,
         parker: Parker,
         init_status_sender: SyncSender<Result<(), ControllerError>>,
+        profile_request_receiver: Receiver<GraphProfileCallbackFn>,
     ) -> Result<(), ControllerError>
     where
         F: FnOnce(
@@ -501,23 +533,8 @@ impl Controller {
         let mut step = 0;
 
         loop {
-            let dump_profile = controller
-                .dump_profile_request
-                .swap(false, Ordering::AcqRel);
-            if dump_profile {
-                // Generate profile in the current working directory.
-                // TODO: make this location configurable.
-                match circuit.dump_profile("profile") {
-                    Ok(path) => {
-                        info!(
-                            "circuit profile dump created in '{}'",
-                            path.canonicalize().unwrap_or_default().display()
-                        );
-                    }
-                    Err(e) => {
-                        error!("failed to dump circuit profile: {e}");
-                    }
-                }
+            for reply_cb in profile_request_receiver.try_iter() {
+                reply_cb(circuit.graph_profile());
             }
             match controller.state() {
                 PipelineState::Running | PipelineState::Paused => {
@@ -667,6 +684,9 @@ impl Controller {
                 }
                 PipelineState::Terminated => {
                     circuit.kill().map_err(|_| ControllerError::dbsp_panic())?;
+                    for reply_cb in profile_request_receiver.try_iter() {
+                        reply_cb(Err(ControllerError::ControllerExit));
+                    }
                     return Ok(());
                 }
             }
@@ -946,7 +966,7 @@ impl OutputBuffer {
 pub struct ControllerInner {
     pub status: Arc<ControllerStatus>,
     num_api_connections: AtomicU64,
-    dump_profile_request: AtomicBool,
+    profile_request: Sender<GraphProfileCallbackFn>,
     catalog: Arc<Mutex<Box<dyn CircuitCatalog>>>,
     inputs: Mutex<BTreeMap<EndpointId, InputEndpointDescr>>,
     outputs: ShardedLock<OutputEndpoints>,
@@ -973,20 +993,20 @@ impl ControllerInner {
         circuit_thread_unparker: Unparker,
         backpressure_thread_unparker: Unparker,
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
+        profile_request: Sender<GraphProfileCallbackFn>,
     ) -> Self {
         let pipeline_name = config
             .name
             .as_ref()
             .map_or_else(|| "unnamed".to_string(), |n| n.clone());
         let status = Arc::new(ControllerStatus::new(config));
-        let dump_profile_request = AtomicBool::new(false);
         let (metrics_snapshotter, prometheus_handle) =
             Self::install_metrics_recorder(pipeline_name);
 
         Self {
             status,
             num_api_connections: AtomicU64::new(0),
-            dump_profile_request,
+            profile_request,
             catalog: Arc::new(Mutex::new(Box::new(Catalog::new()))),
             inputs: Mutex::new(BTreeMap::new()),
             outputs: ShardedLock::new(OutputEndpoints::new()),
@@ -1502,8 +1522,8 @@ impl ControllerInner {
         self.unpark_backpressure();
     }
 
-    fn dump_profile(&self) {
-        self.dump_profile_request.store(true, Ordering::Release);
+    fn graph_profile(&self, cb: GraphProfileCallbackFn) {
+        self.profile_request.send(cb).unwrap();
         self.unpark_circuit();
     }
 
