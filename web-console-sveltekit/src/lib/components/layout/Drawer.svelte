@@ -5,10 +5,6 @@
   import { listen } from 'svelte-mq-store'
   import { MediaQuery } from 'runed'
   import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
-  try {
-  } catch (e) {
-    console.log(e)
-  }
   const isMobile = listen('(max-width: 1200px)')
   // const isMobile = new MediaQuery('(max-width: 1200px)')
 

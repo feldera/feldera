@@ -2,8 +2,10 @@ import { newPipeline, newProgram, type NewPipelineRequest } from '$lib/services/
 
 import { asyncWritable, get, persisted } from '@square/svelte-store'
 
+const emptyPipeline = { name: '', description: '', config: {}, code: '' }
+
 const persistedNewPipeline = persisted<NewPipelineRequest & { code: string }>(
-  { name: '', description: '', config: {}, code: '' },
+  emptyPipeline,
   'pipelines/new',
   { storageType: 'LOCAL_STORAGE' }
 ) // localStore<NewPipelineRequest & {code: string}>('pipelines/new', {name: '', description: '', config: {}, code: '' }).value
@@ -13,15 +15,16 @@ export const writableNewPipeline = () =>
     persistedNewPipeline,
     (p) => p,
     async (pipeline) => {
-      if (pipeline.name) {
-        const program_name = pipeline.name + '_program'
-        await newProgram({ body: { name: program_name, description: '', code: pipeline.code } })
-        await newPipeline({
-          body: { name: pipeline.name, description: '', program_name, config: {} }
-        })
+      if (!pipeline.name) {
+        persistedNewPipeline.set(pipeline)
         return pipeline
       }
-      persistedNewPipeline.set(pipeline)
+      const program_name = pipeline.name + '_program'
+      await newProgram({ body: { name: program_name, description: '', code: pipeline.code } })
+      await newPipeline({
+        body: { name: pipeline.name, description: '', program_name, config: {} }
+      })
+      persistedNewPipeline.set(emptyPipeline)
       return pipeline
     }
   )

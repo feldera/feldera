@@ -3,25 +3,29 @@
   import type { Snippet } from 'svelte'
   import { derived } from '@square/svelte-store'
   import { page } from '$app/stores'
-  import { useOpenPipelines, type PipelineTab } from '$lib/compositions/useOpenPipelines'
-  import { reactiveEq } from '$lib/functions/svelte'
+  import {
+    pipelineTabEq,
+    useOpenPipelines,
+    type PipelineTab
+  } from '$lib/compositions/useOpenPipelines'
   import invariant from 'tiny-invariant'
   import PipelineTabControl from '$lib/components/pipelines/tabs/PipelineTabControl.svelte'
 
   import NewPipelineTabControl from '$lib/components/pipelines/tabs/NewPipelineTabControl.svelte'
   import ExistingPipelineTabControl from '$lib/components/pipelines/tabs/ExistingPipelineTabControl.svelte'
+  import { useChangedPipelines } from '$lib/compositions/pipelines/useChangedPipelines.svelte'
 
-  let openPipelines = useOpenPipelines()
   let { children } = $props<{ children: Snippet }>()
+  let openPipelines = useOpenPipelines()
 
   const dropOpenPipeline = (pipelineTab: PipelineTab) => {
     openPipelines.value.splice(
-      openPipelines.value.findIndex((name) => reactiveEq(name, pipelineTab)),
+      openPipelines.value.findIndex((name) => pipelineTabEq(name, pipelineTab)),
       1
     )
   }
   const renamePipelineTab = (oldTab: PipelineTab, newTab: PipelineTab) => {
-    const idx = openPipelines.value.findIndex((name) => reactiveEq(name, oldTab))
+    const idx = openPipelines.value.findIndex((name) => pipelineTabEq(name, oldTab))
     if (idx === -1) {
       return
     }
@@ -34,6 +38,7 @@
         ? { new: 'new' }
         : { existing: page.params.pipelineName }
   })
+  const changedPipelines = useChangedPipelines()
 </script>
 
 <div class="flex">
@@ -41,8 +46,7 @@
     <Tabs.Control
       group={JSON.stringify($currentTab)}
       name={'"pipelines"'}
-      contentClasses="group-hover:preset-tonal-surface"
-    >
+      contentClasses="group-hover:preset-tonal-surface">
       pipelines
     </Tabs.Control>
   </a>
@@ -54,7 +58,7 @@
         <i>new pipeline</i>
       {/if}
     {/snippet}
-    {#if reactiveEq($currentTab, openPipeline)}
+    {#if pipelineTabEq($currentTab, openPipeline)}
       {invariant(((x): x is PipelineTab => true)($currentTab))}
       {@const close = {
         href: ((last) =>
@@ -63,7 +67,7 @@
               ? '/pipelines/' + last.existing + '/'
               : '/pipeline/new/'
             : '/pipelines/')(
-          openPipelines.value.findLast((name) => !reactiveEq(name, $currentTab))
+          openPipelines.value.findLast((name) => !pipelineTabEq(name, $currentTab))
         ),
         onclick: () => dropOpenPipeline($currentTab)
       }}
@@ -75,7 +79,8 @@
           {close}
           existing={$currentTab.existing}
           {renamePipelineTab}
-        ></ExistingPipelineTabControl>
+          tabContentChanged={changedPipelines.has($currentTab.existing)}>
+        </ExistingPipelineTabControl>
       {:else if $currentTab.new}
         <NewPipelineTabControl
           tab={$currentTab}
@@ -83,8 +88,7 @@
           {text}
           {close}
           new={$currentTab.new}
-          {renamePipelineTab}
-        ></NewPipelineTabControl>
+          {renamePipelineTab}></NewPipelineTabControl>
       {/if}
     {:else}
       <PipelineTabControl
@@ -96,7 +100,10 @@
         {text}
         value={undefined}
         close={undefined}
-      ></PipelineTabControl>
+        tabContentChanged={'existing' in openPipeline
+          ? changedPipelines.has(openPipeline.existing)
+          : undefined}>
+      </PipelineTabControl>
     {/if}
   {/each}
 </div>

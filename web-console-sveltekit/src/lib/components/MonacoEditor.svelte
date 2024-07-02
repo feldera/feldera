@@ -1,50 +1,94 @@
-<script lang="ts">
-  import type { editor } from 'monaco-editor'
-  import { onMount } from 'svelte'
-  const { updateContent, content } = $props<{
-    updateContent: (newContent: string) => void
-    content: string
-  }>()
-  let element = $state<HTMLDivElement>()
-  let instance: editor.ICodeEditor | null = $state(null)
-  onMount(() => {
-    self.MonacoEnvironment = {
-      getWorker: async () =>
-        new Worker(
-          new URL('monaco-editor/esm/vs/editor/browser/services/webWorker.js', import.meta.url)
-        )
-    }
-    ;(async () => {
-      const monaco = await import('monaco-editor')
-      monaco.editor.onDidCreateEditor((i) => {
-        instance = i
-        setTimeout(() => {
-          i.setValue(content)
-        }, 0)
-      })
-      if (!element) return
-      const editor = monaco.editor.create(element, {
-        language: 'markdown'
-      })
-      editor.onDidChangeModelContent(() => {
-        if (content !== editor.getValue()) {
-          updateContent(editor.getValue())
-        }
-      })
-    })()
-  })
+<script context="module" lang="ts">
+  export const exportedThemes = Object.fromEntries(
+    Object.entries(import.meta.glob('/node_modules/monaco-themes/themes/*.json')).map(([k, v]) => [
+      k.toLowerCase().split('/').reverse()[0].slice(0, -'.json'.length).replaceAll(' ', '-'),
+      v
+    ])
+  )
+
+  export const nativeThemes = ['vs', 'vs-dark', 'hc-black']
+
+  export const themeNames: string[] = [...Object.keys(exportedThemes), ...nativeThemes].sort(
+    (a, b) => a.localeCompare(b)
+  )
 </script>
 
-{#if instance === null}
-  <p>Loading...</p>
-{/if}
+<script lang="ts">
+  import type Monaco from 'monaco-editor'
+  import { onDestroy, onMount } from 'svelte'
+  import { createEventDispatcher } from 'svelte'
+  import loader from '@monaco-editor/loader'
 
-<div bind:this={element}></div>
+  let monaco: typeof Monaco
+
+  const dispatch = createEventDispatcher<{
+    ready: Monaco.editor.IStandaloneCodeEditor
+  }>()
+
+  let container: HTMLDivElement
+  export let editor: Monaco.editor.IStandaloneCodeEditor | undefined = undefined
+  export let value: string
+
+  export let theme: string | undefined = undefined
+  export let options: Monaco.editor.IStandaloneEditorConstructionOptions = {
+    value,
+    automaticLayout: true
+  }
+
+  function refreshTheme() {
+    if (theme) {
+      if (exportedThemes[theme]) {
+        const themeName = theme // the theme name can change during the async call
+        exportedThemes[theme]().then((resolvedTheme) => {
+          monaco?.editor.defineTheme(themeName, resolvedTheme as any)
+          monaco?.editor.setTheme(themeName)
+        })
+      } else if (nativeThemes.includes(theme)) {
+        monaco?.editor.setTheme(theme)
+      }
+    }
+  }
+
+  $: if (theme) refreshTheme()
+
+  $: editor?.updateOptions(options)
+  $: model = editor?.getModel()
+  $: model && options.language ? monaco.editor.setModelLanguage(model, options.language) : void 0
+
+  $: if (editor && editor.getValue() != value) {
+    const position = editor.getPosition()
+    editor.setValue(value)
+    if (position) editor.setPosition(position)
+  }
+
+  onMount(async () => {
+    monaco = await loader.init()
+    editor = monaco.editor.create(container, options)
+
+    dispatch('ready', editor)
+
+    refreshTheme()
+
+    editor.getModel()!.onDidChangeContent(() => {
+      if (!editor) return
+      const currentValue = editor.getValue()
+      if (value === currentValue) {
+        return
+      }
+      value = currentValue
+    })
+  })
+
+  onDestroy(() => editor?.dispose())
+</script>
+
+<div class="monaco-container" bind:this={container}></div>
 
 <style>
-  div {
-    display: flex;
+  div.monaco-container {
     width: 100%;
     height: 100%;
+    padding: 0;
+    margin: 0;
   }
 </style>

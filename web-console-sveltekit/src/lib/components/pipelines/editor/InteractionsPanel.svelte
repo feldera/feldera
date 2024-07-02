@@ -1,26 +1,30 @@
 <script lang="ts">
-  import { localStore } from '$lib/compositions/localStore.svelte'
+  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import TabQueryData from '$lib/components/pipelines/editor/TabQueryData.svelte'
   import TabPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
   import TabDBSPGraph from '$lib/components/pipelines/editor/TabDBSPGraph.svelte'
+  import TabSQLErrors from '$lib/components/pipelines/editor/TabSQLErrors.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
   let { pipelineName } = $props<{ pipelineName: string }>()
-  let currentTab = localStore('pipelines/' + pipelineName + '/currentInteractionTab', 'query data')
+  let currentTab = useLocalStorage(
+    'pipelines/' + pipelineName + '/currentInteractionTab',
+    'query data'
+  )
   const tabs = [
     tuple('query data', TabQueryData),
     tuple('performance', TabPerformance),
-    tuple('dbsp operator graph', TabDBSPGraph)
+    tuple('dbsp operator graph', TabDBSPGraph),
+    tuple('SQL errors', TabSQLErrors)
   ]
 </script>
 
 {#snippet tabList()}
-  {#each tabs as [tabName, TabComponent]}
+  {#each tabs as [tabName]}
     <Tabs.Control
       bind:group={currentTab.value}
       name={tabName}
-      contentClasses="group-hover:preset-tonal-surface"
-    >
+      contentClasses="group-hover:preset-tonal-surface">
       <span>{tabName}</span>
     </Tabs.Control>
   {/each}
@@ -28,9 +32,11 @@
 
 {#snippet tabPanels()}
   {#each tabs as [tabName, TabComponent]}
-    <Tabs.Panel bind:group={currentTab.value} value={tabName}
-      ><TabComponent></TabComponent></Tabs.Panel
-    >
+    <Tabs.Panel bind:group={currentTab.value} value={tabName}>
+      <div class=" p-4 pt-0">
+        <TabComponent></TabComponent>
+      </div>
+    </Tabs.Panel>
   {/each}
 {/snippet}
 

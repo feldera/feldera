@@ -9,10 +9,16 @@ import {
   type UpdatePipelineRequest
 } from '$lib/services/manager'
 import { getFullPipeline } from '$lib/services/pipelineManager'
-import { asyncWritable, readable, type Loadable, type Readable } from '@square/svelte-store'
+import {
+  asyncWritable,
+  readable,
+  rebounce,
+  type Loadable,
+  type Readable
+} from '@square/svelte-store'
 
 export const writablePipeline = (pipelineName: Readable<string>) =>
-  asyncWritable(pipelineName, getFullPipeline, async (newPipeline, _, oldPipeline) => {
+  asyncWritable(pipelineName, rebounce(getFullPipeline), async (newPipeline, _, oldPipeline) => {
     const program_name =
       (oldPipeline?.name !== newPipeline.name ? undefined : newPipeline._programName) ??
       newPipeline.name + '_program'

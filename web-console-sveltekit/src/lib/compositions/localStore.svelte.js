@@ -53,7 +53,7 @@ const stores = {}
  * @param {T} value
  * @returns {LocalStore<T>}
  */
-export function localStore(key, value) {
+export function useLocalStorage(key, value) {
   stores[key] ??= new LocalStore(key, value)
   return stores[key]
 }

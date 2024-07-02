@@ -7,20 +7,21 @@
   // import { useDebounce } from '$lib/compositions/debounce.svelte'
   import { useDebounce } from 'runed'
   import MonacoEditor from 'svelte-monaco'
-  import { useOpenPipelines } from '$lib/compositions/useOpenPipelines'
-  import { reactiveEq } from '$lib/functions/svelte'
+  import { pipelineTabEq, useOpenPipelines } from '$lib/compositions/useOpenPipelines'
   import type { Pipeline } from '$lib/services/manager'
-  import PipelineEditLayout from '$lib/components/layout/PipelineEditLayout.svelte'
+  import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import { asyncDebounced } from '$lib/compositions/asyncDebounced'
 
   let pipelineName = derived(page, (page) => decodeURI(page.params.pipelineName))
   {
     let openPipelines = useOpenPipelines()
-    onMount(() => {
-      if (!openPipelines.value.find((p) => reactiveEq(p, { existing: $pipelineName }))) {
-        openPipelines.value = [...openPipelines.value, { existing: $pipelineName }]
+    const addOpenedTab = (pipelineName: string) => {
+      if (!openPipelines.value.find((p) => pipelineTabEq(p, { existing: pipelineName }))) {
+        openPipelines.value = [...openPipelines.value, { existing: pipelineName }]
       }
-    })
+    }
+
+    onMount(() => pipelineName.subscribe(addOpenedTab))
   }
 
   const pipeline = writablePipeline(pipelineName)
@@ -35,7 +36,6 @@
   //     return p
   //   }
   // )
-  const debouncedPipeline = asyncDebounced(pipeline)
   const pipelineCodeStore = asyncWritable(
     pipeline!,
     (pipeline) => pipeline.code,
@@ -43,7 +43,7 @@
       if (!pipeline || !newCode) {
         return oldCode
       }
-      $debouncedPipeline = {
+      $pipeline = {
         ...pipeline,
         code: newCode
       }

@@ -20,7 +20,7 @@
   // let initial = writable<PipelineStatus>('Initializing')
   const status = asyncDerived(pipelineName, getPipelineStatus, {
     reloadable: true,
-    initial: { status: 'No program' as const }
+    initial: { status: 'Initializing' as const }
   })
   $effect(() => {
     let interval = setInterval(() => status.reload?.(), 2000)
@@ -55,11 +55,13 @@
       // .with('Pausing', () => ['spinner', 'edit'])
       .with('Paused', () => ['_start', '_shutdown'])
       .with('ShuttingDown', () => ['_spinner'])
-      .with('Failed', () => ['_spacer', '_shutdown'])
+      .with({ PipelineError: P.any }, () => ['_spacer', '_shutdown'])
       .with('Compiling sql', () => ['_spinner'])
       .with('Compiling bin', () => ['_spinner'])
-      .with('No program', () => [])
-      .with('Program err', () => [])
+      .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
+        '_spacer',
+        '_delete'
+      ])
       .exhaustive()
   )
 
@@ -80,29 +82,25 @@
   <button
     class={'bx bx-trash-alt ' + buttonClass}
     onclick={() =>
-      showDeleteDialog('Delete', (name) => `${name} pipeline`, deletePipeline)($pipelineName)}
-  >
+      showDeleteDialog('Delete', (name) => `${name} pipeline`, deletePipeline)($pipelineName)}>
   </button>
 {/snippet}
 {#snippet _start()}
   <button
     class={'bx bx-play-circle ' + buttonClass}
-    onclick={() => pipelineAction($pipelineName, 'start').then(reload)}
-  >
+    onclick={() => pipelineAction($pipelineName, 'start').then(reload)}>
   </button>
 {/snippet}
 {#snippet _pause()}
   <button
     class={'bx bx-pause-circle ' + buttonClass}
-    onclick={() => pipelineAction($pipelineName, 'pause').then(reload)}
-  >
+    onclick={() => pipelineAction($pipelineName, 'pause').then(reload)}>
   </button>
 {/snippet}
 {#snippet _shutdown()}
   <button
     class={'bx bx-stop-circle ' + buttonClass}
-    onclick={() => pipelineAction($pipelineName, 'shutdown').then(reload)}
-  >
+    onclick={() => pipelineAction($pipelineName, 'shutdown').then(reload)}>
   </button>
 {/snippet}
 {#snippet _spacer()}

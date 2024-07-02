@@ -18,6 +18,6 @@ export const handled =
       res.data
         ? res.data
         : (() => {
-            throw new Error(JSONbig.stringify(res.error))
+            throw res.error
           })()
     )

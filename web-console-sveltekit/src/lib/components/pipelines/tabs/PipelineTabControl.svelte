@@ -11,15 +11,17 @@
     href,
     text,
     value = $bindable(),
-    close
-  } = $props<{
+    close,
+    tabContentChanged
+  }: {
     tab: PipelineTab | 'pipelines'
     currentTab: PipelineTab
     href: string | undefined
     text: Snippet
     value: string | undefined
     close: { href: string; onclick: () => void } | undefined
-  }>()
+    tabContentChanged?: boolean
+  } = $props()
 </script>
 
 <div class="relative">
@@ -27,8 +29,7 @@
     <Tabs.Control
       group={JSON.stringify(tab)}
       name={JSON.stringify(currentTab)}
-      contentClasses="group-hover:preset-tonal-surface"
-    >
+      contentClasses="group-hover:preset-tonal-surface">
       <div class="mr-4">
         {#if nonNull(value)}
           <DoubleClickInput bind:value>
@@ -43,8 +44,17 @@
   {#if close}
     <a
       {...close}
-      class="preset-grayout-surface bx bx-x btn-icon absolute right-0 top-2 h-6 text-[24px]"
-    >
+      class={' btn-icon bx bx-x absolute right-0 top-2 h-6 text-[24px] ' +
+        (tabContentChanged
+          ? 'text-transparent duration-0 hover:text-inherit'
+          : 'preset-grayout-surface')}>
+      {#if tabContentChanged}
+        <div
+          class="bx bxs-circle text-surface-950-50 absolute left-2.5 -m-1 w-8 p-1.5 text-xs duration-0 hover:text-transparent">
+        </div>
+      {/if}
     </a>
+  {:else if tabContentChanged}
+    <div class="bx bxs-circle text-surface-600-400 absolute right-3 top-3 text-xs"></div>
   {/if}
 </div>

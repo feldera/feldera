@@ -1,15 +1,16 @@
-import { asyncWritable, type WritableLoadable } from "@square/svelte-store";
+import { asyncWritable, type WritableLoadable } from '@square/svelte-store'
 
-import { useDebounce } from "runed";
+import { useDebounce } from 'runed'
 
-export const asyncDebounced = <T>(store: WritableLoadable<T>) => {
+export const asyncDebounced = <T>(store: WritableLoadable<T>, wait: number | (() => number)) => {
   const debounce = useDebounce((s: T) => {
     store.set(s)
-  }, 1000)
+  }, wait)
+  debounce
   return asyncWritable(
     store,
-    s => s,
-    async s => {
+    (s) => s,
+    async (s) => {
       debounce(s)
       return s
     }

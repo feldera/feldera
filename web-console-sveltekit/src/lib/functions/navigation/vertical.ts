@@ -9,13 +9,13 @@ export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavI
   return [
     {
       title: 'Home',
-      path: '/home',
+      path: '/home/',
       class: 'bx bx-home-circle',
       testid: 'button-vertical-nav-home'
     },
     {
       title: 'Demos',
-      path: '/demos',
+      path: '/demos/',
       class: 'bx bx-rocket'
     },
     {
@@ -23,7 +23,7 @@ export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavI
     },
     {
       title: 'Pipelines',
-      path: ['/pipelines'],
+      path: ['/pipelines/'],
       class: 'bx bx-git-repo-forked',
       testid: 'button-vertical-nav-pipelines'
     },
@@ -35,7 +35,7 @@ export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavI
         ? [
             {
               title: 'Settings',
-              path: '/settings',
+              path: '/settings/',
               class: 'bx bx-cog'
             }
           ]

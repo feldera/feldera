@@ -1,0 +1,19 @@
+<script lang="ts">
+  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+
+  let { downstreamChanged }: { downstreamChanged: boolean } = $props()
+
+  const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
+</script>
+
+<div class="flex flex-nowrap gap-2">
+  <!-- <div class="w-20 p-0.5 text-center">
+    {downstreamChanged ? 'changed' : 'saved'}
+  </div> -->
+  <button
+    class="border-primary-50-950 preset-outlined-primary-50-950 hover:preset-filled-primary-50-950 w-32 border-2 px-2"
+    tabindex={10}
+    onclick={() => (autoSavePipeline.value = !autoSavePipeline.value)}>
+    autosave: {autoSavePipeline.value ? 'on' : 'off'}
+  </button>
+</div>

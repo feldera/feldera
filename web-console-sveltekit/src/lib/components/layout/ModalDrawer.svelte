@@ -35,7 +35,7 @@
   } = $props()
 </script>
 
-<div role="presentation" class="relative z-10" onclick={() => (open = !open)}>
+<div role="presentation" class="relative z-20" onclick={() => (open = !open)}>
   <div
     class={'fixed inset-0 bg-gray-500 bg-opacity-75 transition-all ' +
       (open
@@ -50,7 +50,6 @@
           class={'pointer-events-auto relative h-full w-full transform transition duration-300 ease-in-out ' +
             (open ? openClassNames[side] : closeClassNames[side])}
           onclick={(event) => {
-            event.preventDefault()
             event.stopPropagation()
           }}>
           <div role="dialog" aria-modal="true" class={'flex h-full flex-col shadow-xl ' + _class}>

@@ -148,3 +148,14 @@ export const nubFirst = <T>(array: T[]) =>
     .reverse()
     .filter((value, index, arr) => arr.indexOf(value) === index)
     .reverse()
+
+/**
+ * Performs no checks on uniqueness of inputs
+ */
+export const intersect2 = <A, B, C, Key extends number | string>(as: A[], bs: B[], getKeyA: (a: A) => Key, getKeyB: (b: B) => Key, zip: (a: A, b: B) => C) => {
+  return as.flatMap(a => {
+    const keyA = getKeyA(a)
+    const match = bs.findIndex(b => keyA === getKeyB(b))
+    return match === -1 ? [] : [zip(a, bs[match])]
+})
+}

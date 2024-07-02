@@ -1,5 +1,5 @@
 <script lang="ts">
-  import PipelineEditLayout from '$lib/components/layout/PipelineEditLayout.svelte'
+  import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import { asyncDebounced } from '$lib/compositions/asyncDebounced'
   import { writableNewPipeline } from '$lib/compositions/useNewPipeline'
   import { useOpenPipelines } from '$lib/compositions/useOpenPipelines'
@@ -18,15 +18,14 @@
   }
 
   let pipeline = writableNewPipeline()
-  const debouncedPipeline = asyncDebounced(pipeline)
   let pipelineCodeStore = asyncWritable(
-    debouncedPipeline,
+    pipeline,
     (pipeline) => pipeline.code,
     async (newCode, pipeline, oldCode) => {
       if (!pipeline || !newCode) {
         return oldCode
       }
-      $debouncedPipeline = {
+      $pipeline = {
         ...pipeline,
         code: newCode
       }

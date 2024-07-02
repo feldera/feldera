@@ -1,7 +1,7 @@
-import { localStore } from '$lib/compositions/localStore.svelte'
+import { useLocalStorage } from '$lib/compositions/localStore.svelte'
 
 export let useDarkMode = () => {
-  let mode = localStore<'dark' | 'light'>('darkMode', 'light')
+  let mode = useLocalStorage<'dark' | 'light'>('darkMode', 'light')
   return {
     get darkMode() {
       return mode
