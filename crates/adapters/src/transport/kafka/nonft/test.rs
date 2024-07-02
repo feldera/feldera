@@ -216,7 +216,7 @@ outputs:
     running.store(false, Ordering::Release);
 }
 
-fn test_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
+fn test_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str, poller_threads: usize) {
     init_test_logger();
 
     let kafka_resources = KafkaResources::create_topics(&[(topic1, 1), (topic2, 2)]);
@@ -276,6 +276,7 @@ transport:
         auto.offset.reset: "earliest"
         topics: [{topic1}, {topic2}]
         log_level: debug
+        poller_threads: {poller_threads}
 format:
     name: csv
 "#
@@ -294,10 +295,14 @@ format:
     info!("proptest_kafka_input: Test: Receive from a topic with a single partition");
 
     // Send data to a topic with a single partition;
-    // Make sure all records arrive in the original order.
     producer.send_to_topic(&data, topic1);
 
-    wait_for_output_ordered(&zset, &data);
+    if poller_threads == 1 {
+        // Make sure all records arrive in the original order.
+        wait_for_output_ordered(&zset, &data);
+    } else {
+        wait_for_output_unordered(&zset, &data);
+    }
     zset.reset();
 
     info!("proptest_kafka_input: Test: Receive from a topic with multiple partitions");
@@ -344,7 +349,20 @@ format:
 /// thousand records as part of the failure.
 #[test]
 fn kafka_input_trivial() {
-    test_kafka_input(Vec::new(), "trivial_test_topic1", "trivial_test_topic2");
+    test_kafka_input(Vec::new(), "trivial_test_topic1", "trivial_test_topic2", 1);
+}
+
+/// If Kafka tests are going to fail because the server is not running or
+/// not functioning properly, it's good to fail quickly without printing a
+/// thousand records as part of the failure.
+#[test]
+fn kafka_input_trivial_threaded() {
+    test_kafka_input(
+        Vec::new(),
+        "threaded_trivial_test_topic1",
+        "threaded_trivial_test_topic2",
+        3,
+    );
 }
 
 /// Test the output endpoint buffer.
@@ -499,7 +517,12 @@ proptest! {
 
     #[test]
     fn proptest_kafka_input(data in generate_test_batches(0, 100, 1000)) {
-        test_kafka_input(data, "input_test_topic1", "input_test_topic2");
+        test_kafka_input(data, "input_test_topic1", "input_test_topic2", 1);
+    }
+
+    #[test]
+    fn proptest_kafka_input_threaded(data in generate_test_batches(0, 100, 1000)) {
+        test_kafka_input(data, "threaded_test_topic1", "threaded_test_topic2", 3);
     }
 
     #[test]
