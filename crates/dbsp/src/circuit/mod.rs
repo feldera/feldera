@@ -28,6 +28,7 @@ mod fingerprinter;
 pub mod metrics;
 pub mod operator_traits;
 pub mod schedule;
+pub mod tokio;
 pub mod trace;
 
 pub use activations::{Activations, Activator};
