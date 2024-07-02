@@ -165,7 +165,6 @@ where
                 AsofJoin::new(
                     factories.clone(),
                     ts_func1,
-                    ts_func2,
                     tscmp_func,
                     valts_cmp_func,
                     join_func,
@@ -214,7 +213,6 @@ where
     pub fn new(
         factories: AsofJoinFactories<TS, I1, I2, Z>,
         ts_func1: Box<dyn Fn(&I1::Val, &mut TS)>,
-        ts_func2: Box<dyn Fn(&I2::Val, &mut TS)>,
         tscmp_func: Box<dyn Fn(&I1::Val, &I2::Val) -> Ordering>,
         valts_cmp_func: Box<dyn Fn(&I1::Val, &TS) -> Ordering>,
         join_func: Box<AsofJoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>>,
@@ -225,7 +223,6 @@ where
         Self {
             factories,
             ts_func1,
-            ts_func2,
             tscmp_func,
             valts_cmp_func,
             join_func,
