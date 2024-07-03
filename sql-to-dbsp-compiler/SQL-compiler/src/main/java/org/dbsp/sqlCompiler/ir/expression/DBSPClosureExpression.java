@@ -164,11 +164,6 @@ public final class DBSPClosureExpression extends DBSPExpression {
         if (this.parameters.length != 1)
             throw new InternalCompilerError("Expected closure with 1 parameter", this);
         DBSPExpression apply = this.call(before.body.borrow());
-        DBSPClosureExpression result = new DBSPClosureExpression(apply, before.parameters);
-        BetaReduction reduction = new BetaReduction(errorReporter);
-        Simplify simplify = new Simplify(errorReporter);
-        IDBSPInnerNode reduced = reduction.apply(result);
-        IDBSPInnerNode simplified = simplify.apply(reduced);
-        return simplified.to(DBSPClosureExpression.class);
+        return apply.closure(before.parameters).reduce(errorReporter).to(DBSPClosureExpression.class);
     }
 }

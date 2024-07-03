@@ -569,29 +569,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String sql = EndToEndTests.E2E_TABLE + "; " +
                 "CREATE VIEW V AS SELECT T1.COL3 FROM T AS T1 JOIN T AS T2 ON T1.COL2 = T2.COL6";
         DBSPCompiler compiler = this.testCompiler();
-        // Without optimizations there is a map operator.
-        compiler.options.languageOptions.optimizationLevel = 1;
         compiler.compileStatements(sql);
         DBSPCircuit circuit = getCircuit(compiler);
-        CircuitVisitor findMap = new CircuitVisitor(compiler) {
-            int mapCount = 0;
-
-            @Override
-            public VisitDecision preorder(DBSPMapOperator node) {
-                this.mapCount++;
-                return super.preorder(node);
-            }
-
-            @Override
-            public void endVisit() {
-                Assert.assertTrue(this.mapCount > 0);
-            }
-        };
-        findMap.apply(circuit);
-
-        compiler = this.testCompiler();
-        compiler.compileStatements(sql);
-        circuit = getCircuit(compiler);
         CircuitVisitor noMap = new CircuitVisitor(compiler) {
             @Override
             public VisitDecision preorder(DBSPMapOperator node) {
