@@ -36,6 +36,11 @@ export default defineConfig({
     trace: 'on-first-retry',
     testIdAttribute: 'data-testid',
   },
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 1
+    }
+  },
 
   /* Configure projects for major browsers */
   projects: [
