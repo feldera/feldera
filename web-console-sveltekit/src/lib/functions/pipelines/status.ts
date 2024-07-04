@@ -1,5 +1,5 @@
-import type { PipelineStatus } from "$lib/services/pipelineManager"
-import { P, match } from "ts-pattern"
+import type { PipelineStatus } from '$lib/services/pipelineManager'
+import { P, match } from 'ts-pattern'
 
 export const getStatusLabel = (status: PipelineStatus) => {
   return match(status)

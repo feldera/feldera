@@ -24,7 +24,8 @@
     <Tabs.Control
       bind:group={currentTab.value}
       name={tabName}
-      contentClasses="group-hover:preset-tonal-surface">
+      contentClasses="group-hover:preset-tonal-surface"
+    >
       <span>{tabName}</span>
     </Tabs.Control>
   {/each}

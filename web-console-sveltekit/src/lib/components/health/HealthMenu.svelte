@@ -20,18 +20,20 @@
               <div
                 class="flex w-full cursor-pointer items-center gap-2 py-2"
                 onclick={toggle}
-                role="presentation">
+                role="presentation"
+              >
                 <div
                   class={'bx bx-chevron-down text-[24px] transition-transform ' +
-                    (open ? 'rotate-180' : '')}>
-                </div>
+                    (open ? 'rotate-180' : '')}
+                ></div>
                 <a href={systemError.cause.source} class="text-primary-500">
                   {systemError.name}
                 </a>
               </div>
               {#if !open}
                 <div
-                  class=" -mb-5 w-full overflow-x-hidden overflow-y-clip overflow-ellipsis whitespace-nowrap text-sm">
+                  class=" -mb-5 w-full overflow-x-hidden overflow-y-clip overflow-ellipsis whitespace-nowrap text-sm"
+                >
                   {systemError.message}
                   <!-- {open
                 ? ''
@@ -52,12 +54,14 @@
               </div>
               <div class="relative">
                 <div
-                  class="bg-surface-50-950 m-0 max-h-48 overflow-x-auto whitespace-pre p-2 pt-6 font-mono text-sm">
+                  class="m-0 max-h-48 overflow-x-auto whitespace-pre p-2 pt-6 font-mono text-sm bg-surface-50-950"
+                >
                   {text}
                 </div>
                 <button
-                  class="btn-icon preset-tonal-surface absolute right-4 top-2 text-[20px]"
-                  use:clipboard={text}>
+                  class="btn-icon absolute right-4 top-2 text-[20px] preset-tonal-surface"
+                  use:clipboard={text}
+                >
                   <div class="bx bx-copy"></div>
                 </button>
               </div>

@@ -28,16 +28,20 @@ const emptyProgramDescr: ProgramDescr = {
   description: '',
   name: '',
   program_id: '',
-  schema: { inputs: [], outputs: []},
+  schema: { inputs: [], outputs: [] },
   status: 'Success',
-  version: -1,
-    }
+  version: -1
+}
 
 const toPipelineThumb = (pipeline: Pipeline, program: ProgramDescr) => ({
   name: pipeline.descriptor.name,
   description: pipeline.descriptor.description,
   config: pipeline.descriptor.config,
-  status: consolidatePipelineStatus(pipeline.state.current_status, pipeline.state.error, program.status)
+  status: consolidatePipelineStatus(
+    pipeline.state.current_status,
+    pipeline.state.error,
+    program.status
+  )
 })
 
 export type PipelineThumb = ReturnType<typeof toPipelineThumb>
@@ -71,7 +75,13 @@ export const getFullPipeline = async (pipeline_name: string) => {
 export const getPipelines = async () => {
   const pipelines = await handled(listPipelines)()
   const programs = await handled(getPrograms)()
-  return leftJoin(pipelines, programs, p => p.descriptor.program_name ?? p.descriptor.name + '_program', p => p.name, (pipeline, program) => toPipelineThumb(pipeline, program ?? emptyProgramDescr))
+  return leftJoin(
+    pipelines,
+    programs,
+    (p) => p.descriptor.program_name ?? p.descriptor.name + '_program',
+    (p) => p.name,
+    (pipeline, program) => toPipelineThumb(pipeline, program ?? emptyProgramDescr)
+  )
 }
 
 export const getPipelineStatus = async (pipeline_name: string) => {
@@ -83,25 +93,32 @@ export const getPipelineStatus = async (pipeline_name: string) => {
       })
     : undefined
   return {
-    status: consolidatePipelineStatus(pipeline.state.current_status, pipeline.state.error, program?.status ?? 'Success')
+    status: consolidatePipelineStatus(
+      pipeline.state.current_status,
+      pipeline.state.error,
+      program?.status ?? 'Success'
+    )
   }
 }
 
 export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>
 
 export const getPipelineStats = async (pipeline_name: string) => {
-  return handled(pipelineStats)({ path: { pipeline_name } }).then(status => ({
-    pipelineName: pipeline_name,
-    status: status as ControllerStatus | null
-  }), (e) => {
-    if (e.error_code !== 'PipelineShutdown') {
-      throw new Error(e)
-    }
-    return  {
+  return handled(pipelineStats)({ path: { pipeline_name } }).then(
+    (status) => ({
       pipelineName: pipeline_name,
-      status: 'not running' as const
+      status: status as ControllerStatus | null
+    }),
+    (e) => {
+      if (e.error_code !== 'PipelineShutdown') {
+        throw new Error(e)
+      }
+      return {
+        pipelineName: pipeline_name,
+        status: 'not running' as const
+      }
     }
-})
+  )
 }
 
 const consolidatePipelineStatus = (
@@ -113,9 +130,9 @@ const consolidatePipelineStatus = (
     .with(['Shutdown', P.nullish, 'CompilingSql'], () => 'Compiling sql' as const)
     .with(['Shutdown', P.nullish, 'Pending'], () => 'Queued' as const)
     .with(['Shutdown', P.nullish, 'CompilingRust'], () => 'Compiling bin' as const)
-    .with(['Shutdown', P.nullish, { SqlError: P.select() }], (SqlError) => ({ SqlError } ))
-    .with(['Shutdown', P.nullish, { RustError: P.select() }], (RustError) => ({ RustError } ))
-    .with(['Shutdown', P.nullish, { SystemError: P.select() }], (SystemError) => ({ SystemError } ))
+    .with(['Shutdown', P.nullish, { SqlError: P.select() }], (SqlError) => ({ SqlError }))
+    .with(['Shutdown', P.nullish, { RustError: P.select() }], (RustError) => ({ RustError }))
+    .with(['Shutdown', P.nullish, { SystemError: P.select() }], (SystemError) => ({ SystemError }))
     .with(['Shutdown', P.nullish, 'Success'], () => 'Shutdown' as const)
     .with(['Shutdown', P.select(P.nonNullable), P.any], () => 'Shutdown' as const)
     .with(['Provisioning', P.nullish, P._], () => 'Starting up' as const)
@@ -127,7 +144,11 @@ const consolidatePipelineStatus = (
     .with(['Running', P.nullish, P._], () => 'Running' as const)
     .with(['ShuttingDown', P.nullish, P._], () => 'ShuttingDown' as const)
     .with(['Failed', P.select(P.nonNullable), P._], (PipelineError) => ({ PipelineError }))
-    .otherwise(() => {throw new Error(`Unable to consolidatePipelineStatus: ${pipelineStatus} ${pipelineError} ${programStatus}`)})
+    .otherwise(() => {
+      throw new Error(
+        `Unable to consolidatePipelineStatus: ${pipelineStatus} ${pipelineError} ${programStatus}`
+      )
+    })
 }
 
 export const deletePipeline = async (pipeline_name: string) => {

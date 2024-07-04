@@ -37,5 +37,5 @@
   {text}
   bind:value={$store}
   {close}
-  {tabContentChanged}>
-</PipelineTabControl>
+  {tabContentChanged}
+></PipelineTabControl>

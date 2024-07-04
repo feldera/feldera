@@ -89,7 +89,8 @@
                 scrollbar: {
                   vertical: 'visible'
                 }
-              }} />
+              }}
+            />
           </div>
         </Pane>
       </PaneGroup>

@@ -69,4 +69,25 @@ fn main() {
             .build()
             .unwrap();
     }
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_dir_parts = out_dir.iter().collect::<Vec<_>>();
+    let rel_build_dir = out_dir_parts[out_dir_parts.len() - 2..]
+        .iter()
+        .collect::<PathBuf>();
+    env::set_var("BUILD_DIR", rel_build_dir.clone());
+    let asset_path = Path::new("../../web-console-sveltekit/").join("build");
+
+    let mut res = NpmBuild::new("../../web-console-sveltekit")
+        .executable("bun")
+        .install()
+        .expect("Could not run `bun install`. Follow set-up instructions in web-console-sveltekit/README.md")
+        .run("build")
+        .expect("Could not run `bun run build`. Run it manually in web-console-sveltekit/ to debug.")
+        .target(asset_path.clone())
+        .to_resource_dir();
+
+    let _ = res.with_generated_filename("generated_sveltekit.rs");
+
+    res.build().expect("SvelteKit failed to build");
 }

@@ -82,25 +82,29 @@
   <button
     class={'bx bx-trash-alt ' + buttonClass}
     onclick={() =>
-      showDeleteDialog('Delete', (name) => `${name} pipeline`, deletePipeline)($pipelineName)}>
+      showDeleteDialog('Delete', (name) => `${name} pipeline`, deletePipeline)($pipelineName)}
+  >
   </button>
 {/snippet}
 {#snippet _start()}
   <button
     class={'bx bx-play-circle ' + buttonClass}
-    onclick={() => pipelineAction($pipelineName, 'start').then(reload)}>
+    onclick={() => pipelineAction($pipelineName, 'start').then(reload)}
+  >
   </button>
 {/snippet}
 {#snippet _pause()}
   <button
     class={'bx bx-pause-circle ' + buttonClass}
-    onclick={() => pipelineAction($pipelineName, 'pause').then(reload)}>
+    onclick={() => pipelineAction($pipelineName, 'pause').then(reload)}
+  >
   </button>
 {/snippet}
 {#snippet _shutdown()}
   <button
     class={'bx bx-stop-circle ' + buttonClass}
-    onclick={() => pipelineAction($pipelineName, 'shutdown').then(reload)}>
+    onclick={() => pipelineAction($pipelineName, 'shutdown').then(reload)}
+  >
   </button>
 {/snippet}
 {#snippet _spacer()}

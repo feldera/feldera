@@ -12,23 +12,25 @@
     {#snippet trigger(open)}
       <button
         onclick={open}
-        class="btn-icon bx bx-error preset-tonal-surface !text-warning-500 cursor-pointer text-[24px]">
+        class="bx bx-error btn-icon cursor-pointer text-[24px] !text-warning-500 preset-tonal-surface"
+      >
       </button>
-      <span class="badge-icon preset-filled-error-500 absolute -right-2 -top-2 text-sm">
+      <span class="badge-icon absolute -right-2 -top-2 text-sm preset-filled-error-500">
         {$systemErrors.length}
       </span>
     {/snippet}
     {#snippet content()}
       <div
         transition:fade={{ duration: 100 }}
-        class="absolute right-0 z-10 max-h-[500px] w-[calc(100vw-100px)] max-w-[600px] justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black">
+        class="absolute right-0 z-10 max-h-[500px] w-[calc(100vw-100px)] max-w-[600px] justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black"
+      >
         <HealthMenu {systemErrors}></HealthMenu>
       </div>
     {/snippet}
   </Popup>
 {:else}
   <Tooltip tip="No errors detected in Feldera deployment" active={true}>
-    <button class="btn-icon bx bx-check-circle preset-tonal-surface !text-success-500 text-[24px]">
+    <button class="bx bx-check-circle btn-icon text-[24px] !text-success-500 preset-tonal-surface">
     </button>
   </Tooltip>
 {/if}

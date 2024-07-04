@@ -5,6 +5,7 @@
   import Tooltip from 'sv-tooltip'
 
   const sqlErrors = useSqlErrors()
+  console.log('tab sqlErrors', $sqlErrors)
   const programsErrors = derived(sqlErrors, (errors) =>
     groupBy(errors, (error) => error.cause.entityName)
   )

@@ -36,7 +36,7 @@ export const sendGithubReport = async ({ name, ...report }: ReportDetails) => {
     title: name ? name : 'User report: system error',
     body: (
       await Promise.all(
-        sortOn(Object.entries(report), o => o[0]).map(
+        sortOn(Object.entries(report), (o) => o[0]).map(
           async ([key, detail]) => sections[key as unknown as keyof typeof report] + detail
         )
       )
