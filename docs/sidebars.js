@@ -30,20 +30,38 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'Deploy',
-      link: { type: 'doc', id: 'deploy' },
+      label: 'Feldera Enterprise',
+      link: {
+        type: 'doc',
+        id: 'enterprise/index'
+      },
       items: [
-        'docker',
+        'enterprise/quickstart',
+        'enterprise/helm-guide',
         {
           type: 'category',
-          label: 'Bring Your Own Cloud',
-          link: { type: 'doc', id: 'cloud/index' },
+          label: 'Kubernetes guides',
+          link: {
+            type: 'doc',
+            id: 'enterprise/kubernetes-guides/index',
+          },
           items: [
-            'cloud/assets',
-            'cloud/deployment',
-            'cloud/secret-management'
+            'enterprise/kubernetes-guides/k3d',
+            {
+              type: 'category',
+              label: 'EKS',
+              link: {
+                type: 'doc',
+                id: 'enterprise/kubernetes-guides/eks/index',
+              },
+              items: [
+                'enterprise/kubernetes-guides/eks/cluster',
+                'enterprise/kubernetes-guides/eks/ingress'
+              ]
+            },
+            'enterprise/kubernetes-guides/secret-management'
           ]
-        },
+        }
       ]
     },
     {
