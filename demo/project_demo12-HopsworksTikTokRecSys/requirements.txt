@@ -1,0 +1,8 @@
+mimesis==15.1.0
+tensorflow==2.13
+tensorflow-recommenders==0.7.2
+catboost==1.1.1
+tqdm
+kafka-python
+pandas
+lz4
