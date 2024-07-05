@@ -55,7 +55,7 @@ impl BatchMerger {
                 Err(e) => {
                     // We dropped all references to the recv channel, this means
                     // the circuit was destroyed, we can exit the compactor thread.
-                    tracing::trace!(
+                    log::trace!(
                         "exiting compactor thread due to rx error on channel: {:?}",
                         e
                     );

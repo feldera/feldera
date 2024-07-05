@@ -5,6 +5,7 @@ use crate::{InputConsumer, TransportInputEndpoint};
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use futures::executor::block_on;
+use log::{debug, error, info, warn};
 use pipeline_types::transport::kafka::KafkaInputConfig;
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic};
 use rdkafka::config::{FromClientConfig, FromClientConfigAndContext};
@@ -31,7 +32,6 @@ use std::{
     sync::{Arc, Mutex},
     thread::{Builder, JoinHandle},
 };
-use tracing::{debug, error, info, warn};
 
 use super::CommonConfig;
 

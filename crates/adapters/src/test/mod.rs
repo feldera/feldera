@@ -6,6 +6,7 @@ use crate::{
 };
 use anyhow::Result as AnyResult;
 use dbsp::{DBData, OrdZSet, Runtime};
+use log::{Log, Metadata, Record};
 use pipeline_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
@@ -42,7 +43,23 @@ pub use mock_input_consumer::MockInputConsumer;
 pub use mock_output_consumer::MockOutputConsumer;
 use pipeline_types::program_schema::{Field, Relation};
 
+pub struct TestLogger;
+
+pub static TEST_LOGGER: TestLogger = TestLogger;
+
 pub static DEFAULT_TIMEOUT_MS: u128 = 600_000;
+
+impl Log for TestLogger {
+    fn enabled(&self, _metadata: &Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &Record) {
+        println!("{} - {}", record.level(), record.args());
+    }
+
+    fn flush(&self) {}
+}
 
 /// Wait for `predicate` to become `true`.
 ///

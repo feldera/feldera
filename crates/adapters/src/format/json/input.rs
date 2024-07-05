@@ -452,13 +452,13 @@ mod test {
         transport::InputConsumer,
         FormatConfig, ParseError,
     };
+    use log::trace;
     use pipeline_types::{
         deserialize_table_record,
         format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat},
         serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
     };
     use std::{borrow::Cow, fmt::Debug};
-    use tracing::trace;
 
     #[derive(PartialEq, Debug, Eq)]
     struct TestStruct {

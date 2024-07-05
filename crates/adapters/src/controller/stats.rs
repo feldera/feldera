@@ -37,6 +37,7 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
+use log::error;
 use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
 use metrics_util::{
     debugging::{DebugValue, Snapshot},
@@ -57,7 +58,6 @@ use std::{
         Mutex,
     },
 };
-use tracing::error;
 
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {

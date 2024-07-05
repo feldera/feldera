@@ -126,15 +126,15 @@ impl Checkpointer {
             ) || path.is_dir()
             {
                 if path.is_dir() {
-                    tracing::debug!("Removing unused directory '{}'", path.display());
+                    log::debug!("Removing unused directory '{}'", path.display());
                     fs::remove_dir_all(path)?;
                 } else {
                     match fs::remove_file(path) {
                         Ok(_) => {
-                            tracing::debug!("Removed unused file '{}'", path.display());
+                            log::debug!("Removed unused file '{}'", path.display());
                         }
                         Err(e) => {
-                            tracing::warn!("Unable to remove old-checkpoint file {}: {} (the pipeline will try to delete the file again on a restart)", path.display(), e);
+                            log::warn!("Unable to remove old-checkpoint file {}: {} (the pipeline will try to delete the file again on a restart)", path.display(), e);
                         }
                     }
                 }
@@ -250,10 +250,10 @@ impl Checkpointer {
             );
             match fs::remove_file(file) {
                 Ok(_) => {
-                    tracing::debug!("Removed file {}", file.as_ref().display());
+                    log::debug!("Removed file {}", file.as_ref().display());
                 }
                 Err(e) => {
-                    tracing::warn!("Unable to remove old-checkpoint file {}: {} (the pipeline will try to delete the file again on a restart)", file.as_ref().display(), e);
+                    log::warn!("Unable to remove old-checkpoint file {}: {} (the pipeline will try to delete the file again on a restart)", file.as_ref().display(), e);
                 }
             }
         }
@@ -266,7 +266,7 @@ impl Checkpointer {
         assert_ne!(cpm.uuid, Uuid::nil());
         let checkpoint_dir = self.storage_path.join(cpm.uuid.to_string());
         if !checkpoint_dir.exists() {
-            tracing::warn!(
+            log::warn!(
                 "Tried to remove a checkpoint directory '{}' that doesn't exist.",
                 checkpoint_dir.display()
             );

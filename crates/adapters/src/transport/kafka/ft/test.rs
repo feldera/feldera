@@ -11,6 +11,7 @@ use crate::{
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use env_logger::Env;
+use log::info;
 use proptest::prelude::*;
 use rdkafka::mocking::MockCluster;
 use std::{
@@ -22,7 +23,6 @@ use std::{
     thread::sleep,
     time::{Duration, Instant},
 };
-use tracing::info;
 use uuid::Uuid;
 
 /// Wait to receive all records in `data` in the same order.

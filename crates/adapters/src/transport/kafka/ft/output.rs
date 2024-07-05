@@ -4,6 +4,7 @@ use crate::{
     AsyncErrorCallback, OutputEndpoint,
 };
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
+use log::{debug, info, warn};
 use pipeline_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::{
@@ -20,7 +21,6 @@ use std::{
     sync::{Condvar, Mutex, RwLock},
     time::Duration,
 };
-use tracing::{debug, info, warn};
 
 use super::{count_partitions_in_topic, CommonConfig, Ctp, DataConsumerContext};
 

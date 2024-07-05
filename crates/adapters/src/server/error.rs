@@ -46,6 +46,7 @@ use actix_web::{
 };
 use anyhow::Error as AnyError;
 use dbsp::{operator::sample::MAX_QUANTILES, DetailedError};
+use log::{error, log, warn, Level};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::{
@@ -54,7 +55,6 @@ use std::{
     fmt::{Display, Error as FmtError, Formatter},
     sync::Arc,
 };
-use tracing::{error, warn, Level};
 use utoipa::ToSchema;
 
 pub const MAX_REPORTED_PARSE_ERRORS: usize = 1_000;
@@ -83,18 +83,6 @@ where
     }
 }
 
-macro_rules! dyn_event {
-    ($lvl:ident, $($arg:tt)+) => {
-        match $lvl {
-            ::tracing::Level::TRACE => ::tracing::trace!($($arg)+),
-            ::tracing::Level::DEBUG => ::tracing::debug!($($arg)+),
-            ::tracing::Level::INFO => ::tracing::info!($($arg)+),
-            ::tracing::Level::WARN => ::tracing::warn!($($arg)+),
-            ::tracing::Level::ERROR => ::tracing::error!($($arg)+),
-        }
-    };
-}
-
 impl ErrorResponse {
     pub fn from_anyerror(error: &AnyError) -> Self {
         let message = error.to_string();
@@ -115,9 +103,9 @@ impl ErrorResponse {
         E: DetailedError,
     {
         let result = Self::from_error_nolog(error);
-        let level = error.log_level();
-        dyn_event!(
-            level,
+
+        log!(
+            error.log_level(),
             "[HTTP error response] {}: {}",
             result.error_code,
             result.message
@@ -294,10 +282,10 @@ impl DetailedError for PipelineError {
 
     fn log_level(&self) -> Level {
         match self {
-            Self::Initializing => Level::INFO,
-            Self::Terminating => Level::INFO,
+            Self::Initializing => Level::Info,
+            Self::Terminating => Level::Info,
             Self::ControllerError { error } => error.log_level(),
-            _ => Level::ERROR,
+            _ => Level::Error,
         }
     }
 }

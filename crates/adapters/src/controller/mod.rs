@@ -51,6 +51,7 @@ use crossbeam::{
 };
 use dbsp::circuit::{CircuitConfig, Layout};
 use dbsp::profile::GraphProfile;
+use log::{debug, error, info, trace};
 use metrics::set_global_recorder;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use metrics_util::{
@@ -73,7 +74,6 @@ use std::{
     thread::{spawn, JoinHandle},
     time::{Duration, Instant},
 };
-use tracing::{debug, error, info, trace};
 use uuid::Uuid;
 
 mod error;
