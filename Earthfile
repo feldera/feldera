@@ -34,6 +34,10 @@ install-deps:
     RUN sudo apt-get install nodejs -y
     RUN npm install --global yarn
     RUN npm install --global openapi-typescript-codegen
+    ## Install Bun.js
+    RUN curl -fsSL https://bun.sh/install | bash
+    ENV PATH="$HOME/.bun/bin:$PATH"
+
     RUN apt install unzip -y
     RUN apt install python3-requests -y
     RUN arch=`dpkg --print-architecture`; \

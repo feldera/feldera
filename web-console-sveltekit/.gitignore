@@ -19,3 +19,6 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Pipeline Manager tmp build folder
+/pipeline-manager-*/

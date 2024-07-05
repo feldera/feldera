@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
+  import { base } from '$app/paths'
 
-  goto('/pipelines')
+  goto(`${base}/pipelines`)
 </script>

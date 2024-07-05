@@ -1,3 +1,4 @@
+import { base } from '$app/paths'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 
 import type { VerticalNavItemsType } from '$lib/types/layout'
@@ -9,13 +10,13 @@ export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavI
   return [
     {
       title: 'Home',
-      path: '/home/',
+      path: `${base}/home/`,
       class: 'bx bx-home-circle',
       testid: 'button-vertical-nav-home'
     },
     {
       title: 'Demos',
-      path: '/demos/',
+      path: `${base}/demos/`,
       class: 'bx bx-rocket'
     },
     {
@@ -23,7 +24,7 @@ export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavI
     },
     {
       title: 'Pipelines',
-      path: ['/pipelines/'],
+      path: [`${base}/pipelines/`],
       class: 'bx bx-git-repo-forked',
       testid: 'button-vertical-nav-pipelines'
     },
@@ -35,7 +36,7 @@ export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavI
         ? [
             {
               title: 'Settings',
-              path: '/settings/',
+              path: `${base}/settings/`,
               class: 'bx bx-cog'
             }
           ]

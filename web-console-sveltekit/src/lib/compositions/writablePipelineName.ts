@@ -2,6 +2,7 @@ import type { NewPipelineRequest } from '$lib/services/manager'
 import { type WritableLoadable, asyncWritable } from '@square/svelte-store'
 import type { PipelineTab } from './useOpenPipelines'
 import type { FullPipeline } from '$lib/services/pipelineManager'
+import { base } from '$app/paths'
 
 export const writablePipelineName = (
   pipeline: WritableLoadable<FullPipeline | (NewPipelineRequest & { code: string })>,
@@ -24,7 +25,7 @@ export const writablePipelineName = (
       renamePipelineTab(oldPipelineName ? { existing: oldPipelineName } : { new: 'new' }, {
         existing: newPipelineName
       })
-      window.location.replace('/pipelines/' + newPipelineName)
+      window.location.replace(`${base}/pipelines/` + newPipelineName)
       return newPipelineName
     }
   )

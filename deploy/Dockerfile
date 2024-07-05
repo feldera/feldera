@@ -47,6 +47,11 @@ ENV NODE_MAJOR=20
 RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
 RUN apt update --fix-missing && apt install nodejs -y
 RUN npm install --global yarn openapi-typescript-codegen
+
+## Install Bun.js
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="$HOME/.bun/bin:$PATH"
+
 # - yarn
 COPY web-console/package.json ./web-console/package.json
 COPY web-console/yarn.lock ./web-console/yarn.lock
