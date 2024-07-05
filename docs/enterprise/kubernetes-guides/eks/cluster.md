@@ -135,11 +135,27 @@ nodes will only be on the private subnet.
   ```
   You should see a cluster of a single node, with the status `Ready`.
 
+* Feldera needs at least a default storage class to allocate persistent volume claims (PVCs).
+  Users can also explicitly specify the storage class per pipeline directly in their configuration.
+
+  If you installed the EBS CSI driver as per the instructions above, you should see the `gp2` storage
+  class in your cluster already, marked as the default:
+  ```bash
+  $ kubectl get sc
+  NAME            PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+  gp2 (default)   kubernetes.io/aws-ebs   Delete          WaitForFirstConsumer   false                  64m
+  ```
+  
+  If it has not been automatically marked as default (visible next to its name), set it as such using:
+  ```bash
+  kubectl patch sc gp2 -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+  ```
+
 ### 5. Cluster deletion
 
 Cluster deletion can be done by running:
 ```
-eksctl delete cluster -f ekstctl.yaml --disable-nodegroup-eviction
+eksctl delete cluster -f eks-config.yaml --disable-nodegroup-eviction
 ```
 
 ## Kubernetes cluster considerations
