@@ -49,6 +49,7 @@ RUN apt update --fix-missing && apt install nodejs -y
 RUN npm install --global yarn openapi-typescript-codegen
 
 ## Install Bun.js
+RUN apt install unzip -y
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="$HOME/.bun/bin:$PATH"
 

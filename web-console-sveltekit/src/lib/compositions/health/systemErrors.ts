@@ -1,3 +1,4 @@
+import { base } from '$app/paths'
 import { nonNull } from '$lib/functions/common/function'
 import { handled } from '$lib/functions/request'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
@@ -43,7 +44,7 @@ const extractPipelineErrors = (pipeline: PipelineThumb) => {
       cause: {
         entityName: pipeline.name,
         tag: 'pipelineError',
-        source: `/streaming/builder/?pipeline_name=${pipeline.name}`,
+        source: `${base}/pipelines/${pipeline.name}`,
         report: {
           ...defaultGithubReportSections,
           name: 'Report: pipeline execution error',
@@ -80,7 +81,7 @@ const programErrorReport = async (pipeline: { name: string }, message: string) =
   }) as ReportDetails
 
 const extractProgramError = (pipeline: { name: string; status: PipelineStatus }) => {
-  const source = `/pipelines/${encodeURI(pipeline.name)}`
+  const source = `${base}/pipelines/${encodeURI(pipeline.name)}`
   const result = match(pipeline.status)
     .returnType<Promise<SystemError>[]>()
     .with({ RustError: P.any }, (e) => [
@@ -156,7 +157,7 @@ const extractPipelineXgressErrors = ({
   status: Pick<ControllerStatus, 'inputs' | 'outputs'> | null | 'not running'
 }): SystemError[] => {
   const stats = status == null || status === 'not running' ? { inputs: [], outputs: [] } : status
-  const source = `/streaming/builder/?pipeline_name=${pipelineName}`
+  const source = `${base}/pipelines/${pipelineName}`
   const stringifyConfig = (config: any) =>
     `Connector config:\n\`\`\`\n${JSONbig.stringify(config, undefined, '\t')}\n\`\`\`\n`
   const z = stats.inputs

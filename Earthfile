@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install --yes sudo
 WORKDIR /dbsp
 ENV RUSTUP_HOME=$HOME/.rustup
 ENV CARGO_HOME=$HOME/.cargo
-# Adds python and rust binaries to thep path
+# Adds python and rust binaries to the path
 ENV PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH
 ENV RUST_VERSION=1.78.0
 ENV RUST_BUILD_MODE='' # set to --release for release builds
@@ -34,11 +34,11 @@ install-deps:
     RUN sudo apt-get install nodejs -y
     RUN npm install --global yarn
     RUN npm install --global openapi-typescript-codegen
-    ## Install Bun.js
-    RUN curl -fsSL https://bun.sh/install | bash
-    ENV PATH="$HOME/.bun/bin:$PATH"
-
     RUN apt install unzip -y
+    ## Install Bun.js
+    RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=$HOME/.bun bash
+    ENV PATH=$HOME/.bun/bin:$PATH
+
     RUN apt install python3-requests -y
     RUN arch=`dpkg --print-architecture`; \
             curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
@@ -333,6 +333,7 @@ build-pipeline-manager-container:
     # Install cargo and rust for this non-root user
     RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
     ENV PATH="$PATH:/home/feldera/.cargo/bin"
+
     RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler --compilation-profile=unoptimized --dbsp-override-path=/home/feldera/database-stream-processor --precompile
     ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/database-stream-processor", "--compilation-profile=unoptimized"]
 
