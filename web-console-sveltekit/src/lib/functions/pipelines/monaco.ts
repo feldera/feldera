@@ -1,6 +1,8 @@
 import type Monaco from 'svelte-monaco'
-import type { editor, Range } from 'monaco-editor'
+import { MarkerSeverity, type editor, type Range } from 'monaco-editor'
 import invariant from 'tiny-invariant'
+import type { SystemError } from '$lib/compositions/health/systemErrors'
+import type { SqlCompilerMessage } from '$lib/services/manager'
 
 const getDefaultErrorMarker = (monaco: Monaco, error: { message: string }) => ({
   startLineNumber: 0,
@@ -81,5 +83,31 @@ export const getFormErrorsMarkers = (
       return defaultErr
     }
     return getRangeErrorMarker(monaco, error, offenderPos)
+  })
+}
+
+export const extractSQLCompilerErrorMarkers = (
+  errors: SystemError<string | SqlCompilerMessage>[]
+) => {
+  return errors.map(({ cause: { body: error } }) => {
+    if (typeof error === 'string') {
+      // Just make sure error highlights all of the program
+      return {
+        startLineNumber: 0,
+        endLineNumber: 999,
+        startColumn: 0,
+        endColumn: 9999,
+        message: error,
+        severity: MarkerSeverity.Error
+      }
+    }
+    return {
+      startLineNumber: error.startLineNumber,
+      endLineNumber: error.endLineNumber,
+      startColumn: error.startColumn,
+      endColumn: error.endColumn + 1,
+      message: error.message,
+      severity: error.warning ? MarkerSeverity.Warning : MarkerSeverity.Error
+    }
   })
 }

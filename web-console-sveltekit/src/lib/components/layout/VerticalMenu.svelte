@@ -15,7 +15,8 @@
   {#each verticalNavItems({ showSettings: false }) as item}
     {#if 'sectionTitle' in item}
       <div
-        class="text-surface-300 before:border-surface-300 after:border-surface-300 dark:text-surface-700 dark:before:border-surface-600 dark:after:border-surface-600 flex items-center py-2 text-sm uppercase before:me-6 before:flex-1 before:border-t after:ms-6 after:flex-1 after:border-t">
+        class="flex items-center py-2 text-sm uppercase text-surface-300 before:me-6 before:flex-1 before:border-t before:border-surface-300 after:ms-6 after:flex-1 after:border-t after:border-surface-300 dark:text-surface-700 dark:before:border-surface-600 dark:after:border-surface-600"
+      >
         {item.sectionTitle}
       </div>
     {:else}
@@ -24,7 +25,8 @@
         class={'flex h-8 flex-nowrap items-center gap-4 rounded-r-full px-6 py-1 ' +
           (isNavLinkActive(item)
             ? 'bg-primary-500 text-surface-contrast-600'
-            : 'text-surface-700 hover:bg-surface-100/50 dark:text-surface-300')}>
+            : 'text-surface-700 hover:bg-surface-100/50 dark:text-surface-300')}
+      >
         <div class={item.class + ' text-[24px]'}></div>
         <span>{item.title}</span>
       </a>{/if}{/each}

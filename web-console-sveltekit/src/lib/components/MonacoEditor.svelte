@@ -34,6 +34,7 @@
     value,
     automaticLayout: true
   }
+  export let markers: Record<string, Monaco.editor.IMarkerData[]> | undefined = undefined
 
   function refreshTheme() {
     if (theme) {
@@ -60,6 +61,11 @@
     editor.setValue(value)
     if (position) editor.setPosition(position)
   }
+  $: model &&
+    markers &&
+    Object.entries(markers).forEach(([owner, markers]) =>
+      monaco.editor.setModelMarkers(model, owner, markers)
+    )
 
   onMount(async () => {
     monaco = await loader.init()

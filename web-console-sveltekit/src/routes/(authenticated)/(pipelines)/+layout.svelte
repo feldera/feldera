@@ -65,7 +65,7 @@
         href: ((last) =>
           last
             ? 'existing' in last
-              ? `${base}/pipelines` + last.existing + '/'
+              ? `${base}/pipelines/` + last.existing + '/'
               : `${base}/pipeline/new/`
             : `${base}/pipelines/`)(
           openPipelines.value.findLast((name) => !pipelineTabEq(name, $currentTab))

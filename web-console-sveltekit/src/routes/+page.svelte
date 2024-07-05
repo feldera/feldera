@@ -2,5 +2,5 @@
   import { goto } from '$app/navigation'
   import { base } from '$app/paths'
 
-  goto(`${base}/pipelines`)
+  goto(`${base}/pipelines/`)
 </script>

@@ -12,20 +12,20 @@ import {
   type PipelineThumb
 } from '$lib/services/pipelineManager'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
-import { asyncDerived, asyncReadable, derived } from '@square/svelte-store'
+import { asyncDerived, asyncReadable, derived, type Readable } from '@square/svelte-store'
 import { onMount } from 'svelte'
 
 import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
 
-export type SystemError = Error & {
+export type SystemError<T = any> = Error & {
   message: string
   cause: {
     entityName: string
     source: string
     report: ReportDetails
     tag: string
-    body: any
+    body: T
   }
 }
 
@@ -44,7 +44,7 @@ const extractPipelineErrors = (pipeline: PipelineThumb) => {
       cause: {
         entityName: pipeline.name,
         tag: 'pipelineError',
-        source: `${base}/pipelines/${pipeline.name}`,
+        source: `${base}/pipelines/${pipeline.name}/`,
         report: {
           ...defaultGithubReportSections,
           name: 'Report: pipeline execution error',
@@ -81,7 +81,7 @@ const programErrorReport = async (pipeline: { name: string }, message: string) =
   }) as ReportDetails
 
 const extractProgramError = (pipeline: { name: string; status: PipelineStatus }) => {
-  const source = `${base}/pipelines/${encodeURI(pipeline.name)}`
+  const source = `${base}/pipelines/${encodeURI(pipeline.name)}/`
   const result = match(pipeline.status)
     .returnType<Promise<SystemError>[]>()
     .with({ RustError: P.any }, (e) => [
@@ -126,7 +126,11 @@ const extractProgramError = (pipeline: { name: string; status: PipelineStatus })
           cause: {
             entityName: pipeline.name,
             tag: 'programError',
-            source,
+            source:
+              source +
+              '#:' +
+              e.startLineNumber +
+              (e.startColumn > 1 ? ':' + e.startColumn.toString() : ''),
             report: await programErrorReport(pipeline, e.message),
             body: e
           }
@@ -157,7 +161,7 @@ const extractPipelineXgressErrors = ({
   status: Pick<ControllerStatus, 'inputs' | 'outputs'> | null | 'not running'
 }): SystemError[] => {
   const stats = status == null || status === 'not running' ? { inputs: [], outputs: [] } : status
-  const source = `${base}/pipelines/${pipelineName}`
+  const source = `${base}/pipelines/${pipelineName}/`
   const stringifyConfig = (config: any) =>
     `Connector config:\n\`\`\`\n${JSONbig.stringify(config, undefined, '\t')}\n\`\`\`\n`
   const z = stats.inputs
@@ -254,9 +258,9 @@ const programsErrors = asyncDerived(
   referencePipelines,
   (ps) => {
     return Promise.all<SystemError>(ps.flatMap(extractProgramError)).then(
-      errors => errors,
-      (e) => {
-        return []
+      (errors) => errors,
+      () => {
+        return [] as SystemError[]
       }
     )
   },
@@ -273,9 +277,13 @@ const systemErrors = derived(
     return ([] as SystemError[]).concat(a, b, c)
   }
 )
-// const systemErrors = derived([programsErrors], ([a]) => a)
 
-export const useSqlErrors = () => {
+export const useSqlErrors = (pipelineName?: Readable<string>) => {
+  if (pipelineName) {
+    return derived([pipelineName, programsErrors], ([pipelineName, errors]) =>
+      errors.filter((error) => error.cause.entityName === pipelineName)
+    )
+  }
   return programsErrors
 }
 

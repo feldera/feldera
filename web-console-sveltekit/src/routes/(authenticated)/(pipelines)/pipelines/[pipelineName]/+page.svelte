@@ -11,6 +11,7 @@
   import type { Pipeline } from '$lib/services/manager'
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import { asyncDebounced } from '$lib/compositions/asyncDebounced'
+  import { useSqlErrors } from '$lib/compositions/health/systemErrors'
 
   let pipelineName = derived(page, (page) => decodeURI(page.params.pipelineName))
   {
@@ -50,6 +51,8 @@
       return newCode
     }
   )
+
+  const errors = useSqlErrors(pipelineName)
 </script>
 
-<PipelineEditLayout {pipelineName} {pipelineCodeStore}></PipelineEditLayout>
+<PipelineEditLayout {pipelineName} {pipelineCodeStore} {errors}></PipelineEditLayout>
