@@ -72,6 +72,23 @@ COPY web-console/next.d.ts ./web-console/next.d.ts
 COPY web-console/tsconfig.json ./web-console/tsconfig.json
 RUN cd web-console && yarn build
 
+# sveltekit
+COPY web-console-sveltekit/package.json ./web-console-sveltekit/
+COPY web-console-sveltekit/bun.lockb ./web-console-sveltekit/
+RUN cd web-console-sveltekit && bun install
+
+COPY web-console-sveltekit/static web-console-sveltekit/static
+COPY web-console-sveltekit/src web-console-sveltekit/src
+COPY web-console-sveltekit/.prettierignore web-console-sveltekit/
+COPY web-console-sveltekit/.prettierrc web-console-sveltekit/
+COPY web-console-sveltekit/eslint.config.js web-console-sveltekit/
+COPY web-console-sveltekit/postcss.config.js web-console-sveltekit/
+COPY web-console-sveltekit/svelte.config.js ./web-console-sveltekit/
+COPY web-console-sveltekit/tailwind.config.ts ./web-console-sveltekit/
+COPY web-console-sveltekit/tsconfig.json ./web-console-sveltekit/
+COPY web-console-sveltekit/vite.config.ts ./web-console-sveltekit/
+RUN cd web-console-sveltekit && bun run build
+
 # Cache dependencies from rust
 FROM chef AS planner
 COPY Cargo.toml Cargo.toml
@@ -93,7 +110,9 @@ COPY crates crates
 RUN mkdir sql-to-dbsp-compiler || true
 COPY sql-to-dbsp-compiler/lib sql-to-dbsp-compiler/lib
 COPY --from=web-ui-builder /web-console/out web-console-out
+COPY --from=web-ui-builder /web-console-sveltekit/build web-console-build
 ENV WEBUI_BUILD_DIR=/app/web-console-out
+ENV WEBCONSOLE_BUILD_DIR=/app/web-console-build
 RUN /root/.cargo/bin/cargo build --release --bin=pipeline-manager --features=pg-embed
 
 # Java build can be performed in parallel

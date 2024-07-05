@@ -2,7 +2,7 @@ import { join } from 'path'
 
 import { skeleton } from '@skeletonlabs/skeleton/plugin'
 
-import { felderaTheme } from './felderaTheme'
+import { felderaTheme } from './src/felderaTheme'
 
 import type { Config } from 'tailwindcss'
 
