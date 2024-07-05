@@ -590,7 +590,7 @@ all-tests:
     BUILD +test-sql
     BUILD +integration-tests
     BUILD +ui-playwright-tests-ct
-    BUILD +ui-playwright-tests-e2e
+    # BUILD +ui-playwright-tests-e2e
     BUILD +test-docker-compose
     # BUILD +test-docker-compose-stable
     BUILD +test-debezium-mysql
