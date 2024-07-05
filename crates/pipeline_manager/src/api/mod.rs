@@ -296,11 +296,8 @@ fn public_scope() -> Scope {
 }
 
 fn new_scope() -> Scope {
-    web::scope("/new").service(
-        ResourceFiles::new("/", web_v2::generate())
-            .do_not_resolve_defaults()
-            .resolve_not_found_to_root(),
-    )
+    web::scope("/new")
+        .service(ResourceFiles::new("/", web_v2::generate()).resolve_not_found_to_root())
 }
 
 // The scope for all authenticated API endpoints
