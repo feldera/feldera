@@ -1,7 +1,7 @@
 use change_detection::ChangeDetection;
 use static_files::{resource_dir, NpmBuild};
-use std::env;
 use std::path::{Path, PathBuf};
+use std::{env, fs};
 
 // These are touched during the build, so it would re-build every time if we
 // don't exclude them from change detection:
@@ -71,13 +71,13 @@ fn main() {
     }
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    fs::create_dir(out_dir.join("v2")).ok();
     let out_dir_parts = out_dir.iter().collect::<Vec<_>>();
     let rel_build_dir = out_dir_parts[out_dir_parts.len() - 2..]
         .iter()
         .collect::<PathBuf>();
     env::set_var("BUILD_DIR", rel_build_dir.clone());
     let asset_path = Path::new("../../web-console-sveltekit/").join("build");
-
     let mut res = NpmBuild::new("../../web-console-sveltekit")
         .executable("bun")
         .install()
@@ -86,8 +86,6 @@ fn main() {
         .expect("Could not run `bun run build`. Run it manually in web-console-sveltekit/ to debug.")
         .target(asset_path.clone())
         .to_resource_dir();
-
-    let _ = res.with_generated_filename("generated_sveltekit.rs");
-
+    let _ = res.with_generated_filename(out_dir.join("v2").join("generated.rs"));
     res.build().expect("SvelteKit failed to build");
 }

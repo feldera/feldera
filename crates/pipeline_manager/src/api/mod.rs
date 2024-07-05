@@ -276,16 +276,14 @@ pub struct ApiDoc;
 
 // `static_files` magic.
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
-mod sveltekit {
-    include!(concat!(env!("OUT_DIR"), "/generated_sveltekit.rs"));
+
+mod web_v2 {
+    include!(concat!(env!("OUT_DIR"), "/v2/generated.rs"));
 }
 
 // The scope for all unauthenticated API endpoints
 fn public_scope() -> Scope {
     let openapi = ApiDoc::openapi();
-    // Creates a dictionary of static files indexed by file name.
-    let generated = generate();
-    let generatedSvelteKit = sveltekit::generate();
 
     // Leave this as an empty prefix to load the UI by default. When constructing an
     // app, always attach other scopes without empty prefixes before this one,
@@ -294,8 +292,8 @@ fn public_scope() -> Scope {
         .service(config_api::get_authentication_config)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(healthz)
-        .service(ResourceFiles::new("/", generated))
-        .service(ResourceFiles::new("/svelte", generatedSvelteKit))
+        .service(ResourceFiles::new("/new", web_v2::generate()))
+        .service(ResourceFiles::new("/", generate()))
 }
 
 // The scope for all authenticated API endpoints
