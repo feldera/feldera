@@ -253,9 +253,15 @@ const programsErrors = asyncDerived(
   referencePipelines,
   (ps) => {
     console.log('deriving errs', ps)
-    return Promise.all<SystemError>(ps.flatMap(extractProgramError)).then(f => (console.log('f', f), f), (e) => {console.log('caught', e); return []})
+    return Promise.all<SystemError>(ps.flatMap(extractProgramError)).then(
+      (f) => (console.log('f', f), f),
+      (e) => {
+        console.log('caught', e)
+        return []
+      }
+    )
   },
-  { reloadable: true, 'initial': [] }
+  { reloadable: true, initial: [] }
 )
 const pipelineXgressErrors = asyncDerived(referencePipelines, (ps) =>
   Promise.all(ps.map((p) => getPipelineStats(p.name))).then((ss) => {
