@@ -291,6 +291,7 @@ def main():
     parser.add_argument('--output', action=argparse.BooleanOptionalAction, help='whether to write query output back to Kafka (default: --no-output)')
     parser.add_argument('--merge', action=argparse.BooleanOptionalAction, help='whether to merge all the queries into one program (default: --no-merge)')
     parser.add_argument('--storage', action=argparse.BooleanOptionalAction, help='whether to enable storage (default: --no-storage)')
+    parser.add_argument("--poller-threads", required=False, type=int, help="Override number of poller threads to use")
     parser.add_argument('--min-storage-bytes', type=int, help='If storage is enabled, the minimum number of bytes to write a batch to storage.')
     parser.add_argument('--query', action='append', help='queries to run (by default, all queries), specify one or more of: ' + ','.join(sort_queries(QUERY_SQL.keys())))
     parser.add_argument('--input-topic-suffix', help='suffix to apply to input topic names (by default, "")')
@@ -313,6 +314,9 @@ def main():
     queries = sort_queries(parse_queries(parser.parse_args().query))
     cores = int(parser.parse_args().cores)
     storage = parser.parse_args().storage
+    poller_threads = parser.parse_args().poller_threads
+    if poller_threads is not None:
+        kafka_options["poller_threads"] = poller_threads
     min_storage_bytes = parser.parse_args().min_storage_bytes
     if min_storage_bytes is not None:
         min_storage_bytes = int(min_storage_bytes)
