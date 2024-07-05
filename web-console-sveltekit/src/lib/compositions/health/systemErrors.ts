@@ -252,11 +252,9 @@ const pipelinesErrors = asyncDerived(referencePipelines, (ps) =>
 const programsErrors = asyncDerived(
   referencePipelines,
   (ps) => {
-    console.log('deriving errs', ps)
     return Promise.all<SystemError>(ps.flatMap(extractProgramError)).then(
-      (f) => (console.log('f', f), f),
+      errors => errors,
       (e) => {
-        console.log('caught', e)
         return []
       }
     )

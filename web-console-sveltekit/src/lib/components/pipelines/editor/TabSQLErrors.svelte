@@ -5,7 +5,6 @@
   import Tooltip from 'sv-tooltip'
 
   const sqlErrors = useSqlErrors()
-  console.log('tab sqlErrors', $sqlErrors)
   const programsErrors = derived(sqlErrors, (errors) =>
     groupBy(errors, (error) => error.cause.entityName)
   )
@@ -20,15 +19,13 @@
       <Tooltip color="" top>
         <a
           href={error.cause.source}
-          class="block overflow-hidden text-ellipsis whitespace-nowrap pl-8"
-        >
+          class="block overflow-hidden text-ellipsis whitespace-nowrap pl-8">
           <span class="bx bx-x-circle text-error-500"></span>
           {error.cause.body.message}
         </a>
         <div
           slot="custom-tip"
-          class=" max-h-64 max-w-full overflow-y-auto whitespace-break-spaces rounded bg-white p-2 shadow-md text-surface-950-50 dark:bg-black"
-        >
+          class=" text-surface-950-50 max-h-64 max-w-full overflow-y-auto whitespace-break-spaces rounded bg-white p-2 shadow-md dark:bg-black">
           {error.cause.body.message}
         </div>
       </Tooltip>
