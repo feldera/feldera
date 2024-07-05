@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
+use log::error;
 use tokio::sync::{
     mpsc,
     watch::{channel, Receiver, Sender},
 };
-use tracing::error;
 
 use crate::{InputConsumer, InputReader, PipelineState, TransportInputEndpoint};
 use dbsp::circuit::tokio::TOKIO;

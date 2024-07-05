@@ -9,6 +9,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
+use log::debug;
 use num_traits::FromPrimitive;
 use pipeline_types::{secret_ref::MaybeSecretRef, transport::kafka::KafkaInputConfig};
 use rdkafka::config::RDKafkaLogLevel;
@@ -31,7 +32,6 @@ use std::{
     thread::spawn,
     time::{Duration, Instant},
 };
-use tracing::debug;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 

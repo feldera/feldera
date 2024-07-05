@@ -848,7 +848,7 @@ impl RuntimeHandle {
         match st {
             StorageLocation::Temporary(path) => {
                 if std::thread::panicking() || did_runtime_panic {
-                    tracing::info!("Preserved runtime storage at: {:?} due to panic", path);
+                    log::info!("Preserved runtime storage at: {:?} due to panic", path);
                 } else {
                     let _ = std::fs::remove_dir_all(path);
                 }

@@ -3,12 +3,12 @@
 //! Makes sure we don't accidentally run multiple instances of the program
 //! using the same data directory.
 
+use log::{debug, warn};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Error as IoError, ErrorKind, Read, Write};
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use sysinfo::{Pid, System};
-use tracing::{debug, warn};
 
 use crate::storage::backend::StorageError;
 
@@ -110,12 +110,12 @@ impl LockedDirectory {
                     // The pidfile is ours, just leave it as is.
                 } else {
                     // The process doesn't exist, so we can safely overwrite the pidfile.
-                    tracing::debug!("Found stale pidfile: {}", pid_file.display());
+                    log::debug!("Found stale pidfile: {}", pid_file.display());
                 }
             } else {
                 // If the pidfile is corrupt, we won't take ownership of the storage dir until
                 // the user fixes it.
-                tracing::error!(
+                log::error!(
                     "Invalid pidfile contents: '{}' in {}, pipeline refused to take ownership of storage dir.",
                     contents,
                     pid_file.display(),

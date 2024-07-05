@@ -44,7 +44,7 @@ aws-types = "1.1.7"
 actix = "0.13.1"
 actix-web = { version = "4.4.0", default-features = false, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
 mime = "0.3.16"
-tracing = { version = "0.1.40" }
+log = "0.4.20"
 # Once chrono is released with `849932` chrono version needs to be updated in size-of crate:
 size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db", features = ["time-std", "ordered-float"], optional = true }
 futures = { version = "0.3.28" }

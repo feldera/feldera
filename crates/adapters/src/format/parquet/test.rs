@@ -173,6 +173,6 @@ fn debug_parquet_buffer(buffer: Vec<u8>) {
         .expect("Row iterator creation should succeed");
     for maybe_record in row_iter {
         let record = maybe_record.expect("Record should be read successfully");
-        tracing::info!("record = {:?}", record.to_string());
+        log::info!("record = {:?}", record.to_string());
     }
 }
