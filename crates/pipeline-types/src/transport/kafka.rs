@@ -47,6 +47,14 @@ pub struct KafkaInputConfig {
 
     /// If specified, this service is used to provide defaults for the Kafka options.
     pub kafka_service: Option<String>,
+
+    /// Set to 1 or more to fix the number of threads used to poll
+    /// `rdkafka`. Multiple threads can increase performance with small Kafka
+    /// messages; for large messages, one thread is enough. In either case, too
+    /// many threads can harm performance. If unset, the default is 3, which
+    /// helps with small messages but will not harm performance with large
+    /// messagee
+    pub poller_threads: Option<usize>,
 }
 
 /// Fault tolerance configuration for Kafka input connector.
@@ -477,6 +485,7 @@ impl TransportConfigVariant for KafkaInputConfig {
                         group_join_timeout_secs: self.group_join_timeout_secs,
                         fault_tolerance: self.fault_tolerance,
                         kafka_service: None, // The service has been resolved, as such it is set to None
+                        poller_threads: None,
                     })
                 } else {
                     Err(TransportResolveError::UnexpectedServiceType {
