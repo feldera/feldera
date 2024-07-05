@@ -505,6 +505,7 @@ case $runner:$language in
 	    --api-url="$api_url" \
 	    -O bootstrap.servers="${kafka_from_feldera:-${kafka_broker}}" \
 	    --cores $cores \
+	    --poller-threads 10 \
 	    --input-topic-suffix="-$partitions-$events" \
 	    --csv results.csv \
 	    --query $(if test $query = all; then echo all; else echo q$query; fi)
