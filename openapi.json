@@ -874,6 +874,8 @@
                   },
                   "storage": false,
                   "storage_config": null,
+                  "tracing": true,
+                  "tracing_endpoint_jaeger": "127.0.0.1:6831",
                   "workers": 8
                 }
               }
@@ -4452,6 +4454,14 @@
                 "type": "boolean",
                 "description": "Should persistent storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory data-structures.\nThis is useful if the pipeline is ephemeral and does not need to be recovered\nafter a restart. The pipeline will most likely run faster since it does not\nneed to read from, or write to disk\n\n- If `true`, the pipeline state is stored in the specified location,\nis persisted across restarts, and can be checkpointed and recovered.\nThis feature is currently experimental."
               },
+              "tracing": {
+                "type": "boolean",
+                "description": "Enable pipeline tracing."
+              },
+              "tracing_endpoint_jaeger": {
+                "type": "string",
+                "description": "Jaeger tracing endpoint to send tracing information to."
+              },
               "workers": {
                 "type": "integer",
                 "format": "int32",
@@ -4990,6 +5000,14 @@
           "storage": {
             "type": "boolean",
             "description": "Should persistent storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory data-structures.\nThis is useful if the pipeline is ephemeral and does not need to be recovered\nafter a restart. The pipeline will most likely run faster since it does not\nneed to read from, or write to disk\n\n- If `true`, the pipeline state is stored in the specified location,\nis persisted across restarts, and can be checkpointed and recovered.\nThis feature is currently experimental."
+          },
+          "tracing": {
+            "type": "boolean",
+            "description": "Enable pipeline tracing."
+          },
+          "tracing_endpoint_jaeger": {
+            "type": "string",
+            "description": "Jaeger tracing endpoint to send tracing information to."
           },
           "workers": {
             "type": "integer",

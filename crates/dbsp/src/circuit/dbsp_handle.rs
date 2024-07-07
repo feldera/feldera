@@ -9,7 +9,11 @@ use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
 use hashbrown::HashMap;
 use itertools::Either;
 use metrics::counter;
+use minitrace::collector::SpanContext;
+use minitrace::local::LocalSpan;
+use minitrace::Span;
 pub use pipeline_types::config::{StorageCacheConfig, StorageConfig};
+use std::sync::Arc;
 use std::{
     collections::HashSet,
     error::Error as StdError,
@@ -328,6 +332,7 @@ impl Runtime {
 
         let runtime = Self::run(&config, move || {
             let worker_index = Runtime::worker_index() - worker_ofs;
+            let worker_index_str: &'static str = worker_index.to_string().leak();
 
             // Drop all but one channels.  This makes sure that if one of the worker panics
             // or exits, its channel will become disconnected.
@@ -352,14 +357,13 @@ impl Runtime {
                 }
             };
 
-            // TODO: uncomment this when we have support for background compaction.
-            // let mut moregc = true;
-
             while !Runtime::kill_in_progress() {
                 // Wait for command.
                 match command_receiver.try_recv() {
-                    Ok(Command::Step) => {
-                        //moregc = true;
+                    Ok(Command::Step(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span = LocalSpan::enter_with_local_parent("worker-step")
+                            .with_property(|| ("worker", worker_index_str));
                         let status = circuit.step().map(|_| Response::Unit);
                         // Send response.
                         if status_sender.send(status).is_err() {
@@ -413,12 +417,7 @@ impl Runtime {
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
                     Err(TryRecvError::Empty) => {
-                        // GC
-                        /*if moregc {
-                            moregc = circuit.gc();
-                        } else {*/
                         Runtime::parker().with(|parker| parker.park());
-                        //}
                     }
                     Err(_) => {
                         break;
@@ -471,7 +470,7 @@ impl Runtime {
 
 #[derive(Clone)]
 enum Command {
-    Step,
+    Step(Arc<Span>),
     EnableProfiler,
     DumpProfile,
     RetrieveProfile,
@@ -605,7 +604,12 @@ impl DBSPHandle {
     pub fn step(&mut self) -> Result<(), DBSPError> {
         counter!("feldera.dbsp.step").increment(1);
         self.step_id += 1;
-        self.broadcast_command(Command::Step, |_, _| {})
+        let span = Arc::new(
+            Span::root("step", SpanContext::random())
+                .with_properties(|| [("step", format!("{}", self.step_id))]),
+        );
+        let _guard = span.set_local_parent();
+        self.broadcast_command(Command::Step(span), |_, _| {})
     }
 
     /// Used by the checkpointer to initiate a commit on the circuit.

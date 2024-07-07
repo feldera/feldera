@@ -24,6 +24,7 @@ use crate::{
     Circuit, DBData, DynZWeight, RootCircuit, Stream, ZWeight,
 };
 use dyn_clone::clone_box;
+use minitrace::trace;
 use num::PrimInt;
 use size_of::SizeOf;
 use std::{
@@ -361,6 +362,7 @@ where
     OT: PartitionedRadixTreeReader<TS, Acc, Key = Z::Key, R = O::R> + Clone,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
 {
+    #[trace]
     fn eval<'a>(
         &mut self,
         delta: Cow<'a, Z>,

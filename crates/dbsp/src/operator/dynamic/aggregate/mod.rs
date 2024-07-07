@@ -1,6 +1,7 @@
 //! Aggregation operators.
 
 use dyn_clone::{clone_box, DynClone};
+use minitrace::trace;
 use std::{
     any::TypeId,
     borrow::Cow,
@@ -577,6 +578,7 @@ where
     O: IndexedZSet<Key = Z::Key>,
     Acc: DataTrait + ?Sized,
 {
+    #[trace]
     fn eval(&mut self, i: &Z) -> O {
         let mut builder = O::Builder::with_capacity(&self.factories, (), i.len());
         let mut agg = self.option_output_factory.default_box();
@@ -714,6 +716,7 @@ where
     /// aggregation logic in the `Aggregator` trait.  The second iteration
     /// is only needed inside nested scopes and can in the future be
     /// optimized to terminate early.
+    #[trace]
     fn eval_key(
         &mut self,
         key: &Z::Key,
@@ -841,6 +844,7 @@ where
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
 {
+    #[trace]
     fn eval(&mut self, delta: &Z, input_trace: &IT) -> Box<DynPairs<Z::Key, DynOpt<Out>>> {
         // println!(
         //     "{}: AggregateIncremental::eval @{:?}\ndelta:{delta}",

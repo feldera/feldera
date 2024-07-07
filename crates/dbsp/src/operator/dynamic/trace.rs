@@ -14,6 +14,7 @@ use crate::{
     Error, Timestamp,
 };
 use dyn_clone::clone_box;
+use minitrace::trace;
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
@@ -647,6 +648,7 @@ where
         panic!("UntimedTraceAppend::eval(): cannot accept trace by reference")
     }
 
+    #[trace]
     fn eval_owned_and_ref(&mut self, mut trace: T, batch: &T::Batch) -> T {
         trace.insert(batch.clone());
         trace
@@ -658,6 +660,7 @@ where
         panic!("UntimedTraceAppend::eval_ref_and_owned(): cannot accept trace by reference")
     }
 
+    #[trace]
     fn eval_owned(&mut self, mut trace: T, batch: T::Batch) -> T {
         trace.insert(batch);
         trace
@@ -707,12 +710,14 @@ where
     Clk: WithClock + 'static,
     T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = Clk::Time>,
 {
+    #[trace]
     fn eval(&mut self, _trace: &T, _batch: &B) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
         unimplemented!()
     }
 
+    #[trace]
     fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
         // TODO: extend `trace` type to feed untimed batches directly
         // (adding fixed timestamp on the fly).
@@ -730,6 +735,7 @@ where
         unimplemented!()
     }
 
+    #[trace]
     fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
         trace.insert(copy_batch(
             &batch,
@@ -876,6 +882,7 @@ where
         unimplemented!()
     }
 
+    #[trace]
     fn eval_strict_owned(&mut self, mut i: T) {
         self.time = self.time.advance(0);
 

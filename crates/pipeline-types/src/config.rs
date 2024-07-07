@@ -31,6 +31,16 @@ const fn default_workers() -> u16 {
     1
 }
 
+/// Default endpoint to send tracing data to.
+fn default_tracing_endpoint() -> String {
+    "127.0.0.1:6831".to_string()
+}
+
+/// Default value of `RuntimeConfig::tracing`.
+fn default_tracing() -> bool {
+    true
+}
+
 /// Pipeline configuration specified by the user when creating
 /// a new pipeline instance.
 ///
@@ -137,6 +147,14 @@ pub struct RuntimeConfig {
     /// Enable CPU profiler.
     #[serde(default)]
     pub cpu_profiler: bool,
+
+    /// Enable pipeline tracing.
+    #[serde(default = "default_tracing")]
+    pub tracing: bool,
+
+    /// Jaeger tracing endpoint to send tracing information to.
+    #[serde(default = "default_tracing_endpoint")]
+    pub tracing_endpoint_jaeger: String,
 
     /// Minimal input batch size.
     ///

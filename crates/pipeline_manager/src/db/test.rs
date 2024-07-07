@@ -981,6 +981,8 @@ async fn versioning() {
         workers: 1,
         cpu_profiler: true,
         storage: false,
+        tracing: false,
+        tracing_endpoint_jaeger: "".to_string(),
         min_batch_size_records: 0,
         max_buffering_delay_usecs: 0,
         resources: ResourceConfig::default(),
@@ -1292,6 +1294,8 @@ pub(crate) fn runtime_config() -> impl Strategy<Value = RuntimeConfig> {
         min_batch_size_records: config.2,
         max_buffering_delay_usecs: config.3,
         storage: config.4,
+        tracing: false,
+        tracing_endpoint_jaeger: "".to_string(),
         resources: ResourceConfig {
             cpu_cores_min: config.5,
             cpu_cores_max: config.6,
@@ -1327,6 +1331,8 @@ pub(crate) fn option_runtime_config() -> impl Strategy<Value = Option<RuntimeCon
             min_batch_size_records: config.2,
             max_buffering_delay_usecs: config.3,
             storage: config.4,
+            tracing: false,
+            tracing_endpoint_jaeger: "".to_string(),
             resources: ResourceConfig {
                 cpu_cores_min: config.5,
                 cpu_cores_max: config.6,

@@ -12,6 +12,7 @@ use crate::{
     trace::{BatchFactories, BatchReader, BatchReaderFactories, Cursor, Serializer, Spine},
     Error,
 };
+use minitrace::trace;
 use rkyv::Deserialize;
 use std::{borrow::Cow, cmp::max, fs, marker::PhantomData, path::PathBuf};
 use uuid::Uuid;
@@ -164,6 +165,7 @@ where
     // builder API to construct the output batch.  This requires processing
     // regions in order + extra care to iterate over `batch` and `trace` jointly
     // in region3.
+    #[trace]
     fn eval(
         &mut self,
         trace: Cow<'_, Spine<B>>,

@@ -24,6 +24,7 @@ use crate::{
     utils::Tup2,
     DBData, ZWeight,
 };
+use minitrace::trace;
 use size_of::{Context, SizeOf};
 use std::{
     borrow::Cow,
@@ -750,6 +751,7 @@ where
     I2: IndexedZSetReader<Key = I1::Key>,
     Z: ZSet,
 {
+    #[trace]
     fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
         let mut cursor1 = i1.cursor();
         let mut cursor2 = i2.cursor();
@@ -855,6 +857,7 @@ where
     I2: IndexedZSetReader<Key = I1::Key>,
     Z: ZSet,
 {
+    #[trace]
     fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
         let mut cursor1 = i1.cursor();
         let mut cursor2 = i2.cursor();
@@ -1093,6 +1096,7 @@ where
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
 {
+    #[trace]
     fn eval(&mut self, index: &I, trace: &T) -> Z {
         self.stats.lhs_tuples += index.len();
         self.stats.rhs_tuples = trace.len();
