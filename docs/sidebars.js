@@ -85,7 +85,8 @@ const sidebars = {
                   'tutorials/basics/part3'
               ]
           },
-          'tutorials/rest_api/index'
+          'tutorials/rest_api/index',
+          'tutorials/monitoring/index'
       ]
     },
     {

@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [WebConsole] Drop Data Services functionality (#1945)
 - Pipeline manager metrics endpoint now includes metrics of all
   running pipelines ([#1969](https://github.com/feldera/feldera/pull/1969)).
+- Added ability to trace pipeline steps with Jaegertracing
+  ([#1999](https://github.com/feldera/feldera/pull/1999))
 
 ## [0.19.0] - 2024-06-25
 
