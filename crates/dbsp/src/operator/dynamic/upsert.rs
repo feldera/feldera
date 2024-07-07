@@ -11,6 +11,7 @@ use crate::{
     trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
     Circuit, DBData, Stream, Timestamp, ZWeight,
 };
+use minitrace::trace;
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
 use super::trace::{BoundsId, FileKeySpine};
@@ -302,6 +303,7 @@ where
     T: ZTrace,
     B: IndexedZSet<Key = T::Key, Val = T::Val>,
 {
+    #[trace]
     fn eval(&mut self, trace: &T, updates: &Box<DynPairs<T::Key, DynOpt<T::Val>>>) -> B {
         // Inputs must be sorted by key
         debug_assert!(updates.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst())));

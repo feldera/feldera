@@ -12,6 +12,7 @@ use crate::{
         Builder, Cursor, OrdIndexedWSet, OrdIndexedWSetFactories, OrdWSet, OrdWSetFactories,
     },
 };
+use minitrace::trace;
 use std::{borrow::Cow, marker::PhantomData};
 
 /// See [`crate::operator::FilterMap`].
@@ -409,6 +410,7 @@ impl<B> UnaryOperator<B, B> for FilterZSet<B>
 where
     B: Batch<Time = ()>,
 {
+    #[trace]
     fn eval(&mut self, input: &B) -> B {
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
@@ -437,7 +439,7 @@ where
     }
 
     // Enable this optimization when we have `retain`.
-    /*fn eval_owned(&mut self, input: CI) -> CO {
+    /*#[trace] fn eval_owned(&mut self, input: CI) -> CO {
         // Bootleg specialization, we can do filtering in-place when the input and
         // output types are `OrdZSet`. I'd prefer to do this with "real" specialization
         // of some kind, but this'll work for now
@@ -508,6 +510,7 @@ impl<B> UnaryOperator<B, B> for FilterIndexedZSet<B>
 where
     B: Batch<Time = ()>,
 {
+    #[trace]
     fn eval(&mut self, input: &B) -> B {
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
@@ -535,7 +538,7 @@ where
         builder.done()
     }
 
-    /*fn eval_owned(&mut self, input: CI) -> CO {
+    /*#[trace] fn eval_owned(&mut self, input: CI) -> CO {
         let mut builder = CO::Builder::with_capacity((), input.len());
 
         let mut consumer = input.consumer();
@@ -605,6 +608,7 @@ where
     CI: BatchReader<Time = ()>,
     CO: Batch<Time = (), R = CI::R>,
 {
+    #[trace]
     fn eval(&mut self, i: &CI) -> CO {
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
@@ -674,6 +678,7 @@ where
     CI: BatchReader<Time = ()>,
     CO: Batch<Time = (), R = CI::R>,
 {
+    #[trace]
     fn eval(&mut self, i: &CI) -> CO {
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
@@ -735,6 +740,7 @@ where
     CI: BatchReader<Time = ()>,
     CO: Batch<Time = (), R = CI::R>,
 {
+    #[trace]
     fn eval(&mut self, i: &CI) -> CO {
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
@@ -817,6 +823,7 @@ where
     CI: BatchReader<Time = ()>,
     CO: Batch<Time = (), R = CI::R>,
 {
+    #[trace]
     fn eval(&mut self, i: &CI) -> CO {
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());

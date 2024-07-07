@@ -24,6 +24,7 @@ mod topk;
 mod test;
 
 use dyn_clone::clone_box;
+use minitrace::trace;
 
 use crate::dynamic::{ClonableTrait, Erase};
 pub use lag::{LagCustomOrdFactories, LagFactories};
@@ -387,6 +388,7 @@ where
     OB: IndexedZSet<Key = B::Key>,
     OT: ZTrace<Key = B::Key, Val = OB::Val, Time = ()> + Clone,
 {
+    #[trace]
     fn eval<'a>(
         &mut self,
         delta: Cow<'a, B>,

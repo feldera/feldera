@@ -30,6 +30,7 @@ use crate::{
     Circuit, DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
 };
 use dyn_clone::{clone_box, DynClone};
+use minitrace::trace;
 use num::Bounded;
 use std::{
     borrow::Cow,
@@ -758,6 +759,7 @@ where
     OT: PartitionedBatchReader<DynDataTyped<TS>, DynOpt<Out>, Key = B::Key, R = B::R> + Clone,
     O: IndexedZSet<Key = B::Key, Val = DynPair<DynDataTyped<TS>, DynOpt<Out>>>,
 {
+    #[trace]
     fn eval<'a>(
         &mut self,
         input_delta: Cow<'a, B>,

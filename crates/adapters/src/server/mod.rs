@@ -23,6 +23,7 @@ use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
 use log::{debug, error, info, warn};
+use minitrace::collector::Config;
 use pipeline_types::{format::json::JsonFlavor, transport::http::EgressMode};
 use pipeline_types::{query::OutputQuery, transport::http::SERVER_PORT_FILE};
 use serde::Deserialize;
@@ -381,6 +382,18 @@ where
             eprintln!("Failed to initialize logging: {e}.")
         });
     let _ = loginit_sender.send(());
+
+    if config.global.tracing {
+        let reporter = minitrace_jaeger::JaegerReporter::new(
+            config.global.tracing_endpoint_jaeger.parse().unwrap(),
+            config
+                .name
+                .clone()
+                .unwrap_or("unknown pipeline".to_string()),
+        )
+        .unwrap();
+        minitrace::set_reporter(reporter, Config::default());
+    }
 
     *state.metadata.write().unwrap() = match &args.metadata_file {
         None => String::new(),

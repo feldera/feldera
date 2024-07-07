@@ -10,6 +10,7 @@ use crate::{
     utils::Tup2,
     Circuit, DBData, Stream, ZWeight,
 };
+use minitrace::trace;
 use std::{
     borrow::Cow,
     cmp::{min, Ordering},
@@ -119,6 +120,7 @@ where
     Keys: IndexedZSetReader<Key = Pairs::Key, Val = DynUnit>,
     Out: ZSet<Key = DynPair<Pairs::Key, Pairs::Val>>,
 {
+    #[trace]
     fn eval(&mut self, pairs: &Pairs, keys: &Keys) -> Out {
         let mut pair_cursor = pairs.cursor();
         let mut key_cursor = keys.cursor();
@@ -162,7 +164,7 @@ where
         builder.done()
     }
 
-    // fn eval_owned(&mut self, pairs: Pairs, keys: Keys) -> Out {
+    // #[trace] fn eval_owned(&mut self, pairs: Pairs, keys: Keys) -> Out {
     //     // Choose capacity heuristically.
     //     let mut builder = Out::Builder::with_capacity((), min(pairs.len(),
     // keys.len()));
@@ -208,7 +210,7 @@ where
     //     builder.done()
     // }
 
-    // fn eval_owned_and_ref(&mut self, pairs: Pairs, keys: &Keys) -> Out {
+    // #[trace] fn eval_owned_and_ref(&mut self, pairs: Pairs, keys: &Keys) -> Out {
     //     // Choose capacity heuristically.
     //     let mut builder = Out::Builder::with_capacity((), min(pairs.len(),
     // keys.len()));

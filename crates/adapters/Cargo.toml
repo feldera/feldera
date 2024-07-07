@@ -83,6 +83,8 @@ metrics = "0.23"
 metrics-util = "0.17"
 metrics-exporter-prometheus = "0.15.1"
 ordered-float = { version = "4.2.0", features = ["serde"] }
+minitrace = { version = "0.6", features = ["enable"] }
+minitrace-jaeger = { version = "0.6" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemalloc_pprof = "0.1.0"

@@ -4517,7 +4517,6 @@ impl CircuitHandle {
     pub fn step(&self) -> Result<(), SchedulerError> {
         // TODO: Add a runtime check to prevent re-entering this method from an
         // operator.
-
         self.executor.run(&self.circuit)
     }
 

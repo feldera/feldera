@@ -9,6 +9,7 @@ use crate::{
     dynamic::{ClonableTrait, DataTrait, DynPair, DynUnit},
     trace::{Batch, BatchFactories, BatchReader, Builder, Cursor, OrdIndexedWSet},
 };
+use minitrace::trace;
 use std::{borrow::Cow, marker::PhantomData, ops::DerefMut};
 
 circuit_cache_key!(IndexId<C, D>(GlobalNodeId => Stream<C, D>));
@@ -133,6 +134,7 @@ where
     CO: Batch<Time = ()>,
     CI: BatchReader<Key = DynPair<CO::Key, CO::Val>, Val = DynUnit, Time = (), R = CO::R>,
 {
+    #[trace]
     fn eval(&mut self, input: &CI) -> CO {
         let mut builder = <CO as Batch>::Builder::with_capacity(&self.factories, (), input.len());
 
@@ -152,7 +154,7 @@ where
     }
 
     // TODO: implement consumers
-    /*fn eval_owned(&mut self, input: CI) -> CO {
+    /*#[trace] fn eval_owned(&mut self, input: CI) -> CO {
         let mut builder = <CO as Batch>::Builder::with_capacity((), input.len());
 
         let mut consumer = input.consumer();
@@ -224,6 +226,7 @@ where
     CI: BatchReader<Val = DynUnit, Time = (), R = CO::R>,
     F: Fn(&CI::Key, &mut DynPair<CO::Key, CO::Val>) + 'static,
 {
+    #[trace]
     fn eval(&mut self, i: &CI) -> CO {
         let mut tuples = self.factories.weighted_items_factory().default_box();
         tuples.reserve(i.len());

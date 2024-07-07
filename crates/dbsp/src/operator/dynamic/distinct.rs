@@ -15,6 +15,7 @@ use crate::{
     trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
     DBData, Timestamp, ZWeight,
 };
+use minitrace::trace;
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
@@ -221,10 +222,12 @@ impl<Z> UnaryOperator<Z, Z> for Distinct<Z>
 where
     Z: IndexedZSet,
 {
+    #[trace]
     fn eval(&mut self, input: &Z) -> Z {
         input.distinct()
     }
 
+    #[trace]
     fn eval_owned(&mut self, input: Z) -> Z {
         input.distinct_owned()
     }
@@ -270,6 +273,7 @@ where
     Z: IndexedZSet,
     I: IndexedZSetReader<Key = Z::Key, Val = Z::Val>,
 {
+    #[trace]
     fn eval(&mut self, delta: &Z, delayed_integral: &I) -> Z {
         let mut builder = Z::Builder::with_capacity(&self.input_factories, (), delta.len());
         let mut delta_cursor = delta.cursor();
@@ -645,6 +649,7 @@ where
 {
     // TODO: add eval_owned, so we can use keys and values from `delta` without
     // cloning.
+    #[trace]
     fn eval(&mut self, delta: &Z, trace: &T) -> Z {
         let time = self.clock.time();
 
