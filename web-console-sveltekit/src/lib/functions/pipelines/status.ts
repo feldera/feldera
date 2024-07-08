@@ -3,7 +3,7 @@ import { P, match } from 'ts-pattern'
 
 export const getStatusLabel = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', () => 'Shutdown')
+    .with('Shutdown', () => 'Ready To Run')
     .with('Starting up', () => 'Starting up')
     .with('Initializing', () => 'Initializing')
     .with('Paused', () => 'Paused')

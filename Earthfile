@@ -36,8 +36,8 @@ install-deps:
     RUN npm install --global openapi-typescript-codegen
     RUN apt install unzip -y
     ## Install Bun.js
-    RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=$HOME/.bun bash
-    ENV PATH=$HOME/.bun/bin:$PATH
+    RUN curl -fsSL https://bun.sh/install | bash
+    ENV PATH="$HOME/.bun/bin:$PATH"
 
     RUN apt install python3-requests -y
     RUN arch=`dpkg --print-architecture`; \
@@ -131,7 +131,7 @@ build-webui-deps:
 
     COPY web-console-sveltekit/package.json ./web-console-sveltekit/
     COPY web-console-sveltekit/bun.lockb ./web-console-sveltekit/
-    RUN cd web-console-sveltekit && bun install
+    RUN cd web-console-sveltekit && $HOME/.bun/bin/bun install
 
 build-webui:
     FROM +build-webui-deps
@@ -163,8 +163,8 @@ build-webui:
     COPY web-console-sveltekit/tsconfig.json ./web-console-sveltekit/
     COPY web-console-sveltekit/vite.config.ts ./web-console-sveltekit/
 
-    # RUN cd web-console-sveltekit && bun run check
-    RUN cd web-console-sveltekit && bun run build
+    # RUN cd web-console-sveltekit && $HOME/.bun/bin/bun run check
+    RUN cd web-console-sveltekit && $HOME/.bun/bin/bun run build
     SAVE ARTIFACT ./web-console-sveltekit/build
 
 build-dbsp:
