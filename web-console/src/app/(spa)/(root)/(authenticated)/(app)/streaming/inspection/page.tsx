@@ -12,7 +12,7 @@ import { useSearchParams } from 'next/navigation'
 import { useEffect } from 'react'
 import { nonNull } from 'src/lib/functions/common/function'
 
-import { Alert, AlertTitle, Autocomplete, Box, FormControl, Link, MenuItem, TextField } from '@mui/material'
+import { Alert, AlertTitle, Autocomplete, Box, FormControl, Link, MenuItem, TextField, Tooltip } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { useQuery } from '@tanstack/react-query'
 import { useHashPart } from 'src/lib/compositions/useHashPart'
@@ -26,7 +26,7 @@ const TablesBreadcrumb = (props: {
 }) => {
   const [tab] = useHashPart()
   const options = props.tables
-    .map(relation => ({ type: 'Tables', name: getCaseIndependentName(relation), relation }))
+    .map(relation => ({ type: 'Tables' as 'Tables' | 'Views', name: getCaseIndependentName(relation), relation }))
     .concat(props.views.map(relation => ({ type: 'Views', name: getCaseIndependentName(relation), relation })))
   return (
     <Box sx={{ mb: '-1rem' }}>
@@ -47,19 +47,36 @@ const TablesBreadcrumb = (props: {
             type: props.relationType === 'table' ? 'Tables' : 'Views',
             relation: undefined!
           }}
-          renderOption={(_props, item) => (
-            <MenuItem
-              key={item.name}
-              value={item.name}
-              {...{
-                component: Link,
-                href: `?pipeline_name=${props.pipeline.descriptor.name}&relation=${item.name}${item.relation.materialized ? '#' + tab : '#insert'}`
-              }}
-              data-testid={`button-option-relation-${item.name}`}
-            >
-              {item.name}
-            </MenuItem>
-          )}
+          renderOption={(_props, item) => {
+            const baseUrl = `?pipeline_name=${props.pipeline.descriptor.name}&relation=${item.name}`
+            const href =
+              item.type === 'Tables'
+                ? baseUrl + (item.relation.materialized ? '#' + tab : '#insert')
+                : item.relation.materialized
+                  ? baseUrl + '#inspect'
+                  : undefined
+            const disabled = !href?.length
+            return (
+              <MenuItem
+                key={item.name}
+                value={item.name}
+                disableRipple={disabled}
+                sx={disabled ? { cursor: 'default', color: 'text.disabled' } : {}}
+                {...{
+                  component: Link,
+                  href
+                }}
+                data-testid={`button-option-relation-${item.name}`}
+              >
+                <Tooltip
+                  title={disabled ? `Use 'CREATE MATERIALIZED VIEW' syntax to enable browsing the view` : undefined}
+                  slotProps={{ tooltip: { sx: { fontSize: 14 } } }}
+                >
+                  <Box sx={{ width: '100%' }}>{item.name}</Box>
+                </Tooltip>
+              </MenuItem>
+            )
+          }}
         />
       </FormControl>
     </Box>
