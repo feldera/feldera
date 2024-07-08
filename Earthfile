@@ -564,6 +564,27 @@ benchmark:
     SAVE ARTIFACT crates/dbsp/galen_results.csv AS LOCAL .
     #SAVE ARTIFACT crates/dbsp/ldbc_results.csv AS LOCAL .
 
+flink-benchmark:
+    FROM +rust-sources
+
+    # Install docker compose - earthly can do this automatically, but it installs an older version
+    ENV DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+    RUN mkdir -p $DOCKER_CONFIG/cli-plugins
+    RUN curl -SL https://github.com/docker/compose/releases/download/v2.24.0-birthday.10/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+    RUN chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+    RUN mkdir -p benchmark/flink
+    COPY benchmark/flink/* benchmark/flink
+    COPY benchmark/run-nexmark.sh benchmark
+    RUN apt-get install maven
+    RUN benchmark/flink/setup-flink.sh
+
+    RUN echo "when,runner,mode,language,name,num_cores,num_events,elapsed" >> flink_results.csv
+    WITH DOCKER 
+        RUN docker compose -f benchmark/flink/docker-compose.yml -p nexmark up --build --force-recreate --renew-anon-volumes -d && \
+            docker exec -i nexmark-jobmanager-1 run.sh 2>&1 | ./benchmark/run-nexmark.sh --runner flink --parse >> flink_results.csv
+    END
+    SAVE ARTIFACT flink_results.csv AS LOCAL .
+
 all-tests:
     BUILD +formatting-check
     BUILD +machete
