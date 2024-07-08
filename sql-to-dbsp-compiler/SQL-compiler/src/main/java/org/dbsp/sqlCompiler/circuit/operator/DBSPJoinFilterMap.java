@@ -11,31 +11,44 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** We use join_flatmap to implement a join followed by a filter.
- * The function returns None for dropping a value, and Some(result)
- * for keeping a result. */
-public final class DBSPJoinFlatmapOperator extends DBSPBinaryOperator {
-    public DBSPJoinFlatmapOperator(
+/** This class represents a join followed by a filter followed by a map.
+ * The operator is eventually lowered to a join_flatmap,
+ * where the synthesized function
+ * returns None when filter(function) is false, and Some(map(function))
+ * otherwise. */
+public final class DBSPJoinFilterMap extends DBSPBinaryOperator {
+    // If the following is null, the function represents the combined function/filter
+    // and the function returns Option.
+    @Nullable
+    public final DBSPExpression filter;
+    @Nullable
+    public final DBSPExpression map;
+
+    public DBSPJoinFilterMap(
             CalciteObject node, DBSPTypeZSet outputType,
-            DBSPExpression function, boolean isMultiset,
+            DBSPExpression function, @Nullable DBSPExpression filter, @Nullable DBSPExpression map,
+            boolean isMultiset,
             DBSPOperator left, DBSPOperator right) {
         super(node, "join_flatmap", function, outputType, isMultiset, left, right);
+        this.filter = filter;
+        this.map = map;
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPJoinFlatmapOperator(
+        return new DBSPJoinFilterMap(
                 this.getNode(), outputType.to(DBSPTypeZSet.class),
-                Objects.requireNonNull(expression),
+                Objects.requireNonNull(expression), this.filter, this.map,
                 this.isMultiset, this.left(), this.right());
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPJoinFlatmapOperator(
+            return new DBSPJoinFilterMap(
                     this.getNode(), this.getOutputZSetType(),
-                    this.getFunction(), this.isMultiset, newInputs.get(0), newInputs.get(1));
+                    this.getFunction(), this.filter, this.map,
+                    this.isMultiset, newInputs.get(0), newInputs.get(1));
         return this;
     }
 

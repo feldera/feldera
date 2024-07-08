@@ -5,13 +5,14 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMap;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -32,7 +33,7 @@ import java.util.function.Function;
  * structure.  The function is analyzed using the 'Projection' inner visitor.
  * - Merge Projection operations into the previous operation if possible.
  *   Done for joins, constants, flatmaps, and some maps.
- * - Swap projection with operations such as Distinct, Integral, Differential, Sum, etc.
+ * - Swap projection with operations such as Distinct, Integral, Differential, etc.
  */
 public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
     /** If this function returns 'true' the operator can be optimized. */
@@ -44,9 +45,38 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPMapIndexOperator operator) {
+        DBSPOperator source = this.mapped(operator.input());
+        if (source.is(DBSPMapOperator.class)) {
+            // mapindex(map) = mapindex
+            DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
+            DBSPClosureExpression newFunction = operator.getFunction().to(DBSPClosureExpression.class)
+                    .applyAfter(this.errorReporter, expression);
+            DBSPOperator result = new DBSPMapIndexOperator(
+                    operator.getNode(), newFunction, operator.getOutputIndexedZSetType(), source.inputs.get(0));
+            this.map(operator, result);
+            return;
+        }
+        super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPMapOperator operator) {
         DBSPOperator source = this.mapped(operator.input());
-        if ((source.is(DBSPStreamJoinOperator.class) || source.is(DBSPJoinOperator.class)) &&
+        if (source.is(DBSPJoinFilterMap.class)) {
+            // map(joinfilter) = joinfilter
+            DBSPJoinFilterMap jfm = source.to(DBSPJoinFilterMap.class);
+            DBSPExpression newMap = operator.getFunction();
+            if (jfm.map != null) {
+                newMap = operator.getFunction().to(DBSPClosureExpression.class)
+                        .applyAfter(this.errorReporter, jfm.map.to(DBSPClosureExpression.class));
+            }
+            DBSPOperator result = new DBSPJoinFilterMap(
+                    jfm.getNode(), operator.getOutputZSetType(), jfm.getFunction(),
+                    jfm.filter, newMap, operator.isMultiset, jfm.left(), jfm.right());
+            this.map(operator, result);
+            return;
+        } else if ((source.is(DBSPStreamJoinOperator.class) || source.is(DBSPJoinOperator.class)) &&
                 // We have to look up the original operator input, not source
                 this.canOptimize.apply(operator.input())) {
             DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);

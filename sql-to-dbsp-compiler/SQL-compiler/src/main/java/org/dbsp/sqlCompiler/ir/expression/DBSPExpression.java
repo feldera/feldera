@@ -23,8 +23,11 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -153,6 +156,14 @@ public abstract class DBSPExpression
         if (expression == null)
             return null;
         return expression.deepCopy();
+    }
+
+    /** Attempt to simplify the current expression */
+    public DBSPExpression reduce(IErrorReporter reporter) {
+        BetaReduction beta = new BetaReduction(reporter);
+        DBSPExpression reduced = beta.apply(this).to(DBSPExpression.class);
+        Simplify simplify = new Simplify(reporter);
+        return simplify.apply(reduced).to(DBSPExpression.class);
     }
 
     /** Check expressions for equivalence in a specified context.

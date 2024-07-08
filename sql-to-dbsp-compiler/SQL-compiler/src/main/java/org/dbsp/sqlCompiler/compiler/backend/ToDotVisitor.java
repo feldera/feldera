@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOutputOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMap;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
@@ -177,6 +178,11 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             if (expression.is(DBSPFlatmap.class)) {
                 expression = LowerCircuitVisitor.rewriteFlatmap(expression.to(DBSPFlatmap.class));
             }
+        }
+        if (node.is(DBSPJoinFilterMap.class)) {
+            expression = LowerCircuitVisitor.lowerJoinFilterMapFunctions(
+                    this.errorReporter,
+                    node.to(DBSPJoinFilterMap.class));
         }
         String result = ToRustInnerVisitor.toRustString(
                 this.errorReporter, expression, CompilerOptions.getDefault(), true);

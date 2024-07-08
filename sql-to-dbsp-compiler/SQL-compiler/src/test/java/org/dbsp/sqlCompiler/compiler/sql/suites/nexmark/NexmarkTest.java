@@ -27,6 +27,7 @@ import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -556,6 +557,7 @@ SELECT
         CompilerOptions options = new CompilerOptions();
         options.languageOptions.lexicalRules = Lex.ORACLE;
         options.languageOptions.throwOnError = true;
+        options.languageOptions.incrementalize = true;
         options.languageOptions.generateInputForEveryTable = false;
         options.ioOptions.emitHandles = true;
         return new DBSPCompiler(options);
@@ -566,7 +568,14 @@ SELECT
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
         compiler.compileStatements(queries[query]);
+        final boolean debug = false;
+        Class<?> module = DBSPCompiler.class;
+        int previous;
+        if (debug)
+            previous = Logger.INSTANCE.setLoggingLevel(module, 4);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        if (debug)
+            Logger.INSTANCE.setLoggingLevel(module, previous);
         for (int i = 0; i < scriptsAndTables.length; i += 2)
             ccs.step(scriptsAndTables[i], scriptsAndTables[i + 1]);
         this.addRustTestCase("q" + query, ccs);
@@ -710,7 +719,7 @@ INSERT INTO Bid VALUES(4, 1, 60, 'my-channel', 'https://example.com', '2020-01-0
     }
 
     @Test @Ignore("The results are wrong, must investigate")
-    public void testQ7() {
+    public void q7test() {
         this.createTest(7,
         // The rust code has transposed columns 'price' and 'bidder' in the output
         """
@@ -729,7 +738,7 @@ INSERT INTO bid VALUES(1, 1, 1000000, 'my-channel', 'https://example.com', '2020
     }
 
     @Test
-    public void testQ8() {
+    public void q8test() {
         // Persons 2 and 3 were both added during the 10-20 interval and created auctions in
         // that same interval. Person 1 was added in the previous interval (0-10) though their
         // auction is in the correct interval. Person 4 was added in the interval, but their auction is
@@ -785,14 +794,14 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
     }
 
     @Test
-    public void testQ9() {
+    public void q9test() {
         this.createTest(9, "", """
  id | item | description | initialBid | reserve | date_time | expires | seller | category | extra | auction | bidder | price | bid_datetime | bid_extra | weight
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------""");
     }
 
     @Test
-    public void testQ10() {
+    public void q10test() {
         this.createTest(10, "",
                 """
  auction | bidder | price | date_time | extra | date | time | weight
@@ -800,7 +809,7 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
     }
 
     @Test
-    public void testQ17() {
+    public void q17test() {
         this.createTest(17, "",
                 """
  auction | date | total_bids | rank1_bids | rank2_bids | rank3_bids | min_price | max_price | avg_price | sum_price | weight
@@ -808,7 +817,7 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
     }
 
     @Test
-    public void testQ18() {
+    public void q18test() {
         this.createTest(18, "",
                 """
  auction | bidder | price | channel | url | date_time | extra | weight
@@ -816,7 +825,7 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
     }
 
     @Test
-    public void testQ19() {
+    public void q19test() {
         this.createTest(19, "",
                 """
  auction | bidder | price | channel | url | date_time | extra | row_number | weight
@@ -824,7 +833,7 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
     }
 
     @Test
-    public void testQ20() {
+    public void q20test() {
         this.createTest(19, "",
                 """
  auction | bidder | price | channel | url | date_time | extra | itemName | description | initialBid | reserve | ADateTime | expires | seller | category | Aextra | weight

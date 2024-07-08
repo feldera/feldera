@@ -113,8 +113,7 @@ public class CalciteOptimizer implements IWritesLogs {
         @Override public void visit(
                 RelNode node, int ordinal,
                 @org.checkerframework.checker.nullness.qual.Nullable RelNode parent) {
-            if (node instanceof Join) {
-                Join join = (Join)node;
+            if (node instanceof Join join) {
                 ++joinCount;
                 if (join.getJoinType().isOuterJoin())
                     ++outerJoinCount;
@@ -189,21 +188,24 @@ public class CalciteOptimizer implements IWritesLogs {
             }
         });
 
-        this.addStep(new SimpleOptimizerStep(
-                "Move projections",
-                CoreRules.PROJECT_CORRELATE_TRANSPOSE,
-                CoreRules.PROJECT_SET_OP_TRANSPOSE,
-                CoreRules.FILTER_PROJECT_TRANSPOSE
-                // Rule is unsound
-                // CoreRules.PROJECT_JOIN_TRANSPOSE
-        ));
-        this.addStep(new SimpleOptimizerStep(
+        SimpleOptimizerStep merge = new SimpleOptimizerStep(
                 "Merge identical operations",
                 CoreRules.PROJECT_MERGE,
                 CoreRules.MINUS_MERGE,
                 CoreRules.UNION_MERGE,
                 CoreRules.AGGREGATE_MERGE,
-                CoreRules.INTERSECT_MERGE));
+                CoreRules.INTERSECT_MERGE);
+        // this.addStep(merge); -- messes up the shape of uncollect
+        this.addStep(new SimpleOptimizerStep(
+                "Move projections",
+                CoreRules.PROJECT_CORRELATE_TRANSPOSE,
+                CoreRules.PROJECT_WINDOW_TRANSPOSE,
+                CoreRules.PROJECT_SET_OP_TRANSPOSE,
+                CoreRules.FILTER_PROJECT_TRANSPOSE
+                // Rule is unsound
+                // CoreRules.PROJECT_JOIN_TRANSPOSE
+        ));
+        this.addStep(merge);
         this.addStep(new SimpleOptimizerStep("Remove dead code",
                 CoreRules.AGGREGATE_REMOVE,
                 CoreRules.UNION_REMOVE,

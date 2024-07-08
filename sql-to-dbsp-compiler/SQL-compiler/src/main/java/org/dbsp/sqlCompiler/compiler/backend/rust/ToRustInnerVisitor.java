@@ -1274,34 +1274,50 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTypeBaseType type) {
-        type.wrapOption(this.builder, type.getRustString());
+        if (this.compact) {
+            this.builder.append(type.getRustString());
+            if (type.mayBeNull)
+                this.builder.append("?");
+        } else {
+            type.wrapOption(this.builder, type.getRustString());
+        }
         return VisitDecision.STOP;
+    }
+
+    void optionPrefix(DBSPType type) {
+        if (type.mayBeNull && !this.compact)
+            this.builder.append("Option<");
+    }
+
+    void optionSuffix(DBSPType type) {
+        if (type.mayBeNull) {
+            if (this.compact)
+                this.builder.append("?");
+            else
+                this.builder.append(">");
+        }
     }
 
     @Override
     public VisitDecision preorder(DBSPTypeRawTuple type) {
-        if (type.mayBeNull)
-            this.builder.append("Option<");
+        this.optionPrefix(type);
         this.builder.append("(");
         for (DBSPType fType: type.tupFields) {
             fType.accept(this);
             this.builder.append(", ");
         }
         this.builder.append(")");
-        if (type.mayBeNull)
-            this.builder.append(">");
+        this.optionSuffix(type);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTypeRef type) {
-        if (type.mayBeNull)
-            this.builder.append("Option<");
+        this.optionPrefix(type);
         this.builder.append("&")
                 .append(type.mutable ? "mut " : "");
         type.type.accept(this);
-        if (type.mayBeNull)
-            this.builder.append(">");
+        this.optionSuffix(type);
         return VisitDecision.STOP;
     }
 
@@ -1348,18 +1364,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPTypeStruct type) {
         // A *reference* to a struct type is just the type name.
-        if (type.mayBeNull)
-            this.builder.append("Option<");
+        this.optionPrefix(type);
         this.builder.append(type.sanitizedName);
-        if (type.mayBeNull)
-            this.builder.append(">");
+        this.optionSuffix(type);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTypeTuple type) {
-        if (type.mayBeNull)
-            this.builder.append("Option<");
+        this.optionPrefix(type);
         this.builder.append(type.getName());
         if (type.size() > 0) {
             this.builder.append("<");
@@ -1372,15 +1385,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
             this.builder.append(">");
         }
-        if (type.mayBeNull)
-            this.builder.append(">");
+        this.optionSuffix(type);
         return VisitDecision.STOP;
     }
 
     @Override
     public VisitDecision preorder(DBSPTypeUser type) {
-        if (type.mayBeNull)
-            this.builder.append("Option<");
+        this.optionPrefix(type);
         this.builder.append(type.name);
         if (type.typeArgs.length > 0) {
             this.builder.append("<");
@@ -1393,8 +1404,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
             this.builder.append(">");
         }
-        if (type.mayBeNull)
-            this.builder.append(">");
+        this.optionSuffix(type);
         return VisitDecision.STOP;
     }
 

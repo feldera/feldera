@@ -33,11 +33,9 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     public final TopKNumbering numbering;
     /** Limit K used by TopK.  Expected to be a constant */
     public final DBSPExpression limit;
-    /**
-     * Optional closure which produces the output tuple.  The signature is
+    /** Optional closure which produces the output tuple.  The signature is
      * (i64, sorted_tuple) -> output_tuple.  i64 is the rank of the current row.
-     * If this closure is missing it is assumed to produce just the sorted_tuple.
-     */
+     * If this closure is missing it is assumed to produce just the sorted_tuple. */
     @Nullable
     public final DBSPClosureExpression outputProducer;
 

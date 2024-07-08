@@ -69,13 +69,14 @@ public class Logger {
         return this.belowLevel(module.getClassName(), level);
     }
 
-    /**
-     * Debug level is controlled per module and can be changed dynamically.
+    /** Debug level is controlled per module and can be changed dynamically.
      * @param clazz   Class name.
      * @param level   Debugging level.
-     */
-    public void setLoggingLevel(String clazz, int level) {
+     * @return Previous logging level for this module. */
+    public int setLoggingLevel(String clazz, int level) {
+        int previous = this.loggingLevel.getOrDefault(clazz, 0);
         this.loggingLevel.put(clazz, level);
+        return previous;
     }
 
     /**
@@ -89,8 +90,8 @@ public class Logger {
         return this.loggingLevel.getOrDefault(clazz.getSimpleName(), 0);
     }
 
-    public <T> void setLoggingLevel(Class<T> clazz, int level) {
-        this.setLoggingLevel(clazz.getSimpleName(), level);
+    public <T> int setLoggingLevel(Class<T> clazz, int level) {
+        return this.setLoggingLevel(clazz.getSimpleName(), level);
     }
 
     /**
