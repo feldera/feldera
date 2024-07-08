@@ -9,6 +9,7 @@ services:
       # manager command below (e.g., --allowed-origins "http://localhost:xyz").
       # Otherwise, browsers will complain about CORS errors
       - "8080:8080"
+      - "8081:8081"
     stop_grace_period: 0s
     environment:
       - RUST_BACKTRACE=1
