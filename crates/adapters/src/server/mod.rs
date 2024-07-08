@@ -384,8 +384,17 @@ where
     let _ = loginit_sender.send(());
 
     if config.global.tracing {
+        use std::net::{SocketAddr, ToSocketAddrs};
+        let socket_addrs: Vec<SocketAddr> = config
+            .global
+            .tracing_endpoint_jaeger
+            .to_socket_addrs()
+            .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)")
+            .collect();
         let reporter = minitrace_jaeger::JaegerReporter::new(
-            config.global.tracing_endpoint_jaeger.parse().unwrap(),
+            *socket_addrs
+                .first()
+                .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)"),
             config
                 .name
                 .clone()
