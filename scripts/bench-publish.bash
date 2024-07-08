@@ -10,11 +10,6 @@ if [ -v ${CI_MACHINE_TYPE} ]; then
     exit 1
 fi
 
-# Clean-up old results
-if [ "$SMOKE" = "" ]; then
-rm -rf gh-pages
-fi
-
 NEXMARK_CSV_FILE='nexmark_results.csv'
 NEXMARK_DRAM_CSV_FILE='dram_nexmark_results.csv'
 NEXMARK_SQL_CSV_FILE='sql_nexmark_results.csv'
@@ -24,12 +19,7 @@ NEXMARK_SQL_STORAGE_METRICS_CSV_FILE='sql_storage_nexmark_metrics.csv'
 NEXMARK_PERSISTENCE_CSV_FILE='persistence_nexmark_results.csv'
 GALEN_CSV_FILE='galen_results.csv'
 LDBC_CSV_FILE='ldbc_results.csv'
-rm -f nexmark_comment.txt
 
-# Clone repo
-if [ ! -d "gh-pages" ]; then
-    git clone --depth 1 -b main git@github.com:feldera/benchmarks.git gh-pages
-fi
 pip3 install -r gh-pages/requirements.txt
 
 # If you change this, adjust the command also in the append_csv function in utils.py:
