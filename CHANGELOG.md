@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2024-07-09
+
 - [SQL] Added `MATERIALIZED` views
   ([#1959](https://github.com/feldera/feldera/pull/1959))
 - [WebConsole] Drop Data Services functionality (#1945)
