@@ -6,11 +6,10 @@ use colored::Colorize;
 use pipeline_manager::api::ApiDoc;
 use pipeline_manager::compiler::Compiler;
 use pipeline_manager::config::{
-    ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig, ProberConfig,
+    ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig,
 };
 use pipeline_manager::db::ProjectDB;
 use pipeline_manager::local_runner;
-use pipeline_manager::prober::run_prober;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use utoipa::OpenApi;
@@ -28,7 +27,6 @@ async fn main() -> anyhow::Result<()> {
     let cli = ApiServerConfig::augment_args(cli);
     let cli = CompilerConfig::augment_args(cli);
     let cli = LocalRunnerConfig::augment_args(cli);
-    let cli = ProberConfig::augment_args(cli);
     let matches = cli.get_matches();
 
     let mut api_config = ApiServerConfig::from_arg_matches(&matches)
@@ -55,14 +53,10 @@ async fn main() -> anyhow::Result<()> {
     let local_runner_config = LocalRunnerConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
-    let prober_config = ProberConfig::from_arg_matches(&matches)
-        .map_err(|err| err.exit())
-        .unwrap();
 
     let api_config = api_config.canonicalize()?;
     let compiler_config = compiler_config.canonicalize()?;
     let local_runner_config = local_runner_config.canonicalize()?;
-    let prober_config = prober_config.canonicalize()?;
 
     let metrics_handle = pipeline_manager::metrics::init();
     if compiler_config.precompile {
@@ -91,10 +85,6 @@ async fn main() -> anyhow::Result<()> {
     let db_clone = db.clone();
     let _local_runner = tokio::spawn(async move {
         local_runner::run(db_clone, &local_runner_config).await;
-    });
-    let db_clone = db.clone();
-    let _prober = tokio::spawn(async move {
-        run_prober(&prober_config, db_clone).await.unwrap();
     });
     pipeline_manager::metrics::create_endpoint(metrics_handle, db.clone()).await;
     // The api-server blocks forever

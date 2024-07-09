@@ -2,14 +2,11 @@
 /// which represent named external services such as Kafka.
 use super::{ManagerError, ServerState};
 use crate::api::parse_string_param;
-use crate::db::ServiceProbeId;
-use crate::prober::service::{ServiceProbeRequest, ServiceProbeType};
 use crate::{
     api::examples,
     auth::TenantId,
     db::{storage::Storage, DBError, ServiceId},
 };
-use actix_web::web::Query;
 use actix_web::{
     delete, get,
     http::header::{CacheControl, CacheDirective},
@@ -17,7 +14,6 @@ use actix_web::{
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
-use chrono::Utc;
 use log::info;
 use pipeline_types::service::ServiceConfig;
 use serde::{Deserialize, Serialize};
@@ -87,27 +83,6 @@ pub(crate) struct CreateOrReplaceServiceRequest {
 pub(crate) struct CreateOrReplaceServiceResponse {
     /// Unique id assigned to the service.
     service_id: ServiceId,
-}
-
-/// Response to a create service probe request.
-#[derive(Serialize, ToSchema)]
-pub(crate) struct CreateServiceProbeResponse {
-    /// Unique id assigned to the service probe.
-    service_probe_id: ServiceProbeId,
-}
-
-/// Request to retrieve a (limited) list of service probes, optionally filtered
-/// by id.
-#[derive(Debug, Deserialize, IntoParams)]
-pub struct ListServiceProbes {
-    /// If provided, will filter based on exact match of the service probe
-    /// identifier.
-    id: Option<Uuid>,
-    /// If provided, will limit the amount of probes to the N most recent.
-    limit: Option<u32>,
-    /// If provided, will only have probes of that particular type.
-    #[serde(rename = "type")]
-    probe_type: Option<ServiceProbeType>,
 }
 
 /// Fetch services, optionally filtered by name, ID or configuration type.
@@ -362,110 +337,6 @@ async fn get_service(
         .await
         .get_service_by_name(*tenant_id, &service_name, None)
         .await?;
-
-    Ok(HttpResponse::Ok()
-        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(&descr))
-}
-
-/// Create a service probe.
-#[utoipa::path(
-    request_body = ServiceProbeRequest,
-    responses(
-        (status = CREATED, description = "Service probe created successfully", body = CreateServiceProbeResponse),
-        (status = NOT_FOUND
-            , description = "Specified service name does not exist"
-            , body = ErrorResponse
-            , example = json!(examples::unknown_name())),
-    ),
-    params(
-        ("service_name" = String, Path, description = "Unique service name")
-    ),
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
-    tag = "Services"
-)]
-#[post("/services/{service_name}/probes")]
-async fn new_service_probe(
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-    request: HttpRequest,
-    body: web::Json<ServiceProbeRequest>,
-) -> Result<HttpResponse, ManagerError> {
-    let service_name = parse_string_param(&request, "service_name")?;
-    let service_probe_id = state
-        .db
-        .lock()
-        .await
-        .new_service_probe_for_service_by_name(
-            *tenant_id,
-            &service_name,
-            Uuid::now_v7(),
-            body.0,
-            &Utc::now(),
-        )
-        .await?;
-    info!(
-        "Created for service {} probe with id {} (tenant: {})",
-        service_name, service_probe_id, *tenant_id
-    );
-    Ok(HttpResponse::Created()
-        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(&CreateServiceProbeResponse { service_probe_id }))
-}
-
-/// Fetch a list of probes for a service, optionally filtered by id.
-#[utoipa::path(
-    responses(
-        (status = OK, description = "Service probes retrieved successfully.", body = [ServiceProbeDescr]),
-        (status = NOT_FOUND
-        , description = "Specified service name does not exist"
-        , body = ErrorResponse
-        , example = json!(examples::unknown_name()))
-    ),
-    params(
-        ListServiceProbes,
-        ("service_name" = String, Path, description = "Unique service name"),
-    ),
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
-    tag = "Services"
-)]
-#[get("/services/{service_name}/probes")]
-async fn list_service_probes(
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-    req: HttpRequest,
-    query: Query<ListServiceProbes>,
-) -> Result<HttpResponse, ManagerError> {
-    let service_name = parse_string_param(&req, "service_name")?;
-    let descr = if let Some(id) = query.id {
-        // TODO: return error if query.limit is specified as well
-        vec![
-            state
-                .db
-                .lock()
-                .await
-                .get_service_probe_for_service_by_name(
-                    *tenant_id,
-                    &service_name,
-                    ServiceProbeId(id),
-                )
-                .await?,
-        ]
-    } else {
-        state
-            .db
-            .lock()
-            .await
-            .list_service_probes_for_service_by_name(
-                *tenant_id,
-                &service_name,
-                query.limit,
-                query.probe_type.clone(),
-            )
-            .await?
-    };
 
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))

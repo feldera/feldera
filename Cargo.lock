@@ -6953,7 +6953,6 @@ dependencies = [
  "proptest",
  "proptest-derive 0.3.0",
  "rand 0.8.5",
- "rdkafka",
  "refinery",
  "reqwest 0.11.27",
  "serde",

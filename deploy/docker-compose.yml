@@ -184,4 +184,4 @@ services:
     command:
       - bash
       - -c
-      - "sleep 1 && cd demo/service-probe && python3 run.py --api-url http://pipeline-manager:8080 && sleep 1 && cd ../simple-count && python3 run.py --api-url http://pipeline-manager:8080"
+      - "sleep 1 && cd demo/simple-count && python3 run.py --api-url http://pipeline-manager:8080"

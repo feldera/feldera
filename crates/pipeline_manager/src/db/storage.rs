@@ -6,11 +6,8 @@ use super::{
 use crate::api::ProgramStatus;
 use crate::auth::TenantId;
 use crate::compiler::ProgramConfig;
-use crate::db::service::{ServiceProbeDescr, ServiceProbeId};
 use crate::db::{ServiceDescr, ServiceId};
-use crate::prober::service::{ServiceProbeRequest, ServiceProbeResponse, ServiceProbeType};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use deadpool_postgres::Transaction;
 use pipeline_types::config::ConnectorConfig;
 use pipeline_types::service::ServiceConfig;
@@ -451,70 +448,6 @@ pub(crate) trait Storage {
     ///
     /// Returns error if there does not exist a service with the provided name.
     async fn delete_service(&self, tenant_id: TenantId, service_name: &str) -> Result<(), DBError>;
-
-    /// Creates a new service probe.
-    ///
-    /// Returns error if the tenant or service referenced by identifier does not
-    /// exist.
-    async fn new_service_probe(
-        &self,
-        tenant_id: TenantId,
-        service_id: ServiceId,
-        id: Uuid,
-        request: ServiceProbeRequest,
-        created_at: &DateTime<Utc>,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<ServiceProbeId, DBError>;
-
-    /// Sets the status of an existing service probe to running and saves the
-    /// starting timestamp.
-    ///
-    /// Returns error if the service_probe_id does not exist.
-    async fn update_service_probe_set_running(
-        &self,
-        tenant_id: TenantId,
-        service_probe_id: ServiceProbeId,
-        started_at: &DateTime<Utc>,
-    ) -> Result<(), DBError>;
-
-    /// Sets the status of an existing service probe to either succeeded or
-    /// failed based on the success,and saves the response and finishing
-    /// timestamp.
-    ///
-    /// Returns error if the service_probe_id does not exist.
-    async fn update_service_probe_set_finished(
-        &self,
-        tenant_id: TenantId,
-        service_probe_id: ServiceProbeId,
-        response: ServiceProbeResponse,
-        finished_at: &DateTime<Utc>,
-    ) -> Result<(), DBError>;
-
-    /// Retrieves the next service probe to perform.
-    async fn next_service_probe(
-        &self,
-    ) -> Result<Option<(ServiceProbeId, TenantId, ServiceProbeRequest, ServiceConfig)>, DBError>;
-
-    /// Retrieves service probe by its identifier.
-    async fn get_service_probe(
-        &self,
-        tenant_id: TenantId,
-        service_id: ServiceId,
-        service_probe_id: ServiceProbeId,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<ServiceProbeDescr, DBError>;
-
-    /// Retrieves a list of all probes of a service.
-    /// Optionally, limited to a specific number of the most recent probes.
-    /// Optionally, filtered to a specific request type.
-    async fn list_service_probes(
-        &self,
-        tenant_id: TenantId,
-        service_id: ServiceId,
-        limit: Option<u32>,
-        probe_type: Option<ServiceProbeType>,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<Vec<ServiceProbeDescr>, DBError>;
 
     /// Check connectivity to the DB
     async fn check_connection(&self) -> Result<(), DBError>;

@@ -1,6 +1,6 @@
 use super::{ConnectorId, PipelineId, ProgramId, Version};
 use crate::auth::TenantId;
-use crate::db::{ServiceId, ServiceProbeId};
+use crate::db::ServiceId;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
@@ -82,9 +82,6 @@ pub enum DBError {
     UnknownServiceName {
         service_name: String,
     },
-    UnknownServiceProbe {
-        service_probe_id: ServiceProbeId,
-    },
     UnknownApiKey {
         name: String,
     },
@@ -112,16 +109,6 @@ pub enum DBError {
     #[serde(serialize_with = "serialize_unknown_pipeline_status")]
     UnknownPipelineStatus {
         status: String,
-        backtrace: Backtrace,
-    },
-    #[serde(serialize_with = "serialize_unknown_service_probe_status")]
-    UnknownServiceProbeStatus {
-        status: String,
-        backtrace: Backtrace,
-    },
-    #[serde(serialize_with = "serialize_unknown_service_probe_type")]
-    UnknownServiceProbeType {
-        probe_type: String,
         backtrace: Backtrace,
     },
     ProgramNotSet,
@@ -159,18 +146,6 @@ impl DBError {
     pub fn unknown_pipeline_status(status: String) -> Self {
         Self::UnknownPipelineStatus {
             status,
-            backtrace: Backtrace::capture(),
-        }
-    }
-    pub fn unknown_service_probe_status(status: String) -> Self {
-        Self::UnknownServiceProbeStatus {
-            status,
-            backtrace: Backtrace::capture(),
-        }
-    }
-    pub fn unknown_service_probe_type(probe_type: String) -> Self {
-        Self::UnknownServiceProbeType {
-            probe_type,
             backtrace: Backtrace::capture(),
         }
     }
@@ -309,34 +284,6 @@ where
     ser.end()
 }
 
-fn serialize_unknown_service_probe_status<S>(
-    status: &String,
-    backtrace: &Backtrace,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let mut ser = serializer.serialize_struct("UnknownServiceProbeStatus", 2)?;
-    ser.serialize_field("status", &status.to_string())?;
-    ser.serialize_field("backtrace", &backtrace.to_string())?;
-    ser.end()
-}
-
-fn serialize_unknown_service_probe_type<S>(
-    probe_type: &String,
-    backtrace: &Backtrace,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let mut ser = serializer.serialize_struct("UnknownServiceProbeType", 2)?;
-    ser.serialize_field("probe_type", &probe_type.to_string())?;
-    ser.serialize_field("backtrace", &backtrace.to_string())?;
-    ser.end()
-}
-
 impl From<PgError> for DBError {
     fn from(error: PgError) -> Self {
         Self::PostgresError {
@@ -438,9 +385,6 @@ impl Display for DBError {
             DBError::UnknownServiceName { service_name } => {
                 write!(f, "Unknown service name '{service_name}'")
             }
-            DBError::UnknownServiceProbe { service_probe_id } => {
-                write!(f, "Unknown service probe id '{service_probe_id}'")
-            }
             DBError::UnknownApiKey { name } => {
                 write!(f, "Unknown API key '{name}'")
             }
@@ -464,12 +408,6 @@ impl Display for DBError {
             }
             DBError::UnknownPipelineStatus { status, .. } => {
                 write!(f, "Unknown pipeline status '{status}' encountered")
-            }
-            DBError::UnknownServiceProbeStatus { status, .. } => {
-                write!(f, "Unknown service probe status '{status}' encountered")
-            }
-            DBError::UnknownServiceProbeType { probe_type, .. } => {
-                write!(f, "Unknown service probe type '{probe_type}' encountered")
             }
             DBError::ProgramNotSet => write!(f, "The pipeline does not have a program attached"),
             DBError::ProgramNotCompiled => {
@@ -538,7 +476,6 @@ impl DetailedError for DBError {
             Self::InvalidConnectorTransport { .. } => Cow::from("InvalidConnectorTransport"),
             Self::UnknownService { .. } => Cow::from("UnknownService"),
             Self::UnknownServiceName { .. } => Cow::from("UnknownServiceName"),
-            Self::UnknownServiceProbe { .. } => Cow::from("UnknownServiceProbe"),
             Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
             Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
             Self::UnknownAttachedConnector { .. } => Cow::from("UnknownAttachedConnector"),
@@ -548,8 +485,6 @@ impl DetailedError for DBError {
             Self::InvalidKey => Cow::from("InvalidKey"),
             Self::UniqueKeyViolation { .. } => Cow::from("UniqueKeyViolation"),
             Self::UnknownPipelineStatus { .. } => Cow::from("UnknownPipelineStatus"),
-            Self::UnknownServiceProbeStatus { .. } => Cow::from("UnknownServiceProbeStatus"),
-            Self::UnknownServiceProbeType { .. } => Cow::from("UnknownServiceProbeType"),
             Self::ProgramNotSet => Cow::from("ProgramNotSet"),
             Self::ProgramNotCompiled => Cow::from("ProgramNotCompiled"),
             Self::ProgramFailedToCompile => Cow::from("ProgramFailedToCompile"),
@@ -598,7 +533,6 @@ impl ResponseError for DBError {
             Self::InvalidConnectorTransport { .. } => StatusCode::BAD_REQUEST,
             Self::UnknownService { .. } => StatusCode::NOT_FOUND,
             Self::UnknownServiceName { .. } => StatusCode::NOT_FOUND,
-            Self::UnknownServiceProbe { .. } => StatusCode::NOT_FOUND,
             Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
             // TODO: should we report not found instead?
             Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED,
@@ -615,8 +549,6 @@ impl ResponseError for DBError {
             Self::MissingMigrations { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             // should in practice not happen, e.g., would mean invalid status in db:
             Self::UnknownPipelineStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::UnknownServiceProbeStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::UnknownServiceProbeType { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::NoRevisionAvailable { .. } => StatusCode::NOT_FOUND,
             Self::RevisionNotChanged => StatusCode::BAD_REQUEST,
             Self::TablesNotInSchema { .. } => StatusCode::BAD_REQUEST,

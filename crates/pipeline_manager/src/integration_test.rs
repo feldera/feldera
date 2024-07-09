@@ -262,7 +262,6 @@ impl TestConfig {
             let req = config.delete(format!("/v0/services/{}", name)).await;
             assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
         }
-        // .. service probes are deleted through cascading
     }
 
     async fn get<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
@@ -2256,111 +2255,6 @@ async fn service_basic() {
 
     // Check no service is left
     let mut request = config.get_ok(format!("/v0/services")).await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 0);
-}
-
-/// Wait for the service probe to have a certain status with a one minute timeout.
-async fn wait_for_service_probe_status(config: &TestConfig, probe_id: &str, expected_status: &str) {
-    let start = Instant::now();
-    loop {
-        let mut response = config
-            .get(format!("/v0/services/example-kafka/probes?id={probe_id}"))
-            .await;
-        let value: Value = response.json().await.unwrap();
-        let status = value.as_array().unwrap()[0]["status"].as_str().unwrap();
-        if status == expected_status {
-            break;
-        }
-        sleep(Duration::from_millis(100)).await;
-        if Instant::now() - start > Duration::from_secs(60) {
-            panic!("Waiting for service probe status {expected_status} took too long")
-        }
-    }
-}
-
-#[actix_web::test]
-#[serial]
-async fn service_probe_basic() {
-    let config = setup().await;
-
-    // Create a service
-    let request = config
-        .post(
-            format!("/v0/services"),
-            &json!({
-              "name": "example-kafka",
-              "description": "Description of the service used to test service probing",
-              "config": {
-                "kafka": {
-                  "bootstrap_servers": [
-                    "localhost:nonexistent",
-                  ],
-                  "options": {}
-                }
-              }
-            }),
-        )
-        .await;
-    assert_eq!(request.status(), StatusCode::CREATED);
-
-    // Create a probe for connectivity
-    let post_body = json!("test_connectivity");
-    let mut request = config
-        .post(format!("/v0/services/example-kafka/probes"), &post_body)
-        .await;
-    assert_eq!(request.status(), StatusCode::CREATED);
-    let response: Value = request.json().await.unwrap();
-    let probe_id = response["service_probe_id"].as_str().unwrap();
-    wait_for_service_probe_status(&config, probe_id, "failure").await;
-
-    // Create a probe for Kafka topics
-    let post_body = json!("kafka_get_topics");
-    let mut request = config
-        .post(format!("/v0/services/example-kafka/probes"), &post_body)
-        .await;
-    assert_eq!(request.status(), StatusCode::CREATED);
-    let response: Value = request.json().await.unwrap();
-    let probe_id = response["service_probe_id"].as_str().unwrap();
-    wait_for_service_probe_status(&config, probe_id, "failure").await;
-
-    // List: no filter
-    let mut request = config.get_ok("/v0/services/example-kafka/probes").await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 2);
-
-    // List: limit 1
-    let mut request = config
-        .get_ok("/v0/services/example-kafka/probes?limit=1")
-        .await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 1);
-
-    // List: limit 0
-    let mut request = config
-        .get_ok("/v0/services/example-kafka/probes?limit=0")
-        .await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 0);
-
-    // List: only test_connectivity
-    let mut request = config
-        .get_ok("/v0/services/example-kafka/probes?type=test_connectivity")
-        .await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 1);
-
-    // List: only kafka_get_topics
-    let mut request = config
-        .get_ok("/v0/services/example-kafka/probes?type=kafka_get_topics")
-        .await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 1);
-
-    // List: filter limit and request type
-    let mut request = config
-        .get_ok("/v0/services/example-kafka/probes?type=kafka_get_topics&limit=0")
-        .await;
     let response: Value = request.json().await.unwrap();
     assert_eq!(response.as_array().unwrap().len(), 0);
 }
