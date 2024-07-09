@@ -1,0 +1,1 @@
+CREATE VIEW q0 AS SELECT auction, bidder, price, date_time, extra FROM bid;
