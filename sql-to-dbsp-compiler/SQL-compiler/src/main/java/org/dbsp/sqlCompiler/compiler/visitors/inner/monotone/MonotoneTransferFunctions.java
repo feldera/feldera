@@ -400,11 +400,6 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.variables.put(statement, value);
     }
 
-    static boolean isMonotoneBinaryOperation(DBSPOpcode opcode) {
-        return opcode == DBSPOpcode.ADD ||
-                opcode == DBSPOpcode.MAX;
-    }
-
     @Override
     public void postorder(DBSPBinaryExpression expression) {
         MonotoneExpression left = this.get(expression.left);
@@ -414,13 +409,32 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             this.constantExpressions.contains(expression.right.id))
             this.constantExpressions.add(expression.id);
 
+        boolean lm = left.mayBeMonotone();
+        boolean rm = right.mayBeMonotone();
+
         // Assume type is not monotone
         IMaybeMonotoneType resultType = new NonMonotoneType(expression.type);
-        if (left.mayBeMonotone() && right.mayBeMonotone() &&
-                isMonotoneBinaryOperation(expression.operation)) {
+        if (expression.operation == DBSPOpcode.ADD && lm && rm) {
+            // The addition of two monotone expressions is monotone
             resultType = new MonotoneType(expression.type);
             reduced = expression.replaceSources(
                     left.getReducedExpression(), right.getReducedExpression());
+        }
+        if (expression.operation == DBSPOpcode.MAX && (lm || rm)) {
+            // The result of MAX is monotone if either expression is monotone
+            resultType = new MonotoneType(expression.type);
+            if (!lm) {
+                reduced = right.getReducedExpression()
+                        // must preserve type
+                        .cast(expression.getType());
+            } else if (!rm) {
+                reduced = left.getReducedExpression()
+                        .cast(expression.getType());
+            } else {
+                reduced = expression.replaceSources(
+                        left.getReducedExpression(),
+                        right.getReducedExpression());
+            }
         }
         // Some expressions are monotone if some of their operands are constant
         if (left.mayBeMonotone() && expression.operation == DBSPOpcode.SUB) {
