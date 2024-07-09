@@ -51,7 +51,6 @@ refinery = {version = "0.8.10", features = ["tokio-postgres"]}
 reqwest = {version = "0.11.18", features = ["json"]}
 url = {version = "2.4.0"}
 dirs = "5.0"
-rdkafka = { version = "0.34.0", features = ["cmake-build", "ssl-vendored", "gssapi-vendored"] }
 thiserror = "1.0"
 metrics = "0.23"
 metrics-exporter-prometheus = "0.15.1"
