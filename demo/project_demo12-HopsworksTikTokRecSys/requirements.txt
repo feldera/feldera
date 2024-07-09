@@ -5,4 +5,3 @@ catboost==1.1.1
 tqdm
 kafka-python
 pandas
-lz4

@@ -1,3 +1,7 @@
+# This code is borrowed from the Hopsworks TikTok RecSys Demo
+
+# Original Source: https://github.com/davitbzh/tiktok-recsys/blob/main/python/Jupyter/features/interactions.py
+
 from mimesis import Generic
 from mimesis.locales import Locale
 import random
@@ -58,7 +62,7 @@ def generate_interactions(num_interactions: int, users: List[Dict[str, str]], vi
 
         # Constructing the interaction dictionary
         interaction = {
-            'interaction_id': generic.person.identifier(mask='####-##-####'),
+            'interaction_id': int(generic.person.identifier(mask='##########')),
             'user_id': user['user_id'],
             'video_id': video['video_id'],
             'category_id': video['category_id'],

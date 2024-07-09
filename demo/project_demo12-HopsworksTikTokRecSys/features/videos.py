@@ -1,3 +1,7 @@
+# This code is borrowed from the Hopsworks TikTok RecSys Demo
+
+# Original Source: https://github.com/davitbzh/tiktok-recsys/blob/main/python/Jupyter/features/videos.py
+
 from mimesis import Generic
 from mimesis.locales import Locale
 import random
@@ -37,7 +41,7 @@ def generate_video_content(num_videos: int, historical=False) -> List[Dict[str, 
         video_category = random.choice(categories)
 
         video = {
-            'video_id': generic.person.identifier(mask='#@@##@'),  # Unique video identifier
+            'video_id': int(generic.person.identifier(mask='#####')),  # Unique video identifier
             'category_id': categories_dict[video_category],            
             'category': video_category,
             'video_length': video_length_seconds,
