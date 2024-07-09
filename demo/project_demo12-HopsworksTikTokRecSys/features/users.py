@@ -1,3 +1,7 @@
+# This code is borrowed from the Hopsworks TikTok RecSys Demo
+
+# Original Source: https://github.com/davitbzh/tiktok-recsys/blob/main/python/Jupyter/features/users.py
+
 from mimesis import Generic
 from mimesis.locales import Locale
 import random
@@ -30,7 +34,7 @@ def generate_users(num_users: int, historical=False) -> List[Dict[str, str]]:
 
             # Generate each user's details
         user = {
-            'user_id': generic.person.identifier(mask='@@###@'),  # Unique user identifier
+            'user_id': int(generic.person.identifier(mask='#####')),  # Unique user identifier
             'gender': generic.person.gender(),                    # Randomly generated gender
             'age': random.randint(12, 90),                        # Randomly generated age between 12 and 90
             'country': generic.address.country(),                 # Randomly generated country name
