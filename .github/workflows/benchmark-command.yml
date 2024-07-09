@@ -43,10 +43,7 @@ jobs:
 
       - name: Fetch previous results
         run: bash ./scripts/clone-gh-pages.bash
-
-      - name: Refresh Flink Benchmark
-        run: bash ./benchmark/flink/refresh-flink-benchmark.sh
-
+        
       - name: Publish results
         run: bash ./scripts/bench-publish.bash
 
