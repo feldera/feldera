@@ -415,19 +415,25 @@ impl CircuitGraph {
 
 fn label(name: &str, location: OperatorLocation) -> String {
     if let Some(location) = location {
-        let file = if location.file().starts_with(env!("CARGO_MANIFEST_DIR")) {
-            let mut path = location
-                .file()
-                // Strip the crate's path from any of its operators
-                .trim_start_matches(env!("CARGO_MANIFEST_DIR"))
-                .replace('\\', "\\\\");
-            path.insert_str(0, "database-stream-processor");
-            path
-        } else {
-            location
-                .file() // Windows uses "\" for paths which dot interprets as an escape char
-                .replace('\\', "\\\\")
-        };
+        let file = location
+            .file()
+            // Strip the crate's path from any of its operators
+            .trim_start_matches(env!("CARGO_MANIFEST_DIR"))
+            // Windows uses "\" for paths which dot interprets as an escape char
+            .replace('\\', "/");
+
+        // Abbreviate the file name to the first letter of each directory
+        // followed by the full name of the file.
+        let mut components = file.split('/');
+        let base_name = components.next_back().unwrap();
+        let mut file = String::new();
+        for dir_name in components {
+            if let Some(c) = dir_name.chars().next() {
+                file.push(c);
+                file.push('/');
+            }
+        }
+        file.push_str(base_name);
 
         format!(
             "{} @ {}:{}:{}",
