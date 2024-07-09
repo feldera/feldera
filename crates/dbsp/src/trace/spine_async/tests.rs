@@ -36,7 +36,8 @@ fn merger_can_merge_stuff() {
 
     let large_batch1: Vec<Tup2<i32, ZWeight>> = (1..=100_000).map(|x| Tup2(x, x as i64)).collect();
     let large_batch2: Vec<Tup2<i32, ZWeight>> = (1..=100_000).map(|x| Tup2(x, x as i64)).collect();
-    let len_after_merge = large_batch2.len() + large_batch2.len();
+    let len_before_merge = large_batch1.len() + large_batch2.len();
+    let len_after_merge = large_batch1.len();
     let batches: Vec<Vec<Tup2<i32, ZWeight>>> = vec![large_batch1, large_batch2];
 
     for tuples in batches.into_iter() {
@@ -45,6 +46,18 @@ fn merger_can_merge_stuff() {
         trace.insert(batch);
     }
 
+    // We just inserted the batches. They will still be there in full.
+    let level = Spine::<VecWSet<DynI32, DynZWeight>>::size_to_level(len_before_merge);
+    assert_eq!(trace.levels[level].len(), 1);
+    assert_eq!(
+        trace.levels[level].first_entry().unwrap().get().n_updates(),
+        len_before_merge
+    );
+
+    // Finish the merge.
+    trace.complete_merges();
+
+    // The batches' weights got added up, so half the length.
     let level = Spine::<VecWSet<DynI32, DynZWeight>>::size_to_level(len_after_merge);
     assert_eq!(trace.levels[level].len(), 1);
     assert_eq!(
