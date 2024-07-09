@@ -27,6 +27,7 @@ import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Monotonicity;
 import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
@@ -569,7 +570,7 @@ SELECT
         this.prepareInputs(compiler);
         compiler.compileStatements(queries[query]);
         final boolean debug = false;
-        Class<?> module = DBSPCompiler.class;
+        Class<?> module = Monotonicity.class;
         int previous;
         if (debug)
             previous = Logger.INSTANCE.setLoggingLevel(module, 4);

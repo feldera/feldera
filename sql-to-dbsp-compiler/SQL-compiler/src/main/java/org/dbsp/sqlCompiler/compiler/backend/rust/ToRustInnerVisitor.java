@@ -260,7 +260,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         expression.source.accept(this);
         boolean hasSource = expression.source.is(DBSPFieldComparatorExpression.class);
         if (hasSource)
-            this.builder.append(".then(");
+            this.builder.newline().append(".then(");
         this.builder.append("Extract::new(move |r: &");
         expression.tupleType().accept(this);
         this.builder.append("| r.")

@@ -32,13 +32,18 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTransferFun
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -50,8 +55,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.ToIndentableString;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -450,9 +457,173 @@ public class Monotonicity extends CircuitVisitor {
         this.identity(node);
     }
 
+    /** Helper class for analyzing filters */
+    static class Comparisons {
+        /** A comparison between an output column and an expression which
+         * may be monotone */
+        static class Comparison implements ToIndentableString {
+            // Output column involved in comparison
+            public final int columnIndex;
+            public final DBSPExpression comparedTo;
+
+            Comparison(int columnIndex, DBSPExpression comparedTo) {
+                assert columnIndex >= 0;
+                this.columnIndex = columnIndex;
+                this.comparedTo = comparedTo;
+            }
+
+            @Override
+            public IIndentStream toString(IIndentStream builder) {
+                return builder.append(this.columnIndex)
+                        .append(" >= ")
+                        .append(this.comparedTo);
+            }
+
+            @Override
+            public String toString() {
+                return "t." + this.columnIndex + " >= " + this.comparedTo;
+            }
+        }
+
+        public final List<Comparison> comparisons = new ArrayList<>();
+
+        public boolean isEmpty() {
+            return this.comparisons.isEmpty();
+        }
+
+        @Override
+        public String toString() {
+            return this.comparisons.toString();
+        }
+
+        /** Check of an expression is a reference to a column of a given parameter.
+         * Return the column index if it is, or -1 otherwise. */
+        static int isColumn(DBSPExpression expression, DBSPParameter param) {
+            DBSPFieldExpression field = expression.as(DBSPFieldExpression.class);
+            if (field == null)
+                return -1;
+            DBSPDerefExpression deref = field.expression.as(DBSPDerefExpression.class);
+            if (deref == null)
+                return -1;
+            DBSPVariablePath var = deref.expression.as(DBSPVariablePath.class);
+            if (var == null)
+                return -1;
+            if (var.variable.equals(param.name))
+                return field.fieldNo;
+            return -1;
+        }
+
+        /** If larger is a column reference, create a new comparison and add it to the list */
+        void addIfIsColumn(DBSPExpression smaller, DBSPExpression larger, DBSPParameter param) {
+            int index = isColumn(larger, param);
+            if (index < 0)
+                return;
+            Comparison comp = new Comparison(index, smaller);
+            this.comparisons.add(comp);
+        }
+
+        /** Check if `expression` is a comparison and if so add it to the list */
+        void findComparison(DBSPExpression expression, DBSPParameter param) {
+            DBSPBinaryExpression binary = expression.as(DBSPBinaryExpression.class);
+            if (binary == null)
+                return;
+            switch (binary.operation) {
+                case LTE:
+                case LT:
+                    this.addIfIsColumn(binary.left, binary.right, param);
+                    break;
+                case GTE:
+                case GT:
+                    this.addIfIsColumn(binary.right, binary.left, param);
+                    break;
+                case EQ:
+                    // add both ways
+                    this.addIfIsColumn(binary.left, binary.right, param);
+                    this.addIfIsColumn(binary.right, binary.left, param);
+                    break;
+            }
+        }
+
+        void analyzeConjunction(DBSPExpression expression, DBSPParameter param) {
+            DBSPBinaryExpression binary = expression.as(DBSPBinaryExpression.class);
+            if (binary == null)
+                return;
+            if (binary.operation == DBSPOpcode.AND) {
+                this.analyzeConjunction(binary.left, param);
+                this.analyzeConjunction(binary.right, param);
+            } else {
+                this.findComparison(binary, param);
+            }
+        }
+
+        /** Analyze the condition of a filter and decompose it into a conjunction of comparisons */
+        public Comparisons(DBSPExpression closure) {
+            DBSPClosureExpression clo = closure.to(DBSPClosureExpression.class);
+            assert clo.parameters.length == 1;
+            DBSPParameter param = clo.parameters[0];
+            DBSPExpression expression = clo.body;
+            if (expression.is(DBSPUnaryExpression.class)) {
+                DBSPUnaryExpression unary = expression.to(DBSPUnaryExpression.class);
+                if (unary.operation == DBSPOpcode.WRAP_BOOL)
+                    expression = unary.source;
+            }
+            this.analyzeConjunction(expression, param);
+        }
+
+        /** Get all the expressions that are below the specified output column */
+        List<DBSPExpression> getLowerBounds(int index) {
+            return Linq.map(
+                    Linq.where(this.comparisons, c -> c.columnIndex == index),
+                    c -> c.comparedTo);
+        }
+    }
+
     @Override
     public void postorder(DBSPFilterOperator node) {
-        this.identity(node);
+        MonotoneExpression input = this.getMonotoneExpression(node.input());
+        if (input == null)
+            return;
+        boolean pairOfReferences = node.getType().is(DBSPTypeIndexedZSet.class);
+        if (pairOfReferences) {
+            // TODO: if this is useful we should implement it
+            this.identity(node);
+            return;
+        }
+
+        // Find out if the filter condition is a conjunction of comparisons.
+        // Extract all the comparisons of the form column >= expression.
+        Comparisons comparisons = new Comparisons(node.getFunction());
+        if (!comparisons.isEmpty()) {
+            Logger.INSTANCE.belowLevel(this, 2)
+                    .append(node.toString())
+                    .append(" comparisons: ")
+                    .append(comparisons.toString())
+                    .newline();
+        }
+
+        IMaybeMonotoneType projection = getBodyType(input);
+        if (!projection.mayBeMonotone())
+            return;
+        DBSPTypeTuple tuple = projection.getType().to(DBSPTypeTuple.class);
+        // Must reuse the same parameter name
+        DBSPVariablePath var = node.getFunction().to(DBSPClosureExpression.class).parameters[0].asVariable();
+        MonotoneTransferFunctions.ArgumentKind argumentType = MonotoneTransferFunctions.ArgumentKind.ZSet;
+        DBSPExpression[] fields = new DBSPExpression[tuple.size()];
+        for (int i = 0; i < tuple.size(); i++) {
+            DBSPExpression field = var.deepCopy().deref().field(i);
+            List<DBSPExpression> comp = comparisons.getLowerBounds(i);
+            for (DBSPExpression exp: comp) {
+                field = new DBSPBinaryExpression(node.getNode(),
+                        field.getType(), DBSPOpcode.MAX, field, exp);
+            }
+            fields[i] = field;
+        }
+        DBSPClosureExpression closure = tuple.makeTuple(fields).closure(var.asParameter());
+        // Invoke inner visitor.
+        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
+                this.errorReporter, node, argumentType, projection);
+        MonotoneExpression output = Objects.requireNonNull(analyzer.applyAnalysis(closure));
+        this.set(node, output);
     }
 
     /** Create a NoExpression with the specified type.

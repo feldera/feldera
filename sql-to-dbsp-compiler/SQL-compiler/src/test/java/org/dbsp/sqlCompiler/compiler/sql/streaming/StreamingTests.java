@@ -9,7 +9,9 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Monotonicity;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -46,7 +48,7 @@ public class StreamingTests extends StreamingTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase("hoppingTest", ccs);
+        this.addRustTestCase("issue1973", ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int integrate_trace = 0;
 
@@ -58,6 +60,38 @@ public class StreamingTests extends StreamingTest {
             @Override
             public void endVisit() {
                 Assert.assertEquals(4, this.integrate_trace);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
+    public void issue2003() {
+        String sql = """
+                CREATE TABLE event(
+                    end   TIMESTAMP,
+                    start TIMESTAMP NOT NULL LATENESS INTERVAL '1' HOURS
+                );
+                
+                -- This is monotone because of the filter
+                CREATE VIEW event_duration AS SELECT DISTINCT end
+                FROM event
+                WHERE end > start;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("issue2003", ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int integrate_trace = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.integrate_trace);
             }
         };
         visitor.apply(ccs.circuit);
