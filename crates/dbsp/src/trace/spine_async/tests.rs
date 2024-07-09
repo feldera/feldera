@@ -48,7 +48,7 @@ fn merger_can_merge_stuff() {
     let level = Spine::<VecWSet<DynI32, DynZWeight>>::size_to_level(len_after_merge);
     assert_eq!(trace.levels[level].len(), 1);
     assert_eq!(
-        trace.levels[level].first_entry().unwrap().get().len(),
+        trace.levels[level].first_entry().unwrap().get().n_updates(),
         len_after_merge
     );
 }

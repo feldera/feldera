@@ -79,29 +79,14 @@ impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
     }
 }
 
-/// The type of value that the given key stores.
-///
-/// - `Merging` implies `BatchState::Merging(a,b)` as a value -- this also means a merge of these two
-///    has been initiated.
-/// - `Single` implies `BatchState::Single(a)` as a value -- this batch isn't currently being
-///    merged with another batch.
-///
-/// This ensures a sort order in the corresponding level where `Single` entries
-/// come first when iterating over the tree, and the things we are merged are pushed
-/// to the back of the tree.
-#[derive(Debug, Ord, PartialOrd, Copy, Clone, Eq, PartialEq)]
-enum BatchKind {
-    Single,
-    Merging,
-}
-
 /// A unique identifier for batches we hold within levels.
-#[derive(SizeOf, Ord, PartialOrd, Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(SizeOf, Ord, Default, PartialOrd, Debug, Copy, Clone, Eq, PartialEq)]
 struct BatchIdent {
-    /// What type of value we're dealing with (e.g., two batches
-    /// being currently merged or a single batch).
+    /// The number of nested batches, either 1 if no merging is going on or 2 if
+    /// this represents a pair of batches being merged. (Larger values would
+    /// represent multiway merges, which we currently don't do.)
     #[size_of(skip)]
-    kind: BatchKind,
+    n: usize,
     /// Which level this batch is from.
     ///
     /// We use this to find the two batches we want to remove when
@@ -115,60 +100,34 @@ struct BatchIdent {
     key: u64,
 }
 
-impl BatchIdent {
-    fn single(level: usize, key: u64) -> Self {
-        BatchIdent {
-            kind: BatchKind::Single,
-            level,
-            key,
-        }
-    }
-
-    fn merging(level: usize, key: u64) -> Self {
-        BatchIdent {
-            kind: BatchKind::Merging,
-            level,
-            key,
-        }
-    }
-}
-
 /// Describes the state of a layer.
 ///
-/// A layer can be empty, contain a single batch, or contain a pair of batches
-/// that are in the process of merging into a new batch.
+/// A layer can be empty, contain a single batch, or contain multiple batches
+/// (currently just 2) that are being merged in the background.
+///
+/// If there's only one batch then the `Arc` has a reference count of 1,
+/// otherwise they are higher than that because the background merger thread
+/// holds a reference.
 #[derive(SizeOf)]
-pub enum BatchState<B>
+pub struct BatchState<B>(Vec<Arc<B>>)
 where
-    B: Batch,
-{
-    /// An entry containing a single batch.
-    Single(B),
-    /// An entry containing two batches which are in the process of merging.
-    Merging(Vec<Arc<B>>),
-}
+    B: Batch;
 
 impl<B> BatchState<B>
 where
     B: Batch,
 {
     /// The number of actual updates contained in the level.
-    fn len(&self) -> usize {
-        match self {
-            BatchState::Single(b) => b.len(),
-            BatchState::Merging(bs) => bs.iter().map(|b| b.len()).sum(),
-        }
+    fn n_updates(&self) -> usize {
+        self.0.iter().map(|b| b.len()).sum()
     }
 
     fn batch_count(&self) -> usize {
-        match self {
-            BatchState::Single(_) => 1,
-            BatchState::Merging(bs) => bs.len(),
-        }
+        self.0.len()
     }
 
     fn is_merging(&self) -> bool {
-        matches!(self, BatchState::Merging(_))
+        self.0.len() > 1
     }
 }
 
@@ -364,18 +323,9 @@ where
         );
         for level in self.levels.iter().rev() {
             for merge_state in level.values() {
-                match merge_state {
-                    BatchState::Merging(bs) => {
-                        for batch in bs.iter() {
-                            if !batch.is_empty() {
-                                cursors.push(batch.cursor());
-                            }
-                        }
-                    }
-                    BatchState::Single(batch) => {
-                        if !batch.is_empty() {
-                            cursors.push(batch.cursor());
-                        }
+                for batch in merge_state.0.iter() {
+                    if !batch.is_empty() {
+                        cursors.push(batch.cursor());
                     }
                 }
             }
@@ -462,19 +412,17 @@ where
 
         for level in self.levels.iter() {
             for batch in level.values() {
-                match batch {
-                    BatchState::Merging(bs) => {
-                        s.write_char('[').unwrap();
-                        for b in bs.iter() {
-                            s.write_fmt(format_args!("{},", b.num_entries_deep()))
-                                .unwrap();
-                        }
-                        s.write_char(']').unwrap();
-                    }
-                    BatchState::Single(batch) => {
-                        s.write_fmt(format_args!("{},", batch.num_entries_deep()))
+                if batch.0.len() != 1 {
+                    s.write_char('[').unwrap();
+                    for b in batch.0.iter() {
+                        s.write_fmt(format_args!("{},", b.num_entries_deep()))
                             .unwrap();
                     }
+                    s.write_char(']').unwrap();
+                } else {
+                    let b = &batch.0[0];
+                    s.write_fmt(format_args!("{},", b.num_entries_deep()))
+                        .unwrap();
                 }
             }
         }
@@ -489,13 +437,8 @@ where
     {
         for level in self.levels.iter().rev() {
             for batch in level.values() {
-                match batch {
-                    BatchState::Merging(bs) => {
-                        for b in bs.iter() {
-                            map(b);
-                        }
-                    }
-                    BatchState::Single(batch) => map(batch),
+                for b in batch.0.iter() {
+                    map(b);
                 }
             }
         }
@@ -509,14 +452,11 @@ where
             .iter()
             .rev()
             .flat_map(|inner| inner.values())
-            .fold(init, |mut acc, batch| match batch {
-                BatchState::Merging(bs) => {
-                    for b in bs.iter() {
-                        acc = fold(acc, b);
-                    }
-                    acc
+            .fold(init, |mut acc, batch| {
+                for b in batch.0.iter() {
+                    acc = fold(acc, b);
                 }
-                BatchState::Single(batch) => fold(acc, batch),
+                acc
             })
     }
 
@@ -529,14 +469,11 @@ where
             .iter()
             .rev()
             .flat_map(|innser| innser.values())
-            .try_fold(init, |mut acc, batch| match batch {
-                BatchState::Merging(bs) => {
-                    for b in bs.iter() {
-                        acc = fold(acc, b)?;
-                    }
-                    Ok(acc)
+            .try_fold(init, |mut acc, batch| {
+                for b in batch.0.iter() {
+                    acc = fold(acc, b)?;
                 }
-                BatchState::Single(batch) => fold(acc, batch),
+                Ok(acc)
             })
     }
 
@@ -795,14 +732,16 @@ where
             .levels
             .into_iter()
             .flat_map(|inner| inner.into_values())
-            .map(|batch| match batch {
-                BatchState::Single(b) => Arc::new(b),
-                BatchState::Merging(_bs) => {
-                    // This shouldn't happen because we call complete_merges first.
-                    // we could also just add them to `batches and don't wait for
-                    // `complete_merges`
-                    panic!("In-progress Merge op found during consolidation");
-                }
+            .map(|mut batch| {
+                // This shouldn't happen because we call complete_merges first.
+                // we could also just add them to `batches and don't wait for
+                // `complete_merges`
+                assert_eq!(
+                    batch.0.len(),
+                    1,
+                    "In-progress Merge op found during consolidation"
+                );
+                batch.0.pop().unwrap()
             })
             .collect();
 
@@ -818,7 +757,7 @@ where
                     let to_merge = vec![batches.pop().unwrap(), batches.pop().unwrap()];
                     Self::enqueue(
                         &self.merger_tx,
-                        BatchIdent::single(0, 0),
+                        BatchIdent::default(),
                         to_merge,
                         self.key_filter.clone(),
                         self.value_filter.clone(),
@@ -956,10 +895,7 @@ where
         self.levels
             .iter()
             .flat_map(|inner| inner.values())
-            .map(|b| match b {
-                x @ BatchState::Single(_) => (1, x.len()),
-                x @ BatchState::Merging(bs) => (bs.len(), x.len()),
-            })
+            .map(|b| (b.0.len(), b.n_updates()))
             .collect()
     }
 
@@ -995,7 +931,7 @@ where
             return;
         }
         let level = Self::size_to_level(batch.len());
-        self.insert_batch_at(level, BatchState::Single(batch));
+        self.insert_batch_at(level, BatchState(vec![Arc::new(batch)]));
         self.maybe_initiate_merges(level);
     }
 
@@ -1040,11 +976,11 @@ where
 
     /// Inserts the `bs` at `level` and returns the key used to insert it.
     fn insert_batch_at(&mut self, level: usize, bs: BatchState<B>) -> BatchIdent {
-        let key = match bs {
-            BatchState::Single(_) => BatchIdent::single(level, self.next_batch_key),
-            BatchState::Merging(_) => BatchIdent::merging(level, self.next_batch_key),
+        let key = BatchIdent {
+            n: bs.0.len(),
+            level,
+            key: self.next_batch_key,
         };
-
         let r = self.levels[level].insert(key, bs);
         assert!(r.is_none(), "We will never overwrite an existing entry");
         self.next_batch_key += 1;
@@ -1054,12 +990,7 @@ where
     /// Checks if the current level needs compaction and if
     /// so initiates it.
     fn maybe_initiate_merges(&mut self, level: usize) {
-        if self.levels[level]
-            .keys()
-            .filter(|id| id.kind != BatchKind::Merging)
-            .count()
-            >= self.strategy.min_threshold
-        {
+        if self.levels[level].keys().filter(|id| id.n == 1).count() >= self.strategy.min_threshold {
             self.initiate_merges_at(level, self.strategy.max_threshold);
         }
     }
@@ -1074,56 +1005,34 @@ where
     /// - The number of new merges initiated.
     fn initiate_merges_at(&mut self, level: usize, max_initiations: usize) -> usize {
         let mut merges_initiated = 0;
-        while merges_initiated < max_initiations {
-            // We try to get two Single batch entries from the level,
+        while merges_initiated < max_initiations && self.levels[level].len() >= 2 {
+            // We try to get two single-batch entries from the level,
             // the sort order is such that they are in the front of the tree
-            match (
-                self.levels[level].pop_first(),
-                self.levels[level].pop_first(),
-            ) {
-                (Some((_key1, BatchState::Single(b1))), Some((_key2, BatchState::Single(b2)))) => {
-                    let b1_arc = Arc::new(b1);
-                    let b2_arc = Arc::new(b2);
-                    // We found two single batches, merge them
-                    let key = self.insert_batch_at(
-                        level,
-                        BatchState::Merging(vec![b1_arc.clone(), b2_arc.clone()]),
-                    );
-                    let key_filter = self.key_filter.clone();
-                    let value_filter = self.value_filter.clone();
-                    let start = Instant::now();
-                    Self::enqueue(
-                        &self.merger_tx,
-                        key,
-                        vec![b1_arc.clone(), b2_arc.clone()],
-                        key_filter,
-                        value_filter,
-                        self.completion_tx.clone(),
-                    );
-                    counter!(COMPACTION_STALL_TIME).increment(start.elapsed().as_millis() as u64);
-                    self.outstanding[level] += 1;
-
-                    merges_initiated += 1;
-                }
-                // The rest are handling the cases where we don't have two single batches,
-                // we re-insert what we popped and exit the loop:
-                (Some((key, val)), None) => {
-                    self.levels[level].insert(key, val);
-                    break;
-                }
-                (None, Some((key, val))) => {
-                    self.levels[level].insert(key, val);
-                    break;
-                }
-                (Some((key1, val1)), Some((key2, val2))) => {
-                    self.levels[level].insert(key1, val1);
-                    self.levels[level].insert(key2, val2);
-                    break;
-                }
-                (None, None) => {
-                    break;
-                }
+            let (key1, mut val1) = self.levels[level].pop_first().unwrap();
+            let (key2, mut val2) = self.levels[level].pop_first().unwrap();
+            if val1.0.len() != 1 || val2.0.len() != 1 {
+                self.levels[level].insert(key1, val1);
+                self.levels[level].insert(key2, val2);
+                break;
             }
+
+            // We found two single batches, merge them
+            let b1 = val1.0.pop().unwrap();
+            let b2 = val2.0.pop().unwrap();
+            let key = self.insert_batch_at(level, BatchState(vec![b1.clone(), b2.clone()]));
+            let start = Instant::now();
+            Self::enqueue(
+                &self.merger_tx,
+                key,
+                vec![b1, b2],
+                self.key_filter.clone(),
+                self.value_filter.clone(),
+                self.completion_tx.clone(),
+            );
+            counter!(COMPACTION_STALL_TIME).increment(start.elapsed().as_millis() as u64);
+            self.outstanding[level] += 1;
+
+            merges_initiated += 1;
         }
 
         merges_initiated
@@ -1162,12 +1071,14 @@ where
             .flat_map(|level| level.values_mut())
             .rev()
         {
-            match batch {
-                BatchState::Merging(_) => {
-                    panic!("map_batches_mut called on an in-progress batch")
-                }
-                BatchState::Single(batch) => f(batch),
-            }
+            assert_eq!(
+                batch.0.len(),
+                1,
+                "map_batches_mut called on an in-progress batch"
+            );
+            let mut b = Arc::unwrap_or_clone(batch.0.pop().unwrap());
+            f(&mut b);
+            batch.0.push(Arc::new(b));
         }
     }
 }
