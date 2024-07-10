@@ -6,7 +6,7 @@
   import TabSQLErrors from '$lib/components/pipelines/editor/TabSQLErrors.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
-  let { pipelineName } = $props<{ pipelineName: string }>()
+  let { pipelineName }: { pipelineName: string } = $props()
   let currentTab = useLocalStorage(
     'pipelines/' + pipelineName + '/currentInteractionTab',
     'query data'
@@ -35,7 +35,7 @@
   {#each tabs as [tabName, TabComponent]}
     <Tabs.Panel bind:group={currentTab.value} value={tabName}>
       <div class=" p-4 pt-0">
-        <TabComponent></TabComponent>
+        <TabComponent {pipelineName}></TabComponent>
       </div>
     </Tabs.Panel>
   {/each}

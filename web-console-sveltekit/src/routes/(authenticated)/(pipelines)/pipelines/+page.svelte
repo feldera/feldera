@@ -2,8 +2,8 @@
   import { asyncReadable, derived, readable } from '@square/svelte-store'
   import { getPipelines } from '$lib/services/pipelineManager'
   import { onMount } from 'svelte'
-  import Status from '$lib/components/pipelines/list/Status.svelte'
-  import Actions from '$lib/components/pipelines/list/Actions.svelte'
+  import PipelineStatus from '$lib/components/pipelines/list/Status.svelte'
+  import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
   import { base } from '$app/paths'
   let pipelines = asyncReadable([], getPipelines, { reloadable: true })
   onMount(() => {
@@ -16,12 +16,13 @@
 
 <div class="flex flex-col gap-4 p-4">
   {#each $pipelines as pipeline, i}
-    <div class="flex flex-nowrap">
+    <div class="flex flex-nowrap items-center gap-2">
       <a class="" href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}>
         {pipeline.name}
       </a>
-      <Status pipelineName={pipeline.name}></Status>
-      <Actions pipelineName={pipeline.name} reloadPipelines={() => pipelines.reload?.()}></Actions>
+      <PipelineStatus class="ml-auto" pipelineName={pipeline.name}></PipelineStatus>
+      <PipelineActions pipelineName={pipeline.name} reloadPipelines={() => pipelines.reload?.()}
+      ></PipelineActions>
     </div>
   {/each}
   <a href="{base}/pipeline/new/"> + create pipeline </a>

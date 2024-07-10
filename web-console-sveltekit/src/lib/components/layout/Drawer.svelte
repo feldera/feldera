@@ -17,11 +17,12 @@
     side: 'right' | 'left' | 'top' | 'bottom'
     children: Snippet
   } = $props()
+  console.log('open drawer', open)
 </script>
 
 <!-- {#if isMobile.matches} -->
 {#if $isMobile}
-  <ModalDrawer {open} {side} {children} class="bg-surface-50 dark:bg-surface-950"></ModalDrawer>
+  <ModalDrawer bind:open {side} {children} class="bg-surface-50 dark:bg-surface-950"></ModalDrawer>
 {:else}
   <InlineDrawer {open} {side} {children}></InlineDrawer>
 {/if}

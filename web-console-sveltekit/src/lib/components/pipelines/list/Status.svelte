@@ -1,19 +1,26 @@
 <script lang="ts">
   import { getStatusLabel } from '$lib/functions/pipelines/status'
   import { getPipelineStatus } from '$lib/services/pipelineManager'
-  import { asyncDerived, derived, readable } from '@square/svelte-store'
+  import { asyncDerived, asyncReadable, derived, readable } from '@square/svelte-store'
   import { match, P } from 'ts-pattern'
 
-  const { pipelineName }: { pipelineName: string } = $props()
-  const status = asyncDerived(readable(pipelineName), getPipelineStatus, {
-    reloadable: true,
-    initial: { status: 'Initializing' as const }
-  })
+  const { pipelineName, class: _class = '' }: { pipelineName: string; class?: string } = $props()
+  const status = asyncReadable(
+    { status: 'Initializing' as const },
+    () => getPipelineStatus(pipelineName),
+    {
+      reloadable: true
+    }
+  )
   $effect(() => {
     let interval = setInterval(() => status.reload?.(), 2000)
     return () => {
       clearInterval(interval)
     }
+  })
+  $effect(() => {
+    pipelineName
+    status.reload?.()
   })
   const chipClass = derived(status, (status) => {
     return match(status.status)
@@ -37,7 +44,7 @@
   })
 </script>
 
-<div class={'chip pointer-events-none h-6 w-24 uppercase ' + $chipClass}>
+<div class={'chip pointer-events-none h-6 w-24 uppercase ' + $chipClass + ' ' + _class}>
   {getStatusLabel($status.status)}
 </div>
 <!-- {#each ['preset-tonal-primary', 'preset-tonal-secondary', 'preset-tonal-tertiary', 'preset-tonal-success', 'preset-tonal-warning', 'preset-tonal-error', 'preset-tonal-surface'] as color}

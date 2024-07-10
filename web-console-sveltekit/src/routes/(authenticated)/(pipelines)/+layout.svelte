@@ -47,7 +47,8 @@
     <Tabs.Control
       group={JSON.stringify($currentTab)}
       name={'"pipelines"'}
-      contentClasses="group-hover:preset-tonal-surface">
+      contentClasses="group-hover:preset-tonal-surface"
+    >
       pipelines
     </Tabs.Control>
   </a>
@@ -89,7 +90,8 @@
           {text}
           {close}
           new={$currentTab.new}
-          {renamePipelineTab}></NewPipelineTabControl>
+          {renamePipelineTab}
+        ></NewPipelineTabControl>
       {/if}
     {:else}
       <PipelineTabControl
@@ -103,7 +105,8 @@
         close={undefined}
         tabContentChanged={'existing' in openPipeline
           ? changedPipelines.has(openPipeline.existing)
-          : undefined}></PipelineTabControl>
+          : undefined}
+      ></PipelineTabControl>
     {/if}
   {/each}
 </div>

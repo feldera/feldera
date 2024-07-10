@@ -12,7 +12,7 @@ import {
   type PipelineThumb
 } from '$lib/services/pipelineManager'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
-import { asyncDerived, asyncReadable, derived, type Readable } from '@square/svelte-store'
+import { asyncDerived, asyncReadable, derived, get, type Readable } from '@square/svelte-store'
 import { onMount } from 'svelte'
 
 import JSONbig from 'true-json-bigint'
@@ -251,8 +251,10 @@ const extractPipelineXgressErrors = ({
 }
 
 const referencePipelines = asyncReadable([], () => getPipelines(), { reloadable: true })
-const pipelinesErrors = asyncDerived(referencePipelines, (ps) =>
-  Promise.all<SystemError>(ps.flatMap(extractPipelineErrors))
+const pipelinesErrors = asyncDerived(
+  referencePipelines,
+  (ps) => Promise.all<SystemError>(ps.flatMap(extractPipelineErrors)),
+  { initial: [] }
 )
 const programsErrors = asyncDerived(
   referencePipelines,
@@ -266,10 +268,13 @@ const programsErrors = asyncDerived(
   },
   { reloadable: true, initial: [] }
 )
-const pipelineXgressErrors = asyncDerived(referencePipelines, (ps) =>
-  Promise.all(ps.map((p) => getPipelineStats(p.name))).then((ss) => {
-    return ss.flatMap(extractPipelineXgressErrors)
-  })
+const pipelineXgressErrors = asyncDerived(
+  referencePipelines,
+  (ps) =>
+    Promise.all(ps.map((p) => getPipelineStats(p.name))).then((ss) => {
+      return ss.flatMap(extractPipelineXgressErrors)
+    }),
+  { initial: [] }
 )
 const systemErrors = derived(
   [programsErrors, pipelinesErrors, pipelineXgressErrors],

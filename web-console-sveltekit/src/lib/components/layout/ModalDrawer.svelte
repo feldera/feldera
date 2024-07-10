@@ -33,9 +33,17 @@
     children: Snippet
     class: string
   } = $props()
+  console.log('open modal', open)
 </script>
 
-<div role="presentation" class="relative z-20" onclick={() => (open = !open)}>
+<div
+  role="presentation"
+  class="relative z-20"
+  onclick={() => {
+    console.log('toggle2')
+    open = !open
+  }}
+>
   <div
     class={'fixed inset-0 bg-gray-500 bg-opacity-75 transition-all ' +
       (open
@@ -53,7 +61,11 @@
             event.stopPropagation()
           }}
         >
-          <div role="dialog" aria-modal="true" class={'flex h-full flex-col shadow-xl ' + _class}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            class={'flex h-full flex-col ' + (open ? ' shadow-xl ' : '') + _class}
+          >
             {@render children()}
           </div>
         </div>

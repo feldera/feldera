@@ -8,17 +8,12 @@ import type { VerticalNavItemsType } from '$lib/types/layout'
 // so it is never empty
 export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavItemsType => {
   return [
-    {
-      title: 'Home',
-      path: `${base}/home/`,
-      class: 'bx bx-home-circle',
-      testid: 'button-vertical-nav-home'
-    },
-    {
-      title: 'Demos',
-      path: `${base}/demos/`,
-      class: 'bx bx-rocket'
-    },
+    // {
+    //   title: 'Home',
+    //   path: `${base}/home/`,
+    //   class: 'bx bx-home-circle',
+    //   testid: 'button-vertical-nav-home'
+    // },
     {
       sectionTitle: 'Analytics'
     },
@@ -27,6 +22,11 @@ export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavI
       path: [`${base}/pipelines/`],
       class: 'bx bx-git-repo-forked',
       testid: 'button-vertical-nav-pipelines'
+    },
+    {
+      title: 'Demos',
+      path: `${base}/demos/`,
+      class: 'bx bx-rocket'
     },
     {
       sectionTitle: 'Platform'
@@ -64,9 +64,16 @@ export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavI
       testid: 'button-vertical-nav-email'
     },
     {
+      title: 'Discord',
+      path: 'https://felderacommunity.slack.com',
+      class: 'font-brands fa-discord w-6  before:-ml-0.5',
+      openInNewTab: true,
+      testid: 'button-vertical-nav-discord'
+    },
+    {
       title: 'Slack',
       path: 'https://felderacommunity.slack.com',
-      class: 'font-brands fa-slack',
+      class: 'font-brands fa-slack w-6 before:ml-0.5',
       openInNewTab: true,
       testid: 'button-vertical-nav-slack'
     }

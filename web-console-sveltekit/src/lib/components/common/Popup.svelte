@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
 
-  const { trigger, content }: { trigger: Snippet<[() => void]>; content: Snippet } = $props()
+  const { trigger, content }: { trigger: Snippet<[() => void]>; content: Snippet<[() => void]> } =
+    $props()
   let show = $state(false)
   let contentNode: HTMLElement
   const onclick = (e: MouseEvent) => {
@@ -22,11 +23,11 @@
 
 <div class="relative">
   {@render trigger(() => {
-    show = true
+    show = !show
   })}
   {#if show}
     <div bind:this={contentNode}>
-      {@render content()}
+      {@render content(() => (show = false))}
     </div>
   {/if}
 </div>

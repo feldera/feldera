@@ -6,7 +6,8 @@
   import { clipboard } from '@svelte-bin/clipboard'
   import { fade, slide } from 'svelte/transition'
 
-  const { systemErrors }: { systemErrors: Loadable<SystemError[]> } = $props()
+  const { systemErrors, close }: { systemErrors: Loadable<SystemError[]>; close?: () => void } =
+    $props()
 </script>
 
 <div class="flex flex-col gap-2 p-4">
@@ -26,7 +27,13 @@
                   class={'bx bx-chevron-down text-[24px] transition-transform ' +
                     (open ? 'rotate-180' : '')}
                 ></div>
-                <a href={systemError.cause.source} class="text-primary-500">
+                <a
+                  href={systemError.cause.source}
+                  class="text-primary-500"
+                  onclick={(e) => {
+                    close?.()
+                  }}
+                >
                   {systemError.name}
                 </a>
               </div>
@@ -35,11 +42,6 @@
                   class=" -mb-5 w-full overflow-x-hidden overflow-y-clip overflow-ellipsis whitespace-nowrap text-sm"
                 >
                   {systemError.message}
-                  <!-- {open
-                ? ''
-                : ((str) => (str.length <= 80 ? str : str.slice(0, 65) + '...'))(
-                    systemError.message
-                  )} -->
                 </div>
               {/if}
             </div>

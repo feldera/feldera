@@ -8,6 +8,8 @@
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { useDebounce } from 'runed'
   import PipelineEditorStatusBar from './PipelineEditorStatusBar.svelte'
+  import PipelineStatus from '$lib/components/pipelines/list/Status.svelte'
+  import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
   import { asyncDebounced } from '$lib/compositions/asyncDebounced'
   import { asyncDecoupled } from '$lib/compositions/asyncDecoupled.svelte'
   import { useChangedPipelines } from '$lib/compositions/pipelines/useChangedPipelines.svelte'
@@ -92,8 +94,14 @@
         </Pane>
         <PaneResizer class="w-4" />
         <Pane defaultSize={80} minSize={50} class="flex flex-col-reverse !overflow-visible">
-          <PipelineEditorStatusBar downstreamChanged={decoupledCode.downstreamChanged}
-          ></PipelineEditorStatusBar>
+          <div class="flex flex-nowrap items-center gap-2 pr-2">
+            <PipelineEditorStatusBar downstreamChanged={decoupledCode.downstreamChanged}
+            ></PipelineEditorStatusBar>
+            {#if $pipelineName}
+              <PipelineStatus class="ml-auto" pipelineName={$pipelineName}></PipelineStatus>
+              <PipelineActions pipelineName={$pipelineName}></PipelineActions>
+            {/if}
+          </div>
           <div class="relative h-full w-full">
             <div class="absolute h-full w-full">
               <MonacoEditor
