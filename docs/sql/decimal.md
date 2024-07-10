@@ -19,8 +19,8 @@ The type ``NUMERIC`` is the same as ``NUMERIC(MAX_PRECISION, 0)``.
 > This means that casting to ``DECIMAL`` or ``NUMERIC`` will round the value to a decimal with no fractional part.
 > Example: ``SELECT CAST('0.5' AS DECIMAL)`` will return ``1`` as the scale is 0.
 
-The maximum precision supported is 128 binary digits (38 decimal
-digits).  The maximum scale supported is 10 decimal digits.
+The maximum precision supported is 28 decimal digits.  The maximum
+scale supported is 10 decimal digits.
 
 ## Operations available for the ``decimal`` type
 
@@ -28,7 +28,7 @@ The legal operations are ``+`` (plus, unary and binary), ``-`` (minus,
 unary and binary), ``*`` (multiplication), ``/`` (division), ``%``
 (modulus).
 
-Modulus happens as follows: 
+Modulus happens as follows:
 For: ``mod = x % y``
 - if ``x >= 0`` and ``y > 0`` then: ``x - (floor(x / y) * y)``
 - if ``x >= 0`` and ``y < 0`` then: ``x % abs(y)``
@@ -79,7 +79,7 @@ Example while casting from ``DECIMAL(8, 4)`` to ``DECIMAL(6, 2)``:
 
 ### Invalid casts between Decimal types
 
-While casting to decimal types, if the current decimal number cannot be represented 
+While casting to decimal types, if the current decimal number cannot be represented
 with the specified precision and scale, a run time error is thrown.
 
 Example:
