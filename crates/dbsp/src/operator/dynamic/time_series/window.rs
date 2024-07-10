@@ -294,8 +294,8 @@ mod test {
         indexed_zset,
         operator::{dynamic::trace::TraceBound, Generator},
         typed_batch::{OrdIndexedZSet, TypedBox},
-        utils::Tup2,
-        zset, Circuit, RootCircuit, Runtime, Stream,
+        utils::{Tup2, Tup3},
+        zset, Circuit, OrdZSet, RootCircuit, Runtime, Stream,
     };
     use size_of::SizeOf;
     use std::vec;
@@ -539,6 +539,75 @@ mod test {
         for i in 0..10000 {
             for j in i * 100..(i + 1) * 100 {
                 input_handle.push(j, 1);
+            }
+            dbsp.step().unwrap();
+        }
+    }
+
+    /// This test shows how to implement a SQL query similar to
+    ///
+    /// SELECT
+    ///   user,
+    ///   COUNT(*)
+    ///   FROM transactions
+    ///   WHERE transactions.time >= now() - 1000
+    /// GROUP BY user
+    ///
+    /// where now() is a monotonically increasing timestamp.
+    /// By using `window` to implement the `WHERE` clause, we automatically GC old transactions
+    /// and compute changes to the window incrementally.
+    type Clock = i64;
+
+    /// (time, user, amt)
+    type Transaction = Tup3<Clock, String, u64>;
+
+    #[test]
+    fn aggregate_with_now() {
+        let (mut dbsp, (now_handle, data_handle)) = Runtime::init_circuit(8, |circuit| {
+            let (now, now_handle) = circuit.add_input_stream::<Clock>();
+
+            let (data, data_handle) = circuit.add_input_zset::<Transaction>();
+            let data_by_time = data.map_index(|x| (x.0, x.clone()));
+
+            let bounds = now.apply(|ts: &Clock| (TypedBox::new(*ts - 1000), TypedBox::new(*ts)));
+
+            let counts = data_by_time
+                .window(&bounds)
+                .map_index(|(_ts, x)| (x.1.clone(), x.clone()))
+                .weighted_count();
+
+            // Reference implementation: filter the entire collection wrt to now.
+            let expected = data
+                .integrate()
+                .apply2(&now, |batch, ts| {
+                    OrdZSet::from_keys(
+                        (),
+                        batch
+                            .iter()
+                            .filter_map(|(x, (), w)| {
+                                if x.0 <= *ts && x.0 >= *ts - 1000 {
+                                    Some(Tup2(x.clone(), w))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .differentiate()
+                .map_index(|x| (x.1.clone(), x.clone()))
+                .weighted_count();
+
+            expected.apply2(&counts, |expected, actual| assert_eq!(expected, actual));
+
+            Ok((now_handle, data_handle))
+        })
+        .unwrap();
+
+        for i in 1..1000 {
+            now_handle.set_for_all(i * 10);
+            for j in (i - 1) * 10..i * 10 {
+                data_handle.push(Tup3(j, format!("{}", j % 10), j as u64), 1);
             }
             dbsp.step().unwrap();
         }
