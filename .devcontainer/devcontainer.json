@@ -20,7 +20,9 @@
 				"vadimcn.vscode-lldb",
 				"mike-co.import-sorter",
 				"lihui.vs-color-picker",
-				"ms-playwright.playwright"
+				"ms-playwright.playwright",
+				"svelte.svelte-vscode",
+				"bradlc.vscode-tailwindcss"
 			],
 			"settings": {
 				"editor.formatOnSave": true,

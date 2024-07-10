@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install --yes sudo
 WORKDIR /dbsp
 ENV RUSTUP_HOME=$HOME/.rustup
 ENV CARGO_HOME=$HOME/.cargo
-# Adds python and rust binaries to thep path
+# Adds python and rust binaries to the path
 ENV PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH
 ENV RUST_VERSION=1.78.0
 ENV RUST_BUILD_MODE='' # set to --release for release builds
@@ -35,6 +35,10 @@ install-deps:
     RUN npm install --global yarn
     RUN npm install --global openapi-typescript-codegen
     RUN apt install unzip -y
+    ## Install Bun.js
+    RUN curl -fsSL https://bun.sh/install | bash
+    ENV PATH="$HOME/.bun/bin:$PATH"
+
     RUN apt install python3-requests -y
     RUN arch=`dpkg --print-architecture`; \
             curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
@@ -90,6 +94,8 @@ clippy:
     FROM +rust-sources
     ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
     COPY ( +build-webui/out ) ./web-console/out
+    ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console-sveltekit/build
+    COPY ( +build-webui/build ) ./web-console-sveltekit/build
     DO rust+CARGO --args="clippy -- -D warnings"
     ENV RUSTDOCFLAGS="-D warnings"
     DO rust+CARGO --args="doc --no-deps"
@@ -121,8 +127,11 @@ build-webui-deps:
     FROM +install-deps
     COPY web-console/package.json ./web-console/package.json
     COPY web-console/yarn.lock ./web-console/yarn.lock
-
     RUN cd web-console && yarn install
+
+    COPY web-console-sveltekit/package.json ./web-console-sveltekit/
+    COPY web-console-sveltekit/bun.lockb ./web-console-sveltekit/
+    RUN cd web-console-sveltekit && $HOME/.bun/bin/bun install
 
 build-webui:
     FROM +build-webui-deps
@@ -142,6 +151,21 @@ build-webui:
     RUN cd web-console && yarn format-check
     RUN cd web-console && yarn build
     SAVE ARTIFACT ./web-console/out
+
+    COPY --dir web-console-sveltekit/static web-console-sveltekit/static
+    COPY --dir web-console-sveltekit/src web-console-sveltekit/src
+    COPY web-console-sveltekit/.prettierignore web-console-sveltekit/
+    COPY web-console-sveltekit/.prettierrc web-console-sveltekit/
+    COPY web-console-sveltekit/eslint.config.js web-console-sveltekit/
+    COPY web-console-sveltekit/postcss.config.js web-console-sveltekit/
+    COPY web-console-sveltekit/svelte.config.js ./web-console-sveltekit/
+    COPY web-console-sveltekit/tailwind.config.ts ./web-console-sveltekit/
+    COPY web-console-sveltekit/tsconfig.json ./web-console-sveltekit/
+    COPY web-console-sveltekit/vite.config.ts ./web-console-sveltekit/
+
+    # RUN cd web-console-sveltekit && $HOME/.bun/bin/bun run check
+    RUN cd web-console-sveltekit && $HOME/.bun/bin/bun run build
+    SAVE ARTIFACT ./web-console-sveltekit/build
 
 build-dbsp:
     FROM +rust-sources
@@ -173,6 +197,8 @@ build-manager:
     # For some reason if this ENV before the FROM line it gets invalidated
     ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
     COPY ( +build-webui/out ) ./web-console/out
+    ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console-sveltekit/build
+    COPY ( +build-webui/build ) ./web-console-sveltekit/build
     DO rust+CARGO --args="build --package pipeline-manager --features pg-embed" --output="debug/pipeline-manager"
 
     IF [ -f ./target/debug/pipeline-manager ]
@@ -329,6 +355,7 @@ build-pipeline-manager-container:
     # Install cargo and rust for this non-root user
     RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
     ENV PATH="$PATH:/home/feldera/.cargo/bin"
+
     RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler --compilation-profile=unoptimized --dbsp-override-path=/home/feldera/database-stream-processor --precompile
     ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/database-stream-processor", "--compilation-profile=unoptimized"]
 

@@ -47,6 +47,12 @@ ENV NODE_MAJOR=20
 RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
 RUN apt update --fix-missing && apt install nodejs -y
 RUN npm install --global yarn openapi-typescript-codegen
+
+## Install Bun.js
+RUN apt install unzip -y
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="$HOME/.bun/bin:$PATH"
+
 # - yarn
 COPY web-console/package.json ./web-console/package.json
 COPY web-console/yarn.lock ./web-console/yarn.lock
@@ -65,6 +71,23 @@ COPY web-console/next.config.js ./web-console/next.config.js
 COPY web-console/next.d.ts ./web-console/next.d.ts
 COPY web-console/tsconfig.json ./web-console/tsconfig.json
 RUN cd web-console && yarn build
+
+# sveltekit
+COPY web-console-sveltekit/package.json ./web-console-sveltekit/
+COPY web-console-sveltekit/bun.lockb ./web-console-sveltekit/
+RUN cd web-console-sveltekit && $HOME/.bun/bin/bun install
+
+COPY web-console-sveltekit/static web-console-sveltekit/static
+COPY web-console-sveltekit/src web-console-sveltekit/src
+COPY web-console-sveltekit/.prettierignore web-console-sveltekit/
+COPY web-console-sveltekit/.prettierrc web-console-sveltekit/
+COPY web-console-sveltekit/eslint.config.js web-console-sveltekit/
+COPY web-console-sveltekit/postcss.config.js web-console-sveltekit/
+COPY web-console-sveltekit/svelte.config.js ./web-console-sveltekit/
+COPY web-console-sveltekit/tailwind.config.ts ./web-console-sveltekit/
+COPY web-console-sveltekit/tsconfig.json ./web-console-sveltekit/
+COPY web-console-sveltekit/vite.config.ts ./web-console-sveltekit/
+RUN cd web-console-sveltekit && $HOME/.bun/bin/bun run build
 
 # Cache dependencies from rust
 FROM chef AS planner
@@ -87,7 +110,9 @@ COPY crates crates
 RUN mkdir sql-to-dbsp-compiler || true
 COPY sql-to-dbsp-compiler/lib sql-to-dbsp-compiler/lib
 COPY --from=web-ui-builder /web-console/out web-console-out
+COPY --from=web-ui-builder /web-console-sveltekit/build web-console-build
 ENV WEBUI_BUILD_DIR=/app/web-console-out
+ENV WEBCONSOLE_BUILD_DIR=/app/web-console-build
 RUN /root/.cargo/bin/cargo build --release --bin=pipeline-manager --features=pg-embed
 
 # Java build can be performed in parallel
