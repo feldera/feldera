@@ -36,7 +36,7 @@ eksctl get nodegroup --cluster CLUSTERNAME --region us-west-1 --name ng-m5-4xlar
    eksctl create nodegroup --config-file=eks-config.yaml
    ```
 
-## Scaling
+## Changing instance types
 
 For example, we wish to change the capacity of node group `ng-m5-4xlarge` to 0,
 and that of `ng-m5-8xlarge` to 1.

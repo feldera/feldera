@@ -58,11 +58,7 @@ metadata:
   region: us-west-1
   version: "1.30"
 
-# Availability zones (AZ) (at least two zones must be specified)
-# Note: not all instance types are available in all availability zones
-availabilityZones: ["us-west-1a", "us-west-1c"]
-
-# Node groups that can be used to scale the cluster up and down.
+# Node groups that can be used to scale the cluster up and down
 managedNodeGroups:
   - name: ng-m5-4xlarge
     desiredCapacity: 1
