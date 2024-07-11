@@ -1,10 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -30,6 +32,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -145,7 +148,8 @@ public class ImplementNow extends Passes {
     /** Replace map operators that contain now() as an expression with
      * map operators that take an extra field and use that instead of the now() call.
      * Insert a join prior to such operators (which also requires a MapIndex operator.
-     * Also inserts a MapIndex operator to index the 'NOW' built-in table. */
+     * Also inserts a MapIndex operator to index the 'NOW' built-in table.
+     * Same for filter operators. */
     static class RewriteNow extends CircuitCloneVisitor {
         // Holds the indexed version of the 'now' operator (indexed with an empty key).
         @Nullable
@@ -155,41 +159,68 @@ public class ImplementNow extends Passes {
             super(reporter, false);
         }
 
+        DBSPStreamJoinOperator createJoin(DBSPUnaryOperator operator) {
+            // Index the input
+            DBSPType inputType = operator.input().getOutputZSetElementType();
+            DBSPVariablePath var = inputType.ref().var();
+            DBSPExpression indexFunction = new DBSPRawTupleExpression(
+                    new DBSPTupleExpression(),
+                    var.deref().applyClone());
+            DBSPMapIndexOperator index = new DBSPMapIndexOperator(
+                    operator.getNode(), indexFunction.closure(var.asParameter()),
+                    TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), inputType),
+                    this.mapped(operator.input()));
+            this.addOperator(index);
+
+            // Join with 'indexedNow'
+            DBSPVariablePath key = new DBSPTypeTuple().ref().var();
+            DBSPVariablePath left = inputType.ref().var();
+            DBSPVariablePath right = new DBSPTypeTuple(ContainsNow.timestampType()).ref().var();
+            List<DBSPExpression> fields = left.deref().allFields();
+            fields.add(right.deref().field(0));
+            DBSPTypeZSet joinType = TypeCompiler.makeZSet(new DBSPTypeTuple(
+                    Linq.map(fields, DBSPExpression::getType)));
+            DBSPExpression joinFunction = new DBSPTupleExpression(fields, false)
+                    .closure(key.asParameter(), left.asParameter(), right.asParameter());
+            DBSPStreamJoinOperator join = new DBSPStreamJoinOperator(operator.getNode(), joinType,
+                    joinFunction, operator.isMultiset, index, Objects.requireNonNull(this.nowIndexed));
+            this.addOperator(join);
+            return join;
+        }
+
         @Override
         public void postorder(DBSPMapOperator operator) {
             ContainsNow cn = new ContainsNow(this.errorReporter);
             DBSPExpression function = operator.getFunction();
             cn.apply(function);
             if (cn.found()) {
-                // Index the input
-                DBSPType inputType = operator.input().getOutputZSetElementType();
-                DBSPVariablePath var = inputType.ref().var();
-                DBSPExpression indexFunction = new DBSPRawTupleExpression(
-                        new DBSPTupleExpression(),
-                        var.deref().applyClone());
-                DBSPMapIndexOperator index = new DBSPMapIndexOperator(
-                        operator.getNode(), indexFunction.closure(var.asParameter()),
-                        TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), inputType),
-                        this.mapped(operator.input()));
-                this.addOperator(index);
-
-                // Join with 'indexedNow'
-                DBSPVariablePath key = new DBSPTypeTuple().ref().var();
-                DBSPVariablePath left = inputType.ref().var();
-                DBSPVariablePath right = new DBSPTypeTuple(ContainsNow.timestampType()).ref().var();
-                List<DBSPExpression> fields = left.deref().allFields();
-                fields.add(right.deref().field(0));
-                DBSPTypeZSet joinType = TypeCompiler.makeZSet(new DBSPTypeTuple(
-                        Linq.map(fields, DBSPExpression::getType)));
-                DBSPExpression joinFunction = new DBSPTupleExpression(fields, false)
-                        .closure(key.asParameter(), left.asParameter(), right.asParameter());
-                DBSPOperator join = new DBSPStreamJoinOperator(operator.getNode(), joinType,
-                        joinFunction, operator.isMultiset, index, Objects.requireNonNull(this.nowIndexed));
-                this.addOperator(join);
-
+                DBSPStreamJoinOperator join = this.createJoin(operator);
                 RewriteNowExpression rn = new RewriteNowExpression(this.errorReporter);
                 function = rn.apply(function).to(DBSPExpression.class);
                 DBSPOperator result = new DBSPMapOperator(operator.getNode(), function, operator.getOutputZSetType(), join);
+                this.map(operator, result);
+            } else {
+                super.postorder(operator);
+            }
+        }
+
+        @Override
+        public void postorder(DBSPFilterOperator operator) {
+            ContainsNow cn = new ContainsNow(this.errorReporter);
+            DBSPExpression function = operator.getFunction();
+            cn.apply(function);
+            if (cn.found()) {
+                DBSPStreamJoinOperator join = this.createJoin(operator);
+                RewriteNowExpression rn = new RewriteNowExpression(this.errorReporter);
+                function = rn.apply(function).to(DBSPExpression.class);
+                DBSPOperator filter = new DBSPFilterOperator(operator.getNode(), function, join);
+                this.addOperator(filter);
+                // Drop the extra field
+                DBSPVariablePath var = filter.getOutputZSetElementType().ref().var();
+                List<DBSPExpression> fields = var.deref().allFields();
+                Utilities.removeLast(fields);
+                DBSPExpression drop = new DBSPTupleExpression(fields, false).closure(var.asParameter());
+                DBSPMapOperator result = new DBSPMapOperator(operator.getNode(), drop, operator.getOutputZSetType(), filter);
                 this.map(operator, result);
             } else {
                 super.postorder(operator);

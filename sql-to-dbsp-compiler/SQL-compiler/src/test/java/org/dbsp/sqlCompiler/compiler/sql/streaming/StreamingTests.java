@@ -144,6 +144,29 @@ public class StreamingTests extends StreamingTest {
     }
 
     @Test
+    public void testNow4() {
+        // now() used in WHERE
+        String sql = """
+                CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
+                CREATE TABLE transactions (
+                  id INT PRIMARY KEY,
+                  ts TIMESTAMP,
+                  users INT,
+                  AMOUNT DECIMAL
+                );
+                CREATE VIEW window_computation AS
+                SELECT
+                  users,
+                  COUNT(*) AS transaction_count_by_user
+                FROM transactions
+                WHERE ts >= now() - INTERVAL 1 DAY
+                GROUP BY users""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        new CompilerCircuitStream(compiler);
+    }
+
+    @Test
     public void issue2003() {
         String sql = """
                 CREATE TABLE event(
