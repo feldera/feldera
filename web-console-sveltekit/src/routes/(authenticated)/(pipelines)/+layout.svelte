@@ -42,13 +42,13 @@
   const changedPipelines = useChangedPipelines()
 </script>
 
-<div class="flex">
+<div class=" -mt-12 ml-12 mr-36 flex">
   <a class="preset-grayout-surface" href="{base}/pipelines/">
     <Tabs.Control
+      class="mb-2"
       group={JSON.stringify($currentTab)}
       name={'"pipelines"'}
-      contentClasses="group-hover:preset-tonal-surface"
-    >
+      contentClasses="group-hover:preset-tonal-surface">
       pipelines
     </Tabs.Control>
   </a>
@@ -90,8 +90,7 @@
           {text}
           {close}
           new={$currentTab.new}
-          {renamePipelineTab}
-        ></NewPipelineTabControl>
+          {renamePipelineTab}></NewPipelineTabControl>
       {/if}
     {:else}
       <PipelineTabControl
@@ -105,8 +104,7 @@
         close={undefined}
         tabContentChanged={'existing' in openPipeline
           ? changedPipelines.has(openPipeline.existing)
-          : undefined}
-      ></PipelineTabControl>
+          : undefined}></PipelineTabControl>
     {/if}
   {/each}
 </div>
