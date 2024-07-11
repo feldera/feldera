@@ -9,8 +9,8 @@ use crate::{
             vec::key_batch::{VecKeyBuilder, VecKeyMerger},
             FileKeyBatch, OrdKeyBatch,
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, FileKeyBatchFactories,
-        Filter, Merger, OrdKeyBatchFactories, TimedBuilder, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
+        FileKeyBatchFactories, Filter, Merger, OrdKeyBatchFactories, TimedBuilder, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -251,6 +251,14 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.approximate_byte_size(),
             Inner::File(file) => file.approximate_byte_size(),
+        }
+    }
+
+    #[inline]
+    fn location(&self) -> BatchLocation {
+        match &self.inner {
+            Inner::Vec(vec) => vec.location(),
+            Inner::File(file) => file.location(),
         }
     }
 

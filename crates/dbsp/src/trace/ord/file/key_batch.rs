@@ -12,8 +12,8 @@ use crate::{
     trace::{
         cursor::{HasTimeDiffCursor, TimeDiffCursor},
         ord::{filter, merge_batcher::MergeBatcher},
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Merger,
-        TimedBuilder, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
+        Filter, Merger, TimedBuilder, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime, Timestamp,
@@ -256,6 +256,11 @@ where
 
     fn approximate_byte_size(&self) -> usize {
         self.file.byte_size().unwrap() as usize
+    }
+
+    #[inline]
+    fn location(&self) -> BatchLocation {
+        BatchLocation::Storage
     }
 
     fn lower(&self) -> AntichainRef<'_, T> {

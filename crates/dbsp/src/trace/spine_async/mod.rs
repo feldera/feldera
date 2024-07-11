@@ -1,9 +1,13 @@
 //! Implementation of a trace which merges batches in the background.
 
 use crate::{
+    circuit::metadata::{MetaItem, OperatorMeta},
     dynamic::{DynVec, Factory, Weight},
     time::{Antichain, AntichainRef, Timestamp},
-    trace::{cursor::CursorList, Batch, BatchReader, BatchReaderFactories, Cursor, Filter, Trace},
+    trace::{
+        cursor::CursorList, Batch, BatchLocation, BatchReader, BatchReaderFactories, Cursor,
+        Filter, Trace,
+    },
     Error, NumEntries, Runtime,
 };
 
@@ -149,6 +153,38 @@ impl Default for CompactStrategy {
     }
 }
 
+/// Statistics about merges that a [Spine] has performed.
+///
+/// The difference between `post_len` and `pre_len` reflects updates that were
+/// dropped because weights added to zero or because of key or value filters.
+#[derive(Default)]
+struct MergeStats {
+    /// Number of updates before merging.
+    pre_len: u64,
+    /// Number of updates after merging.
+    post_len: u64,
+}
+
+impl MergeStats {
+    /// Adds `pre_len` and `post_len` to the statistics.
+    fn report_merge(&mut self, pre_len: usize, post_len: usize) {
+        self.pre_len += pre_len as u64;
+        self.post_len += post_len as u64;
+    }
+
+    /// Reports the percentage (in range `0..=100`) of updates that merging
+    /// eliminated.
+    fn reduction_percent(&self) -> f64 {
+        if self.pre_len > self.post_len {
+            let pre = self.pre_len as f64;
+            let post = self.post_len as f64;
+            (pre - post) / pre * 100.0
+        } else {
+            0.0
+        }
+    }
+}
+
 /// Persistence optimized [trace][crate::trace::Trace] implementation based on
 /// collection and merging immutable batches of updates.
 #[derive(SizeOf)]
@@ -189,6 +225,9 @@ where
     /// Decision logic for compaction.
     #[size_of(skip)]
     strategy: CompactStrategy,
+    /// Merge statistics.
+    #[size_of(skip)]
+    merge_stats: MergeStats,
 }
 
 impl<B> Display for Spine<B>
@@ -860,6 +899,56 @@ where
 
         Ok(())
     }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        let mut n_batches = 0;
+        let mut n_merging = 0;
+        let mut storage_size = 0;
+        let mut merging_size = 0;
+        for level in self.levels.iter().rev() {
+            for batch in level.values() {
+                n_batches += batch.0.len();
+                let merging = batch.0.len() > 1;
+                if merging {
+                    n_merging += batch.0.len();
+                }
+                for b in batch.0.iter() {
+                    let on_storage = b.location() == BatchLocation::Storage;
+                    if on_storage || merging {
+                        let size = b.approximate_byte_size();
+                        if on_storage {
+                            storage_size += size;
+                        }
+                        if merging {
+                            merging_size += size;
+                        }
+                    }
+                }
+            }
+        }
+
+        meta.extend(metadata! {
+            // Number of batches currently in the spine.
+            "batches" => n_batches,
+
+            // The amount of data in the spine currently stored on disk (not
+            // including any in-progress merges).
+            "storage size" => MetaItem::bytes(storage_size),
+
+            // The number of batches currently being merged (currently this
+            // is always an even number because batches are merged in
+            // pairs).
+            "merging batches" => n_merging,
+
+            // The number of bytes of batches being merged.
+            "merging size" => MetaItem::bytes(merging_size),
+
+            // For merges already completed, the percentage of the updates input
+            // to merges that merging eliminated, whether by weights adding to
+            // zero or through key or value filters.
+            "merge reduction" => MetaItem::Percent(self.merge_stats.reduction_percent())
+        });
+    }
 }
 
 impl<B> Spine<B>
@@ -922,6 +1011,7 @@ where
             completion_rx: rx,
             outstanding: (0..MAX_LEVELS).map(|_| 0).collect(),
             strategy: CompactStrategy::default(),
+            merge_stats: MergeStats::default(),
         }
     }
 
@@ -949,11 +1039,17 @@ where
     /// We remove the old two batches and insert the new one.
     fn handle_completed_batch(&mut self, r: (BatchIdent, B)) {
         let (old_key, new_batch) = r;
-        let ret = self.levels[old_key.level].remove(&old_key).unwrap();
-        assert!(ret.is_merging(), "We should have found a double batch");
+        let input_batches = self.levels[old_key.level].remove(&old_key).unwrap();
+        let old_len = input_batches.0.iter().map(|b| b.len()).sum();
+        assert!(
+            input_batches.is_merging(),
+            "We should have found a double batch"
+        );
+        let new_len = new_batch.len();
         self.introduce_batch(new_batch);
 
         self.outstanding[old_key.level] -= 1;
+        self.merge_stats.report_merge(old_len, new_len);
     }
 
     /// Check if the RX queue from the merger thread has any completed merges,

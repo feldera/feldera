@@ -13,8 +13,8 @@ use crate::{
     trace::{
         cursor::{HasTimeDiffCursor, SingletonTimeDiffCursor},
         ord::{filter, merge_batcher::MergeBatcher},
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, Merger, Serializer, TimedBuilder, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
+        Deserializer, Filter, Merger, Serializer, TimedBuilder, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime,
@@ -354,6 +354,11 @@ where
 
     fn approximate_byte_size(&self) -> usize {
         self.file.byte_size().unwrap() as usize
+    }
+
+    #[inline]
+    fn location(&self) -> BatchLocation {
+        BatchLocation::Storage
     }
 
     #[inline]

@@ -15,8 +15,8 @@ use crate::{
                 VecIndexedWSetMerger,
             },
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, FileIndexedWSet,
-        FileIndexedWSetFactories, Filter, Merger, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
+        FileIndexedWSet, FileIndexedWSetFactories, Filter, Merger, WeightedItem,
     },
     DBData, DBWeight, NumEntries,
 };
@@ -334,6 +334,14 @@ where
         match &self.inner {
             Inner::File(file) => file.approximate_byte_size(),
             Inner::Vec(vec) => vec.approximate_byte_size(),
+        }
+    }
+
+    #[inline]
+    fn location(&self) -> BatchLocation {
+        match &self.inner {
+            Inner::Vec(vec) => vec.location(),
+            Inner::File(file) => file.location(),
         }
     }
 
