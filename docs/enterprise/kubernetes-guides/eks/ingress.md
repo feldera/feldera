@@ -114,7 +114,7 @@ kubectl get svc -n ingress-nginx-internal ingress-nginx-internal-controller-inte
 This should return a hostname like:
 
 ```
-abcd-efgh.elb.us-west-1.amazonaws.com
+abcd-efgh.elb.us-west-2.amazonaws.com
 ```
 
 From within your VPC (e.g., via VPN) visit the load balancer endpoint hostname in a browser

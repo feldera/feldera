@@ -55,7 +55,7 @@ apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 metadata:
   name: feldera-cluster
-  region: us-west-1
+  region: us-west-2
   version: "1.30"
 
 # Node groups that can be used to scale the cluster up and down
@@ -66,7 +66,7 @@ managedNodeGroups:
     maxSize: 3
     instanceType: m5.4xlarge
     privateNetworking: true
-    availabilityZones: ["us-west-1a"]
+    availabilityZones: ["us-west-2a"]
 
 # Virtual private cloud (VPC)
 vpc:
@@ -118,7 +118,7 @@ It should take roughly 15-20 minutes. This uses CloudFormation behind-the-scenes
 to bring up an EKS cluster named `feldera-cluster` with one EC2 instance as worker node,
 running in a newly created dedicated VPC. 
 
-`eksctl` will create the VPC in the `us-west-1` region which will run the EKS
+`eksctl` will create the VPC in the `us-west-2` region which will run the EKS
 cluster. The cluster will be deployed across two availability zones (AZs). Each
 AZ will have two subnets, one private and one public. The private subnets will
 have outbound Internet connectivity via a NAT gateway. The public subnets will
