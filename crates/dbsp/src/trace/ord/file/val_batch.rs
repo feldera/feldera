@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::trace::cursor::{HasTimeDiffCursor, TimeDiffCursor};
-use crate::trace::TimedBuilder;
+use crate::trace::{BatchLocation, TimedBuilder};
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
@@ -283,6 +283,11 @@ where
 
     fn approximate_byte_size(&self) -> usize {
         self.file.byte_size().unwrap() as usize
+    }
+
+    #[inline]
+    fn location(&self) -> BatchLocation {
+        BatchLocation::Storage
     }
 
     fn lower(&self) -> AntichainRef<'_, T> {

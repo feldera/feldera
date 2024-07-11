@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::trace::cursor::DelegatingCursor;
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
-use crate::trace::TimedBuilder;
+use crate::trace::{BatchLocation, TimedBuilder};
 use crate::{
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     time::AntichainRef,
@@ -260,6 +260,14 @@ where
         match &self.inner {
             Inner::File(file) => file.approximate_byte_size(),
             Inner::Vec(vec) => vec.approximate_byte_size(),
+        }
+    }
+
+    #[inline]
+    fn location(&self) -> BatchLocation {
+        match &self.inner {
+            Inner::Vec(vec) => vec.location(),
+            Inner::File(file) => file.location(),
         }
     }
 

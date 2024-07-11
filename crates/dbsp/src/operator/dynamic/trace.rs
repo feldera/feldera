@@ -834,6 +834,10 @@ where
             "allocations" => bytes.distinct_allocations(),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
         });
+
+        if let Some(trace) = self.trace.as_ref() {
+            trace.metadata(meta);
+        }
     }
 
     fn fixedpoint(&self, scope: Scope) -> bool {

@@ -32,6 +32,7 @@
 //! and upper bounds, one for each category of incomparable time, in an
 //! [`Antichain`].
 
+use crate::circuit::metadata::OperatorMeta;
 use crate::dynamic::ClonableTrait;
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::time::Antichain;
@@ -265,6 +266,19 @@ pub trait Trace: BatchReader {
     fn restore<P: AsRef<str>>(&mut self, _cid: Uuid, _pid: P) -> Result<(), Error> {
         Ok(())
     }
+
+    /// Allows the trace to report additional metadata.
+    fn metadata(&self, _meta: &mut OperatorMeta) {}
+}
+
+/// Where a batch is stored.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BatchLocation {
+    /// In RAM.
+    Memory,
+
+    /// On disk.
+    Storage,
 }
 
 /// A set of `(key, value, time, diff)` tuples whose contents may be read in
@@ -331,6 +345,11 @@ where
     /// in the batch. The batch will be discarded afterward, which means that
     /// the implementation need not attempt to cache the return value.
     fn approximate_byte_size(&self) -> usize;
+
+    /// Where the batch's data is stored.
+    fn location(&self) -> BatchLocation {
+        BatchLocation::Memory
+    }
 
     /// True if the batch is empty.
     fn is_empty(&self) -> bool {
@@ -459,7 +478,7 @@ where
 
     /// Pushes all timestamps in the trace back to `frontier` or less, by
     /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  See
-    /// [`Trace::recede_to`].
+    /// [`Batch::recede_to`].
     fn recede_to(&mut self, frontier: &Self::Time);
 
     fn persistent_id(&self) -> Option<PathBuf> {
