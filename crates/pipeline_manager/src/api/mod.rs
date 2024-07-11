@@ -277,9 +277,9 @@ pub struct ApiDoc;
 // `static_files` magic.
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-// mod web_v2 {
-//     include!(concat!(env!("OUT_DIR"), "/v2/generated.rs"));
-// }
+mod web_v2 {
+    include!(concat!(env!("OUT_DIR"), "/v2/generated.rs"));
+}
 
 // The scope for all unauthenticated API endpoints
 fn public_scope() -> Scope {
@@ -295,10 +295,10 @@ fn public_scope() -> Scope {
         .service(ResourceFiles::new("/", generate()))
 }
 
-// fn new_scope() -> Scope {
-//     web::scope("/new")
-//         .service(ResourceFiles::new("/", web_v2::generate()).resolve_not_found_to_root())
-// }
+fn new_scope() -> Scope {
+    web::scope("/new")
+        .service(ResourceFiles::new("/", web_v2::generate()).resolve_not_found_to_root())
+}
 
 // The scope for all authenticated API endpoints
 fn api_scope() -> Scope {
@@ -464,7 +464,7 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
                         let req = crate::auth::tag_with_default_tenant_id(req);
                         srv.call(req)
                     }))
-                    // .service(new_scope())
+                    .service(new_scope())
                     .service(public_scope())
             });
             server.listen(listener)?.run()

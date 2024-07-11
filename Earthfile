@@ -131,7 +131,7 @@ build-webui-deps:
 
     COPY web-console-sveltekit/package.json ./web-console-sveltekit/
     COPY web-console-sveltekit/bun.lockb ./web-console-sveltekit/
-    RUN cd web-console-sveltekit && $HOME/.bun/bin/bun install
+    RUN cd web-console-sveltekit && bun install
 
 build-webui:
     FROM +build-webui-deps
@@ -163,8 +163,8 @@ build-webui:
     COPY web-console-sveltekit/tsconfig.json ./web-console-sveltekit/
     COPY web-console-sveltekit/vite.config.ts ./web-console-sveltekit/
 
-    # RUN cd web-console-sveltekit && $HOME/.bun/bin/bun run check
-    RUN cd web-console-sveltekit && $HOME/.bun/bin/bun run build
+    # RUN cd web-console-sveltekit && bun run check
+    RUN cd web-console-sveltekit && bun run build
     SAVE ARTIFACT ./web-console-sveltekit/build
 
 build-dbsp:
@@ -622,7 +622,7 @@ flink-benchmark:
     RUN benchmark/flink/setup-flink.sh
 
     RUN echo "when,runner,mode,language,name,num_cores,num_events,elapsed" >> flink_results.csv
-    WITH DOCKER 
+    WITH DOCKER
         RUN docker compose -f benchmark/flink/docker-compose.yml -p nexmark up --build --force-recreate --renew-anon-volumes -d && \
             docker exec -i nexmark-jobmanager-1 run.sh -q q0 2>&1 | tee flink_log.txt && \
             ./benchmark/run-nexmark.sh --runner flink --parse < flink_log.txt >> flink_results.csv
