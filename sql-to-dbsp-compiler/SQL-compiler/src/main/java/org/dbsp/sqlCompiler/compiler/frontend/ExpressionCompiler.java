@@ -1360,7 +1360,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         boolean isConstructor = this.compiler.isStructConstructor(function);
         if (isConstructor) {
             DBSPTypeStruct struct = this.compiler.getStructByName(function);
-            assert struct.toTuple().sameType(type);
+            assert Objects.requireNonNull(struct).toTuple().sameType(type);
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
             for (int i = 0; i < ops.size(); i++) {
                 DBSPExpression opi = ops.get(i);
@@ -1404,7 +1404,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     }
 
     @Override
-    public DBSPCompiler getCompiler() {
+    public DBSPCompiler compiler() {
         return this.compiler;
     }
 }

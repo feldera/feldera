@@ -83,7 +83,7 @@ public class ExternalFunction extends SqlFunction {
     @Nullable
     public DBSPType structReturnType = null;
     @Nullable
-    public RexNode body;
+    public final RexNode body;
 
     static SqlOperandTypeChecker createTypeChecker(String function, List<RelDataTypeField> parameters) {
         if (parameters.isEmpty())

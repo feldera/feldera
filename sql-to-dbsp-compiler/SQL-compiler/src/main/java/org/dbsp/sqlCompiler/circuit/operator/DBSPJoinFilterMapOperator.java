@@ -17,7 +17,7 @@ import java.util.Objects;
  * where the synthesized function
  * returns None when filter(function) is false, and Some(map(function))
  * otherwise. */
-public final class DBSPJoinFilterMap extends DBSPBinaryOperator {
+public final class DBSPJoinFilterMapOperator extends DBSPBinaryOperator {
     // If the following is null, the function represents the combined function/filter
     // and the function returns Option.
     @Nullable
@@ -25,7 +25,7 @@ public final class DBSPJoinFilterMap extends DBSPBinaryOperator {
     @Nullable
     public final DBSPExpression map;
 
-    public DBSPJoinFilterMap(
+    public DBSPJoinFilterMapOperator(
             CalciteObject node, DBSPTypeZSet outputType,
             DBSPExpression function, @Nullable DBSPExpression filter, @Nullable DBSPExpression map,
             boolean isMultiset,
@@ -33,11 +33,20 @@ public final class DBSPJoinFilterMap extends DBSPBinaryOperator {
         super(node, "join_flatmap", function, outputType, isMultiset, left, right);
         this.filter = filter;
         this.map = map;
+        assert left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType);
+    }
+
+    public DBSPType getKeyType() {
+        return left().getOutputIndexedZSetType().keyType;
+    }
+
+    public DBSPExpression getFilter() {
+        return Objects.requireNonNull(this.filter);
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPJoinFilterMap(
+        return new DBSPJoinFilterMapOperator(
                 this.getNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression), this.filter, this.map,
                 this.isMultiset, this.left(), this.right()).copyAnnotations(this);
@@ -46,7 +55,7 @@ public final class DBSPJoinFilterMap extends DBSPBinaryOperator {
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPJoinFilterMap(
+            return new DBSPJoinFilterMapOperator(
                     this.getNode(), this.getOutputZSetType(),
                     this.getFunction(), this.filter, this.map,
                     this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
@@ -57,7 +66,7 @@ public final class DBSPJoinFilterMap extends DBSPBinaryOperator {
     public boolean equivalent(DBSPOperator other) {
         if (!super.equivalent(other))
             return false;
-        DBSPJoinFilterMap jfm = other.as(DBSPJoinFilterMap.class);
+        DBSPJoinFilterMapOperator jfm = other.as(DBSPJoinFilterMapOperator.class);
         if (jfm == null)
             return false;
         return EquivalenceContext.equiv(this.filter, jfm.filter) &&

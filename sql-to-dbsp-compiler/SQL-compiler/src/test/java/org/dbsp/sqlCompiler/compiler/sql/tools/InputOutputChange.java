@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.sql.simple;
+package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 /** A pair of changes, one for inputs and the expected corresponding outputs,
  * used in a test. */

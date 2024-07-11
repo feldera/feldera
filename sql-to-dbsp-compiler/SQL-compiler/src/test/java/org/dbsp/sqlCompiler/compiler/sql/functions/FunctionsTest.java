@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.functions;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -268,7 +268,6 @@ public class FunctionsTest extends SqlIoTest {
     @Test
     public void issue1187divisorZero() {
         this.runtimeConstantFail("SELECT 8 % 0", "attempt to calculate the remainder with a divisor of zero");
-
         this.shouldWarn("SELECT 8 % 0", "Modulus by constant zero value as divisor.");
     }
 

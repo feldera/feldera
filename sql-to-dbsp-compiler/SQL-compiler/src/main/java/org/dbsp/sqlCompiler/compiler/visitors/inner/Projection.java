@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.apache.commons.math3.util.Pair;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -20,45 +21,55 @@ import org.dbsp.util.ExplicitShuffle;
 import org.dbsp.util.Shuffle;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
+import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 
-/**
- * Discovers whether a closure is just a projection:
+/** Discovers whether a closure is just a projection:
  * selects some fields from the input tuple.
- * A conservative approximation.
- */
+ * A conservative approximation. */
 public class Projection extends InnerVisitor {
+    // TODO: resolve identifiers properly
+
     @Nullable
     public DBSPClosureExpression expression;
     /** Set to true if this is indeed a projection. */
     public boolean isProjection;
     /** Parameters of the enclosing closure. */
-    public final Set<String> parameters;
+    public final List<String> parameters;
 
     /** If the description can be described as a shuffle,
      * this is it.
      * For a projection to be described as a shuffle,
      * it cannot contain constant fields, or nested fields.
      * (a.1, a.3) is simple
-     * (2, a.3, a.3.2) is not simple
-     */
+     * (2, a.3, a.3.2) is not simple.
+     * Only makes sense for functions with a single parameter. */
     @Nullable
     ExplicitShuffle shuffle;
 
+    /** A list indexed by output number.  For each output, the list
+     * contains the input parameter index, and the field index, if the analyzed
+     * function is a projection. */
+    @Nullable
+    List<Pair<Integer, Integer>> outputs;
+
     VisitDecision notProjection() {
         this.shuffle = null;
+        this.outputs = null;
         this.isProjection = false;
         return VisitDecision.STOP;
     }
 
+    int currentParameterIndex = -1;
+
     public Projection(IErrorReporter reporter) {
         super(reporter);
-        this.parameters = new HashSet<>();
+        this.parameters = new ArrayList<>();
         this.isProjection = true;
+        this.outputs = new ArrayList<>();
         this.shuffle = new ExplicitShuffle();
     }
 
@@ -87,6 +98,7 @@ public class Projection extends InnerVisitor {
         if (!this.parameters.contains(path.variable)) {
             return this.notProjection();
         }
+        this.currentParameterIndex = this.parameters.indexOf(path.variable);
         return VisitDecision.CONTINUE;
     }
 
@@ -94,6 +106,7 @@ public class Projection extends InnerVisitor {
     public VisitDecision preorder(DBSPDerefExpression expression) {
         if (!expression.expression.is(DBSPVariablePath.class)) {
             this.shuffle = null;
+            this.outputs = null;
         }
         return VisitDecision.CONTINUE;
     }
@@ -107,6 +120,14 @@ public class Projection extends InnerVisitor {
         if (this.shuffle != null)
             this.shuffle.add(field.fieldNo);
         return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public void postorder(DBSPFieldExpression field) {
+        if (this.outputs != null) {
+            assert this.currentParameterIndex >= 0;
+            this.outputs.add(Pair.create(this.currentParameterIndex, field.fieldNo));
+        }
     }
 
     @Override
@@ -124,6 +145,7 @@ public class Projection extends InnerVisitor {
 
     public VisitDecision preorder(DBSPLiteral expression) {
         this.shuffle = null;
+        this.outputs = null;
         return VisitDecision.CONTINUE;
     }
 
@@ -173,6 +195,11 @@ public class Projection extends InnerVisitor {
     }
 
     public boolean isShuffle() {
+        assert this.parameters.size() == 1;
         return this.shuffle != null;
+    }
+
+    public List<Pair<Integer, Integer>> getOutputs() {
+        return Objects.requireNonNull(this.outputs);
     }
 }

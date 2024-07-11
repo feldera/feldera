@@ -26,8 +26,7 @@ package org.dbsp.sqlCompiler.compiler.sql.suites.nexmark;
 import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.Monotonicity;
+import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
@@ -38,7 +37,7 @@ import java.util.Set;
 
 /* Test SQL queries from the Nexmark suite.
  * https://github.com/nexmark/nexmark/tree/master/nexmark-flink/src/main/resources/queries */
-public class NexmarkTest extends StreamingTest {
+public class NexmarkTest extends StreamingTestBase {
     static final String[] tables = {
             """
 CREATE TABLE person (
@@ -569,10 +568,10 @@ SELECT
         this.prepareInputs(compiler);
         compiler.compileStatements(queries[query]);
         final boolean debug = false;
-        Class<?> module = Monotonicity.class;
+        Class<?> module = DBSPCompiler.class;
         int previous;
         if (debug)
-            previous = Logger.INSTANCE.setLoggingLevel(module, 4);
+            previous = Logger.INSTANCE.setLoggingLevel(module, 1);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         if (debug)
             Logger.INSTANCE.setLoggingLevel(module, previous);

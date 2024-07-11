@@ -2,8 +2,8 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Assert;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
 
 /** Regression tests that failed in incremental mode using the Catalog API */

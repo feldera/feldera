@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMap;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
@@ -206,7 +206,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     }
 
     public static DBSPClosureExpression lowerJoinFilterMapFunctions(
-            IErrorReporter errorReporter, DBSPJoinFilterMap node) {
+            IErrorReporter errorReporter, DBSPJoinFilterMapOperator node) {
         assert node.filter != null;
         if (node.map == null) {
             // Generate code of the form
@@ -253,14 +253,14 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPJoinFilterMap node) {
+    public void postorder(DBSPJoinFilterMapOperator node) {
         if (node.filter == null) {
             // Already lowered
             super.postorder(node);
             return;
         }
         DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.errorReporter, node);
-        DBSPOperator result = new DBSPJoinFilterMap(node.getNode(), node.getOutputZSetType(),
+        DBSPOperator result = new DBSPJoinFilterMapOperator(node.getNode(), node.getOutputZSetType(),
                 newFunction, null, null, node.isMultiset,
                 this.mapped(node.left()), this.mapped(node.right()));
         this.map(node, result);

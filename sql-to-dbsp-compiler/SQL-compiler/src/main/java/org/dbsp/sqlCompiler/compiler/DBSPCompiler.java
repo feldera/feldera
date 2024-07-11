@@ -166,7 +166,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     @Override
-    public DBSPCompiler getCompiler() {
+    public DBSPCompiler compiler() {
         return this;
     }
 
@@ -230,17 +230,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.frontend.addSchemaSource(name, schema);
     }
 
-    static class SqlStatements {
-        final String statement;
-        final boolean many;
+    record SqlStatements(String statement, boolean many) {}
 
-        SqlStatements(String statement, boolean many) {
-            this.statement = statement;
-            this.many = many;
-        }
-    }
-
-    List<SqlStatements> toCompile = new ArrayList<>();
+    final List<SqlStatements> toCompile = new ArrayList<>();
 
     /** Accumulate program to compile.
      * @param statements Statements to compile.
@@ -321,7 +313,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 SqlOperatorTable newTable = SqlOperatorTables.of(functions);
                 this.frontend.addOperatorTable(newTable);
                 if (this.options.ioOptions.udfs.isEmpty()) {
-                    this.getCompiler().reportWarning(
+                    this.compiler().reportWarning(
                             SourcePositionRange.INVALID,
                             "No UDFs",
                             "Program contains `CREATE FUNCTION` statements but the compiler" +
@@ -444,7 +436,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         for (LatenessStatement late: this.lateness) {
             String view = late.view.getSimple();
             if (!this.views.containsKey(view)) {
-                this.getCompiler().reportWarning(late.getPosition(), "No such view",
+                this.compiler().reportWarning(late.getPosition(), "No such view",
                         "No view named " + Utilities.singleQuote(view) + " found");
             }
         }

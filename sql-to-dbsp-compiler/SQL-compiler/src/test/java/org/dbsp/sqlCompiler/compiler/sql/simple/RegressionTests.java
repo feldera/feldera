@@ -1,13 +1,15 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
-import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -88,6 +90,51 @@ public class RegressionTests extends SqlIoTest {
                          ON example_a.id = example_b.id
                 );""";
         this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void testFilterPull() {
+        // Example used in a blog post
+        String sql = """
+                CREATE TABLE transaction (
+                   cc_num int
+                );
+                
+                CREATE TABLE users (
+                   cc_num int,
+                   id bigint,
+                   age int
+                );
+                
+                CREATE VIEW transaction_with_user AS
+                SELECT
+                    transaction.*,
+                    users.id as user_id,
+                    users.age
+                FROM
+                    transaction JOIN users
+                ON users.cc_num = transaction.cc_num
+                WHERE
+                    users.age >= 21;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int filterJoin = 0;
+
+            @Override
+            public void postorder(DBSPJoinFilterMapOperator operator) {
+                this.filterJoin++;
+            }
+
+            @Override
+            public void endVisit() {
+                // If the filter for age is not pulled above the join, it
+                // will produce a JoinFilterMap operator.
+                Assert.assertEquals(0, this.filterJoin);
+            }
+        };
+        visitor.apply(circuit);
     }
 
     @Test

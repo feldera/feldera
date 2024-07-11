@@ -1,5 +1,5 @@
 package org.dbsp.sqlCompiler.compiler;
 
 public interface ICompilerComponent {
-    DBSPCompiler getCompiler();
+    DBSPCompiler compiler();
 }

@@ -196,7 +196,7 @@ public class ToCsvVisitor extends InnerVisitor {
     public static File toCsv(IErrorReporter reporter, File file, DBSPZSetLiteral literal) throws IOException {
         StringBuilder builder = new StringBuilder();
         ToCsvVisitor visitor = new ToCsvVisitor(reporter, builder, () -> "");
-        visitor.traverse(literal);
+        visitor.apply(literal);
         FileWriter writer = new FileWriter(file);
         writer.write(builder.toString());
         writer.close();

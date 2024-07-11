@@ -6,8 +6,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
-import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
+import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -26,7 +26,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /** Tests that exercise streaming features. */
-public class StreamingTests extends StreamingTest {
+public class StreamingTests extends StreamingTestBase {
     @Test
     public void issue1973() {
         String sql = """
@@ -157,6 +157,30 @@ public class StreamingTests extends StreamingTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         new CompilerCircuitStream(compiler);
+    }
+
+    @Test
+    public void timerTest() {
+        // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
+        this.compileRustTestCase("""
+                CREATE TABLE timer (
+                  now BIGINT LATENESS 0
+                );
+                
+                CREATE TABLE transactions (
+                  id INT PRIMARY KEY,
+                  timee BIGINT,
+                  userid INT,
+                  AMOUNT DECIMAL
+                );
+                
+                CREATE VIEW window_computation AS
+                SELECT
+                  userid,
+                  COUNT(*) AS transaction_count_by_user
+                FROM transactions
+                WHERE timee >= (SELECT max(now) FROM timer) - 86400
+                GROUP BY userid""");
     }
 
     @Test

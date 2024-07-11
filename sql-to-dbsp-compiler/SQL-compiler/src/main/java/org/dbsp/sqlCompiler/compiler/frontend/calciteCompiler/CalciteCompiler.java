@@ -166,8 +166,6 @@ public class CalciteCompiler implements IWritesLogs {
     private ValidateTypes validateTypes;
     private final CalciteConnectionConfig connectionConfig;
     private final IErrorReporter errorReporter;
-    /** If true the next view will be an output, otherwise it's just an intermediate result */
-    boolean generateOutputForNextView = true;
     private final SchemaPlus rootSchema;
     private final CustomFunctions customFunctions;
     /** User-defined types */
@@ -725,9 +723,8 @@ public class CalciteCompiler implements IWritesLogs {
             return false;
         }
 
-        void visitScan(TableScan scan) {
-            // nothing
-        }
+        @SuppressWarnings("EmptyMethod")
+        void visitScan(TableScan scan) { }
 
         void visitProject(LogicalProject project) {
             List<RexNode> fields = project.getProjects();

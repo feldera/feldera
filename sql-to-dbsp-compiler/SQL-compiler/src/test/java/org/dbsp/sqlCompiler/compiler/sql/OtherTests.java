@@ -45,8 +45,9 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.compiler.sql.simple.EndToEndTests;
+import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
@@ -105,7 +106,9 @@ import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
-public class OtherTests extends BaseSQLTests implements IWritesLogs {
+/** Miscellaneous tests that do not fit into standard categories */
+public class OtherTests extends BaseSQLTests
+    implements IWritesLogs { // interface used for testing
     static final String ddl = """
             CREATE TABLE T (
             COL1 INT NOT NULL
@@ -137,8 +140,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         // Deterministically name the circuit function.
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
         String str = circuit.toString();
-        String expected;
-        expected = """
+        String expected = """
                 Circuit circuit {
                     // DBSPSourceMultisetOperator 59
                     // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
@@ -373,7 +375,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         DBSPZSetLiteral s = new DBSPZSetLiteral(EndToEndTests.e0, EndToEndTests.e1);
         StringBuilder builder = new StringBuilder();
         ToCsvVisitor visitor = new ToCsvVisitor(compiler, builder, () -> "");
-        visitor.traverse(s);
+        visitor.apply(s);
         String[] lines = builder.toString().split("\n");
         Arrays.sort(lines);
         Assert.assertEquals(

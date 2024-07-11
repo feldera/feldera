@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMap;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -63,15 +63,15 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPMapOperator operator) {
         DBSPOperator source = this.mapped(operator.input());
-        if (source.is(DBSPJoinFilterMap.class)) {
+        if (source.is(DBSPJoinFilterMapOperator.class)) {
             // map(joinfilter) = joinfilter
-            DBSPJoinFilterMap jfm = source.to(DBSPJoinFilterMap.class);
+            DBSPJoinFilterMapOperator jfm = source.to(DBSPJoinFilterMapOperator.class);
             DBSPExpression newMap = operator.getFunction();
             if (jfm.map != null) {
                 newMap = operator.getFunction().to(DBSPClosureExpression.class)
                         .applyAfter(this.errorReporter, jfm.map.to(DBSPClosureExpression.class));
             }
-            DBSPOperator result = new DBSPJoinFilterMap(
+            DBSPOperator result = new DBSPJoinFilterMapOperator(
                     jfm.getNode(), operator.getOutputZSetType(), jfm.getFunction(),
                     jfm.filter, newMap, operator.isMultiset, jfm.left(), jfm.right());
             this.map(operator, result);
@@ -112,7 +112,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
         }
 
         Projection projection = new Projection(this.errorReporter);
-        projection.traverse(operator.getFunction());
+        projection.apply(operator.getFunction());
         if (projection.isProjection) {
             if (source.is(DBSPConstantOperator.class)) {
                 DBSPExpression newConstant = projection.applyAfter(

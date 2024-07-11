@@ -77,10 +77,9 @@ class ModifyTableTranslation implements ICompilerComponent {
             int index = 0;
             DBSPType[] columnTypes = new DBSPType[columnList.size()];
             for (SqlNode node : columnList) {
-                if (!(node instanceof SqlIdentifier)) {
+                if (!(node instanceof SqlIdentifier id)) {
                     throw new UnimplementedException(statement.getCalciteObject());
                 }
-                SqlIdentifier id = (SqlIdentifier) node;
                 int actualIndex = tableDefinition.getColumnIndex(id);
                 // This must be a permutation
                 for (int value : this.columnPermutation.values())
@@ -134,7 +133,7 @@ class ModifyTableTranslation implements ICompilerComponent {
     }
 
     @Override
-    public DBSPCompiler getCompiler() {
+    public DBSPCompiler compiler() {
         return this.compiler;
     }
 }

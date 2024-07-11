@@ -1,11 +1,9 @@
-package org.dbsp.sqlCompiler.compiler.sql;
+package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
-import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;

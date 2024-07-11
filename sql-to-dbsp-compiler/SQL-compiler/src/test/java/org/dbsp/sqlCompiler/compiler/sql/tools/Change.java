@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.sql.simple;
+package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;

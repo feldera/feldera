@@ -1,9 +1,7 @@
-package org.dbsp.sqlCompiler.compiler.sql;
+package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
@@ -34,7 +32,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Represents a test case that will be executed. */
-class TestCase {
+public class TestCase {
     /** Name of the test case. */
     public final String name;
     /** Name of the Java test that is being run. */

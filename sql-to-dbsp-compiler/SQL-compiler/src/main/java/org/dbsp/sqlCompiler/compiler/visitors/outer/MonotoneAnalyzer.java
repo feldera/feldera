@@ -30,7 +30,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
             String result = source.getOutputRowType().toString();
             MonotoneExpression expr = info.get(source);
             if (expr != null) {
-                result = source.getIdString() + " " + Monotonicity.getBodyType(expr).toString();
+                result = source.getIdString() + " " + Monotonicity.getBodyType(expr);
             }
             return result;
         }

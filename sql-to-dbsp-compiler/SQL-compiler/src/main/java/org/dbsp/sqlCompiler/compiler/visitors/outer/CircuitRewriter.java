@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMap;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -318,7 +318,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPJoinFilterMap operator) {
+    public void postorder(DBSPJoinFilterMapOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         DBSPExpression function = this.transform(operator.getFunction());
         DBSPExpression filter = this.transformN(operator.filter);
@@ -330,7 +330,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || filter != operator.filter
                 || map != operator.map
                 || Linq.different(sources, operator.inputs)) {
-            result = new DBSPJoinFilterMap(operator.getNode(), outputType.to(DBSPTypeZSet.class),
+            result = new DBSPJoinFilterMapOperator(operator.getNode(), outputType.to(DBSPTypeZSet.class),
                     function, filter, map, operator.isMultiset, sources.get(0), sources.get(1));
         }
         this.map(operator, result);

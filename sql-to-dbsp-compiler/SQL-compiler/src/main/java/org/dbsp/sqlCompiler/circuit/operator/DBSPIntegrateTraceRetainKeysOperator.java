@@ -31,10 +31,10 @@ public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPBinaryOperat
 
         DBSPParameter param;
         DBSPExpression compare;
-        DBSPVariablePath controlArg = new DBSPVariablePath(controlType.ref());
+        DBSPVariablePath controlArg = controlType.ref().var();
         if (data.outputType.is(DBSPTypeIndexedZSet.class)) {
             DBSPType keyType = data.getOutputIndexedZSetType().keyType;
-            DBSPVariablePath dataArg = new DBSPVariablePath(keyType);
+            DBSPVariablePath dataArg = keyType.var();
             param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
             DBSPExpression project = dataProjection
                     .to(PartiallyMonotoneTuple.class)
@@ -44,7 +44,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPBinaryOperat
                     project, controlArg.deref().field(0));
         } else {
             DBSPType keyType = data.getOutputZSetElementType();
-            DBSPVariablePath dataArg = new DBSPVariablePath(keyType);
+            DBSPVariablePath dataArg = keyType.var();
             param = new DBSPParameter(dataArg.variable, dataArg.getType().ref());
             DBSPExpression project = dataProjection.projectExpression(dataArg);
             compare = DBSPControlledFilterOperator.generateTupleCompare(

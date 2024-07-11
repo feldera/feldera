@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.junit.Assert;
 import org.junit.Test;
 

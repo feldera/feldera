@@ -108,7 +108,7 @@ public class Monotonicity extends CircuitVisitor {
         }
     }
 
-    MonotonicityInformation info;
+    final MonotonicityInformation info;
 
     @Nullable
     public MonotoneExpression getMonotoneExpression(DBSPOperator operator) {
@@ -474,26 +474,32 @@ public class Monotonicity extends CircuitVisitor {
         /** A comparison between an output column and an expression which
          * may be monotone */
         static class Comparison implements ToIndentableString {
-            // Output column involved in comparison
+            /** Output column involved in comparison */
             public final int columnIndex;
+            /** Expression that is compared with column; column >= expression */
             public final DBSPExpression comparedTo;
+            /** Parameter that represents the row */
+            final DBSPParameter parameter;
 
-            Comparison(int columnIndex, DBSPExpression comparedTo) {
+            Comparison(int columnIndex, DBSPExpression comparedTo, DBSPParameter parameter) {
                 assert columnIndex >= 0;
                 this.columnIndex = columnIndex;
                 this.comparedTo = comparedTo;
+                this.parameter = parameter;
             }
 
             @Override
             public IIndentStream toString(IIndentStream builder) {
-                return builder.append(this.columnIndex)
+                return builder
+                        .append(this.parameter.name)
+                        .append(this.columnIndex)
                         .append(" >= ")
                         .append(this.comparedTo);
             }
 
             @Override
             public String toString() {
-                return "t." + this.columnIndex + " >= " + this.comparedTo;
+                return this.parameter.name + "." + this.columnIndex + " >= " + this.comparedTo;
             }
         }
 
@@ -508,7 +514,7 @@ public class Monotonicity extends CircuitVisitor {
             return this.comparisons.toString();
         }
 
-        /** Check of an expression is a reference to a column of a given parameter.
+        /** Check if `expression` is a reference to a column (field) of a given `parameter`.
          * Return the column index if it is, or -1 otherwise. */
         static int isColumn(DBSPExpression expression, DBSPParameter param) {
             DBSPFieldExpression field = expression.as(DBSPFieldExpression.class);
@@ -525,12 +531,12 @@ public class Monotonicity extends CircuitVisitor {
             return -1;
         }
 
-        /** If larger is a column reference, create a new comparison and add it to the list */
+        /** If `larger` is a column reference, create a new comparison and add it to the list */
         void addIfIsColumn(DBSPExpression smaller, DBSPExpression larger, DBSPParameter param) {
             int index = isColumn(larger, param);
             if (index < 0)
                 return;
-            Comparison comp = new Comparison(index, smaller);
+            Comparison comp = new Comparison(index, smaller, param);
             this.comparisons.add(comp);
         }
 
@@ -576,6 +582,7 @@ public class Monotonicity extends CircuitVisitor {
             DBSPExpression expression = clo.body;
             if (expression.is(DBSPUnaryExpression.class)) {
                 DBSPUnaryExpression unary = expression.to(DBSPUnaryExpression.class);
+                // If the filter is wrap_bool(expression), analyze expression
                 if (unary.operation == DBSPOpcode.WRAP_BOOL)
                     expression = unary.source;
             }
@@ -583,9 +590,9 @@ public class Monotonicity extends CircuitVisitor {
         }
 
         /** Get all the expressions that are below the specified output column */
-        List<DBSPExpression> getLowerBounds(int index) {
+        List<DBSPExpression> getLowerBounds(int columnIndex) {
             return Linq.map(
-                    Linq.where(this.comparisons, c -> c.columnIndex == index),
+                    Linq.where(this.comparisons, c -> c.columnIndex == columnIndex),
                     c -> c.comparedTo);
         }
     }
@@ -616,10 +623,8 @@ public class Monotonicity extends CircuitVisitor {
         IMaybeMonotoneType projection = getBodyType(input);
         if (!projection.mayBeMonotone())
             return;
-        DBSPTypeTuple tuple = projection.getType().to(DBSPTypeTuple.class);
-        // Must reuse the same parameter name
+        DBSPTypeTupleBase tuple = projection.getType().to(DBSPTypeTupleBase.class);
         DBSPVariablePath var = node.getFunction().to(DBSPClosureExpression.class).parameters[0].asVariable();
-        MonotoneTransferFunctions.ArgumentKind argumentType = MonotoneTransferFunctions.ArgumentKind.ZSet;
         DBSPExpression[] fields = new DBSPExpression[tuple.size()];
         for (int i = 0; i < tuple.size(); i++) {
             DBSPExpression field = var.deepCopy().deref().field(i);
@@ -631,7 +636,7 @@ public class Monotonicity extends CircuitVisitor {
             fields[i] = field;
         }
         DBSPClosureExpression closure = tuple.makeTuple(fields).closure(var.asParameter());
-        // Invoke inner visitor.
+        MonotoneTransferFunctions.ArgumentKind argumentType = MonotoneTransferFunctions.ArgumentKind.ZSet;
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.errorReporter, node, argumentType, projection);
         MonotoneExpression output = Objects.requireNonNull(analyzer.applyAnalysis(closure));

@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.ir.type.user;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TYPEDBOX;

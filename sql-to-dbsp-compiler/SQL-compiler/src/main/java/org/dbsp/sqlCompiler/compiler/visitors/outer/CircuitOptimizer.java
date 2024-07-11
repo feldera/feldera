@@ -37,17 +37,11 @@ import java.util.List;
 
 /** Very high level circuit-level optimizations.
  * Does not really look at the functions inside the circuit. */
-public class CircuitOptimizer implements ICompilerComponent {
-    public final DBSPCompiler compiler;
-
-    public CircuitOptimizer(DBSPCompiler compiler) {
-        this.compiler = compiler;
-    }
-
+public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerComponent {
     CircuitTransform getOptimizer() {
         List<CircuitTransform> passes = new ArrayList<>();
-        IErrorReporter reporter = this.getCompiler();
-        CompilerOptions options = this.getCompiler().options;
+        IErrorReporter reporter = this.compiler();
+        CompilerOptions options = this.compiler().options;
 
         passes.add(new ImplementNow(reporter, compiler));
         if (options.languageOptions.outputsAreSets)
@@ -56,7 +50,7 @@ public class CircuitOptimizer implements ICompilerComponent {
             if (!options.ioOptions.emitHandles)
                 passes.add(new IndexedInputs(reporter));
             if (options.languageOptions.incrementalize) {
-                passes.add(new IncrementalizeVisitor(this.getCompiler()));
+                passes.add(new IncrementalizeVisitor(this.compiler()));
             }
         } else {
             // only on optimization level 2
@@ -70,11 +64,13 @@ public class CircuitOptimizer implements ICompilerComponent {
             }
             passes.add(new DeadCode(reporter, true, false));
             passes.add(new Simplify(reporter).circuitRewriter());
+            passes.add(new FilterJoinVisitor(reporter));
+            passes.add(new DeadCode(reporter, true, false));
             passes.add(new MonotoneAnalyzer(reporter));
             // Doing this after the monotone analysis only
             if (!options.ioOptions.emitHandles)
                 passes.add(new IndexedInputs(reporter));
-            passes.add(new FilterJoin(reporter));
+            passes.add(new FilterJoinVisitor(reporter));
             passes.add(new OptimizeProjections(reporter));
             passes.add(new DeadCode(reporter, true, false));
             passes.add(new Simplify(reporter).circuitRewriter());
@@ -97,10 +93,5 @@ public class CircuitOptimizer implements ICompilerComponent {
     public DBSPCircuit optimize(DBSPCircuit input) {
         CircuitTransform optimizer = this.getOptimizer();
         return optimizer.apply(input);
-    }
-
-    @Override
-    public DBSPCompiler getCompiler() {
-        return this.compiler;
     }
 }

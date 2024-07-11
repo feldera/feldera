@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 
 // From https://github.com/apache/calcite/blob/main/ubenchmark/src/jmh/java/org/apache/calcite/benchmarks/StatementTest.java
 public class HrBaseTests extends SqlIoTest {

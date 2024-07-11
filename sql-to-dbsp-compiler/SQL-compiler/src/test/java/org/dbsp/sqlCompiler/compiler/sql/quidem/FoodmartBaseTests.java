@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 

@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
 
 public class TrigonometryTests extends SqlIoTest {
