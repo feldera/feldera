@@ -960,9 +960,10 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression comparator = this.transform(expression.comparator);
         DBSPType elementType = this.transform(expression.elementType);
+        @Nullable DBSPExpression limit = this.transformN(expression.limit);
         this.pop(expression);
         DBSPExpression result = new DBSPSortExpression(
-                expression.getNode(), elementType, comparator.to(DBSPComparatorExpression.class));
+                expression.getNode(), elementType, comparator.to(DBSPComparatorExpression.class), limit);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
