@@ -83,60 +83,47 @@
 
 <div class="h-full">
   <PaneGroup direction="vertical" class="!overflow-visible">
-    <Pane defaultSize={50} minSize={20} class="!overflow-visible">
-      <PaneGroup
-        direction="horizontal"
-        autoSaveId="layout/pipelines/vertical/pos"
-        class="!overflow-visible"
-      >
-        <Pane defaultSize={20} minSize={20}>
-          <div class="mr-1 bg-white dark:bg-black">List of connectors</div>
-        </Pane>
-        <PaneResizer class="w-4" />
-        <Pane defaultSize={80} minSize={50} class="flex flex-col-reverse !overflow-visible">
-          <div class="flex flex-nowrap items-center gap-2 pr-2">
-            <PipelineEditorStatusBar downstreamChanged={decoupledCode.downstreamChanged}
-            ></PipelineEditorStatusBar>
-            {#if $pipelineName}
-              <PipelineStatus class="ml-auto" pipelineName={$pipelineName}></PipelineStatus>
-              <PipelineActions pipelineName={$pipelineName}></PipelineActions>
-            {/if}
-          </div>
-          <div class="relative h-full w-full">
-            <div class="absolute h-full w-full">
-              <MonacoEditor
-                markers={$errors ? { sql: extractSQLCompilerErrorMarkers($errors) } : undefined}
-                on:ready={(x) => {
-                  x.detail.onKeyDown((e) => {
-                    if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
-                      decoupledCode.push()
-                      e.preventDefault()
-                    }
-                  })
-                }}
-                bind:editor={editorRef}
-                bind:value={$decoupledCode}
-                options={{
-                  theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
-                  automaticLayout: true,
-                  lineNumbersMinChars: 3,
-                  ...isMonacoEditorDisabled(false),
-                  overviewRulerLanes: 0,
-                  hideCursorInOverviewRuler: true,
-                  overviewRulerBorder: false,
-                  scrollbar: {
-                    vertical: 'visible'
-                  },
-                  language: 'sql'
-                }}
-              />
-            </div>
-          </div>
-        </Pane>
-      </PaneGroup>
+    <Pane defaultSize={60} minSize={20} class="flex flex-col-reverse !overflow-visible">
+      <div class="flex flex-nowrap items-center gap-2 pr-2">
+        <PipelineEditorStatusBar downstreamChanged={decoupledCode.downstreamChanged}
+        ></PipelineEditorStatusBar>
+        {#if $pipelineName}
+          <PipelineStatus class="ml-auto" pipelineName={$pipelineName}></PipelineStatus>
+          <PipelineActions pipelineName={$pipelineName}></PipelineActions>
+        {/if}
+      </div>
+      <div class="relative h-full w-full">
+        <div class="absolute h-full w-full">
+          <MonacoEditor
+            markers={$errors ? { sql: extractSQLCompilerErrorMarkers($errors) } : undefined}
+            on:ready={(x) => {
+              x.detail.onKeyDown((e) => {
+                if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
+                  decoupledCode.push()
+                  e.preventDefault()
+                }
+              })
+            }}
+            bind:editor={editorRef}
+            bind:value={$decoupledCode}
+            options={{
+              theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
+              automaticLayout: true,
+              lineNumbersMinChars: 3,
+              ...isMonacoEditorDisabled(false),
+              overviewRulerLanes: 0,
+              hideCursorInOverviewRuler: true,
+              overviewRulerBorder: false,
+              scrollbar: {
+                vertical: 'visible'
+              },
+              language: 'sql'
+            }} />
+        </div>
+      </div>
     </Pane>
-    <PaneResizer class="h-4" />
-    <Pane defaultSize={50} minSize={30} class="!overflow-visible">
+    <PaneResizer class="bg-surface-100-900 h-2" />
+    <Pane minSize={20} class="!overflow-visible">
       {#if $pipelineName}
         <InteractionsPanel pipelineName={$pipelineName}></InteractionsPanel>
       {/if}

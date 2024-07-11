@@ -18,15 +18,14 @@
       <VerticalMenu></VerticalMenu>
     </Drawer>
     <div class="flex h-full w-full flex-col">
-      <div class="flex justify-between p-4">
+      <div class="flex justify-between p-3">
         <div class="flex">
           <button
             class="btn-icon"
             onclick={() => {
               console.log('toggle1')
               showDrawer.value = !showDrawer.value
-            }}
-          >
+            }}>
             <i class="bx bx-menu text-[24px]"></i>
           </button>
         </div>
@@ -35,9 +34,8 @@
           <HealthPopup></HealthPopup>
           <button
             onclick={toggleDarkMode}
-            class={'btn-icon text-[24px] preset-tonal-surface ' +
-              (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}
-          ></button>
+            class={'btn-icon preset-tonal-surface text-[24px] ' +
+              (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}></button>
         </div>
       </div>
       {@render children()}
