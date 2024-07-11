@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
@@ -42,6 +43,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementExpansion;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -415,12 +417,23 @@ public class InsertLimiters extends CircuitCloneVisitor {
             }
         }
 
+        this.processIntegral(expansion.leftIntegrator);
+        this.processIntegral(expansion.rightIntegrator);
         this.processStreamJoin(expansion.leftDelta);
         this.processStreamJoin(expansion.rightDelta);
         this.processStreamJoin(expansion.both);
         this.processSum(expansion.sum);
 
         this.map(join, result, true);
+    }
+
+    private void processIntegral(DBSPDelayedIntegralOperator replacement) {
+        if (replacement.hasAnnotation(a -> a.is(AlwaysMonotone.class))) {
+            DBSPOperator limiter = this.bound.get(replacement.input());
+            if (limiter != null) {
+                this.markBound(replacement, limiter);
+            }
+        }
     }
 
     /** Given two expressions with the same type, compute the MAX expression pointwise,

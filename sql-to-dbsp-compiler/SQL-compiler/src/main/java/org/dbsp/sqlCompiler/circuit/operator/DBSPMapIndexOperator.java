@@ -45,11 +45,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
     public DBSPMapIndexOperator(CalciteObject node, DBSPExpression indexFunction,
                                 DBSPTypeIndexedZSet outputType,
                                 DBSPOperator input) {
-        super(node, "map_index", indexFunction, outputType, input.isMultiset, input);
-        DBSPType outputElementType = outputType.getKVType();
-        // Expression must return a tuple that is composed of a key and a value
-        this.checkResultType(indexFunction, outputElementType);
-        this.checkArgumentFunctionType(indexFunction, 0, input);
+        this(node, indexFunction, outputType, input.isMultiset, input);
     }
 
     /** Create an MapIndexOperator
@@ -84,7 +80,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
         DBSPTypeIndexedZSet ixOutputType = type.to(DBSPTypeIndexedZSet.class);
         return new DBSPMapIndexOperator(
                 this.getNode(), Objects.requireNonNull(expression),
-                ixOutputType, this.input());
+                ixOutputType, this.input()).copyAnnotations(this);
     }
 
     @Override
@@ -92,7 +88,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPMapIndexOperator(
                     this.getNode(), this.getFunction(),
-                    this.getOutputIndexedZSetType(), newInputs.get(0));
+                    this.getOutputIndexedZSetType(), newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 }

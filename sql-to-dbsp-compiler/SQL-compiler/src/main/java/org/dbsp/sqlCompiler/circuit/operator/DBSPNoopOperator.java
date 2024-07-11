@@ -59,7 +59,8 @@ public final class DBSPNoopOperator extends DBSPUnaryOperator {
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPNoopOperator(this.getNode(), newInputs.get(0), this.comment);
+            return new DBSPNoopOperator(this.getNode(), newInputs.get(0), this.comment)
+                    .copyAnnotations(this);
         return this;
     }
 }

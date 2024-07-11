@@ -6,6 +6,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 
+import javax.annotation.Nullable;
+
 /** Base class for function applications */
 public abstract class DBSPApplyBaseExpression extends DBSPExpression {
     public final DBSPExpression function;
@@ -31,6 +33,22 @@ public abstract class DBSPApplyBaseExpression extends DBSPExpression {
                     arg.getType() + " does not match parameter type " + parameterTypes[index];
             index++;
         }
+    }
+
+    /** True if the function is given by name.
+     * (It could be e.g., a lambda). */
+    public boolean functionIsNamed() {
+        return this.function.is(DBSPPathExpression.class);
+    }
+
+    /** Return the function name if the function is given by name,
+     * null otherwise. */
+    @Nullable
+    public String getFunctionName() {
+        DBSPPathExpression pe = this.function.as(DBSPPathExpression.class);
+        if (pe == null)
+            return null;
+        return pe.path.toString();
     }
 
     protected DBSPApplyBaseExpression(

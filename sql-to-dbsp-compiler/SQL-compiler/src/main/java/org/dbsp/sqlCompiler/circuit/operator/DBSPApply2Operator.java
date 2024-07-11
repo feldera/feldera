@@ -31,7 +31,8 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPApply2Operator(
                 this.getNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
-                outputType, this.left(), this.right());
+                outputType, this.left(), this.right())
+                .copyAnnotations(this);
     }
 
     @Override
@@ -40,7 +41,8 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApply2Operator(
                     this.getNode(), this.getFunction().to(DBSPClosureExpression.class),
-                    this.getType(), newInputs.get(0), newInputs.get(1));
+                    this.getType(), newInputs.get(0), newInputs.get(1))
+                    .copyAnnotations(this);
         }
         return this;
     }

@@ -51,13 +51,15 @@ public final class DBSPConstantOperator extends DBSPOperator {
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPConstantOperator(this.getNode(), Objects.requireNonNull(expression), this.isMultiset);
+        return new DBSPConstantOperator(this.getNode(), Objects.requireNonNull(expression), this.isMultiset)
+                .copyAnnotations(this);
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPConstantOperator(this.getNode(), this.getFunction(), this.isMultiset);
+            return new DBSPConstantOperator(this.getNode(), this.getFunction(), this.isMultiset)
+                    .copyAnnotations(this);
         return this;
     }
 }

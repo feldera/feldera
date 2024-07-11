@@ -34,7 +34,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWindowOperator(
-                    this.getNode(), newInputs.get(0), newInputs.get(1));
+                    this.getNode(), newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
 

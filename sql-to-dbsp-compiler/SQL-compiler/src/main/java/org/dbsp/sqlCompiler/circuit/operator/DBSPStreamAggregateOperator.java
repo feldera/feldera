@@ -58,7 +58,8 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
         return new DBSPStreamAggregateOperator(this.getNode(),
-                ixOutputType, expression, this.aggregate, this.input(), this.isLinear);
+                ixOutputType, expression, this.aggregate, this.input(), this.isLinear)
+                .copyAnnotations(this);
     }
 
     @Override
@@ -66,7 +67,8 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
         if (force || this.inputsDiffer(newInputs))
             return new DBSPStreamAggregateOperator(
                     this.getNode(), this.getOutputIndexedZSetType(),
-                    this.function, this.aggregate, newInputs.get(0), this.isLinear);
+                    this.function, this.aggregate, newInputs.get(0), this.isLinear)
+                    .copyAnnotations(this);
         return this;
     }
 

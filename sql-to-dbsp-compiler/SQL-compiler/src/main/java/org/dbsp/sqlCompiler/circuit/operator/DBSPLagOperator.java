@@ -55,7 +55,8 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPLagOperator(this.getNode(), this.offset,
                     this.projection, this.getFunction(), this.comparator,
-                    this.getOutputIndexedZSetType(), newInputs.get(0));
+                    this.getOutputIndexedZSetType(), newInputs.get(0))
+                    .copyAnnotations(this);
         }
         return this;
     }

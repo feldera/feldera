@@ -58,7 +58,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPBinaryOperat
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPIntegrateTraceRetainKeysOperator(
                 this.getNode(), Objects.requireNonNull(expression),
-                this.left(), this.right());
+                this.left(), this.right()).copyAnnotations(this);
     }
 
     @Override
@@ -67,7 +67,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator extends DBSPBinaryOperat
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIntegrateTraceRetainKeysOperator(
                     this.getNode(), this.getFunction(),
-                    newInputs.get(0), newInputs.get(1));
+                    newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
 

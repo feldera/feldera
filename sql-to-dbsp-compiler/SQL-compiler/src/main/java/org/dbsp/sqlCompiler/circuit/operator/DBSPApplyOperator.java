@@ -28,7 +28,8 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPApplyOperator(
                 this.getNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
-                outputType, this.input(), this.comment);
+                outputType, this.input(), this.comment)
+                .copyAnnotations(this);
     }
 
     @Override
@@ -37,7 +38,8 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApplyOperator(
                     this.getNode(), this.getFunction().to(DBSPClosureExpression.class),
-                    this.getType(), newInputs.get(0), this.comment);
+                    this.getType(), newInputs.get(0), this.comment)
+                    .copyAnnotations(this);
         }
         return this;
     }

@@ -29,6 +29,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.annotation.Annotation;
+import org.dbsp.sqlCompiler.ir.annotation.Annotations;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
@@ -44,6 +46,7 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * A DBSP operator that applies a function to the inputs and produces an output.
@@ -70,6 +73,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
     public final DBSPType outputStreamType;
     /** id of the operator this one is derived from.  -1 for "new" operators */
     public long derivedFrom;
+    public final Annotations annotations;
 
     protected DBSPOperator(CalciteObject node, String operation,
                            @Nullable DBSPExpression function, DBSPType outputType,
@@ -83,6 +87,7 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
         this.comment = comment;
         this.outputStreamType = new DBSPTypeStream(this.outputType);
         this.derivedFrom = -1;
+        this.annotations = new Annotations();
         if (!operation.startsWith("waterline") &&
                 !operation.startsWith("apply") &&
                 !operation.startsWith("delay") &&
@@ -112,6 +117,12 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
                         @Nullable DBSPExpression function,
                         DBSPType outputType, boolean isMultiset) {
         this(node, operation, function, outputType, isMultiset, null);
+    }
+
+    public DBSPOperator copyAnnotations(DBSPOperator source) {
+        if (source != this)
+            this.annotations.replace(source.annotations);
+        return this;
     }
 
     public void setDerivedFrom(long id) {
@@ -211,6 +222,14 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
      *                   If false and the inputs are the same this may return this.
      */
     public abstract DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force);
+
+    public void addAnnotation(Annotation annotation) {
+        this.annotations.add(annotation);
+    }
+
+    public boolean hasAnnotation(Predicate<Annotation> test) {
+        return this.annotations.contains(test);
+    }
 
     /**
      * Return true if any of the inputs in `newInputs` is different from one of the inputs

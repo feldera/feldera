@@ -262,12 +262,31 @@ computation on whole days.
 
 `DATE`, `TIME` and `TIMESTAMP` have no time zone.
 
-## Important unsupported operations
+## Non-deterministic functions
 
-Since DBSP is a *deterministic* query engine, it does not currently
-offer support for any function that depends on the current time.  So
-the following are *not* supported: `LOCALTIME`, `LOCALTIMESTAMP`,
-`CURRENT_TIME`, `CURRENT_DATE`, `CURRENT_TIMESTAMP`.
+Since DBSP is a *deterministic* query engine, it supports real-time
+based functions in way which is different from other SQL engines.
+Currently the only such function supported is `NOW`.  This function
+returns a TIMESTAMP value.  Programs that use the `NOW` function need
+to also declare the following table as the first table in the program:
+
+```sql
+CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
+```
+
+(In the future this table will be automatically synthesized by the
+compiler, but for now its declaration must exist in the program.)
+
+The environment has to maintain the invariant that this table always
+contains a single value.  Moreover, deleting a value and inserting a
+new one requires the newly inserted value to be larger than the
+original value.  All invocations of the `NOW()` function within the
+program will in fact produce the value that currently exists in this
+table.
+
+| Operation     | Description         | Example                        |
+|---------------|---------------------|--------------------------------|
+| `NOW`         | Returns a timestamp | `NOW()` => 2024-07-10 00:00:00 |
 
 ## Date formatting
 

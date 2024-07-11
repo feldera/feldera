@@ -46,10 +46,8 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
      * false if it is a TupN tuple. */
     public abstract boolean isRaw();
 
-    /**
-     * If the expression has a tuple type, return the list of fields.
-     * Else return the expression itself.
-     */
+    /** If the expression has a tuple type, return the list of fields.
+     * Else return the expression itself. */
     public static List<DBSPExpression> flatten(DBSPExpression expression) {
         DBSPTypeTupleBase tuple = expression.getType().as(DBSPTypeTupleBase.class);
         if (tuple == null)

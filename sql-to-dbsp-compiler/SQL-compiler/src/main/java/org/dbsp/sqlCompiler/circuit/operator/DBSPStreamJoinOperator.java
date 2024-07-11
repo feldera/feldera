@@ -58,7 +58,7 @@ public final class DBSPStreamJoinOperator extends DBSPBinaryOperator {
         return new DBSPStreamJoinOperator(
                 this.getNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression),
-                this.isMultiset, this.left(), this.right());
+                this.isMultiset, this.left(), this.right()).copyAnnotations(this);
     }
 
     @Override
@@ -66,7 +66,8 @@ public final class DBSPStreamJoinOperator extends DBSPBinaryOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPStreamJoinOperator(
                     this.getNode(), this.getOutputZSetType(),
-                    this.getFunction(), this.isMultiset, newInputs.get(0), newInputs.get(1));
+                    this.getFunction(), this.isMultiset, newInputs.get(0), newInputs.get(1))
+                    .copyAnnotations(this);
         return this;
     }
 }

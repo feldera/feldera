@@ -63,13 +63,15 @@ public final class DBSPDelayOperator extends DBSPUnaryOperator {
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPDelayOperator(this.getNode(), this.function, newInputs.get(0), this.output);
+            return new DBSPDelayOperator(this.getNode(), this.function, newInputs.get(0), this.output)
+                    .copyAnnotations(this);
         return this;
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression function, DBSPType unusedOutputType) {
-        return new DBSPDelayOperator(this.getNode(), function, this.input(), this.output);
+        return new DBSPDelayOperator(this.getNode(), function, this.input(), this.output)
+                .copyAnnotations(this);
     }
 
     @Override

@@ -59,7 +59,7 @@ public final class DBSPSubtractOperator extends DBSPBinaryOperator {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSubtractOperator(
-                    this.getNode(), newInputs.get(0), newInputs.get(1));
+                    this.getNode(), newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
 }

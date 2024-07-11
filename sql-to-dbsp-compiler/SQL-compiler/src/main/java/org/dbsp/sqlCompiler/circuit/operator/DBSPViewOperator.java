@@ -48,7 +48,7 @@ public final class DBSPViewOperator
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression ignoredFunction, DBSPType ignoredType) {
         return new DBSPViewOperator(this.getNode(), this.viewName, this.query, this.originalRowType,
-                this.metadata, this.input());
+                this.metadata, this.input()).copyAnnotations(this);
     }
 
     @Override
@@ -56,7 +56,7 @@ public final class DBSPViewOperator
         if (force || this.inputsDiffer(newInputs))
             return new DBSPViewOperator(
                     this.getNode(), this.viewName, this.query, this.originalRowType,
-                    this.metadata, newInputs.get(0));
+                    this.metadata, newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 
