@@ -183,7 +183,7 @@ build-sql:
     COPY demo/project_demo03-GreenTrip/project.sql demo/project_demo03-GreenTrip/project.sql
     COPY demo/project_demo04-SimpleSelect/project.sql demo/project_demo04-SimpleSelect/project.sql
     CACHE /root/.m2
-    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package -DskipTests --no-transfer-progress
+    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package -DskipTests --no-transfer-progress -q -B
     SAVE ARTIFACT sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies.jar
     SAVE ARTIFACT sql-to-dbsp-compiler
 
@@ -211,7 +211,7 @@ build-manager:
 test-sql:
     # SQL-generated code imports adapters crate.
     FROM +build-adapters
-    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package -q --no-transfer-progress
+    RUN cd "sql-to-dbsp-compiler/SQL-compiler" && mvn package -q --no-transfer-progress -B
 
 build-nexmark:
     FROM +build-dbsp
