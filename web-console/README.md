@@ -1,11 +1,12 @@
-# DBSP Web UI
+# Feldera Web Console
 
-This is the web UI for the DBSP project.
+This is the GUI for managing the Feldera deployment.
 
 ## Setup
 
 ```bash
-# Install nodejs
+# Install nodejs on Ubuntu
+
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl gnupg
 sudo mkdir -p /etc/apt/keyrings
@@ -14,6 +15,7 @@ NODE_MAJOR=20
 echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
 sudo apt-get update
 sudo apt-get install nodejs -y
+# If you don't run Ubuntu: [other binary distributions for node.js](https://github.com/nodesource/distributions)
 
 # Install yarn/openapi generator
 sudo npm install --global yarn
@@ -23,8 +25,6 @@ sudo npm install --global openapi-typescript-codegen
 git clone https://github.com/feldera/feldera.git
 cd dbsp/web-console
 ```
-
-If you don't run ubuntu: [other binary distributions for node.js](https://github.com/nodesource/distributions)
 
 ## Development
 
@@ -87,4 +87,4 @@ regenerating the API bindings.
 - `lib/functions/common`: Utility functions that are not specific to this project
 - `lib/services/`: Functions that describe side effects (persistent storage, networking etc.)
 - `lib/types/`: Types used throughout the app, OpenAPI generated types.
-- `pages/`: Webapp pages used by file-based routing
+- `pages/`: Webapp pages used in file-based routing

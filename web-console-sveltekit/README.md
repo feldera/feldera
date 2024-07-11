@@ -1,38 +1,84 @@
-# create-svelte
+# Feldera Web Console
 
-Everything you need to build a Svelte project, powered by [`create-svelte`](https://github.com/sveltejs/kit/tree/main/packages/create-svelte).
+This is the GUI for managing the Feldera deployment.
 
-## Creating a project
-
-If you're seeing this, you've probably already done this step. Congrats!
+## Setup
 
 ```bash
-# create a new project in the current directory
-npm create svelte@latest
+# Install Node on Ubuntu (optional)
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+NODE_MAJOR=20
+echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+sudo apt-get update
+sudo apt-get install nodejs -y
+# If you don't run Ubuntu: [other binary distributions for node.js](https://github.com/nodesource/distributions)
 
-# create a new project in my-app
-npm create svelte@latest my-app
+# Install Bun
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg unzip
+sudo curl -fsSL https://bun.sh/install | bash
+
+# Install OpenAPI typings generator
+sudo bun install --global @hey-api/openapi-ts
+
+# Clone the repo for the UI
+git clone https://github.com/feldera/feldera.git
+cd dbsp/web-console-sveltekit
 ```
 
-## Developing
+## Development
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+Install dependencies (needs to be done whenever package.json depencies change):
 
 ```bash
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+bun install
 ```
 
-## Building
-
-To create a production version of your app:
+Start the development server:
 
 ```bash
-npm run build
+bun run dev
 ```
 
-You can preview the production build with `npm run preview`.
+Build & export static website:
 
-> To deploy your app, you may need to install an [adapter](https://kit.svelte.dev/docs/adapters) for your target environment.
+```bash
+bun build
+```
+
+Format the code & linting:
+
+```bash
+bun run format
+bun run lint
+bun run check
+```
+
+## OpenAPI bindings
+
+The bindings for OpenAPI (under $lib/services/manager) are generated using
+[openapi typescript codegen](https://www.npmjs.com/package/@hey-api/openapi-ts).
+
+If you change the API, execute the following steps to update the bindings:
+
+```bash
+bun run build-openapi # If you need to generate a new openapi.json
+bun run generate-openapi
+```
+
+## File Organization
+
+- `src/assets/`: Static assets referenced in UI components, but not served as-is
+- `src/hooks.server.ts`: Point of injection of HTTP request and page load middleware
+- `src/lib/`: Imported modules
+- `src/lib/components/`: Reusable Svelte components
+- `src/lib/compositions/`: Stateful functions that app state management
+- `src/lib/functions/`: Pure functions, or functions that perform side effects through dependency injection
+- `src/lib/functions/common`: Utility functions that are not specific to this project
+- `src/lib/services/`: Functions that describe side effects (persistent storage, networking etc.)
+- `src/lib/types/`: Types used throughout the app
+- `src/routes/`: Web app pages used in file-based routing
+- `static/`: Static assets served as-is

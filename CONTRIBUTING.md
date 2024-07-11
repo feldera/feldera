@@ -25,14 +25,15 @@ Our known dependencies are:
   - a Java Virtual Machine (at least Java 19)
     - maven
   - graphviz
-- Cloud and UI
+- Cloud
   - Python 3
-  - typescript
   - Redpanda or Kafka
   - Earthly (https://earthly.dev/get-earthly)
+- Web Console
+  - Bun
 
 Additional dependencies are automatically installed by the Rust,
-maven, Python, and typescript build tools.
+maven, Python, and TypeScript build tools.
 
 ## Contribution Flow
 
