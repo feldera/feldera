@@ -58,7 +58,11 @@ metadata:
   region: us-west-1
   version: "1.30"
 
-# Node groups that can be used to scale the cluster up and down
+# Availability zones (AZ) (at least two zones must be specified)
+# Note: not all instance types are available in all availability zones
+availabilityZones: ["us-west-1a", "us-west-1c"]
+
+# Node groups that can be used to scale the cluster up and down.
 managedNodeGroups:
   - name: ng-m5-4xlarge
     desiredCapacity: 1
@@ -66,6 +70,7 @@ managedNodeGroups:
     maxSize: 3
     instanceType: m5.4xlarge
     privateNetworking: true
+    availabilityZones: ["us-west-1a"]
 
 # Virtual private cloud (VPC)
 vpc:

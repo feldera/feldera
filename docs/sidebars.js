@@ -56,7 +56,8 @@ const sidebars = {
               },
               items: [
                 'enterprise/kubernetes-guides/eks/cluster',
-                'enterprise/kubernetes-guides/eks/ingress'
+                'enterprise/kubernetes-guides/eks/ingress',
+                'enterprise/kubernetes-guides/eks/scaling'
               ]
             },
             'enterprise/kubernetes-guides/secret-management'
