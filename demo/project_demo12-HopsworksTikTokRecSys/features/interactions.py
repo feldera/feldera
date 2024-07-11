@@ -30,6 +30,8 @@ def generate_interactions(num_interactions: int, users: List[Dict[str, str]], vi
     generic = Generic(locale=Locale.EN)
     interactions = []  # List to store generated interaction data
 
+    current_time = datetime.now()
+
     for _ in range(num_interactions):
         user = random.choice(users)
         video = random.choice(videos)
@@ -44,8 +46,11 @@ def generate_interactions(num_interactions: int, users: List[Dict[str, str]], vi
         # Generate a random date for the interaction
         days_since_earliest = (datetime.now() - earliest_date).days
         random_days = random.randint(0, days_since_earliest)
-        interaction_date = earliest_date + timedelta(days=random_days)
-        
+
+        #interaction_date = earliest_date + timedelta(days=random_days)
+        random_delay = timedelta(seconds = random.randint(0, 600))
+        interaction_date = current_time + random_delay
+
         previous_interaction_date = interaction_date - timedelta(days=random.randint(0, random.randint(0, 90)))
 
         interaction_types = ['like', 'dislike', 'view', 'comment', 'share', 'skip']
@@ -69,11 +74,12 @@ def generate_interactions(num_interactions: int, users: List[Dict[str, str]], vi
             'interaction_type': random.choices(interaction_types, weights=weights, k=1)[0],
             'watch_time': watch_time,
             'interaction_date': interaction_date.strftime(config.DATE_TIME_FORMAT),
-            'previous_interaction_date': previous_interaction_date.strftime(config.DATE_TIME_FORMAT),            
+            'previous_interaction_date': previous_interaction_date.strftime(config.DATE_TIME_FORMAT),
             'interaction_month': interaction_date.strftime(config.MONTH_FORMAT),
         }
 
         interactions.append(interaction)  # Add the interaction to the list
+        current_time = current_time + timedelta(seconds=1)
 
     return interactions
 
@@ -195,23 +201,23 @@ def generate_video_interactions_window_agg(num_interactions: int, users: List[Di
     return interactions
 
 # Calculate ondemand features the sine and cosine of the month of interaction date
-def month_sine(interaction_date):     
+def month_sine(interaction_date):
         # Calculate a coefficient for adjusting the periodicity of the month
         coef = np.random.uniform(0, 2 * np.pi) / 12
 
         #month_of_purchase = datetime.strptime(transaction_date, "%Y-%m-%dT%H:%M:%S").month
-        month_of_interaction = interaction_date.month 
-    
+        month_of_interaction = interaction_date.month
+
         # Calculate the sine and cosine components for the month_of_purchase
-        return float(np.sin(month_of_interaction * coef)) 
+        return float(np.sin(month_of_interaction * coef))
 
-def month_cosine(interaction_date):     
+def month_cosine(interaction_date):
         # Calculate a coefficient for adjusting the periodicity of the month
         coef = np.random.uniform(0, 2 * np.pi) / 12
 
         #month_of_purchase = datetime.strptime(transaction_date, "%Y-%m-%dT%H:%M:%S").month
-        month_of_interaction = interaction_date.month 
-    
+        month_of_interaction = interaction_date.month
+
         # Calculate the sine and cosine components for the month_of_purchase
         return float(np.cos(month_of_interaction * coef))
 
