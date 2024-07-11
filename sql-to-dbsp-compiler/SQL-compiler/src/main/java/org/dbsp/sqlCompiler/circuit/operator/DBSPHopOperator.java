@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -38,6 +39,19 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
         if (!decision.stop())
             visitor.postorder(this);
         visitor.pop(this);
+    }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPHopOperator hop = other.as(DBSPHopOperator.class);
+        if (hop == null)
+            return false;
+        return EquivalenceContext.equiv(this.interval, hop.interval) &&
+                this.timestampIndex == hop.timestampIndex &&
+                EquivalenceContext.equiv(this.start, hop.start) &&
+                EquivalenceContext.equiv(this.size, hop.size);
     }
 
     @Override

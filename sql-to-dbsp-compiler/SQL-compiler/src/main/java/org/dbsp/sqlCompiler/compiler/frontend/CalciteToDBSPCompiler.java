@@ -166,6 +166,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
@@ -1944,10 +1945,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (!this.ancestors.isEmpty()) {
                 RelNode last = Utilities.last(this.ancestors);
                 if (last instanceof LogicalAggregate ||
-                    last instanceof LogicalProject) {
+                        last instanceof LogicalProject ||
+                        last instanceof LogicalJoin) {
                     done = true;
                 }
             }
+            if (sort.getCollation().getFieldCollations().isEmpty())
+                // We don't really need to sort; this is just a limit operator
+                done = true;
             if (done) {
                 // We must drop the index we built.
                 DBSPDeindexOperator deindex = new DBSPDeindexOperator(node, integral);
@@ -1987,7 +1992,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 folder, null, index, false);
         this.circuit.addOperator(agg);
 
-        DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator);
+        if (limit != null)
+            limit = limit.cast(new DBSPTypeUSize(node, false));
+        DBSPSortExpression sorter = new DBSPSortExpression(node, inputRowType, comparator, limit);
         DBSPOperator result = new DBSPMapOperator(
                 node, sorter, this.makeZSet(vecType), agg);
         this.assignOperator(sort, result);

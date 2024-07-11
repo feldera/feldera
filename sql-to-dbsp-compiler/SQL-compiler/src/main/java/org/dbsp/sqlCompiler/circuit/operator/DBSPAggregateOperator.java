@@ -69,4 +69,6 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
                     this.function, this.aggregate, newInputs.get(0), this.isLinear);
         return this;
     }
+
+    // equivalent is inherited from base class
 }

@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -50,6 +51,17 @@ public final class DBSPJoinFilterMap extends DBSPBinaryOperator {
                     this.getFunction(), this.filter, this.map,
                     this.isMultiset, newInputs.get(0), newInputs.get(1));
         return this;
+    }
+
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPJoinFilterMap jfm = other.as(DBSPJoinFilterMap.class);
+        if (jfm == null)
+            return false;
+        return EquivalenceContext.equiv(this.filter, jfm.filter) &&
+                EquivalenceContext.equiv(this.map, jfm.map);
     }
 
     @Override

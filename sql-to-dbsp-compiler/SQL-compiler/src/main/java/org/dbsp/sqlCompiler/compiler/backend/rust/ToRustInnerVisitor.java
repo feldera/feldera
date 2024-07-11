@@ -54,6 +54,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPQualifyTypeExpression;
@@ -182,19 +183,28 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append(">)| -> Vec<");
         expression.elementType.accept(this);
         this.builder.append("> {").increase();
-        this.builder.append("let ec = ");
-        expression.comparator.accept(this);
-        this.builder.append(";").newline();
-        this.builder.append("let comp = move |a: &");
-        expression.elementType.accept(this);
-        this.builder.append(", b: &");
-        expression.elementType.accept(this);
-        this.builder.append("| { ec.compare(a, b) };");
-        this.builder.append("let mut v = v.clone();").newline()
-                // we don't use sort_unstable_by because it is
-                // non-deterministic
-                .append("v.sort_by(comp);").newline()
-                .append("v").newline()
+        if (!expression.comparator.is(DBSPNoComparatorExpression.class)) {
+            this.builder.append("let ec = ");
+            expression.comparator.accept(this);
+            this.builder.append(";").newline();
+            this.builder.append("let comp = move |a: &");
+            expression.elementType.accept(this);
+            this.builder.append(", b: &");
+            expression.elementType.accept(this);
+            this.builder.append("| { ec.compare(a, b) };").newline();
+            this.builder.append("let mut v = v.clone();").newline()
+                    // we don't use sort_unstable_by because it is
+                    // non-deterministic
+                    .append("v.sort_by(comp);").newline();
+        } // otherwise the vector doesn't need to be sorted at all
+        if (expression.limit != null) {
+            this.builder.append("let mut v = v.clone();").newline();
+            this.builder.append("v.truncate(");
+            expression.limit.accept(this);
+            this.builder.append(");").newline();
+        }
+        this.builder.append("v");
+        this.builder.newline()
                 .decrease()
                 .append("}");
         return VisitDecision.STOP;

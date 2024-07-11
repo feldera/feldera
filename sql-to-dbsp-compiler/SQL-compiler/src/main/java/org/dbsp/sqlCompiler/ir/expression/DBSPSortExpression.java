@@ -34,6 +34,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.IIndentStream;
 
+import javax.annotation.Nullable;
+
 /**
  * Represents a closure that sorts an IndexedZSet with empty keys and
  * a Vector of tuples as a value.
@@ -45,8 +47,12 @@ import org.dbsp.util.IIndentStream;
 public final class DBSPSortExpression extends DBSPExpression {
     public final DBSPComparatorExpression comparator;
     public final DBSPType elementType;
+    @Nullable
+    public final DBSPExpression limit;
 
-    public DBSPSortExpression(CalciteObject node, DBSPType elementType, DBSPComparatorExpression comparator) {
+    public DBSPSortExpression(
+            CalciteObject node, DBSPType elementType,
+            DBSPComparatorExpression comparator, @Nullable DBSPExpression limit) {
         super(node, new DBSPTypeFunction(
                 // Return type
                 new DBSPTypeVec(elementType, false),
@@ -56,6 +62,7 @@ public final class DBSPSortExpression extends DBSPExpression {
                         new DBSPTypeVec(elementType, false).ref())));
         this.comparator = comparator;
         this.elementType = elementType;
+        this.limit = limit;
     }
 
     @Override
@@ -75,7 +82,8 @@ public final class DBSPSortExpression extends DBSPExpression {
         if (o == null)
             return false;
         return this.comparator == o.comparator &&
-                this.elementType == o.elementType;
+                this.elementType == o.elementType &&
+                this.limit == o.limit;
     }
 
     @Override
@@ -88,7 +96,7 @@ public final class DBSPSortExpression extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPSortExpression(this.getNode(), this.elementType,
-                this.comparator.deepCopy().to(DBSPComparatorExpression.class));
+                this.comparator.deepCopy().to(DBSPComparatorExpression.class), this.limit);
     }
 
     @Override
@@ -96,6 +104,7 @@ public final class DBSPSortExpression extends DBSPExpression {
         DBSPSortExpression otherExpression = other.as(DBSPSortExpression.class);
         if (otherExpression == null)
             return false;
-        return this.comparator.equivalent(context, otherExpression.comparator);
+        return this.comparator.equivalent(context, otherExpression.comparator) &&
+                EquivalenceContext.equiv(this.limit, otherExpression.limit);
     }
 }

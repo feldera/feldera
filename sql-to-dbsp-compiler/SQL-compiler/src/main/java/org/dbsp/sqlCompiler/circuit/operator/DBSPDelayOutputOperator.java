@@ -16,8 +16,7 @@ import java.util.List;
  * This operator does not have an explicit input; the input is coming implicitly from
  * the corresponding DBSPDelayOperator.  This trick makes all graphs look acyclic.
  * This looks like a source operator, but it has a "hidden" input.
- * The ToDot visitor will correct this situation when drawing them.
- */
+ * The ToDot visitor will correct this situation when drawing them. */
 @NonCoreIR
 public final class DBSPDelayOutputOperator extends DBSPSourceBaseOperator {
     public DBSPDelayOutputOperator(CalciteObject node, DBSPType outputType, boolean isMultiset,

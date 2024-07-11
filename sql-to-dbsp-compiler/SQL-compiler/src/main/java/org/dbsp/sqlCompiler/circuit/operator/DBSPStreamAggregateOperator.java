@@ -69,4 +69,6 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
                     this.function, this.aggregate, newInputs.get(0), this.isLinear);
         return this;
     }
+
+    // equivalent inherited from base class
 }
