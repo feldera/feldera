@@ -1,7 +1,7 @@
 use change_detection::ChangeDetection;
 use static_files::{resource_dir, NpmBuild};
 use std::path::{Path, PathBuf};
-use std::{env /* fs */};
+use std::{env, fs};
 
 // These are touched during the build, so it would re-build every time if we
 // don't exclude them from change detection:
@@ -11,12 +11,12 @@ const EXCLUDE_LIST: [&str; 4] = [
     "../../web-console/.next",
     "../../web-console/pipeline-manager-",
 ];
-// const SVELTEKIT_EXCLUDE_LIST: [&str; 4] = [
-//     "../../web-console-sveltekit/node_modules",
-//     "../../web-console-sveltekit/build",
-//     "../../web-console-sveltekit/.svelte-kit",
-//     "../../web-console-sveltekit/pipeline-manager-",
-// ];
+const SVELTEKIT_EXCLUDE_LIST: [&str; 4] = [
+    "../../web-console-sveltekit/node_modules",
+    "../../web-console-sveltekit/build",
+    "../../web-console-sveltekit/.svelte-kit",
+    "../../web-console-sveltekit/pipeline-manager-",
+];
 
 /// The build script has two modes:
 ///
@@ -76,7 +76,7 @@ fn main() {
             .unwrap();
     }
 
-    /*{
+    {
         // sveltekit
         if let Ok(webui_out_folder) = env::var("WEBCONSOLE_BUILD_DIR") {
             ChangeDetection::path(&webui_out_folder)
@@ -110,7 +110,7 @@ fn main() {
                 .iter()
                 .collect::<PathBuf>();
             env::set_var("BUILD_DIR", rel_build_dir.clone());
-            let asset_path: PathBuf = Path::new("../../web-console-sveltekit/").join("build");
+            let asset_path: PathBuf = Path::new("../../web-console-sveltekit/").join(rel_build_dir);
             let mut resource_dir = NpmBuild::new("../../web-console-sveltekit")
                 .executable("bun")
                 .install()
@@ -122,5 +122,5 @@ fn main() {
             let _ = resource_dir.with_generated_filename(out_dir.join("v2").join("generated.rs"));
             resource_dir.build().expect("SvelteKit app failed to build");
         };
-    }*/
+    }
 }
