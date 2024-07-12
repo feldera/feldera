@@ -267,8 +267,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         MonotoneExpression value = this.variables.get(declaration);
         this.maybeSet(var, value);
         assert value == null || value.expression.getType().sameType(var.getType())
-                : "Variable " + var.variable + " type " + var.getType() +
-                " does not match expected type in expression " + value.expression.getType();
+                : "Variable " + var.variable + "(" + var.getId() + ") type " + var.getType() +
+                " does not match expected type in expression " + value.expression +
+                "(" + value.expression.getId() + ")" +
+                " with type " + value.expression.getType();
     }
 
     @Override

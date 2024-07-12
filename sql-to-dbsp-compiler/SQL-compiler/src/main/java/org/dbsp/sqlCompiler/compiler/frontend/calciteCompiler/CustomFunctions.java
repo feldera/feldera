@@ -35,6 +35,7 @@ public class CustomFunctions {
         this.initial.add(new GunzipFunction());
         this.initial.add(new WriteLogFunction());
         this.initial.add(new SequenceFunction());
+        this.initial.add(new NowFunction());
         this.udf = new HashMap<>();
     }
 
@@ -58,6 +59,22 @@ public class CustomFunctions {
         @Override
         public boolean isDeterministic() {
             // TODO: change this when we learn how to constant-fold in the RexToLixTranslator
+            return false;
+        }
+    }
+
+    static class NowFunction extends SqlFunction {
+        public NowFunction() {
+            super("NOW",
+                    SqlKind.OTHER_FUNCTION,
+                    ReturnTypes.TIMESTAMP,
+                    null,
+                    OperandTypes.NILADIC,
+                    SqlFunctionCategory.TIMEDATE);
+        }
+
+        @Override
+        public boolean isDeterministic() {
             return false;
         }
     }

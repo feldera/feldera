@@ -61,7 +61,8 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPFlatMapOperator(
                 this.getNode(), Objects.requireNonNull(expression),
-                outputType.to(DBSPTypeZSet.class), this.input());
+                outputType.to(DBSPTypeZSet.class), this.input())
+                .copyAnnotations(this);
     }
 
     @Override
@@ -69,7 +70,8 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPFlatMapOperator(
                     this.getNode(), this.getFunction(),
-                    this.getOutputZSetType(), newInputs.get(0));
+                    this.getOutputZSetType(), newInputs.get(0))
+                    .copyAnnotations(this);
         return this;
     }
 }

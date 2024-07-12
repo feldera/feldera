@@ -55,7 +55,7 @@ public final class DBSPSinkOperator extends DBSPViewBaseOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSinkOperator(
                     this.getNode(), this.viewName, this.query, this.originalRowType,
-                    this.metadata, newInputs.get(0));
+                    this.metadata, newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 }

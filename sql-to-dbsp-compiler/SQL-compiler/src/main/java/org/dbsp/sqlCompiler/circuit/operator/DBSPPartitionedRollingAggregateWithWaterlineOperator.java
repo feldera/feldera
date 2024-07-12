@@ -77,7 +77,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
                 this.partitioningFunction,
                 expression, this.aggregate, this.lower, this.upper,
                 outputType.to(DBSPTypeIndexedZSet.class),
-                this.left(), this.right());
+                this.left(), this.right()).copyAnnotations(this);
     }
 
     @Override
@@ -88,7 +88,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
                     this.getNode(),
                     this.partitioningFunction, this.function, this.aggregate,
                     this.lower, this.upper, this.getOutputIndexedZSetType(),
-                    newInputs.get(0), newInputs.get(1));
+                    newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
 

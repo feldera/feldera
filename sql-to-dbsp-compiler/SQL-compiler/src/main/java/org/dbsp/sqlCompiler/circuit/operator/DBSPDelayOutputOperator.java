@@ -26,13 +26,15 @@ public final class DBSPDelayOutputOperator extends DBSPSourceBaseOperator {
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPDelayOutputOperator(this.getNode(), outputType, this.isMultiset, this.comment);
+        return new DBSPDelayOutputOperator(this.getNode(), outputType, this.isMultiset, this.comment)
+                .copyAnnotations(this);
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPDelayOutputOperator(this.getNode(), this.outputType, this.isMultiset, this.comment);
+            return new DBSPDelayOutputOperator(this.getNode(), this.outputType, this.isMultiset, this.comment)
+                    .copyAnnotations(this);
         return this;
     }
 

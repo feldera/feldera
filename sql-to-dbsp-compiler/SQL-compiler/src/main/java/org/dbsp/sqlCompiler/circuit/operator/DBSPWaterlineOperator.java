@@ -26,14 +26,15 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPWaterlineOperator(this.getNode(), this.init,
                 Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
-                this.input());
+                this.input()).copyAnnotations(this);
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWaterlineOperator(this.getNode(), this.init,
-                    this.getFunction().to(DBSPClosureExpression.class), newInputs.get(0));
+                    this.getFunction().to(DBSPClosureExpression.class), newInputs.get(0))
+                    .copyAnnotations(this);
         return this;
     }
 

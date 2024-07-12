@@ -106,7 +106,7 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPControlledFilterOperator(
                 this.getNode(), Objects.requireNonNull(expression),
-                this.left(), this.right());
+                this.left(), this.right()).copyAnnotations(this);
     }
 
     @Override
@@ -115,7 +115,8 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPControlledFilterOperator(
                     this.getNode(), this.getFunction(),
-                    newInputs.get(0), newInputs.get(1));
+                    newInputs.get(0), newInputs.get(1))
+                    .copyAnnotations(this);
         return this;
     }
 

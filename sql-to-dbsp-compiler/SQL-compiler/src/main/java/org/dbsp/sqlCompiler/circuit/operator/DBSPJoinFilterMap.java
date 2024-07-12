@@ -40,7 +40,7 @@ public final class DBSPJoinFilterMap extends DBSPBinaryOperator {
         return new DBSPJoinFilterMap(
                 this.getNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(expression), this.filter, this.map,
-                this.isMultiset, this.left(), this.right());
+                this.isMultiset, this.left(), this.right()).copyAnnotations(this);
     }
 
     @Override
@@ -49,7 +49,7 @@ public final class DBSPJoinFilterMap extends DBSPBinaryOperator {
             return new DBSPJoinFilterMap(
                     this.getNode(), this.getOutputZSetType(),
                     this.getFunction(), this.filter, this.map,
-                    this.isMultiset, newInputs.get(0), newInputs.get(1));
+                    this.isMultiset, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
 

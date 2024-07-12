@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- [SQL] Preliminary implementation of the `NOW()` function
+  ([#2019](https://github.com/feldera/feldera/pull/2019))
 - Service probing is removed: API endpoints and corresponding
   demo are deleted, and the database table `service_probe` is dropped
   ([#2002](https://github.com/feldera/feldera/pull/2002))

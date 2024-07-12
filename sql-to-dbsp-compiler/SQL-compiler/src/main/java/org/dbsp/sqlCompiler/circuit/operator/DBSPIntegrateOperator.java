@@ -47,7 +47,7 @@ public final class DBSPIntegrateOperator extends DBSPUnaryOperator {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIntegrateOperator(
-                    this.getNode(), newInputs.get(0));
+                    this.getNode(), newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 }

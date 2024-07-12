@@ -36,7 +36,7 @@ public final class DBSPDistinctIncrementalOperator extends DBSPBinaryOperator {
         assert newInputs.size() == 2;
         if (force || this.inputsDiffer(newInputs))
             return new DBSPDistinctIncrementalOperator(
-                    this.getNode(), newInputs.get(0), newInputs.get(1));
+                    this.getNode(), newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
 }

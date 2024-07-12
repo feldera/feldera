@@ -9,7 +9,7 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.Monotonicity;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -63,6 +63,107 @@ public class StreamingTests extends StreamingTest {
             }
         };
         visitor.apply(ccs.circuit);
+    }
+
+    @Test
+    public void testNow() {
+        String sql = """
+                CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
+                CREATE VIEW V AS SELECT 1, NOW() < TIMESTAMP '2025-12-12 00:00:00';""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.step("INSERT INTO now VALUES ('2024-12-12 00:00:00')",
+                """
+                         c | compare | weight
+                        ----------------------
+                         1 | true    | 1""");
+        this.addRustTestCase("testNow", ccs);
+    }
+
+    @Test
+    public void testNow2() {
+        String sql = """
+                CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
+                CREATE TABLE T(value INT);
+                CREATE VIEW V AS SELECT *, NOW() FROM T;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 0);
+        ccs.step("""
+                        INSERT INTO T VALUES (2), (3);
+                        INSERT INTO now VALUES ('2024-12-12 00:00:00');
+                        """,
+                """
+                         value | now                 | weight
+                        --------------------------------------
+                         2     | 2024-12-12 00:00:00 | 1
+                         3     | 2024-12-12 00:00:00 | 1""");
+        ccs.step("""
+                        REMOVE FROM now VALUES ('2024-12-12 00:00:00');
+                        INSERT INTO now VALUES ('2024-12-12 00:01:00');
+                        """,
+                """
+                         value | now                 | weight
+                        --------------------------------------
+                         2     | 2024-12-12 00:00:00 | -1
+                         3     | 2024-12-12 00:00:00 | -1
+                         2     | 2024-12-12 00:01:00 | 1
+                         3     | 2024-12-12 00:01:00 | 1""");
+        this.addRustTestCase("testNow2", ccs);
+    }
+
+    @Test
+    public void testNow3() {
+        String sql = """
+                CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
+                CREATE TABLE T(value INT);
+                CREATE VIEW V AS SELECT SUM(value) + MINUTE(NOW()) FROM T;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.step("""
+                        INSERT INTO T VALUES (2), (3);
+                        INSERT INTO now VALUES ('2024-12-12 00:00:00');
+                        """,
+                """
+                         value | weight
+                        ----------------
+                         5     | 1""");
+        ccs.step("""
+                        REMOVE FROM now VALUES ('2024-12-12 00:00:00');
+                        INSERT INTO now VALUES ('2024-12-12 00:01:00');
+                        """,
+                """
+                         value | weight
+                        ----------------
+                         5     | -1
+                         6     | 1""");
+        this.addRustTestCase("testNow3", ccs);
+    }
+
+    @Test
+    public void testNow4() {
+        // now() used in WHERE
+        String sql = """
+                CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
+                CREATE TABLE transactions (
+                  id INT PRIMARY KEY,
+                  ts TIMESTAMP,
+                  users INT,
+                  AMOUNT DECIMAL
+                );
+                CREATE VIEW window_computation AS
+                SELECT
+                  users,
+                  COUNT(*) AS transaction_count_by_user
+                FROM transactions
+                WHERE ts >= now() - INTERVAL 1 DAY
+                GROUP BY users""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        new CompilerCircuitStream(compiler);
     }
 
     @Test

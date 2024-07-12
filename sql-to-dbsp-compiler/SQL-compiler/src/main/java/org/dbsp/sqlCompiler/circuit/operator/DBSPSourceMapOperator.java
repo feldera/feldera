@@ -54,7 +54,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return new DBSPSourceMapOperator(this.getNode(), this.sourceName,
                 this.keyFields, outputType.to(DBSPTypeIndexedZSet.class), this.originalRowType,
-                this.metadata, this.tableName, this.comment);
+                this.metadata, this.tableName, this.comment).copyAnnotations(this);
     }
 
     @Override
@@ -62,7 +62,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSourceMapOperator(this.getNode(), this.sourceName,
                     this.keyFields, this.getOutputIndexedZSetType(), this.originalRowType,
-                    this.metadata, this.tableName, this.comment);
+                    this.metadata, this.tableName, this.comment).copyAnnotations(this);
         return this;
     }
 

@@ -109,7 +109,11 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(operator.toString())
                 .newline();
         this.getResult().addOperator(operator);
-        operator.setDerivedFrom(this.getCurrent().getId());
+        if (!this.current.isEmpty()) {
+            // This can happen when operators are inserted in startVisit, for example.
+            // Such operators are not derived from the "current" operator.
+            operator.setDerivedFrom(this.getCurrent().getId());
+        }
     }
 
     @Override
@@ -361,8 +365,8 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
-        this.startVisit(circuit);
         this.result = new DBSPPartialCircuit(circuit.circuit.errorReporter, circuit.circuit.metadata);
+        this.startVisit(circuit);
         circuit.accept(this);
         this.endVisit();
         DBSPPartialCircuit result = this.getResult();

@@ -23,7 +23,7 @@ public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPPrimitiveAggregateOperator(this.getNode(), expression,
-                outputType, this.left(), this.right());
+                outputType, this.left(), this.right()).copyAnnotations(this);
     }
 
     @Override
@@ -31,7 +31,7 @@ public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator {
         assert newInputs.size() == 2: "Expected 2 inputs";
         if (force || this.inputsDiffer(newInputs))
             return new DBSPPrimitiveAggregateOperator(this.getNode(), this.function,
-                    this.outputType, newInputs.get(0), newInputs.get(1));
+                    this.outputType, newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
 

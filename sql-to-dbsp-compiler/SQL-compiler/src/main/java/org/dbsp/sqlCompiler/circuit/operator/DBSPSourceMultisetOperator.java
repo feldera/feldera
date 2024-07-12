@@ -29,8 +29,7 @@ public final class DBSPSourceMultisetOperator
      * @param sourceName Calcite node for the identifier naming the table.
      * @param outputType Type of table.
      * @param name       The name of the table that this operator is created from.
-     * @param comment    A comment describing the operator.
-     */
+     * @param comment    A comment describing the operator. */
     public DBSPSourceMultisetOperator(
             CalciteObject node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
@@ -53,7 +52,7 @@ public final class DBSPSourceMultisetOperator
     public DBSPOperator withFunction(@Nullable DBSPExpression unused, DBSPType outputType) {
         return new DBSPSourceMultisetOperator(this.getNode(), this.sourceName,
                 outputType.to(DBSPTypeZSet.class), this.originalRowType,
-                this.metadata, this.tableName, this.comment);
+                this.metadata, this.tableName, this.comment).copyAnnotations(this);
     }
 
     @Override
@@ -61,7 +60,7 @@ public final class DBSPSourceMultisetOperator
         if (force || this.inputsDiffer(newInputs))
             return new DBSPSourceMultisetOperator(
                     this.getNode(), this.sourceName, this.getOutputZSetType(), this.originalRowType,
-                    this.metadata, this.tableName, this.comment);
+                    this.metadata, this.tableName, this.comment).copyAnnotations(this);
         return this;
     }
 

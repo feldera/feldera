@@ -24,7 +24,8 @@ public final class DBSPWeighOperator extends DBSPUnaryOperator {
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPWeighOperator(this.getNode(), this.getFunction(), newInputs.get(0));
+            return new DBSPWeighOperator(this.getNode(), this.getFunction(), newInputs.get(0))
+                    .copyAnnotations(this);
         return this;
     }
 

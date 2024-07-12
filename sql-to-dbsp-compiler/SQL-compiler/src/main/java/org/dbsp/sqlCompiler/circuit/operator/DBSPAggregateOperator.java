@@ -58,7 +58,8 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
         DBSPTypeIndexedZSet ix = outputType.to(DBSPTypeIndexedZSet.class);
         return new DBSPAggregateOperator(
                 this.getNode(), ix,
-                expression, this.aggregate, this.input(), this.isLinear);
+                expression, this.aggregate, this.input(), this.isLinear)
+                .copyAnnotations(this);
     }
 
     @Override
@@ -66,7 +67,8 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateOperator(
                     this.getNode(), this.outputType.to(DBSPTypeIndexedZSet.class),
-                    this.function, this.aggregate, newInputs.get(0), this.isLinear);
+                    this.function, this.aggregate, newInputs.get(0), this.isLinear)
+                    .copyAnnotations(this);
         return this;
     }
 

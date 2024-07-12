@@ -74,7 +74,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPIndexedTopKOperator(this.getNode(), this.numbering, this.getFunction(),
-                    this.limit, this.outputProducer, newInputs.get(0));
+                    this.limit, this.outputProducer, newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 
@@ -94,7 +94,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPIndexedTopKOperator(this.getNode(), this.numbering,
                 Objects.requireNonNull(expression), this.limit,
-                this.outputProducer, this.input());
+                this.outputProducer, this.input()).copyAnnotations(this);
     }
 
     @Override

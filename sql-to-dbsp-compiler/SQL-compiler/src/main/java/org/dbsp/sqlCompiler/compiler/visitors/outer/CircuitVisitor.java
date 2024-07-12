@@ -40,7 +40,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** Depth-first traversal of an IDBSOuterPNode hierarchy. */
+/** Depth-first traversal of an IDBSOuterNode hierarchy. */
 @SuppressWarnings({"SameReturnValue", "BooleanMethodIsAlwaysInverted"})
 public abstract class CircuitVisitor
         implements CircuitTransform, IWritesLogs, IHasId {

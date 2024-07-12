@@ -36,10 +36,13 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Base class for all expressions */
 public abstract class DBSPExpression
@@ -164,6 +167,18 @@ public abstract class DBSPExpression
         DBSPExpression reduced = beta.apply(this).to(DBSPExpression.class);
         Simplify simplify = new Simplify(reporter);
         return simplify.apply(reduced).to(DBSPExpression.class);
+    }
+
+    /** 'this' must be an expression with a tuple type.
+     * @return a DBSPTupleExpression that contains all fields of this expression (cloned if necessary).
+     */
+    public List<DBSPExpression> allFields() {
+        DBSPTypeTupleBase type = this.getType().to(DBSPTypeTupleBase.class);
+        List<DBSPExpression> result = new ArrayList<>();
+        for (int i = 0; i < type.tupFields.length; i++) {
+            result.add(this.deepCopy().field(i).applyCloneIfNeeded());
+        }
+        return result;
     }
 
     /** Check expressions for equivalence in a specified context.

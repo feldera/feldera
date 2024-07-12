@@ -79,7 +79,7 @@ public final class DBSPSumOperator extends DBSPOperator {
             }
         }
         if (different)
-            return new DBSPSumOperator(this.getNode(), newInputs);
+            return new DBSPSumOperator(this.getNode(), newInputs).copyAnnotations(this);
         return this;
     }
 }

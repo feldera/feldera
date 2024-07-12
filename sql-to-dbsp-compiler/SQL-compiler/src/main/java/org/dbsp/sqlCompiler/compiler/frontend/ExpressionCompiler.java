@@ -1030,6 +1030,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "concat":
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
+                    case "now":
                     case "array":
                         return compileFunction(call, node, type, ops, 0);
                     case "gunzip":

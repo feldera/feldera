@@ -47,7 +47,7 @@ public final class DBSPNegateOperator extends DBSPUnaryOperator {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPNegateOperator(
-                    this.getNode(), newInputs.get(0));
+                    this.getNode(), newInputs.get(0)).copyAnnotations(this);
         return this;
     }
 }

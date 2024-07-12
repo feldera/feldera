@@ -58,7 +58,8 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPHopOperator(
                 this.getNode(), this.timestampIndex, this.interval, this.start, this.size,
-                outputType.to(DBSPTypeZSet.class), this.input());
+                outputType.to(DBSPTypeZSet.class), this.input())
+                .copyAnnotations(this);
     }
 
     @Override
@@ -66,7 +67,8 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPHopOperator(
                     this.getNode(), this.timestampIndex, this.interval, this.start, this.size,
-                    this.getOutputZSetType(), newInputs.get(0));
+                    this.getOutputZSetType(), newInputs.get(0))
+                    .copyAnnotations(this);
         return this;
     }
 }
