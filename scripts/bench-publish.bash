@@ -10,6 +10,8 @@ if [ -v ${CI_MACHINE_TYPE} ]; then
     exit 1
 fi
 
+RESULTS_DIR=benchmark-run-data
+
 NEXMARK_CSV_FILE='nexmark_results.csv'
 NEXMARK_DRAM_CSV_FILE='dram_nexmark_results.csv'
 NEXMARK_SQL_CSV_FILE='sql_nexmark_results.csv'
@@ -23,54 +25,32 @@ LDBC_CSV_FILE='ldbc_results.csv'
 pip3 install -r gh-pages/requirements.txt
 
 # If you change this, adjust the command also in the append_csv function in utils.py:
-DATE_PREFIX=`date +"%Y-%m-%d-%H-%M"`
+DATE_PREFIX=`date +"%Y-%m-%d-%H-%M/"`
 if [ -z "${PR_COMMIT_SHA}" ]; then
     # So we can run the script in non-runner environments and not pull request events
     PR_COMMIT_SHA=`git rev-parse HEAD`
 fi
 
-# Add nexmark results to repo
-DEPLOY_DIR="gh-pages/nexmark/${CI_MACHINE_TYPE}/${PR_COMMIT_SHA}/"
-if [ -d "${DEPLOY_DIR}" ]; then
-    # If we already have results for this SHA (the directory exists),
-    # we will add the new results in a subdir
-    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
-fi
+BENCHMARKS_LIST='gh-pages/benchmarks-list'
+> $BENCHMARKS_LIST
+for test in ${RESULTS_DIR}/*; do
+    name=$(basename $test)
+    echo ${name} >> $BENCHMARKS_LIST
 
-# Copy nexmark results
-mkdir -p ${DEPLOY_DIR}
-mv ${NEXMARK_CSV_FILE} ${NEXMARK_DRAM_CSV_FILE} ${NEXMARK_SQL_CSV_FILE} ${NEXMARK_SQL_METRICS_CSV_FILE} ${NEXMARK_SQL_STORAGE_CSV_FILE} ${NEXMARK_SQL_STORAGE_METRICS_CSV_FILE} ${DEPLOY_DIR}
-gzip -f ${DEPLOY_DIR}/${NEXMARK_CSV_FILE}
-#gzip -f ${DEPLOY_DIR}/${NEXMARK_PERSISTENCE_CSV_FILE}
-gzip -f ${DEPLOY_DIR}/${NEXMARK_DRAM_CSV_FILE}
-gzip -f ${DEPLOY_DIR}/${NEXMARK_SQL_CSV_FILE}
-gzip -f ${DEPLOY_DIR}/${NEXMARK_SQL_METRICS_CSV_FILE}
-gzip -f ${DEPLOY_DIR}/${NEXMARK_SQL_STORAGE_CSV_FILE}
-gzip -f ${DEPLOY_DIR}/${NEXMARK_SQL_STORAGE_METRICS_CSV_FILE}
+    # Add results to repo
+    DEPLOY_DIR="gh-pages/${name}/${CI_MACHINE_TYPE}/${PR_COMMIT_SHA}/"
+    if [ -d "${DEPLOY_DIR}" ]; then
+        # If we already have results for this SHA (the directory exists),
+        # we will add the new results in a subdir
+        DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
+    fi
 
-# Add galen results to repo
-DEPLOY_DIR="gh-pages/galen/${CI_MACHINE_TYPE}/${PR_COMMIT_SHA}/"
-if [ -d "${DEPLOY_DIR}" ]; then
-    # If we already have results for this SHA (the directory exists),
-    # we will add the new results in a subdir
-    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
-fi
-# Copy galen results
-mkdir -p ${DEPLOY_DIR}
-mv ${GALEN_CSV_FILE} ${DEPLOY_DIR}
-gzip -f ${DEPLOY_DIR}/${GALEN_CSV_FILE}
+    # Copy results
+    mkdir -p ${DEPLOY_DIR}
+    mv ${test}/* ${DEPLOY_DIR}
+    gzip -f ${DEPLOY_DIR}*.csv
+done
 
-# Add ldbc results to repo
-#DEPLOY_DIR="gh-pages/ldbc/${CI_MACHINE_TYPE}/${PR_COMMIT_SHA}/"
-#if [ -d "${DEPLOY_DIR}" ]; then
-    # If we already have results for this SHA (the directory exists),
-    # we will add the new results in a subdir
-#    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
-#fi
-# Copy ldbc results
-#mkdir -p ${DEPLOY_DIR}
-#mv ${LDBC_CSV_FILE} ${DEPLOY_DIR}
-#gzip -f ${DEPLOY_DIR}/${LDBC_CSV_FILE}
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py --append --machine $CI_MACHINE_TYPE

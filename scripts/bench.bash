@@ -6,20 +6,19 @@
 #
 set -ex
 
-# Clean-up old results
-if [ "$SMOKE" = "" ]; then
-rm -rf gh-pages
-fi
+RESULTS_DIR=benchmark-run-data
+NEXMARK_RESULTS_DIR=$RESULTS_DIR/nexmark
+GALEN_RESULTS_DIR=$RESULTS_DIR/galen
+LDBC_RESULTS_DIR=$RESULTS_DIR/ldbc
+
 NEXMARK_CSV_FILE='nexmark_results.csv'
 NEXMARK_DRAM_CSV_FILE='dram_nexmark_results.csv'
-NEXMARK_SQL_CSV_FILE='sql_nexmark_results.csv'
-NEXMARK_SQL_METRICS_CSV_FILE='sql_nexmark_metrics.csv'
-NEXMARK_SQL_STORAGE_CSV_FILE='sql_storage_nexmark_results.csv'
-NEXMARK_SQL_STORAGE_METRICS_CSV_FILE='sql_storage_nexmark_metrics.csv'
 NEXMARK_PERSISTENCE_CSV_FILE='persistence_nexmark_results.csv'
 GALEN_CSV_FILE='galen_results.csv'
 LDBC_CSV_FILE='ldbc_results.csv'
-rm -f crates/nexmark/${NEXMARK_CSV_FILE} crates/nexmark/${NEXMARK_SQL_CSV_FILE} crates/dbsp/${GALEN_CSV_FILE} crates/dbsp/${LDBC_CSV_FILE} crates/nexmark/${NEXMARK_DRAM_CSV_FILE} crates/nexmark/${NEXMARK_PERSISTENCE_CSV_FILE}
+rm -f crates/dbsp/${GALEN_CSV_FILE} crates/dbsp/${LDBC_CSV_FILE} crates/nexmark/${NEXMARK_DRAM_CSV_FILE}
+rm -rf ${RESULTS_DIR}
+mkdir -p ${RESULTS_DIR}
 
 # Run nexmark benchmark
 EVENT_RATE=10000000
@@ -35,6 +34,8 @@ FILES=( "q0" "q1" "q2" "q3" "q4" "q5" "q6" "q7" "q8" "q9" "q12" "q13" "q14" "q15
 for FILE in "${FILES[@]}"
   do cargo bench --bench nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES}  --num-event-generators ${GENERATORS} --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE} --query $FILE
 done
+mkdir -p ${NEXMARK_RESULTS_DIR}
+mv crates/nexmark/${NEXMARK_CSV_FILE} $NEXMARK_RESULTS_DIR
 
 # Run nexmark SQL benchmark
 # This test requires a running instance of redpanda and pipeline-manager.
@@ -45,26 +46,34 @@ if [ "$SMOKE" != "" ]; then
   MAX_EVENTS=1000000
 fi
 KAFKA_BROKER=localhost:9092
-rpk topic -X brokers=$KAFKA_BROKER delete bid auction person
-cargo run  -p dbsp_nexmark --example generate --features with-kafka -- --max-events ${MAX_EVENTS} -O bootstrap.servers=$KAFKA_BROKER
 
 FELDERA_API=http://localhost:8080
-nexmark_sql_benchmark() {
+sql_benchmark() {
+    mkdir -p $RESULTS_DIR/$name
     local csv=$1 metrics=$2; shift; shift
     python3 benchmark/feldera-sql/run.py \
 	    --api-url $FELDERA_API \
 	    -O bootstrap.servers=$KAFKA_BROKER \
-	    --csv "crates/nexmark/$csv" \
-	    --csv-metrics "crates/nexmark/$metrics" \
+	    --csv "$RESULTS_DIR/$name/$csv" \
+	    --csv-metrics "$RESULTS_DIR/$name/$metrics" \
 	    --metrics-interval 1 \
 	    --poller-threads 10 \
 	    "$@"
 }
-nexmark_sql_benchmark "${NEXMARK_SQL_CSV_FILE}" "${NEXMARK_SQL_METRICS_CSV_FILE}"
-nexmark_sql_benchmark "${NEXMARK_SQL_STORAGE_CSV_FILE}" "${NEXMARK_SQL_STORAGE_METRICS_CSV_FILE}" --storage
+
+DIR="benchmark/feldera-sql/benchmarks/"
+for test in $DIR/*; do
+  rpk topic -X brokers=$KAFKA_BROKER delete -r '.*'
+  source ${test}/generate.bash
+  name=$(basename $test)
+  sql_benchmark "sql_${name}_results.csv" "sql_${name}_metrics.csv" --folder benchmarks/${name}
+  sql_benchmark "sql_storage_${name}_results.csv" "sql_storage_${name}_metrics.csv" --storage --folder benchmarks/${name} --min-storage-bytes 100000000
+done
 
 # Run galen benchmark
 cargo bench --bench galen -- --workers 10 --csv ${GALEN_CSV_FILE}
+mkdir -p ${GALEN_RESULTS_DIR}
+mv crates/dbsp/${GALEN_CSV_FILE} ${GALEN_RESULTS_DIR}
 
 # Run ldbc benchmarks
 DATASET_SMALL='graph500-22'
@@ -77,6 +86,8 @@ fi
 #cargo bench --bench ldbc-graphalytics -- bfs ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
 #cargo bench --bench ldbc-graphalytics -- pagerank ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
 #cargo bench --bench ldbc-graphalytics -- pagerank ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
+#mkdir -p ${LDBC_RESULTS_DIR}
+#mv crates/dbsp/${LDBC_CSV_FILE} ${LDBC_RESULTS_DIR}
 
 # Run nexmark benchmark with persistence
 EVENT_RATE=5000000
@@ -87,4 +98,6 @@ if [ "$SMOKE" != "" ]; then
   MAX_EVENTS=100000
 fi
 cargo bench --bench nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_DRAM_CSV_FILE}
+mv crates/nexmark/${NEXMARK_DRAM_CSV_FILE} $NEXMARK_RESULTS_DIR 
 #cargo bench --bench nexmark --features persistence -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_PERSISTENCE_CSV_FILE}
+#mv crates/nexmark/${NEXMARK_PERSISTENCE_CSV_FILE} $NEXMARK_RESULTS_DIR 
