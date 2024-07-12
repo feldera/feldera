@@ -271,7 +271,8 @@ returns a TIMESTAMP value.  Programs that use the `NOW` function need
 to also declare the following table as the first table in the program:
 
 ```sql
-CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
+-- the quotes around "NOW" are very important!
+CREATE TABLE "NOW"(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
 ```
 
 (In the future this table will be automatically synthesized by the
