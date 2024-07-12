@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Service probing is removed: API endpoints and corresponding
   demo are deleted, and the database table `service_probe` is dropped
   ([#2002](https://github.com/feldera/feldera/pull/2002))
+- [WebConsole] Fix pipeline relation metrics not aggregated when there are multiple connectors per relation
 
 ## [0.20.0] - 2024-07-09
 
