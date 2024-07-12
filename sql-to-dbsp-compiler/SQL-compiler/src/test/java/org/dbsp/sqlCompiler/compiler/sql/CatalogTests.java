@@ -18,6 +18,17 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue2028() {
+        String sql = """
+                CREATE TABLE varchar_pk (
+                    pk VARCHAR PRIMARY KEY
+                );
+                
+                CREATE VIEW V AS SELECT * FROM varchar_pk;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void issue1894() {
         String sql = """
                 CREATE TYPE trans AS (

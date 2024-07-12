@@ -114,7 +114,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
         DBSPExpression[] fields = new DBSPExpression[this.keyFields.size()];
         int insertAt = 0;
         for (int index: this.keyFields) {
-            fields[insertAt++] = var.deref().field(index);
+            fields[insertAt++] = var.deref().field(index).applyCloneIfNeeded();
         }
         DBSPExpression tuple = new DBSPTupleExpression(fields);
         return tuple.closure(var.asParameter());
@@ -126,7 +126,7 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
         DBSPExpression[] fields = new DBSPExpression[this.keyFields.size()];
         int insertAt = 0;
         for (int index: this.keyFields) {
-            fields[insertAt++] = var.deref().field(index);
+            fields[insertAt++] = var.deref().field(index).applyCloneIfNeeded();
         }
         DBSPExpression tuple = new DBSPTupleExpression(fields);
         return tuple.closure(var.asParameter());
