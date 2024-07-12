@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
@@ -35,7 +36,7 @@ public class ToSqlVisitor extends InnerVisitor {
         if (literal.value != null)
             this.appendable.append(literal.value);
         else
-            this.appendable.append("NULL");
+            this.appendable.append(DBSPNullLiteral.NULL);
         return VisitDecision.STOP;
     }
 
@@ -44,7 +45,7 @@ public class ToSqlVisitor extends InnerVisitor {
         if (literal.value != null)
             this.appendable.append(literal.value);
         else
-            this.appendable.append("NULL");
+            this.appendable.append(DBSPNullLiteral.NULL);
         return VisitDecision.STOP;
     }
 
@@ -53,7 +54,7 @@ public class ToSqlVisitor extends InnerVisitor {
         if (!literal.isNull)
             this.appendable.append(Objects.requireNonNull(literal.value));
         else
-            this.appendable.append("NULL");
+            this.appendable.append(DBSPNullLiteral.NULL);
         return VisitDecision.STOP;
     }
 
@@ -62,7 +63,7 @@ public class ToSqlVisitor extends InnerVisitor {
         if (literal.value != null)
             this.appendable.append(literal.value);
         else
-            this.appendable.append("NULL");
+            this.appendable.append(DBSPNullLiteral.NULL);
         return VisitDecision.STOP;
     }
 
@@ -71,7 +72,7 @@ public class ToSqlVisitor extends InnerVisitor {
         if (literal.value != null)
             this.appendable.append(literal.value);
         else
-            this.appendable.append("NULL");
+            this.appendable.append(DBSPNullLiteral.NULL);
         return VisitDecision.STOP;
     }
 
@@ -80,7 +81,7 @@ public class ToSqlVisitor extends InnerVisitor {
         if (literal.value != null)
             this.appendable.append(Utilities.doubleQuote(literal.value));
         else
-            this.appendable.append("NULL");
+            this.appendable.append(DBSPNullLiteral.NULL);
         return VisitDecision.STOP;
     }
 
@@ -89,7 +90,7 @@ public class ToSqlVisitor extends InnerVisitor {
         if (literal.value != null)
             this.appendable.append(literal.value);
         else
-            this.appendable.append("NULL");
+            this.appendable.append(DBSPNullLiteral.NULL);
         return VisitDecision.STOP;
     }
 

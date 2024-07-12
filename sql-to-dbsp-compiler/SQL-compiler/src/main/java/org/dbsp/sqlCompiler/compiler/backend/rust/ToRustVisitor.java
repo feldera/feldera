@@ -1004,11 +1004,11 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(", ");
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(", ");
-        this.builder.append("RelRange::new(");
+        this.builder.append("RelRange::new(").increase();
         this.emitWindowBound(operator.lower);
-        this.builder.append(", ");
+        this.builder.append(",").newline();
         this.emitWindowBound(operator.upper);
-        this.builder.append(")")
+        this.builder.decrease().append(")")
                 .append(");")
                 .newline();
         return VisitDecision.STOP;

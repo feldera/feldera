@@ -80,6 +80,13 @@ public final class DBSPI16Literal extends DBSPIntLiteral implements IsNumericLit
     }
 
     @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        return this.value.toString();
+    }
+
+    @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
     }

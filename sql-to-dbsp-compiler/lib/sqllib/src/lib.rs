@@ -17,7 +17,7 @@ pub use interval::{LongInterval, ShortInterval};
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::{Date, Time, Timestamp};
 
-use dbsp::algebra::{OrdIndexedZSetFactories, OrdZSetFactories, UnsignedPrimInt};
+use dbsp::algebra::{OrdIndexedZSetFactories, OrdZSetFactories};
 use dbsp::dynamic::{DowncastTrait, DynData, Erase};
 use dbsp::trace::ord::{OrdIndexedWSetBuilder, OrdWSetBuilder, OrdWSetFactories};
 use dbsp::trace::BatchReaderFactories;
@@ -73,16 +73,6 @@ where
     fn from_integer(value: &T) -> Self {
         *value
     }
-}
-
-/// Trait used to convert values to window bounds in OVER
-/// queries.  partitioned_rolling_aggregates always requires
-/// unsigned bounds.
-pub trait ToWindowBound<T>
-where
-    T: UnsignedPrimInt,
-{
-    fn to_bound(&self) -> T;
 }
 
 pub type Weight = i64; // Default weight type

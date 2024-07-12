@@ -83,4 +83,11 @@ public final class DBSPI8Literal extends DBSPIntLiteral implements IsNumericLite
         assert this.value != null;
         return this.value > 0;
     }
+
+    @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        return this.value.toString();
+    }
 }

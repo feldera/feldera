@@ -99,6 +99,11 @@ public final class DBSPKeywordLiteral extends DBSPLiteral {
     }
 
     @Override
+    public String toSqlString() {
+        throw new InternalCompilerError("unreachable");
+    }
+
+    @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.keyword);
     }

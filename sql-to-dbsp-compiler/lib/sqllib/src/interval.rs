@@ -6,7 +6,6 @@
 //! - Long intervals, representing differences between months. These are
 //!   represented as days.
 
-use crate::ToWindowBound;
 use dbsp::num_entries_scalar;
 use num::PrimInt;
 use pipeline_types::{deserialize_without_context, serialize_without_context};
@@ -52,18 +51,34 @@ impl ShortInterval {
     }
 }
 
-impl ToWindowBound<u128> for ShortInterval {
-    fn to_bound(&self) -> u128 {
-        (self.milliseconds / 1000 / 86400) as u128
-    }
+pub fn to_bound_ShortInterval_Date_u128(value: &ShortInterval) -> u128 {
+    // express value in days
+    (value.milliseconds / 1000 / 86400) as u128
 }
 
-// This trait is used when converting to DATE offets
-// In this case we convert the number to days
-impl ToWindowBound<u64> for ShortInterval {
-    fn to_bound(&self) -> u64 {
-        (self.milliseconds / 1000 / 86400) as u64
-    }
+pub fn to_bound_ShortInterval_Date_u64(value: &ShortInterval) -> u64 {
+    // express value in days
+    (value.milliseconds / 1000 / 86400) as u64
+}
+
+pub fn to_bound_ShortInterval_Timestamp_u128(value: &ShortInterval) -> u128 {
+    // express value in milliseconds
+    value.milliseconds as u128
+}
+
+pub fn to_bound_ShortInterval_Timestamp_u64(value: &ShortInterval) -> u64 {
+    // express value in milliseconds
+    value.milliseconds as u64
+}
+
+pub fn to_bound_ShortInterval_Time_u128(value: &ShortInterval) -> u128 {
+    // express value in nanoseconds
+    (value.milliseconds * 1_000_000) as u128
+}
+
+pub fn to_bound_ShortInterval_Time_u64(value: &ShortInterval) -> u64 {
+    // express value in nanoseconds
+    (value.milliseconds * 1_000_000) as u64
 }
 
 impl<T> Mul<T> for ShortInterval
@@ -128,14 +143,6 @@ impl LongInterval {
 
     pub fn months(&self) -> i32 {
         self.months
-    }
-}
-
-impl ToWindowBound<u64> for LongInterval {
-    // TODO: this is not correct.  This expresses the interval in
-    // days.
-    fn to_bound(&self) -> u64 {
-        (self.months * 30) as u64
     }
 }
 

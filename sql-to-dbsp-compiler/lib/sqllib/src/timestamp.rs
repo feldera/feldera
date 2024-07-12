@@ -993,10 +993,24 @@ impl ToInteger<u64> for Time {
     }
 }
 
+impl ToInteger<i64> for Time {
+    fn to_integer(&self) -> i64 {
+        self.nanoseconds as i64
+    }
+}
+
 impl FromInteger<u64> for Time {
     fn from_integer(value: &u64) -> Self {
         Self {
             nanoseconds: *value,
+        }
+    }
+}
+
+impl FromInteger<i64> for Time {
+    fn from_integer(value: &i64) -> Self {
+        Self {
+            nanoseconds: *value as u64,
         }
     }
 }

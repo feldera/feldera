@@ -24,7 +24,7 @@ public class CalciteRelNode extends CalciteObject {
                     new RelToSqlConverter(SqlDialect.DatabaseProduct.UNKNOWN.getDialect());
             SqlNode node = converter.visitRoot(this.relNode).asStatement();
             return node.toString();
-        } catch (Exception ex) {
+        } catch (Throwable ex) {
             // Sometimes Calcite crashes when converting rel to SQL
             return this.relNode.toString();
         }

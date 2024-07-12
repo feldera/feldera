@@ -84,6 +84,11 @@ public final class DBSPU128Literal extends DBSPIntLiteral implements IsNumericLi
     }
 
     @Override
+    public String toSqlString() {
+        throw new InternalCompilerError("unreachable");
+    }
+
+    @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
     }

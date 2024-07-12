@@ -113,6 +113,85 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2027() {
+        // validated with Postgres 15
+        String sql = """
+                CREATE TABLE T (
+                   id INT,
+                   amt INT,
+                   ts TIMESTAMP
+                );
+                
+                CREATE VIEW V AS SELECT
+                    id,
+                    amt,
+                    SUM(amt) OVER window1 AS s1,
+                    SUM(amt) OVER window2 AS s2,
+                    SUM(amt) OVER window3 AS s3,
+                    SUM(amt) OVER window4 AS s4
+                FROM T WINDOW
+                window1 AS (PARTITION BY id ORDER BY EXTRACT(HOUR FROM ts) RANGE BETWEEN 2 PRECEDING AND 2 FOLLOWING),
+                window2 AS (PARTITION BY id ORDER BY ts RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 MINUTE FOLLOWING),
+                window3 AS (PARTITION BY id ORDER BY CAST(ts AS DATE) RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 MINUTE FOLLOWING),
+                window4 AS (PARTITION BY id ORDER BY CAST(ts AS TIME) RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 MINUTE FOLLOWING);""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.step("""
+                        INSERT INTO T VALUES(0, 1, '2024-01-01 00:00:00');
+                        INSERT INTO T VALUES(1, 2, '2024-01-01 00:00:00');
+                        INSERT INTO T VALUES(0, 3, '2024-01-01 00:00:01');
+                        INSERT INTO T VALUES(0, 4, '2024-01-01 00:00:01');
+                        INSERT INTO T VALUES(0, 5, '2024-01-01 00:10:00');
+                        INSERT INTO T VALUES(0, 6, '2024-01-01 00:11:00');
+                        INSERT INTO T VALUES(0, 7, '2024-01-01 00:13:00');""",
+                """
+                        id | amt | s1 | s2 | s3 | s4 | weight
+                       ---------------------------------------
+                        0  | 1   | 26 | 8  | 26 | 8  | 1
+                        0  | 3   | 26 | 8  | 26 | 8  | 1
+                        0  | 4   | 26 | 8  | 26 | 8  | 1
+                        0  | 5   | 26 | 19 | 26 | 19 | 1
+                        0  | 6   | 26 | 19 | 26 | 19 | 1
+                        0  | 7   | 26 | 26 | 26 | 26 | 1
+                        1  | 2   | 2  | 2  | 2  | 2  | 1"""
+        );
+        this.addRustTestCase("issue2027", ccs);
+    }
+
+    @Test
+    public void issue2027negative() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE t (
+                   id INT,
+                   amt INT,
+                   ts TIMESTAMP
+                );
+                
+                CREATE VIEW V AS SELECT
+                    SUM(amt) OVER window1 AS s1
+                FROM t WINDOW
+                window1 AS (PARTITION BY id ORDER BY ts RANGE BETWEEN INTERVAL 1 MONTH PRECEDING AND INTERVAL 1 YEAR FOLLOWING);""",
+                "Can you rephrase the query using an interval");
+    }
+
+    @Test
+    public void issue2027negative1() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE t (
+                   id INT,
+                   amt INT,
+                   ts TIMESTAMP
+                );
+                
+                CREATE VIEW V AS SELECT
+                    SUM(amt) OVER window1 AS s1
+                FROM t WINDOW
+                window1 AS (PARTITION BY id ORDER BY ts RANGE BETWEEN INTERVAL -1 HOUR PRECEDING AND CURRENT ROW);""",
+                "Window bounds must be positive");
+    }
+
+    @Test
     public void issue1768() {
         String sql = """
                 CREATE TABLE transaction (

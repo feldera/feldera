@@ -9,9 +9,7 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -90,7 +88,6 @@ public class StreamingTests extends StreamingTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 0);
         ccs.step("""
                         INSERT INTO T VALUES (2), (3);
                         INSERT INTO now VALUES ('2024-12-12 00:00:00');

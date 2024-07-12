@@ -78,6 +78,13 @@ public final class DBSPBoolLiteral extends DBSPLiteral {
     }
 
     @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        return this.value.toString();
+    }
+
+    @Override
     public boolean sameValue(@Nullable DBSPLiteral o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;

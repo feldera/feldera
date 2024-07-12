@@ -166,6 +166,8 @@ public abstract class DBSPLiteral extends DBSPExpression {
         return this.sameValue(that);
     }
 
+    public abstract String toSqlString();
+
     @Override
     public int hashCode() {
         return Objects.hash(isNull);

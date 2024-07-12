@@ -101,6 +101,16 @@ public final class DBSPIntervalMillisLiteral
     }
 
     @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        long ms = this.value % 1000L;
+        return "INTERVAL " + this.value / 1000L +
+                ((ms > 0) ? "." + String.format("%03d", this.value % 1000L) : "") +
+                " SECONDS";
+    }
+
+    @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
     }

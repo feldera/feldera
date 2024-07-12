@@ -111,4 +111,11 @@ public final class DBSPDateLiteral extends DBSPLiteral {
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
     }
+
+    @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        return Objects.requireNonNull(this.getDateString()).toString();
+    }
 }

@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.type.*;
@@ -35,11 +36,8 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.*;
 
-/**
- * This class manages the interface to the SQL
- * runtime library: support functions that implement the
- * SQL semantics.
- */
+/** This class encodes (part of) the interface to the SQL
+ * runtime library: support functions that implement the SQL semantics. */
 @SuppressWarnings({"SpellCheckingInspection"})
 public class RustSqlRuntimeLibrary {
     private final LinkedHashMap<String, DBSPOpcode> arithmeticFunctions = new LinkedHashMap<>();
@@ -147,6 +145,21 @@ public class RustSqlRuntimeLibrary {
                     ", returnType=" + returnType +
                     '}';
         }
+    }
+
+    public static FunctionDescription getWindowBound(CalciteObject node,
+            DBSPType unsignedType, DBSPType sortType, DBSPType boundType) {
+        // we ignore nullability because window bounds are constants and cannot be null
+        if (boundType.is(DBSPTypeMonthsInterval.class)) {
+            throw new UnsupportedException("""
+                    Currently the compiler only supports constant OVER window bounds.
+                    Intervals such as 'INTERVAL 1 MONTH' or 'INTERVAL 1 YEAR' are not constant.
+                    Can you rephrase the query using an interval such as 'INTERVAL 30 DAYS' instead?""", node);
+        }
+        return new FunctionDescription("to_bound_" +
+                boundType.setMayBeNull(false).baseTypeWithSuffix() + "_" +
+                sortType.setMayBeNull(false).baseTypeWithSuffix() + "_" +
+                unsignedType.baseTypeWithSuffix(), unsignedType);
     }
 
     public FunctionDescription getImplementation(CalciteObject node,
