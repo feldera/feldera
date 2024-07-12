@@ -288,6 +288,35 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true);
     }
 
+    @Test
+    public void issue2037() throws IOException, InterruptedException, SQLException {
+        // Removing the quotes around "NOW" causes an assertion failure
+        String[] statements = new String[] {
+               """
+               CREATE TABLE "NOW"(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
+               
+               CREATE TABLE transactions (
+                   id INT PRIMARY KEY,
+                   ts TIMESTAMP,
+                   user_id INT,
+                   AMOUNT DECIMAL
+               );
+               
+               CREATE VIEW window_computation AS SELECT
+                   user_id,
+                   COUNT(*) AS transaction_count_by_user
+                   FROM transactions
+                   WHERE ts >= now() - INTERVAL 1 DAY
+                   GROUP BY user_id;"""
+        };
+        File file = createInputScript(statements);
+        CompilerMessages messages = CompilerMain.execute("-i", "--unquotedCasing", "lower",
+                "-o", BaseSQLTests.testFilePath, file.getPath());
+        System.out.println(messages);
+        Assert.assertEquals(0, messages.errorCount());
+        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, true);
+    }
+
     // Test illegal values for the --unquotedCasing command-line parameter
     @Test
     public void illegalCasing() throws IOException, SQLException {

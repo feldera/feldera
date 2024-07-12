@@ -205,6 +205,10 @@ public class CalciteOptimizer implements IWritesLogs {
                 // Rule is unsound
                 // CoreRules.PROJECT_JOIN_TRANSPOSE
         ));
+        this.addStep(new SimpleOptimizerStep(
+                "Simplify aggregates",
+                CoreRules.AGGREGATE_REDUCE_FUNCTIONS
+        ));
         this.addStep(merge);
         this.addStep(new SimpleOptimizerStep("Remove dead code",
                 CoreRules.AGGREGATE_REMOVE,

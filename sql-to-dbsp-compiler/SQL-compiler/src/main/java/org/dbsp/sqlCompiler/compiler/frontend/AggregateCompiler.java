@@ -404,9 +404,9 @@ public class AggregateCompiler implements ICompilerComponent {
                     this.resultType, accumulator, aggregatedValue, this.filterArgument());
         } else {
             linear = aggregatedValue.closure(this.v.asParameter());
-            DBSPExpression weighted = new DBSPBinaryExpression(
-                    node, aggregatedValue.getType(),
-                    DBSPOpcode.MUL_WEIGHT, aggregatedValue, this.compiler.weightVar);
+            DBSPExpression weighted = new DBSPBinaryExpression(node,
+                    aggregatedValue.getType(), DBSPOpcode.MUL_WEIGHT,
+                    aggregatedValue, this.compiler.weightVar);
             increment = this.aggregateOperation(
                     node, DBSPOpcode.AGG_ADD, this.resultType,
                     accumulator, weighted, this.filterArgument());
@@ -414,6 +414,8 @@ public class AggregateCompiler implements ICompilerComponent {
         String semigroupName = "DefaultSemigroup";
         if (this.filterArgument >= 0)
             // If we are filtering the sum is no longer linear
+            linear = null;
+        if (aggregatedValue.getType().mayBeNull)
             linear = null;
         if (accumulator.getType().mayBeNull)
             semigroupName = "DefaultOptSemigroup";

@@ -53,8 +53,7 @@ import org.junit.Test;
 
 import java.math.BigDecimal;
 
-/**
- * Test end-to-end by compiling some DDL statements and view
+/** Test end-to-end by compiling some DDL statements and view
  * queries by compiling them to rust and executing them
  * by inserting data in the input tables and reading data
  * from the declared views. */
@@ -812,6 +811,15 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPZSetLiteral(
                         new DBSPTupleExpression(DBSPLiteral.none(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
+    }
+
+    @Test
+    public void linearAggregateTest() {
+        String query = "SELECT SUM(COL1) FROM T GROUP BY COL5";
+        DBSPExpression value = new DBSPTupleExpression(new DBSPI32Literal(10));
+        this.testAggregate(query,
+                new DBSPZSetLiteral(value, value),
+                new DBSPZSetLiteral(value.getType()));
     }
 
     @Test
