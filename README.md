@@ -36,6 +36,9 @@ To this end we set the following high-level objectives:
    business logic of their application, leaving it to the system to evaluate
    this logic efficiently.
 
+1. **Datasets larger than RAM.** Our platform is designed to handle datasets
+   that exceed the available RAM, ensuring efficient retrieval from NVMe.
+
 ## Architecture
 
 With Feldera Platform, users create data pipelines out of SQL programs and data
