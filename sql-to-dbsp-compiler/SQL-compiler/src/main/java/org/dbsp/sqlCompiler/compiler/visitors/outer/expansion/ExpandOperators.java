@@ -213,8 +213,10 @@ public class ExpandOperators extends CircuitCloneVisitor {
         List<DBSPOperator> inputs = Linq.map(operator.inputs, this::mapped);
         DBSPDelayedIntegralOperator leftIntegrator = new DBSPDelayedIntegralOperator(operator.getNode(), inputs.get(0));
         this.addOperator(leftIntegrator);
+        leftIntegrator.copyAnnotations(operator.left());
         DBSPDelayedIntegralOperator rightIntegrator = new DBSPDelayedIntegralOperator(operator.getNode(), inputs.get(1));
         this.addOperator(rightIntegrator);
+        rightIntegrator.copyAnnotations(operator.right());
         DBSPTypeZSet type = operator.getOutputZSetType();
 
         DBSPStreamJoinOperator deltaJoin = new DBSPStreamJoinOperator(operator.getNode(), type,

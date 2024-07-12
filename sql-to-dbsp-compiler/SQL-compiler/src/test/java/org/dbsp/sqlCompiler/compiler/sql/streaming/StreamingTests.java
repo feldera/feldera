@@ -28,6 +28,31 @@ import java.util.List;
 /** Tests that exercise streaming features. */
 public class StreamingTests extends StreamingTestBase {
     @Test
+    public void issue2004() {
+        String sql = """
+                CREATE TABLE auction (
+                   date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
+                   expires   TIMESTAMP NOT NULL,
+                   id        INT
+                );
+                
+                CREATE TABLE bid (
+                   date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
+                   price INT,
+                   auction INT
+                );
+                
+                CREATE VIEW Q9 AS
+                SELECT A.*, B.price, B.date_time AS bid_dateTime
+                FROM auction A, bid B
+                WHERE A.id = B.auction AND B.date_time BETWEEN A.date_time AND A.expires""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("issue2004", ccs);
+    }
+
+    @Test
     public void issue1973() {
         String sql = """
                 create table t (
@@ -161,7 +186,6 @@ public class StreamingTests extends StreamingTestBase {
 
     @Test
     public void timerTest() {
-        // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         this.compileRustTestCase("""
                 CREATE TABLE timer (
                   now BIGINT LATENESS 0
@@ -169,7 +193,7 @@ public class StreamingTests extends StreamingTestBase {
                 
                 CREATE TABLE transactions (
                   id INT PRIMARY KEY,
-                  timee BIGINT,
+                  ts BIGINT,
                   userid INT,
                   AMOUNT DECIMAL
                 );
@@ -179,7 +203,7 @@ public class StreamingTests extends StreamingTestBase {
                   userid,
                   COUNT(*) AS transaction_count_by_user
                 FROM transactions
-                WHERE timee >= (SELECT max(now) FROM timer) - 86400
+                WHERE ts >= (SELECT max(now) FROM timer) - 86400
                 GROUP BY userid""");
     }
 

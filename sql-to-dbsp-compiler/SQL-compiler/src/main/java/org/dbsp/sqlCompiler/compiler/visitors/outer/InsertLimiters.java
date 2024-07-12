@@ -470,6 +470,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPOperator limiter = this.bound.get(replacement.input());
             if (limiter != null) {
                 this.markBound(replacement, limiter);
+            } else {
+                this.nonMonotone(replacement);
             }
         }
     }
@@ -490,6 +492,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
+        this.processIntegral(expansion.leftIntegrator);
+        this.processIntegral(expansion.rightIntegrator);
         this.processStreamJoin(expansion.leftDelta);
         this.processStreamJoin(expansion.rightDelta);
         this.processStreamJoin(expansion.both);

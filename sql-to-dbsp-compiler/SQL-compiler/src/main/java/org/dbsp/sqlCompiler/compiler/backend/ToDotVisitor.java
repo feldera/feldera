@@ -76,6 +76,12 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         return operator.isMultiset ? "" : "*";
     }
 
+    static String annotations(DBSPOperator operator) {
+        if (operator.annotations.isEmpty())
+            return "";
+        return " " + operator.annotations.toString();
+    }
+
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
         String name = node.operation;
@@ -85,6 +91,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(" [ shape=box style=filled fillcolor=lightgrey label=\"")
                 .append(node.getIdString())
                 .append(isMultiset(node))
+                .append(annotations(node))
                 .append(" ")
                 .append(name)
                 .append("\" ]")
@@ -98,6 +105,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
                 .append(isMultiset(node))
+                .append(annotations(node))
                 .append(" ")
                 .append(getFunction(node))
                 .append("\" ]")
@@ -146,6 +154,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
                 .append(isMultiset(node))
+                .append(annotations(node))
                 .append(" ")
                 .append(node.viewName)
                 .append("\"")
@@ -221,6 +230,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(" label=\"")
                 .append(node.getIdString())
                 .append(isMultiset(node))
+                .append(annotations(node))
                 .append(" ")
                 .append(node.operation)
                 .append(node.comment != null ? node.comment : "");
@@ -264,7 +274,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         CircuitVisitor create(IndentStream stream);
     }
 
-    public static void toDot(IErrorReporter reporter, String fileName, int details,
+    public static void toDot(String fileName, int details,
                       @Nullable String outputFormat, DBSPCircuit circuit, VisitorConstructor constructor) {
         System.out.println("Writing circuit to " + fileName);
         Logger.INSTANCE.belowLevel("ToDotVisitor", 1)
@@ -297,6 +307,6 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     public static void toDot(IErrorReporter reporter, String fileName, int details,
                              @Nullable String outputFormat, DBSPCircuit circuit) {
-        toDot(reporter, fileName, details, outputFormat, circuit, stream -> new ToDotVisitor(reporter, stream, details));
+        toDot(fileName, details, outputFormat, circuit, stream -> new ToDotVisitor(reporter, stream, details));
     }
 }
