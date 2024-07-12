@@ -150,7 +150,7 @@ def main():
     parser.add_argument('--csv', help='File to write results in .csv format')
     parser.add_argument('--csv-metrics', help='File to write pipeline metrics (memory, disk) in .csv format')
     parser.add_argument('--metrics-interval', help='How often metrics should be sampled, in seconds (default: 1)')
-    parser.set_defaults(lateness=True, output=False, merge=False, storage=False, cores=16, metrics_interval=1, folder='nexmark')
+    parser.set_defaults(lateness=True, output=False, merge=False, storage=False, cores=16, metrics_interval=1, folder='benchmarks/nexmark')
     
     global api_url, kafka_options, headers
     api_url = parser.parse_args().api_url
@@ -247,7 +247,7 @@ def main():
                     # "storage_class": "..."
                 }
             },
-            "program_name": program_name,
+            "program_name": pipeline_name,
             "connectors": connectors
         }).raise_for_status()
 

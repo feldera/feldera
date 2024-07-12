@@ -579,6 +579,7 @@ benchmark:
     FROM +build-manager
     COPY scripts/bench.bash scripts/bench.bash
     COPY benchmark/feldera-sql/run.py benchmark/feldera-sql/run.py
+    COPY benchmark/feldera-sql/benchmarks benchmark/feldera-sql/benchmarks
     COPY +build-manager/pipeline-manager .
     COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
     RUN mkdir -p /working-dir/cargo_workspace
@@ -598,14 +599,7 @@ benchmark:
             docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 redpanda start --smp 2 \
             && bash scripts/bench.bash
     END
-    SAVE ARTIFACT crates/nexmark/nexmark_results.csv AS LOCAL .
-    SAVE ARTIFACT crates/nexmark/sql_nexmark_results.csv AS LOCAL .
-    SAVE ARTIFACT crates/nexmark/sql_nexmark_metrics.csv AS LOCAL .
-    SAVE ARTIFACT crates/nexmark/sql_storage_nexmark_results.csv AS LOCAL .
-    SAVE ARTIFACT crates/nexmark/sql_storage_nexmark_metrics.csv AS LOCAL .
-    SAVE ARTIFACT crates/nexmark/dram_nexmark_results.csv AS LOCAL .
-    SAVE ARTIFACT crates/dbsp/galen_results.csv AS LOCAL .
-    #SAVE ARTIFACT crates/dbsp/ldbc_results.csv AS LOCAL .
+    SAVE ARTIFACT benchmark-run-data AS LOCAL .
 
 flink-benchmark:
     FROM +rust-sources
