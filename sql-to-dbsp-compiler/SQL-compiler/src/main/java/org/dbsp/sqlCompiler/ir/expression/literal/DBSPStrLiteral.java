@@ -80,6 +80,11 @@ public final class DBSPStrLiteral extends DBSPLiteral {
     }
 
     @Override
+    public String toSqlString() {
+        throw new InternalCompilerError("unreachable");
+    }
+
+    @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(Utilities.doubleQuote(this.value));
     }

@@ -288,10 +288,10 @@ public class PostgresWindowTests extends SqlIoTest {
     @Test
     public void dateWindow() {
         // around line 1534
-        // This is not supposed to work, since we don't really support variable window bounds
+        // Converted INTERVAL 1 YEAR to INTERVAL 365 DAYS
         this.qs("""
                 select sum(salary)
-                OVER (order by enroll_date range between INTERVAL 1 YEAR preceding and INTERVAL 1 YEAR following),
+                OVER (order by enroll_date range between INTERVAL 365 DAYS preceding and INTERVAL 365 DAYS following),
                 	salary, enroll_date FROM empsalary;
                   sum  | salary | enroll_date
                 -------+--------+-------------
@@ -308,7 +308,7 @@ public class PostgresWindowTests extends SqlIoTest {
                 (10 rows)
                 
                 select sum(salary)
-                OVER (order by enroll_date desc range between INTERVAL 1 year following and INTERVAL 1 year following),
+                OVER (order by enroll_date desc range between INTERVAL 365 DAYS following and INTERVAL 365 DAYS following),
                 	salary, enroll_date from empsalary;
                  sum | salary | enroll_date
                 -----+--------+-------------

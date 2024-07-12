@@ -107,6 +107,16 @@ public final class DBSPRealLiteral extends DBSPFPLiteral implements IsNumericLit
     }
 
     @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        String result = this.value.toString();
+        if (!result.contains("e"))
+            result += "e0";
+        return result;
+    }
+
+    @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
     }

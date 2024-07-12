@@ -33,7 +33,7 @@ public class NonMonotoneType extends ScalarMonotoneType {
         } else if (type.is(DBSPTypeTupleBase.class)) {
             return nonMonotoneTuple(type.to(DBSPTypeTupleBase.class));
         } else if (type.is(DBSPTypeRef.class)) {
-            return new MonotoneRefType(nonMonotone(type.to(DBSPTypeRef.class).ref()));
+            return new MonotoneRefType(nonMonotone(type.to(DBSPTypeRef.class).type));
         }
         throw new UnsupportedException(type.getNode());
     }

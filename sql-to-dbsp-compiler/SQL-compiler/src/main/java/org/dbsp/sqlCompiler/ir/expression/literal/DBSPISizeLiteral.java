@@ -107,4 +107,9 @@ public final class DBSPISizeLiteral extends DBSPLiteral implements IsNumericLite
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
     }
+
+    @Override
+    public String toSqlString() {
+        throw new InternalCompilerError("unreachable");
+    }
 }

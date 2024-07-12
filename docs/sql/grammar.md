@@ -373,6 +373,7 @@ on aggregation](aggregates.md#window-aggregate-functions).
 
 Currently we require window ranges to have constant values.  This
 precludes ranges such as `INTERVAL 1 YEAR`, which have variable sizes.
+The window bounds must be non-negative constant values.
 
 ## Table functions
 

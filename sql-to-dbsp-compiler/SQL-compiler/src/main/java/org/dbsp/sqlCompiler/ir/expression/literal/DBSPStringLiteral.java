@@ -102,6 +102,13 @@ public final class DBSPStringLiteral extends DBSPLiteral {
     }
 
     @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        return Utilities.singleQuote(this.value);
+    }
+
+    @Override
     public IIndentStream toString(IIndentStream builder) {
         if (this.value == null)
             return builder.append("(")

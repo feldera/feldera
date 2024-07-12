@@ -101,6 +101,7 @@ import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.rust.RustSqlRuntimeLibrary;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -119,9 +120,11 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.HasSchema;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.LatenessStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -160,11 +163,13 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
+import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
@@ -1570,12 +1575,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
             super(compiler, window, group, windowFieldIndex);
         }
 
-        DBSPWindowBoundExpression compileWindowBound(RexWindowBound bound, DBSPType boundType, ExpressionCompiler eComp) {
-            IsNumericType numType = boundType.as(IsNumericType.class);
+        DBSPWindowBoundExpression compileWindowBound(
+                RexWindowBound bound, DBSPType sortType, DBSPType unsignedType, ExpressionCompiler eComp) {
+            CalciteObject node = CalciteObject.create(this.window);
+            IsNumericType numType = unsignedType.as(IsNumericType.class);
             if (numType == null) {
                 throw new UnimplementedException("Currently windows must use integer values, so "
-                        + boundType + " is not legal",
-                        CalciteObject.create(this.window));
+                        + unsignedType + " is not legal", node);
             }
             DBSPExpression numericBound;
             if (bound.isUnbounded())
@@ -1584,12 +1590,25 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 numericBound = numType.getZero();
             else {
                 DBSPExpression value = eComp.compile(Objects.requireNonNull(bound.getOffset()));
-                if (value.getType().is(DBSPTypeInteger.class))
-                    numericBound = value.cast(boundType);
-                else
-                    numericBound = new DBSPApplyMethodExpression("to_bound", boundType, value);
+                Simplify simplify = new Simplify(this.compiler.compiler);
+                IDBSPInnerNode simplified = simplify.apply(value);
+                if (!simplified.is(DBSPLiteral.class)) {
+                    throw new UnsupportedException("Currently window bounds must be constant values: " +
+                            simplified, node);
+                }
+                DBSPLiteral literal = simplified.to(DBSPLiteral.class);
+                if (!literal.to(IsNumericLiteral.class).gt0()) {
+                    throw new UnsupportedException("Window bounds must be positive: " + literal.toSqlString(), node);
+                }
+                if (literal.getType().is(DBSPTypeInteger.class)) {
+                    numericBound = value.cast(unsignedType);
+                } else {
+                    RustSqlRuntimeLibrary.FunctionDescription desc =
+                            RustSqlRuntimeLibrary.getWindowBound(node, unsignedType, sortType, literal.getType());
+                    numericBound = new DBSPApplyExpression(desc.function, unsignedType, literal.borrow());
+                }
             }
-            return new DBSPWindowBoundExpression(CalciteObject.EMPTY, bound.isPreceding(), numericBound);
+            return new DBSPWindowBoundExpression(node, bound.isPreceding(), numericBound);
         }
 
         @Override
@@ -1623,7 +1642,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 sortType = originalOrderField.getType();
                 if (!sortType.is(DBSPTypeInteger.class) &&
                         !sortType.is(DBSPTypeTimestamp.class) &&
-                        !sortType.is(DBSPTypeDate.class))
+                        !sortType.is(DBSPTypeDate.class) &&
+                        !sortType.is(DBSPTypeTime.class))
                     throw new UnimplementedException("OVER currently cannot sort on columns with type "
                             + Utilities.singleQuote(sortType.asSqlString()), node);
 
@@ -1655,8 +1675,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.compiler.circuit.addOperator(diff);
 
                 // Create window description
-                DBSPWindowBoundExpression lb = this.compileWindowBound(group.lowerBound, unsignedSortType, eComp);
-                DBSPWindowBoundExpression ub = this.compileWindowBound(group.upperBound, unsignedSortType, eComp);
+                DBSPWindowBoundExpression lb = this.compileWindowBound(group.lowerBound, sortType, unsignedSortType, eComp);
+                DBSPWindowBoundExpression ub = this.compileWindowBound(group.upperBound, sortType, unsignedSortType, eComp);
 
                 List<DBSPType> types = Linq.map(aggregateCalls, c -> this.compiler.convertType(c.type, false));
                 DBSPTypeTuple tuple = new DBSPTypeTuple(types);

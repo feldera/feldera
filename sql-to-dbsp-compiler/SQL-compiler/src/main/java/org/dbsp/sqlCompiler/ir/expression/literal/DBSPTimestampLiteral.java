@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.time.Instant;
@@ -118,6 +119,13 @@ public final class DBSPTimestampLiteral extends DBSPLiteral {
                     .append(")null");
         else
             return builder.append(TimestampString.fromMillisSinceEpoch(this.value).toString());
+    }
+
+    @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        return "TIMESTAMP " + Utilities.singleQuote(Objects.requireNonNull(this.getTimestampString()).toString());
     }
 
     @Override

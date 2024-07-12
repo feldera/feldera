@@ -166,5 +166,24 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
         return context.equivalent(this.data, otherExpression.data);
     }
 
-    // TODO: implement equals and hashcode
+    @Override
+    public String toSqlString() {
+        if (this.data == null)
+            return DBSPNullLiteral.NULL;
+        StringBuilder builder = new StringBuilder();
+        builder.append("ARRAY[");
+        boolean first = true;
+        for (DBSPExpression d: this.data) {
+            if (!first)
+                builder.append(", ");
+            first = false;
+            if (d.is(DBSPLiteral.class)) {
+                builder.append(d.to(DBSPLiteral.class).toSqlString());
+            } else {
+                builder.append(d.toString());
+            }
+        }
+        builder.append("]");
+        return builder.toString();
+    }
 }

@@ -198,6 +198,13 @@ pub fn cast_to_Time_Time(value: Time) -> Time {
 
 cast_function!(Time, Time, Time, Time);
 
+#[inline]
+pub fn cast_to_Time_Timestamp(value: Timestamp) -> Time {
+    Time::from_time(value.to_dateTime().time())
+}
+
+cast_function!(Time, Time, Timestamp, Timestamp);
+
 /////////// cast to decimal
 
 #[inline]

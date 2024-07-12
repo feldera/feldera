@@ -95,7 +95,7 @@ public final class DBSPIntervalMonthsLiteral
                 .append(")");
         if (this.value != null)
             return builder.append(this.value.toString());
-        return builder.append("null");
+        return builder.append(DBSPNullLiteral.NULL);
     }
 
     @Override
@@ -113,5 +113,12 @@ public final class DBSPIntervalMonthsLiteral
         if (this.value == null)
             return this;
         return new DBSPIntervalMonthsLiteral(Math.toIntExact(this.value * value));
+    }
+
+    @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        return "INTERVAL " + this.value + " MONTHS";
     }
 }

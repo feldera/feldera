@@ -13,10 +13,10 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -79,14 +79,30 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         }
     };
 
+    static class ExpressionSet {
+        final Set<Long> ids;
+
+        ExpressionSet() {
+            this.ids = new HashSet<>();
+        }
+
+        void add(DBSPExpression expression) {
+            this.ids.add(expression.id);
+        }
+
+        boolean contains(DBSPExpression expression) {
+            return this.ids.contains(expression.id);
+        }
+    }
+
     IMaybeMonotoneType[] parameterTypes;
     /** Maps each declaration to its current value. */
     final DeclarationValue<MonotoneExpression> variables;
-    /** Ids of expressions which are guaranteed to have constant values */
-    final Set<Long> constantExpressions;
-    /** Ids of expressions which are guaranteed to have constant and positive values
+    /** Monotone expressions which are guaranteed to have constant values */
+    final ExpressionSet constantExpressions;
+    /** Monotone expressions which are guaranteed to have constant and positive values
      * (They all must have numeric types) */
-    final Set<Long> positiveExpressions;
+    final ExpressionSet positiveExpressions;
     final ResolveReferences resolver;
     final ArgumentKind argumentKind;
     /** Operator where the analyzed closure originates from.
@@ -112,8 +128,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.argumentKind = argumentKind;
         this.variables = new DeclarationValue<>();
         this.resolver = new ResolveReferences(reporter, false);
-        this.constantExpressions = new HashSet<>();
-        this.positiveExpressions = new HashSet<>();
+        this.constantExpressions = new ExpressionSet();
+        this.positiveExpressions = new ExpressionSet();
     }
 
     @Override
@@ -288,6 +304,22 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     }
 
     @Override
+    public void postorder(DBSPBorrowExpression expression) {
+        MonotoneExpression value = this.get(expression.expression);
+        IMaybeMonotoneType sourceType = value.type;
+        DBSPExpression reduced = null;
+        IMaybeMonotoneType type = NonMonotoneType.nonMonotone(expression.type);
+        if (sourceType.mayBeMonotone()) {
+            reduced = value.getReducedExpression().borrow();
+            type = new MonotoneRefType(sourceType);
+        }
+        MonotoneExpression result = new MonotoneExpression(expression, type, reduced);
+        if (this.constantExpressions.contains(expression.expression))
+            this.constantExpressions.add(expression);
+        this.maybeSet(expression, result);
+    }
+
+    @Override
     public void postorder(DBSPDerefExpression expression) {
         MonotoneExpression value = this.get(expression.expression);
         IMaybeMonotoneType type = value.type;
@@ -295,6 +327,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (type.mayBeMonotone())
             reduced = value.getReducedExpression().deref();
         MonotoneExpression result = new MonotoneExpression(expression, type.to(MonotoneRefType.class).base, reduced);
+        if (this.constantExpressions.contains(expression.expression))
+            this.constantExpressions.add(expression);
         this.maybeSet(expression, result);
     }
 
@@ -316,9 +350,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     new DBSPTupleExpression(
                             expression.getNode(), expression.getType().mayBeNull, monotoneComponents);
         }
-        boolean allConstant = Linq.all(fields, f -> this.constantExpressions.contains(f.id));
+        boolean allConstant = Linq.all(expression.fields, this.constantExpressions::contains);
         if (allConstant) {
-            this.constantExpressions.add(expression.id);
+            this.constantExpressions.add(expression);
         }
         MonotoneExpression result = new MonotoneExpression(expression, tuple, reduced);
         this.set(expression, result);
@@ -328,11 +362,11 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     public void postorder(DBSPLiteral expression) {
         MonotoneExpression result = new MonotoneExpression(
                 expression, new MonotoneType(expression.getType()), expression);
-        this.constantExpressions.add(expression.id);
+        this.constantExpressions.add(expression);
         if (expression.is(IsNumericLiteral.class)) {
             if (!expression.to(DBSPLiteral.class).isNull &&
                     expression.to(IsNumericLiteral.class).gt0())
-                this.positiveExpressions.add(expression.id);
+                this.positiveExpressions.add(expression);
         }
         this.set(expression, result);
     }
@@ -354,10 +388,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (source.mayBeMonotone()) {
             reduced = new DBSPCloneExpression(expression.getNode(), source.getReducedExpression());
         }
-        if (this.positiveExpressions.contains(source.id))
-            this.positiveExpressions.add(expression.id);
-        if (this.constantExpressions.contains(source.id))
-            this.constantExpressions.add(expression.id);
+        if (this.positiveExpressions.contains(expression.expression))
+            this.positiveExpressions.add(expression);
+        if (this.constantExpressions.contains(expression.expression))
+            this.constantExpressions.add(expression);
         MonotoneExpression result = new MonotoneExpression(expression, source.getMonotoneType(), reduced);
         this.set(expression, result);
     }
@@ -370,10 +404,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (source.mayBeMonotone()) {
             reduced = new DBSPSomeExpression(expression.getNode(), source.getReducedExpression());
         }
-        if (this.positiveExpressions.contains(source.id))
-            this.positiveExpressions.add(expression.id);
-        if (this.constantExpressions.contains(source.id))
-            this.constantExpressions.add(expression.id);
+        if (this.positiveExpressions.contains(expression.expression))
+            this.positiveExpressions.add(expression);
+        if (this.constantExpressions.contains(expression.expression))
+            this.constantExpressions.add(expression);
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.getMonotoneType().setMaybeNull(true), reduced);
         this.set(expression, result);
@@ -384,10 +418,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         MonotoneExpression result;
         if (expression.lastExpression != null) {
             result = this.get(expression.lastExpression);
-            if (this.constantExpressions.contains(expression.lastExpression.id))
-                this.constantExpressions.add(expression.id);
-            if (this.positiveExpressions.contains(expression.lastExpression.id))
-                this.positiveExpressions.add(expression.id);
+            if (this.constantExpressions.contains(expression.lastExpression))
+                this.constantExpressions.add(expression);
+            if (this.positiveExpressions.contains(expression.lastExpression))
+                this.positiveExpressions.add(expression);
         } else {
             result = new MonotoneExpression(expression, new NonMonotoneType(expression.type), null);
         }
@@ -407,9 +441,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         MonotoneExpression left = this.get(expression.left);
         MonotoneExpression right = this.get(expression.right);
         DBSPExpression reduced = null;
-        if (this.constantExpressions.contains(expression.left.id) &&
-            this.constantExpressions.contains(expression.right.id))
-            this.constantExpressions.add(expression.id);
+        if (this.constantExpressions.contains(expression.left) &&
+            this.constantExpressions.contains(expression.right))
+            this.constantExpressions.add(expression);
 
         boolean lm = left.mayBeMonotone();
         boolean rm = right.mayBeMonotone();
@@ -441,7 +475,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         // Some expressions are monotone if some of their operands are constant
         if (left.mayBeMonotone() && expression.operation == DBSPOpcode.SUB) {
             // Subtracting a constant from a monotone expression produces a monotone result
-            if (this.constantExpressions.contains(expression.right.id)) {
+            if (this.constantExpressions.contains(expression.right)) {
                 resultType = left.copyMonotonicity(expression.type);
                 reduced = expression.replaceSources(
                         left.getReducedExpression(), right.getReducedExpression());
@@ -453,7 +487,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             // a positive constant produces a monotone result
             // TODO: multiplication is commutative.
             if (expression.right.is(DBSPLiteral.class)) {
-                if (this.positiveExpressions.contains(expression.right.id)) {
+                if (this.positiveExpressions.contains(expression.right)) {
                     if (expression.right.to(IsNumericLiteral.class).gt0()) {
                         assert right.getReducedExpression() == expression.right;
                         resultType = left.copyMonotonicity(expression.type);
@@ -475,11 +509,11 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
         }
-        if (this.positiveExpressions.contains(expression.source.id) &&
+        if (this.positiveExpressions.contains(expression.source) &&
                 expression.type.is(IsNumericType.class))
-            this.positiveExpressions.add(expression.id);
-        if (this.constantExpressions.contains(expression.source.id))
-            this.constantExpressions.add(expression.id);
+            this.positiveExpressions.add(expression);
+        if (this.constantExpressions.contains(expression.source))
+            this.constantExpressions.add(expression);
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.copyMonotonicity(expression.getType()), reduced);
         this.set(expression, result);
@@ -492,9 +526,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
         }
-        this.positiveExpressions.add(expression.id);
-        if (this.constantExpressions.contains(expression.source.id))
-            this.constantExpressions.add(expression.id);
+        this.positiveExpressions.add(expression);
+        if (this.constantExpressions.contains(expression.source))
+            this.constantExpressions.add(expression);
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.copyMonotonicity(expression.getType()), reduced);
         this.set(expression, result);
@@ -507,8 +541,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
         }
-        if (this.constantExpressions.contains(expression.source.id))
-            this.constantExpressions.add(expression.id);
+        if (this.constantExpressions.contains(expression.source))
+            this.constantExpressions.add(expression);
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.copyMonotonicity(expression.getType()), reduced);
         this.set(expression, result);
@@ -522,40 +556,13 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 expression.operation == DBSPOpcode.TYPEDBOX) &&
             source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
-            if (this.positiveExpressions.contains(expression.source.id))
-                this.positiveExpressions.add(expression.id);
+            if (this.positiveExpressions.contains(expression.source))
+                this.positiveExpressions.add(expression);
         }
-        if (this.constantExpressions.contains(expression.source.id))
-            this.constantExpressions.add(expression.id);
+        if (this.constantExpressions.contains(expression.source))
+            this.constantExpressions.add(expression);
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.copyMonotonicity(expression.getType()), reduced);
-        this.set(expression, result);
-    }
-
-    @Override
-    public void postorder(DBSPApplyMethodExpression expression) {
-        DBSPExpression reduced = null;
-        MonotoneExpression[] arguments = Linq.map(expression.arguments, this::get, MonotoneExpression.class);
-        MonotoneExpression self = this.get(expression.self);
-        IMaybeMonotoneType resultType = NonMonotoneType.nonMonotone(expression.getType());
-        boolean allArgsMonotone = Linq.all(arguments, MonotoneExpression::mayBeMonotone);
-        if (allArgsMonotone && self.mayBeMonotone()) {
-            DBSPExpression reducedSelf = self.getReducedExpression();
-            if (expression.function.is(DBSPPathExpression.class)) {
-                DBSPPathExpression path = expression.function.to(DBSPPathExpression.class);
-                String name = path.toString();
-                if (name.equals("to_bound")) {
-                    // No arguments, and self is supposed to be a constant
-                    resultType = new MonotoneType(expression.getType());
-                    reduced = expression.replaceArguments(reducedSelf);
-                    if (this.constantExpressions.contains(expression.self.id)) {
-                        this.constantExpressions.add(expression.id);
-                    }
-                }
-            }
-        }
-
-        MonotoneExpression result = new MonotoneExpression(expression, resultType, reduced);
         this.set(expression, result);
     }
 
@@ -564,9 +571,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         // Monotone functions applied to monotone arguments.
         MonotoneExpression[] arguments = Linq.map(expression.arguments, this::get, MonotoneExpression.class);
         boolean allArgsMonotone = Linq.all(arguments, MonotoneExpression::mayBeMonotone);
+        boolean allArgsConstant = Linq.all(expression.arguments, this.constantExpressions::contains);
         DBSPExpression reduced = null;
         IMaybeMonotoneType resultType = new NonMonotoneType(expression.getType());
-        if (allArgsMonotone) {
+        if (allArgsMonotone || allArgsConstant) {
             DBSPExpression[] reducedArgs = Linq.map(
                     arguments, MonotoneExpression::getReducedExpression, DBSPExpression.class);
             if (expression.function.is(DBSPPathExpression.class)) {
@@ -584,7 +592,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         name.startsWith("extract_year_") ||
                         name.startsWith("extract_epoch_") ||
                         name.startsWith("extract_hour_Time") ||
-                        name.equals("hop_start_timestamp")
+                        name.equals("hop_start_timestamp") ||
+                        name.startsWith("to_bound_")
                 ) {
                     resultType = new MonotoneType(expression.getType());
                     reduced = expression.replaceArguments(reducedArgs);
@@ -598,6 +607,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         reduced = expression.replaceArguments(reducedArgs);
                     }
                 }
+            }
+            if (allArgsConstant) {
+                this.constantExpressions.add(expression);
             }
         }
         MonotoneExpression result = new MonotoneExpression(expression, resultType, reduced);

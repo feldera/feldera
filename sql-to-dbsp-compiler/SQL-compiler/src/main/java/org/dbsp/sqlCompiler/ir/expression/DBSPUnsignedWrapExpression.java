@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -23,8 +24,8 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
             this.dataType = dataType;
             this.dataConvertedType = getInitialIntegerType(this.dataType);
             if (!this.dataConvertedType.signed) {
-                this.intermediateType = this.dataConvertedType;
-                this.unsignedType = this.dataConvertedType;
+                throw new InternalCompilerError("The data type encoding " + dataType +
+                        " must be signed, but it is " + this.dataConvertedType);
             } else {
                 int width = this.dataConvertedType.getWidth();
                 this.intermediateType = new DBSPTypeInteger(dataType.getNode(), width * 2, true, false);
@@ -37,12 +38,13 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
             return seq.unsignedType;
         }
 
+        // How each SQL type that may be used in a sorting key is converted into a signed value
         static DBSPTypeInteger getInitialIntegerType(DBSPType sourceType) {
             return switch (sourceType.code) {
                 case INT8, INT16, INT32, INT64 -> sourceType.setMayBeNull(false).to(DBSPTypeInteger.class);
                 case DATE -> new DBSPTypeInteger(sourceType.getNode(), 32, true, false);
                 case TIMESTAMP -> new DBSPTypeInteger(sourceType.getNode(), 64, true, false);
-                case TIME -> new DBSPTypeInteger(sourceType.getNode(), 64, false, false);
+                case TIME -> new DBSPTypeInteger(sourceType.getNode(), 64, true, false);
                 default -> throw new UnimplementedException(sourceType.getNode());
             };
         }

@@ -196,4 +196,9 @@ public final class DBSPZSetLiteral extends DBSPLiteral
             throw new InternalCompilerError("Nullable zset");
         return this;
     }
+
+    @Override
+    public String toSqlString() {
+        throw new InternalCompilerError("unreachable");
+    }
 }

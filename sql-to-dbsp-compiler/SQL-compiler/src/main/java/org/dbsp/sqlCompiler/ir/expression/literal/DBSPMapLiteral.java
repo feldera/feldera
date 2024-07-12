@@ -116,6 +116,26 @@ public final class DBSPMapLiteral extends DBSPLiteral {
     }
 
     @Override
+    public String toSqlString() {
+        if (this.keys == null)
+            return DBSPNullLiteral.NULL;
+        StringBuilder builder = new StringBuilder();
+        assert this.values != null;
+        builder.append("MAP[");
+        boolean first = true;
+        for (int i = 0; i < this.size(); i++) {
+            if (!first)
+                builder.append(", ");
+            first = false;
+            builder.append(this.keys.get(i));
+            builder.append(", ");
+            builder.append(this.values.get(i));
+        }
+        builder.append("]");
+        return builder.toString();
+    }
+
+    @Override
     public boolean sameValue(@Nullable DBSPLiteral o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;

@@ -114,4 +114,14 @@ public final class DBSPDoubleLiteral extends DBSPFPLiteral implements IsNumericL
         assert this.value != null;
         return this.value > 0.0;
     }
+
+    @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        String result = this.value.toString();
+        if (!result.contains("e"))
+            result += "e0";
+        return result;
+    }
 }

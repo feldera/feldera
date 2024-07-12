@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -75,6 +76,12 @@ public final class DBSPTimeLiteral extends DBSPLiteral {
                 this.checkIfNull(this.value, mayBeNull));
     }
 
+    @Override
+    public String toSqlString() {
+        if (this.value == null)
+            return DBSPNullLiteral.NULL;
+        return "TIME " + Utilities.singleQuote(this.value.toString());
+    }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {

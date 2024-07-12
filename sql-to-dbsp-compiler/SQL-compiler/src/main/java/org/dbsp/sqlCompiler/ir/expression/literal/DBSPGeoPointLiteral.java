@@ -78,6 +78,13 @@ public final class DBSPGeoPointLiteral extends DBSPLiteral {
     }
 
     @Override
+    public String toSqlString() {
+        if (this.left == null)
+            return DBSPNullLiteral.NULL;
+        return "POINT(" + this.left + ", " + this.right + ")";
+    }
+
+    @Override
     public boolean sameValue(@Nullable DBSPLiteral o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;

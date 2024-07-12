@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Utilities;
 import org.junit.Assert;
 
 import java.io.IOException;
@@ -214,7 +215,9 @@ public abstract class SqlIoTest extends BaseSQLTests {
         Assert.assertTrue(compiler.messages.exitCode != 0);
         String message = compiler.messages.toString();
         boolean contains = message.contains(messageFragment);
-        Assert.assertTrue(contains);
+        if (!contains)
+            Assert.fail("Error message\n" + Utilities.singleQuote(message) +
+                    "\ndoes not contain the expected fragment\n" + Utilities.singleQuote(messageFragment));
     }
 
     /** Run a query that is expected to fail in compilation.

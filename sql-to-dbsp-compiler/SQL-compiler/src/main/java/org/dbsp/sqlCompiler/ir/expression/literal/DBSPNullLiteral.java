@@ -27,6 +27,8 @@ public final class DBSPNullLiteral extends DBSPLiteral {
         this(CalciteObject.EMPTY, new DBSPTypeNull(CalciteObject.EMPTY), null);
     }
 
+    public static final String NULL = "NULL";
+
     @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
@@ -47,6 +49,11 @@ public final class DBSPNullLiteral extends DBSPLiteral {
         if (!mayBeNull)
             throw new UnsupportedException(this.getNode());
         return this;
+    }
+
+    @Override
+    public String toSqlString() {
+        return NULL;
     }
 
     @Override

@@ -13,12 +13,10 @@ import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
-/**
- * Represents a (constant) IndexedZSet described by its elements.
+/** Represents a (constant) IndexedZSet described by its elements.
  * An IndexedZSet is a map from keys to tuples to integer weights.
  * Currently, we only support empty indexed zsets since we found no
- * need for other constants yet.
- */
+ * need for other constants yet. */
 public final class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPContainer {
     public final DBSPTypeIndexedZSet indexedZSetType;
 
@@ -68,6 +66,11 @@ public final class DBSPIndexedZSetLiteral extends DBSPLiteral implements IDBSPCo
     @Override
     public IDBSPContainer add(DBSPExpression expression) {
         throw new UnimplementedException(expression);
+    }
+
+    @Override
+    public String toSqlString() {
+        throw new InternalCompilerError("Unreachable");
     }
 
     @Override
