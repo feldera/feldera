@@ -1,16 +1,24 @@
 use crate::catalog::ArrowStream;
+#[cfg(feature = "with-avro")]
+use crate::catalog::AvroStream;
+#[cfg(feature = "with-avro")]
+use crate::format::avro::input::avro_de_config;
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::byte_record_deserializer,
     ControllerError, DeCollectionHandle,
 };
 use anyhow::{anyhow, bail, Result as AnyResult};
+#[cfg(feature = "with-avro")]
+use apache_avro::types::Value as AvroValue;
 use arrow::array::RecordBatch;
 use dbsp::{
     algebra::HasOne, operator::Update, utils::Tup2, DBData, InputHandle, MapHandle, SetHandle,
     ZSetHandle, ZWeight,
 };
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+#[cfg(feature = "with-avro")]
+use serde::Deserialize;
 use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
 
@@ -22,21 +30,21 @@ pub trait DeserializerFromBytes<C> {
     /// Parse an object of type `T` from `data`.
     fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
     where
-        T: for<'de> DeserializeWithContext<'de, C>;
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>;
 }
 
 /// Deserializer for CSV-encoded data.
-pub struct CsvDeserializerFromBytes<C> {
+pub struct CsvDeserializerFromBytes {
     // CSV deserializer maintains some allocations across invocations,
     // so we keep an instance here.
     reader: csv::Reader<VecDeque<u8>>,
     // Byte record to read CSV records into.
     record: csv::ByteRecord,
-    config: C,
+    config: SqlSerdeConfig,
 }
 
-impl<C> DeserializerFromBytes<C> for CsvDeserializerFromBytes<C> {
-    fn create(config: C) -> Self {
+impl DeserializerFromBytes<SqlSerdeConfig> for CsvDeserializerFromBytes {
+    fn create(config: SqlSerdeConfig) -> Self {
         CsvDeserializerFromBytes {
             reader: csv::ReaderBuilder::new()
                 .has_headers(false)
@@ -48,7 +56,7 @@ impl<C> DeserializerFromBytes<C> for CsvDeserializerFromBytes<C> {
     }
     fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
     where
-        T: for<'de> DeserializeWithContext<'de, C>,
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
     {
         // Push new data to reader.
         self.reader.get_mut().extend(data.iter());
@@ -63,17 +71,17 @@ impl<C> DeserializerFromBytes<C> for CsvDeserializerFromBytes<C> {
 }
 
 // Deserializer for JSON-encoded data.
-pub struct JsonDeserializerFromBytes<C> {
-    config: C,
+pub struct JsonDeserializerFromBytes {
+    config: SqlSerdeConfig,
 }
 
-impl<C> DeserializerFromBytes<C> for JsonDeserializerFromBytes<C> {
-    fn create(config: C) -> Self {
+impl DeserializerFromBytes<SqlSerdeConfig> for JsonDeserializerFromBytes {
+    fn create(config: SqlSerdeConfig) -> Self {
         JsonDeserializerFromBytes { config }
     }
     fn deserialize<T>(&mut self, data: &[u8]) -> AnyResult<T>
     where
-        T: for<'de> DeserializeWithContext<'de, C>,
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
     {
         T::deserialize_with_context(
             &mut serde_json::Deserializer::from_slice(data),
@@ -170,7 +178,7 @@ where
             RecordFormat::Csv => {
                 let config = SqlSerdeConfig::default();
                 Ok(Box::new(DeScalarStreamImpl::<
-                    CsvDeserializerFromBytes<_>,
+                    CsvDeserializerFromBytes,
                     T,
                     D,
                     _,
@@ -184,7 +192,7 @@ where
             RecordFormat::Json(flavor) => {
                 let config = SqlSerdeConfig::from(flavor);
                 Ok(Box::new(DeScalarStreamImpl::<
-                    JsonDeserializerFromBytes<_>,
+                    JsonDeserializerFromBytes,
                     T,
                     D,
                     _,
@@ -233,7 +241,7 @@ where
 impl<De, T, D, C, F> DeScalarStream for DeScalarStreamImpl<De, T, D, C, F>
 where
     T: Default + Send + Clone + 'static,
-    D: Default + for<'de> DeserializeWithContext<'de, C> + Send + Clone + 'static,
+    D: Default + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Clone + 'static,
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
     F: Fn(D) -> T + Clone + Send + 'static,
@@ -268,6 +276,15 @@ pub struct DeZSetHandle<K, D> {
     phantom: PhantomData<D>,
 }
 
+impl<K, D> Clone for DeZSetHandle<K, D> {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle.clone(),
+            phantom: PhantomData,
+        }
+    }
+}
+
 impl<K, D> DeZSetHandle<K, D> {
     pub fn new(handle: ZSetHandle<K>) -> Self {
         Self {
@@ -290,7 +307,7 @@ where
             RecordFormat::Csv => {
                 let config = SqlSerdeConfig::default();
                 Ok(Box::new(
-                    DeZSetStream::<CsvDeserializerFromBytes<_>, K, D, _>::new(
+                    DeZSetStream::<CsvDeserializerFromBytes, K, D, _>::new(
                         self.handle.clone(),
                         config,
                     ),
@@ -298,12 +315,12 @@ where
             }
             RecordFormat::Json(flavor) => {
                 let config = SqlSerdeConfig::from(flavor);
-                Ok(Box::new(DeZSetStream::<
-                    JsonDeserializerFromBytes<_>,
-                    K,
-                    D,
-                    _,
-                >::new(self.handle.clone(), config)))
+                Ok(Box::new(
+                    DeZSetStream::<JsonDeserializerFromBytes, K, D, _>::new(
+                        self.handle.clone(),
+                        config,
+                    ),
+                ))
             }
             RecordFormat::Parquet(_) => {
                 todo!()
@@ -320,6 +337,15 @@ where
         config: SqlSerdeConfig,
     ) -> Result<Box<dyn ArrowStream>, ControllerError> {
         Ok(Box::new(ArrowZSetStream::new(self.handle.clone(), config)))
+    }
+
+    #[cfg(feature = "with-avro")]
+    fn configure_avro_deserializer(&self) -> Result<Box<dyn AvroStream>, ControllerError> {
+        Ok(Box::new(AvroZSetStream::new(self.handle.clone())))
+    }
+
+    fn fork(&self) -> Box<dyn DeCollectionHandle> {
+        Box::new(self.clone())
     }
 }
 
@@ -368,7 +394,7 @@ where
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
@@ -452,9 +478,99 @@ where
     }
 }
 
+/// Implements `Deserialize` for `T` by calling `deserialize_with_context`.
+#[cfg(feature = "with-avro")]
+pub struct AvroWrapper<T> {
+    pub value: T,
+}
+
+#[cfg(feature = "with-avro")]
+impl<'de, T> Deserialize<'de> for AvroWrapper<T>
+where
+    T: DeserializeWithContext<'de, SqlSerdeConfig>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(AvroWrapper {
+            value: DeserializeWithContext::deserialize_with_context(
+                deserializer,
+                avro_de_config(),
+            )?,
+        })
+    }
+}
+
+/// `AvroStream` implementation that collects deserialized records
+/// into a Z-set.
+#[cfg(feature = "with-avro")]
+pub struct AvroZSetStream<K, D> {
+    handle: ZSetHandle<K>,
+    phantom: PhantomData<D>,
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, D> Clone for AvroZSetStream<K, D> {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle.clone(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, D> AvroZSetStream<K, D> {
+    pub fn new(handle: ZSetHandle<K>) -> Self {
+        Self {
+            handle,
+            phantom: PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, D> AvroStream for AvroZSetStream<K, D>
+where
+    K: DBData + From<D>,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+{
+    fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
+        let v: AvroWrapper<D> = apache_avro::from_value(data)
+            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+
+        self.handle.push(K::from(v.value), 1);
+
+        Ok(())
+    }
+
+    fn delete(&mut self, data: &AvroValue) -> AnyResult<()> {
+        let v: AvroWrapper<D> = apache_avro::from_value(data)
+            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+
+        self.handle.push(K::from(v.value), -1);
+
+        Ok(())
+    }
+
+    fn fork(&self) -> Box<dyn AvroStream> {
+        Box::new(self.clone())
+    }
+}
+
 pub struct DeSetHandle<K, D> {
     handle: SetHandle<K>,
     phantom: PhantomData<D>,
+}
+
+impl<K, D> Clone for DeSetHandle<K, D> {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle.clone(),
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<K, D> DeSetHandle<K, D> {
@@ -477,14 +593,14 @@ where
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
             RecordFormat::Csv => Ok(Box::new(
-                DeSetStream::<CsvDeserializerFromBytes<_>, K, D, _>::new(
+                DeSetStream::<CsvDeserializerFromBytes, K, D, _>::new(
                     self.handle.clone(),
                     SqlSerdeConfig::default(),
                 ),
             )),
             RecordFormat::Json(flavor) => {
                 Ok(Box::new(
-                    DeSetStream::<JsonDeserializerFromBytes<_>, K, D, _>::new(
+                    DeSetStream::<JsonDeserializerFromBytes, K, D, _>::new(
                         self.handle.clone(),
                         SqlSerdeConfig::from(flavor),
                     ),
@@ -505,6 +621,15 @@ where
         config: SqlSerdeConfig,
     ) -> Result<Box<dyn ArrowStream>, ControllerError> {
         Ok(Box::new(ArrowSetStream::new(self.handle.clone(), config)))
+    }
+
+    #[cfg(feature = "with-avro")]
+    fn configure_avro_deserializer(&self) -> Result<Box<dyn AvroStream>, ControllerError> {
+        Ok(Box::new(AvroSetStream::new(self.handle.clone())))
+    }
+
+    fn fork(&self) -> Box<dyn DeCollectionHandle> {
+        Box::new(self.clone())
     }
 }
 
@@ -548,7 +673,7 @@ where
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
@@ -640,6 +765,63 @@ where
     }
 }
 
+/// `AvroStream` implementation that collects deserialized records
+/// into a set.
+#[cfg(feature = "with-avro")]
+pub struct AvroSetStream<K, D> {
+    handle: SetHandle<K>,
+    phantom: PhantomData<D>,
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, D> Clone for AvroSetStream<K, D> {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle.clone(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, D> AvroSetStream<K, D> {
+    pub fn new(handle: SetHandle<K>) -> Self {
+        Self {
+            handle,
+            phantom: PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, D> AvroStream for AvroSetStream<K, D>
+where
+    K: DBData + From<D>,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+{
+    fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
+        let v: AvroWrapper<D> = apache_avro::from_value(data)
+            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+
+        self.handle.push(K::from(v.value), true);
+
+        Ok(())
+    }
+
+    fn delete(&mut self, data: &AvroValue) -> AnyResult<()> {
+        let v: AvroWrapper<D> = apache_avro::from_value(data)
+            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+
+        self.handle.push(K::from(v.value), false);
+
+        Ok(())
+    }
+
+    fn fork(&self) -> Box<dyn AvroStream> {
+        Box::new(self.clone())
+    }
+}
+
 pub struct DeMapHandle<K, KD, V, VD, U, UD, VF, UF>
 where
     V: DBData,
@@ -649,6 +831,23 @@ where
     value_key_func: VF,
     update_key_func: UF,
     phantom: PhantomData<fn(KD, VD, UD)>,
+}
+
+impl<K, KD, V, VD, U, UD, VF, UF> Clone for DeMapHandle<K, KD, V, VD, U, UD, VF, UF>
+where
+    V: DBData,
+    U: DBData,
+    VF: Clone,
+    UF: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle.clone(),
+            value_key_func: self.value_key_func.clone(),
+            update_key_func: self.update_key_func.clone(),
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<K, KD, V, VD, U, UD, VF, UF> DeMapHandle<K, KD, V, VD, U, UD, VF, UF>
@@ -683,7 +882,7 @@ where
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
             RecordFormat::Csv => Ok(Box::new(DeMapStream::<
-                CsvDeserializerFromBytes<_>,
+                CsvDeserializerFromBytes,
                 K,
                 KD,
                 V,
@@ -700,7 +899,7 @@ where
                 SqlSerdeConfig::default(),
             ))),
             RecordFormat::Json(flavor) => Ok(Box::new(DeMapStream::<
-                JsonDeserializerFromBytes<_>,
+                JsonDeserializerFromBytes,
                 K,
                 KD,
                 V,
@@ -735,6 +934,19 @@ where
             self.value_key_func.clone(),
             config,
         )))
+    }
+
+    #[cfg(feature = "with-avro")]
+    fn configure_avro_deserializer(&self) -> Result<Box<dyn AvroStream>, ControllerError> {
+        Ok(Box::new(AvroMapStream::new(
+            self.handle.clone(),
+            self.value_key_func.clone(),
+        )))
+    }
+
+    fn fork(&self) -> Box<dyn DeCollectionHandle> {
+        let clone: Self = self.clone();
+        Box::new(clone)
     }
 }
 
@@ -795,11 +1007,11 @@ where
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     U: DBData + From<UD>,
-    UD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     VF: Fn(&V) -> K + Clone + Send + 'static,
     UF: Fn(&U) -> K + Clone + Send + 'static,
 {
@@ -925,6 +1137,77 @@ where
             self.value_key_func.clone(),
             self.config.clone(),
         ))
+    }
+}
+
+/// `AvroStream` implementation that collects deserialized records
+/// into a map.
+#[cfg(feature = "with-avro")]
+pub struct AvroMapStream<K, KD, V, VD, U, VF> {
+    value_key_func: VF,
+    handle: MapHandle<K, V, U>,
+    phantom: PhantomData<(KD, VD)>,
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, KD, V, VD, U, VF> Clone for AvroMapStream<K, KD, V, VD, U, VF>
+where
+    VF: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            value_key_func: self.value_key_func.clone(),
+            handle: self.handle.clone(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, KD, V, VD, U, VF> AvroMapStream<K, KD, V, VD, U, VF> {
+    pub fn new(handle: MapHandle<K, V, U>, value_key_func: VF) -> Self {
+        Self {
+            value_key_func,
+            handle,
+            phantom: PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, KD, V, VD, U, VF> AvroStream for AvroMapStream<K, KD, V, VD, U, VF>
+where
+    K: DBData + From<KD>,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    V: DBData + From<VD>,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    U: DBData,
+    VF: Fn(&V) -> K + Clone + Send + 'static,
+{
+    fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
+        let v: AvroWrapper<VD> = apache_avro::from_value(data)
+            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+
+        let val = V::from(v.value);
+        self.handle
+            .push((self.value_key_func)(&val), Update::Insert(val));
+
+        Ok(())
+    }
+
+    fn delete(&mut self, data: &AvroValue) -> AnyResult<()> {
+        let v: AvroWrapper<VD> = apache_avro::from_value(data)
+            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+
+        let val = V::from(v.value);
+        self.handle
+            .push((self.value_key_func)(&val), Update::Delete);
+
+        Ok(())
+    }
+
+    fn fork(&self) -> Box<dyn AvroStream> {
+        Box::new(self.clone())
     }
 }
 

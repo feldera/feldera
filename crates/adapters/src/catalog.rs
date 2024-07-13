@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::{static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
-use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
+use apache_avro::{schema::NamesRef, types::Value as AvroValue, Schema as AvroSchema};
 use arrow::record_batch::RecordBatch;
 use dbsp::{utils::Tup2, InputHandle};
 use feldera_types::format::json::JsonFlavor;
@@ -20,7 +20,7 @@ use serde_arrow::ArrayBuilder;
 
 /// Descriptor that specifies the format in which records are received
 /// or into which they should be encoded before sending.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub enum RecordFormat {
     // TODO: Support different JSON encodings:
     // * Map - the default encoding
@@ -146,6 +146,8 @@ pub trait DeCollectionStream: Send {
     fn fork(&self) -> Box<dyn DeCollectionStream>;
 }
 
+/// Like `DeCollectionStream`, but deserializes Arrow-encoded records before pushing them to a
+/// stream.
 pub trait ArrowStream: Send {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()>;
 
@@ -154,6 +156,19 @@ pub trait ArrowStream: Send {
     /// Create a new deserializer with the same configuration connected to
     /// the same input stream.
     fn fork(&self) -> Box<dyn ArrowStream>;
+}
+
+/// Like `DeCollectionStream`, but deserializes Avro-encoded records before pushing them to a
+/// stream.
+#[cfg(feature = "with-avro")]
+pub trait AvroStream: Send {
+    fn insert(&mut self, data: &AvroValue) -> AnyResult<()>;
+
+    fn delete(&mut self, data: &AvroValue) -> AnyResult<()>;
+
+    /// Create a new deserializer with the same configuration connected to
+    /// the same input stream.
+    fn fork(&self) -> Box<dyn AvroStream>;
 }
 
 /// A handle to an input collection that can be used to feed serialized data
@@ -166,10 +181,17 @@ pub trait DeCollectionHandle: Send {
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError>;
 
+    /// Create an `ArrowStream` object to parse Arrow-encoded input data.
     fn configure_arrow_deserializer(
         &self,
         config: SqlSerdeConfig,
     ) -> Result<Box<dyn ArrowStream>, ControllerError>;
+
+    /// Create an `AvroStream` object to parse Avro-encoded input data.
+    #[cfg(feature = "with-avro")]
+    fn configure_avro_deserializer(&self) -> Result<Box<dyn AvroStream>, ControllerError>;
+
+    fn fork(&self) -> Box<dyn DeCollectionHandle>;
 }
 
 /// A type-erased batch whose contents can be serialized.
@@ -297,7 +319,7 @@ pub trait SerCursor: Send {
 
     #[cfg(feature = "with-avro")]
     /// Convert current key to an Avro value.
-    fn key_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue>;
+    fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue>;
 
     /// Serialize the `(key, weight)` tuple.
     ///
@@ -310,7 +332,7 @@ pub trait SerCursor: Send {
 
     #[cfg(feature = "with-avro")]
     /// Convert current value to Avro.
-    fn val_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue>;
+    fn val_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue>;
 
     /// Returns the weight associated with the current key/value pair.
     fn weight(&mut self) -> i64;
@@ -436,8 +458,8 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
     }
 
     #[cfg(feature = "with-avro")]
-    fn key_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue> {
-        self.cursor.key_to_avro(schema)
+    fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
+        self.cursor.key_to_avro(schema, refs)
     }
 
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -453,8 +475,8 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
     }
 
     #[cfg(feature = "with-avro")]
-    fn val_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue> {
-        self.cursor.val_to_avro(schema)
+    fn val_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
+        self.cursor.val_to_avro(schema, refs)
     }
 
     fn weight(&mut self) -> i64 {

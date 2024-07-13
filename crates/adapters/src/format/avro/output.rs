@@ -1,4 +1,5 @@
 use crate::catalog::{CursorWithPolarity, SerBatchReader};
+use crate::format::avro::schema_registry_settings;
 use crate::format::MAX_DUPLICATES;
 use crate::{ControllerError, Encoder, OutputConsumer, OutputFormat, RecordFormat, SerCursor};
 use actix_web::HttpRequest;
@@ -9,13 +10,13 @@ use feldera_types::format::avro::AvroEncoderConfig;
 use feldera_types::program_schema::Relation;
 use log::{debug, error};
 use schema_registry_converter::avro_common::get_supplied_schema;
-use schema_registry_converter::blocking::schema_registry::{post_schema, SrSettings};
+use schema_registry_converter::blocking::schema_registry::post_schema;
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::str::FromStr;
-use std::time::Duration;
 
 // TODOs:
 // - This connector currently only supports raw Avro format, i.e., deletes cannot be represented.
@@ -27,10 +28,8 @@ use std::time::Duration;
 //   by matching the schema against the SQL relation schema.
 // - Add an option to generate Avro schema from relation schema.
 // - Support complex schemas with cross-references.
-// - Make the serializer less strict, e.g., allow non-nullable columns to be encoded
-//   as nullable columns and smaller int's to be encoded as long's.
 // - The serializer doesn't currently support the Avro `fixed` type.
-// - Add a Kafka end-to-end test to `kafka/test.rs`.  This requires implementing an Avro parser,
+// - Add a Kafka end-to-end test to `kafka/test.rs`.  This requires implementing an Avro parser.
 
 /// Avro format encoder.
 pub struct AvroOutputFormat;
@@ -78,11 +77,11 @@ impl OutputFormat for AvroOutputFormat {
     }
 }
 
-struct AvroEncoder {
+pub(crate) struct AvroEncoder {
     endpoint_name: String,
     /// Consumer to push serialized data to.
     output_consumer: Box<dyn OutputConsumer>,
-    schema: AvroSchema,
+    pub(crate) schema: AvroSchema,
     /// Buffer to store serialized avro records, reused across `encode` invocations.
     buffer: Vec<u8>,
     /// Count of skipped deletes, used to rate-limit error messages.
@@ -92,7 +91,7 @@ struct AvroEncoder {
 }
 
 impl AvroEncoder {
-    fn create(
+    pub(crate) fn create(
         endpoint_name: &str,
         output_consumer: Box<dyn OutputConsumer>,
         config: AvroEncoderConfig,
@@ -117,80 +116,8 @@ impl AvroEncoder {
             )
         })?;
 
-        if config.registry_urls.is_empty() {
-            if config.registry_username.is_some() {
-                return Err(ControllerError::invalid_encoder_configuration(
-                    endpoint_name,
-                    "'registry_username' requires 'registry_urls' to be set",
-                ));
-            }
-            if config.registry_authorization_token.is_some() {
-                return Err(ControllerError::invalid_encoder_configuration(
-                    endpoint_name,
-                    "'registry_authorization_token' requires 'registry_urls' to be set",
-                ));
-            }
-            if config.registry_proxy.is_some() {
-                return Err(ControllerError::invalid_encoder_configuration(
-                    endpoint_name,
-                    "'registry_proxy' requires 'registry_urls' to be set",
-                ));
-            }
-            if !config.registry_headers.is_empty() {
-                return Err(ControllerError::invalid_encoder_configuration(
-                    endpoint_name,
-                    "'registry_headers' requires 'registry_urls' to be set",
-                ));
-            }
-        }
-
-        if config.registry_username.is_some() && config.registry_authorization_token.is_some() {
-            return Err(ControllerError::invalid_encoder_configuration(
-                endpoint_name,
-                "'registry_username' and 'registry_authorization_token' options are mutually exclusive"));
-        }
-
-        if config.registry_password.is_some() && config.registry_username.is_none() {
-            return Err(ControllerError::invalid_encoder_configuration(
-                endpoint_name,
-                "'registry_password' option provided without 'registry_username'",
-            ));
-        }
-
-        let sr_settings = if !config.registry_urls.is_empty() {
-            let mut sr_settings_builder = SrSettings::new_builder(config.registry_urls[0].clone());
-            for url in &config.registry_urls[1..] {
-                sr_settings_builder.add_url(url.clone());
-            }
-            if let Some(username) = &config.registry_username {
-                sr_settings_builder
-                    .set_basic_authorization(username, config.registry_password.as_deref());
-            }
-            if let Some(token) = &config.registry_authorization_token {
-                sr_settings_builder.set_token_authorization(token);
-            }
-
-            for (key, val) in config.registry_headers.iter() {
-                sr_settings_builder.add_header(key.as_str(), val.as_str());
-            }
-
-            if let Some(proxy) = &config.registry_proxy {
-                sr_settings_builder.set_proxy(proxy.as_str());
-            }
-
-            if let Some(timeout) = config.registry_timeout_secs {
-                sr_settings_builder.set_timeout(Duration::from_secs(timeout));
-            }
-
-            Some(sr_settings_builder.build().map_err(|e| {
-                ControllerError::invalid_encoder_configuration(
-                    endpoint_name,
-                    &format!("invalid schema registry configuration: {e}"),
-                )
-            })?)
-        } else {
-            None
-        };
+        let sr_settings = schema_registry_settings(&config.registry_config)
+            .map_err(|e| ControllerError::invalid_encoder_configuration(endpoint_name, &e))?;
 
         let schema_id = if let Some(sr_settings) = &sr_settings {
             let supplied_schema = get_supplied_schema(&schema);
@@ -275,8 +202,9 @@ impl Encoder for AvroEncoder {
             }
 
             while w != 0 {
+                // TODO: resolve schema
                 let avro_value = cursor
-                    .key_to_avro(&self.schema)
+                    .key_to_avro(&self.schema, &HashMap::new())
                     .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
                 let mut avro_buffer = to_avro_datum(&self.schema, avro_value)
                     .map_err(|e| anyhow!("error serializing Avro value: {e}"))?;
@@ -301,116 +229,5 @@ impl Encoder for AvroEncoder {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::format::avro::output::{AvroEncoder, AvroEncoderConfig};
-    use crate::static_compile::seroutput::SerBatchImpl;
-    use crate::test::{generate_test_batches_with_weights, MockOutputConsumer, TestStruct};
-    use crate::{Encoder, SerBatch};
-    use dbsp::utils::Tup2;
-    use dbsp::{DBData, OrdZSet};
-    use feldera_types::serde_with_context::{SerializeWithContext, SqlSerdeConfig};
-    use log::trace;
-    use proptest::proptest;
-    use serde::Deserialize;
-    use std::sync::Arc;
-
-    fn test_avro<T>(avro_schema: &str, batches: Vec<Vec<Tup2<T, i64>>>)
-    where
-        T: DBData + for<'de> Deserialize<'de> + SerializeWithContext<SqlSerdeConfig>,
-    {
-        let config = AvroEncoderConfig {
-            schema: avro_schema.to_string(),
-            ..Default::default()
-        };
-
-        let consumer = MockOutputConsumer::new();
-        let consumer_data = consumer.data.clone();
-        let mut encoder =
-            AvroEncoder::create("avro_test_endpoint", Box::new(consumer), config).unwrap();
-        let zsets = batches
-            .iter()
-            .map(|batch| {
-                let zset = OrdZSet::from_keys(
-                    (),
-                    batch
-                        .iter()
-                        .map(|Tup2(x, w)| Tup2(x.clone(), *w))
-                        .collect::<Vec<_>>(),
-                );
-                Arc::new(<SerBatchImpl<_, T, ()>>::new(zset)) as Arc<dyn SerBatch>
-            })
-            .collect::<Vec<_>>();
-        for (step, zset) in zsets.iter().enumerate() {
-            encoder.consumer().batch_start(step as u64);
-            encoder.encode(zset.as_batch_reader()).unwrap();
-            encoder.consumer().batch_end();
-        }
-
-        let expected_output = batches
-            .into_iter()
-            .flat_map(|batch| {
-                let zset = OrdZSet::from_keys(
-                    (),
-                    batch
-                        .iter()
-                        .map(|Tup2(x, w)| Tup2(x.clone(), *w))
-                        .collect::<Vec<_>>(),
-                );
-                /*let mut deletes = zset
-                .iter()
-                .flat_map(|(data, (), weight)| {
-                    trace!("data: {data:?}, weight: {weight}");
-                    let range = if weight < 0 { weight..0 } else { 0..0 };
-
-                    range.map(move |_| {
-                        let upd = U::update(
-                            false,
-                            data.clone(),
-                            encoder.stream_id,
-                            *seq_number.borrow(),
-                        );
-                        *seq_number.borrow_mut() += 1;
-                        upd
-                    })
-                })
-                .collect::<Vec<_>>();*/
-                let inserts = zset
-                    .iter()
-                    .flat_map(|(data, (), weight)| {
-                        trace!("data: {data:?}, weight: {weight}");
-                        let range = if weight > 0 { 0..weight } else { 0..0 };
-
-                        range.map(move |_| data.clone())
-                    })
-                    .collect::<Vec<_>>();
-
-                inserts
-            })
-            .collect::<Vec<_>>();
-
-        let mut actual_output = Vec::new();
-        for (_, avro_datum) in consumer_data.lock().unwrap().iter() {
-            let avro_value =
-                apache_avro::from_avro_datum(&encoder.schema, &mut &avro_datum[5..], None).unwrap();
-            // FIXME: this will use the default `serde::Deserialize` implementation and will only work
-            // for types where it happens to do the right thing. We should use Avro-compatible
-            // deserialization logic instead, when it exists.
-            let val = apache_avro::from_value::<T>(&avro_value).unwrap();
-            actual_output.push(val);
-        }
-
-        assert_eq!(actual_output, expected_output);
-    }
-
-    proptest! {
-        #[test]
-        fn proptest_avro_output(data in generate_test_batches_with_weights(10, 20))
-        {
-            test_avro::<TestStruct>(TestStruct::avro_schema(), data)
-        }
     }
 }

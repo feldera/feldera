@@ -1,13 +1,13 @@
 use crate::catalog::{SerBatchReader, SerBatchReaderHandle, SerTrace, SyncSerBatchReader};
 #[cfg(feature = "with-avro")]
-use crate::format::avro::serializer::{
-    avro_serde_config, AvroSchemaSerializer, AvroSerializerError,
-};
+use crate::format::avro::serializer::{avro_ser_config, AvroSchemaSerializer, AvroSerializerError};
 use crate::{
     catalog::{RecordFormat, SerBatch, SerCollectionHandle, SerCursor},
     ControllerError,
 };
 use anyhow::Result as AnyResult;
+#[cfg(feature = "with-avro")]
+use apache_avro::schema::NamesRef;
 #[cfg(feature = "with-avro")]
 use apache_avro::types::Value as AvroValue;
 #[cfg(feature = "with-avro")]
@@ -98,6 +98,7 @@ trait BytesSerializer<C>: Send {
         &mut self,
         _val: &T,
         _schema: &AvroSchema,
+        _refs: &NamesRef<'_>,
     ) -> Result<AvroValue, AvroSerializerError>
     where
         T: SerializeWithContext<C>,
@@ -193,7 +194,7 @@ pub struct AvroSerializer {
 impl AvroSerializer {
     fn create() -> Self {
         Self {
-            config: avro_serde_config(),
+            config: avro_ser_config(),
         }
     }
 }
@@ -211,11 +212,12 @@ impl BytesSerializer<SqlSerdeConfig> for AvroSerializer {
         &mut self,
         val: &T,
         schema: &AvroSchema,
+        refs: &NamesRef<'_>,
     ) -> Result<AvroValue, AvroSerializerError>
     where
         T: SerializeWithContext<SqlSerdeConfig>,
     {
-        val.serialize_with_context(AvroSchemaSerializer::new(schema), &self.config)
+        val.serialize_with_context(AvroSchemaSerializer::new(schema, refs), &self.config)
     }
 }
 
@@ -635,10 +637,10 @@ where
     }
 
     #[cfg(feature = "with-avro")]
-    fn key_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue> {
+    fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
         Ok(self
             .serializer
-            .serialize_avro(self.key.as_ref().unwrap(), schema)?)
+            .serialize_avro(self.key.as_ref().unwrap(), schema, refs)?)
     }
 
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -652,10 +654,10 @@ where
     }
 
     #[cfg(feature = "with-avro")]
-    fn val_to_avro(&mut self, schema: &AvroSchema) -> AnyResult<AvroValue> {
+    fn val_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
         Ok(self
             .serializer
-            .serialize_avro(self.val.as_ref().unwrap(), schema)?)
+            .serialize_avro(self.val.as_ref().unwrap(), schema, refs)?)
     }
 
     fn weight(&mut self) -> i64 {

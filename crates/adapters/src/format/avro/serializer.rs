@@ -1,4 +1,4 @@
-use apache_avro::schema::RecordSchema;
+use apache_avro::schema::{Name, NamesRef, RecordSchema};
 use apache_avro::{types::Value as AvroValue, Decimal, Schema as AvroSchema};
 use feldera_types::serde_with_context::serde_config::DecimalFormat;
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
@@ -14,7 +14,7 @@ use std::iter::once;
 use std::mem::take;
 
 /// Serde configuration expected by [`AvroSchemaSerializer`].
-pub fn avro_serde_config() -> SqlSerdeConfig {
+pub fn avro_ser_config() -> SqlSerdeConfig {
     SqlSerdeConfig::default()
         .with_timestamp_format(TimestampFormat::MicrosSinceEpoch)
         .with_time_format(TimeFormat::Micros)
@@ -44,6 +44,9 @@ pub enum AvroSerializerError {
         typ: String,
         expected: usize,
         actual: usize,
+    },
+    UnknownRef {
+        name: Name,
     },
     Custom {
         error: String,
@@ -76,6 +79,11 @@ impl AvroSerializerError {
             struct_name,
         }
     }
+
+    fn unknown_ref(name: &Name) -> Self {
+        AvroSerializerError::UnknownRef { name: name.clone() }
+    }
+
     fn wrong_number_of_fields(typ: &str, expected: usize, actual: usize) -> Self {
         AvroSerializerError::WrongNumberOfFields {
             typ: typ.to_string(),
@@ -114,6 +122,9 @@ impl Display for AvroSerializerError {
                     "field '{field}' is not a member of struct '{struct_name}'"
                 )
             }
+            AvroSerializerError::UnknownRef { name } => {
+                write!(f, "unable to resolve Avro schema reference {name}")
+            }
             AvroSerializerError::WrongNumberOfFields {
                 typ,
                 expected,
@@ -144,12 +155,14 @@ pub struct StructSerializer<'a> {
     schema: &'a RecordSchema,
     optional: OptionalField,
     fields: Vec<(String, AvroValue)>,
+    refs: &'a NamesRef<'a>,
 }
 
 impl<'a> StructSerializer<'a> {
-    fn new(schema: &'a RecordSchema, optional: OptionalField) -> Self {
+    fn new(schema: &'a RecordSchema, refs: &'a NamesRef<'a>, optional: OptionalField) -> Self {
         Self {
             schema,
+            refs,
             optional,
             fields: Vec::with_capacity(schema.fields.len()),
         }
@@ -171,6 +184,7 @@ impl<'a> SerializeStruct for StructSerializer<'a> {
             name.to_owned(),
             value.serialize(AvroSchemaSerializer::new(
                 &self.schema.fields[field_schema_idx].schema,
+                self.refs,
             ))?,
         ));
         Ok(())
@@ -189,14 +203,21 @@ impl<'a> SerializeStruct for StructSerializer<'a> {
 
 pub struct SeqSerializer<'a> {
     schema: &'a AvroSchema,
+    refs: &'a NamesRef<'a>,
     items: Vec<AvroValue>,
     optional: OptionalField,
 }
 
 impl<'a> SeqSerializer<'a> {
-    fn new(schema: &'a AvroSchema, len: Option<usize>, optional: OptionalField) -> Self {
+    fn new(
+        schema: &'a AvroSchema,
+        refs: &'a NamesRef<'a>,
+        len: Option<usize>,
+        optional: OptionalField,
+    ) -> Self {
         Self {
             schema,
+            refs,
             items: Vec::with_capacity(len.unwrap_or(0)),
             optional,
         }
@@ -212,7 +233,7 @@ impl<'a> SerializeSeq for SeqSerializer<'a> {
         T: Serialize + ?Sized,
     {
         self.items
-            .push(value.serialize(AvroSchemaSerializer::new(self.schema))?);
+            .push(value.serialize(AvroSchemaSerializer::new(self.schema, self.refs))?);
         Ok(())
     }
 
@@ -228,15 +249,22 @@ impl<'a> SerializeSeq for SeqSerializer<'a> {
 
 pub struct MapSerializer<'a> {
     schema: &'a AvroSchema,
+    refs: &'a NamesRef<'a>,
     optional: OptionalField,
     key: String,
     map: HashMap<String, AvroValue>,
 }
 
 impl<'a> MapSerializer<'a> {
-    fn new(schema: &'a AvroSchema, len: Option<usize>, optional: OptionalField) -> Self {
+    fn new(
+        schema: &'a AvroSchema,
+        refs: &'a NamesRef<'a>,
+        len: Option<usize>,
+        optional: OptionalField,
+    ) -> Self {
         Self {
             schema,
+            refs,
             optional,
             key: String::new(),
             map: HashMap::with_capacity(len.unwrap_or_default()),
@@ -253,7 +281,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
         T: Serialize + ?Sized,
     {
         let key = key
-            .serialize(AvroSchemaSerializer::new(&AvroSchema::String))
+            .serialize(AvroSchemaSerializer::new(&AvroSchema::String, self.refs))
             .map_err(|_| AvroSerializerError::map_key_not_a_string(None))?;
 
         if let AvroValue::String(key) = key {
@@ -270,7 +298,7 @@ impl<'a> SerializeMap for MapSerializer<'a> {
     where
         T: Serialize + ?Sized,
     {
-        let value = value.serialize(AvroSchemaSerializer::new(self.schema))?;
+        let value = value.serialize(AvroSchemaSerializer::new(self.schema, self.refs))?;
         self.map.insert(take(&mut self.key), value);
         Ok(())
     }
@@ -411,11 +439,25 @@ fn schema_unwrap_optional(schema: &AvroSchema) -> (&AvroSchema, OptionalField) {
 // strings, arrays, and decimals.
 pub struct AvroSchemaSerializer<'a> {
     schema: &'a AvroSchema,
+    refs: &'a NamesRef<'a>,
 }
 
 impl<'a> AvroSchemaSerializer<'a> {
-    pub fn new(schema: &'a AvroSchema) -> Self {
-        Self { schema }
+    pub fn new(schema: &'a AvroSchema, refs: &'a NamesRef<'a>) -> Self {
+        Self { schema, refs }
+    }
+
+    fn resolve_ref(&self, schema: &'a AvroSchema) -> Result<&'a AvroSchema, AvroSerializerError> {
+        match schema {
+            AvroSchema::Ref { name } => {
+                if let Some(schema) = self.refs.get(name) {
+                    Ok(*schema)
+                } else {
+                    Err(AvroSerializerError::unknown_ref(name))
+                }
+            }
+            _ => Ok(schema),
+        }
     }
 }
 
@@ -554,12 +596,12 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         match self.schema {
             AvroSchema::Union(union_schema) => match union_schema.variants() {
                 [AvroSchema::Null, inner_schema] => {
-                    let serializer = AvroSchemaSerializer::new(inner_schema);
+                    let serializer = AvroSchemaSerializer::new(inner_schema, self.refs);
                     let val = value.serialize(serializer)?;
                     Ok(AvroValue::Union(1, Box::new(val)))
                 }
                 [inner_schema, AvroSchema::Null] => {
-                    let serializer = AvroSchemaSerializer::new(inner_schema);
+                    let serializer = AvroSchemaSerializer::new(inner_schema, self.refs);
                     let val = value.serialize(serializer)?;
                     Ok(AvroValue::Union(0, Box::new(val)))
                 }
@@ -620,7 +662,9 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
         match schema_unwrap_optional(self.schema) {
-            (AvroSchema::Array(schema), location) => Ok(SeqSerializer::new(schema, len, location)),
+            (AvroSchema::Array(schema), location) => {
+                Ok(SeqSerializer::new(schema, self.refs, len, location))
+            }
             _ => Err(AvroSerializerError::incompatible("sequence", self.schema)),
         }
     }
@@ -651,29 +695,33 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
         match schema_unwrap_optional(self.schema) {
-            (AvroSchema::Map(schema), optional) => Ok(MapSerializer::new(schema, len, optional)),
+            (AvroSchema::Map(schema), optional) => {
+                Ok(MapSerializer::new(schema, self.refs, len, optional))
+            }
             _ => Err(AvroSerializerError::incompatible("map", self.schema)),
         }
     }
 
     fn serialize_struct(
         self,
-        name: &'static str,
+        struct_name: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
-        match schema_unwrap_optional(self.schema) {
+        let (schema, optional) = schema_unwrap_optional(self.schema);
+        let schema = self.resolve_ref(schema)?;
+        match (schema, optional) {
             (AvroSchema::Record(record_schema), optional) if record_schema.fields.len() == len => {
-                Ok(StructSerializer::new(record_schema, optional))
+                Ok(StructSerializer::new(record_schema, self.refs, optional))
             }
             (AvroSchema::Record(record_schema), _) => {
                 Err(AvroSerializerError::wrong_number_of_fields(
-                    &format!("struct {name}"),
+                    &format!("struct {struct_name}"),
                     record_schema.fields.len(),
                     len,
                 ))
             }
             _ => Err(AvroSerializerError::incompatible(
-                &format!("struct {name}"),
+                &format!("struct {struct_name}"),
                 self.schema,
             )),
         }
@@ -696,8 +744,9 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::format::avro::serializer::{avro_serde_config, AvroSchemaSerializer};
+    use crate::format::avro::serializer::{avro_ser_config, AvroSchemaSerializer};
     use crate::test::{EmbeddedStruct, TestStruct2};
+    use apache_avro::schema::ResolvedSchema;
     use apache_avro::{
         from_avro_datum, to_avro_datum, types::Value as AvroValue, Decimal, Schema as AvroSchema,
     };
@@ -780,10 +829,13 @@ mod test {
         ($schema: expr, $record: ident, $avro: ident) => {
             let schema = serde_json::Value::from_str($schema).unwrap();
             let schema = AvroSchema::parse(&schema).unwrap();
+            let resolved =
+                ResolvedSchema::new_with_known_schemata(vec![&schema], &None, &HashMap::new())
+                    .unwrap();
 
-            let serializer = AvroSchemaSerializer::new(&schema);
+            let serializer = AvroSchemaSerializer::new(&schema, resolved.get_names());
             let val = $record
-                .serialize_with_context(serializer, &avro_serde_config())
+                .serialize_with_context(serializer, &avro_ser_config())
                 .unwrap();
             assert_eq!(val, $avro);
 

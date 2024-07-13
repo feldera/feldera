@@ -3,6 +3,8 @@ use crate::format::parquet::{ParquetInputFormat, ParquetOutputFormat};
 use crate::{transport::Step, ControllerError};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
+#[cfg(feature = "with-avro")]
+use avro::input::AvroInputFormat;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::program_schema::Relation;
 use feldera_types::serde_with_context::FieldParseError;
@@ -329,6 +331,8 @@ static INPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn InputFormat>>> = Lazy:
             "parquet",
             Box::new(ParquetInputFormat) as Box<dyn InputFormat>,
         ),
+        #[cfg(feature = "with-avro")]
+        ("avro", Box::new(AvroInputFormat) as Box<dyn InputFormat>),
     ])
 });
 
@@ -428,10 +432,8 @@ pub trait Parser: Send {
     /// [`DeCollectionHandle`](`crate::DeCollectionHandle`) API.
     /// The chunk is expected to contain complete records only.
     ///
-    /// The parser must not buffer any data.
-    ///
-    /// Returns the number of records in the parsed representation or an error
-    /// if parsing fails.
+    /// Returns the number of records in the parsed representation and the list
+    /// of errors encountered during parsing.
     fn input_chunk(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
         self.input_fragment(data)
     }

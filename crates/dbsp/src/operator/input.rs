@@ -31,11 +31,19 @@ pub use crate::operator::dynamic::input_upsert::{PatchFunc, Update};
 pub type IndexedZSetStream<K, V> = Stream<RootCircuit, OrdIndexedZSet<K, V>>;
 pub type ZSetStream<K> = Stream<RootCircuit, OrdZSet<K>>;
 
-#[derive(Clone)]
 #[repr(transparent)]
 pub struct ZSetHandle<K> {
     handle: CollectionHandle<DynPair<DynData, DynUnit>, DynZWeight>,
     phantom: PhantomData<fn(&K)>,
+}
+
+impl<K> Clone for ZSetHandle<K> {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle.clone(),
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<K> Deref for ZSetHandle<K> {
@@ -101,11 +109,19 @@ where
     }
 }
 
-#[derive(Clone)]
 #[repr(transparent)]
 pub struct SetHandle<K> {
     handle: UpsertHandle<DynData, DynBool>,
     phantom: PhantomData<fn(&K)>,
+}
+
+impl<K> Clone for SetHandle<K> {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle.clone(),
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<K> SetHandle<K>
@@ -129,11 +145,19 @@ where
     }
 }
 
-#[derive(Clone)]
 #[repr(transparent)]
 pub struct MapHandle<K, V, U> {
     handle: UpsertHandle<DynData, DynUpdate<DynData, DynData>>,
     phantom: PhantomData<fn(&K, &V, &U)>,
+}
+
+impl<K, V, U> Clone for MapHandle<K, V, U> {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle.clone(),
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<K, V, U> MapHandle<K, V, U>
