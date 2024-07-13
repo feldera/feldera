@@ -3734,7 +3734,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "log",
- "metrics 0.22.3",
+ "metrics 0.23.0",
  "mimalloc-rust-sys",
  "minitrace",
  "nix 0.27.1",
