@@ -192,7 +192,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     String getColor(DBSPOperator operator) {
         return switch (operator.operation) {
-            case "waterline_monotonic" -> " style=filled fillcolor=lightgreen";
+            case "waterline" -> " style=filled fillcolor=lightgreen";
             case "controlled_filter" -> " style=filled fillcolor=cyan";
             case "apply", "apply2" -> " style=filled fillcolor=yellow";
             case "integrate_trace_retain_keys", "integrate_trace_retain_values" -> " style=filled fillcolor=pink";
