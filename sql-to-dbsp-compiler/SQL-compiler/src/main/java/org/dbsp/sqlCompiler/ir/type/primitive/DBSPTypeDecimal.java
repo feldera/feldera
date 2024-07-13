@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.type.primitive;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -106,7 +107,9 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
     }
 
     @Override
-    public DBSPLiteral defaultValue() {
+    public DBSPExpression defaultValue() {
+        if (this.mayBeNull)
+            return this.none();
         return this.getZero();
     }
 
@@ -131,6 +134,7 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
 
     @Override
     public String toString() {
-        return "DECIMAL(" + this.precision + ", " + this.scale + ")";
+        return "DECIMAL(" + this.precision + ", " + this.scale + ")" +
+                (this.mayBeNull ? "?" : "");
     }
 }

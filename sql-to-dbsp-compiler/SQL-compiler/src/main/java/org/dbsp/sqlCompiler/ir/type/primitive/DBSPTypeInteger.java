@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI128Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
@@ -179,7 +180,9 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     }
 
     @Override
-    public DBSPLiteral defaultValue() {
+    public DBSPExpression defaultValue() {
+        if (this.mayBeNull)
+            return this.none();
         return this.getZero();
     }
 

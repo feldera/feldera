@@ -28,7 +28,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.NonCoreIR;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import java.util.Objects;
@@ -47,7 +47,7 @@ public class DBSPTypeStr extends DBSPTypeBaseType {
     }
 
     @Override
-    public DBSPLiteral defaultValue() {
+    public DBSPExpression defaultValue() {
         throw new UnsupportedException("default value for 'str' type", this.getNode());
     }
 

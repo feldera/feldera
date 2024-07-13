@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.type.primitive;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -36,9 +37,7 @@ import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ISIZE;
 
-/**
- * Represents the usize Rust type.
- */
+/** Represents the usize Rust type. */
 public class DBSPTypeISize extends DBSPTypeBaseType implements IsNumericType {
     @SuppressWarnings("SameParameterValue")
     public DBSPTypeISize(CalciteObject node, boolean mayBeNull) {
@@ -58,7 +57,9 @@ public class DBSPTypeISize extends DBSPTypeBaseType implements IsNumericType {
     }
 
     @Override
-    public DBSPLiteral defaultValue() {
+    public DBSPExpression defaultValue() {
+        if (this.mayBeNull)
+            return this.none();
         return this.getZero();
     }
 

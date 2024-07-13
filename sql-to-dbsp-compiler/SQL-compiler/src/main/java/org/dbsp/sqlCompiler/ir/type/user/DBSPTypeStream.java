@@ -23,8 +23,10 @@
 
 package org.dbsp.sqlCompiler.ir.type.user;
 
+import org.apache.commons.lang3.NotImplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
@@ -44,6 +46,11 @@ public class DBSPTypeStream extends DBSPType {
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public DBSPExpression defaultValue() {
+        throw new NotImplementedException();
     }
 
     @Override

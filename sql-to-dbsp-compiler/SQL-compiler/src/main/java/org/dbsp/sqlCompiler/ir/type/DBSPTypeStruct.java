@@ -23,12 +23,14 @@
 
 package org.dbsp.sqlCompiler.ir.type;
 
+import org.apache.commons.lang3.NotImplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -228,6 +230,11 @@ public class DBSPTypeStruct extends DBSPType {
             return tuple.makeType(Linq.list(fields));
         }
         return type;
+    }
+
+    @Override
+    public DBSPExpression defaultValue() {
+        throw new NotImplementedException();
     }
 
     /** Generate a tuple type by ignoring the struct and field names, recursively. */

@@ -65,7 +65,6 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
-import org.dbsp.util.NameGen;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -97,7 +96,6 @@ public class AggregateCompiler implements ICompilerComponent {
     // null only for COUNT(*)
     @Nullable
     private final DBSPExpression aggArgument;
-    private final NameGen generator;
     private final RelNode aggregateNode;
     private final ImmutableBitSet groups;
     private final AggregateCall call;
@@ -118,7 +116,6 @@ public class AggregateCompiler implements ICompilerComponent {
         this.v = v;
         this.isDistinct = call.isDistinct();
         this.aggFunction = call.getAggregation();
-        this.generator = new NameGen("a");
         this.filterArgument = call.filterArg;
         List<Integer> argList = call.getArgList();
         if (argList.isEmpty()) {
@@ -281,6 +278,7 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processBasic(SqlBasicAggFunction function) {
+        // ARG_MAX(value, compared).  First argument is the output, and has type `this.returnType`
         SqlKind kind = function.getKind();
         if (kind == SqlKind.ARRAY_AGG) {
             this.processArrayAgg(function);
@@ -289,7 +287,7 @@ public class AggregateCompiler implements ICompilerComponent {
         CalciteObject node = CalciteObject.create(function);
         DBSPTupleExpression tuple = Objects.requireNonNull(this.aggArgument).to(DBSPTupleExpression.class);
         assert tuple.fields.length == 2: "Expected 2 arguments for " + kind;
-        DBSPOpcode compare = switch (kind) {
+        DBSPOpcode compareOpcode = switch (kind) {
             case ARG_MAX -> DBSPOpcode.AGG_GTE;
             case ARG_MIN -> DBSPOpcode.AGG_LTE;
             default -> throw new UnimplementedException(node);
@@ -297,21 +295,26 @@ public class AggregateCompiler implements ICompilerComponent {
 
         // Accumulator is a pair of fields.
         DBSPExpression zero = new DBSPTupleExpression(
-                tuple.fields[0].getType().nullValue(), tuple.fields[1].getType().nullValue());
-        DBSPVariablePath accumulator = tuple.getType().var();
+                this.resultType.defaultValue(),
+                tuple.fields[1].getType().defaultValue());
+        DBSPVariablePath accumulator = zero.getType().var();
         DBSPClosureExpression linear = null;  // not linear
         DBSPExpression ge = new DBSPBinaryExpression(
-                node, DBSPTypeBool.create(false), compare,
+                node, DBSPTypeBool.create(false), compareOpcode,
                 tuple.fields[1].applyCloneIfNeeded(),
                 accumulator.field(1).applyCloneIfNeeded());
-        DBSPExpression increment = new DBSPIfExpression(node, ge, this.aggArgument, accumulator.applyCloneIfNeeded());
-        DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "UnimplementedSemigroup", false, tuple.getType());
+        DBSPTupleExpression aggArgCast = new DBSPTupleExpression(
+                tuple.fields[0].cast(this.resultType).applyCloneIfNeeded(),
+                tuple.fields[1].applyCloneIfNeeded());
+        DBSPExpression increment = new DBSPIfExpression(node, ge, aggArgCast, accumulator.applyCloneIfNeeded());
+        DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "UnimplementedSemigroup",
+                false, aggArgCast.getType());
         DBSPExpression postBody = accumulator.field(0).applyCloneIfNeeded();
         this.setFoldingFunction(new DBSPAggregate.Implementation(
                 node, zero,
                 this.makeRowClosure(increment, accumulator),
                 postBody.closure(accumulator.asParameter()),
-                this.resultType.nullValue(),
+                this.resultType.defaultValue(),
                 semigroup, linear));
     }
 

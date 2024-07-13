@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.type;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.IIndentStream;
 
 import java.util.Objects;
@@ -51,6 +52,11 @@ public class DBSPTypeRef extends DBSPType {
         if (this.mayBeNull == mayBeNull)
             return this;
         return new DBSPTypeRef(this.type, this.mutable, mayBeNull);
+    }
+
+    @Override
+    public DBSPExpression defaultValue() {
+        return this.type.defaultValue().borrow();
     }
 
     @Override

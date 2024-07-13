@@ -27,6 +27,7 @@ import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -42,7 +43,9 @@ public class DBSPTypeTime extends DBSPTypeBaseType implements IsDateType {
     }
 
     @Override
-    public DBSPLiteral defaultValue() {
+    public DBSPExpression defaultValue() {
+        if (this.mayBeNull)
+            return this.none();
         return new DBSPTimeLiteral(this.getNode(), this, new TimeString(0, 0, 0));
     }
 

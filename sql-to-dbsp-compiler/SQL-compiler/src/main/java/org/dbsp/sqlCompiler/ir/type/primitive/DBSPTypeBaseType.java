@@ -50,9 +50,6 @@ public abstract class DBSPTypeBaseType extends DBSPType {
         return var.cast(to).applyCloneIfNeeded().closure(var.asParameter());
     }
 
-    /** Default value for this type. */
-    public abstract DBSPLiteral defaultValue();
-
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append(this.shortName())
