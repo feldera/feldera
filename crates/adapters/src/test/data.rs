@@ -365,6 +365,7 @@ impl TestStruct2 {
         r#"{
             "type": "record",
             "name": "TestStruct2",
+            "connect.name": "test_namespace.TestStruct2",
             "fields": [
                 { "name": "id", "type": "long" },
                 { "name": "name", "type": ["string", "null"] },

@@ -1,4 +1,5 @@
-use crate::catalog::ArrowStream;
+use crate::catalog::{ArrowStream, AvroStream};
+use crate::static_compile::deinput::AvroWrapper;
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     static_compile::deinput::{
@@ -6,7 +7,9 @@ use crate::{
     },
     ControllerError, DeCollectionHandle,
 };
+use anyhow::anyhow;
 use anyhow::Result as AnyResult;
+use apache_avro::types::Value as AvroValue;
 use dbsp::DBData;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use std::{
@@ -115,6 +118,13 @@ impl<T, U> MockDeZSet<T, U> {
     pub fn state(&self) -> MutexGuard<MockDeZSetState<T, U>> {
         self.0.lock().unwrap()
     }
+
+    pub fn flush(&self) {
+        let mut state = self.0.lock().unwrap();
+
+        let mut buffered = take(&mut state.buffered);
+        state.flushed.append(&mut buffered);
+    }
 }
 
 impl<T, U> DeCollectionHandle for MockDeZSet<T, U>
@@ -127,21 +137,20 @@ where
         record_format: RecordFormat,
     ) -> Result<Box<dyn DeCollectionStream>, ControllerError> {
         match record_format {
-            RecordFormat::Csv => Ok(Box::new(MockDeZSetStream::<
-                CsvDeserializerFromBytes<_>,
-                T,
-                U,
-            >::new(
-                self.clone(), SqlSerdeConfig::default()
-            ))),
-            RecordFormat::Json(flavor) => Ok(Box::new(MockDeZSetStream::<
-                JsonDeserializerFromBytes<SqlSerdeConfig>,
-                T,
-                U,
-            >::new(
-                self.clone(),
-                SqlSerdeConfig::from(flavor),
-            ))),
+            RecordFormat::Csv => Ok(Box::new(
+                MockDeZSetStream::<CsvDeserializerFromBytes, T, U>::new(
+                    self.clone(),
+                    SqlSerdeConfig::default(),
+                ),
+            )),
+            RecordFormat::Json(flavor) => {
+                Ok(Box::new(
+                    MockDeZSetStream::<JsonDeserializerFromBytes, T, U>::new(
+                        self.clone(),
+                        SqlSerdeConfig::from(flavor),
+                    ),
+                ))
+            }
             RecordFormat::Parquet(_) => {
                 todo!()
             }
@@ -157,6 +166,14 @@ where
         _config: SqlSerdeConfig,
     ) -> Result<Box<dyn ArrowStream>, ControllerError> {
         todo!()
+    }
+
+    fn configure_avro_deserializer(&self) -> Result<Box<dyn AvroStream>, ControllerError> {
+        Ok(Box::new(MockAvroStream::new(self.clone())))
+    }
+
+    fn fork(&self) -> Box<dyn DeCollectionHandle> {
+        Box::new(self.clone())
     }
 }
 
@@ -222,10 +239,7 @@ where
     fn reserve(&mut self, _reservation: usize) {}
 
     fn flush(&mut self) {
-        let mut state = self.handle.0.lock().unwrap();
-
-        let mut buffered = take(&mut state.buffered);
-        state.flushed.append(&mut buffered);
+        self.handle.flush()
     }
 
     fn clear_buffer(&mut self) {
@@ -234,6 +248,60 @@ where
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
         Box::new(Self::new(self.handle.clone(), self.config.clone()))
+    }
+}
+
+/// [`AvroStream`] implementation that collects deserialized records into a
+/// [`MockDeZSet`].
+#[derive(Clone)]
+pub struct MockAvroStream<T, U> {
+    handle: MockDeZSet<T, U>,
+}
+
+impl<T, U> MockAvroStream<T, U> {
+    fn new(handle: MockDeZSet<T, U>) -> Self {
+        Self { handle }
+    }
+}
+
+impl<T, U> AvroStream for MockAvroStream<T, U>
+where
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+{
+    fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
+        let v: AvroWrapper<T> = apache_avro::from_value(data)
+            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+
+        self.handle
+            .0
+            .lock()
+            .unwrap()
+            .buffered
+            .push(MockUpdate::Insert(v.value));
+
+        self.handle.flush();
+
+        Ok(())
+    }
+
+    fn delete(&mut self, data: &apache_avro::types::Value) -> AnyResult<()> {
+        let v: AvroWrapper<T> = apache_avro::from_value(data)
+            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+
+        self.handle
+            .0
+            .lock()
+            .unwrap()
+            .buffered
+            .push(MockUpdate::Delete(v.value));
+
+        self.handle.flush();
+        Ok(())
+    }
+
+    fn fork(&self) -> Box<dyn AvroStream> {
+        Box::new(Self::new(self.handle.clone()))
     }
 }
 
