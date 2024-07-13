@@ -167,7 +167,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPMapOperator operator) {
+    public void postorder(DBSPDeindexOperator operator) {
         ReplacementExpansion expanded = this.getReplacement(operator);
         if (expanded != null)
             this.addBounds(expanded.replacement, 0);
@@ -177,12 +177,28 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPMapOperator operator) {
+        ReplacementExpansion expanded = this.getReplacement(operator);
+        if (expanded != null) {
+            DBSPOperator bound = this.addBounds(expanded.replacement, 0);
+            if (operator != expanded.replacement && bound != null)
+                this.markBound(operator, bound);
+        } else {
+            this.nonMonotone(operator);
+        }
+        super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPFilterOperator operator) {
         ReplacementExpansion expanded = this.getReplacement(operator);
-        if (expanded != null)
-            this.addBounds(expanded.replacement, 0);
-        else
+        if (expanded != null) {
+            DBSPOperator bound = this.addBounds(expanded.replacement, 0);
+            if (operator != expanded.replacement && bound != null)
+                this.markBound(operator, bound);
+        } else {
             this.nonMonotone(operator);
+        }
         super.postorder(operator);
     }
 
@@ -678,7 +694,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPSourceMultisetOperator operator) {
-        DBSPOperator replacement = this.processLateness(operator, operator);
+        ReplacementExpansion replacementExpansion = Objects.requireNonNull(this.getReplacement(operator));
+        DBSPOperator expansion = this.processLateness(operator, replacementExpansion.replacement);
 
         // Process watermark annotations.  Very similar to lateness annotations.
         int index = 0;
@@ -711,7 +728,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         if (!minimums.isEmpty()) {
             assert fields.size() == 1;
-            this.addOperator(replacement);
+            this.addOperator(expansion);
 
             DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
             DBSPTupleExpression bound = new DBSPTupleExpression(bounds, false);
@@ -733,17 +750,17 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPOperator ix = new DBSPMapIndexOperator(operator.getNode(),
                     new DBSPRawTupleExpression(fields.get(0), t.deref()).closure(t.asParameter()),
                     new DBSPTypeIndexedZSet(operator.getNode(),
-                            fields.get(0).getType(), dataType), true, replacement);
+                            fields.get(0).getType(), dataType), true, expansion);
             this.addOperator(ix);
             DBSPWindowOperator window = new DBSPWindowOperator(operator.getNode(), ix, apply);
             this.addOperator(window);
-            replacement = new DBSPDeindexOperator(operator.getNode(), window);
+            expansion = new DBSPDeindexOperator(operator.getNode(), window);
         }
 
-        if (replacement == operator) {
+        if (expansion == operator) {
             this.replace(operator);
         } else {
-            this.map(operator, replacement);
+            this.map(operator, expansion);
         }
     }
 

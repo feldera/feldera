@@ -47,9 +47,8 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
 
         if (debug)
             ToDotVisitor.toDot(this.reporter, "original.png", details, "png", circuit);
-        ExpandOperators expander = new ExpandOperators(this.reporter, 1);
-        Repeat repeat = new Repeat(this.reporter, expander);
-        DBSPCircuit expanded = repeat.apply(circuit);
+        ExpandOperators expander = new ExpandOperators(this.reporter);
+        DBSPCircuit expanded = expander.apply(circuit);
 
         Monotonicity monotonicity = new Monotonicity(this.reporter);
         expanded = monotonicity.apply(expanded);

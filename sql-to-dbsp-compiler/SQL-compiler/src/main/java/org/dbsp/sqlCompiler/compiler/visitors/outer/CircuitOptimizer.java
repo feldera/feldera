@@ -50,11 +50,11 @@ public class CircuitOptimizer implements ICompilerComponent {
         CompilerOptions options = this.getCompiler().options;
 
         passes.add(new ImplementNow(reporter));
-        if (!options.ioOptions.emitHandles)
-            passes.add(new IndexedInputs(reporter));
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));
         if (options.languageOptions.optimizationLevel < 2) {
+            if (!options.ioOptions.emitHandles)
+                passes.add(new IndexedInputs(reporter));
             if (options.languageOptions.incrementalize) {
                 passes.add(new IncrementalizeVisitor(this.getCompiler()));
             }
@@ -69,8 +69,11 @@ public class CircuitOptimizer implements ICompilerComponent {
                 passes.add(new OptimizeIncrementalVisitor(reporter));
             }
             passes.add(new DeadCode(reporter, true, false));
-            // passes.add(new Simplify(reporter).circuitRewriter());
+            passes.add(new Simplify(reporter).circuitRewriter());
             passes.add(new MonotoneAnalyzer(reporter));
+            // Doing this after the monotone analysis only
+            if (!options.ioOptions.emitHandles)
+                passes.add(new IndexedInputs(reporter));
             passes.add(new FilterJoin(reporter));
             passes.add(new OptimizeProjections(reporter));
             passes.add(new DeadCode(reporter, true, false));

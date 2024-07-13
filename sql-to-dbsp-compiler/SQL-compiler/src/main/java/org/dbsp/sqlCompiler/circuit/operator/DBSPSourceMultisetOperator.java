@@ -17,9 +17,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 public final class DBSPSourceMultisetOperator
-        extends DBSPSourceTableOperator
-        implements IHasColumnsMetadata
-{
+        extends DBSPSourceTableOperator {
     /**
      * Create a DBSP operator that is a source to the dataflow graph.
      * The table has *no* primary key, so the data can form a multiset.
@@ -34,7 +32,7 @@ public final class DBSPSourceMultisetOperator
             CalciteObject node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, String name, @Nullable String comment) {
-        super(node, sourceName, outputType, originalRowType, true, metadata, name, comment);
+        super(node, "multiset", sourceName, outputType, originalRowType, true, metadata, name, comment);
         assert metadata.getColumnCount() == originalRowType.fields.size();
         assert metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size();
     }
@@ -57,21 +55,12 @@ public final class DBSPSourceMultisetOperator
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
-        if (force || this.inputsDiffer(newInputs))
+        assert newInputs.isEmpty();
+        if (force)
             return new DBSPSourceMultisetOperator(
                     this.getNode(), this.sourceName, this.getOutputZSetType(), this.originalRowType,
                     this.metadata, this.tableName, this.comment).copyAnnotations(this);
         return this;
-    }
-
-    @Override
-    public Iterable<? extends IHasLateness> getLateness() {
-        return this.metadata.getColumns();
-    }
-
-    @Override
-    public Iterable<? extends IHasWatermark> getWatermarks() {
-        return this.metadata.getColumns();
     }
 
     @Override
