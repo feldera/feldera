@@ -148,7 +148,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let stream131: stream<WSet<Tup1<b>>> = stream61;
+                    let stream178: stream<WSet<Tup1<b>>> = stream61;
                 }
                 """;
         Assert.assertEquals(expected, str);
@@ -292,10 +292,12 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
     @Test
     public void illegalCasing() throws IOException, SQLException {
         String[] statements = new String[] {
-                "CREATE TABLE T (\n" +
-                        "COL1 INT NOT NULL" +
-                        ", COL2 DOUBLE NOT NULL" +
-                        ")",
+                """
+                CREATE TABLE T (
+                COL1 INT NOT NULL
+                , COL2 DOUBLE NOT NULL
+                
+                )""",
                 "CREATE VIEW V AS SELECT COL1 FROM T"
         };
         File file = createInputScript(statements);

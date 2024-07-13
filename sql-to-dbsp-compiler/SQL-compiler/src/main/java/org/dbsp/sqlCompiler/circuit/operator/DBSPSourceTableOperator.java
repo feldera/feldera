@@ -1,5 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
+import org.dbsp.sqlCompiler.compiler.IHasLateness;
+import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -9,7 +12,9 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import javax.annotation.Nullable;
 
 /** Base class for source operators which represent tables. */
-public abstract class DBSPSourceTableOperator extends DBSPSourceBaseOperator {
+public abstract class DBSPSourceTableOperator
+        extends DBSPSourceBaseOperator
+        implements IHasColumnsMetadata {
     /** Original output row type, as a struct (not a tuple), i.e., with named columns. */
     public final DBSPTypeStruct originalRowType;
     public final CalciteObject sourceName;
@@ -29,10 +34,10 @@ public abstract class DBSPSourceTableOperator extends DBSPSourceBaseOperator {
      * @param comment    A comment describing the operator.
      */
     protected DBSPSourceTableOperator(
-            CalciteObject node, CalciteObject sourceName,
+            CalciteObject node, String operation, CalciteObject sourceName,
             DBSPType outputType, DBSPTypeStruct originalRowType, boolean isMultiset,
             TableMetadata metadata, String name, @Nullable String comment) {
-        super(node, outputType, isMultiset, name, comment);
+        super(node, operation, outputType, isMultiset, name, comment);
         this.originalRowType = originalRowType;
         this.sourceName = sourceName;
         this.metadata = metadata;
@@ -43,5 +48,15 @@ public abstract class DBSPSourceTableOperator extends DBSPSourceBaseOperator {
         if (!this.sourceName.isEmpty() && this.sourceName.getPositionRange().isValid())
             return this.sourceName.getPositionRange();
         return this.getNode().getPositionRange();
+    }
+
+    @Override
+    public Iterable<? extends IHasLateness> getLateness() {
+        return this.metadata.getColumns();
+    }
+
+    @Override
+    public Iterable<? extends IHasWatermark> getWatermarks() {
+        return this.metadata.getColumns();
     }
 }

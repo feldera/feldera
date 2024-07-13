@@ -2,10 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.expansion;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOutputOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctIncrementalOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -22,13 +19,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWeighOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -44,17 +40,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Expands each operator into a lower level representation, that closely
- * mimics the DBSP runtime representation.
- */
+/** Expands each operator into a lower level representation, that closely
+ * mimics the DBSP runtime representation. */
 public class ExpandOperators extends CircuitCloneVisitor {
-    public final int verbosity;
     public final Map<DBSPOperator, OperatorExpansion> expansion;
 
-    public ExpandOperators(IErrorReporter reporter, int verbosity) {
-        super(reporter, false);
-        this.verbosity = verbosity;
+    public ExpandOperators(IErrorReporter reporter) {
+        super(reporter, true);
         this.expansion = new HashMap<>();
     }
 
@@ -89,7 +81,7 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPSourceMapOperator operator) {
-        this.identity(operator);
+        throw new InternalCompilerError("Didn't expect to find a SourceMapOperator at this stage " + operator);
     }
 
     @Override
@@ -120,57 +112,6 @@ public class ExpandOperators extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPNoopOperator node) {
         this.identity(node);
-    }
-
-    @Override
-    public void postorder(DBSPIntegrateOperator operator) {
-        if (verbosity < 2) {
-            this.replace(operator);
-            return;
-        }
-
-        DBSPOperator input = this.mapped(operator.input());
-        DBSPDelayOutputOperator delayOutput = new DBSPDelayOutputOperator(
-                operator.getNode(), operator.outputType, operator.input().isMultiset, operator.comment);
-        this.addOperator(delayOutput);
-        DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), input, delayOutput);
-        this.map(operator, sum);
-        DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), sum, delayOutput);
-        this.addOperator(delay);
-        this.addExpansion(operator, new IntegralExpansion(delayOutput, sum, delay));
-    }
-
-    @Override
-    public void postorder(DBSPDelayedIntegralOperator operator) {
-        if (verbosity < 2) {
-            this.replace(operator);
-            return;
-        }
-
-        DBSPOperator input = this.mapped(operator.input());
-        DBSPDelayOutputOperator delayOutput = new DBSPDelayOutputOperator(
-                operator.getNode(), operator.outputType, operator.input().isMultiset, operator.comment);
-        this.addOperator(delayOutput);
-        DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), input, delayOutput);
-        this.addOperator(sum);
-        DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), sum, delayOutput);
-        this.map(operator, delay);
-        this.addExpansion(operator, new IntegralExpansion(delayOutput, sum, delay));
-    }
-
-    @Override
-    public void postorder(DBSPDifferentiateOperator operator) {
-        if (verbosity < 2) {
-            this.replace(operator);
-            return;
-        }
-
-        DBSPOperator input = this.mapped(operator.input());
-        DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), input);
-        this.addOperator(delay);
-        DBSPSubtractOperator sub = new DBSPSubtractOperator(operator.getNode(), input, delay);
-        this.map(operator, sub);
-        this.addExpansion(operator, new DifferentialExpansion(delay, sub));
     }
 
     @Override
@@ -233,28 +174,6 @@ public class ExpandOperators extends CircuitCloneVisitor {
     public void postorder(DBSPPartitionedRollingAggregateOperator operator) {
         // This is not true, but we don't care here about the internal structure
         this.identity(operator);
-    }
-
-    @Override
-    public void postorder(DBSPUpsertFeedbackOperator operator) {
-        if (verbosity < 2) {
-            this.replace(operator);
-            return;
-        }
-
-        DBSPOperator input = this.mapped(operator.input());
-        DBSPDelayOutputOperator delayOutput = new DBSPDelayOutputOperator(
-                operator.getNode(), operator.outputType, false, operator.comment);
-        this.addOperator(delayOutput);
-
-        DBSPUpsertOperator upsert = new DBSPUpsertOperator(operator.getNode(), input, delayOutput);
-        this.map(operator, upsert);
-        // These two collectively make a delayed integrator operator
-        DBSPSumOperator sum = new DBSPSumOperator(operator.getNode(), upsert, delayOutput);
-        this.addOperator(sum);
-        DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), sum, delayOutput);
-        this.addOperator(delay);
-        this.addExpansion(operator, new UpsertExpansion(delayOutput, upsert, sum, delay));
     }
 
     @Override

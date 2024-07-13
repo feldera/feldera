@@ -78,7 +78,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
-        String name = node.tableName;
+        String name = node.operation;
         if (node.is(DBSPDelayOutputOperator.class))
             name = "delay";
         this.stream.append(node.getOutputName())

@@ -37,14 +37,15 @@ public abstract class DBSPSourceBaseOperator extends DBSPOperator {
      *
      * @param node       Calcite node for the statement creating the table
      *                   that this node is created from.
-     * @param outputType Type of table.
+     * @param outputType The output type of the table.
+     * @param operation  Type of table.
      * @param isMultiset True if the source data can be a multiset.
      * @param tableName  The name of the table that this operator is created from.
      * @param comment    A comment describing the operator. */
     protected DBSPSourceBaseOperator(
-            CalciteObject node, DBSPType outputType, boolean isMultiset,
+            CalciteObject node, String operation, DBSPType outputType, boolean isMultiset,
             String tableName, @Nullable String comment) {
-        super(node, "source " + tableName, null, outputType, isMultiset, comment);
+        super(node, operation + " " + tableName, null, outputType, isMultiset, comment);
         this.tableName = tableName;
     }
 

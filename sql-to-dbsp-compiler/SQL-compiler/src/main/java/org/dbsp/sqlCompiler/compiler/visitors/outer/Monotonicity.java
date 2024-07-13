@@ -76,7 +76,7 @@ import java.util.Set;
  * Outer visitor for monotonicity dataflow analysis.
  * Detect almost "monotone" columns.  A column is almost monotone
  * if it is a monotone function applied to almost monotone columns.
- * Monotonicity is computed on the expanded operator graph.
+ * Monotonicity is computed *on the expanded operator graph*.
  * See the ExpandOperators class. */
 public class Monotonicity extends CircuitVisitor {
     public static class MonotonicityInformation {
@@ -142,11 +142,11 @@ public class Monotonicity extends CircuitVisitor {
         DBSPVariablePath var;
         MonotoneTransferFunctions.ArgumentKind argumentType;
         if (pairOfReferences) {
-            DBSPTypeRawTuple tpl = varType.to(DBSPTypeRawTuple.class);
+            DBSPTypeTupleBase tpl = varType.to(DBSPTypeTupleBase.class);
             assert tpl.size() == 2: "Expected a pair, got " + varType;
-            varType = new DBSPTypeRawTuple(tpl.tupFields[0].ref(), tpl.tupFields[1].ref());
+            varType = tpl.makeType(Linq.list(tpl.tupFields[0].ref(), tpl.tupFields[1].ref()));
             var = varType.var();
-            body = new DBSPRawTupleExpression(var.field(0).deref(), var.deepCopy().field(1).deref());
+            body = tpl.makeTuple(var.field(0).deref(), var.deepCopy().field(1).deref());
             argumentType = MonotoneTransferFunctions.ArgumentKind.IndexedZSet;
         } else {
             varType = varType.ref();
@@ -312,7 +312,7 @@ public class Monotonicity extends CircuitVisitor {
         IMaybeMonotoneType keyProjection = new PartiallyMonotoneTuple(keyColumns, false, false);
         IMaybeMonotoneType valueProjection = new PartiallyMonotoneTuple(valueColumns, false, false);
         IMaybeMonotoneType pairProjection = new PartiallyMonotoneTuple(
-                Linq.list(keyProjection, valueProjection), false, false);
+                Linq.list(keyProjection, valueProjection), true, false);
         MonotoneExpression result = this.identity(node, pairProjection, true);
         this.set(node, result);
     }
@@ -430,7 +430,7 @@ public class Monotonicity extends CircuitVisitor {
         MonotoneExpression inputFunction = this.getMonotoneExpression(node.input());
         if (inputFunction == null)
             return;
-        PartiallyMonotoneTuple tuple = inputFunction.getMonotoneType().to(PartiallyMonotoneTuple.class);
+        PartiallyMonotoneTuple tuple = getBodyType(inputFunction).to(PartiallyMonotoneTuple.class);
         IMaybeMonotoneType value = tuple.getField(1);
         if (!value.mayBeMonotone())
             return;

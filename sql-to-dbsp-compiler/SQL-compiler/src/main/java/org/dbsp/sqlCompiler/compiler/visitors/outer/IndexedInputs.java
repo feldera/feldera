@@ -13,10 +13,8 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Converts DBSPSourceMultisetOperators that have a primary key
- * into DBSPSourceSetOperator followed by a DBSPDeindexOperator.
- */
+/** Converts DBSPSourceMultisetOperators that have a primary key
+ * into DBSPSourceSetOperator followed by a DBSPDeindexOperator. */
 public class IndexedInputs extends CircuitCloneVisitor {
     public IndexedInputs(IErrorReporter reporter) {
         super(reporter, false);

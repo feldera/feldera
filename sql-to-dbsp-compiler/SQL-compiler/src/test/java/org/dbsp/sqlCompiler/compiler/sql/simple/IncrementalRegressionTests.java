@@ -3,14 +3,55 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.util.Logger;
 import org.junit.Test;
 
-/** Regression tests that fail in incremental mode */
+/** Regression tests that failed in incremental mode using the Catalog API */
 public class IncrementalRegressionTests extends SqlIoTest {
     @Override
     public DBSPCompiler testCompiler() {
         CompilerOptions options = this.testOptions(true, true);
+        // This causes the use of SourceSet operators
+        options.ioOptions.emitHandles = false;
+        // Without the following ORDER BY causes failures
+        options.languageOptions.ignoreOrderBy = true;
         return new DBSPCompiler(options);
+    }
+
+    @Test
+    public void issue2039() {
+        String sql = """
+                CREATE TABLE transactions (
+                    id INT PRIMARY KEY,
+                    ts TIMESTAMP LATENESS INTERVAL 0 HOURS,
+                    user_id INT,
+                    AMOUNT DECIMAL
+                );""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue2043() {
+        String sql =
+                """
+                CREATE TABLE "NOW" (
+                  now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS
+                );
+                
+                CREATE TABLE transactions (
+                    id INT PRIMARY KEY,
+                    ts TIMESTAMP LATENESS INTERVAL 0 SECONDS,
+                    user_id INT,
+                    AMOUNT DECIMAL
+                ) with ('materialized' = 'true');
+                
+                CREATE MATERIALIZED VIEW window_computation AS SELECT
+                    user_id,
+                    COUNT(*) AS transaction_count_by_user
+                    FROM transactions
+                    WHERE ts > "NOW"() - INTERVAL 1 DAY and ts <= "NOW"()
+                    GROUP BY user_id;""";
+        this.compileRustTestCase(sql);
     }
 
     @Test

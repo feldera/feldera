@@ -18,7 +18,8 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
 
     public DBSPWaterlineOperator(CalciteObject node, DBSPExpression init,
                                  DBSPClosureExpression function, DBSPOperator input) {
-        super(node, "waterline_monotonic", function, function.getResultType(), false, input);
+        super(node, "waterline_monotonic", function, function.getResultType(),
+                false, input);
         this.init = init;
     }
 
