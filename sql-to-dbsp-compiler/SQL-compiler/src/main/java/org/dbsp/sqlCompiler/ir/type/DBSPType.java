@@ -166,4 +166,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
     public DBSPExpression none() {
         return DBSPLiteral.none(this);
     }
+
+    /** Used for implementing some aggregates */
+    public abstract DBSPExpression defaultValue();
 }

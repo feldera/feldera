@@ -34,7 +34,36 @@ public class AggregateTests extends SqlIoTest {
                    (5,  5),
                    (1,  5),
                    (3,  3);
+                CREATE TABLE NN (
+                   I INT NOT NULL,
+                   J INT,
+                   K INT
+                );
+                INSERT INTO NN VALUES
+                   (0, 0, 0),
+                   (1, 1, 1),
+                   (2, NULL, 0),
+                   (3, NULL, 1);
                 """);
+    }
+
+    @Test
+    public void issue2042() {
+        this.qs("""
+                SELECT ARG_MAX(I, I), ARG_MAX(I, J), ARG_MAX(J, I), ARG_MAX(J, J)
+                FROM NN;
+                 ii | ij | ji   | jj
+                --------------------
+                 3  | 1  | NULL | 1
+                (1 row)
+                
+                SELECT K, ARG_MAX(I, I), ARG_MAX(I, J), ARG_MAX(J, I), ARG_MAX(J, J)
+                FROM NN GROUP BY K;
+                 k | ii | ij | ji   | jj
+                -------------------------
+                 0 | 2  | 0  | NULL | 0
+                 1 | 3  | 1  | NULL | 1
+                (1 row)""");
     }
 
     @Test

@@ -78,5 +78,13 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         return this.tupFields.length;
     }
 
+    @Override
+    public DBSPExpression defaultValue() {
+        if (this.mayBeNull)
+            return this.none();
+        DBSPExpression[] fields = Linq.map(this.tupFields, DBSPType::defaultValue, DBSPExpression.class);
+        return this.makeTuple(fields);
+    }
+
     public abstract DBSPType makeType(List<DBSPType> fields);
 }
