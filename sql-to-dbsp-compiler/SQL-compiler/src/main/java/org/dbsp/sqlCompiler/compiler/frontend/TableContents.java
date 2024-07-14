@@ -48,13 +48,9 @@ import java.util.Map;
  */
 public class TableContents implements ICompilerComponent {
     public final List<String> tablesCreated = new ArrayList<>();
-    /**
-     * Remember the last statement that created each table.
-     */
+    /** Remember the last statement that created each table. */
     final Map<String, CreateTableStatement> tableCreation = new HashMap<>();
-    /**
-     * Keep track of the contents of each table.
-     */
+    /** Keep track of the contents of each table. */
     @Nullable
     final Map<String, DBSPZSetLiteral> tableContents;
     final DBSPCompiler compiler;
@@ -127,5 +123,12 @@ public class TableContents implements ICompilerComponent {
         for (Map.Entry<String, DBSPZSetLiteral> entry: this.tableContents.entrySet()) {
             entry.setValue(DBSPZSetLiteral.emptyWithElementType(entry.getValue().getElementType()));
         }
+    }
+
+    public void removeTable(String name) {
+        if (this.tableContents == null)
+            return;
+        this.tableContents.remove(name);
+        this.tablesCreated.remove(name);
     }
 }

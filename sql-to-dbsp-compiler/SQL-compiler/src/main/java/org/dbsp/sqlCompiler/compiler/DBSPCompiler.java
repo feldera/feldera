@@ -95,6 +95,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     final GlobalTypes globalTypes = new GlobalTypes();
 
+    /** Convert the string to the casing specified by the options */
+    public String toCase(String name) {
+        return this.options.canonicalName(name);
+    }
+
     /** Where does the compiled program come from? */
     public enum InputSource {
         /** No data source set yet. */
@@ -142,6 +147,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.typeCompiler = new TypeCompiler(this);
         this.weightVar = new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER, "Weight", false)
                 .var();
+        this.start();
+    }
+
+    void start() {
+        // Steps executed before the actual compilation.
+        // Declare the "NOW" table
+        this.compileInternal(
+                "CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS)", false, false);
     }
 
     public boolean hasWarnings() {
@@ -229,14 +242,26 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     List<SqlStatements> toCompile = new ArrayList<>();
 
-    private void compileInternal(String statements, boolean many) {
+    /** Accumulate program to compile.
+     * @param statements Statements to compile.
+     * @param many       Is this one or many statements?
+     * @param appendToSource  If true this is part of the source supplied by the user.
+     *                        Otherwise it's a "preamble" generated internally.
+     */
+    private void compileInternal(String statements, boolean many, boolean appendToSource) {
         if (this.inputSources != InputSource.File) {
             // If we read from file we already have read the entire data.
             // Otherwise, we append the statements to the sources.
-            this.sources.append(statements);
-            this.sources.append("\n");
+            if (appendToSource) {
+                this.sources.append(statements);
+                this.sources.append("\n");
+            }
         }
         this.toCompile.add(new SqlStatements(statements, many));
+    }
+
+    private void compileInternal(String statements, boolean many) {
+        this.compileInternal(statements, many, true);
     }
 
     void runAllCompilerStages() {
@@ -384,6 +409,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.circuit = optimizer.optimize(this.circuit);
     }
 
+    public void removeNowTable() {
+        String name = this.toCase("now");
+        this.metadata.removeTable(name);
+        this.midend.getTableContents().removeTable(name);
+    }
+
     public void compileStatement(String statement) {
         this.compileInternal(statement, false);
     }
@@ -457,10 +488,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.messages.show(stream);
     }
 
-    /**
-     * Throw if any error has been encountered.
-     * Displays the errors on stderr as well.
-     */
+    /** Throw if any error has been encountered.
+     * Displays the errors on stderr as well. */
     public void throwIfErrorsOccurred() {
         if (this.hasErrors()) {
             this.showErrors(System.err);

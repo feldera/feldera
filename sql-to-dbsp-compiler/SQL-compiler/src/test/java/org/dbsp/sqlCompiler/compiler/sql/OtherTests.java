@@ -140,15 +140,15 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs {
         String expected;
         expected = """
                 Circuit circuit {
-                    // DBSPSourceMultisetOperator 39
+                    // DBSPSourceMultisetOperator 59
                     // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
-                    let stream39 = T();
-                    // DBSPMapOperator 61
-                    let stream61: stream<WSet<Tup1<b>>> = stream39.map((|t_1: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t_1).2), )));
+                    let stream59 = T();
+                    // DBSPMapOperator 81
+                    let stream81: stream<WSet<Tup1<b>>> = stream59.map((|t_1: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t_1).2), )));
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let stream178: stream<WSet<Tup1<b>>> = stream61;
+                    let stream200: stream<WSet<Tup1<b>>> = stream81;
                 }
                 """;
         Assert.assertEquals(expected, str);

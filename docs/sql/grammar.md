@@ -10,6 +10,9 @@ form.
 - Parentheses `()` are used for grouping productions together.
 - The vertical bar `|` indicates choice between two constructs.
 
+SQL reserved keywords cannot be used as table and view names.
+In addition, the following keywords are reserved: `USER`, `NOW`.
+
 ```
 statementList:
       statement [ ';' statement ]* [ ';' ]

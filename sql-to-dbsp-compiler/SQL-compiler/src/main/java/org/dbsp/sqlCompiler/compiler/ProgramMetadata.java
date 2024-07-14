@@ -45,6 +45,10 @@ public class ProgramMetadata {
         this.inputTables.put(description.getName(), description);
     }
 
+    public void removeTable(String name) {
+        this.inputTables.remove(name);
+    }
+
     public void addView(IHasSchema description) {
         this.outputViews.put(description.getName(), description);
     }

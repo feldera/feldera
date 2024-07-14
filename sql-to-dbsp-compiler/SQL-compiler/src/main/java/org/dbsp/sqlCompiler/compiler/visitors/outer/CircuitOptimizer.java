@@ -49,7 +49,7 @@ public class CircuitOptimizer implements ICompilerComponent {
         IErrorReporter reporter = this.getCompiler();
         CompilerOptions options = this.getCompiler().options;
 
-        passes.add(new ImplementNow(reporter));
+        passes.add(new ImplementNow(reporter, compiler));
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));
         if (options.languageOptions.optimizationLevel < 2) {

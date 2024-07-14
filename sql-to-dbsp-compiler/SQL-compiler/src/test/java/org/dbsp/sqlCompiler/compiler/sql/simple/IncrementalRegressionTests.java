@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
-import org.dbsp.util.Logger;
+import org.junit.Assert;
 import org.junit.Test;
 
 /** Regression tests that failed in incremental mode using the Catalog API */
@@ -34,10 +34,27 @@ public class IncrementalRegressionTests extends SqlIoTest {
     public void issue2043() {
         String sql =
                 """
-                CREATE TABLE "NOW" (
-                  now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS
-                );
-                
+                        CREATE TABLE transactions (
+                            id INT PRIMARY KEY,
+                            ts TIMESTAMP LATENESS INTERVAL 0 SECONDS,
+                            user_id INT,
+                            AMOUNT DECIMAL
+                        ) with ('materialized' = 'true');
+                                        
+                        CREATE MATERIALIZED VIEW window_computation AS SELECT
+                            user_id,
+                            COUNT(*) AS transaction_count_by_user
+                            FROM transactions
+                            WHERE ts > NOW() - INTERVAL 1 DAY and ts <= NOW()
+                            GROUP BY user_id;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue2043uppercase() {
+        // Simulate a different unquotedCasing flag
+        String sql =
+                """
                 CREATE TABLE transactions (
                     id INT PRIMARY KEY,
                     ts TIMESTAMP LATENESS INTERVAL 0 SECONDS,
@@ -49,9 +66,14 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     user_id,
                     COUNT(*) AS transaction_count_by_user
                     FROM transactions
-                    WHERE ts > "NOW"() - INTERVAL 1 DAY and ts <= "NOW"()
+                    WHERE ts > NOW() - INTERVAL 1 DAY and ts <= NOW()
                     GROUP BY user_id;""";
-        this.compileRustTestCase(sql);
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.languageOptions.unquotedCasing = "upper";
+        compiler.compileStatements(sql);
+        getCircuit(compiler);
+        Assert.assertEquals(0, compiler.messages.exitCode);
     }
 
     @Test
