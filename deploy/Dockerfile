@@ -2,7 +2,7 @@
 # we need a Java and Rust compiler to run alongside the pipeline manager
 # as of now. This will change later.
 FROM ubuntu:24.04 AS base
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 # These two environment variables are used to make openssl-sys pick
 # up libssl-dev and statically link it. Without it, our build defaults
 # to building a vendored version of OpenSSL.
@@ -27,19 +27,19 @@ RUN apt update --fix-missing && apt install \
 # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
   locale-gen
-ENV LC_ALL en_US.UTF-8
-ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en
+ENV LC_ALL=en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
 
 # Use cargo-chef to produce a recipe.json file
 # to cache the requisite dependencies
-FROM base as chef
+FROM base AS chef
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 RUN /root/.cargo/bin/cargo install cargo-chef
 WORKDIR app
 
 # Build web-ui
-FROM base as web-ui-builder
+FROM base AS web-ui-builder
 # - nodejs
 RUN mkdir -p /etc/apt/keyrings
 RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
@@ -52,10 +52,11 @@ RUN npm install --global yarn openapi-typescript-codegen
 RUN apt install unzip -y
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="$HOME/.bun/bin:$PATH"
+RUN ln -s $HOME/.bun/bin/bun /usr/bin/bun
 
 # - yarn
-COPY web-console/package.json ./web-console/package.json
-COPY web-console/yarn.lock ./web-console/yarn.lock
+COPY web-console/package.json web-console/
+COPY web-console/yarn.lock web-console/
 RUN cd web-console && yarn install
 # Use a glob here so that the .env file's presence is optional. This should
 # not fail in our CI/CD builds and if it does, we should see a MUIX license
@@ -66,15 +67,15 @@ COPY web-console/src web-console/src
 COPY web-console/.editorconfig web-console/
 COPY web-console/.eslintrc.json web-console/
 COPY web-console/.prettierrc.js web-console/
-COPY web-console/next-env.d.ts ./web-console/next-env.d.ts
-COPY web-console/next.config.js ./web-console/next.config.js
-COPY web-console/next.d.ts ./web-console/next.d.ts
-COPY web-console/tsconfig.json ./web-console/tsconfig.json
+COPY web-console/next-env.d.ts web-console/
+COPY web-console/next.config.js web-console/
+COPY web-console/next.d.ts web-console/
+COPY web-console/tsconfig.json web-console/
 RUN cd web-console && yarn build
 
 # sveltekit
-COPY web-console-sveltekit/package.json ./web-console-sveltekit/
-COPY web-console-sveltekit/bun.lockb ./web-console-sveltekit/
+COPY web-console-sveltekit/package.json web-console-sveltekit/
+COPY web-console-sveltekit/bun.lockb web-console-sveltekit/
 RUN cd web-console-sveltekit && bun install
 
 COPY web-console-sveltekit/static web-console-sveltekit/static
@@ -83,10 +84,10 @@ COPY web-console-sveltekit/.prettierignore web-console-sveltekit/
 COPY web-console-sveltekit/.prettierrc web-console-sveltekit/
 COPY web-console-sveltekit/eslint.config.js web-console-sveltekit/
 COPY web-console-sveltekit/postcss.config.js web-console-sveltekit/
-COPY web-console-sveltekit/svelte.config.js ./web-console-sveltekit/
-COPY web-console-sveltekit/tailwind.config.ts ./web-console-sveltekit/
-COPY web-console-sveltekit/tsconfig.json ./web-console-sveltekit/
-COPY web-console-sveltekit/vite.config.ts ./web-console-sveltekit/
+COPY web-console-sveltekit/svelte.config.js web-console-sveltekit/
+COPY web-console-sveltekit/tailwind.config.ts web-console-sveltekit/
+COPY web-console-sveltekit/tsconfig.json web-console-sveltekit/
+COPY web-console-sveltekit/vite.config.ts web-console-sveltekit/
 RUN cd web-console-sveltekit && bun run build
 
 # Cache dependencies from rust
@@ -116,7 +117,7 @@ ENV WEBCONSOLE_BUILD_DIR=/app/web-console-build
 RUN /root/.cargo/bin/cargo build --release --bin=pipeline-manager --features=pg-embed
 
 # Java build can be performed in parallel
-FROM base as javabuild
+FROM base AS javabuild
 RUN apt install maven -y
 RUN mkdir sql
 COPY sql-to-dbsp-compiler /sql/sql-to-dbsp-compiler
@@ -124,7 +125,7 @@ RUN --mount=type=cache,target=/root/.m2 \
     cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -ntp -DskipTests package
 
 # Minimal image for running the pipeline manager
-FROM base as release
+FROM base AS release
 # Pipeline manager binary
 RUN useradd -ms /bin/bash feldera
 USER feldera
@@ -157,13 +158,13 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --pr
 ENV PATH="$PATH:/home/feldera/.cargo/bin"
 # Run the precompile phase to speed up Rust compilations during deployment
 RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler --dbsp-override-path=/home/feldera/lib --precompile
-ENV BANNER_ADDR localhost
+ENV BANNER_ADDR=localhost
 ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/lib", "--allowed-origins", "https://www.feldera.com", "--allowed-origins", "http://localhost:8080"]
 
 ##### The stages below are used to build the demo container
 
 # Prepare SecOps simulator recipe
-FROM chef as demo-planner
+FROM chef AS demo-planner
 COPY ./demo/project_demo00-SecOps/simulator/ .
 RUN /root/.cargo/bin/cargo chef prepare --recipe-path recipe.json
 
@@ -177,7 +178,7 @@ RUN /root/.cargo/bin/cargo build --release
 
 # The dev target adds an rpk client and demo projects
 FROM ubuntu:24.04 AS client
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="$PATH:/root/.cargo/bin"
 COPY demo demo
 # Remove the simulator cargo project and the corresponding build artifacts
