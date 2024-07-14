@@ -39,8 +39,8 @@ import java.util.Objects;
 
 public class DBSPTypeDecimal extends DBSPTypeBaseType
         implements IsNumericType {
-    public static final int MAX_PRECISION = 38;  // Total digits. Rather arbitrary.
-    public static final int MAX_SCALE = 10;       // Digits after decimal period.  Rather arbitrary.
+    public static final int MAX_PRECISION = 28;   // Total digits. This limit comes from the Rust decimal library
+    public static final int MAX_SCALE = 10;       // Digits after decimal period.
 
     public final int precision;
     public final int scale;
