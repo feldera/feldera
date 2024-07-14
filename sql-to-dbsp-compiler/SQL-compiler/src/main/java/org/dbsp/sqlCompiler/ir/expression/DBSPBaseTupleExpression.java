@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
 
@@ -63,5 +64,9 @@ public abstract class DBSPBaseTupleExpression extends DBSPExpression {
     public DBSPBaseTupleExpression shuffle(Shuffle data) {
         List<DBSPExpression> fields = data.shuffle(Linq.list(this.fields));
         return this.fromFields(fields);
+    }
+
+    public DBSPTypeTupleBase getTupleType() {
+        return this.getType().to(DBSPTypeTupleBase.class);
     }
 }

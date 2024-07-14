@@ -711,9 +711,11 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.input().getOutputName())
                 .append(".")
                 .append(operator.operation)
-                .append("::<_, DynData, _, _>(");
+                .append("::<_, DynData, _, _, _>(");
         // This part is different from a standard operator.
         operator.init.accept(this.innerVisitor);
+        this.builder.append(", ");
+        operator.extractTs.accept(this.innerVisitor);
         this.builder.append(", ");
         operator.getFunction().accept(this.innerVisitor);
         // FIXME: temporary fix until the compiler learns to work with the

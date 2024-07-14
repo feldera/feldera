@@ -36,9 +36,8 @@ import org.junit.Test;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Test SQL queries from the Nexmark suite.
+/* Test SQL queries from the Nexmark suite.
  * https://github.com/nexmark/nexmark/tree/master/nexmark-flink/src/main/resources/queries */
-@SuppressWarnings("JavadocLinkAsPlainText")
 public class NexmarkTest extends StreamingTest {
     static final String[] tables = {
             """
@@ -59,7 +58,7 @@ CREATE TABLE auction (
     description  VARCHAR,
     initialBid  BIGINT,
     reserve  BIGINT,
-    date_time  TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
+    date_time  TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
     expires  TIMESTAMP(3),
     seller  BIGINT,
     category  BIGINT,
@@ -72,7 +71,7 @@ CREATE TABLE bid (
     price  BIGINT,
     channel  VARCHAR,
     url  VARCHAR,
-    date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
+    date_time TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
     extra  VARCHAR
 )"""
     };

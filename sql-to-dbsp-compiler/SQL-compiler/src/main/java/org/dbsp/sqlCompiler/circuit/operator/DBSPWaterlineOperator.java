@@ -14,18 +14,26 @@ import java.util.Objects;
 /** Given a stream, it computes max(function(stream), delay(this)). */
 public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
     /** Initial value of waterline */
-    public final DBSPExpression init;
+    public final DBSPClosureExpression init;
+    /** Function which extracts a timestamp */
+    public final DBSPClosureExpression extractTs;
 
-    public DBSPWaterlineOperator(CalciteObject node, DBSPExpression init,
+    public DBSPWaterlineOperator(CalciteObject node, DBSPClosureExpression init,
+                                 DBSPClosureExpression extractTs,
                                  DBSPClosureExpression function, DBSPOperator input) {
-        super(node, "waterline_monotonic", function, function.getResultType(),
+        super(node, "waterline", function, function.getResultType(),
                 false, input);
         this.init = init;
+        this.extractTs = extractTs;
+        assert init.parameters.length == 0;
+        assert extractTs.parameters.length == 2;
+        assert function.parameters.length == 2;
     }
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPWaterlineOperator(this.getNode(), this.init,
+                this.extractTs,
                 Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
                 this.input()).copyAnnotations(this);
     }
@@ -34,7 +42,9 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWaterlineOperator(this.getNode(), this.init,
-                    this.getFunction().to(DBSPClosureExpression.class), newInputs.get(0))
+                    this.extractTs,
+                    this.getFunction().to(DBSPClosureExpression.class),
+                    newInputs.get(0))
                     .copyAnnotations(this);
         return this;
     }
