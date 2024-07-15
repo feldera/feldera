@@ -7,7 +7,7 @@ import {
   getProgram,
   listPipelines,
   newProgram,
-  updatePipeline,
+  updatePipeline as _updatePipeline,
   type UpdatePipelineRequest,
   type PipelineStatus as _PipelineStatus,
   type ProgramStatus,
@@ -16,7 +16,8 @@ import {
   pipelineAction as _pipelineAction,
   pipelineStats,
   type ErrorResponse,
-  getPrograms
+  getPrograms,
+  updateProgram
 } from '$lib/services/manager'
 import { P, match } from 'ts-pattern'
 import { leftJoin } from 'array-join'
@@ -70,6 +71,44 @@ export const getFullPipeline = async (pipeline_name: string) => {
       })
     : emptyProgramDescr
   return toFullPipeline(pipeline, program)
+}
+
+
+
+/**
+ * Pipeline should already exist
+ */
+export const updatePipeline = async (oldPipeline: {name: string, _programName: string | null | undefined} | undefined, newPipeline: FullPipeline) => {
+  const program_name =
+  (oldPipeline?.name !== newPipeline.name ? undefined : newPipeline._programName) ??
+  newPipeline.name + '_program'
+
+  await createOrReplaceProgram({
+    body: { code: newPipeline.code, description: '' },
+    path: { program_name }
+  })
+  await _updatePipeline({
+    body: ((p) =>
+      ({
+        name: p.name,
+        description: p.description,
+        connectors: p._connectors,
+        config: p.config,
+        program_name
+      }) satisfies UpdatePipelineRequest)(newPipeline),
+    path: { pipeline_name: oldPipeline!.name }
+  })
+  if (oldPipeline?._programName && oldPipeline._programName !== program_name) {
+    await deleteProgram({ path: { program_name: oldPipeline._programName } })
+  }
+}
+
+export const patchPipeline = async (pipelineName: string, pipeline: Omit<UpdatePipelineRequest, 'connectors' | 'program_name'> & { code?: string}) => {
+  const { code, ...pipelinePatch } = pipeline
+  await _updatePipeline({body: pipelinePatch, path: { pipeline_name: pipelineName }})
+  if (code) {
+    await updateProgram({body: {code, name: (pipelinePatch.name || pipelineName) + '_program' }, path: { program_name: pipelineName + '_program' }})
+  }
 }
 
 export const getPipelines = async () => {
