@@ -7,6 +7,7 @@
 
 <div
   class={'flex items-center py-2 text-sm uppercase before:me-6 before:flex-1 before:border-t after:ms-6 after:flex-1 after:border-t ' +
-    _class}>
+    _class}
+>
   {@render children()}
 </div>

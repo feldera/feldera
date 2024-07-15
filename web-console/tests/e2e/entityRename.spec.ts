@@ -253,7 +253,7 @@ test('Entity rename test', async ({ page, request }) => {
     await page.getByTestId('button-confirm-delete').click()
     await expect(page).toHaveScreenshot('a-4-edit-pipeline2.png')
     await page.getByTestId('input-pipeline-name').fill('pipeline2')
-    await page.getByTestId('box-error-name').waitFor({state: 'detached'})
+    await page.getByTestId('box-error-name').waitFor({ state: 'detached' })
     await expect(page).toHaveScreenshot('a-5-edit-pipeline2.png')
     await page.getByTestId('box-save-saved').waitFor()
     await expect(page).toHaveScreenshot('a-6-edit-pipeline2.png')
