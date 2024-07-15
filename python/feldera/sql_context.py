@@ -266,7 +266,7 @@ class SQLContext:
 
         tbl = self.tables.get(table_name)
 
-        if tbl is None:
+        if tbl is None and table_name.lower() != "now":
             raise ValueError(f"Cannot push to table '{table_name}' as it is not registered yet")
         else:
             # tbl.validate_schema(df)   TODO: something like this would be nice
