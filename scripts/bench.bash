@@ -67,7 +67,7 @@ for test in $DIR/*; do
   source ${test}/generate.bash
   name=$(basename $test)
   sql_benchmark "sql_${name}_results.csv" "sql_${name}_metrics.csv" --folder benchmarks/${name}
-  sql_benchmark "sql_storage_${name}_results.csv" "sql_storage_${name}_metrics.csv" --storage --folder benchmarks/${name} --min-storage-bytes 100000000
+  sql_benchmark "sql_storage_${name}_results.csv" "sql_storage_${name}_metrics.csv" --storage --folder benchmarks/${name}
 done
 
 # Run galen benchmark
