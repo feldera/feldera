@@ -26,6 +26,7 @@
     FullPipeline,
     PipelineStatus as PipelineStatusType
   } from '$lib/services/pipelineManager'
+  import { pipelineStats } from '$lib/services/manager'
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
@@ -109,8 +110,7 @@
   <PaneGroup direction="vertical" class="!overflow-visible">
     <Pane defaultSize={60} minSize={20} class="flex flex-col-reverse !overflow-visible">
       <div class="flex flex-nowrap items-center gap-2 pr-2">
-        <PipelineEditorStatusBar
-          downstreamChanged={decoupledCode.downstreamChanged}
+        <PipelineEditorStatusBar downstreamChanged={decoupledCode.downstreamChanged}
         ></PipelineEditorStatusBar>
         {#if status}
           <PipelineStatus class="ml-auto" {status}></PipelineStatus>
@@ -119,7 +119,7 @@
         {/if}
       </div>
       <div class="relative h-full w-full">
-        <div class="absolute h-full w-full">
+        <div class="absolute h-full w-full" class:opacity-70={status !== 'Shutdown'}>
           <MonacoEditor
             markers={$errors ? { sql: extractSQLCompilerErrorMarkers($errors) } : undefined}
             on:ready={(x) => {
@@ -136,7 +136,7 @@
               theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
               automaticLayout: true,
               lineNumbersMinChars: 3,
-              ...isMonacoEditorDisabled(false),
+              ...isMonacoEditorDisabled(status !== 'Shutdown'),
               overviewRulerLanes: 0,
               hideCursorInOverviewRuler: true,
               overviewRulerBorder: false,
@@ -144,12 +144,11 @@
                 vertical: 'visible'
               },
               language: 'sql'
-            }}
-          />
+            }} />
         </div>
       </div>
     </Pane>
-    <PaneResizer class="h-2 bg-surface-100-900" />
+    <PaneResizer class="bg-surface-100-900 h-2" />
     <Pane minSize={20} class="!overflow-visible">
       {#if $pipeline.name}
         <InteractionsPanel pipelineName={$pipeline.name}></InteractionsPanel>
