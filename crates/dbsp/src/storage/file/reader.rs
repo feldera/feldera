@@ -1965,7 +1965,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Position<K, A>
 where
     K: DataTrait + ?Sized,
@@ -1986,60 +1986,6 @@ where
             Position::Before => Position::Before,
             Position::Row(path) => Position::Row(path.clone()),
             Position::After => Position::After,
-        }
-    }
-}
-
-impl<K, A> PartialEq for Position<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Before, Self::Before) => true,
-            (Self::Row(a), Self::Row(b)) => a.eq(b),
-            (Self::After, Self::After) => true,
-            _ => false,
-        }
-    }
-}
-
-impl<K, A> Eq for Position<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
-}
-
-impl<K, A> PartialOrd for Position<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<K, A> Ord for Position<K, A>
-where
-    K: DataTrait + ?Sized,
-    A: DataTrait + ?Sized,
-{
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
-            (Self::Before, Self::Before) => Equal,
-            (Self::Before, Self::Row(_)) => Less,
-            (Self::Before, Self::After) => Less,
-
-            (Self::Row(_), Self::Before) => Greater,
-            (Self::Row(a), Self::Row(b)) => a.cmp(b),
-            (Self::Row(_), Self::After) => Less,
-
-            (Self::After, Self::Before) => Greater,
-            (Self::After, Self::Row(_)) => Greater,
-            (Self::After, Self::After) => Equal,
         }
     }
 }
