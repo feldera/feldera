@@ -1,29 +1,12 @@
 <script lang="ts">
   import { getStatusLabel } from '$lib/functions/pipelines/status'
-  import { getPipelineStatus } from '$lib/services/pipelineManager'
-  import { asyncDerived, asyncReadable, derived, readable } from '@square/svelte-store'
+  import { getPipelineStatus, type PipelineStatus } from '$lib/services/pipelineManager'
+  import { asyncDerived, asyncReadable, readable } from '@square/svelte-store'
   import { match, P } from 'ts-pattern'
 
-  const { pipelineName, class: _class = '' }: { pipelineName: string; class?: string } = $props()
-  const status = asyncReadable(
-    { status: 'Initializing' as const },
-    () => getPipelineStatus(pipelineName),
-    {
-      reloadable: true
-    }
-  )
-  $effect(() => {
-    let interval = setInterval(() => status.reload?.(), 2000)
-    return () => {
-      clearInterval(interval)
-    }
-  })
-  $effect(() => {
-    pipelineName
-    status.reload?.()
-  })
-  const chipClass = derived(status, (status) => {
-    return match(status.status)
+  const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
+  const chipClass = $derived(
+    match(status)
       .with('Shutdown', () => 'preset-tonal-success')
       .with('Starting up', () => 'preset-tonal-surface')
       .with('Initializing', () => 'preset-tonal-warning')
@@ -41,11 +24,11 @@
         () => 'preset-tonal-error'
       )
       .exhaustive()
-  })
+  )
 </script>
 
-<div class={'chip pointer-events-none h-6 w-24 uppercase ' + $chipClass + ' ' + _class}>
-  {getStatusLabel($status.status)}
+<div class={'chip pointer-events-none h-6 w-24 uppercase ' + chipClass + ' ' + _class}>
+  {getStatusLabel(status)}
 </div>
 <!-- {#each ['preset-tonal-primary', 'preset-tonal-secondary', 'preset-tonal-tertiary', 'preset-tonal-success', 'preset-tonal-warning', 'preset-tonal-error', 'preset-tonal-surface'] as color}
   <div class={'chip ' + color}>fffffffff</div>

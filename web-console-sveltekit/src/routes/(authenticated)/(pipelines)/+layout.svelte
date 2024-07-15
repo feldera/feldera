@@ -1,8 +1,7 @@
 <script lang="ts">
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
   import type { Snippet } from 'svelte'
-  import { derived } from '@square/svelte-store'
-  import { page } from '$app/stores'
+  import { page as pageStore } from '$app/stores'
   import {
     pipelineTabEq,
     useOpenPipelines,
@@ -15,97 +14,33 @@
   import ExistingPipelineTabControl from '$lib/components/pipelines/tabs/ExistingPipelineTabControl.svelte'
   import { useChangedPipelines } from '$lib/compositions/pipelines/useChangedPipelines.svelte'
   import { base } from '$app/paths'
+  import { Store } from 'runed'
 
   let { children } = $props<{ children: Snippet }>()
-  let openPipelines = useOpenPipelines()
-
-  const dropOpenPipeline = (pipelineTab: PipelineTab) => {
-    openPipelines.value.splice(
-      openPipelines.value.findIndex((name) => pipelineTabEq(name, pipelineTab)),
-      1
-    )
-  }
-  const renamePipelineTab = (oldTab: PipelineTab, newTab: PipelineTab) => {
-    const idx = openPipelines.value.findIndex((name) => pipelineTabEq(name, oldTab))
-    if (idx === -1) {
-      return
-    }
-    openPipelines.value.splice(idx, 1, newTab)
-  }
-  const currentTab = derived(page, (page) => {
-    return page.url.pathname === `${base}/pipelines/`
-      ? ('pipelines' as const)
-      : page.url.pathname === `${base}/pipeline/new/`
-        ? { new: 'new' }
-        : { existing: page.params.pipelineName }
-  })
+  let page = new Store(pageStore)
+  let pipeline: { new: string } | { existing: string } = $derived(
+    page.current.url.pathname === `${base}/pipeline/new/`
+      ? { new: 'new' }
+      : { existing: page.current.params.pipelineName }
+  )
   const changedPipelines = useChangedPipelines()
 </script>
 
-<div class=" -mt-12 ml-12 mr-36 flex">
-  <a class="preset-grayout-surface" href="{base}/pipelines/">
-    <Tabs.Control
-      class="mb-2"
-      group={JSON.stringify($currentTab)}
-      name={'"pipelines"'}
-      contentClasses="group-hover:preset-tonal-surface">
-      pipelines
-    </Tabs.Control>
-  </a>
-  {#each openPipelines.value as openPipeline}
+<div class=" -mt-10 mb-4 ml-12 w-fit">
+  {#if 'existing' in pipeline}
     {#snippet text()}
-      {#if typeof openPipeline === 'object' && 'existing' in openPipeline}
-        {openPipeline.existing}
-      {:else}
-        <i>new pipeline</i>
-      {/if}
+      {pipeline.existing}
     {/snippet}
-    {#if pipelineTabEq($currentTab, openPipeline)}
-      {invariant(((x): x is PipelineTab => true)($currentTab))}
-      {@const close = {
-        href: ((last) =>
-          last
-            ? 'existing' in last
-              ? `${base}/pipelines/` + last.existing + '/'
-              : `${base}/pipeline/new/`
-            : `${base}/pipelines/`)(
-          openPipelines.value.findLast((name) => !pipelineTabEq(name, $currentTab))
-        ),
-        onclick: () => dropOpenPipeline($currentTab)
-      }}
-      {#if 'existing' in $currentTab && $currentTab.existing}
-        <ExistingPipelineTabControl
-          tab={$currentTab}
-          currentTab={openPipeline}
-          {text}
-          {close}
-          existing={$currentTab.existing}
-          {renamePipelineTab}
-          tabContentChanged={changedPipelines.has($currentTab.existing)}
-        ></ExistingPipelineTabControl>
-      {:else if $currentTab.new}
-        <NewPipelineTabControl
-          tab={$currentTab}
-          currentTab={openPipeline}
-          {text}
-          {close}
-          new={$currentTab.new}
-          {renamePipelineTab}></NewPipelineTabControl>
-      {/if}
-    {:else}
-      <PipelineTabControl
-        tab={$currentTab}
-        currentTab={openPipeline}
-        href={'existing' in openPipeline
-          ? `${base}/pipelines/` + encodeURI(openPipeline.existing) + '/'
-          : `${base}/pipeline/new/`}
-        {text}
-        value={undefined}
-        close={undefined}
-        tabContentChanged={'existing' in openPipeline
-          ? changedPipelines.has(openPipeline.existing)
-          : undefined}></PipelineTabControl>
-    {/if}
-  {/each}
+    <ExistingPipelineTabControl
+      {text}
+      close={undefined}
+      existing={pipeline.existing}
+      tabContentChanged={changedPipelines.has(pipeline.existing)}></ExistingPipelineTabControl>
+  {:else}
+    {#snippet text()}
+      <i>new pipeline</i>
+    {/snippet}
+    <NewPipelineTabControl {text} close={undefined} new={pipeline.new}></NewPipelineTabControl>
+  {/if}
 </div>
 {@render children()}

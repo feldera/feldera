@@ -1,10 +1,14 @@
 import { newPipeline, newProgram, type NewPipelineRequest } from '$lib/services/manager'
+import type { FullPipeline } from '$lib/services/pipelineManager'
 
 import { asyncWritable, get, persisted } from '@square/svelte-store'
 
-const emptyPipeline = { name: '', description: '', config: {}, code: '' }
+const emptyPipeline: FullPipeline = { name: '', description: '', config: {}, code: '', schema: {
+  inputs: [],
+  outputs: []
+}, _programName: null, _connectors: [] }
 
-const persistedNewPipeline = persisted<NewPipelineRequest & { code: string }>(
+const persistedNewPipeline = persisted<FullPipeline>(
   emptyPipeline,
   'pipelines/new',
   { storageType: 'LOCAL_STORAGE' }
@@ -26,5 +30,5 @@ export const writableNewPipeline = () =>
       })
       persistedNewPipeline.set(emptyPipeline)
       return pipeline
-    }
+    }, {initial: emptyPipeline}
   )

@@ -6,7 +6,7 @@ import { base } from '$app/paths'
 
 export const writablePipelineName = (
   pipeline: WritableLoadable<FullPipeline | (NewPipelineRequest & { code: string })>,
-  renamePipelineTab: (oldTab: PipelineTab, newTab: PipelineTab) => void
+  onRenamePipeline?: (oldTab: PipelineTab, newTab: PipelineTab) => void
 ) =>
   asyncWritable(
     pipeline,
@@ -22,7 +22,7 @@ export const writablePipelineName = (
         ...ppl,
         name: newPipelineName
       })
-      renamePipelineTab(oldPipelineName ? { existing: oldPipelineName } : { new: 'new' }, {
+      onRenamePipeline?.(oldPipelineName ? { existing: oldPipelineName } : { new: 'new' }, {
         existing: newPipelineName
       })
       window.location.replace(`${base}/pipelines/` + newPipelineName)

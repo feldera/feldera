@@ -4,9 +4,14 @@
   import MonacoEditor, { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import InteractionsPanel from '$lib/components/pipelines/editor/InteractionsPanel.svelte'
-  import type { Readable, Writable, WritableLoadable } from '@square/svelte-store'
+  import {
+    asyncWritable,
+    type Readable,
+    type Writable,
+    type WritableLoadable
+  } from '@square/svelte-store'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import { useDebounce } from 'runed'
+  import { Store, useDebounce } from 'runed'
   import PipelineEditorStatusBar from './PipelineEditorStatusBar.svelte'
   import PipelineStatus from '$lib/components/pipelines/list/Status.svelte'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
@@ -17,18 +22,37 @@
   import { editor } from 'monaco-editor'
   import { extractSQLCompilerErrorMarkers } from '$lib/functions/pipelines/monaco'
   import { page } from '$app/stores'
+  import type {
+    FullPipeline,
+    PipelineStatus as PipelineStatusType
+  } from '$lib/services/pipelineManager'
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
   const {
-    pipelineName,
-    pipelineCodeStore,
-    errors
+    pipeline,
+    errors,
+    status
   }: {
-    pipelineName?: Readable<string>
-    pipelineCodeStore: WritableLoadable<string>
+    pipeline: WritableLoadable<FullPipeline>
+    status: PipelineStatusType | undefined
     errors?: Readable<SystemError[]>
   } = $props()
+
+  const pipelineCodeStore = asyncWritable(
+    pipeline,
+    (pipeline) => pipeline.code,
+    async (newCode, pipeline, oldCode) => {
+      if (!pipeline || !newCode) {
+        return oldCode
+      }
+      $pipeline = {
+        ...pipeline,
+        code: newCode
+      }
+      return newCode
+    }
+  )
 
   const decoupledCode = asyncDecoupled(
     pipelineCodeStore,
@@ -45,22 +69,22 @@
     decoupledCode.pull()
   })
   $effect(() => {
-    if (!$pipelineName) {
+    if (!$pipeline.name) {
       return
     }
     decoupledCode.downstreamChanged
-      ? changedPipelines.add($pipelineName)
-      : changedPipelines.remove($pipelineName)
+      ? changedPipelines.add($pipeline.name)
+      : changedPipelines.remove($pipeline.name)
   })
 
   {
-    let oldPipelineName = $state($pipelineName)
+    let oldPipelineName = $state($pipeline.name)
     $effect(() => {
-      if ($pipelineName === oldPipelineName) {
+      if ($pipeline.name === oldPipelineName) {
         return
       }
       changedPipelines.remove(oldPipelineName || '')
-      oldPipelineName = $pipelineName
+      oldPipelineName = $pipeline.name
     })
   }
   const mode = useDarkMode()
@@ -85,11 +109,12 @@
   <PaneGroup direction="vertical" class="!overflow-visible">
     <Pane defaultSize={60} minSize={20} class="flex flex-col-reverse !overflow-visible">
       <div class="flex flex-nowrap items-center gap-2 pr-2">
-        <PipelineEditorStatusBar downstreamChanged={decoupledCode.downstreamChanged}
-        ></PipelineEditorStatusBar>
-        {#if $pipelineName}
-          <PipelineStatus class="ml-auto" pipelineName={$pipelineName}></PipelineStatus>
-          <PipelineActions pipelineName={$pipelineName}></PipelineActions>
+        <PipelineEditorStatusBar downstreamChanged={decoupledCode.downstreamChanged}>
+        </PipelineEditorStatusBar>
+        {#if status}
+          <PipelineStatus class="ml-auto" {status}></PipelineStatus>
+
+          <PipelineActions name={$pipeline.name} {status}></PipelineActions>
         {/if}
       </div>
       <div class="relative h-full w-full">
@@ -124,8 +149,8 @@
     </Pane>
     <PaneResizer class="bg-surface-100-900 h-2" />
     <Pane minSize={20} class="!overflow-visible">
-      {#if $pipelineName}
-        <InteractionsPanel pipelineName={$pipelineName}></InteractionsPanel>
+      {#if $pipeline.name}
+        <InteractionsPanel pipelineName={$pipeline.name}></InteractionsPanel>
       {/if}
     </Pane>
   </PaneGroup>

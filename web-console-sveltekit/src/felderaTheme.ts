@@ -70,7 +70,7 @@ export const felderaTheme = {
     '--color-primary-contrast-200': 'var(--color-primary-contrast-dark)',
     '--color-primary-contrast-300': 'var(--color-primary-contrast-dark)',
     '--color-primary-contrast-400': 'var(--color-primary-contrast-dark)',
-    '--color-primary-contrast-500': 'var(--color-primary-contrast-dark)',
+    '--color-primary-contrast-500': 'var(--color-primary-contrast-light)',
     '--color-primary-contrast-600': 'var(--color-primary-contrast-light)',
     '--color-primary-contrast-700': 'var(--color-primary-contrast-light)',
     '--color-primary-contrast-800': 'var(--color-primary-contrast-light)',

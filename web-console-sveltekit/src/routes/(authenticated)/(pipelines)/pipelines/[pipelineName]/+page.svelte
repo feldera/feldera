@@ -2,7 +2,7 @@
   import { SplitPane } from '@rich_harris/svelte-split-pane'
   import { page } from '$app/stores'
   import { onMount } from 'svelte'
-  import { writablePipeline } from '$lib/compositions/pipelineManager'
+  import { useWritablePipeline } from '$lib/compositions/pipelineManager'
   import { asyncWritable, derived } from '@square/svelte-store'
   // import { useDebounce } from '$lib/compositions/debounce.svelte'
   import { useDebounce } from 'runed'
@@ -12,6 +12,9 @@
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import { asyncDebounced } from '$lib/compositions/asyncDebounced'
   import { useSqlErrors } from '$lib/compositions/health/systemErrors'
+  import { usePipelineStatus } from '$lib/compositions/pipelines/usePipelineStatus.svelte'
+
+  let { data } = $props()
 
   let pipelineName = derived(page, (page) => decodeURI(page.params.pipelineName))
   {
@@ -25,34 +28,11 @@
     onMount(() => pipelineName.subscribe(addOpenedTab))
   }
 
-  const pipeline = writablePipeline(pipelineName)
-  // const debounce = useDebounce((p: typeof $pipeline) => {
-  //   $pipeline = p
-  // }, 1000)
-  // const  = asyncWritable(
-  //   pipeline,
-  //   (p) => p,
-  //   async (p) => {
-  //     debounce(p)
-  //     return p
-  //   }
-  // )
-  const pipelineCodeStore = asyncWritable(
-    pipeline!,
-    (pipeline) => pipeline.code,
-    async (newCode, pipeline, oldCode) => {
-      if (!pipeline || !newCode) {
-        return oldCode
-      }
-      $pipeline = {
-        ...pipeline,
-        code: newCode
-      }
-      return newCode
-    }
-  )
+  const pipeline = useWritablePipeline(pipelineName, data.preloadedPipeline)
 
   const errors = useSqlErrors(pipelineName)
+
+  const status = usePipelineStatus(derived(pipeline, (pipeline) => pipeline.name))
 </script>
 
-<PipelineEditLayout {pipelineName} {pipelineCodeStore} {errors}></PipelineEditLayout>
+<PipelineEditLayout {pipeline} status={status.current.status} {errors}></PipelineEditLayout>
