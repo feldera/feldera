@@ -65,7 +65,7 @@ export const navItems = (props: { showSettings: boolean }): NavLink[] => {
     // },
     {
       title: 'Discord',
-      path: 'https://felderacommunity.slack.com',
+      path: 'https://discord.com/invite/s6t5n9UzHE',
       class: 'font-brands fa-discord w-6  before:-ml-0.5',
       openInNewTab: true,
       testid: 'button-vertical-nav-discord'

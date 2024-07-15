@@ -15,7 +15,6 @@ export const pipelineTabEq = (a: PipelineTab | 'pipelines', b: PipelineTab | 'pi
     : a === 'pipelines' && b === 'pipelines'
 }
 
-
 // const dropOpenPipeline = (pipelineTab: PipelineTab) => {
 //   openPipelines.value.splice(
 //     openPipelines.value.findIndex((name) => pipelineTabEq(name, pipelineTab)),

@@ -40,13 +40,14 @@
   class="relative z-20"
   onclick={() => {
     open = !open
-  }}>
+  }}
+>
   <div
     class={'fixed inset-0 bg-gray-500 bg-opacity-75 transition-all ' +
       (open
         ? 'visible opacity-100 duration-300 ease-in-out'
-        : 'invisible opacity-0 duration-300 ease-in-out')}>
-  </div>
+        : 'invisible opacity-0 duration-300 ease-in-out')}
+  ></div>
   <div class={open ? 'fixed inset-0 overflow-hidden' : ''}>
     <div class="absolute inset-0 overflow-hidden">
       <div class={'pointer-events-none fixed max-w-full ' + classNames[side]}>
@@ -56,11 +57,13 @@
             (open ? openClassNames[side] : closeClassNames[side])}
           onclick={(event) => {
             event.stopPropagation()
-          }}>
+          }}
+        >
           <div
             role="dialog"
             aria-modal="true"
-            class={'flex h-full flex-col ' + (open ? ' shadow-xl ' : '') + _class}>
+            class={'flex h-full flex-col ' + (open ? ' shadow-xl ' : '') + _class}
+          >
             {@render children()}
           </div>
         </div>

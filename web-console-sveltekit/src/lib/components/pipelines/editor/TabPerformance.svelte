@@ -2,23 +2,22 @@
   import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
   import { useAggregatePipelineStats } from '$lib/compositions/useAggregatePipelineStats.svelte'
   import { humanSize } from '$lib/functions/common/string'
+  import { emptyPipelineMetrics, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
 
   let { pipelineName: _pipelineName }: { pipelineName: string } = $props()
 
   let pipelineName = $state(_pipelineName)
   $effect(() => {
-    console.log('name update', _pipelineName)
     pipelineName = _pipelineName
   })
 
-  let pipelineStats
+  let pipelineStats = $state({ metrics: emptyPipelineMetrics } as { metrics: PipelineMetrics })
 
-  useEffect(() => )= useAggregatePipelineStats(pipelineName, 1000, 5000)
+  $effect(() => {
+    pipelineStats = useAggregatePipelineStats(pipelineName, 1000, 5000)
+  })
 
   const global = $derived(pipelineStats.metrics.global.at(-1))
-  $effect(() => {
-    // console.log('metrics updated', JSON.stringify(pipelineStats.metrics.global.length))
-  })
 </script>
 
 <!-- <div>global {global}</div> -->
@@ -55,6 +54,8 @@
           </div>
         {/each}
       </div>
+    {:else}
+      <span class="text-surface-600-400">Pipeline is not running</span>
     {/if}
     <!-- <PipelineMemoryGraph metrics={pipelineStats.metrics}></PipelineMemoryGraph> -->
   </div>

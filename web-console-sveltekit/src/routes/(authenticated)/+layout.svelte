@@ -44,7 +44,8 @@
             class="btn-icon"
             onclick={() => {
               showDrawer.value = !showDrawer.value
-            }}>
+            }}
+          >
             <i class="bx bx-menu text-[24px]"></i>
           </button>
         </div>
@@ -53,7 +54,8 @@
           {#each navItems({ showSettings: false }) as item}
             <a
               href={Array.isArray(item.path) ? item.path[0] : item.path}
-              class="text-surface-700-300 flex flex-nowrap items-center justify-center">
+              class="flex flex-nowrap items-center justify-center text-surface-700-300"
+            >
               <div class="flex w-9 justify-center">
                 <div class={item.class + ' text-[24px]'}></div>
               </div>
@@ -63,8 +65,9 @@
           <HealthPopup></HealthPopup>
           <button
             onclick={toggleDarkMode}
-            class={'btn-icon preset-tonal-surface text-[24px] ' +
-              (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}></button>
+            class={'btn-icon text-[24px] preset-tonal-surface ' +
+              (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}
+          ></button>
         </div>
       </div>
       {@render children()}

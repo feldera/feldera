@@ -109,8 +109,9 @@
   <PaneGroup direction="vertical" class="!overflow-visible">
     <Pane defaultSize={60} minSize={20} class="flex flex-col-reverse !overflow-visible">
       <div class="flex flex-nowrap items-center gap-2 pr-2">
-        <PipelineEditorStatusBar downstreamChanged={decoupledCode.downstreamChanged}>
-        </PipelineEditorStatusBar>
+        <PipelineEditorStatusBar
+          downstreamChanged={decoupledCode.downstreamChanged}
+        ></PipelineEditorStatusBar>
         {#if status}
           <PipelineStatus class="ml-auto" {status}></PipelineStatus>
 
@@ -143,11 +144,12 @@
                 vertical: 'visible'
               },
               language: 'sql'
-            }} />
+            }}
+          />
         </div>
       </div>
     </Pane>
-    <PaneResizer class="bg-surface-100-900 h-2" />
+    <PaneResizer class="h-2 bg-surface-100-900" />
     <Pane minSize={20} class="!overflow-visible">
       {#if $pipeline.name}
         <InteractionsPanel pipelineName={$pipeline.name}></InteractionsPanel>

@@ -12,10 +12,10 @@
     'performance'
   )
   const tabs = [
-    tuple('performance', TabPerformance),
-    tuple('query plan', TabDBSPGraph),
+    tuple('SQL errors', TabSQLErrors),
     tuple('ad-hoc query', TabQueryData),
-    tuple('SQL errors', TabSQLErrors)
+    tuple('performance', TabPerformance),
+    tuple('query plan', TabDBSPGraph)
   ]
 </script>
 

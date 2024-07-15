@@ -26,7 +26,7 @@
   const changedPipelines = useChangedPipelines()
 </script>
 
-<div class=" -mt-10 mb-4 ml-12 w-fit">
+<div class=" -mt-10 mb-4 ml-14 w-fit">
   {#if 'existing' in pipeline}
     {#snippet text()}
       {pipeline.existing}

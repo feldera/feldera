@@ -9,7 +9,7 @@
 
 <div class="flex flex-col gap-4 p-4">
   {#each pipelines as pipeline, i}
-    <div class="flex flex-nowrap items-center gap-2">
+    <div class="flex flex-nowrap items-center gap-2 break-all">
       <a class="" href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}>
         {pipeline.name}
       </a>

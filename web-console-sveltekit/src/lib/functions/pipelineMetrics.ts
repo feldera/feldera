@@ -31,7 +31,7 @@ const reconcileHistoricData = (
     if (!nonNull(keepMs)) {
       return -oldData.length
     }
-    const isOverwritingTimestamp = !!oldData.find(m => m.timeMs >= newData.timeMs)
+    const isOverwritingTimestamp = !!oldData.find((m) => m.timeMs >= newData.timeMs)
     if (isOverwritingTimestamp) {
       // clear metrics history if we get a timestamp that overwrites existing data point
       return oldData.length
@@ -42,29 +42,38 @@ const reconcileHistoricData = (
   return [...oldData.slice(sliceAt), newData]
 }
 
-export const accumulatePipelineMetrics = (refetchMs: number, keepMs?: number) => (oldData: PipelineMetrics | undefined, {status: newData}: {status: ControllerStatus | null}) => {
-  invariant(((v: any): v is PipelineMetrics | undefined => true)(oldData))
-  invariant(((v: any): v is ControllerStatus | null => true)(newData))
-  if (!newData) {
-    return {
-      ...emptyPipelineMetrics,
-      lastTimestamp: undefined
+export const accumulatePipelineMetrics =
+  (refetchMs: number, keepMs?: number) =>
+  (
+    oldData: PipelineMetrics | undefined,
+    { status: newData }: { status: ControllerStatus | null }
+  ) => {
+    invariant(((v: any): v is PipelineMetrics | undefined => true)(oldData))
+    invariant(((v: any): v is ControllerStatus | null => true)(newData))
+    if (!newData) {
+      return {
+        ...emptyPipelineMetrics,
+        lastTimestamp: undefined
+      }
     }
-  }
-  const newTimestamp = Date.now()
-  const globalWithTimestamp = {
-    ...newData.global_metrics,
-    timeMs: newTimestamp
-  }
+    const newTimestamp = Date.now()
+    const globalWithTimestamp = {
+      ...newData.global_metrics,
+      timeMs: newTimestamp
+    }
 
-  return {
-    lastTimestamp: oldData?.lastTimestamp,
-    input: new Map(
-      newData.inputs.map(cs => tuple(normalizeCaseIndependentName({ name: cs.config.stream }), cs.metrics))
-    ),
-    output: new Map(
-      newData.outputs.map(cs => tuple(normalizeCaseIndependentName({ name: cs.config.stream }), cs.metrics))
-    ),
-    global: reconcileHistoricData(oldData?.global ?? [], globalWithTimestamp, refetchMs, keepMs)
-  } satisfies PipelineMetrics
-}
+    return {
+      lastTimestamp: oldData?.lastTimestamp,
+      input: new Map(
+        newData.inputs.map((cs) =>
+          tuple(normalizeCaseIndependentName({ name: cs.config.stream }), cs.metrics)
+        )
+      ),
+      output: new Map(
+        newData.outputs.map((cs) =>
+          tuple(normalizeCaseIndependentName({ name: cs.config.stream }), cs.metrics)
+        )
+      ),
+      global: reconcileHistoricData(oldData?.global ?? [], globalWithTimestamp, refetchMs, keepMs)
+    } satisfies PipelineMetrics
+  }

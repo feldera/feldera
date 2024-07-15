@@ -34,14 +34,15 @@
       class={' bx bx-x btn-icon absolute right-0 top-2 h-6 text-[24px] ' +
         (tabContentChanged
           ? 'text-transparent duration-0 hover:text-inherit'
-          : 'preset-grayout-surface')}>
+          : 'preset-grayout-surface')}
+    >
       {#if tabContentChanged}
         <div
-          class="bx bxs-circle text-surface-950-50 absolute left-2.5 -m-1 w-8 p-1.5 text-xs duration-0 hover:text-transparent">
-        </div>
+          class="bx bxs-circle absolute left-2.5 -m-1 w-8 p-1.5 text-xs duration-0 text-surface-950-50 hover:text-transparent"
+        ></div>
       {/if}
     </a>
   {:else if tabContentChanged}
-    <div class="bx bxs-circle text-surface-600-400 absolute right-0 top-1 text-xs"></div>
+    <div class="bx bxs-circle absolute right-0 top-1 text-xs text-surface-600-400"></div>
   {/if}
 </div>
