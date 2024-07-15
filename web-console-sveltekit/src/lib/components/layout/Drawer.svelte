@@ -17,7 +17,6 @@
     side: 'right' | 'left' | 'top' | 'bottom'
     children: Snippet
   } = $props()
-  console.log('open drawer', open)
 </script>
 
 <!-- {#if isMobile.matches} -->

@@ -5,42 +5,32 @@
     pipelineAction,
     type PipelineStatus
   } from '$lib/services/pipelineManager'
-  import { asyncDerived, asyncReadable, derived, readable, writable } from '@square/svelte-store'
+  import { asyncDerived, asyncReadable, readable, writable } from '@square/svelte-store'
   import { match, P } from 'ts-pattern'
   import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
 
   let {
-    pipelineName,
-    reloadPipelines,
+    name: pipelineName,
+    status,
+    reload,
     class: _class = ''
   }: {
-    pipelineName: string
-    reloadPipelines?: () => void
+    name: string
+    status: PipelineStatus
+    reload?: () => void
     class?: string
   } = $props()
-  // let initial = writable<PipelineStatus>('Initializing')
-  const status = asyncReadable(
-    { status: 'Initializing' as const },
-    () => getPipelineStatus(pipelineName),
-    {
-      reloadable: true
-    }
-  )
   $effect(() => {
-    let interval = setInterval(() => status.reload?.(), 2000)
+    let interval = setInterval(() => reload?.(), 2000)
     return () => {
       clearInterval(interval)
     }
-  })
-  $effect(() => {
-    pipelineName
-    status.reload?.()
   })
 
   const { showDeleteDialog } = useDeleteDialog()
   const deletePipeline = (pipelineName: string) => {
     _deletePipeline(pipelineName)
-    reloadPipelines?.()
+    reload?.()
   }
 
   const actions = {
@@ -53,7 +43,7 @@
     _configure
   }
 
-  const active = derived(status, ({ status }) =>
+  const active = $derived(
     match(status)
       .returnType<(keyof typeof actions)[]>()
       .with('Shutdown', () => ['_start', '_configure', '_delete'])
@@ -76,14 +66,14 @@
   )
 
   const buttonClass = 'btn-icon preset-tonal-surface text-[24px]'
-  const reload = () => {
-    setTimeout(() => status.reload?.(), 300)
-    setTimeout(() => status.reload?.(), 500)
+  const _reload = () => {
+    setTimeout(() => reload?.(), 300)
+    setTimeout(() => reload?.(), 500)
   }
 </script>
 
 <div class={'flex flex-nowrap ' + _class}>
-  {#each $active as name}
+  {#each active as name}
     {@render actions[name]()}
   {/each}
 </div>
@@ -92,29 +82,25 @@
   <button
     class={'bx bx-trash-alt ' + buttonClass}
     onclick={() =>
-      showDeleteDialog('Delete', (name) => `${name} pipeline`, deletePipeline)(pipelineName)}
-  >
+      showDeleteDialog('Delete', (name) => `${name} pipeline`, deletePipeline)(pipelineName)}>
   </button>
 {/snippet}
 {#snippet _start()}
   <button
     class={'bx bx-play-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'start').then(reload)}
-  >
+    onclick={() => pipelineAction(pipelineName, 'start').then(_reload)}>
   </button>
 {/snippet}
 {#snippet _pause()}
   <button
     class={'bx bx-pause-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'pause').then(reload)}
-  >
+    onclick={() => pipelineAction(pipelineName, 'pause').then(_reload)}>
   </button>
 {/snippet}
 {#snippet _shutdown()}
   <button
     class={'bx bx-stop-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'shutdown').then(reload)}
-  >
+    onclick={() => pipelineAction(pipelineName, 'shutdown').then(_reload)}>
   </button>
 {/snippet}
 {#snippet _configure()}

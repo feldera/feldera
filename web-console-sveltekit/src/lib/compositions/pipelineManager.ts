@@ -8,7 +8,7 @@ import {
   updatePipeline,
   type UpdatePipelineRequest
 } from '$lib/services/manager'
-import { getFullPipeline } from '$lib/services/pipelineManager'
+import { getFullPipeline, type FullPipeline } from '$lib/services/pipelineManager'
 import {
   asyncWritable,
   readable,
@@ -17,7 +17,7 @@ import {
   type Readable
 } from '@square/svelte-store'
 
-export const writablePipeline = (pipelineName: Readable<string>) =>
+export const useWritablePipeline = <T extends FullPipeline>(pipelineName: Readable<string>, preloaded?: T) =>
   asyncWritable(pipelineName, rebounce(getFullPipeline), async (newPipeline, _, oldPipeline) => {
     const program_name =
       (oldPipeline?.name !== newPipeline.name ? undefined : newPipeline._programName) ??
@@ -42,4 +42,4 @@ export const writablePipeline = (pipelineName: Readable<string>) =>
       await deleteProgram({ path: { program_name: oldPipeline._programName } })
     }
     return getFullPipeline(newPipeline.name)
-  })
+  }, {initial: preloaded})

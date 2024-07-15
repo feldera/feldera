@@ -18,4 +18,4 @@ export type NavSectionTitle = {
   subject?: string
 }
 
-export type VerticalNavItemsType = (NavLink | NavSectionTitle)[]
+export type NavItem = (NavLink | NavSectionTitle)

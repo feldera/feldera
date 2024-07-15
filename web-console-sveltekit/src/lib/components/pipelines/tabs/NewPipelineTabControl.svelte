@@ -7,22 +7,17 @@
 
   let {
     new: _new,
-    tab,
-    currentTab,
     text,
-    renamePipelineTab,
+    onRenamePipeline,
     close
   } = $props<{
     new: string
-    tab: PipelineTab
-    currentTab: PipelineTab
     text: Snippet
     close: { href: string; onclick: () => void } | undefined
-    renamePipelineTab: (oldTab: PipelineTab, newTab: PipelineTab) => void
+    onRenamePipeline?: (oldTab: PipelineTab, newTab: PipelineTab) => void
   }>()
 
-  let store = writablePipelineName(writableNewPipeline(), renamePipelineTab)
+  let store = writablePipelineName(writableNewPipeline(), onRenamePipeline)
 </script>
 
-<PipelineTabControl {tab} {currentTab} href={undefined} {text} bind:value={$store} {close}
-></PipelineTabControl>
+<PipelineTabControl {text} bind:value={$store} {close}></PipelineTabControl>

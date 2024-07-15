@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { writablePipeline } from '$lib/compositions/pipelineManager'
+  import { useWritablePipeline } from '$lib/compositions/pipelineManager'
   import type { PipelineTab } from '$lib/compositions/useOpenPipelines'
   import { writablePipelineName } from '$lib/compositions/writablePipelineName'
   import { readable } from 'svelte/store'
@@ -9,33 +9,21 @@
 
   let {
     existing,
-    tab,
-    currentTab,
     text,
-    renamePipelineTab,
+    onRenamePipeline,
     close,
     tabContentChanged
   }: {
     existing: string
-    tab: PipelineTab
-    currentTab: PipelineTab
     text: Snippet
     close: { href: string; onclick: () => void } | undefined
-    renamePipelineTab: (oldTab: PipelineTab, newTab: PipelineTab) => void
+    onRenamePipeline?: (oldTab: PipelineTab, newTab: PipelineTab) => void
     tabContentChanged?: boolean
   } = $props()
 
-  let store = writablePipelineName(writablePipeline(readable(existing)), renamePipelineTab)
-
-  const changedPipelines = useChangedPipelines()
+  let store = $derived(
+    writablePipelineName(useWritablePipeline(readable(existing)), onRenamePipeline)
+  )
 </script>
 
-<PipelineTabControl
-  {tab}
-  {currentTab}
-  href={undefined}
-  {text}
-  bind:value={$store}
-  {close}
-  {tabContentChanged}
-></PipelineTabControl>
+<PipelineTabControl {text} bind:value={$store} {close} {tabContentChanged}></PipelineTabControl>
