@@ -107,16 +107,22 @@ public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode
 
     public Iterable<DBSPOperator> getAllOperators() { return this.allOperators; }
 
+    /** Get the table with the specified name.
+     * @param tableName must use the proper casing */
     @Nullable
     public DBSPSourceBaseOperator getInput(String tableName) {
         return this.sourceOperators.get(tableName);
     }
 
+    /** Get the local view with the specified name.
+     * @param viewName must use the proper casing */
     @Nullable
     public DBSPViewOperator getView(String viewName) {
         return this.viewOperators.get(viewName);
     }
 
+    /** Get the external view with the specified name.
+     * @param viewName must use the proper casing */
     @Nullable
     public DBSPSinkOperator getSink(String viewName) {
         return this.sinkOperators.get(viewName);

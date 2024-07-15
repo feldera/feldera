@@ -66,7 +66,6 @@ public class StreamingTests extends StreamingTest {
     @Test
     public void testNow() {
         String sql = """
-                CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
                 CREATE VIEW V AS SELECT 1, NOW() < TIMESTAMP '2025-12-12 00:00:00';""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
@@ -82,7 +81,6 @@ public class StreamingTests extends StreamingTest {
     @Test
     public void testNow2() {
         String sql = """
-                CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
                 CREATE TABLE T(value INT);
                 CREATE VIEW V AS SELECT *, NOW() FROM T;""";
         DBSPCompiler compiler = this.testCompiler();
@@ -114,7 +112,6 @@ public class StreamingTests extends StreamingTest {
     @Test
     public void testNow3() {
         String sql = """
-                CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
                 CREATE TABLE T(value INT);
                 CREATE VIEW V AS SELECT SUM(value) + MINUTE(NOW()) FROM T;""";
         DBSPCompiler compiler = this.testCompiler();
@@ -144,7 +141,6 @@ public class StreamingTests extends StreamingTest {
     public void testNow4() {
         // now() used in WHERE
         String sql = """
-                CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
                 CREATE TABLE transactions (
                   id INT PRIMARY KEY,
                   ts TIMESTAMP,

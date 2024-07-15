@@ -5,9 +5,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
+import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -76,6 +79,29 @@ public class ImplementNow extends Passes {
 
         public boolean found() {
             return this.found;
+        }
+    }
+
+    /** Remove the 'now' input table */
+    public static class RemoveNow extends CircuitCloneVisitor {
+        final ICompilerComponent compiler;
+
+        RemoveNow(IErrorReporter errorReporter, ICompilerComponent compiler) {
+            super(errorReporter, false);
+            this.compiler = compiler;
+        }
+
+        @Override
+        public void postorder(DBSPSourceMultisetOperator map) {
+            if (map.tableName.equalsIgnoreCase("now")) {
+                // Return without adding it to the circuit.
+                Logger.INSTANCE.belowLevel(this, 1)
+                        .append("Removing table 'now'")
+                        .newline();
+                this.compiler.getCompiler().removeNowTable();
+                return;
+            }
+            super.postorder(map);
         }
     }
 
@@ -154,9 +180,11 @@ public class ImplementNow extends Passes {
         // Holds the indexed version of the 'now' operator (indexed with an empty key).
         @Nullable
         DBSPOperator nowIndexed = null;
+        final ICompilerComponent compiler;
 
-        public RewriteNow(IErrorReporter reporter) {
+        public RewriteNow(IErrorReporter reporter, ICompilerComponent compiler) {
             super(reporter, false);
+            this.compiler = compiler;
         }
 
         DBSPStreamJoinOperator createJoin(DBSPUnaryOperator operator) {
@@ -233,28 +261,12 @@ public class ImplementNow extends Passes {
 
             DBSPType timestamp = ContainsNow.timestampType();
             CalciteObject node = circuit.getNode();
-            /*
-            // TODO: have the compiler insert this instead of requiring the user to declare the table.
-            // Doing this doesn't work because the front-end of the compiler does not know about this table,
-            // so tests can't use it.
-            // This is not really a multiset, but there is no primary key in the shape expected
-            DBSPTypeTuple type = new DBSPTypeTuple(timestamp);
-            DBSPTypeStruct originalRowType = new DBSPTypeStruct(node, colName, colName,
-                    Linq.list(new DBSPTypeStruct.Field(node, colName, 0, timestamp, false)),
-                    false);
-            InputColumnMetadata colMeta = new InputColumnMetadata(
-                    node, colName, timestamp, false,
-                    // lateness of 0
-                    new DBSPIntervalMillisLiteral(0, false),
-                    null, null);
-            TableMetadata meta = new TableMetadata(Linq.list(colMeta), false);
-            DBSPOperator now = new DBSPSourceMultisetOperator(node,
-                    CalciteObject.EMPTY, TypeCompiler.makeZSet(type), originalRowType,
-                    meta, "now", null);
-            this.addOperator(now);
-             */
-            DBSPOperator now = circuit.to(DBSPCircuit.class).circuit.getInput("NOW");
-            assert now != null;
+
+            String tableName = this.compiler.getCompiler().toCase("NOW");
+            DBSPOperator now = circuit.to(DBSPCircuit.class).circuit.getInput(tableName);
+            if (now == null) {
+                throw new CompilationError("Declaration for table 'NOW' not found in program");
+            }
             // We are doing this in startVisitor because we want now to be first in topological order,
             // otherwise it may be traversed too late, after nodes that will depend on it.
             this.visited.add(now);
@@ -273,13 +285,14 @@ public class ImplementNow extends Passes {
         }
     }
 
-    public ImplementNow(IErrorReporter reporter) {
+    public ImplementNow(IErrorReporter reporter, ICompilerComponent compiler) {
         super(reporter);
         ContainsNow cn = new ContainsNow(reporter);
         CircuitRewriter find = cn.getCircuitVisitor();
-        RewriteNow rewriteNow = new RewriteNow(reporter);
+        RewriteNow rewriteNow = new RewriteNow(reporter, compiler);
         this.passes.add(find);
         this.passes.add(new Conditional(reporter, rewriteNow, cn::found));
+        this.passes.add(new Conditional(reporter, new RemoveNow(reporter, compiler), () -> !cn.found()));
         ContainsNow cn0 = new ContainsNow(reporter);
         this.passes.add(new Conditional(reporter,
                 new Fail(reporter, "Instances of 'now' have not been replaced"), cn0::found));

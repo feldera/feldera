@@ -26,14 +26,15 @@ package org.dbsp.sqlCompiler.compiler;
 import com.beust.jcommander.DynamicParameter;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParametersDelegate;
+import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.Lex;
+import org.apache.calcite.sql.parser.SqlParserUtil;
 import org.dbsp.util.IDiff;
 import org.dbsp.util.SqlLexicalRulesConverter;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 
 /** Packages options for a compiler from SQL to Rust. */
@@ -128,11 +129,12 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
     }
 
     public String canonicalName(String name) {
-        return switch (this.languageOptions.unquotedCasing) {
-            case "upper" -> name.toUpperCase(Locale.ENGLISH);
-            case "lower" -> name.toLowerCase(Locale.ENGLISH);
-            default -> name;
+        Casing casing = switch (this.languageOptions.unquotedCasing) {
+            case "upper" -> Casing.TO_UPPER;
+            case "lower" -> Casing.TO_LOWER;
+            default -> Casing.UNCHANGED;
         };
+        return SqlParserUtil.toCase(name, casing);
     }
 
     @Override
