@@ -1,13 +1,19 @@
 <script lang="ts">
-  import { useDeleteDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import {
+    getFullPipeline,
     getPipelineStatus,
+    patchPipeline,
     pipelineAction,
     type PipelineStatus
   } from '$lib/services/pipelineManager'
   import { asyncDerived, asyncReadable, readable, writable } from '@square/svelte-store'
   import { match, P } from 'ts-pattern'
   import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
+  import DangerDialog from '$lib/components/dialogs/DangerDialog.svelte'
+  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
+  import JSONbig from 'true-json-bigint'
 
   let {
     name: pipelineName,
@@ -27,7 +33,7 @@
     }
   })
 
-  const { showDeleteDialog } = useDeleteDialog()
+  const globalDialog = useGlobalDialog()
   const deletePipeline = (pipelineName: string) => {
     _deletePipeline(pipelineName)
     reload?.()
@@ -72,6 +78,33 @@
   }
 </script>
 
+{#snippet deleteDialog()}
+  <DeleteDialog
+    {...deleteDialogProps('Delete', (name) => `${name} pipeline`, deletePipeline)(pipelineName)}
+    onClose={() => (globalDialog.dialog = null)}></DeleteDialog>
+{/snippet}
+
+{#snippet pipelineResourcesDialog()}
+  {#await getFullPipeline(pipelineName) then pipeline}
+    <JSONDialog
+      json={JSONbig.stringify(pipeline.config, undefined, '  ')}
+      onApply={async (json) => {
+        await patchPipeline(pipeline.name, {
+          config: JSONbig.parse(json),
+          name: pipeline.name,
+          description: pipeline.description
+        })
+      }}
+      onClose={() => (globalDialog.dialog = null)}>
+      {#snippet title()}
+        <div class="h5 text-center font-normal">
+          {`Configure ${pipelineName} runtime resources`}
+        </div>
+      {/snippet}
+    </JSONDialog>
+  {/await}
+{/snippet}
+
 <div class={'flex flex-nowrap ' + _class}>
   {#each active as name}
     {@render actions[name]()}
@@ -81,34 +114,32 @@
 {#snippet _delete()}
   <button
     class={'bx bx-trash-alt ' + buttonClass}
-    onclick={() =>
-      showDeleteDialog('Delete', (name) => `${name} pipeline`, deletePipeline)(pipelineName)}
-  >
+    onclick={() => (globalDialog.dialog = deleteDialog)}>
   </button>
 {/snippet}
 {#snippet _start()}
   <button
     class={'bx bx-play-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'start').then(_reload)}
-  >
+    onclick={() => pipelineAction(pipelineName, 'start').then(_reload)}>
   </button>
 {/snippet}
 {#snippet _pause()}
   <button
     class={'bx bx-pause-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'pause').then(_reload)}
-  >
+    onclick={() => pipelineAction(pipelineName, 'pause').then(_reload)}>
   </button>
 {/snippet}
 {#snippet _shutdown()}
   <button
     class={'bx bx-stop-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'shutdown').then(_reload)}
-  >
+    onclick={() => pipelineAction(pipelineName, 'shutdown').then(_reload)}>
   </button>
 {/snippet}
 {#snippet _configure()}
-  <button class={'bx bx-cog ' + buttonClass}> </button>
+  <button
+    onclick={() => (globalDialog.dialog = pipelineResourcesDialog)}
+    class={'bx bx-cog ' + buttonClass}>
+  </button>
 {/snippet}
 {#snippet _spacer()}
   <div class="w-9"></div>

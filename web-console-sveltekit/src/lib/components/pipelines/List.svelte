@@ -8,9 +8,11 @@
 </script>
 
 <div class="flex flex-col gap-4 p-4">
-  {#each pipelines as pipeline, i}
+  {#each pipelines as pipeline}
     <div class="flex flex-nowrap items-center gap-2 break-all">
-      <a class="" href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}>
+      <a
+        class=" transition-none duration-0"
+        href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}>
         {pipeline.name}
       </a>
       <PipelineStatus class="ml-auto" {...pipeline}></PipelineStatus>

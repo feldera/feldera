@@ -1,9 +1,10 @@
 <script lang="ts">
   import HealthPopup from '$lib/components/health/HealthPopup.svelte'
   import Drawer from '$lib/components/layout/Drawer.svelte'
-  import GlobalModal from '$lib/components/layout/GlobalModal.svelte'
+  import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import FelderaLogo from '$assets/images/feldera/LogoSolid.svg?component'
+  import FelderaLogoColor from '$assets/images/feldera/LogoSolid.svg?component'
+  import FelderaLogoWhite from '$assets/images/feldera/LogoWhite.svg?component'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import PipelinesList from '$lib/components/pipelines/List.svelte'
   import type { Snippet } from 'svelte'
@@ -12,6 +13,8 @@
   import { onMount } from 'svelte'
   import { Store } from 'runed'
   import { navItems } from '$lib/functions/navigation/items'
+  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  const dialog = useGlobalDialog()
 
   let { children } = $props<{ children: Snippet }>()
   let { darkMode, toggleDarkMode } = useDarkMode()
@@ -30,9 +33,13 @@
 <div class="flex h-full flex-col">
   <div class="flex h-full">
     <Drawer bind:open={showDrawer.value} side="left">
-      <div class="flex w-56 flex-col gap-1 pr-4">
+      <div class="flex w-72 flex-col gap-1">
         <a href="/">
-          <FelderaLogo class="w-40 p-3"></FelderaLogo>
+          {#if darkMode.value === 'dark'}
+            <FelderaLogoWhite class="w-40 p-3"></FelderaLogoWhite>
+          {:else}
+            <FelderaLogoColor class="w-40 p-3"></FelderaLogoColor>
+          {/if}
         </a>
         <PipelinesList pipelines={pipelines.current}></PipelinesList>
       </div>
@@ -44,8 +51,7 @@
             class="btn-icon"
             onclick={() => {
               showDrawer.value = !showDrawer.value
-            }}
-          >
+            }}>
             <i class="bx bx-menu text-[24px]"></i>
           </button>
         </div>
@@ -54,8 +60,7 @@
           {#each navItems({ showSettings: false }) as item}
             <a
               href={Array.isArray(item.path) ? item.path[0] : item.path}
-              class="flex flex-nowrap items-center justify-center text-surface-700-300"
-            >
+              class="text-surface-700-300 flex flex-nowrap items-center justify-center">
               <div class="flex w-9 justify-center">
                 <div class={item.class + ' text-[24px]'}></div>
               </div>
@@ -65,13 +70,12 @@
           <HealthPopup></HealthPopup>
           <button
             onclick={toggleDarkMode}
-            class={'btn-icon text-[24px] preset-tonal-surface ' +
-              (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}
-          ></button>
+            class={'btn-icon preset-tonal-surface text-[24px] ' +
+              (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}></button>
         </div>
       </div>
       {@render children()}
     </div>
   </div>
 </div>
-<GlobalModal></GlobalModal>
+<GlobalModal dialog={dialog.dialog} onClose={() => (dialog.dialog = null)}></GlobalModal>
