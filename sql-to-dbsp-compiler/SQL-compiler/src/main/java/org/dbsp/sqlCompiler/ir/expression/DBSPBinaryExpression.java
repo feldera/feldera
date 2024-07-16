@@ -45,6 +45,8 @@ public final class DBSPBinaryExpression extends DBSPExpression {
     }
 
     public DBSPBinaryExpression replaceSources(DBSPExpression left, DBSPExpression right) {
+        assert this.left.getType().sameType(left.getType());
+        assert this.right.getType().sameType(right.getType());
         return new DBSPBinaryExpression(this.getNode(), this.type, this.operation, left, right);
     }
 

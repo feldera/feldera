@@ -2,8 +2,8 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
 import org.junit.Assert;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
 
 /** Regression tests that failed in incremental mode using the Catalog API */
@@ -34,19 +34,19 @@ public class IncrementalRegressionTests extends SqlIoTest {
     public void issue2043() {
         String sql =
                 """
-                        CREATE TABLE transactions (
-                            id INT PRIMARY KEY,
-                            ts TIMESTAMP LATENESS INTERVAL 0 SECONDS,
-                            user_id INT,
-                            AMOUNT DECIMAL
-                        ) with ('materialized' = 'true');
-                                        
-                        CREATE MATERIALIZED VIEW window_computation AS SELECT
-                            user_id,
-                            COUNT(*) AS transaction_count_by_user
-                            FROM transactions
-                            WHERE ts > NOW() - INTERVAL 1 DAY and ts <= NOW()
-                            GROUP BY user_id;""";
+                CREATE TABLE transactions (
+                    id INT PRIMARY KEY,
+                    ts TIMESTAMP LATENESS INTERVAL 0 SECONDS,
+                    user_id INT,
+                    AMOUNT DECIMAL
+                ) with ('materialized' = 'true');
+                
+                CREATE MATERIALIZED VIEW window_computation AS SELECT
+                    user_id,
+                    COUNT(*) AS transaction_count_by_user
+                    FROM transactions
+                    WHERE ts > NOW() - INTERVAL 1 DAY and ts <= NOW()
+                    GROUP BY user_id;""";
         this.compileRustTestCase(sql);
     }
 

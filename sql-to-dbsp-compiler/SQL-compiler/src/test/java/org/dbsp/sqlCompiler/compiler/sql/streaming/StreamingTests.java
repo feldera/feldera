@@ -6,8 +6,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
-import org.dbsp.sqlCompiler.compiler.sql.BaseSQLTests;
-import org.dbsp.sqlCompiler.compiler.sql.StreamingTest;
+import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -26,7 +26,138 @@ import java.util.Arrays;
 import java.util.List;
 
 /** Tests that exercise streaming features. */
-public class StreamingTests extends StreamingTest {
+public class StreamingTests extends StreamingTestBase {
+    @Test
+    public void issue2004() {
+        // Based on Q9
+        String sql = """
+                CREATE TABLE auction (
+                   date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
+                   expires   TIMESTAMP NOT NULL,
+                   id        INT
+                );
+                
+                CREATE TABLE bid (
+                   date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
+                   price INT,
+                   auction INT
+                );
+                
+                CREATE VIEW Q9 AS
+                SELECT A.*, B.price, B.date_time AS bid_dateTime
+                FROM auction A, bid B
+                WHERE A.id = B.auction AND B.date_time BETWEEN A.date_time AND A.expires""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        // Insert an auction. No bids => no output
+        ccs.step("""
+                INSERT INTO auction VALUES('2024-01-01 00:00:00', '2024-01-01 01:00:00', 0);
+                """, """
+                 date_time | expires | id | price | bid_dateTime | weight
+                ----------------------------------------------------------""");
+        // Insert a bid matching auction 0 in the expected time range.  Should produce output.
+        ccs.step("""
+                INSERT INTO bid VALUES('2024-01-01 00:00:01', 100, 0);
+                """, """
+                 date_time | expires | id | price | bid_dateTime | weight
+                ----------------------------------------------------------
+                 2024-01-01 00:00:00 | 2024-01-01 01:00:00 | 0 | 100 | 2024-01-01 00:00:01 | 1""");
+        // Insert a second bid matching auction 0 in the expected time range.  Should produce output.
+        ccs.step("""
+                INSERT INTO bid VALUES('2024-01-01 00:00:10', 200, 0);
+                """, """
+                 date_time | expires | id | price | bid_dateTime | weight
+                ----------------------------------------------------------
+                 2024-01-01 00:00:00 | 2024-01-01 01:00:00 | 0 | 200 | 2024-01-01 00:00:10 | 1""");
+        // Insert a bid matching auction 1, which doesn't exist yet.  No output.
+        ccs.step("""
+                INSERT INTO bid VALUES('2024-01-01 00:00:20', 50, 1);
+                """, """
+                 date_time | expires | id | price | bid_dateTime | weight
+                ----------------------------------------------------------""");
+        // Insert auction 1, which matches the previous bid.  Should produce output.
+        ccs.step("""
+                INSERT INTO auction VALUES('2024-01-01 00:00:10', '2024-01-01 01:00:00', 1);
+                """, """
+                 date_time | expires | id | price | bid_dateTime | weight
+                ----------------------------------------------------------
+                 2024-01-01 00:00:10 | 2024-01-01 01:00:00 | 1 | 50 | 2024-01-01 00:00:20 | 1""");
+        // Insert bid for auction 1 which is out of the auction time range.  No output.
+        ccs.step("""
+                INSERT INTO bid VALUES('2024-01-01 00:00:00', 50, 1);
+                """, """
+                 date_time | expires | id | price | bid_dateTime | weight
+                ----------------------------------------------------------""");
+        // Insert legal bid for auction 1.  Should produce output.
+        ccs.step("""
+                INSERT INTO bid VALUES('2024-01-01 00:00:30', 80, 1);
+                """, """
+                 date_time | expires | id | price | bid_dateTime | weight
+                ----------------------------------------------------------
+                2024-01-01 00:00:10 | 2024-01-01 01:00:00 | 1 | 80 | 2024-01-01 00:00:30 | 1""");
+        // Insert auction and before auction LATENESS, no output.
+        ccs.step("""
+                INSERT INTO auction VALUES('2023-12-12 23:59:59', '2024-01-01 01:00:00', 3);
+                INSERT INTO bid VALUES('2024-01-01 00:02:00', 1000, 3);
+                """, """
+                 date_time | expires | id | price | bid_dateTime | weight
+                ----------------------------------------------------------""");
+        // Insert legal bid for auction 1 but before bid LATENESS, no output.
+        ccs.step("""
+                INSERT INTO bid VALUES('2024-01-01 00:00:30', 3000, 1);
+                """, """
+                 date_time | expires | id | price | bid_dateTime | weight
+                ----------------------------------------------------------""");
+        this.addRustTestCase("issue2004", ccs);
+    }
+
+    @Test
+    public void profileRetainValues() throws IOException, InterruptedException, SQLException {
+        // Based on Q9.  Check whether integrate_trace_retain_values works as expected.
+        String sql = """
+                CREATE TABLE auction (
+                   date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
+                   expires   TIMESTAMP NOT NULL,
+                   id        INT
+                );
+                
+                CREATE TABLE bid (
+                   date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
+                   price INT,
+                   auction INT
+                );
+                
+                CREATE VIEW Q9 AS
+                SELECT A.*, B.price, B.date_time AS bid_dateTime
+                FROM auction A, bid B
+                WHERE A.id = B.auction AND B.date_time BETWEEN A.date_time AND A.expires;
+                """;
+        // Rust program which profiles the circuit.
+        String main = this.createMain("""
+                    // Initial data value for timestamp
+                    let mut timestamp = cast_to_Timestamp_s("2024-01-10 10:10:10".to_string());
+                    for i in 0..1000000 {
+                        let expire = timestamp.add(1000000);
+                        timestamp = timestamp.add(20000);
+                        let auction = zset!(Tup3::new(timestamp, expire, Some(i)) => 1);
+                        append_to_collection_handle(&auction, &streams.0);
+                        let bid = zset!(Tup3::new(timestamp.add(100), Some(i), Some(i)) => 1);
+                        append_to_collection_handle(&bid, &streams.1);
+                        if i % 100 == 0 {
+                            let _ = circuit.step().expect("could not run circuit");
+                            let _ = &read_output_handle(&streams.2);
+                            /*
+                            let end = SystemTime::now();
+                            let profile = circuit.retrieve_profile().expect("could not get profile");
+                            let duration = end.duration_since(start).expect("could not get time");
+                            println!("{:?},{:?}", duration.as_millis(), profile.total_used_bytes().unwrap().bytes);
+                            */
+                        }
+                    }""");
+        this.profile(sql, main);
+    }
+
     @Test
     public void issue1973() {
         String sql = """
@@ -581,13 +712,11 @@ public class StreamingTests extends StreamingTest {
                 CREATE TABLE series (
                         distance DOUBLE,
                         pickup TIMESTAMP LATENESS INTERVAL '1:00' HOURS TO MINUTES
-                )""";
-        String query =
-                "SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE)";
+                );
+                CREATE VIEW V AS
+                SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE);""";
         DBSPCompiler compiler = testCompiler();
-        query = "CREATE VIEW V AS (" + query + ")";
-        compiler.compileStatement(ddl);
-        compiler.compileStatement(query);
+        compiler.compileStatements(ddl);
         Assert.assertFalse(compiler.hasErrors());
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase("nullableLatenessTest", ccs);
@@ -599,13 +728,11 @@ public class StreamingTests extends StreamingTest {
                 CREATE TABLE series (
                         distance DOUBLE,
                         pickup TIMESTAMP NOT NULL WATERMARK INTERVAL '1:00' HOURS TO MINUTES
-                )""";
-        String query =
-                "SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE)";
+                );
+                CREATE VIEW V AS
+                SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE)""";
         DBSPCompiler compiler = testCompiler();
-        query = "CREATE VIEW V AS (" + query + ")";
-        compiler.compileStatement(ddl);
-        compiler.compileStatement(query);
+        compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.step("INSERT INTO series VALUES(10, '2023-12-30 10:00:00');",
                 """
@@ -650,13 +777,11 @@ public class StreamingTests extends StreamingTest {
                 CREATE TABLE series (
                         distance DOUBLE,
                         pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
-                )""";
-        String query =
-                "SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE)";
+                );
+                CREATE VIEW V AS
+                SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE);""";
         DBSPCompiler compiler = testCompiler();
-        query = "CREATE VIEW V AS (" + query + ")";
-        compiler.compileStatement(ddl);
-        compiler.compileStatement(query);
+        compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.step("INSERT INTO series VALUES(10, '2023-12-30 10:00:00');",
                 """
@@ -691,77 +816,7 @@ public class StreamingTests extends StreamingTest {
         this.addRustTestCase("latenessTest", ccs);
     }
 
-    Long[] profile(String program) throws IOException, InterruptedException, SQLException {
-        // Rust program which profiles the circuit.
-        String main = """
-                use dbsp::{
-                    algebra::F64,
-                    circuit::CircuitConfig,
-                    utils::Tup2,
-                    zset,
-                };
-
-                use sqllib::{
-                    append_to_collection_handle,
-                    read_output_handle,
-                    casts::cast_to_Timestamp_s,
-                };
-
-                use std::{
-                    io::Write,
-                    ops::Add,
-                    fs::File,
-                    time::SystemTime,
-                };
-
-                use temp::circuit;
-                use dbsp::circuit::Layout;
-                use uuid::Uuid;
-
-                #[test]
-                // Run the circuit generated by 'circuit' for a while then measure the
-                // memory consumption.  Write the time taken and the memory used into
-                // a file called "mem.txt".
-                pub fn test() {
-                    let (mut circuit, streams) = circuit(
-                         CircuitConfig {
-                             layout: Layout::new_solo(2),
-                             storage: None,
-                             min_storage_bytes: usize::MAX,
-                             init_checkpoint: Uuid::nil(),
-                         }).expect("could not build circuit");
-                    let start = SystemTime::now();
-
-                    // Initial data value for timestamp
-                    let mut timestamp = cast_to_Timestamp_s("2024-01-10 10:10:10".to_string());
-                    for i in 0..1000000 {
-                        let value = Some(F64::new(i.into()));
-                        timestamp = timestamp.add(20000);
-                        let input = zset!(Tup2::new(value, timestamp) => 1);
-                        append_to_collection_handle(&input, &streams.0);
-                        if i % 1000 == 0 {
-                            let _ = circuit.step().expect("could not run circuit");
-                            let _ = &read_output_handle(&streams.1);
-                            /*
-                            let end = SystemTime::now();
-                            let profile = circuit.retrieve_profile().expect("could not get profile");
-                            let duration = end.duration_since(start).expect("could not get time");
-                            println!("{:?},{:?}", duration.as_millis(), profile.total_used_bytes().unwrap().bytes);
-                            */
-                        }
-                    }
-                    let profile = circuit.retrieve_profile().expect("could not get profile");
-                    let end = SystemTime::now();
-                    let duration = end.duration_since(start).expect("could not get time");
-
-                    let mut data = String::new();
-                    data.push_str(&format!("{},{}\\n",
-                                           duration.as_millis(),
-                                           profile.total_used_bytes().unwrap().bytes));
-                    let mut file = File::create("mem.txt").expect("Could not create file");
-                    file.write_all(data.as_bytes()).expect("Could not write data");
-                    // println!("{:?},{:?}", duration, profile.total_used_bytes().unwrap());
-                }""";
+    Long[] measure(String program, String main) throws IOException, InterruptedException, SQLException {
         File script = createInputScript(program);
         CompilerMessages messages = CompilerMain.execute(
                 "-o", BaseSQLTests.testFilePath, "--handles", "-i",
@@ -795,28 +850,115 @@ public class StreamingTests extends StreamingTest {
         return Linq.map(split, Long::parseLong, Long.class);
     }
 
+    String createMain(String rustDataGenerator) {
+        String preamble = """
+                #[allow(unused_imports)]
+                use dbsp::{
+                    algebra::F64,
+                    circuit::CircuitConfig,
+                    utils::{Tup2, Tup3},
+                    zset,
+                };
+
+                use sqllib::{
+                    append_to_collection_handle,
+                    read_output_handle,
+                    casts::cast_to_Timestamp_s,
+                };
+
+                use std::{
+                    io::Write,
+                    ops::Add,
+                    fs::File,
+                    time::SystemTime,
+                };
+
+                use temp::circuit;
+                use dbsp::circuit::Layout;
+                use uuid::Uuid;
+
+                #[test]
+                // Run the circuit generated by 'circuit' for a while then measure the
+                // memory consumption.  Write the time taken and the memory used into
+                // a file called "mem.txt".
+                pub fn test() {
+                    let (mut circuit, streams) = circuit(
+                         CircuitConfig {
+                             layout: Layout::new_solo(2),
+                             storage: None,
+                             min_storage_bytes: usize::MAX,
+                             init_checkpoint: Uuid::nil(),
+                         }).expect("could not build circuit");
+                    let start = SystemTime::now();
+                """;
+        String postamble = """
+                    let profile = circuit.retrieve_profile().expect("could not get profile");
+                    let end = SystemTime::now();
+                    let duration = end.duration_since(start).expect("could not get time");
+
+                    let mut data = String::new();
+                    data.push_str(&format!("{},{}\\n",
+                                           duration.as_millis(),
+                                           profile.total_used_bytes().unwrap().bytes));
+                    let mut file = File::create("mem.txt").expect("Could not create file");
+                    file.write_all(data.as_bytes()).expect("Could not write data");
+                    // println!("{:?},{:?}", duration, profile.total_used_bytes().unwrap());
+                }""";
+        return preamble + rustDataGenerator + postamble;
+    }
+
+    static String stripLateness(String query) {
+        String[] lines = query.split("\n");
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            int lateness = line.indexOf("LATENESS");
+            if (lateness > 0) {
+                boolean comma = line.endsWith(",");
+                line = line.substring(0, lateness);
+                if (comma) line += ",";
+                lines[i] = line;
+            }
+        }
+        return String.join("\n", lines);
+    }
+
     @Test
     public void profileLateness() throws IOException, InterruptedException, SQLException {
-        String ddlLateness = """
+        String sql = """
                 CREATE TABLE series (
                         distance DOUBLE,
                         pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
                 );
-                """;
-        String ddl = """
-                CREATE TABLE series (
-                        distance DOUBLE,
-                        pickup TIMESTAMP NOT NULL
-                );
-                """;
-        String query = """
                 CREATE VIEW V AS
                 SELECT AVG(distance), CAST(pickup AS DATE)
                 FROM series GROUP BY CAST(pickup AS DATE);
                 """;
+        // Rust program which profiles the circuit.
+        String main = this.createMain("""
+                    // Initial data value for timestamp
+                    let mut timestamp = cast_to_Timestamp_s("2024-01-10 10:10:10".to_string());
+                    for i in 0..1000000 {
+                        let value = Some(F64::new(i.into()));
+                        timestamp = timestamp.add(20000);
+                        let input = zset!(Tup2::new(value, timestamp) => 1);
+                        append_to_collection_handle(&input, &streams.0);
+                        if i % 1000 == 0 {
+                            let _ = circuit.step().expect("could not run circuit");
+                            let _ = &read_output_handle(&streams.1);
+                            /*
+                            let end = SystemTime::now();
+                            let profile = circuit.retrieve_profile().expect("could not get profile");
+                            let duration = end.duration_since(start).expect("could not get time");
+                            println!("{:?},{:?}", duration.as_millis(), profile.total_used_bytes().unwrap().bytes);
+                            */
+                        }
+                    }""");
+        this.profile(sql, main);
+    }
 
-        Long[] p0 = this.profile(ddl + query);
-        Long[] p1 = this.profile(ddlLateness + query);
+    void profile(String sql, String main) throws SQLException, IOException, InterruptedException {
+        Long[] p0 = this.measure(stripLateness(sql), main);
+        Long[] p1 = this.measure(sql, main);
         // Memory consumption of program with lateness is expected to be higher
         if (p0[1] < 1.5 * p1[1]) {
             System.err.println("Profile statistics without and with lateness:");
@@ -838,14 +980,10 @@ public class StreamingTests extends StreamingTest {
                     person VARCHAR,
                     on_call DATE
             );
-            """;
-        String query =
-                "SELECT metadata, person FROM series " +
-                        "JOIN shift ON CAST(series.event_time AS DATE) = shift.on_call";
+            CREATE VIEW V AS SELECT metadata, person FROM series
+            JOIN shift ON CAST(series.event_time AS DATE) = shift.on_call;""";
         DBSPCompiler compiler = testCompiler();
-        query = "CREATE VIEW V AS (" + query + ")";
         compiler.compileStatements(ddl);
-        compiler.compileStatement(query);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         this.addRustTestCase("testJoin", ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {

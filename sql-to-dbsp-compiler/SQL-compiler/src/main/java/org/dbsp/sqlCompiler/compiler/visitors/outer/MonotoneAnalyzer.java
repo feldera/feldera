@@ -30,7 +30,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
             String result = source.getOutputRowType().toString();
             MonotoneExpression expr = info.get(source);
             if (expr != null) {
-                result = source.getIdString() + " " + Monotonicity.getBodyType(expr).toString();
+                result = source.getIdString() + " " + Monotonicity.getBodyType(expr);
             }
             return result;
         }
@@ -53,7 +53,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         Monotonicity monotonicity = new Monotonicity(this.reporter);
         expanded = monotonicity.apply(expanded);
         if (debug) {
-            MonotoneDot.toDot(reporter, "expanded.png", details, "png", expanded,
+            MonotoneDot.toDot("expanded.png", details, "png", expanded,
                     stream -> new MonotoneDot(reporter, stream, details, monotonicity.info));
         }
 

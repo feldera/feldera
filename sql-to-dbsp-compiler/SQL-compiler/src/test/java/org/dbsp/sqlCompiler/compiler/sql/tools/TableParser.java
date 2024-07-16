@@ -1,10 +1,9 @@
-package org.dbsp.sqlCompiler.compiler.sql;
+package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.apache.calcite.util.ConversionUtil;
 import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;

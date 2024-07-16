@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
@@ -41,18 +42,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * At the end of the visit the set 'keep' contains all
+/** At the end of the visit the set 'keep' contains all
  * operators that are 'used' by other operators (inputs, outputs,
- * and sources).
- */
+ * and sources). */
 public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     public final Set<DBSPOperator> reachable = new HashSet<>();
     // Includes reachable plus all inputs
     public final Set<DBSPOperator> toKeep = new HashSet<>();
-    /**
-     * If true all sources are kept, even if they are dead.
-     */
+    /** If true all sources are kept, even if they are dead. */
     public final boolean keepAllSources;
     public final boolean warn;
 
@@ -113,6 +110,11 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+        return this.keepInverseReachable(operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegrateTraceRetainValuesOperator operator) {
         return this.keepInverseReachable(operator);
     }
 

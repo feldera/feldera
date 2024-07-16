@@ -1,9 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.apache.commons.math3.util.Pair;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
@@ -12,6 +14,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -31,6 +35,7 @@ import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTransferFunctions;
@@ -38,13 +43,14 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.ScalarMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.CommonJoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinFilterMapExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementExpansion;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.annotation.AlwaysMonotone;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -54,6 +60,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
@@ -194,13 +201,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
     public void postorder(DBSPFilterOperator operator) {
         ReplacementExpansion expanded = this.getReplacement(operator);
         if (expanded != null) {
-            DBSPOperator bound = this.addBounds(expanded.replacement, 0);
-            if (operator != expanded.replacement && bound != null)
+            DBSPOperator bound = this.processFilter(expanded.replacement.to(DBSPFilterOperator.class));
+            if (operator != expanded.replacement && bound != null) {
                 this.markBound(operator, bound);
+            }
         } else {
             this.nonMonotone(operator);
         }
         super.postorder(operator);
+    }
+
+    @Nullable
+    DBSPOperator processFilter(DBSPFilterOperator expansion) {
+        return this.addBounds(expansion, 0);
     }
 
     @Override
@@ -387,30 +400,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.map(operator, result, true);
     }
 
-    @Override
-    public void postorder(DBSPJoinOperator join) {
-        DBSPOperator left = this.mapped(join.left());
-        DBSPOperator right = this.mapped(join.right());
-        OperatorExpansion expanded = this.expandedInto.get(join);
-        if (expanded == null) {
-            super.postorder(join);
-            this.nonMonotone(join);
-            return;
-        }
-        JoinExpansion expansion = expanded.to(JoinExpansion.class);
-
+    @Nullable
+    DBSPOperator gcJoin(DBSPBinaryOperator join, CommonJoinExpansion expansion) {
         DBSPOperator leftLimiter = this.bound.get(join.left());
         DBSPOperator rightLimiter = this.bound.get(join.right());
         if (leftLimiter == null && rightLimiter == null) {
-            super.postorder(join);
-            this.nonMonotone(join);
-            return;
+            return null;
         }
 
+        DBSPOperator left = this.mapped(join.left());
+        DBSPOperator right = this.mapped(join.right());
         DBSPOperator result = join.withInputs(Linq.list(left, right), false);
         if (leftLimiter != null) {
             MonotoneExpression leftMonotone = this.expansionMonotoneValues.get(
-                    expansion.leftIntegrator.input());
+                    expansion.getLeftIntegrator().input());
             // Yes, the limit of the left input is applied to the right one.
             IMaybeMonotoneType leftProjection = Monotonicity.getBodyType(Objects.requireNonNull(leftMonotone));
             // Check if the "key" field is monotone
@@ -423,7 +426,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         if (rightLimiter != null) {
             MonotoneExpression rightMonotone = this.expansionMonotoneValues.get(
-                    expansion.rightIntegrator.input());
+                    expansion.getRightIntegrator().input());
             // Yes, the limit of the right input is applied to the left one.
             IMaybeMonotoneType rightProjection = Monotonicity.getBodyType(Objects.requireNonNull(rightMonotone));
             // Check if the "key" field is monotone
@@ -432,6 +435,24 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         join.getNode(), left, rightProjection, rightLimiter);
                 this.addOperator(l);
             }
+        }
+        return result;
+    }
+
+    @Override
+    public void postorder(DBSPJoinOperator join) {
+        OperatorExpansion expanded = this.expandedInto.get(join);
+        if (expanded == null) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+        JoinExpansion expansion = expanded.to(JoinExpansion.class);
+        DBSPOperator result = this.gcJoin(join, expansion);
+        if (result == null) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
         }
 
         this.processIntegral(expansion.leftIntegrator);
@@ -449,8 +470,142 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPOperator limiter = this.bound.get(replacement.input());
             if (limiter != null) {
                 this.markBound(replacement, limiter);
+            } else {
+                this.nonMonotone(replacement);
             }
         }
+    }
+
+    @Override
+    public void postorder(DBSPJoinFilterMapOperator join) {
+        OperatorExpansion expanded = this.expandedInto.get(join);
+        if (expanded == null) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+        JoinFilterMapExpansion expansion = expanded.to(JoinFilterMapExpansion.class);
+        DBSPOperator result = this.gcJoin(join, expansion);
+        if (result == null) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+
+        this.processIntegral(expansion.leftIntegrator);
+        this.processIntegral(expansion.rightIntegrator);
+        this.processStreamJoin(expansion.leftDelta);
+        this.processStreamJoin(expansion.rightDelta);
+        this.processStreamJoin(expansion.both);
+        this.processFilter(expansion.filter);
+        this.processFilter(expansion.leftFilter);
+        this.processFilter(expansion.rightFilter);
+        this.processSum(expansion.sum);
+
+        // If one of the filters leftFilter or rightFilter has monotone outputs,
+        // we can use these to GC the input of the join using
+        // DBSPIntegrateTraceRetainValuesOperator.
+
+        Projection proj = new Projection(this.errorReporter);
+        proj.apply(join.getFunction());
+        assert(proj.isProjection);
+        List<Pair<Integer, Integer>> outputs = proj.getOutputs();
+        int leftSize = Linq.where(outputs, o -> o.getFirst() == 1).size();
+        int rightSize = outputs.size() - leftSize;
+
+        DBSPTypeTuple keyType = join.getKeyType().to(DBSPTypeTuple.class);
+        int keySize = keyType.size();
+        List<IMaybeMonotoneType> keyParts = new ArrayList<>();
+        for (int i = 0; i < keySize; i++)
+            // a key projection with no monotone fields
+            keyParts.add(NonMonotoneType.nonMonotone(keyType.getFieldType(i)));
+        PartiallyMonotoneTuple keyPart = new PartiallyMonotoneTuple(keyParts, false, false);
+
+        // Check the left side and insert a GC operator if possible
+        DBSPOperator leftLimiter = this.bound.get(expansion.leftFilter);
+        if (leftLimiter != null) {
+            MonotoneExpression monotone = this.expansionMonotoneValues.get(expansion.leftFilter);
+            IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(monotone));
+            if (projection.mayBeMonotone()) {
+                PartiallyMonotoneTuple tuple = projection.to(PartiallyMonotoneTuple.class);
+                assert tuple.size() == outputs.size();
+
+                // Reorganize the tuple into two tuples for left and right fields
+                List<IMaybeMonotoneType> value = new ArrayList<>();
+                for (int i = 0; i < leftSize; i++)
+                    // keep the monotone fields from the value
+                    value.add(tuple.getField(i));
+                PartiallyMonotoneTuple valuePart = new PartiallyMonotoneTuple(value, false, false);
+
+                // Put the fields together
+                PartiallyMonotoneTuple together = new PartiallyMonotoneTuple(
+                        Linq.list(keyPart, valuePart), true, false);
+
+                // From the leftLimiter we need to keep only the fields for the left part
+                DBSPVariablePath var = Objects.requireNonNull(tuple.getProjectedType()).ref().var();
+                List<DBSPExpression> monotoneFields = new ArrayList<>();
+                int index = 0;
+                for (int i = 0; i < leftSize; i++) {
+                    if (tuple.getField(i).mayBeMonotone())
+                        monotoneFields.add(var.deref().field(index++));
+                }
+
+                DBSPExpression func = new DBSPTupleExpression(monotoneFields, false);
+                DBSPApplyOperator extractLeft = new DBSPApplyOperator(
+                        join.getNode(), func.closure(var.asParameter()), func.getType(), leftLimiter, null);
+                this.addOperator(extractLeft);
+
+                DBSPIntegrateTraceRetainValuesOperator l = DBSPIntegrateTraceRetainValuesOperator.create(
+                        join.getNode(), this.mapped(join.left()), together, extractLeft);
+                this.addOperator(l);
+            }
+        }
+
+        // Exact same procedure on the right hand side
+        DBSPOperator rightLimiter = this.bound.get(expansion.rightFilter);
+        if (rightLimiter != null) {
+            MonotoneExpression monotone = this.expansionMonotoneValues.get(expansion.rightFilter);
+            IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(monotone));
+            if (projection.mayBeMonotone()) {
+                PartiallyMonotoneTuple tuple = projection.to(PartiallyMonotoneTuple.class);
+                assert tuple.size() == outputs.size();
+
+                // Reorganize the tuple into two tuples for left and right fields
+                List<IMaybeMonotoneType> value = new ArrayList<>();
+                for (int i = 0; i < rightSize; i++)
+                    // keep the monotone fields from the value
+                    value.add(tuple.getField(leftSize + i));
+                PartiallyMonotoneTuple valuePart = new PartiallyMonotoneTuple(value, false, false);
+
+                // Put the fields together
+                PartiallyMonotoneTuple together = new PartiallyMonotoneTuple(
+                        Linq.list(keyPart, valuePart), true, false);
+
+                // From the rightLimiter we need to keep only the fields for the right part
+                DBSPVariablePath var = Objects.requireNonNull(tuple.getProjectedType()).ref().var();
+                List<DBSPExpression> monotoneFields = new ArrayList<>();
+                int index = 0;
+                for (int i = 0; i < leftSize; i++) {
+                    if (tuple.getField(i).mayBeMonotone())
+                        index++;
+                }
+                for (int i = 0; i < rightSize; i++) {
+                    if (tuple.getField(leftSize + i).mayBeMonotone())
+                        monotoneFields.add(var.deref().field(index++));
+                }
+
+                DBSPExpression func = new DBSPTupleExpression(monotoneFields, false);
+                DBSPApplyOperator extractRight = new DBSPApplyOperator(
+                        join.getNode(), func.closure(var.asParameter()), func.getType(), rightLimiter, null);
+                this.addOperator(extractRight);
+
+                DBSPIntegrateTraceRetainValuesOperator r = DBSPIntegrateTraceRetainValuesOperator.create(
+                        join.getNode(), this.mapped(join.right()), together, extractRight);
+                this.addOperator(r);
+            }
+        }
+
+        this.map(join, result, true);
     }
 
     /** Given two expressions with the same type, compute the MAX expression pointwise,
@@ -637,7 +792,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         List<DBSPExpression> maxes = new ArrayList<>();
         for (int i = 0; i < type.size(); i++) {
             DBSPType ftype = type.tupFields[i];
-            maxes.add(new DBSPBinaryExpression(node, ftype, DBSPOpcode.MAX,
+            maxes.add(ExpressionCompiler.makeBinaryExpression(node, ftype, DBSPOpcode.MAX,
                     left.deref().field(i), right.deref().field(i)));
         }
         DBSPExpression max = new DBSPTupleExpression(maxes, false);

@@ -25,8 +25,6 @@ package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.apache.calcite.sql.SqlNode;
 
-import javax.annotation.Nullable;
-
 public class DropTableStatement extends FrontEndStatement {
     public final String tableName;
 

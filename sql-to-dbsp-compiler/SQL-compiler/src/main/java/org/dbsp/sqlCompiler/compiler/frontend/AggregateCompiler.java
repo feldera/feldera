@@ -638,7 +638,7 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     @Override
-    public DBSPCompiler getCompiler() {
+    public DBSPCompiler compiler() {
         return this.compiler;
     }
 }

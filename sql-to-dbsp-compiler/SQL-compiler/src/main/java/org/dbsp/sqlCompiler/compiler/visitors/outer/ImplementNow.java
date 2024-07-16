@@ -98,7 +98,7 @@ public class ImplementNow extends Passes {
                 Logger.INSTANCE.belowLevel(this, 1)
                         .append("Removing table 'now'")
                         .newline();
-                this.compiler.getCompiler().removeNowTable();
+                this.compiler.compiler().removeNowTable();
                 return;
             }
             super.postorder(map);
@@ -262,7 +262,7 @@ public class ImplementNow extends Passes {
             DBSPType timestamp = ContainsNow.timestampType();
             CalciteObject node = circuit.getNode();
 
-            String tableName = this.compiler.getCompiler().toCase("NOW");
+            String tableName = this.compiler.compiler().toCase("NOW");
             DBSPOperator now = circuit.to(DBSPCircuit.class).circuit.getInput(tableName);
             if (now == null) {
                 throw new CompilationError("Declaration for table 'NOW' not found in program");

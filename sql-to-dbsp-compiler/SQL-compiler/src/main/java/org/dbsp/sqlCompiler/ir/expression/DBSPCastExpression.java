@@ -37,6 +37,7 @@ import org.dbsp.util.IIndentStream;
 public final class DBSPCastExpression extends DBSPExpression {
     public final DBSPExpression source;
 
+    @SuppressWarnings("CommentedOutCode")
     public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to) {
         super(node, to);
         this.source = source;
@@ -46,6 +47,7 @@ public final class DBSPCastExpression extends DBSPExpression {
     }
 
     public DBSPCastExpression replaceSource(DBSPExpression source) {
+        assert source.getType().sameType(this.source.getType());
         return new DBSPCastExpression(this.getNode(), source, this.type);
     }
 

@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.mysql;
 
-import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
 
 public class TimestampdiffTests extends SqlIoTest {

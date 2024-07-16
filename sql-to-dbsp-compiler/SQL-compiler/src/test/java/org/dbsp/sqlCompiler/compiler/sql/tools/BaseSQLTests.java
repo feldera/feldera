@@ -21,16 +21,13 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.compiler.sql;
+package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
-import org.dbsp.sqlCompiler.compiler.sql.simple.Change;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChange;
-import org.dbsp.sqlCompiler.compiler.sql.simple.InputOutputChangeStream;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;

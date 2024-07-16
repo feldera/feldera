@@ -26,12 +26,14 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -663,8 +665,7 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    @Override
-    public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+    VisitDecision retainOperator(DBSPBinaryOperator operator) {
         this.writeComments(operator)
                 .append("let ")
                 .append(operator.getOutputName());
@@ -682,6 +683,16 @@ public class ToRustVisitor extends CircuitVisitor {
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(");");
         return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+        return this.retainOperator(operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegrateTraceRetainValuesOperator operator) {
+        return this.retainOperator(operator);
     }
 
     @Override

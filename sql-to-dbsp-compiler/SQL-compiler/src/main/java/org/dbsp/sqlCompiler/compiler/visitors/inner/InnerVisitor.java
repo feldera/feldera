@@ -213,12 +213,6 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     /** Override to finish after visiting all nodes. */
     public void endVisit() {}
 
-    public void traverse(IDBSPInnerNode node) {
-        this.startVisit(node);
-        node.accept(this);
-        this.endVisit();
-    }
-
     /************************* PREORDER *****************************/
 
     // preorder methods return 'true' when normal traversal is desired,

@@ -55,10 +55,8 @@ public final class DBSPZSetLiteral extends DBSPLiteral
         this.elementType = elementType;
     }
 
-    /**
-     * Creates an empty zset with the specified element type.
-     */
-    DBSPZSetLiteral(DBSPType elementType) {
+    /** Creates an empty zset with the specified element type. */
+    public DBSPZSetLiteral(DBSPType elementType) {
         super(CalciteObject.EMPTY, new DBSPTypeZSet(elementType), false);
         this.elementType = elementType;
         this.data = new HashMap<>();

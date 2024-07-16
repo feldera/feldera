@@ -120,7 +120,7 @@ public class TypeCompiler implements ICompilerComponent {
                 for (RelDataTypeField field : dt.getFieldList()) {
                     DBSPType type = this.convertType(field.getType(), true);
                     String fieldName = field.getName();
-                    if (this.getCompiler().options.languageOptions.lenient)
+                    if (this.compiler().options.languageOptions.lenient)
                         // If we are not lenient and names are duplicated
                         // we will get an exception below where we create the struct.
                         fieldName = fieldNameGen.freshName(fieldName);
@@ -133,7 +133,7 @@ public class TypeCompiler implements ICompilerComponent {
                     RelStruct rs = (RelStruct) dt;
                     name = rs.typeName.getSimple();
                     // Struct must be already declared
-                    return this.compiler.getStructByName(name);
+                    return Objects.requireNonNull(this.compiler.getStructByName(name));
                 }
                 return new DBSPTypeStruct(node, name, saneName, fields, nullable);
             } else {
@@ -260,7 +260,7 @@ public class TypeCompiler implements ICompilerComponent {
     }
 
     @Override
-    public DBSPCompiler getCompiler() {
+    public DBSPCompiler compiler() {
         return this.compiler;
     }
 }

@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.quidem;
 
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.sql.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 
 // Tests based on the POST database
 // https://github.com/apache/calcite/blob/main/testkit/src/main/java/org/apache/calcite/test/CalciteAssert.java

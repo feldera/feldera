@@ -28,8 +28,6 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.ICastable;
 
-import javax.annotation.Nullable;
-
 /** Base class for statements produced by the compiler front-end.
  * The representation is mostly at the level of RelNode, but there
  * is also some SqlNode-level information. */

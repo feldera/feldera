@@ -166,8 +166,6 @@ public class CalciteCompiler implements IWritesLogs {
     private ValidateTypes validateTypes;
     private final CalciteConnectionConfig connectionConfig;
     private final IErrorReporter errorReporter;
-    /** If true the next view will be an output, otherwise it's just an intermediate result */
-    boolean generateOutputForNextView = true;
     private final SchemaPlus rootSchema;
     private final CustomFunctions customFunctions;
     /** User-defined types */
@@ -399,14 +397,19 @@ public class CalciteCompiler implements IWritesLogs {
      * There is no way to reuse the previous parser one, unfortunately. */
     final StringBuilder newlines = new StringBuilder();
 
-    SqlParser createSqlParser(String sql) {
+    /** Create a new parser.
+     * @param sql       Program to parse.
+     * @param saveLines If true remember the number of lines used by the program. */
+    SqlParser createSqlParser(String sql, boolean saveLines) {
         // This function can be invoked multiple times.
         // In order to get correct line numbers, we feed the parser extra empty lines
         // before the statements we compile in this round.
-        String toParse = newlines + sql;
+        String toParse = this.newlines + sql;
         SqlParser sqlParser = SqlParser.create(toParse, this.parserConfig);
-        int lines = sql.split("\n").length;
-        this.newlines.append("\n".repeat(lines));
+        if (saveLines) {
+            int lines = sql.split("\n").length;
+            this.newlines.append("\n".repeat(lines));
+        }
         return sqlParser;
     }
 
@@ -425,21 +428,29 @@ public class CalciteCompiler implements IWritesLogs {
     /** Given a SQL statement returns a SqlNode - a calcite AST
      * representation of the query.
      * @param sql  SQL query to compile */
-    public SqlNode parse(String sql) throws SqlParseException {
-        SqlParser sqlParser = this.createSqlParser(sql);
+    public SqlNode parse(String sql, boolean saveLines) throws SqlParseException {
+        SqlParser sqlParser = this.createSqlParser(sql, saveLines);
         SqlNode result = sqlParser.parseStmt();
         result.accept(this.getTypeValidator());
         return result;
     }
 
+    public SqlNode parse(String sql) throws SqlParseException {
+        return this.parse(sql, true);
+    }
+
     /** Given a list of statements separated by semicolons, parse all of them. */
-    public SqlNodeList parseStatements(String statements) throws SqlParseException {
-        SqlParser sqlParser = this.createSqlParser(statements);
+    public SqlNodeList parseStatements(String statements, boolean saveLines) throws SqlParseException {
+        SqlParser sqlParser = this.createSqlParser(statements, saveLines);
         SqlNodeList sqlNodes = sqlParser.parseStmtList();
         for (SqlNode node: sqlNodes) {
             node.accept(this.getTypeValidator());
         }
         return sqlNodes;
+    }
+
+    public SqlNodeList parseStatements(String statements) throws SqlParseException {
+        return this.parseStatements(statements, true);
     }
 
     RelNode optimize(RelNode rel) {
@@ -725,9 +736,8 @@ public class CalciteCompiler implements IWritesLogs {
             return false;
         }
 
-        void visitScan(TableScan scan) {
-            // nothing
-        }
+        @SuppressWarnings("EmptyMethod")
+        void visitScan(TableScan scan) { }
 
         void visitProject(LogicalProject project) {
             List<RexNode> fields = project.getProjects();
@@ -774,7 +784,7 @@ public class CalciteCompiler implements IWritesLogs {
 
             String sql = builder.toString();
             CalciteCompiler clone = new CalciteCompiler(this);
-            SqlNodeList list = clone.parseStatements(sql);
+            SqlNodeList list = clone.parseStatements(sql, true);
             FrontEndStatement statement = null;
             for (SqlNode node: list) {
                 statement = clone.compile(node.toString(), node);

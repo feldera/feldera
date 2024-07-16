@@ -77,7 +77,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 return IndexedZSet;
             throw new UnsupportedException(type.getNode());
         }
-    };
+    }
 
     static class ExpressionSet {
         final Set<Long> ids;

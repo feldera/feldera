@@ -24,7 +24,7 @@ public class Annotations {
             this.annotations.addAll(annotations.annotations);
     }
 
-    private boolean isEmpty() {
+    public boolean isEmpty() {
         return this.annotations.isEmpty();
     }
 

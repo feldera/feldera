@@ -239,7 +239,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     @Override
-    public DBSPCompiler getCompiler() {
+    public DBSPCompiler compiler() {
         return this.compiler;
     }
 
@@ -316,7 +316,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         for (AggregateCall call: aggregates) {
             DBSPType resultFieldType = resultType.getFieldType(aggIndex + groupCount);
             AggregateCompiler compiler = new AggregateCompiler(node,
-                    this.getCompiler(), call, resultFieldType, rowVar, groupKeys);
+                    this.compiler(), call, resultFieldType, rowVar, groupKeys);
             DBSPAggregate.Implementation implementation = compiler.compile();
             implementations[aggIndex] =  implementation;
             aggIndex++;
@@ -1936,17 +1936,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.circuit.addOperator(index);
 
         // Generate comparison function for sorting the vector
-        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, inputRowType);
-        for (RelFieldCollation collation : sort.getCollation().getFieldCollations()) {
-            int field = collation.getFieldIndex();
-            RelFieldCollation.Direction direction = collation.getDirection();
-            boolean ascending = switch (direction) {
-                case ASCENDING -> true;
-                case DESCENDING -> false;
-                default -> throw new UnimplementedException(node);
-            };
-            comparator = new DBSPFieldComparatorExpression(node, comparator, field, ascending);
-        }
+        DBSPComparatorExpression comparator = makeComparator(sort, node, inputRowType);
 
         if (sort.fetch != null) {
             // TopK operator.
@@ -2018,6 +2008,22 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPOperator result = new DBSPMapOperator(
                 node, sorter, this.makeZSet(vecType), agg);
         this.assignOperator(sort, result);
+    }
+
+    private static DBSPComparatorExpression makeComparator(
+            LogicalSort sort, CalciteObject node, DBSPType inputRowType) {
+        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, inputRowType);
+        for (RelFieldCollation collation : sort.getCollation().getFieldCollations()) {
+            int field = collation.getFieldIndex();
+            RelFieldCollation.Direction direction = collation.getDirection();
+            boolean ascending = switch (direction) {
+                case ASCENDING -> true;
+                case DESCENDING -> false;
+                default -> throw new UnimplementedException(node);
+            };
+            comparator = new DBSPFieldComparatorExpression(node, comparator, field, ascending);
+        }
+        return comparator;
     }
 
     @Override
@@ -2132,7 +2138,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         DBSPOperator o;
-        DBSPTypeStruct struct = view.getRowTypeAsStruct(this.getCompiler().typeCompiler)
+        DBSPTypeStruct struct = view.getRowTypeAsStruct(this.compiler().typeCompiler)
                 .rename(view.relationName);
         List<ViewColumnMetadata> additionalMetadata = new ArrayList<>();
         // Synthesize the metadata for the view's columns.

@@ -310,7 +310,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     @Override
-    public void postorder(DBSPJoinFilterMap operator) {
+    public void postorder(DBSPJoinFilterMapOperator operator) {
         this.replace(operator);
     }
 
@@ -343,6 +343,9 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) { this.replace(operator); }
+
+    @Override
+    public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) { this.replace(operator); }
 
     @Override
     public void postorder(DBSPWaterlineOperator operator) { this.replace(operator); }
