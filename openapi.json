@@ -5492,6 +5492,12 @@
           "path": {
             "type": "string",
             "description": "URL."
+          },
+          "pause_timeout": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Timeout before disconnection when paused.\n\nIf the pipeline is paused, or if the input adapter reads data faster\nthan the pipeline can process it, then the controller will pause the\ninput adapter. If the input adapter stays paused longer than this\ntimeout, it will drop the network connection to the server. It will\nautomatically reconnect when the input adapter starts running again.",
+            "minimum": 0
           }
         }
       },
