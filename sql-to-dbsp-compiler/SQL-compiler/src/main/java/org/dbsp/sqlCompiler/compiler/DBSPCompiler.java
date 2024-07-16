@@ -230,7 +230,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.frontend.addSchemaSource(name, schema);
     }
 
-    record SqlStatements(String statement, boolean many) {}
+    record SqlStatements(String statement, boolean many, boolean visible) {}
 
     final List<SqlStatements> toCompile = new ArrayList<>();
 
@@ -249,7 +249,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 this.sources.append("\n");
             }
         }
-        this.toCompile.add(new SqlStatements(statements, many));
+        this.toCompile.add(new SqlStatements(statements, many, appendToSource));
     }
 
     private void compileInternal(String statements, boolean many) {
@@ -264,9 +264,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 if (stat.many) {
                     if (stat.statement.isEmpty())
                         continue;
-                    parsed.addAll(this.frontend.parseStatements(stat.statement));
+                    parsed.addAll(this.frontend.parseStatements(stat.statement, stat.visible));
                 } else {
-                    SqlNode node = this.frontend.parse(stat.statement);
+                    SqlNode node = this.frontend.parse(stat.statement, stat.visible);
                     List<SqlNode> stmtList = new ArrayList<>();
                     stmtList.add(node);
                     parsed.addAll(new SqlNodeList(stmtList, node.getParserPosition()));

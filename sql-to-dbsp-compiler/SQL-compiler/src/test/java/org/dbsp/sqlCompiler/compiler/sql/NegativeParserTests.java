@@ -249,11 +249,13 @@ public class NegativeParserTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT * FROM S""";
         File file = createInputScript(statements);
         CompilerMessages messages = CompilerMain.execute(file.getPath(), "-o", "/dev/null");
+        System.out.println(messages);
         Assert.assertEquals(messages.exitCode, 0);
         Assert.assertEquals(messages.warningCount(), 1);
         Assert.assertEquals(messages.errorCount(), 0);
         CompilerMessages.Error error = messages.messages.get(0);
         Assert.assertTrue(error.warning);
         Assert.assertTrue(error.message.contains("Table 'T' is not used"));
+        Assert.assertTrue(messages.toString().contains("CREATE TABLE T"));
     }
 }

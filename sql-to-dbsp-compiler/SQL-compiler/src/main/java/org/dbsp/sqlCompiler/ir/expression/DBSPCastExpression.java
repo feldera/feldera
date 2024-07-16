@@ -47,6 +47,7 @@ public final class DBSPCastExpression extends DBSPExpression {
     }
 
     public DBSPCastExpression replaceSource(DBSPExpression source) {
+        assert source.getType().sameType(this.source.getType());
         return new DBSPCastExpression(this.getNode(), source, this.type);
     }
 

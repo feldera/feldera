@@ -51,7 +51,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementExpansion;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.annotation.AlwaysMonotone;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -200,20 +199,21 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPFilterOperator operator) {
-        this.processFilter(operator);
-        super.postorder(operator);
-    }
-
-    void processFilter(DBSPFilterOperator operator) {
         ReplacementExpansion expanded = this.getReplacement(operator);
         if (expanded != null) {
-            DBSPOperator bound = this.addBounds(expanded.replacement, 0);
-            if (operator != expanded.replacement && bound != null)
+            DBSPOperator bound = this.processFilter(expanded.replacement.to(DBSPFilterOperator.class));
+            if (operator != expanded.replacement && bound != null) {
                 this.markBound(operator, bound);
+            }
         } else {
             this.nonMonotone(operator);
         }
         super.postorder(operator);
+    }
+
+    @Nullable
+    DBSPOperator processFilter(DBSPFilterOperator expansion) {
+        return this.addBounds(expansion, 0);
     }
 
     @Override
@@ -502,6 +502,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.processFilter(expansion.rightFilter);
         this.processSum(expansion.sum);
 
+        // If one of the filters leftFilter or rightFilter has monotone outputs,
+        // we can use these to GC the input of the join using
+        // DBSPIntegrateTraceRetainValuesOperator.
+
         Projection proj = new Projection(this.errorReporter);
         proj.apply(join.getFunction());
         assert(proj.isProjection);
@@ -517,7 +521,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             keyParts.add(NonMonotoneType.nonMonotone(keyType.getFieldType(i)));
         PartiallyMonotoneTuple keyPart = new PartiallyMonotoneTuple(keyParts, false, false);
 
-        // The leftFilter has the same schema as the join output
+        // Check the left side and insert a GC operator if possible
         DBSPOperator leftLimiter = this.bound.get(expansion.leftFilter);
         if (leftLimiter != null) {
             MonotoneExpression monotone = this.expansionMonotoneValues.get(expansion.leftFilter);
@@ -788,7 +792,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         List<DBSPExpression> maxes = new ArrayList<>();
         for (int i = 0; i < type.size(); i++) {
             DBSPType ftype = type.tupFields[i];
-            maxes.add(new DBSPBinaryExpression(node, ftype, DBSPOpcode.MAX,
+            maxes.add(ExpressionCompiler.makeBinaryExpression(node, ftype, DBSPOpcode.MAX,
                     left.deref().field(i), right.deref().field(i)));
         }
         DBSPExpression max = new DBSPTupleExpression(maxes, false);

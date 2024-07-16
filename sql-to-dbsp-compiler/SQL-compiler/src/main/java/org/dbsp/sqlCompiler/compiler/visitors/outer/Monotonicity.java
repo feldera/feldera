@@ -630,7 +630,7 @@ public class Monotonicity extends CircuitVisitor {
             DBSPExpression field = var.deepCopy().deref().field(i);
             List<DBSPExpression> comp = comparisons.getLowerBounds(i);
             for (DBSPExpression exp: comp) {
-                field = new DBSPBinaryExpression(node.getNode(),
+                field = ExpressionCompiler.makeBinaryExpression(node.getNode(),
                         field.getType(), DBSPOpcode.MAX, field, exp);
             }
             fields[i] = field;

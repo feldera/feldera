@@ -20,8 +20,10 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
         super(node, "apply", function, outputType, false, input, comment);
         assert function.parameters.length == 1: "Expected 1 parameter for function " + function;
         DBSPType paramType = function.parameters[0].getType().deref();
-        assert input.outputType.sameType(paramType):
+        assert input.outputType.sameType(paramType) :
                 "Parameter type " + paramType + " does not match input type " + input.outputType;
+        assert function.getResultType().sameType(outputType) :
+                "Function return type " + function.getResultType() + " does not match output type " + outputType;
     }
 
     @Override
