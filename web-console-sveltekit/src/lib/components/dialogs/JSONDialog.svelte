@@ -37,7 +37,8 @@
           vertical: 'visible'
         },
         language: 'json'
-      }} />
+      }}
+    />
   </div>
   <div class="flex w-full justify-end">
     <button onclick={() => onApply(value).then(onClose)} class="btn preset-filled-primary-500">

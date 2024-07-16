@@ -12,7 +12,8 @@
     <div class="flex flex-nowrap items-center gap-2 break-all">
       <a
         class=" transition-none duration-0"
-        href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}>
+        href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
+      >
         {pipeline.name}
       </a>
       <PipelineStatus class="ml-auto" {...pipeline}></PipelineStatus>

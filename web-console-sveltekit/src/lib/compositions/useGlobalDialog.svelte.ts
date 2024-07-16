@@ -1,4 +1,4 @@
-import type { Snippet } from "svelte";
+import type { Snippet } from 'svelte'
 import DangerDialog from '$lib/components/dialogs/DangerDialog.svelte'
 
 type DialogAction = { name: string; callback: () => void; 'data-testid'?: string }
