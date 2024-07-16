@@ -8,6 +8,20 @@ use utoipa::ToSchema;
 pub struct UrlInputConfig {
     /// URL.
     pub path: String,
+
+    /// Timeout before disconnection when paused.
+    ///
+    /// If the pipeline is paused, or if the input adapter reads data faster
+    /// than the pipeline can process it, then the controller will pause the
+    /// input adapter. If the input adapter stays paused longer than this
+    /// timeout, it will drop the network connection to the server. It will
+    /// automatically reconnect when the input adapter starts running again.
+    #[serde(default = "default_pause_timeout")]
+    pub pause_timeout: u32,
+}
+
+const fn default_pause_timeout() -> u32 {
+    60
 }
 
 impl TransportConfigVariant for UrlInputConfig {

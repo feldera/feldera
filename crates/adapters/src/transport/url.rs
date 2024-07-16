@@ -8,10 +8,11 @@ use futures::StreamExt;
 use lazy_static::lazy_static;
 use pipeline_types::transport::url::UrlInputConfig;
 use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
-use std::{cmp::Ordering, str::FromStr, sync::Arc, thread::spawn};
+use std::{cmp::Ordering, str::FromStr, sync::Arc, thread::spawn, time::Duration};
 use tokio::{
     select,
     sync::watch::{channel, Receiver, Sender},
+    time::{sleep_until, Instant},
 };
 use webpki_roots::TLS_SERVER_ROOTS;
 
@@ -84,25 +85,58 @@ impl UrlInputReader {
         // The `ClientResponse`, if there is one.
         let mut response = None;
 
+        // The time at which we will disconnect from the server, if we are
+        // paused when this time arrives.
+        let mut deadline = None;
+
         loop {
             let state = *receiver.borrow();
             match state {
                 PipelineState::Terminated => return Ok(()),
                 PipelineState::Paused => {
-                    // On pause, drop the connection.  We will reconnect when we
-                    // start running again.
-                    //
-                    // If we didn't do this, we risk getting an error from the
-                    // server disconnecting when we go idle for a long time.
-                    // Then we'd have to be able to distinguish idle disconnects
-                    // from other server errors, which could be challenging.  It
-                    // seems easier to just disconnect and reconnect.
-                    let _ = response.take();
+                    if deadline.is_none() {
+                        // If the pause timeout is so big that it overflows
+                        // `Instant`, leave it as `None` and we'll just never
+                        // timeout.
+                        deadline = Instant::now()
+                            .checked_add(Duration::from_secs(config.pause_timeout as u64));
+                    }
+                    loop {
+                        let sleep = deadline.map(|deadline| sleep_until(deadline));
+                        tokio::pin!(sleep);
+                        select! {
+                            _ = sleep.as_pin_mut().unwrap(), if sleep.is_some() && response.is_some() => {
+                                // On pause, drop the connection after a delay.
+                                // We will reconnect when we start running
+                                // again.
+                                //
+                                // Dropping the connection immediately is a bad
+                                // idea because the pause might be just long
+                                // enough to let a data ingress backlog clear
+                                // up, probably at most a few seconds.  It's not
+                                // good to churn the connection to the server
+                                // for that, especially if it's one that can't
+                                // restart mid-file.
+                                //
+                                // On the other hand, if we never drop the
+                                // connection while paused, we risk getting an
+                                // error from the server disconnecting when we
+                                // go idle for a long time.  Then we'd have to
+                                // be able to distinguish idle disconnects from
+                                // other server errors, which could be
+                                // challenging.  It seems easier to just
+                                // disconnect and reconnect.
+                                let _ = response.take();
+                            },
 
-                    // Wait for a state change.
-                    receiver.changed().await?;
+                            // Wait for a state change.
+                            result = receiver.changed() => { result?; break; }
+                        }
+                    }
                 }
                 PipelineState::Running => {
+                    deadline = None;
+
                     // If we haven't connected yet, or if we're resuming
                     // following pause, connect to the server.
                     if response.is_none() {
@@ -292,6 +326,7 @@ mod test {
     async fn setup_test<F, Args>(
         response: F,
         path: &str,
+        pause_timeout: u32,
     ) -> (
         Box<dyn InputReader>,
         MockInputConsumer,
@@ -329,6 +364,7 @@ transport:
     name: url_input
     config:
         path: http://{addr}/{path}
+        pause_timeout: {pause_timeout}
 format:
     name: csv
 "#
@@ -354,6 +390,7 @@ bar,false,-10
 "
             },
             "test.csv",
+            60,
         )
         .await;
 
@@ -377,7 +414,7 @@ bar,false,-10
     /// Test connection failure.
     #[actix_web::test]
     async fn test_failure() -> Result<()> {
-        let (endpoint, consumer, _zset) = setup_test(|| async { "" }, "nonexistent").await;
+        let (endpoint, consumer, _zset) = setup_test(|| async { "" }, "nonexistent", 60).await;
 
         // Disable panic on error so we can detect it gracefully below.
         consumer.on_error(Some(Box::new(|_, _| ())));
@@ -400,8 +437,7 @@ bar,false,-10
     }
 
     /// Test pause and resume of connections.
-    #[actix_web::test]
-    async fn test_pause() -> Result<()> {
+    async fn test_pause(with_reconnect: bool) -> Result<()> {
         let test_data: Vec<_> = (0..100)
             .map(|i| TestStruct {
                 s: "foo".into(),
@@ -422,6 +458,7 @@ bar,false,-10
                 HttpResponse::Ok().streaming::<_, IoError>(stream)
             },
             "test.csv",
+            if with_reconnect { 0 } else { 60 },
         )
         .await;
 
@@ -485,23 +522,32 @@ bar,false,-10
             assert_eq!(n5, n);
         }
 
-        // Now restart the endpoint.  It will reopen the connection to the
-        // server.  The server is dumb and it can still only generate records
-        // one per second.  Our code will discard the records until they get up
-        // to the previous position.  That means that if we wait up to 500 ms,
-        // there should be no new data.  Since real life is full of races, let's
-        // only wait 400 ms.
+        // Now restart the endpoint.
         endpoint.start(0).unwrap();
         println!("restarting...");
-        for _ in 0..4 {
-            sleep(Duration::from_millis(100));
+        if with_reconnect {
+            // The adapter will reopen the connection to the server.  The server
+            // is dumb and it can still only generate records one per second.
+            // Our code will discard the records until they get up to the
+            // previous position.  That means that if we wait up to 500 ms,
+            // there should be no new data.  Since real life is full of races,
+            // let's only wait 400 ms.
+            for _ in 0..4 {
+                sleep(Duration::from_millis(100));
+                let n = n_recs(&zset);
+                println!("100 ms later, {n} records arrived");
+                assert_eq!(n5, n);
+            }
+        } else {
+            // The records should start arriving again immediately.
+            sleep(Duration::from_millis(200));
             let n = n_recs(&zset);
-            println!("100 ms later, {n} records arrived");
-            assert_eq!(n5, n);
+            println!("200 ms later, {n} records arrived");
+            assert!(n > n5);
         }
 
-        // Within 600 ms more, though, we should get all 100 records, but fudge
-        // it to 1000 ms.
+        // Within 600 ms more, we should get all 100 records, but fudge it to
+        // 1000 ms.
         let n6_time = wait(|| n_recs(&zset) >= 100, 1000)
             .unwrap_or_else(|()| panic!("only {} records after 1000 ms", n_recs(&zset)));
         let n6 = n_recs(&zset);
@@ -511,5 +557,19 @@ bar,false,-10
             assert_eq!(upd.unwrap_insert(), &test_data[i]);
         }
         Ok(())
+    }
+
+    /// Test pause and resume of connections, with a zero `pause_timeout` so
+    /// that the server connection gets dropped and reconnects.
+    #[actix_web::test]
+    async fn test_pause_with_reconnect() -> Result<()> {
+        test_pause(true).await
+    }
+
+    /// Test pause and resume of connections, with a long `pause_timeout` so
+    /// that the server connection stays up.
+    #[actix_web::test]
+    async fn test_pause_without_reconnect() -> Result<()> {
+        test_pause(false).await
     }
 }
