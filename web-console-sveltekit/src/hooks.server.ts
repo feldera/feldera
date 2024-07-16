@@ -1,6 +1,8 @@
 import type { Handle } from '@sveltejs/kit'
 import { svelteAttr } from 'svelte-attr'
+import * as auth from '$lib/compositions/auth'
 
-export const handle: Handle = async ({ event, resolve }) => {
-  return svelteAttr(resolve(event))
+export const handle: Handle = async (input) => {
+  const response = auth.handle(input)
+  return svelteAttr(response)
 }

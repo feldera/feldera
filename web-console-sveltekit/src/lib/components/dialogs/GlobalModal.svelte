@@ -19,14 +19,15 @@
     <div
       class="fixed inset-0 cursor-pointer bg-gray-500 bg-opacity-75 transition-opacity"
       role="presentation"
-      aria-hidden="true">
-    </div>
+      aria-hidden="true"
+    ></div>
 
     <div class="fixed inset-0 w-screen overflow-y-auto">
       <div
         class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0"
         role="presentation"
-        onclick={onClose}>
+        onclick={onClose}
+      >
         <!--
         Modal panel, show/hide based on modal state.
 
@@ -38,9 +39,10 @@
           To: "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
       -->
         <div
-          class="bg-surface-50-950 relative transform overflow-hidden rounded-lg text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg"
+          class="relative transform overflow-hidden rounded-lg text-left shadow-xl transition-all bg-surface-50-950 sm:my-8 sm:w-full sm:max-w-lg"
           role="presentation"
-          onclick={(e) => e.stopPropagation()}>
+          onclick={(e) => e.stopPropagation()}
+        >
           {@render dialog()}
         </div>
       </div>

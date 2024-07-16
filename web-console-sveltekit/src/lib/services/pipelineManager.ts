@@ -17,7 +17,8 @@ import {
   pipelineStats,
   type ErrorResponse,
   getPrograms,
-  updateProgram
+  updateProgram,
+  getAuthenticationConfig
 } from '$lib/services/manager'
 import { P, match } from 'ts-pattern'
 import { leftJoin } from 'array-join'
@@ -73,15 +74,16 @@ export const getFullPipeline = async (pipeline_name: string) => {
   return toFullPipeline(pipeline, program)
 }
 
-
-
 /**
  * Pipeline should already exist
  */
-export const updatePipeline = async (oldPipeline: {name: string, _programName: string | null | undefined} | undefined, newPipeline: FullPipeline) => {
+export const updatePipeline = async (
+  oldPipeline: { name: string; _programName: string | null | undefined } | undefined,
+  newPipeline: FullPipeline
+) => {
   const program_name =
-  (oldPipeline?.name !== newPipeline.name ? undefined : newPipeline._programName) ??
-  newPipeline.name + '_program'
+    (oldPipeline?.name !== newPipeline.name ? undefined : newPipeline._programName) ??
+    newPipeline.name + '_program'
 
   await createOrReplaceProgram({
     body: { code: newPipeline.code, description: '' },
@@ -103,11 +105,17 @@ export const updatePipeline = async (oldPipeline: {name: string, _programName: s
   }
 }
 
-export const patchPipeline = async (pipelineName: string, pipeline: Omit<UpdatePipelineRequest, 'connectors' | 'program_name'> & { code?: string}) => {
+export const patchPipeline = async (
+  pipelineName: string,
+  pipeline: Omit<UpdatePipelineRequest, 'connectors' | 'program_name'> & { code?: string }
+) => {
   const { code, ...pipelinePatch } = pipeline
-  await _updatePipeline({body: pipelinePatch, path: { pipeline_name: pipelineName }})
+  await _updatePipeline({ body: pipelinePatch, path: { pipeline_name: pipelineName } })
   if (code) {
-    await updateProgram({body: {code, name: (pipelinePatch.name || pipelineName) + '_program' }, path: { program_name: pipelineName + '_program' }})
+    await updateProgram({
+      body: { code, name: (pipelinePatch.name || pipelineName) + '_program' },
+      path: { program_name: pipelineName + '_program' }
+    })
   }
 }
 
@@ -200,3 +208,5 @@ export const deletePipeline = async (pipeline_name: string) => {
 
 export const pipelineAction = (pipeline_name: string, action: 'start' | 'pause' | 'shutdown') =>
   handled(_pipelineAction)({ path: { pipeline_name, action } })
+
+export const getAuthConfig = () => handled(getAuthenticationConfig)()

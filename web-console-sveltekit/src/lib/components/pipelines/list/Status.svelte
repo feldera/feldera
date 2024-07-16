@@ -28,7 +28,8 @@
 </script>
 
 <div
-  class={'chip pointer-events-none h-6 w-20 text-[0.66rem] uppercase ' + chipClass + ' ' + _class}>
+  class={'chip pointer-events-none h-6 w-20 text-[0.66rem] uppercase ' + chipClass + ' ' + _class}
+>
   {getStatusLabel(status)}
 </div>
 <!-- {#each ['preset-tonal-primary', 'preset-tonal-secondary', 'preset-tonal-tertiary', 'preset-tonal-success', 'preset-tonal-warning', 'preset-tonal-error', 'preset-tonal-surface'] as color}

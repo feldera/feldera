@@ -12,7 +12,8 @@
     class={'transition-transform ' +
       (open
         ? 'visible translate-x-0 delay-100 duration-200 ease-in-out'
-        : 'invisible -translate-x-full duration-300 ease-in-out')}>
+        : 'invisible -translate-x-full duration-300 ease-in-out')}
+  >
     {@render children()}
   </div>
 </div>
