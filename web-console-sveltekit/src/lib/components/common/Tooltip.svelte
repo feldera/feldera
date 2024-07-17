@@ -1,0 +1,14 @@
+<script lang="ts" context="module">
+  import Tooltip from './Tooltip.svelte'
+  export { Tooltip }
+</script>
+
+<script lang="ts">
+  import FlowbiteTooltip, { type TooltipProps } from 'flowbite-svelte/Tooltip.svelte'
+
+  let { children, ...props }: TooltipProps = $props()
+</script>
+
+<FlowbiteTooltip {...props}>
+  {@render children?.()}
+</FlowbiteTooltip>

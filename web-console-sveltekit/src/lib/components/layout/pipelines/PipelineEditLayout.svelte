@@ -27,6 +27,8 @@
     PipelineStatus as PipelineStatusType
   } from '$lib/services/pipelineManager'
   import { pipelineStats } from '$lib/services/manager'
+  import { match } from 'ts-pattern'
+  import { isPipelineIdle } from '$lib/functions/pipelines/status'
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
@@ -104,6 +106,7 @@
       window.location.hash = ''
     }, 50)
   })
+  let editDisabled = $derived(status && !isPipelineIdle(status))
 </script>
 
 <div class="h-full">
@@ -119,7 +122,7 @@
         {/if}
       </div>
       <div class="relative h-full w-full">
-        <div class="absolute h-full w-full" class:opacity-70={status !== 'Shutdown'}>
+        <div class="absolute h-full w-full" class:opacity-70={editDisabled}>
           <MonacoEditor
             markers={$errors ? { sql: extractSQLCompilerErrorMarkers($errors) } : undefined}
             on:ready={(x) => {
@@ -136,7 +139,7 @@
               theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
               automaticLayout: true,
               lineNumbersMinChars: 3,
-              ...isMonacoEditorDisabled(status !== 'Shutdown'),
+              ...isMonacoEditorDisabled(editDisabled),
               overviewRulerLanes: 0,
               hideCursorInOverviewRuler: true,
               overviewRulerBorder: false,
@@ -144,12 +147,11 @@
                 vertical: 'visible'
               },
               language: 'sql'
-            }}
-          />
+            }} />
         </div>
       </div>
     </Pane>
-    <PaneResizer class="h-2 bg-surface-100-900" />
+    <PaneResizer class="bg-surface-100-900 h-2" />
     <Pane minSize={20} class="!overflow-visible">
       {#if $pipeline.name}
         <InteractionsPanel pipelineName={$pipeline.name}></InteractionsPanel>

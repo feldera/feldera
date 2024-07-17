@@ -18,3 +18,21 @@ export const getStatusLabel = (status: PipelineStatus) => {
     .with({ SystemError: P.select() }, () => 'Program err')
     .exhaustive()
 }
+
+export const isPipelineIdle = (status: PipelineStatus) => {
+  return match(status)
+    .with('Shutdown', () => true)
+    .with('Starting up', () => false)
+    .with('Initializing', () => false)
+    .with('Paused', () => false)
+    .with('Running', () => false)
+    .with('ShuttingDown', () => false)
+    .with({ PipelineError: P.select() }, () => false)
+    .with('Compiling sql', () => true)
+    .with('Queued', () => true)
+    .with('Compiling bin', () => true)
+    .with({ SqlError: P.select() }, () => true)
+    .with({ RustError: P.select() }, () => true)
+    .with({ SystemError: P.select() }, () => true)
+    .exhaustive()
+}
