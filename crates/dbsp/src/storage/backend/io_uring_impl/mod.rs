@@ -13,8 +13,9 @@ use std::time::Instant;
 
 use io_uring::squeue::Entry;
 use io_uring::{opcode, types::Fd, IoUring};
+use lazy_static::lazy_static;
 use libc::{c_void, iovec};
-use metrics::{counter, histogram};
+use metrics::{counter, histogram, Counter, Histogram};
 use pipeline_types::config::StorageCacheConfig;
 
 use crate::circuit::metrics::{
@@ -323,9 +324,15 @@ impl Inner {
             },
         )?;
 
-        counter!(TOTAL_BYTES_WRITTEN).increment(write.len);
-        counter!(WRITES_SUCCESS).increment(1);
-        histogram!(WRITE_LATENCY).record(request_start.elapsed().as_secs_f64());
+        lazy_static! {
+            static ref TOTAL_BYTES_WRITTEN_COUNTER: Counter = counter!(TOTAL_BYTES_WRITTEN);
+            static ref WRITES_SUCCESS_COUNTER: Counter = counter!(WRITES_SUCCESS);
+            static ref WRITE_LATENCY_HISTOGRAM: Histogram = histogram!(WRITE_LATENCY);
+        }
+
+        TOTAL_BYTES_WRITTEN_COUNTER.increment(write.len);
+        WRITES_SUCCESS_COUNTER.increment(1);
+        WRITE_LATENCY_HISTOGRAM.record(request_start.elapsed().as_secs_f64());
 
         Ok(())
     }
@@ -472,17 +479,24 @@ impl Inner {
     fn read_block(&self, fd: i64, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError> {
         let mut buffer = FBuf::with_capacity(size);
 
+        lazy_static! {
+            static ref TOTAL_BYTES_READ_COUNTER: Counter = counter!(TOTAL_BYTES_READ);
+            static ref READ_LATENCY_HISTOGRAM: Histogram = histogram!(READ_LATENCY);
+            static ref READS_SUCCESS_COUNTER: Counter = counter!(READS_SUCCESS);
+            static ref READS_FAILED_COUNTER: Counter = counter!(READS_FAILED);
+        }
+
         let fm = self.immutable_files.get(fd).unwrap();
         let request_start = Instant::now();
         match buffer.read_exact_at(&fm.file, offset, size) {
             Ok(()) => {
-                counter!(TOTAL_BYTES_READ).increment(buffer.len() as u64);
-                histogram!(READ_LATENCY).record(request_start.elapsed().as_secs_f64());
-                counter!(READS_SUCCESS).increment(1);
+                TOTAL_BYTES_READ_COUNTER.increment(buffer.len() as u64);
+                READ_LATENCY_HISTOGRAM.record(request_start.elapsed().as_secs_f64());
+                READS_SUCCESS_COUNTER.increment(1);
                 Ok(Arc::new(buffer))
             }
             Err(e) => {
-                counter!(READS_FAILED).increment(1);
+                READS_FAILED_COUNTER.increment(1);
                 Err(e.into())
             }
         }
