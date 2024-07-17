@@ -3,7 +3,10 @@
 //! [`Reader`] is the top-level interface for reading layer files.
 
 use std::{
-    cmp::Ordering::{self, *},
+    cmp::{
+        max, min,
+        Ordering::{self, *},
+    },
     fmt::{Debug, Formatter, Result as FmtResult},
     marker::PhantomData,
     mem::size_of,
@@ -553,35 +556,30 @@ where
     where
         C: Fn(&K) -> Ordering,
     {
-        let mut start = 0;
-        let mut end = self.n_values();
+        let block_rows = self.rows();
+        if block_rows.start >= target_rows.end || block_rows.end <= target_rows.start {
+            return None;
+        }
         let mut best = None;
-
         self.factories.key_factory.with(&mut |key| {
+            let mut start = (max(block_rows.start, target_rows.start) - self.first_row) as usize;
+            let mut end = (min(block_rows.end, target_rows.end) - self.first_row) as usize;
             while start < end {
                 let mid = (start + end) / 2;
-                let row = self.first_row + mid as u64;
-                let cmp = range_compare(target_rows, row);
-                match cmp {
-                    Equal => {
-                        self.key(mid, key);
-                        let cmp = compare(key);
+                self.key(mid, key);
+                let cmp = compare(key);
 
-                        match cmp {
-                            Less => end = mid,
-                            Equal => {
-                                best = Some(mid);
-                                return;
-                            }
-                            Greater => start = mid + 1,
-                        };
-                        if cmp == bias {
-                            best = Some(mid);
-                        }
-                    }
+                match cmp {
                     Less => end = mid,
+                    Equal => {
+                        best = Some(mid);
+                        break;
+                    }
                     Greater => start = mid + 1,
                 };
+                if cmp == bias {
+                    best = Some(mid);
+                }
             }
         });
         best
