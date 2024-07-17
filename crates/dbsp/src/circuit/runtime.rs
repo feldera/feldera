@@ -16,6 +16,7 @@ use crate::{
 };
 use crossbeam_utils::sync::{Parker, Unparker};
 use lazy_static::lazy_static;
+use log::warn;
 use once_cell::sync::Lazy;
 use pipeline_types::config::StorageCacheConfig;
 use serde::Serialize;
@@ -330,6 +331,9 @@ fn mk_background_thread(
     bg_work_receiver: Receiver<BackgroundOperation>,
     init_sender: Option<SyncSender<(Unparker, Arc<AtomicBool>)>>,
 ) -> JoinHandle<()> {
+    if thread_name.len() > 15 {
+        warn!("thread name {thread_name:?} will appear truncated in system tools");
+    }
     Builder::new()
         .name(thread_name)
         .spawn(move || {
@@ -456,7 +460,7 @@ impl Runtime {
             let (init_sender, init_receiver) = sync_channel(1);
             let (bg_work_sender, bg_work_receiver) = sync_channel(BatchMerger::RX_QUEUE_SIZE);
             let join_handle = mk_background_thread(
-                format!("dbsp-background-{}", worker_index),
+                format!("dbsp-bg-{}", worker_index),
                 Some(cloned_runtime),
                 worker_index,
                 bg_work_receiver,
@@ -536,7 +540,7 @@ impl Runtime {
         } else {
             let (bg_work_sender, bg_work_receiver) = sync_channel(BatchMerger::RX_QUEUE_SIZE);
             let _join_handle = mk_background_thread(
-                String::from("dbsp-background-no-runtime"),
+                String::from("dbsp-bg-no-rt"),
                 None,
                 worker_index,
                 bg_work_receiver,
