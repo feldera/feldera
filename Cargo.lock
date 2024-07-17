@@ -3734,7 +3734,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "log",
- "metrics 0.23.0",
+ "metrics",
  "mimalloc-rust-sys",
  "minitrace",
  "nix 0.27.1",
@@ -3816,9 +3816,9 @@ dependencies = [
  "jemalloc_pprof",
  "lazy_static",
  "log",
- "metrics 0.23.0",
+ "metrics",
  "metrics-exporter-prometheus",
- "metrics-util 0.17.0",
+ "metrics-util",
  "mime",
  "minitrace",
  "minitrace-jaeger",
@@ -3874,8 +3874,8 @@ dependencies = [
  "env_logger 0.10.2",
  "hdrhist",
  "indicatif",
- "metrics 0.22.3",
- "metrics-util 0.16.3",
+ "metrics",
+ "metrics-util",
  "mimalloc-rust-sys",
  "num-format",
  "paste",
@@ -5977,16 +5977,6 @@ dependencies = [
 
 [[package]]
 name = "metrics"
-version = "0.22.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2be3cbd384d4e955b231c895ce10685e3d8260c5ccffae898c96c723b0772835"
-dependencies = [
- "ahash 0.8.11",
- "portable-atomic",
-]
-
-[[package]]
-name = "metrics"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "884adb57038347dfbaf2d5065887b6cf4312330dc8e94bc30a1a839bd79d3261"
@@ -6008,31 +5998,12 @@ dependencies = [
  "hyper-util",
  "indexmap 2.2.6",
  "ipnet",
- "metrics 0.23.0",
- "metrics-util 0.17.0",
+ "metrics",
+ "metrics-util",
  "quanta",
  "thiserror",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "metrics-util"
-version = "0.16.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b07a5eb561b8cbc16be2d216faf7757f9baf3bfb94dbb0fae3df8387a5bb47f"
-dependencies = [
- "aho-corasick",
- "crossbeam-epoch",
- "crossbeam-utils",
- "hashbrown 0.14.5",
- "indexmap 2.2.6",
- "metrics 0.22.3",
- "num_cpus",
- "ordered-float 4.2.0",
- "quanta",
- "radix_trie",
- "sketches-ddsketch",
 ]
 
 [[package]]
@@ -6046,7 +6017,7 @@ dependencies = [
  "crossbeam-utils",
  "hashbrown 0.14.5",
  "indexmap 2.2.6",
- "metrics 0.23.0",
+ "metrics",
  "num_cpus",
  "ordered-float 4.2.0",
  "quanta",
@@ -7010,7 +6981,7 @@ dependencies = [
  "futures-util",
  "jsonwebtoken",
  "log",
- "metrics 0.23.0",
+ "metrics",
  "metrics-exporter-prometheus",
  "openssl",
  "pg-client-config",
