@@ -584,6 +584,19 @@ where
         });
         best
     }
+
+    /// Returns the comparison of the key in `row` using `compare`.
+    unsafe fn compare_row<C>(&self, row: u64, compare: &C) -> Ordering
+    where
+        C: Fn(&K) -> Ordering,
+    {
+        let mut ordering = Equal;
+        self.factories.key_factory.with(&mut |key| {
+            self.key_for_row(row, key);
+            ordering = compare(key);
+        });
+        ordering
+    }
 }
 
 fn range_compare<T>(range: &Range<T>, target: T) -> Ordering
@@ -834,6 +847,16 @@ where
             .transpose()
     }
 
+    /// Returns the range of rows covered by this index block.
+    fn rows(&self) -> Range<u64> {
+        self.first_row
+            ..self.first_row
+                + self
+                    .inner
+                    .row_totals
+                    .get(&self.inner.raw, self.inner.row_totals.count - 1)
+    }
+
     fn get_rows(&self, index: usize) -> Range<u64> {
         let low = if index == 0 {
             0
@@ -921,6 +944,19 @@ where
 
     fn n_children(&self) -> usize {
         self.inner.child_pointers.count
+    }
+
+    /// Returns the comparison of the largest bound key` using `compare`.
+    unsafe fn compare_max<C>(&self, compare: &C) -> Ordering
+    where
+        C: Fn(&K) -> Ordering,
+    {
+        let mut ordering = Equal;
+        self.key_factory.with(&mut |key| {
+            self.get_bound(self.n_children() * 2 - 1, key);
+            ordering = compare(key);
+        });
+        ordering
     }
 }
 
@@ -1661,11 +1697,7 @@ where
     where
         C: Fn(&K) -> Ordering,
     {
-        let position = Position::best_match::<N, T, _>(&self.row_group, compare, Less)?;
-        if position > self.position {
-            self.position = position;
-        }
-        Ok(())
+        self.position.advance_to_first_ge(&self.row_group, compare)
     }
 
     /// Moves the cursor backward past rows for which `predicate` returns false,
@@ -1911,6 +1943,111 @@ where
             }
         }
     }
+
+    unsafe fn advance_to_first_ge<N, T, C>(
+        &mut self,
+        row_group: &RowGroup<'_, K, A, N, T>,
+        compare: &C,
+    ) -> Result<bool, Error>
+    where
+        T: ColumnSpec,
+        C: Fn(&K) -> Ordering,
+    {
+        // This implementation is equivalent to:
+        //
+        // ````
+        // match Self::best_match(row_group, compare, Less)? {
+        //     Some(path) => {
+        //         *self = path;
+        //         return Ok(true);
+        //     }
+        //     None => return Ok(false),
+        // }
+        // ```
+        //
+        // but it performs much better because it searches from the current
+        // path, reusing the data block and index blocks already in the path,
+        // instead of starting from the root node.
+        //
+        // XXX This operation can yield an inconsistent path (where `self.data`
+        // is not a direct child of the last element in `self.indexes`) if an
+        // I/O error occurs in the middle. Our current upper layers don't try to
+        // tolerate I/O errors though.
+        //
+        // XXX The same optimization would apply to backward seeks, but they
+        // haven't been important in practice yet.
+
+        let rows = self.row..row_group.rows.end;
+
+        // Check the current position first. We might already be done.
+        let mut ordering = Equal;
+        self.factories.key_factory.with(&mut |key| {
+            self.key(key);
+            ordering = compare(key);
+        });
+        if ordering != Greater {
+            return Ok(true);
+        }
+
+        // If the last item in `rows` in the current data block is greater than
+        // or equal to the target, then the position must be in the current data
+        // block.
+        if self
+            .data
+            .compare_row(min(self.data.rows().end, rows.end) - 1, compare)
+            != Greater
+        {
+            let child_idx = self.data.find_best_match(&rows, compare, Less).unwrap();
+            self.row = self.data.first_row + child_idx as u64;
+            return Ok(true);
+        }
+
+        while let Some(index_block) = self.indexes.pop() {
+            // We need to go up another level if `rows.end` is beyond the end of
+            // `index_block` and the greatest value under `index_block` is less
+            // than the target.
+            if rows.end > index_block.rows().end && index_block.compare_max(compare) == Greater {
+                continue;
+            }
+
+            // Otherwise, our target (if any) must be below `index_block`.
+            let Some(child_idx) = index_block.find_best_match(&row_group.rows, compare, Less)
+            else {
+                // `rows.end` is inside `index_block` but the largest key is
+                // less than the target.
+                return Ok(false);
+            };
+            let mut node = index_block.get_child(child_idx)?;
+            self.indexes.push(index_block);
+
+            loop {
+                match node.read::<K, A>(&row_group.reader.0.file)? {
+                    TreeBlock::Index(index_block) => {
+                        let Some(child_idx) =
+                            index_block.find_best_match(&row_group.rows, compare, Less)
+                        else {
+                            return Ok(false);
+                        };
+                        node = index_block.get_child(child_idx)?;
+                        self.indexes.push(index_block);
+                    }
+                    TreeBlock::Data(data_block) => {
+                        let Some(child_idx) =
+                            data_block.find_best_match(&row_group.rows, compare, Less)
+                        else {
+                            return Ok(false);
+                        };
+                        self.row = child_idx as u64 + data_block.first_row;
+                        self.data = data_block;
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+
+        // Every value in `rows` is less than the target.
+        Ok(false)
+    }
 }
 
 impl<K, A> Debug for Path<K, A>
@@ -2120,5 +2257,28 @@ where
             Position::Row(path) => row_group.rows.end - path.row,
             Position::After => 0,
         }
+    }
+
+    unsafe fn advance_to_first_ge<N, T, C>(
+        &mut self,
+        row_group: &RowGroup<'_, K, A, N, T>,
+        compare: &C,
+    ) -> Result<(), Error>
+    where
+        T: ColumnSpec,
+        C: Fn(&K) -> Ordering,
+    {
+        match self {
+            Position::Before => {
+                *self = Self::best_match::<N, T, _>(row_group, compare, Less)?;
+            }
+            Position::After => (),
+            Position::Row(path) => {
+                if !path.advance_to_first_ge(row_group, compare)? {
+                    *self = Position::After
+                }
+            }
+        }
+        Ok(())
     }
 }
