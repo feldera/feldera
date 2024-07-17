@@ -411,8 +411,7 @@ impl InnerDataBlock {
         })
     }
 
-    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error>
-where {
+    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         file.cache.read_data_block(
             file.file_handle.as_ref().unwrap(),
             node.location.offset,
@@ -476,8 +475,7 @@ where
         factories: &Factories<K, A>,
         file: &ImmutableFileRef,
         node: &TreeNode,
-    ) -> Result<Self, Error>
-where {
+    ) -> Result<Self, Error> {
         let inner = InnerDataBlock::new(file, node)?;
 
         let expected_rows = node.rows.end - node.rows.start;
@@ -724,8 +722,7 @@ impl InnerIndexBlock {
         })
     }
 
-    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error>
-where {
+    fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         file.cache.read_index_block(
             file.file_handle.as_ref().unwrap(),
             node.location.offset,
@@ -770,8 +767,7 @@ where
         factories: &AnyFactories,
         file: &ImmutableFileRef,
         node: &TreeNode,
-    ) -> Result<Self, Error>
-where {
+    ) -> Result<Self, Error> {
         const MAX_DEPTH: usize = 64;
         if node.depth > MAX_DEPTH {
             // A depth of 64 (very deep) with a branching factor of 2 (very
@@ -1158,8 +1154,7 @@ where
     ///
     /// This internally creates an empty temporary file, which means that it can
     /// fail with an I/O error.
-    pub fn empty(cache: &Arc<BufferCache<FileCacheEntry>>) -> Result<Self, Error>
-where {
+    pub fn empty(cache: &Arc<BufferCache<FileCacheEntry>>) -> Result<Self, Error> {
         let file_handle = cache.create()?;
         let (file_handle, path) = cache.complete(file_handle)?;
         Ok(Self(Arc::new(ReaderInner {
@@ -1327,8 +1322,7 @@ where
 
     /// Return a cursor for the first row in the row group, or just after the
     /// row group if it is empty.
-    pub fn first(&self) -> Result<Cursor<'a, K, A, N, T>, Error>
-where {
+    pub fn first(&self) -> Result<Cursor<'a, K, A, N, T>, Error> {
         let position = if self.is_empty() {
             Position::After
         } else {
@@ -1339,8 +1333,7 @@ where {
 
     /// Return a cursor for the last row in the row group, or just after the
     /// row group if it is empty.
-    pub fn last(&self) -> Result<Cursor<'a, K, A, N, T>, Error>
-where {
+    pub fn last(&self) -> Result<Cursor<'a, K, A, N, T>, Error> {
         let position = if self.is_empty() {
             Position::After
         } else {
@@ -1352,8 +1345,7 @@ where {
     /// If `row` is less than the number of rows in the row group, returns a
     /// cursor for that row; otherwise, returns a cursor for just after the row
     /// group.
-    pub fn nth(&self, row: u64) -> Result<Cursor<'a, K, A, N, T>, Error>
-where {
+    pub fn nth(&self, row: u64) -> Result<Cursor<'a, K, A, N, T>, Error> {
         let position = if row < self.len() {
             Position::for_row(self, self.rows.start + row)?
         } else {
@@ -1821,8 +1813,7 @@ where
         mut indexes: Vec<IndexBlock<K>>,
         mut node: TreeNode,
         row: u64,
-    ) -> Result<Self, Error>
-where {
+    ) -> Result<Self, Error> {
         loop {
             let block = node.read(&reader.0.file)?;
             let next = block.lookup_row(row)?;
@@ -1841,8 +1832,7 @@ where {
             node = next.unwrap();
         }
     }
-    fn for_row_from_hint<T>(reader: &Reader<T>, hint: &Self, row: u64) -> Result<Self, Error>
-where {
+    fn for_row_from_hint<T>(reader: &Reader<T>, hint: &Self, row: u64) -> Result<Self, Error> {
         if hint.data.rows().contains(&row) {
             return Ok(Self {
                 row,
@@ -1877,8 +1867,7 @@ where {
     fn row_group(&self) -> Result<Range<u64>, Error> {
         self.data.row_group(self.row)
     }
-    fn move_to_row<T>(&mut self, reader: &Reader<T>, row: u64) -> Result<(), Error>
-where {
+    fn move_to_row<T>(&mut self, reader: &Reader<T>, row: u64) -> Result<(), Error> {
         if self.data.rows().contains(&row) {
             self.row = row;
         } else {
