@@ -820,7 +820,7 @@ pub trait Node {
 
     /// Instructs the node to commit the state of its inner operator to
     /// persistent storage.
-    fn commit(&self, cid: Uuid) -> Result<(), DBSPError>;
+    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError>;
 
     /// Instructs the node to restore the state of its inner operator to
     /// the given checkpoint.
@@ -3228,7 +3228,7 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), DBSPError> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
@@ -3312,7 +3312,7 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), DBSPError> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
@@ -3402,7 +3402,7 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), DBSPError> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
@@ -3485,7 +3485,7 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), DBSPError> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
@@ -3588,7 +3588,7 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), DBSPError> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
@@ -3711,7 +3711,7 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), Error> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), Error> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
@@ -3838,7 +3838,7 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), Error> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), Error> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
@@ -3983,7 +3983,7 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), Error> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), Error> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
@@ -4113,7 +4113,7 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), Error> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), Error> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
@@ -4225,7 +4225,7 @@ where
         unsafe { (*self.operator.get()).fixedpoint(scope) }
     }
 
-    fn commit(&self, cid: Uuid) -> Result<(), Error> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), Error> {
         unsafe { (*self.operator.get()).commit(cid, self.global_id().persistent_id()) }
     }
 
@@ -4309,7 +4309,7 @@ where
         unsafe { (*self.operator.get()).fixedpoint(scope) }
     }
 
-    fn commit(&self, _cid: Uuid) -> Result<(), Error> {
+    fn commit(&mut self, _cid: Uuid) -> Result<(), Error> {
         // The Z-1 operator consists of two logical parts.
         // The first part gets invoked at the start of a clock cycle to retrieve the
         // state stored at the previous clock tick. The second one gets invoked
@@ -4467,7 +4467,7 @@ where
         self.circuit.map_nodes_recursive(f);
     }
 
-    fn commit(&self, _cid: Uuid) -> Result<(), Error> {
+    fn commit(&mut self, _cid: Uuid) -> Result<(), Error> {
         Ok(())
     }
 
@@ -4521,9 +4521,10 @@ impl CircuitHandle {
     }
 
     pub fn commit(&mut self, cid: Uuid) -> Result<(), SchedulerError> {
-        self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
-            node.commit(cid).expect("committed");
-        });
+        self.circuit
+            .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
+                node.commit(cid).expect("committed");
+            });
         Ok(())
     }
 

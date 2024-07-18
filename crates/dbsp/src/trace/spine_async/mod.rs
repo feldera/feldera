@@ -855,8 +855,10 @@ where
         &self.value_filter
     }
 
-    fn commit<P: AsRef<str>>(&self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
-        let committed: CommittedSpine<B> = self.into();
+    fn commit<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
+        self.map_batches_mut(|b| b.persist());
+
+        let committed: CommittedSpine<B> = (self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
         write_commit_metadata(
             Self::checkpoint_file(cid, &persistent_id),
@@ -1159,22 +1161,25 @@ where
 
     /// Mutate all batches.
     ///
-    /// Can only be invoked when there are no in-progress batches in the trace.
-    fn map_batches_mut<F: FnMut(&mut <Self as Trace>::Batch)>(&mut self, mut f: F) {
-        for batch in self
-            .levels
-            .iter_mut()
-            .flat_map(|level| level.values_mut())
-            .rev()
-        {
-            assert_eq!(
-                batch.0.len(),
-                1,
-                "map_batches_mut called on an in-progress batch"
-            );
-            let mut b = Arc::unwrap_or_clone(batch.0.pop().unwrap());
-            f(&mut b);
-            batch.0.push(Arc::new(b));
+    /// This will mutate in-progress batches, if there are any, which only makes
+    /// sense if `map` doesn't change the batch's contents, so callers that do
+    /// should make sure to complete ongoing merges first.
+    fn map_batches_mut<F>(&mut self, mut map: F)
+    where
+        F: FnMut(&mut <Self as Trace>::Batch),
+    {
+        for level in self.levels.iter_mut() {
+            for batch in level.values_mut() {
+                batch.0 = batch
+                    .0
+                    .drain(..)
+                    .map(|b| {
+                        let mut b = Arc::unwrap_or_clone(b);
+                        map(&mut b);
+                        Arc::new(b)
+                    })
+                    .collect();
+            }
         }
     }
 }

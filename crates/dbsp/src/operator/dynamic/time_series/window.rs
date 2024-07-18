@@ -121,8 +121,8 @@ where
         panic!("'Window' operator used in fixedpoint iteration")
     }
 
-    fn commit<P: AsRef<str>>(&self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
-        let committed: CommittedWindow = self.into();
+    fn commit<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
+        let committed: CommittedWindow = (self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
         write_commit_metadata(
             Self::checkpoint_file(cid, &persistent_id),

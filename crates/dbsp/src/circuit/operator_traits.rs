@@ -200,7 +200,7 @@ pub trait Operator: 'static {
     /// Instructors operator to checkpoint its state to persistent storage.
     ///
     /// For most operators this method is a no-op.
-    fn commit<P: AsRef<str>>(&self, _cid: Uuid, _persistent_id: P) -> Result<(), Error> {
+    fn commit<P: AsRef<str>>(&mut self, _cid: Uuid, _persistent_id: P) -> Result<(), Error> {
         Ok(())
     }
 
