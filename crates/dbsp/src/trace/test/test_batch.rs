@@ -10,8 +10,8 @@ use crate::{
     },
     time::AntichainRef,
     trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, Filter,
-        Merger, Trace,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Batcher, Builder,
+        Cursor, Filter, Merger, Trace,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -824,7 +824,11 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
-    fn new_merger(source1: &TestBatch<K, V, T, R>, source2: &TestBatch<K, V, T, R>) -> Self {
+    fn new_merger(
+        source1: &TestBatch<K, V, T, R>,
+        source2: &TestBatch<K, V, T, R>,
+        _dst_hint: Option<BatchLocation>,
+    ) -> Self {
         let data = source1
             .data
             .iter()

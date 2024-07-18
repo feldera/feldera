@@ -10,8 +10,8 @@ use crate::{
             Builder as _, Cursor as _, Layer, LayerBuilder, LayerCursor, LayerFactories, Leaf,
             LeafBuilder, LeafCursor, LeafFactories, MergeBuilder, OrdOffset, Trie, TupleBuilder,
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, Merger, Serializer, TimedBuilder, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
+        Deserializer, Filter, Merger, Serializer, TimedBuilder, WeightedItem,
     },
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
@@ -343,8 +343,8 @@ where
         Self::from_tuples(time, keys)
     }*/
 
-    fn begin_merge(&self, other: &Self) -> Self::Merger {
-        Self::Merger::new_merger(self, other)
+    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
+        Self::Merger::new_merger(self, other, dst_hint)
     }
 
     fn recede_to(&mut self, frontier: &T) {
@@ -458,7 +458,11 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
-    fn new_merger(batch1: &VecKeyBatch<K, T, R, O>, batch2: &VecKeyBatch<K, T, R, O>) -> Self {
+    fn new_merger(
+        batch1: &VecKeyBatch<K, T, R, O>,
+        batch2: &VecKeyBatch<K, T, R, O>,
+        _dst_hint: Option<BatchLocation>,
+    ) -> Self {
         // Leonid: we do not require batch bounds to grow monotonically.
         //assert!(batch1.upper() == batch2.lower());
 

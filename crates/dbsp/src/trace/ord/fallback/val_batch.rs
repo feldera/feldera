@@ -23,7 +23,7 @@ use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
 
-use super::utils::{copy_to_builder, BuildTo, GenericMerger, MergeTo};
+use super::utils::{copy_to_builder, pick_merge_destination, BuildTo, GenericMerger};
 
 pub struct FallbackValBatchFactories<K, V, T, R>
 where
@@ -315,8 +315,8 @@ where
     type Builder = FallbackValBuilder<K, V, T, R>;
     type Merger = FallbackValMerger<K, V, T, R>;
 
-    fn begin_merge(&self, other: &Self) -> Self::Merger {
-        FallbackValMerger::new_merger(self, other)
+    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
+        FallbackValMerger::new_merger(self, other, dst_hint)
     }
 
     fn recede_to(&mut self, frontier: &T) {
@@ -382,24 +382,25 @@ where
     fn new_merger(
         batch1: &FallbackValBatch<K, V, T, R>,
         batch2: &FallbackValBatch<K, V, T, R>,
+        dst_hint: Option<BatchLocation>,
     ) -> Self {
         FallbackValMerger {
             factories: batch1.factories.clone(),
             inner: match (
-                MergeTo::from((batch1, batch2)),
+                pick_merge_destination(batch1, batch2, dst_hint),
                 &batch1.inner,
                 &batch2.inner,
             ) {
-                (MergeTo::Memory, Inner::Vec(vec1), Inner::Vec(vec2)) => {
-                    MergerInner::AllVec(VecValMerger::new_merger(vec1, vec2))
+                (BatchLocation::Memory, Inner::Vec(vec1), Inner::Vec(vec2)) => {
+                    MergerInner::AllVec(VecValMerger::new_merger(vec1, vec2, dst_hint))
                 }
-                (MergeTo::Memory, _, _) => {
+                (BatchLocation::Memory, _, _) => {
                     MergerInner::ToVec(GenericMerger::new(&batch1.factories.vec, batch1, batch2))
                 }
-                (MergeTo::Storage, Inner::File(file1), Inner::File(file2)) => {
-                    MergerInner::AllFile(FileValMerger::new_merger(file1, file2))
+                (BatchLocation::Storage, Inner::File(file1), Inner::File(file2)) => {
+                    MergerInner::AllFile(FileValMerger::new_merger(file1, file2, dst_hint))
                 }
-                (MergeTo::Storage, _, _) => {
+                (BatchLocation::Storage, _, _) => {
                     MergerInner::ToFile(GenericMerger::new(&batch1.factories.file, batch1, batch2))
                 }
             },

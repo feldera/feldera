@@ -459,14 +459,22 @@ where
     /// same result that a call to `self.merge(other)` would produce, but it
     /// can be done in a measured fashion. This can help to avoid latency
     /// spikes where a large merge needs to happen.
-    fn begin_merge(&self, other: &Self) -> Self::Merger {
-        Self::Merger::new_merger(self, other)
+    ///
+    /// If `dst_hint` is set, then the merger should prefer to write the output
+    /// batch there, if it can.
+    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
+        Self::Merger::new_merger(self, other, dst_hint)
     }
 
     /// Merges `self` with `other` by running merger to completion.
+    ///
+    /// We keep the merge output in memory on the assumption that it's primarily
+    /// spine merges that should be kept on storage, under the theory that other
+    /// merges are likely to be large if large batches are passing through the
+    /// pipeline.
     fn merge(&self, other: &Self) -> Self {
         let mut fuel = isize::MAX;
-        let mut merger = Self::Merger::new_merger(self, other);
+        let mut merger = Self::Merger::new_merger(self, other, Some(BatchLocation::Memory));
         merger.work(self, other, &None, &None, &mut fuel);
         merger.done()
     }
@@ -607,7 +615,7 @@ where
     Output: Batch<Key = K, Val = V, Time = T, R = R>,
 {
     /// Creates a new merger to merge the supplied batches.
-    fn new_merger(source1: &Output, source2: &Output) -> Self;
+    fn new_merger(source1: &Output, source2: &Output, dst_hint: Option<BatchLocation>) -> Self;
 
     /// Perform some amount of work, decrementing `fuel`.
     ///

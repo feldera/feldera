@@ -11,8 +11,8 @@ use crate::{
             Builder as _, Cursor as _, Layer, LayerBuilder, LayerCursor, LayerFactories, Leaf,
             LeafBuilder, LeafFactories, MergeBuilder, OrdOffset, Trie, TupleBuilder,
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, Merger, Serializer, TimedBuilder, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
+        Deserializer, Filter, Merger, Serializer, TimedBuilder, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -489,8 +489,8 @@ where
         )
     }*/
 
-    fn begin_merge(&self, other: &Self) -> Self::Merger {
-        VecIndexedWSetMerger::new_merger(self, other)
+    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
+        VecIndexedWSetMerger::new_merger(self, other, dst_hint)
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
@@ -529,6 +529,7 @@ where
     fn new_merger(
         batch1: &VecIndexedWSet<K, V, R, O>,
         batch2: &VecIndexedWSet<K, V, R, O>,
+        _dst_hint: Option<BatchLocation>,
     ) -> Self {
         Self {
             lower1: batch1.layer.lower_bound(),

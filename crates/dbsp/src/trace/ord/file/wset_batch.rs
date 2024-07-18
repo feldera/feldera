@@ -416,8 +416,8 @@ where
     type Builder = FileWSetBuilder<K, R>;
     type Merger = FileWSetMerger<K, R>;
 
-    fn begin_merge(&self, other: &Self) -> Self::Merger {
-        FileWSetMerger::new_merger(self, other)
+    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
+        FileWSetMerger::new_merger(self, other, dst_hint)
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
@@ -472,7 +472,11 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn new_merger(batch1: &FileWSet<K, R>, batch2: &FileWSet<K, R>) -> Self {
+    fn new_merger(
+        batch1: &FileWSet<K, R>,
+        batch2: &FileWSet<K, R>,
+        _dst_hint: Option<BatchLocation>,
+    ) -> Self {
         Self {
             factories: batch1.factories.clone(),
             lower1: batch1.lower_bound,
