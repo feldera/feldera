@@ -844,9 +844,9 @@ where
         !self.dirty[scope as usize]
     }
 
-    fn commit<P: AsRef<str>>(&self, cid: Uuid, pid: P) -> Result<(), Error> {
+    fn commit<P: AsRef<str>>(&mut self, cid: Uuid, pid: P) -> Result<(), Error> {
         self.trace
-            .as_ref()
+            .as_mut()
             .map(|trace| trace.commit(cid, pid))
             .unwrap_or(Ok(()))
     }

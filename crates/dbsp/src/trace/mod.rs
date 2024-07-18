@@ -260,7 +260,7 @@ pub trait Trace: BatchReader {
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<Filter<Self::Val>>;
-    fn commit<P: AsRef<str>>(&self, _cid: Uuid, _pid: P) -> Result<(), Error> {
+    fn commit<P: AsRef<str>>(&mut self, _cid: Uuid, _pid: P) -> Result<(), Error> {
         Ok(())
     }
     fn restore<P: AsRef<str>>(&mut self, _cid: Uuid, _pid: P) -> Result<(), Error> {
@@ -480,6 +480,10 @@ where
     /// replacing each timestamp `t` in the trace by `t.meet(frontier)`.  See
     /// [`Batch::recede_to`].
     fn recede_to(&mut self, frontier: &Self::Time);
+
+    /// If this batch supports writing itself to storage, this causes it to
+    /// happen.
+    fn persist(&mut self) {}
 
     fn persistent_id(&self) -> Option<PathBuf> {
         None

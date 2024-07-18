@@ -387,6 +387,15 @@ where
     fn dyn_empty(factories: &Self::Factories, time: Self::Time) -> Self {
         Self::Builder::new_builder(factories, time).done()
     }
+
+    fn persist(&mut self) {
+        if let Inner::Vec(vec) = &self.inner {
+            let mut file = FileWSetBuilder::with_capacity(&self.factories.file, (), 0);
+            copy_to_builder(&mut file, vec.cursor());
+            self.inner = Inner::File(file.done());
+        }
+    }
+
     fn persistent_id(&self) -> Option<PathBuf> {
         match &self.inner {
             Inner::Vec(vec) => vec.persistent_id(),
