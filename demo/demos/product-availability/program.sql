@@ -3,6 +3,8 @@ CREATE TABLE warehouse (
     id INT PRIMARY KEY,
     name VARCHAR NOT NULL,
     address VARCHAR NOT NULL
+) WITH (
+    'materialized' = 'true'
 );
 
 -- Product
@@ -11,6 +13,8 @@ CREATE TABLE product (
     name VARCHAR NOT NULL,
     mass DOUBLE NOT NULL,
     volume DOUBLE NOT NULL
+) WITH (
+    'materialized' = 'true'
 );
 
 -- Each warehouse stores products
@@ -20,10 +24,12 @@ CREATE TABLE storage (
     num_available INT NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     PRIMARY KEY (warehouse_id, product_id)
+) WITH (
+    'materialized' = 'true'
 );
 
 -- How much of each product is stored
-CREATE VIEW product_stored AS
+CREATE MATERIALIZED VIEW product_stored AS
 (
     SELECT   product.id,
              product.name,
@@ -37,7 +43,7 @@ CREATE VIEW product_stored AS
 );
 
 -- How much each warehouse has stored
-CREATE VIEW warehouse_stored AS
+CREATE MATERIALIZED VIEW warehouse_stored AS
 (
     SELECT   warehouse.id,
              warehouse.name,
@@ -51,7 +57,7 @@ CREATE VIEW warehouse_stored AS
 );
 
 -- Top 3 warehouse according to stored mass
-CREATE VIEW top_3_warehouse_mass AS
+CREATE MATERIALIZED VIEW top_3_warehouse_mass AS
 (
     SELECT   warehouse_stored.id,
              warehouse_stored.name,
@@ -62,7 +68,7 @@ CREATE VIEW top_3_warehouse_mass AS
 );
 
 -- Top 3 warehouse according to stored volume
-CREATE VIEW top_3_warehouse_volume AS
+CREATE MATERIALIZED VIEW top_3_warehouse_volume AS
 (
     SELECT   warehouse_stored.id,
              warehouse_stored.name,
@@ -73,7 +79,7 @@ CREATE VIEW top_3_warehouse_volume AS
 );
 
 -- Availability stats across all products
-CREATE VIEW product_availability AS
+CREATE MATERIALIZED VIEW product_availability AS
 (
     SELECT COUNT(*) AS num_product,
            MIN(product_stored.num_available) AS min_availability,
@@ -84,16 +90,16 @@ CREATE VIEW product_availability AS
 );
 
 -- Total number of warehouses
-CREATE VIEW num_warehouse AS
+CREATE MATERIALIZED VIEW num_warehouse AS
 SELECT COUNT(*) AS num_warehouse
 FROM   warehouse;
 
 -- Total number of products
-CREATE VIEW num_product AS
+CREATE MATERIALIZED VIEW num_product AS
 SELECT COUNT(*) AS num_product
 FROM   product;
 
 -- Total number of storage entries
-CREATE VIEW num_storage AS
+CREATE MATERIALIZED VIEW num_storage AS
 SELECT COUNT(*) AS num_storage
 FROM   storage;
