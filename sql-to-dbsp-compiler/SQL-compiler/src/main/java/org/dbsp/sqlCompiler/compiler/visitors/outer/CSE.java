@@ -38,10 +38,10 @@ public class CSE extends Repeat {
     public static class FindCSE extends CircuitVisitor {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical;
-        final Graph.CircuitGraph graph;
+        final CircuitGraph graph;
         final Set<DBSPConstantOperator> constants;
 
-        public FindCSE(IErrorReporter errorReporter, Graph.CircuitGraph graph,
+        public FindCSE(IErrorReporter errorReporter, CircuitGraph graph,
                        Map<DBSPOperator, DBSPOperator> canonical) {
             super(errorReporter);
             this.graph = graph;
@@ -62,7 +62,7 @@ public class CSE extends Repeat {
 
         @Override
         public void postorder(DBSPOperator operator) {
-            List<DBSPOperator> destinations = this.graph.edges.get(operator);
+            List<DBSPOperator> destinations = this.graph.getDestinations(operator);
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
                 DBSPOperator base = destinations.get(i);

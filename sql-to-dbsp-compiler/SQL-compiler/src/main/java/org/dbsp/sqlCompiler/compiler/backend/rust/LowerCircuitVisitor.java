@@ -219,7 +219,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             DBSPClosureExpression expression = node.getFunction().to(DBSPClosureExpression.class);
             DBSPClosureExpression filter = node.filter.to(DBSPClosureExpression.class);
             DBSPLetStatement let = new DBSPLetStatement("tmp", expression.body);
-            DBSPExpression cond = filter.call(let.getVarReference().borrow());
+            DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(errorReporter);
             DBSPExpression tmp = let.getVarReference();
             DBSPIfExpression ifexp = new DBSPIfExpression(
                     node.getNode(),

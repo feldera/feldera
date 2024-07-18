@@ -35,7 +35,13 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
-    // Initially the expression is DBSPFlatmap, but later it is lowered
+    public DBSPFlatMapOperator(CalciteObject node, DBSPExpression expression,
+                               DBSPTypeZSet outputType, boolean isMultiset, DBSPOperator input) {
+        super(node, "flat_map", expression, outputType, isMultiset, input);
+        this.checkArgumentFunctionType(expression, 0, input);
+    }
+
+    // When implementing UNNEST, initially the expression is DBSPFlatmap, but later it is lowered
     // into a lambda of the form
     // |x| -> {
     //   let array: &Vec<i32> = &(*x).A;
@@ -44,8 +50,7 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator {
     // }
     public DBSPFlatMapOperator(CalciteObject node, DBSPExpression expression,
                                DBSPTypeZSet outputType, DBSPOperator input) {
-        super(node, "flat_map", expression, outputType, true, input);
-        this.checkArgumentFunctionType(expression, 0, input);
+        this(node, expression, outputType, true, input);
     }
 
     @Override

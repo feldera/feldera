@@ -23,25 +23,21 @@ import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Function;
 
 /**
  * Optimizes patterns containing projections.
- * You probably don't want to use this visitor directly, consider using
- * OptimizeProjections, which packages this nicely and iterates until convergence.
  * Projections are map operations that have a function with a very simple
- * structure.  The function is analyzed using the 'Projection' inner visitor.
+ * structure.  The function is analyzed using the 'Projection' visitor.
  * - Merge Projection operations into the previous operation if possible.
  *   Done for joins, constants, flatmaps, and some maps.
  * - Swap projection with operations such as Distinct, Integral, Differential, etc.
  */
 public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
-    /** If this function returns 'true' the operator can be optimized. */
-    protected final Function<DBSPOperator, Boolean> canOptimize;
+    final CircuitGraph graph;
 
-    public OptimizeProjectionVisitor(IErrorReporter reporter, Function<DBSPOperator, Boolean> canOptimize) {
+    public OptimizeProjectionVisitor(IErrorReporter reporter, CircuitGraph graph) {
         super(reporter, false);
-        this.canOptimize = canOptimize;
+        this.graph = graph;
     }
 
     @Override
@@ -78,7 +74,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
             return;
         } else if ((source.is(DBSPStreamJoinOperator.class) || source.is(DBSPJoinOperator.class)) &&
                 // We have to look up the original operator input, not source
-                this.canOptimize.apply(operator.input())) {
+                this.graph.getFanout(operator.input()) == 1) {
             DBSPClosureExpression expression = source.getFunction().to(DBSPClosureExpression.class);
             DBSPClosureExpression newFunction = operator.getFunction().to(DBSPClosureExpression.class)
                     .applyAfter(this.errorReporter, expression);
