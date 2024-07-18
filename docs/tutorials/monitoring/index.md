@@ -68,11 +68,11 @@ step.
         "description": "Example pipeline",
         "program_name": "example-program",
         "config": {"tracing": true, "tracing_endpoint_jaeger": "host.docker.internal:6831"},
-        "connectors": [] 
+        "connectors": []
       }'
    ```
     - Use `host.docker.internal:6831` if you are running Feldera in docker or
-      `localhost:6381` if you run Feldera directly.
+      `localhost:6831` if you run Feldera directly.
 
 ## DBSP Profiles
 
