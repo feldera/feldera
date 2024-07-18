@@ -189,8 +189,8 @@ where
 
     fn evict_to(&mut self, max_size: usize) {
         while self.cur_cost > max_size {
-            let (_key, value) = self.cache.pop_first().unwrap();
-            self.lru.remove(&value.serial);
+            let (_serial, key) = self.lru.pop_first().unwrap();
+            let value = self.cache.remove(&key).unwrap();
             self.cur_cost -= value.aux.cost();
         }
         self.debug_check_invariants();
