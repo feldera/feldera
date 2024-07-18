@@ -12,11 +12,11 @@ rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf"
 geo = { version = "0.26.0" }
 geo-types = { version = "0.7" }
 # Once chrono is released with `849932` chrono version needs to be updated in size-of crate:
-size-of = { git = "https://github.com/gz/size-of.git", rev = "3ec40db", features = ["rust_decimal"] }
+size-of = { git = "https://github.com/gz/size-of.git", rev = "f8e6be7", features = ["rust_decimal"] }
 serde = { version = "1.0", features = ["derive"] }
 num = { version = "0.4.1" }
 # Go back to a version once commit containing 849932 is released:
-chrono = { git = "https://github.com/chronotope/chrono", rev = "849932" }
+chrono = { version = "0.4.38" }
 like = { version = "0.3.1" }
 paste = { version = "1.0.12" }
 regex = { version = "1.9.1" }

@@ -12,6 +12,7 @@ use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use env_logger::Env;
 use log::info;
+use pipeline_types::program_schema::Relation;
 use proptest::prelude::*;
 use rdkafka::mocking::MockCluster;
 use std::{
@@ -258,7 +259,9 @@ config:
     // nothing is writing data.
     info!("trying to read read step 0 (should time out)");
     let receiver = DummyInputReceiver::new();
-    let reader = endpoint.open(receiver.consumer(), 0).unwrap();
+    let reader = endpoint
+        .open(receiver.consumer(), 0, Relation::empty())
+        .unwrap();
     reader.start(Step::MAX).unwrap();
     receiver.expect(vec![ConsumerCall::StartStep(0)]);
 
@@ -290,7 +293,9 @@ config:
     // Now open the same endpoint again and all the steps should be immediately
     // available.
     let receiver2 = DummyInputReceiver::new();
-    let reader2 = endpoint.open(receiver2.consumer(), 0).unwrap();
+    let reader2 = endpoint
+        .open(receiver2.consumer(), 0, Relation::empty())
+        .unwrap();
     reader2.start(step + 1).unwrap();
     for step in 0..=step {
         receiver2.expect(vec![ConsumerCall::StartStep(step)])
@@ -329,7 +334,9 @@ config:
 
     info!("trying to read read step 0 (should time out)");
     let receiver = DummyInputReceiver::new();
-    let reader = endpoint.open(receiver.consumer(), 0).unwrap();
+    let reader = endpoint
+        .open(receiver.consumer(), 0, Relation::empty())
+        .unwrap();
     reader.start(0).unwrap();
     receiver.expect(vec![ConsumerCall::StartStep(0)]);
 
@@ -642,9 +649,11 @@ format:
 "#
     );
 
-    let (reader, consumer, _input_handle) =
-        mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(&config_str).unwrap())
-            .unwrap();
+    let (reader, consumer, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
+        serde_yaml::from_str(&config_str).unwrap(),
+        Relation::empty(),
+    )
+    .unwrap();
     consumer.on_error(Some(Box::new(|_, _| {})));
     reader.start(0).unwrap();
     wait(|| consumer.state().endpoint_error.is_some(), 60000).unwrap();
@@ -667,9 +676,11 @@ format:
     name: csv
 "#;
 
-    let (reader, consumer, _input_handle) =
-        mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(config_str).unwrap())
-            .unwrap();
+    let (reader, consumer, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
+        serde_yaml::from_str(config_str).unwrap(),
+        Relation::empty(),
+    )
+    .unwrap();
     consumer.on_error(Some(Box::new(|_, _| {})));
     reader.start(0).unwrap();
     wait(|| consumer.state().endpoint_error.is_some(), 60000).unwrap();
@@ -694,9 +705,11 @@ format:
 
     info!("proptest_kafka_input: Building input pipeline");
 
-    let (endpoint, _consumer, zset) =
-        mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(&config_str).unwrap())
-            .unwrap();
+    let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
+        serde_yaml::from_str(&config_str).unwrap(),
+        Relation::empty(),
+    )
+    .unwrap();
     consumer.on_error(Some(Box::new(|fatal, error| {
         // It's normal for Kafka to emit errors, but not fatal ones.
         if fatal {

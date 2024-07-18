@@ -54,13 +54,13 @@ create table VENDOR (
 create table PART (
     id bigint not null primary key,
     name varchar
-);
+) with ('materialized' = 'true');
 
 create table PRICE (
     part bigint not null,
     vendor bigint not null,
     price decimal
-);
+) with ('materialized' = 'true');
 ```
 
 This looks familiar, just plain old SQL `CREATE TABLE` statements.
@@ -74,8 +74,8 @@ could arrive from a Kafka stream, a database, or an HTTP request.  Below we will
 see how our SQL program can be instantiated with any of these data sources, or
 even multiple data sources connected to the same table.
 
-Finally, note the `'materialized' = 'true'` attribute on the `VENDOR`
-table.  This annotation instructs Feldera to store the entire contents of the table,
+Finally, note the `'materialized' = 'true'` attribute on the
+tables.  This annotation instructs Feldera to store the entire contents of the table,
 so that the user can browse it at any time.
 
 ## Step 2. Write queries

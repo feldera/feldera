@@ -71,7 +71,7 @@ impl FromInteger<i64> for Timestamp {
 
 impl Debug for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let datetime = NaiveDateTime::from_timestamp_millis(self.milliseconds).ok_or(fmt::Error)?;
+        let datetime = DateTime::from_timestamp_millis(self.milliseconds).ok_or(fmt::Error)?;
 
         f.write_str(&datetime.format("%F %T%.f").to_string())
     }
@@ -126,7 +126,7 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Timestamp {
                         D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
                     })?;
 
-                Ok(Self::new(timestamp.timestamp_millis()))
+                Ok(Self::new(timestamp.and_utc().timestamp_millis()))
             }
             TimestampFormat::MillisSinceEpoch => {
                 let millis: i64 = Deserialize::deserialize(deserializer)?;
@@ -156,7 +156,7 @@ impl<'de> Deserialize<'de> for Timestamp {
                 D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
             })?;
 
-        Ok(Self::new(timestamp.timestamp_millis()))
+        Ok(Self::new(timestamp.and_utc().timestamp_millis()))
     }
 }
 
@@ -700,9 +700,9 @@ impl Date {
 impl fmt::Debug for Date {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let millis = (self.days as i64) * 86400 * 1000;
-        let ndt = NaiveDateTime::from_timestamp_millis(millis);
+        let ndt = DateTime::from_timestamp_millis(millis);
         match ndt {
-            Some(ndt) => ndt.date().fmt(f),
+            Some(ndt) => ndt.date_naive().fmt(f),
             _ => write!(f, "date value '{}' out of range", self.days),
         }
     }
@@ -744,7 +744,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Date {
         match context.date_format {
             DateFormat::String(format_string) => {
                 let millis = (self.days as i64) * 86400 * 1000;
-                let datetime = NaiveDateTime::from_timestamp_millis(millis).ok_or_else(|| {
+                let datetime = DateTime::from_timestamp_millis(millis).ok_or_else(|| {
                     S::Error::custom(format!("date value '{}' out of range", self.days))
                 })?;
 
@@ -770,7 +770,7 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Date {
                 let date = NaiveDate::parse_from_str(str.trim(), format)
                     .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
                 Ok(Self::new(
-                    (date.and_time(NaiveTime::default()).timestamp() / 86400) as i32,
+                    (date.and_time(NaiveTime::default()).and_utc().timestamp() / 86400) as i32,
                 ))
             }
             DateFormat::DaysSinceEpoch => Ok(Self {
@@ -790,7 +790,7 @@ impl<'de> Deserialize<'de> for Date {
         let date = NaiveDate::parse_from_str(str.trim(), "%Y-%m-%d")
             .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
         Ok(Self::new(
-            (date.and_time(NaiveTime::default()).timestamp() / 86400) as i32,
+            (date.and_time(NaiveTime::default()).and_utc().timestamp() / 86400) as i32,
         ))
     }
 }

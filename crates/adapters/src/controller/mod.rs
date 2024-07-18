@@ -59,6 +59,7 @@ use metrics_util::{
     layers::FanoutBuilder,
 };
 use pipeline_types::query::OutputQuery;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::sync_channel;
@@ -82,11 +83,12 @@ mod stats;
 use crate::catalog::{SerBatchReader, SerTrace};
 use crate::integrated::create_integrated_input_endpoint;
 pub use error::{ConfigError, ControllerError};
-use pipeline_types::config::OutputBufferConfig;
 pub use pipeline_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };
+use pipeline_types::config::{OutputBufferConfig, TransportConfigVariant};
+use pipeline_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use pipeline_types::program_schema::canonical_identifier;
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
 
@@ -1100,12 +1102,33 @@ impl ControllerInner {
         let reader = match endpoint {
             Some(endpoint) => {
                 // Create parser.
-                let format_config = endpoint_config
-                    .connector_config
-                    .format
-                    .as_ref()
-                    .ok_or_else(|| ControllerError::input_format_not_specified(endpoint_name))?
-                    .clone();
+                let format_config = if endpoint_config.connector_config.transport.name()
+                    != "datagen"
+                {
+                    endpoint_config
+                        .connector_config
+                        .format
+                        .as_ref()
+                        .ok_or_else(|| ControllerError::input_format_not_specified(endpoint_name))?
+                        .clone()
+                } else {
+                    if endpoint_config.connector_config.format.is_some() {
+                        return Err(ControllerError::input_format_not_supported(
+                            endpoint_name,
+                            "datagen endpoints do not support custom formats: remove the 'format' section from connector specification",
+                        ));
+                    }
+                    FormatConfig {
+                        name: Cow::from("json"),
+                        config: serde_yaml::to_value(JsonParserConfig {
+                            update_format: JsonUpdateFormat::Raw,
+                            json_flavor: JsonFlavor::Default,
+                            array: false,
+                        })
+                        .unwrap(),
+                    }
+                };
+
                 let format =
                     <dyn InputFormat>::get_format(&format_config.name).ok_or_else(|| {
                         ControllerError::unknown_input_format(endpoint_name, &format_config.name)
@@ -1129,7 +1152,7 @@ impl ControllerInner {
                 );
 
                 endpoint
-                    .open(probe, 0)
+                    .open(probe, 0, input_handle.schema.clone())
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?
             }
             None => {
