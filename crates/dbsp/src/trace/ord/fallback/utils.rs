@@ -381,6 +381,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 pub(super) enum BuildTo<M, S> {
     Memory(M),
     Storage(S),
@@ -390,33 +391,18 @@ pub(super) enum BuildTo<M, S> {
 impl<M, S> BuildTo<M, S> {
     pub fn for_capacity<MF, SF, T, MC, SC>(
         vf: MF,
-        sf: SF,
+        _sf: SF,
         time: T,
         capacity: usize,
         mc: MC,
-        sc: SC,
+        _sc: SC,
     ) -> Self
     where
         MC: Fn(MF, T, usize) -> M,
         SC: Fn(SF, T, usize) -> S,
     {
-        match Runtime::min_storage_bytes() {
-            usize::MAX => {
-                // Storage is disabled.
-                Self::Memory(mc(vf, time, capacity))
-            }
-
-            min_storage_bytes if capacity >= min_storage_bytes => {
-                // If `capacity` is filled up then we'll have at least 1 byte
-                // per item (as a bottom of the barrel estimate) so we might as
-                // well start out on storage.
-                Self::Storage(sc(sf, time, capacity))
-            }
-            min_storage_bytes => {
-                // Start out in memory and spill to storage if
-                // `min_storage_bytes` is used.
-                Self::Threshold(mc(vf, time, capacity), min_storage_bytes)
-            }
-        }
+        // For now, always build to memory, because spines are the main place we
+        // want to write to storage and spines only do merging.
+        Self::Memory(mc(vf, time, capacity))
     }
 }
