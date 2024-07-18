@@ -423,8 +423,8 @@ where
     type Builder = FileIndexedWSetBuilder<K, V, R>;
     type Merger = FileIndexedWSetMerger<K, V, R>;
 
-    fn begin_merge(&self, other: &Self) -> Self::Merger {
-        FileIndexedWSetMerger::new_merger(self, other)
+    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
+        FileIndexedWSetMerger::new_merger(self, other, dst_hint)
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
@@ -580,7 +580,11 @@ where
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn new_merger(batch1: &FileIndexedWSet<K, V, R>, batch2: &FileIndexedWSet<K, V, R>) -> Self {
+    fn new_merger(
+        batch1: &FileIndexedWSet<K, V, R>,
+        batch2: &FileIndexedWSet<K, V, R>,
+        _dst_hint: Option<BatchLocation>,
+    ) -> Self {
         Self {
             factories: batch1.factories.clone(),
             lower1: batch1.lower_bound,

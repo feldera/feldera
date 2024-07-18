@@ -572,7 +572,7 @@ where
                 if merger.is_none() {
                     // We initialize this here because to ensure we create the new file we're
                     // writing to on the background thread that's running the closure.
-                    merger = Some(<B as Batch>::Merger::new_merger(&a, &b));
+                    merger = Some(<B as Batch>::Merger::new_merger(&a, &b, None));
                 }
 
                 merger

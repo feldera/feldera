@@ -11,8 +11,8 @@ use crate::{
             Builder as _, Cursor as _, Layer, LayerBuilder, LayerCursor, LayerFactories, Leaf,
             LeafBuilder, LeafCursor, LeafFactories, MergeBuilder, OrdOffset, Trie, TupleBuilder,
         },
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, Merger, Serializer, TimedBuilder,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
+        Deserializer, Filter, Merger, Serializer, TimedBuilder,
     },
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
@@ -421,8 +421,8 @@ where
         )
     }*/
 
-    fn begin_merge(&self, other: &Self) -> Self::Merger {
-        VecValMerger::new_merger(self, other)
+    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
+        VecValMerger::new_merger(self, other, dst_hint)
     }
 
     fn recede_to(&mut self, frontier: &T) {
@@ -588,6 +588,7 @@ where
     fn new_merger(
         batch1: &VecValBatch<K, V, T, R, O>,
         batch2: &VecValBatch<K, V, T, R, O>,
+        _dst_hint: Option<BatchLocation>,
     ) -> Self {
         // Leonid: we do not require batch bounds to grow monotonically.
         // assert!(batch1.upper() == batch2.lower());

@@ -9,7 +9,8 @@ use crate::{
     trace::{
         cursor::{HasTimeDiffCursor, TimeDiffCursor},
         ord::filter,
-        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, TimedBuilder,
+        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor, Filter,
+        TimedBuilder,
     },
     Runtime, Timestamp,
 };
@@ -346,36 +347,37 @@ where
     }
 }
 
-pub(super) enum MergeTo {
-    Memory,
-    Storage,
-}
-
-impl<B> From<(&B, &B)> for MergeTo
+pub(super) fn pick_merge_destination<B>(
+    batch1: &B,
+    batch2: &B,
+    dst_hint: Option<BatchLocation>,
+) -> BatchLocation
 where
     B: BatchReader,
 {
-    fn from((batch1, batch2): (&B, &B)) -> Self {
-        // This is equivalent to `batch1.byte_size() + batch2.byte_size() >=
-        // Runtime::min_storage_bytes()` but it avoids calling `byte_size()` any
-        // more than necessary since it can be expensive.
-        let spill = match Runtime::min_storage_bytes() {
-            0 => true,
-            usize::MAX => false,
-            min_storage_bytes => {
-                let size1 = batch1.approximate_byte_size();
-                size1 >= min_storage_bytes || {
-                    let size2 = batch2.approximate_byte_size();
-                    size1 + size2 >= min_storage_bytes
-                }
-            }
-        };
+    if let Some(location) = dst_hint {
+        return location;
+    }
 
-        if spill {
-            Self::Storage
-        } else {
-            Self::Memory
+    // This is equivalent to `batch1.byte_size() + batch2.byte_size() >=
+    // Runtime::min_storage_bytes()` but it avoids calling `byte_size()` any
+    // more than necessary since it can be expensive.
+    let spill = match Runtime::min_storage_bytes() {
+        0 => true,
+        usize::MAX => false,
+        min_storage_bytes => {
+            let size1 = batch1.approximate_byte_size();
+            size1 >= min_storage_bytes || {
+                let size2 = batch2.approximate_byte_size();
+                size1 + size2 >= min_storage_bytes
+            }
         }
+    };
+
+    if spill {
+        BatchLocation::Storage
+    } else {
+        BatchLocation::Memory
     }
 }
 

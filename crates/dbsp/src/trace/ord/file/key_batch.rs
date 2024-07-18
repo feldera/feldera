@@ -317,8 +317,8 @@ where
     type Builder = FileKeyBuilder<K, T, R>;
     type Merger = FileKeyMerger<K, T, R>;
 
-    fn begin_merge(&self, other: &Self) -> Self::Merger {
-        Self::Merger::new_merger(self, other)
+    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
+        Self::Merger::new_merger(self, other, dst_hint)
     }
 
     fn recede_to(&mut self, frontier: &T) {
@@ -477,7 +477,11 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn new_merger(batch1: &FileKeyBatch<K, T, R>, batch2: &FileKeyBatch<K, T, R>) -> Self {
+    fn new_merger(
+        batch1: &FileKeyBatch<K, T, R>,
+        batch2: &FileKeyBatch<K, T, R>,
+        _dst_hint: Option<BatchLocation>,
+    ) -> Self {
         FileKeyMerger {
             factories: batch1.factories.clone(),
             lower: batch1.lower().meet(batch2.lower()),

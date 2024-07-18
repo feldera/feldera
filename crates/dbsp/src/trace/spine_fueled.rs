@@ -1300,7 +1300,7 @@ where
                 //assert!(batch1.upper() == batch2.lower());
                 let start = Instant::now();
                 counter!(TOTAL_COMPACTIONS).increment(1);
-                let begin_merge = <B as Batch>::begin_merge(&batch1, &batch2);
+                let begin_merge = <B as Batch>::begin_merge(&batch1, &batch2, None);
                 MergeVariant::InProgress(batch1, batch2, begin_merge, start)
             }
             (batch @ Some(_), None) | (None, batch @ Some(_)) => MergeVariant::Complete(batch),

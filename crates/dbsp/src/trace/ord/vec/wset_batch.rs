@@ -12,8 +12,8 @@ use crate::{
             Trie, TupleBuilder,
         },
         ord::merge_batcher::MergeBatcher,
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
-        Filter, Merger, Serializer, TimedBuilder, WeightedItem,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
+        Deserializer, Filter, Merger, Serializer, TimedBuilder, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -368,8 +368,8 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Batch for VecWSet<K, R> {
         Self::from_tuples(time, keys)
     }*/
 
-    fn begin_merge(&self, other: &Self) -> Self::Merger {
-        VecWSetMerger::new_merger(self, other)
+    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
+        VecWSetMerger::new_merger(self, other, dst_hint)
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
@@ -400,7 +400,11 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Merger<K, DynUnit, (), R, V
 where
     Self: SizeOf,
 {
-    fn new_merger(batch1: &VecWSet<K, R>, batch2: &VecWSet<K, R>) -> Self {
+    fn new_merger(
+        batch1: &VecWSet<K, R>,
+        batch2: &VecWSet<K, R>,
+        _dst_hint: Option<BatchLocation>,
+    ) -> Self {
         Self {
             result: <<Leaf<K, R> as Trie>::MergeBuilder as MergeBuilder>::with_capacity(
                 &batch1.layer,

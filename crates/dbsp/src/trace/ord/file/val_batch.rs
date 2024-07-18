@@ -345,8 +345,8 @@ where
     type Builder = FileValBuilder<K, V, T, R>;
     type Merger = FileValMerger<K, V, T, R>;
 
-    fn begin_merge(&self, other: &Self) -> Self::Merger {
-        FileValMerger::new_merger(self, other)
+    fn begin_merge(&self, other: &Self, dst_hint: Option<BatchLocation>) -> Self::Merger {
+        FileValMerger::new_merger(self, other, dst_hint)
     }
 
     fn recede_to(&mut self, frontier: &T) {
@@ -680,7 +680,11 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    fn new_merger(batch1: &FileValBatch<K, V, T, R>, batch2: &FileValBatch<K, V, T, R>) -> Self {
+    fn new_merger(
+        batch1: &FileValBatch<K, V, T, R>,
+        batch2: &FileValBatch<K, V, T, R>,
+        _dst_hint: Option<BatchLocation>,
+    ) -> Self {
         Self {
             factories: batch1.factories.clone(),
             result: None,
