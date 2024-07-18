@@ -9,7 +9,7 @@ def generate_program(sql: SQLContext):
             "category_id": "INT",
             "interaction_type": "STRING",
             "watch_time": "INT",
-            "interaction_date": "TIMESTAMP LATENESS INTERVAL 15 MINUTES",
+            "interaction_date": "TIMESTAMP LATENESS INTERVAL 1 DAYS",
             #"interaction_date": "TIMESTAMP",
             "previous_interaction_date": "TIMESTAMP",
             "interaction_month": "TIMESTAMP",
