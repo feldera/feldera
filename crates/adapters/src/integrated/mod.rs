@@ -88,9 +88,9 @@ pub fn create_integrated_input_endpoint(
     config: &InputEndpointConfig,
     controller: Weak<ControllerInner>,
 ) -> Result<Box<dyn IntegratedInputEndpoint>, ControllerError> {
-    let ep = match &config.connector_config.transport {
+    let ep: Box<dyn IntegratedInputEndpoint> = match &config.connector_config.transport {
         #[cfg(feature = "with-deltalake")]
-        TransportConfig::DeltaTableInput(config) => Box::new(DeltaTableInputEndpoint::new(
+        DeltaTableInput(config) => Box::new(DeltaTableInputEndpoint::new(
             endpoint_id,
             endpoint_name,
             config,

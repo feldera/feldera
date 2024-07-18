@@ -146,7 +146,9 @@ pub fn cast_to_bN_bN(value: Option<bool>) -> Option<bool> {
 pub fn cast_to_Date_s(value: String) -> Date {
     let dt = NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok();
     match dt {
-        Some(value) => Date::new((value.and_hms_opt(0, 0, 0).unwrap().timestamp() / 86400) as i32),
+        Some(value) => {
+            Date::new((value.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() / 86400) as i32)
+        }
         None => panic!("Could not parse string '{value}' as a Date"),
     }
 }
@@ -1348,9 +1350,9 @@ pub fn cast_to_ShortIntervalN_nullN(_value: Option<()>) -> Option<ShortInterval>
 pub fn cast_to_Timestamp_s(value: String) -> Timestamp {
     if let Ok(v) = NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S%.f") {
         // round the number of milliseconds
-        let nanos = v.timestamp_subsec_nanos();
+        let nanos = v.and_utc().timestamp_subsec_nanos();
         let nanos = (nanos + 500000) / 1000000;
-        let result = Timestamp::new(v.timestamp() * 1000 + (nanos as i64));
+        let result = Timestamp::new(v.and_utc().timestamp() * 1000 + (nanos as i64));
         //println!("Parsed successfully {} using {} into {:?} ({})",
         //         value, "%Y-%m-%d %H:%M:%S%.f", result, result.milliseconds());
         return result;
@@ -1360,7 +1362,7 @@ pub fn cast_to_Timestamp_s(value: String) -> Timestamp {
     // parse_from_str fails to parse a datetime if there is no time in the format!
     if let Ok(v) = NaiveDate::parse_from_str(&value, "%Y-%m-%d") {
         let dt = v.and_hms_opt(0, 0, 0).unwrap();
-        let result = Timestamp::new(dt.timestamp_millis());
+        let result = Timestamp::new(dt.and_utc().timestamp_millis());
         //println!("Parsed successfully {} using {} into {:?} ({})",
         //         value, "%Y-%m-%d", result, result.milliseconds());
         return result;

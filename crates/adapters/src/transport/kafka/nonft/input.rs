@@ -11,6 +11,7 @@ use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
 use log::debug;
 use num_traits::FromPrimitive;
+use pipeline_types::program_schema::Relation;
 use pipeline_types::{secret_ref::MaybeSecretRef, transport::kafka::KafkaInputConfig};
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::{
@@ -469,6 +470,7 @@ impl TransportInputEndpoint for KafkaInputEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         _start_step: Step,
+        _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(KafkaInputReader::new(&self.config, consumer)?))
     }

@@ -5,6 +5,7 @@ use crate::PipelineState;
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use num_traits::FromPrimitive;
+use pipeline_types::program_schema::Relation;
 use pipeline_types::transport::file::{FileInputConfig, FileOutputConfig};
 use std::{
     fs::File,
@@ -40,6 +41,7 @@ impl TransportInputEndpoint for FileInputEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         _start_step: Step,
+        _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(FileInputReader::new(&self.config, consumer)?))
     }
@@ -205,6 +207,7 @@ mod test {
     use crate::test::{mock_input_pipeline, wait, DEFAULT_TIMEOUT_MS};
     use csv::WriterBuilder as CsvWriterBuilder;
     use pipeline_types::deserialize_without_context;
+    use pipeline_types::program_schema::Relation;
     use serde::{Deserialize, Serialize};
     use std::{io::Write, thread::sleep, time::Duration};
     use tempfile::NamedTempFile;
@@ -260,6 +263,7 @@ format:
 
         let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
             serde_yaml::from_str(&config_str).unwrap(),
+            Relation::empty(),
         )
         .unwrap();
 
@@ -314,6 +318,7 @@ format:
 
         let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
             serde_yaml::from_str(&config_str).unwrap(),
+            Relation::empty(),
         )
         .unwrap();
 

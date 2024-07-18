@@ -9,6 +9,7 @@ use crate::{
 use env_logger::Env;
 use log::info;
 use parquet::data_type::AsBytes;
+use pipeline_types::program_schema::Relation;
 use proptest::prelude::*;
 use rdkafka::message::{BorrowedMessage, Header, Headers};
 use rdkafka::Message;
@@ -238,8 +239,10 @@ format:
 "#
     );
 
-    match mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(&config_str).unwrap())
-    {
+    match mock_input_pipeline::<TestStruct, TestStruct>(
+        serde_yaml::from_str(&config_str).unwrap(),
+        Relation::empty(),
+    ) {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("proptest_kafka_input: Error: {e}"),
     };
@@ -258,7 +261,10 @@ format:
     name: csv
 "#;
 
-    match mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(config_str).unwrap()) {
+    match mock_input_pipeline::<TestStruct, TestStruct>(
+        serde_yaml::from_str(config_str).unwrap(),
+        Relation::empty(),
+    ) {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("proptest_kafka_input: Error: {e}"),
     };
@@ -284,9 +290,11 @@ format:
 
     info!("proptest_kafka_input: Building input pipeline");
 
-    let (endpoint, _consumer, zset) =
-        mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(&config_str).unwrap())
-            .unwrap();
+    let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
+        serde_yaml::from_str(&config_str).unwrap(),
+        Relation::empty(),
+    )
+    .unwrap();
 
     endpoint.start(0).unwrap();
 

@@ -11,6 +11,7 @@ use circular_queue::CircularQueue;
 use futures_util::StreamExt;
 use log::debug;
 use num_traits::FromPrimitive;
+use pipeline_types::program_schema::Relation;
 use serde::Deserialize;
 use std::{
     sync::{
@@ -209,6 +210,7 @@ impl TransportInputEndpoint for HttpInputEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         _start_step: Step,
+        _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
         *self.inner.consumer.lock().unwrap() = Some(consumer);
         Ok(Box::new(self.clone()))

@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [Python] Add `SQLContext.input_json()` to send json
   data to the pipeline
   ([#2088](https://github.com/feldera/feldera/pull/2088))
+- Add a new data generator input adapter
+  ([#2107](https://github.com/feldera/feldera/pull/2107))
 
 ## [0.21.0] - 2024-07-22
 

@@ -10,6 +10,7 @@ use log::{Log, Metadata, Record};
 use pipeline_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
+use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fs::{read_dir, File};
 use std::io::Read;
@@ -41,6 +42,7 @@ use dbsp::utils::Tup2;
 pub use mock_dezset::{MockDeZSet, MockUpdate};
 pub use mock_input_consumer::MockInputConsumer;
 pub use mock_output_consumer::MockOutputConsumer;
+use pipeline_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use pipeline_types::program_schema::{Field, Relation};
 
 pub struct TestLogger;
@@ -97,7 +99,7 @@ where
 {
     let input_handle = <MockDeZSet<T, U>>::new();
     // Input parsers don't care about schema yet.
-    let schema = Relation::new("mock_schema", false, vec![], false);
+    let schema = Relation::empty();
     let consumer = MockInputConsumer::from_handle(
         &InputCollectionHandle::new(schema, input_handle.clone()),
         config,
@@ -119,18 +121,34 @@ where
 /// ```
 pub fn mock_input_pipeline<T, U>(
     config: InputEndpointConfig,
+    relation: Relation,
 ) -> AnyResult<(Box<dyn InputReader>, MockInputConsumer, MockDeZSet<T, U>)>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
-    let (consumer, input_handle) =
-        mock_parser_pipeline(config.connector_config.format.as_ref().unwrap())?;
+    let default_format = FormatConfig {
+        name: Cow::from("json"),
+        config: serde_yaml::to_value(JsonParserConfig {
+            update_format: JsonUpdateFormat::Raw,
+            json_flavor: JsonFlavor::Default,
+            array: false,
+        })
+        .unwrap(),
+    };
+
+    let (consumer, input_handle) = mock_parser_pipeline(
+        config
+            .connector_config
+            .format
+            .as_ref()
+            .unwrap_or(&default_format),
+    )?;
 
     let endpoint =
         input_transport_config_to_endpoint(config.connector_config.transport.clone())?.unwrap();
 
-    let reader = endpoint.open(Box::new(consumer.clone()), 0)?;
+    let reader = endpoint.open(Box::new(consumer.clone()), 0, relation)?;
 
     Ok((reader, consumer, input_handle))
 }
@@ -213,7 +231,6 @@ where
 
     // Use assert_eq, so errors are printed in case of a failure.
     assert_eq!(errors, vec![]);
-
     let records = buffer.state().flushed.clone();
 
     OrdZSet::from_tuples(

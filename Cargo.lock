@@ -650,7 +650,7 @@ dependencies = [
  "arrow-buffer 51.0.0",
  "arrow-data 51.0.0",
  "arrow-schema 51.0.0",
- "chrono 0.4.38",
+ "chrono",
  "half",
  "num",
 ]
@@ -665,7 +665,7 @@ dependencies = [
  "arrow-buffer 52.0.0",
  "arrow-data 52.0.0",
  "arrow-schema 52.0.0",
- "chrono 0.4.38",
+ "chrono",
  "half",
  "num",
 ]
@@ -680,7 +680,7 @@ dependencies = [
  "arrow-buffer 51.0.0",
  "arrow-data 51.0.0",
  "arrow-schema 51.0.0",
- "chrono 0.4.38",
+ "chrono",
  "chrono-tz 0.8.6",
  "half",
  "hashbrown 0.14.5",
@@ -697,7 +697,7 @@ dependencies = [
  "arrow-buffer 52.0.0",
  "arrow-data 52.0.0",
  "arrow-schema 52.0.0",
- "chrono 0.4.38",
+ "chrono",
  "chrono-tz 0.9.0",
  "half",
  "hashbrown 0.14.5",
@@ -739,7 +739,7 @@ dependencies = [
  "arrow-select 51.0.0",
  "atoi 2.0.0",
  "base64 0.22.1",
- "chrono 0.4.38",
+ "chrono",
  "half",
  "lexical-core",
  "num",
@@ -759,7 +759,7 @@ dependencies = [
  "arrow-select 52.0.0",
  "atoi 2.0.0",
  "base64 0.22.1",
- "chrono 0.4.38",
+ "chrono",
  "comfy-table",
  "half",
  "lexical-core",
@@ -778,7 +778,7 @@ dependencies = [
  "arrow-cast 51.0.0",
  "arrow-data 51.0.0",
  "arrow-schema 51.0.0",
- "chrono 0.4.38",
+ "chrono",
  "csv",
  "csv-core",
  "lazy_static",
@@ -797,7 +797,7 @@ dependencies = [
  "arrow-cast 52.0.0",
  "arrow-data 52.0.0",
  "arrow-schema 52.0.0",
- "chrono 0.4.38",
+ "chrono",
  "csv",
  "csv-core",
  "lazy_static",
@@ -869,7 +869,7 @@ dependencies = [
  "arrow-cast 51.0.0",
  "arrow-data 51.0.0",
  "arrow-schema 51.0.0",
- "chrono 0.4.38",
+ "chrono",
  "half",
  "indexmap 2.2.6",
  "lexical-core",
@@ -889,7 +889,7 @@ dependencies = [
  "arrow-cast 52.0.0",
  "arrow-data 52.0.0",
  "arrow-schema 52.0.0",
- "chrono 0.4.38",
+ "chrono",
  "half",
  "indexmap 2.2.6",
  "lexical-core",
@@ -2657,8 +2657,9 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.31"
-source = "git+https://github.com/chronotope/chrono?rev=849932#849932b09bdc58c508c0b6794fa474a9558d27ea"
+version = "0.4.38"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a21f936df1771bf62b77f047b726c4625ff2e8aa607c01ec06e5a05bd8463401"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -2671,27 +2672,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "chrono"
-version = "0.4.38"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a21f936df1771bf62b77f047b726c4625ff2e8aa607c01ec06e5a05bd8463401"
-dependencies = [
- "android-tzdata",
- "iana-time-zone",
- "js-sys",
- "num-traits",
- "serde",
- "wasm-bindgen",
- "windows-targets 0.52.5",
-]
-
-[[package]]
 name = "chrono-tz"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d59ae0466b83e838b81a54256c39d5d7c20b9d7daa10510a242d9b75abd5936e"
 dependencies = [
- "chrono 0.4.38",
+ "chrono",
  "chrono-tz-build 0.2.1",
  "phf",
 ]
@@ -2702,7 +2688,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93698b29de5e97ad0ae26447b344c482a7284c737d9ddc5f9e52b74a336671bb"
 dependencies = [
- "chrono 0.4.38",
+ "chrono",
  "chrono-tz-build 0.3.0",
  "phf",
 ]
@@ -2806,19 +2792,19 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.9"
+version = "4.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64acc1846d54c1fe936a78dc189c34e28d3f5afc348403f28ecf53660b9b8462"
+checksum = "5db83dced34638ad474f39f250d7fea9598bdd239eaced1bdf45d597da0f433f"
 dependencies = [
  "clap_builder",
- "clap_derive 4.5.8",
+ "clap_derive 4.5.5",
 ]
 
 [[package]]
 name = "clap_builder"
-version = "4.5.9"
+version = "4.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fb8393d67ba2e7bfaf28a23458e4e2b543cc73a99595511eb207fdb8aede942"
+checksum = "f7e204572485eb3fbf28f871612191521df159bc3e15a9f5064c66dba3a8c05f"
 dependencies = [
  "anstream",
  "anstyle",
@@ -2842,9 +2828,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.5.8"
+version = "4.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bac35c6dafb060fd4d275d9a4ffae97917c13a6327903a8be2153cd964f7085"
+checksum = "c780290ccf4fb26629baa7a1081e68ced113f1d3ec302fa5948f1c381ebf06c6"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2 1.0.86",
@@ -3065,7 +3051,7 @@ dependencies = [
  "anes",
  "cast",
  "ciborium",
- "clap 4.5.9",
+ "clap 4.5.7",
  "criterion-plot",
  "is-terminal",
  "itertools 0.10.5",
@@ -3388,7 +3374,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "bzip2",
- "chrono 0.4.38",
+ "chrono",
  "dashmap",
  "datafusion-common",
  "datafusion-common-runtime",
@@ -3438,7 +3424,7 @@ dependencies = [
  "arrow-array 52.0.0",
  "arrow-buffer 52.0.0",
  "arrow-schema 52.0.0",
- "chrono 0.4.38",
+ "chrono",
  "half",
  "hashbrown 0.14.5",
  "instant",
@@ -3465,7 +3451,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8385aba84fc4a06d3ebccfbcbf9b4f985e80c762fac634b49079f7cc14933fb1"
 dependencies = [
  "arrow 52.0.0",
- "chrono 0.4.38",
+ "chrono",
  "dashmap",
  "datafusion-common",
  "datafusion-expr",
@@ -3489,7 +3475,7 @@ dependencies = [
  "arrow 52.0.0",
  "arrow-array 52.0.0",
  "arrow-buffer 52.0.0",
- "chrono 0.4.38",
+ "chrono",
  "datafusion-common",
  "paste",
  "serde_json",
@@ -3508,7 +3494,7 @@ dependencies = [
  "base64 0.22.1",
  "blake2",
  "blake3",
- "chrono 0.4.38",
+ "chrono",
  "datafusion-common",
  "datafusion-execution",
  "datafusion-expr",
@@ -3571,7 +3557,7 @@ checksum = "12172f2a6c9eb4992a51e62d709eeba5dedaa3b5369cce37ff6c2260e100ba76"
 dependencies = [
  "arrow 52.0.0",
  "async-trait",
- "chrono 0.4.38",
+ "chrono",
  "datafusion-common",
  "datafusion-expr",
  "datafusion-physical-expr",
@@ -3596,7 +3582,7 @@ dependencies = [
  "arrow-schema 52.0.0",
  "arrow-string 52.0.0",
  "base64 0.22.1",
- "chrono 0.4.38",
+ "chrono",
  "datafusion-common",
  "datafusion-execution",
  "datafusion-expr",
@@ -3638,7 +3624,7 @@ dependencies = [
  "arrow-ord 52.0.0",
  "arrow-schema 52.0.0",
  "async-trait",
- "chrono 0.4.38",
+ "chrono",
  "datafusion-common",
  "datafusion-common-runtime",
  "datafusion-execution",
@@ -3666,7 +3652,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db8eb8d706c73f01c0e2630c64ffc61c33831b064a813ec08a3e094dc3190c0f"
 dependencies = [
  "arrow 52.0.0",
- "chrono 0.4.38",
+ "chrono",
  "datafusion",
  "datafusion-common",
  "datafusion-expr",
@@ -3682,7 +3668,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cde7115772d326eeb78a1c77c974e7753b1538e1747675cb6b428058b654b31c"
 dependencies = [
  "arrow 52.0.0",
- "chrono 0.4.38",
+ "chrono",
  "datafusion-common",
  "object_store 0.9.1",
  "prost 0.12.6",
@@ -3712,8 +3698,8 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "binrw",
- "chrono 0.4.31",
- "clap 4.5.9",
+ "chrono",
+ "clap 4.5.7",
  "crc32c",
  "criterion",
  "crossbeam",
@@ -3798,9 +3784,9 @@ dependencies = [
  "bstr",
  "bytes",
  "bytestring",
- "chrono 0.4.31",
+ "chrono",
  "circular-queue",
- "clap 4.5.9",
+ "clap 4.5.7",
  "colored",
  "crossbeam",
  "csv",
@@ -3809,10 +3795,12 @@ dependencies = [
  "deltalake",
  "env_logger 0.10.2",
  "erased-serde",
+ "fake",
  "form_urlencoded",
  "futures",
  "futures-timer",
  "futures-util",
+ "governor",
  "jemalloc_pprof",
  "lazy_static",
  "log",
@@ -3836,6 +3824,7 @@ dependencies = [
  "proptest-derive 0.3.0",
  "psutil",
  "rand 0.8.5",
+ "rand_distr",
  "rdkafka",
  "regex",
  "reqwest 0.11.27",
@@ -3947,7 +3936,7 @@ dependencies = [
  "arrow-schema 52.0.0",
  "arrow-select 52.0.0",
  "bytes",
- "chrono 0.4.38",
+ "chrono",
  "delta_kernel_derive",
  "either",
  "fix-hidden-lifetime-bug",
@@ -4056,7 +4045,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "cfg-if",
- "chrono 0.4.38",
+ "chrono",
  "dashmap",
  "either",
  "errno",
@@ -4110,7 +4099,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "cfg-if",
- "chrono 0.4.38",
+ "chrono",
  "dashmap",
  "datafusion",
  "datafusion-common",
@@ -4205,6 +4194,12 @@ dependencies = [
  "rustc_version",
  "syn 2.0.68",
 ]
+
+[[package]]
+name = "deunicode"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "339544cc9e2c4dc3fc7149fd630c5f22263a4fdf18a98afd0075784968b5cf00"
 
 [[package]]
 name = "diff"
@@ -4512,6 +4507,18 @@ checksum = "0f214dc438f977e6d4e3500aaa277f5ad94ca83fbbd9b1a15713ce2344ccc5a1"
 dependencies = [
  "event-listener 5.3.1",
  "pin-project-lite",
+]
+
+[[package]]
+name = "fake"
+version = "2.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c25829bde82205da46e1823b2259db6273379f626fc211f126f65654a2669be"
+dependencies = [
+ "deunicode",
+ "http 1.1.0",
+ "rand 0.8.5",
+ "url-escape",
 ]
 
 [[package]]
@@ -4926,6 +4933,26 @@ dependencies = [
  "futures-core",
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "governor"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68a7f542ee6b35af73b06abc0dad1c1bae89964e4e253bc4b587b91c9637867b"
+dependencies = [
+ "cfg-if",
+ "dashmap",
+ "futures",
+ "futures-timer",
+ "no-std-compat",
+ "nonzero_ext",
+ "parking_lot 0.12.3",
+ "portable-atomic",
+ "quanta",
+ "rand 0.8.5",
+ "smallvec",
+ "spinning_top",
 ]
 
 [[package]]
@@ -5410,7 +5437,7 @@ dependencies = [
 [[package]]
 name = "ijson"
 version = "0.1.4"
-source = "git+https://github.com/abhizer/ijson.git#6c9769c780ab533b3fca8f5e2e9204b16af0e6ad"
+source = "git+https://github.com/abhizer/ijson.git?rev=08f2abf#08f2abfa66d66ea80bb72563eeadf473ca986031"
 dependencies = [
  "dashmap",
  "lazy_static",
@@ -6219,6 +6246,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "no-std-compat"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b93853da6d84c2e3c7d730d6473e8817692dd89be387eb01b94d7f108ecb5b8c"
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6227,6 +6260,12 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
+
+[[package]]
+name = "nonzero_ext"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38bf9645c8b145698bb0b18a4637dcacbc421ea49bef2317e4fd8065a387cf21"
 
 [[package]]
 name = "ntapi"
@@ -6404,7 +6443,7 @@ dependencies = [
  "async-trait",
  "base64 0.21.7",
  "bytes",
- "chrono 0.4.38",
+ "chrono",
  "futures",
  "humantime",
  "hyper 0.14.29",
@@ -6434,7 +6473,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bytes",
- "chrono 0.4.38",
+ "chrono",
  "futures",
  "humantime",
  "hyper 1.3.1",
@@ -6722,7 +6761,7 @@ dependencies = [
  "base64 0.22.1",
  "brotli 3.5.0",
  "bytes",
- "chrono 0.4.38",
+ "chrono",
  "flate2",
  "futures",
  "half",
@@ -6757,7 +6796,7 @@ dependencies = [
  "base64 0.22.1",
  "brotli 6.0.0",
  "bytes",
- "chrono 0.4.38",
+ "chrono",
  "flate2",
  "futures",
  "half",
@@ -6972,8 +7011,8 @@ dependencies = [
  "base64 0.21.7",
  "cached 0.43.0",
  "change-detection",
- "chrono 0.4.38",
- "clap 4.5.9",
+ "chrono",
+ "clap 4.5.7",
  "colored",
  "deadpool-postgres",
  "dirs 5.0.1",
@@ -7677,6 +7716,16 @@ checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom 0.2.15",
  "serde",
+]
+
+[[package]]
+name = "rand_distr"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
+dependencies = [
+ "num-traits",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -8545,9 +8594,9 @@ checksum = "a3f0bf26fd526d2a95683cd0f87bf103b8539e2ca1ef48ce002d67aad59aa0b4"
 
 [[package]]
 name = "serde"
-version = "1.0.204"
+version = "1.0.203"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc76f558e0cbb2a839d37354c575f1dc3fdc6546b5be373ba43d95f231bf7c12"
+checksum = "7253ab4de971e72fb7be983802300c30b5a7f0c2e56fab8abfc6a214307c0094"
 dependencies = [
  "serde_derive",
 ]
@@ -8563,16 +8612,16 @@ dependencies = [
  "arrow-data 52.0.0",
  "arrow-schema 52.0.0",
  "bytemuck",
- "chrono 0.4.38",
+ "chrono",
  "half",
  "serde",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.204"
+version = "1.0.203"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0cd7e117be63d3c3678776753929474f3b04a43a080c744d6b0ae2a8c28e222"
+checksum = "500cbc0ebeb6f46627f50f3f5811ccf6bf00643be300b4c3eabc0ef55dc5b5ba"
 dependencies = [
  "proc-macro2 1.0.86",
  "quote 1.0.36",
@@ -8629,7 +8678,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ad483d2ab0149d5a5ebcd9972a3852711e0153d863bf5a5d0391d28883c4a20"
 dependencies = [
  "base64 0.22.1",
- "chrono 0.4.38",
+ "chrono",
  "hex",
  "indexmap 1.9.3",
  "indexmap 2.2.6",
@@ -8798,10 +8847,10 @@ checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 [[package]]
 name = "size-of"
 version = "0.1.5"
-source = "git+https://github.com/gz/size-of.git?rev=3ec40db#3ec40db3d1c8470f22856257542a68ef60c99969"
+source = "git+https://github.com/gz/size-of.git?rev=f8e6be7#f8e6be7050de36e9a6b552a52aaed29e671c17b5"
 dependencies = [
  "arcstr",
- "chrono 0.4.31",
+ "chrono",
  "hashbrown 0.13.2",
  "ordered-float 3.9.2",
  "rust_decimal",
@@ -8813,7 +8862,7 @@ dependencies = [
 [[package]]
 name = "size-of-derive"
 version = "0.1.2"
-source = "git+https://github.com/gz/size-of.git?rev=3ec40db#3ec40db3d1c8470f22856257542a68ef60c99969"
+source = "git+https://github.com/gz/size-of.git?rev=f8e6be7#f8e6be7050de36e9a6b552a52aaed29e671c17b5"
 dependencies = [
  "proc-macro2 1.0.86",
  "quote 1.0.36",
@@ -8911,6 +8960,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "spinning_top"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d96d2d1d716fb500937168cc09353ffdc7a012be8475ac7308e1bdf0e3923300"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
 name = "spki"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8934,7 +8992,7 @@ dependencies = [
 name = "sqllib"
 version = "0.1.0"
 dependencies = [
- "chrono 0.4.31",
+ "chrono",
  "dbsp",
  "flate2",
  "geo",
@@ -10010,6 +10068,15 @@ dependencies = [
  "idna",
  "percent-encoding",
  "serde",
+]
+
+[[package]]
+name = "url-escape"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44e0ce4d1246d075ca5abec4b41d33e87a6054d08e2366b63205665e950db218"
+dependencies = [
+ "percent-encoding",
 ]
 
 [[package]]

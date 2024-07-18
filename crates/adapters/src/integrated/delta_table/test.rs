@@ -738,7 +738,7 @@ proptest! {
         let expected_filtered_zset = OrdZSet::from_tuples(
             (),
             data.into_iter()
-                .filter(|x| x.field_2.milliseconds() >= start.timestamp_millis())
+                .filter(|x| x.field_2.milliseconds() >= start.and_utc().timestamp_millis())
                 .map(|x| Tup2(Tup2(x,()),1)).collect()
             );
 

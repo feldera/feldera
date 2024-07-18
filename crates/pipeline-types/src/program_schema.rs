@@ -55,6 +55,15 @@ pub struct Relation {
 }
 
 impl Relation {
+    pub fn empty() -> Self {
+        Self {
+            name: "".to_string(),
+            case_sensitive: false,
+            fields: Vec::new(),
+            materialized: false,
+        }
+    }
+
     pub fn new(name: &str, case_sensitive: bool, fields: Vec<Field>, materialized: bool) -> Self {
         Self {
             name: name.to_string(),
