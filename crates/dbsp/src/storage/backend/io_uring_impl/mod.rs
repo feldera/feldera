@@ -9,19 +9,14 @@ use std::mem::ManuallyDrop;
 use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
 
 use io_uring::squeue::Entry;
 use io_uring::{opcode, types::Fd, IoUring};
-use lazy_static::lazy_static;
 use libc::{c_void, iovec};
-use metrics::{counter, histogram, Counter, Histogram};
+use metrics::counter;
 use pipeline_types::config::StorageCacheConfig;
 
-use crate::circuit::metrics::{
-    FILES_CREATED, FILES_DELETED, READS_FAILED, READS_SUCCESS, READ_LATENCY, TOTAL_BYTES_READ,
-    TOTAL_BYTES_WRITTEN, WRITES_SUCCESS, WRITE_LATENCY,
-};
+use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
 use crate::storage::backend::{
     AtomicIncrementOnlyI64, FileHandle, ImmutableFile, ImmutableFileHandle, ImmutableFiles,
     Storage, IMMUTABLE_FILE_METADATA, NEXT_FILE_HANDLE,
@@ -297,7 +292,6 @@ impl Inner {
         if write.len == 0 {
             return Ok(());
         }
-        let request_start = Instant::now();
 
         let file = fm.file.clone();
         let iovec = write
@@ -323,17 +317,6 @@ impl Inner {
                 file,
             },
         )?;
-
-        lazy_static! {
-            static ref TOTAL_BYTES_WRITTEN_COUNTER: Counter = counter!(TOTAL_BYTES_WRITTEN);
-            static ref WRITES_SUCCESS_COUNTER: Counter = counter!(WRITES_SUCCESS);
-            static ref WRITE_LATENCY_HISTOGRAM: Histogram = histogram!(WRITE_LATENCY);
-        }
-
-        TOTAL_BYTES_WRITTEN_COUNTER.increment(write.len);
-        WRITES_SUCCESS_COUNTER.increment(1);
-        WRITE_LATENCY_HISTOGRAM.record(request_start.elapsed().as_secs_f64());
-
         Ok(())
     }
 
@@ -479,26 +462,10 @@ impl Inner {
     fn read_block(&self, fd: i64, offset: u64, size: usize) -> Result<Arc<FBuf>, StorageError> {
         let mut buffer = FBuf::with_capacity(size);
 
-        lazy_static! {
-            static ref TOTAL_BYTES_READ_COUNTER: Counter = counter!(TOTAL_BYTES_READ);
-            static ref READ_LATENCY_HISTOGRAM: Histogram = histogram!(READ_LATENCY);
-            static ref READS_SUCCESS_COUNTER: Counter = counter!(READS_SUCCESS);
-            static ref READS_FAILED_COUNTER: Counter = counter!(READS_FAILED);
-        }
-
         let fm = self.immutable_files.get(fd).unwrap();
-        let request_start = Instant::now();
         match buffer.read_exact_at(&fm.file, offset, size) {
-            Ok(()) => {
-                TOTAL_BYTES_READ_COUNTER.increment(buffer.len() as u64);
-                READ_LATENCY_HISTOGRAM.record(request_start.elapsed().as_secs_f64());
-                READS_SUCCESS_COUNTER.increment(1);
-                Ok(Arc::new(buffer))
-            }
-            Err(e) => {
-                READS_FAILED_COUNTER.increment(1);
-                Err(e.into())
-            }
+            Ok(()) => Ok(Arc::new(buffer)),
+            Err(e) => Err(e.into()),
         }
     }
 

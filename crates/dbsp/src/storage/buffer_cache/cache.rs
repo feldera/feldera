@@ -12,10 +12,7 @@ use std::{
 };
 
 use crc32c::crc32c;
-use lazy_static::lazy_static;
-use metrics::{counter, Counter};
 
-use crate::circuit::metrics::{BUFFER_CACHE_HIT, BUFFER_CACHE_MISS};
 use crate::storage::backend::Backend;
 use crate::storage::file::reader::{CorruptionError, Error};
 use crate::{
@@ -245,11 +242,6 @@ where
     }
 }
 
-lazy_static! {
-    static ref BUFFER_CACHE_HIT_COUNTER: Counter = counter!(BUFFER_CACHE_HIT);
-    static ref BUFFER_CACHE_MISS_COUNTER: Counter = counter!(BUFFER_CACHE_MISS);
-}
-
 impl<E> BufferCache<E>
 where
     E: CacheEntry,
@@ -284,12 +276,9 @@ where
     {
         let key = CacheKey::from((fd, offset));
         if let Some(aux) = self.inner.lock().unwrap().get(key) {
-            BUFFER_CACHE_HIT_COUNTER.increment(1);
             return convert(aux)
                 .map_err(|_| Error::Corruption(CorruptionError::BadBlockType { offset, size }));
         }
-
-        BUFFER_CACHE_MISS_COUNTER.increment(1);
 
         let block = Self::backend().read_block(fd, offset, size)?;
         let aux = E::from_read(block, offset, size)?;
