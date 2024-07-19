@@ -83,6 +83,14 @@ impl ErrorResponse {
             details,
         }
     }
+
+    pub fn from_yaml(s: &str) -> Self {
+        serde_yaml::from_str(s).unwrap()
+    }
+
+    pub fn to_yaml(&self) -> String {
+        serde_yaml::to_string(self).unwrap()
+    }
 }
 
 pub trait DetailedError: StdError + Serialize {

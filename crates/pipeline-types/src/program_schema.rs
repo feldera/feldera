@@ -37,6 +37,16 @@ pub struct ProgramSchema {
     pub outputs: Vec<Relation>,
 }
 
+impl ProgramSchema {
+    pub fn from_yaml(s: &str) -> Self {
+        serde_yaml::from_str(s).unwrap()
+    }
+
+    pub fn to_yaml(&self) -> String {
+        serde_yaml::to_string(self).unwrap()
+    }
+}
+
 /// A SQL table or view. It has a name and a list of fields.
 ///
 /// Matches the Calcite JSON format.

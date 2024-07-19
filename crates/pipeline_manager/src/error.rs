@@ -17,7 +17,7 @@
 //! `dbsp_adapters` crate, i.e., errors returned by the pipeline manager and
 //! by individual pipelines have the same format.
 
-use crate::db::DBError;
+use crate::db::error::DBError;
 use crate::demo::DemoError;
 use crate::runner::RunnerError;
 use actix_web::{
