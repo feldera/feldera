@@ -489,9 +489,11 @@ where
     /// [`Batch::recede_to`].
     fn recede_to(&mut self, frontier: &Self::Time);
 
-    /// If this batch supports writing itself to storage, this causes it to
-    /// happen.
-    fn persist(&mut self) {}
+    /// If this batch is not on storage, but supports writing itself to storage,
+    /// this method writes it to storage and returns the stored version.
+    fn persisted(&self) -> Option<Self> {
+        None
+    }
 
     fn persistent_id(&self) -> Option<PathBuf> {
         None

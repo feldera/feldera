@@ -316,12 +316,19 @@ where
         }
     }
 
-    fn persist(&mut self) {
-        if let Inner::Vec(vec) = &self.inner {
-            let mut file = FileKeyBuilder::timed_with_capacity(&self.factories.file, 0);
-            copy_to_builder(&mut file, vec.cursor());
-            self.inner =
-                Inner::File(file.done_with_bounds(vec.lower().to_owned(), vec.upper().to_owned()));
+    fn persisted(&self) -> Option<Self> {
+        match &self.inner {
+            Inner::Vec(vec) => {
+                let mut file = FileKeyBuilder::timed_with_capacity(&self.factories.file, 0);
+                copy_to_builder(&mut file, vec.cursor());
+                Some(Self {
+                    inner: Inner::File(
+                        file.done_with_bounds(vec.lower().to_owned(), vec.upper().to_owned()),
+                    ),
+                    factories: self.factories.clone(),
+                })
+            }
+            Inner::File(_) => None,
         }
     }
 
