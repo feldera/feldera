@@ -509,7 +509,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         Projection proj = new Projection(this.errorReporter);
         proj.apply(join.getFunction());
         assert(proj.isProjection);
-        List<Pair<Integer, Integer>> outputs = proj.getOutputs();
+        List<Pair<Integer, Integer>> outputs = proj.getIoMap();
         int leftSize = Linq.where(outputs, o -> o.getFirst() == 1).size();
         int rightSize = outputs.size() - leftSize;
 

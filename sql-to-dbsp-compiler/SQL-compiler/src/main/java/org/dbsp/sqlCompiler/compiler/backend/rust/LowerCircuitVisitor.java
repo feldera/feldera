@@ -216,10 +216,10 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             // } else {
             //     None
             // }
-            DBSPClosureExpression expression = node.getFunction().to(DBSPClosureExpression.class);
+            DBSPClosureExpression expression = node.getClosureFunction();
             DBSPClosureExpression filter = node.filter.to(DBSPClosureExpression.class);
             DBSPLetStatement let = new DBSPLetStatement("tmp", expression.body);
-            DBSPExpression cond = filter.call(let.getVarReference().borrow());
+            DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(errorReporter);
             DBSPExpression tmp = let.getVarReference();
             DBSPIfExpression ifexp = new DBSPIfExpression(
                     node.getNode(),
@@ -235,7 +235,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             // } else {
             //    None
             // }
-            DBSPClosureExpression expression = node.getFunction().to(DBSPClosureExpression.class);
+            DBSPClosureExpression expression = node.getClosureFunction();
             DBSPClosureExpression filter = node.filter.to(DBSPClosureExpression.class);
             DBSPExpression cond = filter
                     .call(expression.body.borrow())

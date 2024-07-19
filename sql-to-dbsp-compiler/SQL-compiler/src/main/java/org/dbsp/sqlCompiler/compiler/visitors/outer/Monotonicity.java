@@ -624,7 +624,7 @@ public class Monotonicity extends CircuitVisitor {
         if (!projection.mayBeMonotone())
             return;
         DBSPTypeTupleBase tuple = projection.getType().to(DBSPTypeTupleBase.class);
-        DBSPVariablePath var = node.getFunction().to(DBSPClosureExpression.class).parameters[0].asVariable();
+        DBSPVariablePath var = node.getClosureFunction().parameters[0].asVariable();
         DBSPExpression[] fields = new DBSPExpression[tuple.size()];
         for (int i = 0; i < tuple.size(); i++) {
             DBSPExpression field = var.deepCopy().deref().field(i);

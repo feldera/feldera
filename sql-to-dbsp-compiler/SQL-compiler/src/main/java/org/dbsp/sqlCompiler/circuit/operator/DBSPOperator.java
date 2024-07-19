@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.annotation.Annotation;
 import org.dbsp.sqlCompiler.ir.annotation.Annotations;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
@@ -214,6 +215,10 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
 
     public DBSPExpression getFunction() {
         return Objects.requireNonNull(this.function);
+    }
+
+    public DBSPClosureExpression getClosureFunction() {
+        return this.getFunction().to(DBSPClosureExpression.class);
     }
 
     /** Return a version of this operator with the inputs replaced.

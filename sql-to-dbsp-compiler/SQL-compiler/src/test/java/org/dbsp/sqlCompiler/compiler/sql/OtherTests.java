@@ -150,7 +150,7 @@ public class OtherTests extends BaseSQLTests
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let stream202: stream<WSet<Tup1<b>>> = stream81;
+                    let stream206: stream<WSet<Tup1<b>>> = stream81;
                 }
                 """;
         Assert.assertEquals(expected, str);

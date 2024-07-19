@@ -40,6 +40,7 @@ import java.util.*;
 
 /** This visitor rewrites a circuit by replacing each operator
  * recursively with an equivalent one.
+ * The entire work is done in 'postorder' methods.
  * Each operator is replaced in one of two cases:
  * - any of its inputs has changed
  * - the 'force' flag is 'true'.

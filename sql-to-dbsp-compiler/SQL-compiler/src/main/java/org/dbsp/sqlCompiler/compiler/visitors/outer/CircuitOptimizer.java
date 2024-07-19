@@ -64,14 +64,18 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             }
             passes.add(new DeadCode(reporter, true, false));
             passes.add(new Simplify(reporter).circuitRewriter());
-            passes.add(new FilterJoinVisitor(reporter));
-            passes.add(new DeadCode(reporter, true, false));
+            passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeProjectionVisitor(reporter, g)));
+            passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, g)));
+            passes.add(new OptimizeWithGraph(reporter, g -> new FilterJoinVisitor(reporter, g)));
+            passes.add(new NarrowJoins(reporter));
+            // The MonotoneAnalyzer will insert some operators for GC which have weird behavior
+            // (they influence their *input* operators).  So optimizations that come afterward have to
+            // handle these properly.
             passes.add(new MonotoneAnalyzer(reporter));
             // Doing this after the monotone analysis only
             if (!options.ioOptions.emitHandles)
                 passes.add(new IndexedInputs(reporter));
-            passes.add(new FilterJoinVisitor(reporter));
-            passes.add(new OptimizeProjections(reporter));
+            passes.add(new OptimizeWithGraph(reporter, g -> new FilterJoinVisitor(reporter, g)));
             passes.add(new DeadCode(reporter, true, false));
             passes.add(new Simplify(reporter).circuitRewriter());
             // The predicate below controls which nodes have their output dumped at runtime
@@ -82,7 +86,11 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new ExpandHop(reporter));
         passes.add(new RemoveDeindexOperators(reporter));
         passes.add(new RemoveViewOperators(reporter));
-        passes.add(new OptimizeProjections(reporter));
+        if (options.languageOptions.optimizationLevel >= 2) {
+            passes.add(new OptimizeWithGraph(reporter, g -> new FilterMapVisitor(reporter, g)));
+            // optimize the maps introduced by the deindex removal
+            passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeMaps(reporter, g)));
+        }
         passes.add(new EliminateFunctions(reporter).circuitRewriter());
         passes.add(new ExpandWriteLog(reporter).circuitRewriter());
         passes.add(new Simplify(reporter).circuitRewriter());

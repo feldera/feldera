@@ -39,7 +39,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
         assert newInputs.size() == 1: "Expected 1 input " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApplyOperator(
-                    this.getNode(), this.getFunction().to(DBSPClosureExpression.class),
+                    this.getNode(), this.getClosureFunction(),
                     this.getType(), newInputs.get(0), this.comment)
                     .copyAnnotations(this);
         }

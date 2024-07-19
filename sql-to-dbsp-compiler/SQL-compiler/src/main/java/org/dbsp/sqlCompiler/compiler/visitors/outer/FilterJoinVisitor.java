@@ -8,14 +8,18 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 
 /** Combine a Join followed by a filter into a JoinFilterMap. */
 public class FilterJoinVisitor extends CircuitCloneVisitor {
-    public FilterJoinVisitor(IErrorReporter reporter) {
+    final CircuitGraph graph;
+
+    public FilterJoinVisitor(IErrorReporter reporter, CircuitGraph graph) {
         super(reporter, false);
+        this.graph = graph;
     }
 
     @Override
     public void postorder(DBSPFilterOperator operator) {
         DBSPOperator source = this.mapped(operator.input());
-        if (source.is(DBSPJoinOperator.class)) {
+        if (source.is(DBSPJoinOperator.class) &&
+                (this.graph.getFanout(operator.input()) == 1)) {
             DBSPOperator result =
                     new DBSPJoinFilterMapOperator(source.getNode(), source.getOutputZSetType(),
                             source.getFunction(), operator.getFunction(), null,

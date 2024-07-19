@@ -199,7 +199,11 @@ public class Projection extends InnerVisitor {
         return this.shuffle != null;
     }
 
-    public List<Pair<Integer, Integer>> getOutputs() {
+    public boolean hasIoMap() {
+        return this.isProjection && this.outputs != null;
+    }
+
+    public List<Pair<Integer, Integer>> getIoMap() {
         return Objects.requireNonNull(this.outputs);
     }
 }
