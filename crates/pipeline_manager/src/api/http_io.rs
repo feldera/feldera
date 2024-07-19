@@ -6,10 +6,8 @@ use actix_web::{
 };
 use log::debug;
 
-use crate::{
-    api::{examples, parse_string_param},
-    auth::TenantId,
-};
+use crate::api::{examples, parse_string_param};
+use crate::db::types::tenant::TenantId;
 
 use super::{ManagerError, ServerState};
 

@@ -1,9 +1,10 @@
 /// API to create and delete API keys
 use super::{ManagerError, ServerState};
+use crate::db::types::api_key::{ApiKeyId, ApiPermission};
+use crate::db::types::tenant::TenantId;
 use crate::{
     api::{examples, parse_string_param},
-    auth::TenantId,
-    db::{storage::Storage, ApiKeyId},
+    db::storage::Storage,
 };
 use actix_web::{
     delete, get,
@@ -61,7 +62,7 @@ pub(crate) struct ApiKeyNameQuery {
             , description = "Specified API key name does not exist."
             , body = ErrorResponse
             , examples(
-                ("Unknown API key name" = (value = json!(examples::unknown_name()))),
+                ("Unknown API key name" = (value = json!(examples::unknown_api_key()))),
             ),
         )
     ),
@@ -97,7 +98,7 @@ pub(crate) async fn list_api_keys(
             , description = "Specified API key name does not exist."
             , body = ErrorResponse
             , examples(
-                ("Unknown API key name" = (value = json!(examples::unknown_name()))),
+                ("Unknown API key name" = (value = json!(examples::unknown_api_key()))),
             ),
         )
     ),
@@ -129,7 +130,7 @@ pub(crate) async fn get_api_key(
             , description = "Specified API key name does not exist."
             , body = ErrorResponse
             , examples(
-                ("Unknown API key name" = (value = json!(examples::unknown_name()))),
+                ("Unknown API key name" = (value = json!(examples::unknown_api_key()))),
             ),
         )
     ),
@@ -188,10 +189,7 @@ async fn create_api_key(
             id,
             &req.name,
             &api_key,
-            vec![
-                crate::db::ApiPermission::Read,
-                crate::db::ApiPermission::Write,
-            ],
+            vec![ApiPermission::Read, ApiPermission::Write],
         )
         .await
         .map(|_| {
