@@ -57,6 +57,9 @@ pub const COMPACTION_DURATION: &str = "file.compaction_duration";
 /// Time a worker was stalled waiting for more merges to complete.
 pub const COMPACTION_STALL_TIME: &str = "file.compaction_stall_time";
 
+/// Number of records dropped due to LATENES annotations
+pub const TOTAL_LATE_RECORDS: &str = "records.late";
+
 /// Adds descriptions for the metrics we expose.
 pub(crate) fn describe_metrics() {
     // Storage backend metrics.
@@ -103,5 +106,10 @@ pub(crate) fn describe_metrics() {
         COMPACTION_STALL_TIME,
         Unit::Seconds,
         "Time a worker was stalled waiting for more merges to complete"
+    );
+
+    describe_counter!(
+        TOTAL_LATE_RECORDS,
+        "number of records that were dropped due to LATENESS"
     );
 }
