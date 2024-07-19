@@ -17,20 +17,24 @@ pub use interval::{LongInterval, ShortInterval};
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::{Date, Time, Timestamp};
 
-use dbsp::algebra::{OrdIndexedZSetFactories, OrdZSetFactories};
-use dbsp::dynamic::{DowncastTrait, DynData, Erase};
-use dbsp::trace::ord::{OrdIndexedWSetBuilder, OrdWSetBuilder, OrdWSetFactories};
-use dbsp::trace::BatchReaderFactories;
-use dbsp::typed_batch::TypedBatch;
 use dbsp::{
     algebra::{
-        AddByRef, HasOne, HasZero, NegByRef, Semigroup, SemigroupValue, ZRingValue, F32, F64,
+        AddByRef, HasOne, HasZero, NegByRef, OrdIndexedZSetFactories, OrdZSetFactories, Semigroup,
+        SemigroupValue, ZRingValue, F32, F64,
     },
-    trace::{BatchReader, Builder, Cursor},
+    circuit::metrics::TOTAL_LATE_RECORDS,
+    dynamic::{DowncastTrait, DynData, Erase},
+    trace::{
+        ord::{OrdIndexedWSetBuilder, OrdWSetBuilder, OrdWSetFactories},
+        BatchReader, BatchReaderFactories, Builder, Cursor,
+    },
+    typed_batch::TypedBatch,
     utils::*,
     DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
 };
 use itertools::Itertools;
+use lazy_static::lazy_static;
+use metrics::{counter, Counter};
 use num::{PrimInt, Signed, ToPrimitive};
 use num_traits::{Pow, Zero};
 use rust_decimal::{Decimal, MathematicalOps};
@@ -1532,6 +1536,15 @@ where
     TypedBatch::new(builder.done())
 }
 
+pub fn late() {
+    lazy_static! {
+        static ref TOTAL_LATE_RECORDS_COUNTER: Counter = counter!(TOTAL_LATE_RECORDS);
+    }
+
+    // println!("Late record");
+    TOTAL_LATE_RECORDS_COUNTER.increment(1);
+}
+
 pub fn zset_filter_comparator<D, T, F>(data: &WSet<D>, value: &T, comparator: F) -> WSet<D>
 where
     D: DBData + 'static,
@@ -1548,6 +1561,8 @@ where
         let item = unsafe { cursor.key().downcast::<D>() };
         if comparator(item, value) {
             builder.push_refs(item.erase(), ().erase(), weight.erase());
+        } else {
+            late();
         }
         cursor.step_key();
     }
@@ -1576,6 +1591,8 @@ where
             let item = unsafe { cursor.val().downcast::<D>() };
             if comparator((&key, item), value) {
                 builder.push_refs(&key, item.erase(), w.erase());
+            } else {
+                late();
             }
             cursor.step_val();
         }

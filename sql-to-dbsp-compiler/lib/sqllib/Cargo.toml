@@ -25,6 +25,8 @@ rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-featur
 hex = "0.4.3"
 num-traits = "0.2"
 flate2 = "1.0.28"
+metrics = { version = "0.23.0" }
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 lazy_static = "1.4.0"
