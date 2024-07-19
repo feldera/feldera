@@ -44,6 +44,7 @@ fn default_tracing() -> bool {
 
 /// Pipeline configuration specified by the user when creating
 /// a new pipeline instance.
+/// TODO: change this description
 ///
 /// This is the shape of the overall pipeline configuration. It encapsulates a
 /// [`RuntimeConfig`], which is the publicly exposed way for users to configure
@@ -72,6 +73,16 @@ pub struct PipelineConfig {
     /// Output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+}
+
+impl PipelineConfig {
+    pub fn from_yaml(s: &str) -> Self {
+        serde_yaml::from_str(s).unwrap()
+    }
+
+    pub fn to_yaml(&self) -> String {
+        serde_yaml::to_string(self).unwrap()
+    }
 }
 
 /// Configuration for persistent storage in a [`PipelineConfig`].
@@ -200,8 +211,8 @@ impl RuntimeConfig {
         serde_yaml::from_str(s).unwrap()
     }
 
-    pub fn to_yaml(config: &Self) -> String {
-        serde_yaml::to_string(config).unwrap()
+    pub fn to_yaml(&self) -> String {
+        serde_yaml::to_string(self).unwrap()
     }
 }
 

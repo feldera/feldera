@@ -1,16 +1,14 @@
-use crate::db::{PipelineId, ProgramId, Version};
+use crate::db::types::common::Version;
+use crate::db::types::pipeline::PipelineId;
+use crate::db::types::program::CompilationProfile;
 use actix_web::http::header;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{
-    fmt::Display,
     fs::{canonicalize, create_dir_all},
     path::{Path, PathBuf},
-    str::FromStr,
-    string::ParseError,
 };
-use utoipa::ToSchema;
 
 const fn default_server_port() -> u16 {
     8080
@@ -239,58 +237,6 @@ impl ApiServerConfig {
     }
 }
 
-/// Enumeration of possible compilation profiles that can be passed to the Rust compiler
-/// as an argument via `cargo build --profile <>`. A compilation profile affects among
-/// other things the compilation speed (how long till the program is ready to be run)
-/// and runtime speed (the performance while running).
-#[derive(Parser, Eq, PartialEq, Serialize, Deserialize, Debug, Clone, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum CompilationProfile {
-    /// Used primarily for development. Adds source information to binaries.
-    ///
-    /// This corresponds to cargo's out-of-the-box "debug" mode
-    Dev,
-    /// Prioritizes compilation speed over runtime speed
-    Unoptimized,
-    /// Prioritizes runtime speed over compilation speed
-    Optimized,
-}
-
-impl CompilationProfile {
-    fn to_target_folder(&self) -> &'static str {
-        match self {
-            CompilationProfile::Dev => "debug",
-            CompilationProfile::Unoptimized => "unoptimized",
-            CompilationProfile::Optimized => "optimized",
-        }
-    }
-}
-
-impl FromStr for CompilationProfile {
-    type Err = ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "dev" => Ok(CompilationProfile::Dev),
-            "unoptimized" => Ok(CompilationProfile::Unoptimized),
-            "optimized" => Ok(CompilationProfile::Optimized),
-            e => unimplemented!(
-                "Unsupported option {e}. Available choices are 'dev', 'unoptimized' and 'optimized'"
-            ),
-        }
-    }
-}
-
-impl Display for CompilationProfile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self {
-            CompilationProfile::Dev => write!(f, "dev"),
-            CompilationProfile::Unoptimized => write!(f, "unoptimized"),
-            CompilationProfile::Optimized => write!(f, "optimized"),
-        }
-    }
-}
-
 /// Pipeline manager configuration read from a YAML config file or from command
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
@@ -357,8 +303,8 @@ impl CompilerConfig {
     ///
     /// Note: we rely on the program id and not name, so projects can
     /// be renamed without recompiling.
-    pub(crate) fn binary_name(program_id: ProgramId, version: Version) -> String {
-        format!("project_{program_id}_v{version}")
+    pub(crate) fn binary_name(pipeline_id: PipelineId, version: Version) -> String {
+        format!("project_{pipeline_id}_v{version}")
     }
 
     /// Directory where the manager maintains the generated cargo workspace.
@@ -379,8 +325,12 @@ impl CompilerConfig {
     /// Location of the versioned executable.
     /// e.g., `<working-directory>/binaries/
     /// project0188e0cd-d8b0-71d5-bb5a-2f66c7b07dfb-v11`
-    pub(crate) fn versioned_executable(&self, program_id: ProgramId, version: Version) -> PathBuf {
-        Path::new(&self.binaries_dir()).join(Self::binary_name(program_id, version))
+    pub(crate) fn versioned_executable(
+        &self,
+        pipeline_id: PipelineId,
+        version: Version,
+    ) -> PathBuf {
+        Path::new(&self.binaries_dir()).join(Self::binary_name(pipeline_id, version))
     }
 
     /// Location of the compiled executable for the project in the cargo target
@@ -388,55 +338,55 @@ impl CompilerConfig {
     /// Note: This is generally not an executable that's run as a pipeline.
     pub(crate) fn target_executable(
         &self,
-        program_id: ProgramId,
+        pipeline_id: PipelineId,
         profile: &CompilationProfile,
     ) -> PathBuf {
         // Always pick the compiler server's compilation profile if it is configured.
         Path::new(&self.workspace_dir())
             .join("target")
             .join(profile.to_target_folder())
-            .join(Self::crate_name(program_id))
+            .join(Self::crate_name(pipeline_id))
     }
 
     /// Crate name for a project.
     ///
     /// Note: we rely on the program id and not name, so projects can
     /// be renamed without recompiling.
-    pub(crate) fn crate_name(program_id: ProgramId) -> String {
-        format!("project{program_id}")
+    pub(crate) fn crate_name(pipeline_id: PipelineId) -> String {
+        format!("project{pipeline_id}")
     }
 
     /// File name where the manager stores the SQL code of the project.
-    pub(crate) fn sql_file_path(&self, program_id: ProgramId) -> PathBuf {
-        self.project_dir(program_id).join("project.sql")
+    pub(crate) fn sql_file_path(&self, pipeline_id: PipelineId) -> PathBuf {
+        self.project_dir(pipeline_id).join("project.sql")
     }
 
     /// Directory where the manager generates the rust crate for the project.
     ///
     /// e.g., `<working-directory>/cargo_workspace/
     /// project0188e0cd-d8b0-71d5-bb5a-2f66c7b07dfb`
-    pub(crate) fn project_dir(&self, program_id: ProgramId) -> PathBuf {
-        self.workspace_dir().join(Self::crate_name(program_id))
+    pub(crate) fn project_dir(&self, pipeline_id: PipelineId) -> PathBuf {
+        self.workspace_dir().join(Self::crate_name(pipeline_id))
     }
 
     /// The path to `schema.json` that contains a JSON description of input and
     /// output tables.
-    pub(crate) fn schema_path(&self, program_id: ProgramId) -> PathBuf {
+    pub(crate) fn schema_path(&self, pipeline_id: PipelineId) -> PathBuf {
         const SCHEMA_FILE_NAME: &str = "schema.json";
-        let sql_file_path = self.sql_file_path(program_id);
+        let sql_file_path = self.sql_file_path(pipeline_id);
         let project_directory = sql_file_path.parent().unwrap();
 
         PathBuf::from(project_directory).join(SCHEMA_FILE_NAME)
     }
 
     /// Path to the generated `main.rs` for the project.
-    pub(crate) fn rust_program_path(&self, program_id: ProgramId) -> PathBuf {
-        self.project_dir(program_id).join("src").join("main.rs")
+    pub(crate) fn rust_program_path(&self, pipeline_id: PipelineId) -> PathBuf {
+        self.project_dir(pipeline_id).join("src").join("main.rs")
     }
 
     /// Path to the generated `Cargo.toml` file for the project.
-    pub(crate) fn project_toml_path(&self, program_id: ProgramId) -> PathBuf {
-        self.project_dir(program_id).join("Cargo.toml")
+    pub(crate) fn project_toml_path(&self, pipeline_id: PipelineId) -> PathBuf {
+        self.project_dir(pipeline_id).join("Cargo.toml")
     }
 
     /// Top-level `Cargo.toml` file for the generated Rust workspace.
@@ -506,13 +456,13 @@ impl CompilerConfig {
     }
 
     /// File to redirect compiler's stdout stream.
-    pub(crate) fn compiler_stdout_path(&self, program_id: ProgramId) -> PathBuf {
-        self.project_dir(program_id).join("out.log")
+    pub(crate) fn compiler_stdout_path(&self, pipeline_id: PipelineId) -> PathBuf {
+        self.project_dir(pipeline_id).join("out.log")
     }
 
     /// File to redirect compiler's stderr stream.
-    pub(crate) fn compiler_stderr_path(&self, program_id: ProgramId) -> PathBuf {
-        self.project_dir(program_id).join("err.log")
+    pub(crate) fn compiler_stderr_path(&self, pipeline_id: PipelineId) -> PathBuf {
+        self.project_dir(pipeline_id).join("err.log")
     }
 }
 
@@ -565,14 +515,9 @@ impl LocalRunnerConfig {
     }
 
     /// Location to write the fetched pipeline binary to.
-    pub(crate) fn binary_file_path(
-        &self,
-        pipeline_id: PipelineId,
-        program: ProgramId,
-        version: Version,
-    ) -> PathBuf {
+    pub(crate) fn binary_file_path(&self, pipeline_id: PipelineId, version: Version) -> PathBuf {
         self.pipeline_dir(pipeline_id)
-            .join(format!("program_{program}_v{version}"))
+            .join(format!("program_{pipeline_id}_v{version}"))
     }
 
     /// Location to write the pipeline config file.

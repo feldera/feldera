@@ -1,5 +1,8 @@
-use std::sync::{Arc, OnceLock};
-
+use crate::api::ManagerError;
+use crate::db::storage::Storage;
+use crate::db::storage_postgres::StoragePostgres;
+use crate::db::types::pipeline::PipelineStatus;
+use crate::runner::RunnerApi;
 use ::metrics::{describe_histogram, Unit};
 use actix_web::{
     get,
@@ -7,12 +10,8 @@ use actix_web::{
     web, HttpResponse, HttpServer, Responder,
 };
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
-
-use crate::api::ManagerError;
-use crate::db::storage::Storage;
-use crate::db::{PipelineStatus, ProjectDB};
-use crate::runner::RunnerApi;
 
 pub(crate) const COMPILE_LATENCY_SQL: &str = "feldera.manager.compile_latency_sql";
 pub(crate) const COMPILE_LATENCY_RUST: &str = "feldera.manager.compile_latency_rust";
@@ -46,7 +45,7 @@ fn install_metrics_recorder() -> PrometheusHandle {
 }
 
 /// Create a scrape endpoint for metrics on http://0.0.0.0:8081/metrics
-pub async fn create_endpoint(manager_metrics: PrometheusHandle, db: Arc<Mutex<ProjectDB>>) {
+pub async fn create_endpoint(manager_metrics: PrometheusHandle, db: Arc<Mutex<StoragePostgres>>) {
     let db = web::Data::new(db);
     let manager_metrics = web::Data::new(manager_metrics);
 
@@ -66,24 +65,26 @@ pub async fn create_endpoint(manager_metrics: PrometheusHandle, db: Arc<Mutex<Pr
 /// A prometheus-compatible metrics scrape endpoint.
 #[get("/metrics")]
 async fn metrics(
-    db: web::Data<Arc<Mutex<ProjectDB>>>,
+    db: web::Data<Arc<Mutex<StoragePostgres>>>,
     manager_metrics: web::Data<PrometheusHandle>,
 ) -> Result<impl Responder, ManagerError> {
     let mut buffer = String::new();
 
     let db = db.lock().await;
-    let pipelines = db.all_pipelines().await?;
+    let pipelines = db.list_pipeline_ids_across_all_tenants().await?;
     for (tenant_id, pipeline_id) in pipelines {
-        let rts = db
-            .get_pipeline_runtime_state_by_id(tenant_id, pipeline_id)
-            .await?;
+        let rts = db.get_pipeline_by_id(tenant_id, pipeline_id).await?;
 
         // Get the metrics for all running pipelines, don't write anything
         // if the request fails.
-        if rts.current_status == PipelineStatus::Running {
-            if let Ok(r) =
-                RunnerApi::pipeline_http_request(pipeline_id, Method::GET, "metrics", &rts.location)
-                    .await
+        if rts.deployment_status == PipelineStatus::Running {
+            if let Ok(r) = RunnerApi::pipeline_http_request(
+                pipeline_id,
+                Method::GET,
+                "metrics",
+                &rts.deployment_location.unwrap(),
+            ) // TODO: unwrap
+            .await
             {
                 if r.status().is_success() {
                     if let Ok(r) = r.text().await {

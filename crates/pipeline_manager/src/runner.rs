@@ -1,8 +1,8 @@
-use crate::{
-    api::ManagerError,
-    auth::TenantId,
-    db::{storage::Storage, DBError, PipelineId, PipelineRuntimeState, PipelineStatus, ProjectDB},
-};
+use crate::api::ManagerError;
+use crate::db::storage::Storage;
+use crate::db::storage_postgres::StoragePostgres;
+use crate::db::types::pipeline::{PipelineId, PipelineStatus};
+use crate::db::types::tenant::TenantId;
 use actix_web::{
     body::BoxBody,
     http::{Method, StatusCode},
@@ -13,7 +13,6 @@ use pipeline_types::error::{DetailedError, ErrorResponse};
 use serde::Serialize;
 use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
@@ -186,7 +185,7 @@ impl ResponseError for RunnerError {
 /// Interface to express pipeline desired states to runners and also
 /// connect to streams
 pub struct RunnerApi {
-    db: Arc<Mutex<ProjectDB>>,
+    db: Arc<Mutex<StoragePostgres>>,
 }
 
 impl RunnerApi {
@@ -197,195 +196,8 @@ impl RunnerApi {
     const PIPELINE_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_millis(2_000);
 
     /// Create a local runner.
-    pub fn new(db: Arc<Mutex<ProjectDB>>) -> Self {
+    pub fn new(db: Arc<Mutex<StoragePostgres>>) -> Self {
         Self { db }
-    }
-
-    /// Initiate pipeline shutdown.
-    ///
-    /// Sets desired pipeline state to [`PipelineStatus::Paused`].
-    pub(crate) async fn shutdown_pipeline(
-        &self,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-    ) -> Result<(), ManagerError> {
-        self.set_desired_status(tenant_id, pipeline_name, PipelineStatus::Shutdown)
-            .await?;
-        Ok(())
-    }
-
-    /// Delete the pipeline.
-    ///
-    /// Both the desired and the actual states of the pipeline must be equal
-    /// to [`PipelineStatus::Shutdown`] or [`PipelineStatus::Failed`].
-    pub(crate) async fn delete_pipeline(
-        &self,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-    ) -> Result<(), ManagerError> {
-        // Make sure that the pipeline is in a `Shutdown` state.
-
-        // TODO: this function should run in a transaction to avoid conflicts with
-        // another manager instance.
-        let db = self.db.lock().await;
-
-        let pipeline = db.get_pipeline_by_name(tenant_id, pipeline_name).await?;
-        let pipeline_state = db
-            .get_pipeline_runtime_state_by_id(tenant_id, pipeline.descriptor.pipeline_id)
-            .await?;
-        Self::validate_desired_state_request(
-            pipeline.descriptor.pipeline_id,
-            &pipeline_state,
-            None,
-        )?;
-
-        db.delete_pipeline(tenant_id, pipeline_name).await?;
-
-        // No need to do anything else since the pipeline was in the `Shutdown` state.
-        // The pipeline tokio task will self-destruct when it polls pipeline
-        // state and discovers it has been deleted.
-
-        Ok(())
-    }
-
-    /// Set the desired state of the pipeline to [`PipelineStatus::Paused`].
-    ///
-    /// If the pipeline is currently in the `Shutdown` state, will validate
-    /// and commit the pipeline before running it.
-    pub(crate) async fn pause_pipeline(
-        &self,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-    ) -> Result<(), ManagerError> {
-        self.set_desired_status(tenant_id, pipeline_name, PipelineStatus::Paused)
-            .await?;
-        Ok(())
-    }
-
-    /// Set the desired state of the pipeline to [`PipelineStatus::Running`].
-    ///
-    /// If the pipeline is currently in the `Shutdown` state, will validate
-    /// and commit the pipeline before running it.
-    pub(crate) async fn start_pipeline(
-        &self,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-    ) -> Result<(), ManagerError> {
-        self.set_desired_status(tenant_id, pipeline_name, PipelineStatus::Running)
-            .await?;
-        Ok(())
-    }
-
-    /// Check the `request` is a valid new desired state given the current
-    /// runtime state of the pipeline.  `request` value of `None` represents
-    /// the request to delete the pipeline.
-    fn validate_desired_state_request(
-        pipeline_id: PipelineId,
-        pipeline_state: &PipelineRuntimeState,
-        request: Option<PipelineStatus>,
-    ) -> Result<(), ManagerError> {
-        match request {
-            None => {
-                if pipeline_state.current_status != PipelineStatus::Shutdown
-                    || pipeline_state.desired_status != PipelineStatus::Shutdown
-                {
-                    Err(RunnerError::IllegalPipelineStateTransition {
-                        pipeline_id,
-                        error: "Cannot delete a running pipeline. Shutdown the pipeline first by invoking the '/shutdown' endpoint.".to_string(),
-                        current_status: pipeline_state.current_status,
-                        desired_status: pipeline_state.desired_status,
-                        requested_status: None,
-                    })?
-                };
-            }
-            Some(new_desired_status) => {
-                if new_desired_status == PipelineStatus::Paused
-                    || new_desired_status == PipelineStatus::Running
-                {
-                    // Refuse to restart a pipeline that has not completed shutting down.
-                    if pipeline_state.desired_status == PipelineStatus::Shutdown
-                        && pipeline_state.current_status != PipelineStatus::Shutdown
-                    {
-                        Err(RunnerError::IllegalPipelineStateTransition {
-                            pipeline_id,
-                            error: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.".to_string(),
-                            current_status: pipeline_state.current_status,
-                            desired_status: pipeline_state.desired_status,
-                            requested_status: Some(new_desired_status),
-                        })?;
-                    };
-
-                    // Refuse to restart failed pipeline until it's in the shutdown state.
-                    if pipeline_state.desired_status != PipelineStatus::Shutdown
-                        && (pipeline_state.current_status == PipelineStatus::ShuttingDown
-                            || pipeline_state.current_status == PipelineStatus::Failed)
-                    {
-                        Err(RunnerError::IllegalPipelineStateTransition {
-                            pipeline_id,
-                            error: "Cannot restart a failed pipeline. Clear the error state first by invoking the '/shutdown' endpoint.".to_string(),
-                            current_status: pipeline_state.current_status,
-                            desired_status: pipeline_state.desired_status,
-                            requested_status: Some(new_desired_status),
-                        })?;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn set_desired_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-        new_desired_status: PipelineStatus,
-    ) -> Result<(), ManagerError> {
-        // TODO: this function should run in a transaction to avoid conflicts with
-        // another manager instance.
-
-        let db = self.db.lock().await;
-        let pipeline_state = db
-            .get_pipeline_runtime_state_by_name(tenant_id, pipeline_name)
-            .await?;
-        let pipeline_id = pipeline_state.pipeline_id;
-
-        Self::validate_desired_state_request(
-            pipeline_id,
-            &pipeline_state,
-            Some(new_desired_status),
-        )?;
-
-        // When starting a previously shutdown pipeline, commit its config first.
-        if pipeline_state.current_status == PipelineStatus::Shutdown
-            && new_desired_status != PipelineStatus::Shutdown
-        {
-            Self::commit_revision(&db, tenant_id, pipeline_id).await?;
-        }
-
-        db.set_pipeline_desired_status(tenant_id, pipeline_id, new_desired_status)
-            .await?;
-        Ok(())
-    }
-
-    /// Retrieve the last revision for a pipeline.
-    ///
-    /// Tries to create a new revision if this pipeline never had a revision
-    /// created before.
-    async fn commit_revision(
-        db: &ProjectDB,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Result<(), ManagerError> {
-        // Make sure we create a revision by updating to latest config state
-        match db
-            .create_pipeline_deployment(Uuid::now_v7(), tenant_id, pipeline_id)
-            .await
-        {
-            Ok(_revision) => Ok(()),
-            Err(DBError::RevisionNotChanged) => Ok(()),
-            Err(e) => Err(e)?,
-        }
     }
 
     /// Forward HTTP request to the pipeline.
@@ -396,22 +208,28 @@ impl RunnerApi {
         method: Method,
         endpoint: &str,
     ) -> Result<HttpResponse, ManagerError> {
-        let pipeline_state = self
+        let pipeline = self
             .db
             .lock()
             .await
-            .get_pipeline_runtime_state_by_name(tenant_id, pipeline_name)
+            .get_pipeline(tenant_id, pipeline_name)
             .await?;
-        let pipeline_id = pipeline_state.pipeline_id;
+        let pipeline_id = pipeline.id;
 
-        match pipeline_state.current_status {
+        match pipeline.deployment_status {
             PipelineStatus::Shutdown | PipelineStatus::Failed | PipelineStatus::Provisioning => {
                 Err(RunnerError::PipelineShutdown { pipeline_id })?
             }
             _ => {}
         }
 
-        Self::do_forward_to_pipeline(pipeline_id, method, endpoint, &pipeline_state.location).await
+        Self::do_forward_to_pipeline(
+            pipeline_id,
+            method,
+            endpoint,
+            &pipeline.deployment_location.unwrap(),
+        )
+        .await // TODO: unwrap
     }
 
     /// Forward HTTP request to pipeline.  Assumes that the pipeline is running.
@@ -476,21 +294,21 @@ impl RunnerApi {
         body: Payload,
         client: &awc::Client,
     ) -> Result<HttpResponse, ManagerError> {
-        let pipeline_state = self
+        let pipeline = self
             .db
             .lock()
             .await
-            .get_pipeline_runtime_state_by_name(tenant_id, pipeline_name)
+            .get_pipeline(tenant_id, pipeline_name)
             .await?;
-        let pipeline_id = pipeline_state.pipeline_id;
+        let pipeline_id = pipeline.id;
 
-        match pipeline_state.current_status {
+        match pipeline.deployment_status {
             PipelineStatus::Shutdown | PipelineStatus::Failed | PipelineStatus::Provisioning => {
                 Err(RunnerError::PipelineShutdown { pipeline_id })?
             }
             _ => {}
         }
-        let location = pipeline_state.location;
+        let location = pipeline.deployment_location.unwrap(); // TODO: unwrap
 
         // TODO: it might be better to have ?name={}, otherwise we have to
         // restrict name format

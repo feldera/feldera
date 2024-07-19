@@ -57,10 +57,12 @@ use tokio::{
     time::{sleep, timeout},
 };
 
+use crate::db::storage_postgres::StoragePostgres;
+use crate::db::types::program::CompilationProfile;
 use crate::{
     compiler::Compiler,
     config::{ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig},
-    db::{Pipeline, PipelineStatus},
+    db::types::pipeline::PipelineStatus,
 };
 use anyhow::{bail, Result as AnyResult};
 use pipeline_types::service::KafkaService;
@@ -117,7 +119,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         compiler_working_directory: workdir.to_owned(),
         sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
         dbsp_override_path: "../../".to_owned(),
-        compilation_profile: crate::config::CompilationProfile::Unoptimized,
+        compilation_profile: CompilationProfile::Unoptimized,
         precompile: true,
         binary_ref_host: "127.0.0.1".to_string(),
         binary_ref_port: 8085,
@@ -150,7 +152,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(async move {
-                let db = crate::db::ProjectDB::connect(
+                let db = StoragePostgres::connect(
                     &database_config,
                     #[cfg(feature = "pg-embed")]
                     Some(&api_config),
@@ -233,33 +235,6 @@ impl TestConfig {
             )
             .await;
             let req = config.delete(format!("/v0/pipelines/{name}")).await;
-            assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
-        }
-
-        // .. programs
-        let mut req = config.get("/v0/programs").await;
-        let programs: Value = req.json().await.unwrap();
-        for program in programs.as_array().unwrap() {
-            let name = program["name"].as_str().unwrap();
-            let req = config.delete(format!("/v0/programs/{name}")).await;
-            assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
-        }
-
-        // .. connectors
-        let mut req = config.get("/v0/connectors").await;
-        let programs: Value = req.json().await.unwrap();
-        for program in programs.as_array().unwrap() {
-            let name = program["name"].as_str().unwrap();
-            let req = config.delete(format!("/v0/connectors/{name}")).await;
-            assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
-        }
-
-        // .. services
-        let mut req = config.get("/v0/services").await;
-        let services: Value = req.json().await.unwrap();
-        for service in services.as_array().unwrap() {
-            let name = service["name"].as_str().unwrap();
-            let req = config.delete(format!("/v0/services/{}", name)).await;
             assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req)
         }
     }
@@ -481,87 +456,89 @@ impl TestConfig {
             .unwrap()
     }
 
-    async fn compile(&self, program_name: &str, version: i64) {
-        let compilation_request = json!({ "version": version });
+    // TODO: refactor function
+    // async fn compile(&self, program_name: &str, version: i64) {
+    //     let compilation_request = json!({ "version": version });
+    //
+    //     let resp = self
+    //         .post(
+    //             format!("/v0/programs/{program_name}/compile"),
+    //             &compilation_request,
+    //         )
+    //         .await;
+    //     assert_eq!(StatusCode::ACCEPTED, resp.status());
+    //
+    //     let start = Instant::now();
+    //     println!("Waiting for compilation");
+    //     let mut last_wait_println = Instant::now();
+    //     loop {
+    //         std::thread::sleep(time::Duration::from_secs(1));
+    //         if start.elapsed().as_secs() > 480 {
+    //             panic!("Compilation timeout");
+    //         }
+    //         let mut resp = self.get(format!("/v0/programs/{program_name}")).await;
+    //         let val: Value = resp.json().await.unwrap();
+    //
+    //         let status = val["status"].clone();
+    //         if status != json!("CompilingSql")
+    //             && status != json!("CompilingRust")
+    //             && status != json!("Pending")
+    //         {
+    //             if status == json!("Success") {
+    //                 break;
+    //             } else {
+    //                 // This makes long multiline error messages readable.
+    //                 let status = status.to_string().replace("\\n", "\n");
+    //                 panic!("Compilation failed with status {}", status);
+    //             }
+    //         }
+    //         if last_wait_println.elapsed().as_secs() >= 60 {
+    //             println!(
+    //                 "Waiting for compilation since {} seconds, status: {}",
+    //                 start.elapsed().as_secs(),
+    //                 status
+    //             );
+    //             last_wait_println = Instant::now();
+    //         }
+    //     }
+    // }
 
-        let resp = self
-            .post(
-                format!("/v0/programs/{program_name}/compile"),
-                &compilation_request,
-            )
-            .await;
-        assert_eq!(StatusCode::ACCEPTED, resp.status());
-
-        let start = Instant::now();
-        println!("Waiting for compilation");
-        let mut last_wait_println = Instant::now();
-        loop {
-            std::thread::sleep(time::Duration::from_secs(1));
-            if start.elapsed().as_secs() > 480 {
-                panic!("Compilation timeout");
-            }
-            let mut resp = self.get(format!("/v0/programs/{program_name}")).await;
-            let val: Value = resp.json().await.unwrap();
-
-            let status = val["status"].clone();
-            if status != json!("CompilingSql")
-                && status != json!("CompilingRust")
-                && status != json!("Pending")
-            {
-                if status == json!("Success") {
-                    break;
-                } else {
-                    // This makes long multiline error messages readable.
-                    let status = status.to_string().replace("\\n", "\n");
-                    panic!("Compilation failed with status {}", status);
-                }
-            }
-            if last_wait_println.elapsed().as_secs() >= 60 {
-                println!(
-                    "Waiting for compilation since {} seconds, status: {}",
-                    start.elapsed().as_secs(),
-                    status
-                );
-                last_wait_println = Instant::now();
-            }
-        }
-    }
-
-    /// Wait for the pipeline to reach the specified status.
-    /// Panic after `timeout`.
-    async fn wait_for_pipeline_status(
-        &self,
-        name: &str,
-        status: PipelineStatus,
-        timeout: Duration,
-    ) -> Pipeline {
-        let start = Instant::now();
-        println!("Waiting for pipeline status {status:?}...");
-        let mut last_wait_println = Instant::now();
-        loop {
-            let mut response = self.get(format!("/v0/pipelines/{name}")).await;
-
-            let pipeline = response.json::<Pipeline>().await.unwrap();
-
-            if last_wait_println.elapsed().as_secs() >= 60 {
-                println!("Pipeline:\n{pipeline:#?}");
-                println!(
-                    "Waiting for pipeline status {status:?} since {} seconds",
-                    start.elapsed().as_secs()
-                );
-                last_wait_println = Instant::now();
-            }
-
-            if pipeline.state.current_status == status {
-                return pipeline;
-            }
-            if start.elapsed() >= timeout {
-                println!("Pipeline:\n{pipeline:#?}");
-                panic!("Timeout waiting for pipeline status {status:?}");
-            }
-            sleep(Duration::from_millis(300)).await;
-        }
-    }
+    // TODO: refactor function
+    // /// Wait for the pipeline to reach the specified status.
+    // /// Panic after `timeout`.
+    // async fn wait_for_pipeline_status(
+    //     &self,
+    //     name: &str,
+    //     status: PipelineStatus,
+    //     timeout: Duration,
+    // ) -> Pipeline {
+    //     let start = Instant::now();
+    //     println!("Waiting for pipeline status {status:?}...");
+    //     let mut last_wait_println = Instant::now();
+    //     loop {
+    //         let mut response = self.get(format!("/v0/pipelines/{name}")).await;
+    //
+    //         let pipeline = response.json::<Pipeline>().await.unwrap();
+    //
+    //         if last_wait_println.elapsed().as_secs() >= 60 {
+    //             println!("Pipeline:\n{pipeline:#?}");
+    //             println!(
+    //                 "Waiting for pipeline status {status:?} since {} seconds",
+    //                 start.elapsed().as_secs()
+    //             );
+    //             last_wait_println = Instant::now();
+    //         }
+    //
+    //         if pipeline.state.current_status == status {
+    //             return pipeline;
+    //         }
+    //         if start.elapsed() >= timeout {
+    //             println!("Pipeline:\n{pipeline:#?}");
+    //             panic!("Timeout waiting for pipeline status {status:?}");
+    //         }
+    //         sleep(Duration::from_millis(300)).await;
+    //     }
+    // }
 }
 
 async fn bearer_token() -> Option<String> {
@@ -658,1748 +635,1210 @@ async fn setup() -> TestConfig {
     config
 }
 
-async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> String {
-    let program_request = json!({
-        "name":  "test",
-        "description": "desc",
-        "code": sql,
-    });
-    let mut req = config.post("/v0/programs", &program_request).await;
-    assert_eq!(StatusCode::CREATED, req.status());
-    let resp: Value = req.json().await.unwrap();
-    let version = resp["version"].as_i64().unwrap();
-    config.compile("test", version).await;
-
-    let pipeline_request = json!({
-        "name":  "test",
-        "description": "desc",
-        "program_name": Some("test".to_string()),
-        "config": {
-            "storage": true,
-        },
-        "connectors": null
-    });
-    let req = config.post("/v0/pipelines", &pipeline_request).await;
-    assert_eq!(StatusCode::OK, req.status());
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/pause"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Paused,
-            Duration::from_millis(100_000),
-        )
-        .await;
-    "test".to_string()
-}
+// TODO: refactor test
+// async fn deploy_pipeline_without_connectors(config: &TestConfig, sql: &str) -> String {
+//     let program_request = json!({
+//         "name":  "test",
+//         "description": "desc",
+//         "code": sql,
+//     });
+//     let mut req = config.post("/v0/programs", &program_request).await;
+//     assert_eq!(StatusCode::CREATED, req.status());
+//     let resp: Value = req.json().await.unwrap();
+//     let version = resp["version"].as_i64().unwrap();
+//     config.compile("test", version).await;
+//
+//     let pipeline_request = json!({
+//         "name":  "test",
+//         "description": "desc",
+//         "program_name": Some("test".to_string()),
+//         "config": {
+//             "storage": true,
+//         },
+//         "connectors": null
+//     });
+//     let req = config.post("/v0/pipelines", &pipeline_request).await;
+//     assert_eq!(StatusCode::OK, req.status());
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/pause"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Paused,
+//             Duration::from_millis(100_000),
+//         )
+//         .await;
+//     "test".to_string()
+// }
 
 #[actix_web::test]
 #[serial]
 async fn lists_at_initialization_are_empty() {
     let config = setup().await;
-    for endpoint in &["/v0/pipelines", "/v0/programs", "/v0/connectors"] {
+    for endpoint in &["/v0/pipelines"] {
         let mut req = config.get(endpoint).await;
         let ret: Value = req.json().await.unwrap();
         assert_eq!(ret, json!([]));
     }
 }
 
-#[actix_web::test]
-#[serial]
-async fn program_create_compile_delete() {
-    let config = setup().await;
-    let program_request = json!({
-        "name":  "test",
-        "description": "desc",
-        "code": "create table t1(c1 integer);"
-    });
-    let mut req = config.post("/v0/programs", &program_request).await;
-    assert_eq!(StatusCode::CREATED, req.status());
-    let resp: Value = req.json().await.unwrap();
-    let version = resp["version"].as_i64().unwrap();
-    config.compile("test", version).await;
-    let resp = config.delete(format!("/v0/programs/test")).await;
-    assert_eq!(StatusCode::OK, resp.status());
-    let resp = config.get(format!("/v0/programs/test").as_str()).await;
-    assert_eq!(StatusCode::NOT_FOUND, resp.status());
-}
-
-#[actix_web::test]
-#[serial]
-async fn program_create_twice() {
-    let config = setup().await;
-    let program_request = json!({
-        "name":  "test",
-        "description": "desc",
-        "code": "create table t1(c1 integer);"
-    });
-    let req = config.post("/v0/programs", &program_request).await;
-    assert_eq!(StatusCode::CREATED, req.status());
-
-    // Same name, different desc/program.
-    let program_request = json!({
-        "name":  "test",
-        "description": "desc1",
-        "code": "create table t2(c2 integer);"
-    });
-    let req = config.post("/v0/programs", &program_request).await;
-    assert_eq!(StatusCode::CONFLICT, req.status());
-}
-
-#[actix_web::test]
-#[serial]
-async fn deploy_pipeline() {
-    let config = setup().await;
-    let _ = deploy_pipeline_without_connectors(
-        &config,
-        "create table t1(c1 integer) with ('materialized' = 'true'); create view v1 as select * from t1;",
-    )
-    .await;
-
-    // Pause a pipeline before it is started
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/pause"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
-    // Push some data.
-    let req = config
-        .post_csv(
-            format!("/v0/pipelines/test/ingress/T1"),
-            "1\n2\n3\n".to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    // Push more data without Windows-style newlines.
-    let req = config
-        .post_csv(
-            format!("/v0/pipelines/test/ingress/T1"),
-            "4\r\n5\r\n6".to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    // Pause a pipeline after it is started
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/pause"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Paused, Duration::from_millis(1_000))
-        .await;
-
-    // Querying quantiles should work in paused state.
-    let quantiles = config.quantiles_csv("test", "T1").await;
-    assert_eq!(&quantiles, "1,1\n2,1\n3,1\n4,1\n5,1\n6,1\n");
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-}
-
-// Correctly report pipeline panic to the user.
-#[actix_web::test]
-#[serial]
-async fn pipeline_panic() {
-    let config = setup().await;
-
-    // This SQL program is known to panic.
-    let _ = deploy_pipeline_without_connectors(
-        &config,
-        "create table t1(c1 integer); create view v1 as select element(array [2, 3]) from t1;",
-    )
-    .await;
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
-
-    // Push some data.  This should cause a panic.
-    let req = config
-        .post_csv(
-            format!("/v0/pipelines/test/ingress/T1"),
-            "1\n2\n3\n".to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    // The manager should discover the error next time it polls the pipeline.
-    let pipeline = config
-        .wait_for_pipeline_status("test", PipelineStatus::Failed, config.failed_timeout)
-        .await;
-
-    assert_eq!(
-        pipeline.state.error.as_ref().unwrap().error_code,
-        "RuntimeError.WorkerPanic"
-    );
-    println!("status: {pipeline:?}");
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-}
-
-// Program deletes must not cause pipeline deletes.
-#[actix_web::test]
-#[serial]
-async fn program_delete_with_pipeline() {
-    let config = setup().await;
-    let program_request = json!({
-        "name":  "test",
-        "description": "desc",
-        "code": "create table t1(c1 integer); create view v1 as select * from t1;"
-    });
-    let req = config.post("/v0/programs", &program_request).await;
-    assert_eq!(StatusCode::CREATED, req.status());
-
-    let pipeline_request = json!({
-        "name":  "test",
-        "description": "desc",
-        "program_name": Some("test".to_string()),
-        "config": {},
-        "connectors": null
-    });
-    let req = config.post("/v0/pipelines", &pipeline_request).await;
-    assert_eq!(StatusCode::OK, req.status());
-    let req = config.get(format!("/v0/pipelines/test")).await;
-    assert_eq!(StatusCode::OK, req.status());
-
-    // Now delete the program and check that the pipeline still exists
-    let req = config.delete(format!("/v0/programs/test")).await;
-    assert_eq!(StatusCode::BAD_REQUEST, req.status());
-
-    let req = config.get(format!("/v0/programs/test")).await;
-    assert_eq!(StatusCode::OK, req.status());
-
-    let req = config.get(format!("/v0/pipelines/test")).await;
-    assert_eq!(StatusCode::OK, req.status());
-}
-
-#[actix_web::test]
-#[serial]
-async fn json_ingress() {
-    let config = setup().await;
-    let id = deploy_pipeline_without_connectors(
-        &config,
-        "create table t1(c1 integer, c2 bool, c3 varchar) with ('materialized' = 'true'); create materialized view v1 as select * from t1;",
-    )
-    .await;
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
-
-    // Push some data using default json config.
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
-            r#"{"c1": 10, "c2": true}
-            {"c1": 20, "c3": "foo"}"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"c1\":10,\"c2\":true,\"c3\":null}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}}]");
-
-    let hood = config
-        .neighborhood_json(
-            &id,
-            "T1",
-            Some(json!({"c1":10,"c2":true,"c3":null})),
-            10,
-            10,
-        )
-        .await;
-    assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"c1\":10,\"c2\":true,\"c3\":null}}},{\"insert\":{\"index\":1,\"key\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}}}]");
-
-    // Push more data using insert/delete format.
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",),
-            r#"{"delete": {"c1": 10, "c2": true}}
-            {"insert": {"c1": 30, "c3": "bar"}}"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    let quantiles = config.quantiles_json("test", "t1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}}]");
-
-    // Format data as json array.
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
-            r#"{"insert": [40, true, "buzz"]}"#.to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    // Use array of updates instead of newline-delimited JSON
-    let req = config
-        .post_json(
-            format!(
-                "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete&array=true",
-            ),
-            r#"[{"delete": [40, true, "buzz"]}, {"insert": [50, true, ""]}]"#.to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":50,\"c2\":true,\"c3\":\"\"}}]");
-
-    // Trigger parse errors.
-    let mut req = config
-        .post_json(
-            format!(
-                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
-            ),
-            r#"[{"insert": [35, true, ""]}, {"delete": [40, "foo", "buzz"]}, {"insert": [true, true, ""]}]"#.to_string(),
-        )
-        .await;
-    assert_eq!(req.status(), StatusCode::BAD_REQUEST);
-    let body = req.body().await.unwrap();
-    let error = std::str::from_utf8(&body).unwrap();
-    assert_eq!(error, "{\"message\":\"Errors parsing input data (2 errors):\\n    Parse error (event #2): failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\\nInvalid fragment: '[40, \\\"foo\\\", \\\"buzz\\\"]'\\n    Parse error (event #3): failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\\nInvalid fragment: '[true, true, \\\"\\\"]'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\",\"event_number\":2,\"field\":\"c2\",\"invalid_bytes\":null,\"invalid_text\":\"[40, \\\"foo\\\", \\\"buzz\\\"]\",\"suggestion\":null},{\"description\":\"failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\",\"event_number\":3,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"[true, true, \\\"\\\"]\",\"suggestion\":null}],\"num_errors\":2}}");
-
-    // Even records that are parsed successfully don't get ingested when
-    // using array format.
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":50,\"c2\":true,\"c3\":\"\"}}]");
-
-    let mut req = config
-        .post_json(
-            format!(
-                "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",
-            ),
-            r#"{"insert": [25, true, ""]}{"delete": [40, "foo", "buzz"]}{"insert": [true, true, ""]}"#.to_string(),
-        )
-        .await;
-    assert_eq!(req.status(), StatusCode::BAD_REQUEST);
-    let body = req.body().await.unwrap();
-    let error = std::str::from_utf8(&body).unwrap();
-    assert_eq!(error, "{\"message\":\"Errors parsing input data (2 errors):\\n    Parse error (event #2): failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\\nInvalid fragment: '[40, \\\"foo\\\", \\\"buzz\\\"]'\\n    Parse error (event #3): failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\\nInvalid fragment: '[true, true, \\\"\\\"]'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\",\"event_number\":2,\"field\":\"c2\",\"invalid_bytes\":null,\"invalid_text\":\"[40, \\\"foo\\\", \\\"buzz\\\"]\",\"suggestion\":null},{\"description\":\"failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\",\"event_number\":3,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"[true, true, \\\"\\\"]\",\"suggestion\":null}],\"num_errors\":2}}");
-
-    // Even records that are parsed successfully don't get ingested when
-    // using array format.
-    let quantiles = config.quantiles_csv(&id, "T1").await;
-    assert_eq!(quantiles, "20,,foo,1\n25,true,,1\n30,,bar,1\n50,true,,1\n");
-
-    // Debezium CDC format
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=debezium",),
-            r#"{"payload": {"op": "u", "before": [50, true, ""], "after": [60, true, "hello"]}}"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    let quantiles = config.quantiles_csv(&id, "t1").await;
-    assert_eq!(
-        quantiles,
-        "20,,foo,1\n25,true,,1\n30,,bar,1\n60,true,hello,1\n"
-    );
-
-    // Push some CSV data (the second record is invalid, but the other two should
-    // get ingested).
-    let mut req = config
-        .post_csv(
-            format!("/v0/pipelines/test/ingress/t1?format=csv"),
-            r#"15,true,foo
-not_a_number,true,ΑαΒβΓγΔδ
-16,false,unicode🚲"#
-                .to_string(),
-        )
-        .await;
-    assert_eq!(req.status(), StatusCode::BAD_REQUEST);
-    let body = req.body().await.unwrap();
-    let error = std::str::from_utf8(&body).unwrap();
-    assert_eq!(error, "{\"message\":\"Errors parsing input data (1 errors):\\n    Parse error (event #2): failed to deserialize CSV record: error parsing field 'c1': field 0: invalid digit found in string\\nInvalid fragment: 'not_a_number,true,ΑαΒβΓγΔδ\\n'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize CSV record: error parsing field 'c1': field 0: invalid digit found in string\",\"event_number\":2,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"not_a_number,true,ΑαΒβΓγΔδ\\n\",\"suggestion\":null}],\"num_errors\":1}}");
-
-    let quantiles = config.quantiles_json("test", "t1").await;
-    assert_eq!(
-        quantiles,
-        "[{\"insert\":{\"c1\":15,\"c2\":true,\"c3\":\"foo\"}},{\"insert\":{\"c1\":16,\"c2\":false,\"c3\":\"unicode🚲\"}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":25,\"c2\":true,\"c3\":\"\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":60,\"c2\":true,\"c3\":\"hello\"}}]"
-    );
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-}
-
-// Table with column of type MAP.
-#[actix_web::test]
-#[serial]
-async fn map_column() {
-    let config = setup().await;
-    let id = deploy_pipeline_without_connectors(
-        &config,
-        "create table t1(c1 integer, c2 bool, c3 MAP<varchar, varchar>) with ('materialized' = 'true'); create view v1 as select * from t1;",
-    )
-    .await;
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
-
-    // Push some data using default json config.
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
-            r#"{"c1": 10, "c2": true, "c3": {"foo": "1", "bar": "2"}}
-            {"c1": 20}"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"c1\":10,\"c2\":true,\"c3\":{\"bar\":\"2\",\"foo\":\"1\"}}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":null}}]");
-
-    let hood = config
-        .neighborhood_json(
-            &id,
-            "T1",
-            Some(json!({"c1":10,"c2":true,"c3": {"foo": "1", "bar": "2"}})),
-            10,
-            10,
-        )
-        .await;
-    assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"c1\":10,\"c2\":true,\"c3\":{\"bar\":\"2\",\"foo\":\"1\"}}}},{\"insert\":{\"index\":1,\"key\":{\"c1\":20,\"c2\":null,\"c3\":null}}}]");
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-}
-
-#[actix_web::test]
-#[serial]
-async fn parse_datetime() {
-    let config = setup().await;
-    let _ = deploy_pipeline_without_connectors(
-        &config,
-        "create table t1(t TIME, ts TIMESTAMP, d DATE) with ('materialized' = 'true');",
-    )
-    .await;
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
-
-    // The parser should trim leading and trailing white space when parsing
-    // dates/times.
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/t1?format=json&update_format=raw",),
-            r#"{"t":"13:22:00","ts": "2021-05-20 12:12:33","d": "2021-05-20"}
-            {"t":" 11:12:33.483221092 ","ts": " 2024-02-25 12:12:33 ","d": " 2024-02-25 "}"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles.parse::<Value>().unwrap(),
-               "[{\"insert\":{\"d\":\"2024-02-25\",\"t\":\"11:12:33.483221092\",\"ts\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"d\":\"2021-05-20\",\"t\":\"13:22:00\",\"ts\":\"2021-05-20 12:12:33\"}}]".parse::<Value>().unwrap());
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-}
-
-#[actix_web::test]
-#[serial]
-async fn quoted_columns() {
-    let config = setup().await;
-    let _ = deploy_pipeline_without_connectors(
-        &config,
-        r#"create table t1("c1" integer not null, "C2" bool not null, "😁❤" varchar not null, "αβγ" boolean not null, ΔΘ boolean not null) with ('materialized' = 'true')"#,
-    )
-    .await;
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
-
-    // Push some data using default json config.
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
-            r#"{"c1": 10, "C2": true, "😁❤": "foo", "αβγ": true, "δθ": false}"#.to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"C2\":true,\"c1\":10,\"αβγ\":true,\"δθ\":false,\"😁❤\":\"foo\"}}]"
-            .parse::<Value>()
-            .unwrap()
-    );
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-}
-
-#[actix_web::test]
-#[serial]
-async fn primary_keys() {
-    let config = setup().await;
-    let _ = deploy_pipeline_without_connectors(
-        &config,
-        r#"create table t1(id bigint not null, s varchar not null, primary key (id)) with ('materialized' = 'true')"#,
-    )
-    .await;
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
-
-    // Push some data using default json config.
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
-            r#"{"insert":{"id":1, "s": "1"}}
-{"insert":{"id":2, "s": "2"}}"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"id\":1,\"s\":\"1\"}},{\"insert\":{\"id\":2,\"s\":\"2\"}}]"
-            .parse::<Value>()
-            .unwrap()
-    );
-
-    let hood = config
-        .neighborhood_json("test", "T1", Some(json!({"id":2,"s":"1"})), 10, 10)
-        .await;
-    assert_eq!(
-        hood.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"index\":-1,\"key\":{\"id\":1,\"s\":\"1\"}}},{\"insert\":{\"index\":0,\"key\":{\"id\":2,\"s\":\"2\"}}}]"
-            .parse::<Value>()
-            .unwrap()
-    );
-
-    // Make some changes.
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
-            r#"{"insert":{"id":1, "s": "1-modified"}}
-{"update":{"id":2, "s": "2-modified"}}"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"id\":1,\"s\":\"1-modified\"}},{\"insert\":{\"id\":2,\"s\":\"2-modified\"}}]"
-            .parse::<Value>()
-            .unwrap()
-    );
-
-    let hood = config.neighborhood_json("test", "T1", None, 10, 10).await;
-    assert_eq!(
-        hood.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"index\":0,\"key\":{\"id\":1,\"s\":\"1-modified\"}}},{\"insert\":{\"index\":1,\"key\":{\"id\":2,\"s\":\"2-modified\"}}}]"
-            .parse::<Value>()
-            .unwrap()
-    );
-
-    // Delete a key
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
-            r#"{"delete":{"id":2}}"#.to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"id\":1,\"s\":\"1-modified\"}}]"
-            .parse::<Value>()
-            .unwrap()
-    );
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-}
-
-/// Test case-sensitive table ingress/egress behavior.
-#[actix_web::test]
-#[serial]
-async fn case_sensitive_tables() {
-    let config = setup().await;
-    // Table "TaBle1" and view "V1" are case-sensitive and can only be accessed
-    // by quoting their name.
-    // Table "v1" is also case-sensitive, but since its name is lowercase, it
-    // can be accessed as both "v1" and "\"v1\""
-    let _ = deploy_pipeline_without_connectors(
-        &config,
-        r#"create table "TaBle1"(id bigint not null);
-create table table1(id bigint);
-create materialized view "V1" as select * from "TaBle1";
-create materialized view "v1" as select * from table1;"#,
-    )
-    .await;
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
-
-    let mut response1 = config.delta_stream_request_json("test", "\"V1\"").await;
-    let mut response2 = config.delta_stream_request_json("test", "\"v1\"").await;
-
-    // Push some data using default json config.
-    let req = config
-        .post_json(
-            format!(
-                "/v0/pipelines/test/ingress/\"TaBle1\"?format=json&update_format=insert_delete",
-            ),
-            r#"{"insert":{"id":1}}"#.to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/table1?format=json&update_format=insert_delete",),
-            r#"{"insert":{"id":2}}"#.to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    config
-        .read_expected_response_json(
-            &mut response1,
-            Duration::from_millis(10_000),
-            &[json!({"insert": {"id":1}})],
-        )
-        .await;
-
-    config
-        .read_expected_response_json(
-            &mut response2,
-            Duration::from_millis(10_000),
-            &[json!({"insert": {"id":2}})],
-        )
-        .await;
-
-    let quantiles = config.quantiles_json("test", "\"V1\"").await;
-    assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"id\":1}}]".parse::<Value>().unwrap()
-    );
-
-    let quantiles = config.quantiles_json("test", "\"v1\"").await;
-    assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"id\":2}}]".parse::<Value>().unwrap()
-    );
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-}
-
-#[actix_web::test]
-#[serial]
-async fn duplicate_outputs() {
-    let config = setup().await;
-    let _ = deploy_pipeline_without_connectors(
-        &config,
-        r#"create table t1(id bigint not null, s varchar not null); create view v1 as select s from t1;"#,
-    )
-    .await;
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
-
-    let mut response = config.delta_stream_request_json("test", "V1").await;
-
-    // Push some data using default json config.
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
-            r#"{"insert":{"id":1, "s": "1"}}
-{"insert":{"id":2, "s": "2"}}"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    config
-        .read_expected_response_json(
-            &mut response,
-            Duration::from_millis(10_000),
-            &[json!({"insert": {"s":"1"}}), json!({"insert":{"s":"2"}})],
-        )
-        .await;
-
-    // Push some more data
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete"),
-            r#"{"insert":{"id":3, "s": "3"}}
-{"insert":{"id":4, "s": "4"}}"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    config
-        .read_expected_response_json(
-            &mut response,
-            Duration::from_millis(10_000),
-            &[json!({"insert": {"s":"3"}}), json!({"insert":{"s":"4"}})],
-        )
-        .await;
-
-    // Push more records that will create duplicate outputs.
-    let req = config
-        .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
-            r#"{"insert":{"id":5, "s": "1"}}
-{"insert":{"id":6, "s": "2"}}"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    config
-        .read_expected_response_json(
-            &mut response,
-            Duration::from_millis(10_000),
-            &[json!({"insert": {"s":"1"}}), json!({"insert":{"s":"2"}})],
-        )
-        .await;
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-}
-
-#[actix_web::test]
-#[serial]
-async fn upsert() {
-    let config = setup().await;
-    let _ = deploy_pipeline_without_connectors(
-        &config,
-        r#"create table t1(
-            id1 bigint not null,
-            id2 bigint not null,
-            str1 varchar not null,
-            str2 varchar,
-            int1 bigint not null,
-            int2 bigint,
-            primary key(id1, id2));"#,
-    )
-    .await;
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
-
-    let mut response = config.delta_stream_request_json("test", "T1").await;
-
-    // Push some data.
-    //
-    // NOTE: we use `array=true` to push data in this test to make sure that all updates are
-    // delivered atomically and all outputs are produced in a single chunk. It is still
-    // theoretically possible that inputs are split across multiple `step`'s due to the
-    // `ZSetHandle::append` method not being atomic.  This is highly improbable, but if it
-    // happens, increasing buffering delay in DBSP should solve that.
-    let req = config
-        .post_json(
-            format!(
-                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
-            ),
-            // Add several identical records with different id's
-            r#"[{"insert":{"id1":1, "id2":1, "str1": "1", "int1": 1}},{"insert":{"id1":2, "id2":1, "str1": "1", "int1": 1}},{"insert":{"id1":3, "id2":1, "str1": "1", "int1": 1}}]"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    config
-        .read_expected_response_json(
-            &mut response,
-            Duration::from_millis(10_000),
-            &[
-                json!({"insert": {"id1":1,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
-                json!({"insert": {"id1":2,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
-                json!({"insert": {"id1":3,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
-            ],
-        )
-        .await;
-
-    let req = config
-        .post_json(
-            format!(
-                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
-            ),
-            // 1: Update 'str1'.
-            // 2: Update 'str2'.
-            // 3: Overwrite entire record.
-            r#"[{"update":{"id1":1, "id2":1, "str1": "2"}},{"update":{"id1":2, "id2":1, "str2": "foo"}},{"insert":{"id1":3, "id2":1, "str1": "1", "str2": "2", "int1":3, "int2":33}}]"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    config
-        .read_expected_response_json(
-            &mut response,
-            Duration::from_millis(10_000),
-            &[
-                json!({"delete": {"id1":1,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
-                json!({"delete": {"id1":2,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
-                json!({"delete": {"id1":3,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
-                json!({"insert": {"id1":1,"id2":1,"str1":"2","str2":null,"int1":1,"int2":null}}),
-                json!({"insert": {"id1":2,"id2":1,"str1":"1","str2":"foo","int1":1,"int2":null}}),
-                json!({"insert": {"id1":3,"id2":1,"str1":"1","str2":"2","int1":3,"int2":33}}),
-            ],
-        )
-        .await;
-
-    let req = config
-        .post_json(
-            format!(
-                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
-            ),
-            // 1: Update command that doesn't modify any fields - noop.
-            // 2: Clear 'str2' to null.
-            // 3: Delete record.
-            // 4: Delete non-existing key - noop.
-            // 5: Update non-existing key - noop.
-            r#"[{"update":{"id1":1, "id2":1}},{"update":{"id1":2, "id2":1, "str2": null}},{"delete":{"id1":3, "id2":1}},{"delete":{"id1":4, "id2":1}},{"update":{"id1":4, "id2":1, "int1":0, "str1":""}}]"#
-                .to_string(),
-        )
-        .await;
-    assert!(req.status().is_success());
-
-    config
-        .read_expected_response_json(
-            &mut response,
-            Duration::from_millis(10_000),
-            &[
-                json!({"delete": {"id1":2,"id2":1,"str1":"1","str2":"foo","int1":1,"int2":null}}),
-                json!({"delete": {"id1":3,"id2":1,"str1":"1","str2":"2","int1":3,"int2":33}}),
-                json!({"insert": {"id1":2,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
-            ],
-        )
-        .await;
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-}
-
-#[actix_web::test]
-#[serial]
-async fn pipeline_restart() {
-    let config = setup().await;
-    let _ = deploy_pipeline_without_connectors(
-        &config,
-        "create table t1(c1 integer); create view v1 as select * from t1;",
-    )
-    .await;
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Running, config.start_timeout)
-        .await;
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-
-    // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Running, config.start_timeout)
-        .await;
-
-    // Shutdown the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-}
-
-#[actix_web::test]
-#[serial]
-async fn pipeline_runtime_configuration() {
-    let config = setup().await;
-    let pipeline_request = json!({
-        "name":  "pipeline_runtime_configuration",
-        "description": "desc",
-        "program_name": null,
-        "config": {
-            "workers": 100,
-            "resources": {
-                "cpu_cores_min": 5,
-                "storage_mb_max": 2000,
-                "storage_class": "normal"
-            }
-        },
-        "connectors": null
-    });
-    // Create the pipeline
-    let resp = config.post("/v0/pipelines", &pipeline_request).await;
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // Get config
-    let mut resp = config
-        .get(format!(
-            "/v0/pipelines/pipeline_runtime_configuration/config"
-        ))
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let resp: Value = resp.json().await.unwrap();
-    let workers = resp["workers"].as_i64().unwrap();
-    let resources = &resp["resources"];
-    assert_eq!(100, workers);
-    assert_eq!(
-        json!({ "cpu_cores_min": 5, "cpu_cores_max": null, "memory_mb_min": null, "memory_mb_max": null, "storage_mb_max": 2000, "storage_class": "normal" }),
-        *resources
-    );
-
-    // Update config
-    let patch = json!({
-        "name": "pipeline_runtime_configuration",
-        "description": "desc",
-        "config": {
-            "workers": 5,
-            "resources": {
-                "memory_mb_max": 100
-            }
-        },
-    });
-    let resp = config
-        .patch(
-            format!("/v0/pipelines/pipeline_runtime_configuration"),
-            &patch,
-        )
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // Get config
-    let mut resp = config
-        .get(format!(
-            "/v0/pipelines/pipeline_runtime_configuration/config"
-        ))
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let resp: Value = resp.json().await.unwrap();
-    let workers = resp["workers"].as_i64().unwrap();
-    let resources = &resp["resources"];
-    assert_eq!(5, workers);
-    assert_eq!(
-        json!({ "cpu_cores_min": null, "cpu_cores_max": null, "memory_mb_min": null, "memory_mb_max": 100, "storage_mb_max": null, "storage_class": null }),
-        *resources
-    );
-}
-
-#[actix_web::test]
-#[serial]
-// https://github.com/feldera/feldera/issues/1057
-async fn pipeline_start_without_compiling() {
-    let config = setup().await;
-    let program_request = json!({
-        "name":  "test",
-        "description": "desc",
-        "code": "create table foo(bar integer);",
-    });
-    let mut req = config.post("/v0/programs", &program_request).await;
-    assert_eq!(StatusCode::CREATED, req.status());
-    let resp: Value = req.json().await.unwrap();
-    let version = resp["version"].as_i64().unwrap();
-
-    let pipeline_request = json!({
-        "name":  "test",
-        "description": "desc",
-        "program_name": Some("test".to_string()),
-        "config": {},
-        "connectors": null
-    });
-    let req = config.post("/v0/pipelines", &pipeline_request).await;
-    assert_eq!(req.status(), StatusCode::OK);
-
-    // Start compiling the new program but don't wait till completion
-    let compilation_request = json!({ "version": version });
-    let resp = config
-        .post(format!("/v0/programs/test/compile"), &compilation_request)
-        .await;
-    assert_eq!(StatusCode::ACCEPTED, resp.status());
-
-    // Try starting the program when it is in the CompilingRust state.
-    // There is a possibility that rust compilation is so fast that we don't poll
-    // at that moment but that's unlikely.
-    let now = Instant::now();
-    loop {
-        println!("Waiting till program compilation state is in past the CompilingSql state");
-        std::thread::sleep(time::Duration::from_millis(30));
-        if now.elapsed().as_secs() > 200 {
-            panic!("Compilation timeout");
-        }
-        let mut resp = config.get(format!("/v0/programs/test")).await;
-        let val: Value = resp.json().await.unwrap();
-
-        let status = val["status"].clone();
-        println!("Program status is: {status:?}");
-
-        if status == json!("None") || status == json!("Pending") || status == json!("CompilingSql")
-        {
-            continue;
-        }
-        break;
-    }
-    // Start the program
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
-}
-
-/// Test the basic functionality of the services:
-/// create, retrieve, update and delete.
-///
-/// It tests the following things:
-/// - Retrieve service
-/// - Retrieve non-existing service (not found)
-/// - Retrieve list of services, filtered by name, id or config_type
-/// - Create service and check its content
-/// - Create service with the same name (conflict)
-/// - Create service with invalid parameters (bad request)
-/// - Update service partially
-/// - Update service renaming it
-/// - Update service renaming it to another existing name (conflict)
-/// - Delete service
-/// - Delete non-existing service (not found)
-#[actix_web::test]
-#[serial]
-async fn service_basic() {
-    let config = setup().await;
-
-    // Check for non-existing service
-    let resp = config
-        .get(format!("/v0/services/non-existing-service-name"))
-        .await;
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-
-    // Create first service
-    let post_body = json!({
-      "name": "example_kafka1",
-      "description": "example789",
-      "config": {
-        "kafka": {
-          "bootstrap_servers": [
-            "first.example.com:1111",
-            "example.example.example:2222"
-          ],
-          "options": {
-            "example123": "value111",
-            "example456": "value222"
-          }
-        }
-      }
-    });
-    let mut request = config.post(format!("/v0/services"), &post_body).await;
-    assert_eq!(request.status(), StatusCode::CREATED);
-    let response: Value = request.json().await.unwrap();
-    let id_first = response["service_id"].as_str().unwrap();
-
-    // Retrieve first service and check content
-    let mut request = config.get_ok(format!("/v0/services/example_kafka1")).await;
-    let expected_config_first = KafkaService {
-        bootstrap_servers: vec![
-            "first.example.com:1111".to_string(),
-            "example.example.example:2222".to_string(),
-        ],
-        options: BTreeMap::from([
-            ("example123".to_string(), "value111".to_string()),
-            ("example456".to_string(), "value222".to_string()),
-        ]),
-    };
-    let response: Value = request.json().await.unwrap();
-    let response = response.as_object().unwrap();
-    assert_eq!(response["name"].as_str().unwrap(), "example_kafka1");
-    assert_eq!(response["description"].as_str().unwrap(), "example789");
-    let v = response["config"].as_object().unwrap()["kafka"].clone();
-    assert_eq!(
-        serde_json::from_value::<KafkaService>(v).unwrap(),
-        expected_config_first
-    );
-    assert_eq!(response["config_type"].as_str().unwrap(), "kafka");
-
-    // Create second service
-    let post_body = json!({
-      "name": "example_kafka2",
-      "description": "example456",
-      "config": {
-        "kafka": {
-          "bootstrap_servers": [
-            "example.com:1234",
-            "example.example:5678"
-          ],
-          "options": {
-            "example1": "value1",
-            "example2": "value2"
-          }
-        }
-      }
-    });
-    let mut request = config.post(format!("/v0/services"), &post_body).await;
-    assert_eq!(request.status(), StatusCode::CREATED);
-    let response: Value = request.json().await.unwrap();
-    let id_second = response["service_id"].as_str().unwrap();
-
-    // Attempt to create the same service again
-    let request = config.post(format!("/v0/services"), &post_body).await;
-    assert_eq!(request.status(), StatusCode::CONFLICT);
-
-    // Retrieve second service and check content
-    let mut request = config.get_ok(format!("/v0/services/example_kafka2")).await;
-    let expected_config_second = KafkaService {
-        bootstrap_servers: vec![
-            "example.com:1234".to_string(),
-            "example.example:5678".to_string(),
-        ],
-        options: BTreeMap::from([
-            ("example1".to_string(), "value1".to_string()),
-            ("example2".to_string(), "value2".to_string()),
-        ]),
-    };
-    let response: Value = request.json().await.unwrap();
-    let response = response.as_object().unwrap();
-    assert_eq!(response["name"].as_str().unwrap(), "example_kafka2");
-    assert_eq!(response["description"].as_str().unwrap(), "example456");
-    let v = response["config"].as_object().unwrap()["kafka"].clone();
-    assert_eq!(
-        serde_json::from_value::<KafkaService>(v).unwrap(),
-        expected_config_second
-    );
-    assert_eq!(response["config_type"].as_str().unwrap(), "kafka");
-
-    // Attempt to create an invalid service
-    let post_body = json!({
-      "name": "another_example_service",
-      "description": "example_description",
-      "config": {
-        "does_not_exist": {
-          "example": "value"
-        }
-      }
-    });
-    let request = config.post(format!("/v0/services"), &post_body).await;
-    assert_eq!(request.status(), StatusCode::BAD_REQUEST);
-
-    // Retrieve list of all services
-    let mut request = config.get_ok(format!("/v0/services")).await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 2);
-
-    // Retrieve list of services filtered
-    let mut request = config
-        .get_ok(format!("/v0/services?name=example_kafka1"))
-        .await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 1);
-    assert_eq!(
-        response.as_array().unwrap()[0].as_object().unwrap()["name"]
-            .as_str()
-            .unwrap(),
-        "example_kafka1"
-    );
-    let mut request = config
-        .get_ok(format!("/v0/services?name=example_kafka2"))
-        .await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 1);
-    assert_eq!(
-        response.as_array().unwrap()[0].as_object().unwrap()["name"]
-            .as_str()
-            .unwrap(),
-        "example_kafka2"
-    );
-    let request = config
-        .get(format!("/v0/services?name=example_does_not_exist"))
-        .await;
-    assert_eq!(request.status(), StatusCode::NOT_FOUND);
-    let mut request = config.get_ok(format!("/v0/services?id={id_first}")).await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 1);
-    assert_eq!(
-        response.as_array().unwrap()[0].as_object().unwrap()["service_id"]
-            .as_str()
-            .unwrap(),
-        id_first
-    );
-    let mut request = config.get_ok(format!("/v0/services?id={id_second}")).await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 1);
-    assert_eq!(
-        response.as_array().unwrap()[0].as_object().unwrap()["service_id"]
-            .as_str()
-            .unwrap(),
-        id_second
-    );
-    let request = config
-        .get(format!(
-            "/v0/services?id=00000000-0000-0000-0000-000000001234"
-        ))
-        .await;
-    assert_eq!(request.status(), StatusCode::NOT_FOUND);
-
-    // Rename first service to second service (conflict)
-    let patch = json!({
-        "name": "example_kafka2",
-    });
-    let resp = config
-        .patch(format!("/v0/services/example_kafka1"), &patch)
-        .await;
-    assert_eq!(resp.status(), StatusCode::CONFLICT);
-
-    // Delete first service
-    let req = config.delete(format!("/v0/services/example_kafka1")).await;
-    assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req);
-
-    // Check one service is left
-    let mut request = config
-        .get_ok(format!("/v0/services?config_type=kafka"))
-        .await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 1);
-
-    // Check filter works
-    let mut request = config
-        .get_ok(format!("/v0/services?config_type=does_not_exist"))
-        .await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 0);
-
-    // Update second service (only description)
-    let patch = json!({
-        "description": "new_description",
-    });
-    let resp = config
-        .patch(format!("/v0/services/example_kafka2"), &patch)
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // Check description is updated
-    let mut request = config.get_ok(format!("/v0/services/example_kafka2")).await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_object().unwrap()["name"], "example_kafka2"); // name is unchanged
-    assert_eq!(
-        response.as_object().unwrap()["description"],
-        "new_description"
-    );
-    let v = response["config"].as_object().unwrap()["kafka"].clone(); // config is unchanged
-    assert_eq!(
-        serde_json::from_value::<KafkaService>(v).unwrap(),
-        expected_config_second
-    );
-    assert_eq!(response.as_object().unwrap()["config_type"], "kafka");
-
-    // Update second service (description and config)
-    let patch = json!({
-        "description": "another_new_description",
-        "config": {
-          "kafka": {
-            "bootstrap_servers": [
-              "example.example:1111",
-              "another.example:2222"
-            ],
-            "options": {
-              "example3": "value5",
-              "example4": "value6"
-            }
-          }
-        }
-    });
-    let resp = config
-        .patch(format!("/v0/services/example_kafka2"), &patch)
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // Check description and config is updated
-    let mut request = config.get_ok(format!("/v0/services/example_kafka2")).await;
-    let expected_updated_config_second = KafkaService {
-        bootstrap_servers: vec![
-            "example.example:1111".to_string(),
-            "another.example:2222".to_string(),
-        ],
-        options: BTreeMap::from([
-            ("example3".to_string(), "value5".to_string()),
-            ("example4".to_string(), "value6".to_string()),
-        ]),
-    };
-    let response: Value = request.json().await.unwrap();
-    let response = response.as_object().unwrap();
-    assert_eq!(response["name"].as_str().unwrap(), "example_kafka2");
-    assert_eq!(
-        response["description"].as_str().unwrap(),
-        "another_new_description"
-    );
-    let v = response["config"].as_object().unwrap()["kafka"].clone();
-    assert_eq!(
-        serde_json::from_value::<KafkaService>(v).unwrap(),
-        expected_updated_config_second
-    );
-
-    // Rename second service
-    let patch = json!({
-        "name": "example_kafka3",
-    });
-    let resp = config
-        .patch(format!("/v0/services/example_kafka2"), &patch)
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // Check it is renamed
-    config.get_ok(format!("/v0/services/example_kafka3")).await;
-    assert_eq!(
-        config
-            .get(format!("/v0/services/example_kafka2"))
-            .await
-            .status(),
-        StatusCode::NOT_FOUND
-    );
-
-    // Delete second service
-    let req = config.delete(format!("/v0/services/example_kafka3")).await;
-    assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req);
-
-    // Create a service using PUT
-    let put_body = json!({
-      "description": "example123456789",
-      "config": {
-        "kafka": {
-          "bootstrap_servers": [
-            "example.com:11",
-          ],
-          "options": {
-            "example8": "value1",
-          }
-        }
-      }
-    });
-    let request = config
-        .put(format!("/v0/services/example_kafka_put"), &put_body)
-        .await;
-    assert_eq!(request.status(), StatusCode::CREATED);
-
-    // Retrieve service of PUT and check content
-    let mut request = config
-        .get_ok(format!("/v0/services/example_kafka_put"))
-        .await;
-    let expected_config = KafkaService {
-        bootstrap_servers: vec!["example.com:11".to_string()],
-        options: BTreeMap::from([("example8".to_string(), "value1".to_string())]),
-    };
-    let response: Value = request.json().await.unwrap();
-    let response = response.as_object().unwrap();
-    assert_eq!(response["name"].as_str().unwrap(), "example_kafka_put");
-    assert_eq!(
-        response["description"].as_str().unwrap(),
-        "example123456789"
-    );
-    let v = response["config"].as_object().unwrap()["kafka"].clone();
-    assert_eq!(
-        serde_json::from_value::<KafkaService>(v).unwrap(),
-        expected_config
-    );
-    assert_eq!(response["config_type"].as_str().unwrap(), "kafka");
-
-    // Update a service using PUT
-    let put_body = json!({
-      "description": "another_example123",
-      "config": {
-        "kafka": {
-          "bootstrap_servers": [
-            "example.com:12",
-          ],
-          "options": {
-            "example3": "value4",
-          }
-        }
-      }
-    });
-    let request = config
-        .put(format!("/v0/services/example_kafka_put"), &put_body)
-        .await;
-    assert_eq!(request.status(), StatusCode::OK);
-
-    // Retrieve updated service of PUT and check content
-    let mut request = config
-        .get_ok(format!("/v0/services/example_kafka_put"))
-        .await;
-    let expected_config = KafkaService {
-        bootstrap_servers: vec!["example.com:12".to_string()],
-        options: BTreeMap::from([("example3".to_string(), "value4".to_string())]),
-    };
-    let response: Value = request.json().await.unwrap();
-    let response = response.as_object().unwrap();
-    assert_eq!(response["name"].as_str().unwrap(), "example_kafka_put");
-    assert_eq!(
-        response["description"].as_str().unwrap(),
-        "another_example123"
-    );
-    let v = response["config"].as_object().unwrap()["kafka"].clone();
-    assert_eq!(
-        serde_json::from_value::<KafkaService>(v).unwrap(),
-        expected_config
-    );
-    assert_eq!(response["config_type"].as_str().unwrap(), "kafka");
-
-    // Delete last service
-    let req = config
-        .delete(format!("/v0/services/example_kafka_put"))
-        .await;
-    assert_eq!(StatusCode::OK, req.status(), "Response {:?}", req);
-
-    // Delete non-existing
-    let req = config
-        .delete(format!("/v0/services/example_kafka_put"))
-        .await;
-    assert_eq!(StatusCode::NOT_FOUND, req.status(), "Response {:?}", req);
-
-    // Check no service is left
-    let mut request = config.get_ok(format!("/v0/services")).await;
-    let response: Value = request.json().await.unwrap();
-    assert_eq!(response.as_array().unwrap().len(), 0);
-}
-
-#[actix_web::test]
-#[serial]
-async fn service_integrated_connector_transport() {
-    let config = setup().await;
-
-    // Create a service
-    let request = config
-        .post(
-            format!("/v0/services"),
-            &json!({
-              "name": "kafka-service1",
-              "description": "Description of the service used to test integrated connector",
-              "config": {
-                "kafka": {
-                  "bootstrap_servers": [
-                    "localhost:9092",
-                    "localhost:19092"
-                  ],
-                  "options": {
-                    "key1": "value1"
-                  }
-                }
-              }
-            }),
-        )
-        .await;
-    assert_eq!(request.status(), StatusCode::CREATED);
-
-    // Create a connector that uses the service
-    let mut request = config
-        .post(
-            format!("/v0/connectors"),
-            &json!({
-              "name": "kafka-connector1",
-              "description": "Description of the integrated connector",
-              "config": {
-                "transport": {
-                  "name": "kafka_input",
-                  "config": {
-                    "topics": ["a", "b"],
-                    "auto.offset.reset": "earliest",
-                    "kafka_service": "kafka-service1"
-                  }
-                },
-                "format": {
-                  "name": "json",
-                  "config": {
-                    "update_format": "insert_delete"
-                  }
-                }
-              }
-            }),
-        )
-        .await;
-    println!("{:?}", request.body().await);
-    assert_eq!(request.status(), StatusCode::CREATED);
-
-    // Rename service
-    let patch = json!({
-        "name": "kafka-service1-renamed-to-2",
-    });
-    let resp = config
-        .patch(format!("/v0/services/kafka-service1"), &patch)
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // Check connector has correct service name
-    let mut request = config
-        .get_ok(format!("/v0/connectors/kafka-connector1"))
-        .await;
-    let response: Value = request.json().await.unwrap();
-    let response = response.as_object().unwrap();
-    assert_eq!(
-        response["config"].as_object().unwrap()["transport"]
-            .as_object()
-            .unwrap()["config"]
-            .as_object()
-            .unwrap()["kafka_service"],
-        "kafka-service1-renamed-to-2"
-    );
-
-    // Create a program
-    let request = config
-        .post(
-            format!("/v0/programs"),
-            &json!({
-              "name": "program1",
-              "description": "",
-              "code": "CREATE TABLE example(name VARCHAR);",
-            }),
-        )
-        .await;
-    assert_eq!(request.status(), StatusCode::CREATED);
-
-    // Create a pipeline
-    let request = config
-        .post(
-            format!("/v0/pipelines"),
-            &json!({
-              "name": "pipeline1",
-              "description": "",
-              "program_name": "program1",
-              "config": {
-                "workers": 4
-              },
-              "connectors": [
-                {
-                  "connector_name": "kafka-connector1",
-                  "is_input": true,
-                  "name": "example123",
-                  "relation_name": "example"
-                }
-              ],
-            }),
-        )
-        .await;
-    assert_eq!(request.status(), StatusCode::OK);
-
-    // Fetch pipeline config and compare to resolved expectation
-    let mut request = config
-        .get_ok(format!("/v0/pipelines/pipeline1/config"))
-        .await;
-    let response: Value = request.json().await.unwrap();
-    let response = response.as_object().unwrap();
-    let transport_config = response["inputs"].as_object().unwrap()["example123"]
-        .as_object()
-        .unwrap()["transport"]
-        .as_object()
-        .unwrap()["config"]
-        .as_object()
-        .unwrap();
-    assert_eq!(transport_config["topics"], json!(["a", "b"]));
-    assert_eq!(transport_config["auto.offset.reset"], json!("earliest"));
-    assert_eq!(transport_config["kafka_service"], json!(null));
-    assert_eq!(
-        transport_config["bootstrap.servers"],
-        json!("localhost:9092,localhost:19092")
-    );
-    assert_eq!(transport_config["key1"], json!("value1"));
-}
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// async fn program_create_compile_delete() {
+//     let config = setup().await;
+//     let program_request = json!({
+//         "name":  "test",
+//         "description": "desc",
+//         "code": "create table t1(c1 integer);"
+//     });
+//     let mut req = config.post("/v0/programs", &program_request).await;
+//     assert_eq!(StatusCode::CREATED, req.status());
+//     let resp: Value = req.json().await.unwrap();
+//     let version = resp["version"].as_i64().unwrap();
+//     config.compile("test", version).await;
+//     let resp = config.delete(format!("/v0/programs/test")).await;
+//     assert_eq!(StatusCode::OK, resp.status());
+//     let resp = config.get(format!("/v0/programs/test").as_str()).await;
+//     assert_eq!(StatusCode::NOT_FOUND, resp.status());
+// }
+
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// async fn program_create_twice() {
+//     let config = setup().await;
+//     let program_request = json!({
+//         "name":  "test",
+//         "description": "desc",
+//         "code": "create table t1(c1 integer);"
+//     });
+//     let req = config.post("/v0/programs", &program_request).await;
+//     assert_eq!(StatusCode::CREATED, req.status());
+//
+//     // Same name, different desc/program.
+//     let program_request = json!({
+//         "name":  "test",
+//         "description": "desc1",
+//         "code": "create table t2(c2 integer);"
+//     });
+//     let req = config.post("/v0/programs", &program_request).await;
+//     assert_eq!(StatusCode::CONFLICT, req.status());
+// }
+
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// async fn deploy_pipeline() {
+//     let config = setup().await;
+//     let _ = deploy_pipeline_without_connectors(
+//         &config,
+//         "create table t1(c1 integer) with ('materialized' = 'true'); create view v1 as select * from t1;",
+//     )
+//     .await;
+//
+//     // Pause a pipeline before it is started
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/pause"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Running,
+//             Duration::from_millis(1_000),
+//         )
+//         .await;
+//     // Push some data.
+//     let req = config
+//         .post_csv(
+//             format!("/v0/pipelines/test/ingress/T1"),
+//             "1\n2\n3\n".to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     // Push more data without Windows-style newlines.
+//     let req = config
+//         .post_csv(
+//             format!("/v0/pipelines/test/ingress/T1"),
+//             "4\r\n5\r\n6".to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     // Pause a pipeline after it is started
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/pause"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Paused, Duration::from_millis(1_000))
+//         .await;
+//
+//     // Querying quantiles should work in paused state.
+//     let quantiles = config.quantiles_csv("test", "T1").await;
+//     assert_eq!(&quantiles, "1,1\n2,1\n3,1\n4,1\n5,1\n6,1\n");
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Running,
+//             Duration::from_millis(1_000),
+//         )
+//         .await;
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+// }
+
+// TODO: refactor test
+// // Correctly report pipeline panic to the user.
+// #[actix_web::test]
+// #[serial]
+// async fn pipeline_panic() {
+//     let config = setup().await;
+//
+//     // This SQL program is known to panic.
+//     let _ = deploy_pipeline_without_connectors(
+//         &config,
+//         "create table t1(c1 integer); create view v1 as select element(array [2, 3]) from t1;",
+//     )
+//     .await;
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Running,
+//             Duration::from_millis(1_000),
+//         )
+//         .await;
+//
+//     // Push some data.  This should cause a panic.
+//     let req = config
+//         .post_csv(
+//             format!("/v0/pipelines/test/ingress/T1"),
+//             "1\n2\n3\n".to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     // The manager should discover the error next time it polls the pipeline.
+//     let pipeline = config
+//         .wait_for_pipeline_status("test", PipelineStatus::Failed, config.failed_timeout)
+//         .await;
+//
+//     assert_eq!(
+//         pipeline.state.error.as_ref().unwrap().error_code,
+//         "RuntimeError.WorkerPanic"
+//     );
+//     println!("status: {pipeline:?}");
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+// }
+
+// TODO: refactor test
+// // Program deletes must not cause pipeline deletes.
+// #[actix_web::test]
+// #[serial]
+// async fn program_delete_with_pipeline() {
+//     let config = setup().await;
+//     let program_request = json!({
+//         "name":  "test",
+//         "description": "desc",
+//         "code": "create table t1(c1 integer); create view v1 as select * from t1;"
+//     });
+//     let req = config.post("/v0/programs", &program_request).await;
+//     assert_eq!(StatusCode::CREATED, req.status());
+//
+//     let pipeline_request = json!({
+//         "name":  "test",
+//         "description": "desc",
+//         "program_name": Some("test".to_string()),
+//         "config": {},
+//         "connectors": null
+//     });
+//     let req = config.post("/v0/pipelines", &pipeline_request).await;
+//     assert_eq!(StatusCode::OK, req.status());
+//     let req = config.get(format!("/v0/pipelines/test")).await;
+//     assert_eq!(StatusCode::OK, req.status());
+//
+//     // Now delete the program and check that the pipeline still exists
+//     let req = config.delete(format!("/v0/programs/test")).await;
+//     assert_eq!(StatusCode::BAD_REQUEST, req.status());
+//
+//     let req = config.get(format!("/v0/programs/test")).await;
+//     assert_eq!(StatusCode::OK, req.status());
+//
+//     let req = config.get(format!("/v0/pipelines/test")).await;
+//     assert_eq!(StatusCode::OK, req.status());
+// }
+
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// async fn json_ingress() {
+//     let config = setup().await;
+//     let id = deploy_pipeline_without_connectors(
+//         &config,
+//         "create table t1(c1 integer, c2 bool, c3 varchar) with ('materialized' = 'true'); create materialized view v1 as select * from t1;",
+//     )
+//     .await;
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Running,
+//             Duration::from_millis(1_000),
+//         )
+//         .await;
+//
+//     // Push some data using default json config.
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
+//             r#"{"c1": 10, "c2": true}
+//             {"c1": 20, "c3": "foo"}"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     let quantiles = config.quantiles_json("test", "T1").await;
+//     assert_eq!(quantiles, "[{\"insert\":{\"c1\":10,\"c2\":true,\"c3\":null}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}}]");
+//
+//     let hood = config
+//         .neighborhood_json(
+//             &id,
+//             "T1",
+//             Some(json!({"c1":10,"c2":true,"c3":null})),
+//             10,
+//             10,
+//         )
+//         .await;
+//     assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"c1\":10,\"c2\":true,\"c3\":null}}},{\"insert\":{\"index\":1,\"key\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}}}]");
+//
+//     // Push more data using insert/delete format.
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",),
+//             r#"{"delete": {"c1": 10, "c2": true}}
+//             {"insert": {"c1": 30, "c3": "bar"}}"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     let quantiles = config.quantiles_json("test", "t1").await;
+//     assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}}]");
+//
+//     // Format data as json array.
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+//             r#"{"insert": [40, true, "buzz"]}"#.to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     // Use array of updates instead of newline-delimited JSON
+//     let req = config
+//         .post_json(
+//             format!(
+//                 "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete&array=true",
+//             ),
+//             r#"[{"delete": [40, true, "buzz"]}, {"insert": [50, true, ""]}]"#.to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     let quantiles = config.quantiles_json("test", "T1").await;
+//     assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":50,\"c2\":true,\"c3\":\"\"}}]");
+//
+//     // Trigger parse errors.
+//     let mut req = config
+//         .post_json(
+//             format!(
+//                 "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+//             ),
+//             r#"[{"insert": [35, true, ""]}, {"delete": [40, "foo", "buzz"]}, {"insert": [true, true, ""]}]"#.to_string(),
+//         )
+//         .await;
+//     assert_eq!(req.status(), StatusCode::BAD_REQUEST);
+//     let body = req.body().await.unwrap();
+//     let error = std::str::from_utf8(&body).unwrap();
+//     assert_eq!(error, "{\"message\":\"Errors parsing input data (2 errors):\\n    Parse error (event #2): failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\\nInvalid fragment: '[40, \\\"foo\\\", \\\"buzz\\\"]'\\n    Parse error (event #3): failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\\nInvalid fragment: '[true, true, \\\"\\\"]'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\",\"event_number\":2,\"field\":\"c2\",\"invalid_bytes\":null,\"invalid_text\":\"[40, \\\"foo\\\", \\\"buzz\\\"]\",\"suggestion\":null},{\"description\":\"failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\",\"event_number\":3,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"[true, true, \\\"\\\"]\",\"suggestion\":null}],\"num_errors\":2}}");
+//
+//     // Even records that are parsed successfully don't get ingested when
+//     // using array format.
+//     let quantiles = config.quantiles_json("test", "T1").await;
+//     assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":50,\"c2\":true,\"c3\":\"\"}}]");
+//
+//     let mut req = config
+//         .post_json(
+//             format!(
+//                 "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",
+//             ),
+//             r#"{"insert": [25, true, ""]}{"delete": [40, "foo", "buzz"]}{"insert": [true, true, ""]}"#.to_string(),
+//         )
+//         .await;
+//     assert_eq!(req.status(), StatusCode::BAD_REQUEST);
+//     let body = req.body().await.unwrap();
+//     let error = std::str::from_utf8(&body).unwrap();
+//     assert_eq!(error, "{\"message\":\"Errors parsing input data (2 errors):\\n    Parse error (event #2): failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\\nInvalid fragment: '[40, \\\"foo\\\", \\\"buzz\\\"]'\\n    Parse error (event #3): failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\\nInvalid fragment: '[true, true, \\\"\\\"]'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\",\"event_number\":2,\"field\":\"c2\",\"invalid_bytes\":null,\"invalid_text\":\"[40, \\\"foo\\\", \\\"buzz\\\"]\",\"suggestion\":null},{\"description\":\"failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\",\"event_number\":3,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"[true, true, \\\"\\\"]\",\"suggestion\":null}],\"num_errors\":2}}");
+//
+//     // Even records that are parsed successfully don't get ingested when
+//     // using array format.
+//     let quantiles = config.quantiles_csv(&id, "T1").await;
+//     assert_eq!(quantiles, "20,,foo,1\n25,true,,1\n30,,bar,1\n50,true,,1\n");
+//
+//     // Debezium CDC format
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=debezium",),
+//             r#"{"payload": {"op": "u", "before": [50, true, ""], "after": [60, true, "hello"]}}"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     let quantiles = config.quantiles_csv(&id, "t1").await;
+//     assert_eq!(
+//         quantiles,
+//         "20,,foo,1\n25,true,,1\n30,,bar,1\n60,true,hello,1\n"
+//     );
+//
+//     // Push some CSV data (the second record is invalid, but the other two should
+//     // get ingested).
+//     let mut req = config
+//         .post_csv(
+//             format!("/v0/pipelines/test/ingress/t1?format=csv"),
+//             r#"15,true,foo
+// not_a_number,true,ΑαΒβΓγΔδ
+// 16,false,unicode🚲"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert_eq!(req.status(), StatusCode::BAD_REQUEST);
+//     let body = req.body().await.unwrap();
+//     let error = std::str::from_utf8(&body).unwrap();
+//     assert_eq!(error, "{\"message\":\"Errors parsing input data (1 errors):\\n    Parse error (event #2): failed to deserialize CSV record: error parsing field 'c1': field 0: invalid digit found in string\\nInvalid fragment: 'not_a_number,true,ΑαΒβΓγΔδ\\n'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize CSV record: error parsing field 'c1': field 0: invalid digit found in string\",\"event_number\":2,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"not_a_number,true,ΑαΒβΓγΔδ\\n\",\"suggestion\":null}],\"num_errors\":1}}");
+//
+//     let quantiles = config.quantiles_json("test", "t1").await;
+//     assert_eq!(
+//         quantiles,
+//         "[{\"insert\":{\"c1\":15,\"c2\":true,\"c3\":\"foo\"}},{\"insert\":{\"c1\":16,\"c2\":false,\"c3\":\"unicode🚲\"}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":25,\"c2\":true,\"c3\":\"\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":60,\"c2\":true,\"c3\":\"hello\"}}]"
+//     );
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+// }
+
+// TODO: refactor test
+// // Table with column of type MAP.
+// #[actix_web::test]
+// #[serial]
+// async fn map_column() {
+//     let config = setup().await;
+//     let id = deploy_pipeline_without_connectors(
+//         &config,
+//         "create table t1(c1 integer, c2 bool, c3 MAP<varchar, varchar>) with ('materialized' = 'true'); create view v1 as select * from t1;",
+//     )
+//     .await;
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Running,
+//             Duration::from_millis(1_000),
+//         )
+//         .await;
+//
+//     // Push some data using default json config.
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
+//             r#"{"c1": 10, "c2": true, "c3": {"foo": "1", "bar": "2"}}
+//             {"c1": 20}"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     let quantiles = config.quantiles_json("test", "T1").await;
+//     assert_eq!(quantiles, "[{\"insert\":{\"c1\":10,\"c2\":true,\"c3\":{\"bar\":\"2\",\"foo\":\"1\"}}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":null}}]");
+//
+//     let hood = config
+//         .neighborhood_json(
+//             &id,
+//             "T1",
+//             Some(json!({"c1":10,"c2":true,"c3": {"foo": "1", "bar": "2"}})),
+//             10,
+//             10,
+//         )
+//         .await;
+//     assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"c1\":10,\"c2\":true,\"c3\":{\"bar\":\"2\",\"foo\":\"1\"}}}},{\"insert\":{\"index\":1,\"key\":{\"c1\":20,\"c2\":null,\"c3\":null}}}]");
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+// }
+
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// async fn parse_datetime() {
+//     let config = setup().await;
+//     let _ = deploy_pipeline_without_connectors(
+//         &config,
+//         "create table t1(t TIME, ts TIMESTAMP, d DATE) with ('materialized' = 'true');",
+//     )
+//     .await;
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Running,
+//             Duration::from_millis(1_000),
+//         )
+//         .await;
+//
+//     // The parser should trim leading and trailing white space when parsing
+//     // dates/times.
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/t1?format=json&update_format=raw",),
+//             r#"{"t":"13:22:00","ts": "2021-05-20 12:12:33","d": "2021-05-20"}
+//             {"t":" 11:12:33.483221092 ","ts": " 2024-02-25 12:12:33 ","d": " 2024-02-25 "}"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     let quantiles = config.quantiles_json("test", "T1").await;
+//     assert_eq!(quantiles.parse::<Value>().unwrap(),
+//                "[{\"insert\":{\"d\":\"2024-02-25\",\"t\":\"11:12:33.483221092\",\"ts\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"d\":\"2021-05-20\",\"t\":\"13:22:00\",\"ts\":\"2021-05-20 12:12:33\"}}]".parse::<Value>().unwrap());
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+// }
+
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// async fn quoted_columns() {
+//     let config = setup().await;
+//     let _ = deploy_pipeline_without_connectors(
+//         &config,
+//         r#"create table t1("c1" integer not null, "C2" bool not null, "😁❤" varchar not null, "αβγ" boolean not null, ΔΘ boolean not null) with ('materialized' = 'true')"#,
+//     )
+//     .await;
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Running,
+//             Duration::from_millis(1_000),
+//         )
+//         .await;
+//
+//     // Push some data using default json config.
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
+//             r#"{"c1": 10, "C2": true, "😁❤": "foo", "αβγ": true, "δθ": false}"#.to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     let quantiles = config.quantiles_json("test", "T1").await;
+//     assert_eq!(
+//         quantiles.parse::<Value>().unwrap(),
+//         "[{\"insert\":{\"C2\":true,\"c1\":10,\"αβγ\":true,\"δθ\":false,\"😁❤\":\"foo\"}}]"
+//             .parse::<Value>()
+//             .unwrap()
+//     );
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+// }
+
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// async fn primary_keys() {
+//     let config = setup().await;
+//     let _ = deploy_pipeline_without_connectors(
+//         &config,
+//         r#"create table t1(id bigint not null, s varchar not null, primary key (id)) with ('materialized' = 'true')"#,
+//     )
+//     .await;
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Running,
+//             Duration::from_millis(1_000),
+//         )
+//         .await;
+//
+//     // Push some data using default json config.
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+//             r#"{"insert":{"id":1, "s": "1"}}
+// {"insert":{"id":2, "s": "2"}}"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     let quantiles = config.quantiles_json("test", "T1").await;
+//     assert_eq!(
+//         quantiles.parse::<Value>().unwrap(),
+//         "[{\"insert\":{\"id\":1,\"s\":\"1\"}},{\"insert\":{\"id\":2,\"s\":\"2\"}}]"
+//             .parse::<Value>()
+//             .unwrap()
+//     );
+//
+//     let hood = config
+//         .neighborhood_json("test", "T1", Some(json!({"id":2,"s":"1"})), 10, 10)
+//         .await;
+//     assert_eq!(
+//         hood.parse::<Value>().unwrap(),
+//         "[{\"insert\":{\"index\":-1,\"key\":{\"id\":1,\"s\":\"1\"}}},{\"insert\":{\"index\":0,\"key\":{\"id\":2,\"s\":\"2\"}}}]"
+//             .parse::<Value>()
+//             .unwrap()
+//     );
+//
+//     // Make some changes.
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+//             r#"{"insert":{"id":1, "s": "1-modified"}}
+// {"update":{"id":2, "s": "2-modified"}}"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     let quantiles = config.quantiles_json("test", "T1").await;
+//     assert_eq!(
+//         quantiles.parse::<Value>().unwrap(),
+//         "[{\"insert\":{\"id\":1,\"s\":\"1-modified\"}},{\"insert\":{\"id\":2,\"s\":\"2-modified\"}}]"
+//             .parse::<Value>()
+//             .unwrap()
+//     );
+//
+//     let hood = config.neighborhood_json("test", "T1", None, 10, 10).await;
+//     assert_eq!(
+//         hood.parse::<Value>().unwrap(),
+//         "[{\"insert\":{\"index\":0,\"key\":{\"id\":1,\"s\":\"1-modified\"}}},{\"insert\":{\"index\":1,\"key\":{\"id\":2,\"s\":\"2-modified\"}}}]"
+//             .parse::<Value>()
+//             .unwrap()
+//     );
+//
+//     // Delete a key
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+//             r#"{"delete":{"id":2}}"#.to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     let quantiles = config.quantiles_json("test", "T1").await;
+//     assert_eq!(
+//         quantiles.parse::<Value>().unwrap(),
+//         "[{\"insert\":{\"id\":1,\"s\":\"1-modified\"}}]"
+//             .parse::<Value>()
+//             .unwrap()
+//     );
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+// }
+
+// TODO: refactor test
+// /// Test case-sensitive table ingress/egress behavior.
+// #[actix_web::test]
+// #[serial]
+// async fn case_sensitive_tables() {
+//     let config = setup().await;
+//     // Table "TaBle1" and view "V1" are case-sensitive and can only be accessed
+//     // by quoting their name.
+//     // Table "v1" is also case-sensitive, but since its name is lowercase, it
+//     // can be accessed as both "v1" and "\"v1\""
+//     let _ = deploy_pipeline_without_connectors(
+//         &config,
+//         r#"create table "TaBle1"(id bigint not null);
+// create table table1(id bigint);
+// create materialized view "V1" as select * from "TaBle1";
+// create materialized view "v1" as select * from table1;"#,
+//     )
+//     .await;
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Running,
+//             Duration::from_millis(1_000),
+//         )
+//         .await;
+//
+//     let mut response1 = config.delta_stream_request_json("test", "\"V1\"").await;
+//     let mut response2 = config.delta_stream_request_json("test", "\"v1\"").await;
+//
+//     // Push some data using default json config.
+//     let req = config
+//         .post_json(
+//             format!(
+//                 "/v0/pipelines/test/ingress/\"TaBle1\"?format=json&update_format=insert_delete",
+//             ),
+//             r#"{"insert":{"id":1}}"#.to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/table1?format=json&update_format=insert_delete",),
+//             r#"{"insert":{"id":2}}"#.to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     config
+//         .read_expected_response_json(
+//             &mut response1,
+//             Duration::from_millis(10_000),
+//             &[json!({"insert": {"id":1}})],
+//         )
+//         .await;
+//
+//     config
+//         .read_expected_response_json(
+//             &mut response2,
+//             Duration::from_millis(10_000),
+//             &[json!({"insert": {"id":2}})],
+//         )
+//         .await;
+//
+//     let quantiles = config.quantiles_json("test", "\"V1\"").await;
+//     assert_eq!(
+//         quantiles.parse::<Value>().unwrap(),
+//         "[{\"insert\":{\"id\":1}}]".parse::<Value>().unwrap()
+//     );
+//
+//     let quantiles = config.quantiles_json("test", "\"v1\"").await;
+//     assert_eq!(
+//         quantiles.parse::<Value>().unwrap(),
+//         "[{\"insert\":{\"id\":2}}]".parse::<Value>().unwrap()
+//     );
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+// }
+
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// async fn duplicate_outputs() {
+//     let config = setup().await;
+//     let _ = deploy_pipeline_without_connectors(
+//         &config,
+//         r#"create table t1(id bigint not null, s varchar not null); create view v1 as select s from t1;"#,
+//     )
+//     .await;
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Running,
+//             Duration::from_millis(1_000),
+//         )
+//         .await;
+//
+//     let mut response = config.delta_stream_request_json("test", "V1").await;
+//
+//     // Push some data using default json config.
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+//             r#"{"insert":{"id":1, "s": "1"}}
+// {"insert":{"id":2, "s": "2"}}"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     config
+//         .read_expected_response_json(
+//             &mut response,
+//             Duration::from_millis(10_000),
+//             &[json!({"insert": {"s":"1"}}), json!({"insert":{"s":"2"}})],
+//         )
+//         .await;
+//
+//     // Push some more data
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete"),
+//             r#"{"insert":{"id":3, "s": "3"}}
+// {"insert":{"id":4, "s": "4"}}"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     config
+//         .read_expected_response_json(
+//             &mut response,
+//             Duration::from_millis(10_000),
+//             &[json!({"insert": {"s":"3"}}), json!({"insert":{"s":"4"}})],
+//         )
+//         .await;
+//
+//     // Push more records that will create duplicate outputs.
+//     let req = config
+//         .post_json(
+//             format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+//             r#"{"insert":{"id":5, "s": "1"}}
+// {"insert":{"id":6, "s": "2"}}"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     config
+//         .read_expected_response_json(
+//             &mut response,
+//             Duration::from_millis(10_000),
+//             &[json!({"insert": {"s":"1"}}), json!({"insert":{"s":"2"}})],
+//         )
+//         .await;
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+// }
+
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// async fn upsert() {
+//     let config = setup().await;
+//     let _ = deploy_pipeline_without_connectors(
+//         &config,
+//         r#"create table t1(
+//             id1 bigint not null,
+//             id2 bigint,
+//             str1 varchar not null,
+//             str2 varchar,
+//             int1 bigint not null,
+//             int2 bigint,
+//             primary key(id1, id2));"#,
+//     )
+//     .await;
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status(
+//             "test",
+//             PipelineStatus::Running,
+//             Duration::from_millis(1_000),
+//         )
+//         .await;
+//
+//     let mut response = config.delta_stream_request_json("test", "T1").await;
+//
+//     // Push some data.
+//     //
+//     // NOTE: we use `array=true` to push data in this test to make sure that all updates are
+//     // delivered atomically and all outputs are produced in a single chunk. It is still
+//     // theoretically possible that inputs are split across multiple `step`'s due to the
+//     // `ZSetHandle::append` method not being atomic.  This is highly improbable, but if it
+//     // happens, increasing buffering delay in DBSP should solve that.
+//     let req = config
+//         .post_json(
+//             format!(
+//                 "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+//             ),
+//             // Add several identical records with different id's
+//             r#"[{"insert":{"id1":1, "str1": "1", "int1": 1}},{"insert":{"id1":2, "str1": "1", "int1": 1}},{"insert":{"id1":3, "str1": "1", "int1": 1}}]"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     config
+//         .read_expected_response_json(
+//             &mut response,
+//             Duration::from_millis(10_000),
+//             &[
+//                 json!({"insert": {"id1":1,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+//                 json!({"insert": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+//                 json!({"insert": {"id1":3,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+//             ],
+//         )
+//         .await;
+//
+//     let req = config
+//         .post_json(
+//             format!(
+//                 "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+//             ),
+//             // 1: Update 'str1'.
+//             // 2: Update 'str2'.
+//             // 3: Overwrite entire record.
+//             r#"[{"update":{"id1":1, "str1": "2"}},{"update":{"id1":2, "str2": "foo"}},{"insert":{"id1":3, "str1": "1", "str2": "2", "int1":3, "int2":33}}]"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     config
+//         .read_expected_response_json(
+//             &mut response,
+//             Duration::from_millis(10_000),
+//             &[json!({"delete": {"id1":1,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+//                 json!({"delete": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+//                 json!({"delete": {"id1":3,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+//                 json!({"insert": {"id1":1,"id2":null,"str1":"2","str2":null,"int1":1,"int2":null}}),
+//                 json!({"insert": {"id1":2,"id2":null,"str1":"1","str2":"foo","int1":1,"int2":null}}),
+//                 json!({"insert": {"id1":3,"id2":null,"str1":"1","str2":"2","int1":3,"int2":33}})]
+//         )
+//         .await;
+//
+//     let req = config
+//         .post_json(
+//             format!(
+//                 "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+//             ),
+//             // 1: Update command that doesn't modify any fields - noop.
+//             // 2: Clear 'str2' to null.
+//             // 3: Delete record.
+//             // 4: Delete non-existing key - noop.
+//             // 5: Update non-existing key - noop.
+//             r#"[{"update":{"id1":1}},{"update":{"id1":2, "str2": null}},{"delete":{"id1":3}},{"delete":{"id1":4}},{"update":{"id1":4, "int1":0, "str1":""}}]"#
+//                 .to_string(),
+//         )
+//         .await;
+//     assert!(req.status().is_success());
+//
+//     config
+//         .read_expected_response_json(
+//             &mut response,
+//             Duration::from_millis(10_000),
+//             &[json!({"delete": {"id1":2,"id2":null,"str1":"1","str2":"foo","int1":1,"int2":null}}),
+//                 json!({"delete": {"id1":3,"id2":null,"str1":"1","str2":"2","int1":3,"int2":33}}),
+//                 json!({"insert": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}})]
+//         )
+//         .await;
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+// }
+
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// async fn pipeline_restart() {
+//     let config = setup().await;
+//     let _ = deploy_pipeline_without_connectors(
+//         &config,
+//         "create table t1(c1 integer); create view v1 as select * from t1;",
+//     )
+//     .await;
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Running, config.start_timeout)
+//         .await;
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+//
+//     // Start the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Running, config.start_timeout)
+//         .await;
+//
+//     // Shutdown the pipeline
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/shutdown"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+//     config
+//         .wait_for_pipeline_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+//         .await;
+// }
+
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// async fn pipeline_runtime_configuration() {
+//     let config = setup().await;
+//     let pipeline_request = json!({
+//         "name":  "pipeline_runtime_configuration",
+//         "description": "desc",
+//         "program_name": null,
+//         "config": {
+//             "workers": 100,
+//             "resources": {
+//                 "cpu_cores_min": 5,
+//                 "storage_mb_max": 2000,
+//                 "storage_class": "normal"
+//             }
+//         },
+//         "connectors": null
+//     });
+//     // Create the pipeline
+//     let resp = config.post("/v0/pipelines", &pipeline_request).await;
+//     assert_eq!(resp.status(), StatusCode::OK);
+//
+//     // Get config
+//     let mut resp = config
+//         .get(format!(
+//             "/v0/pipelines/pipeline_runtime_configuration/config"
+//         ))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::OK);
+//     let resp: Value = resp.json().await.unwrap();
+//     let workers = resp["workers"].as_i64().unwrap();
+//     let resources = &resp["resources"];
+//     assert_eq!(100, workers);
+//     assert_eq!(
+//         json!({ "cpu_cores_min": 5, "cpu_cores_max": null, "memory_mb_min": null, "memory_mb_max": null, "storage_mb_max": 2000, "storage_class": "normal" }),
+//         *resources
+//     );
+//
+//     // Update config
+//     let patch = json!({
+//         "name": "pipeline_runtime_configuration",
+//         "description": "desc",
+//         "config": {
+//             "workers": 5,
+//             "resources": {
+//                 "memory_mb_max": 100
+//             }
+//         },
+//     });
+//     let resp = config
+//         .patch(
+//             format!("/v0/pipelines/pipeline_runtime_configuration"),
+//             &patch,
+//         )
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::OK);
+//
+//     // Get config
+//     let mut resp = config
+//         .get(format!(
+//             "/v0/pipelines/pipeline_runtime_configuration/config"
+//         ))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::OK);
+//     let resp: Value = resp.json().await.unwrap();
+//     let workers = resp["workers"].as_i64().unwrap();
+//     let resources = &resp["resources"];
+//     assert_eq!(5, workers);
+//     assert_eq!(
+//         json!({ "cpu_cores_min": null, "cpu_cores_max": null, "memory_mb_min": null, "memory_mb_max": 100, "storage_mb_max": null, "storage_class": null }),
+//         *resources
+//     );
+// }
+
+// TODO: refactor test
+// #[actix_web::test]
+// #[serial]
+// // https://github.com/feldera/feldera/issues/1057
+// async fn pipeline_start_without_compiling() {
+//     let config = setup().await;
+//     let program_request = json!({
+//         "name":  "test",
+//         "description": "desc",
+//         "code": "create table foo(bar integer);",
+//     });
+//     let mut req = config.post("/v0/programs", &program_request).await;
+//     assert_eq!(StatusCode::CREATED, req.status());
+//     let resp: Value = req.json().await.unwrap();
+//     let version = resp["version"].as_i64().unwrap();
+//
+//     let pipeline_request = json!({
+//         "name":  "test",
+//         "description": "desc",
+//         "program_name": Some("test".to_string()),
+//         "config": {},
+//         "connectors": null
+//     });
+//     let req = config.post("/v0/pipelines", &pipeline_request).await;
+//     assert_eq!(req.status(), StatusCode::OK);
+//
+//     // Start compiling the new program but don't wait till completion
+//     let compilation_request = json!({ "version": version });
+//     let resp = config
+//         .post(format!("/v0/programs/test/compile"), &compilation_request)
+//         .await;
+//     assert_eq!(StatusCode::ACCEPTED, resp.status());
+//
+//     // Try starting the program when it is in the CompilingRust state.
+//     // There is a possibility that rust compilation is so fast that we don't poll
+//     // at that moment but that's unlikely.
+//     let now = Instant::now();
+//     loop {
+//         println!("Waiting till program compilation state is in past the CompilingSql state");
+//         std::thread::sleep(time::Duration::from_millis(30));
+//         if now.elapsed().as_secs() > 200 {
+//             panic!("Compilation timeout");
+//         }
+//         let mut resp = config.get(format!("/v0/programs/test")).await;
+//         let val: Value = resp.json().await.unwrap();
+//
+//         let status = val["status"].clone();
+//         println!("Program status is: {status:?}");
+//
+//         if status == json!("None") || status == json!("Pending") || status == json!("CompilingSql")
+//         {
+//             continue;
+//         }
+//         break;
+//     }
+//     // Start the program
+//     let resp = config
+//         .post_no_body(format!("/v0/pipelines/test/start"))
+//         .await;
+//     assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+// }
