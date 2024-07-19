@@ -8,7 +8,7 @@ use pipeline_manager::compiler::Compiler;
 use pipeline_manager::config::{
     ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig,
 };
-use pipeline_manager::db::ProjectDB;
+use pipeline_manager::db::storage_postgres::StoragePostgres;
 use pipeline_manager::local_runner;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -66,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
     let database_config = DatabaseConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
-    let db: ProjectDB = ProjectDB::connect(
+    let db: StoragePostgres = StoragePostgres::connect(
         &database_config,
         #[cfg(feature = "pg-embed")]
         Some(&api_config),

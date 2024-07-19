@@ -24,7 +24,7 @@ use super::{ManagerError, ServerState};
     tag = "Authentication"
 )]
 #[get("/config/authentication")]
-async fn get_authentication_config(
+async fn get_config_authentication(
     state: WebData<ServerState>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
@@ -53,7 +53,7 @@ async fn get_authentication_config(
     tag = "Configuration",
 )]
 #[get("/config/demos")]
-async fn get_demos(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
+async fn get_config_demos(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
     match &state._config.demos_dir {
         None => Ok(HttpResponse::Ok().json(Vec::<Demo>::new())),
         Some(demos_dir) => {

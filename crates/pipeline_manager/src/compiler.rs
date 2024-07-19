@@ -1,7 +1,11 @@
-use crate::auth::TenantId;
-use crate::config::{CompilationProfile, CompilerConfig};
+use crate::config::CompilerConfig;
+use crate::db::error::DBError;
 use crate::db::storage::Storage;
-use crate::db::{DBError, ProgramDescr, ProgramId, ProjectDB, Version};
+use crate::db::storage_postgres::StoragePostgres;
+use crate::db::types::common::Version;
+use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
+use crate::db::types::program::{CompilationProfile, ProgramStatus, SqlCompilerMessage};
+use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::metrics::{COMPILE_LATENCY_RUST, COMPILE_LATENCY_SQL};
 use crate::probe::Probe;
@@ -9,9 +13,8 @@ use actix_files::NamedFile;
 use actix_web::{get, web, HttpRequest, HttpServer, Responder};
 use futures_util::join;
 use log::warn;
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 use metrics::histogram;
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Instant;
 use std::{
@@ -28,7 +31,6 @@ use tokio::{
     sync::Mutex,
     time::{sleep, Duration},
 };
-use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// The frequency with which the compiler polls the project database
@@ -42,87 +44,6 @@ const COMPILER_POLL_INTERVAL: Duration = Duration::from_millis(1000);
 /// Artifcially low limit at the moment since this is new code. Increase in the
 /// future.
 const GC_POLL_INTERVAL: Duration = Duration::from_secs(3);
-
-/// A SQL compiler error.
-///
-/// The SQL compiler returns a list of errors in the following JSON format if
-/// it's invoked with the `-je` option.
-///
-/// ```ignore
-///  [ {
-/// "startLineNumber" : 14,
-/// "startColumn" : 13,
-/// "endLineNumber" : 14,
-/// "endColumn" : 13,
-/// "warning" : false,
-/// "errorType" : "Error parsing SQL",
-/// "message" : "Encountered \"<EOF>\" at line 14, column 13."
-/// } ]
-/// ```
-#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct SqlCompilerMessage {
-    start_line_number: usize,
-    start_column: usize,
-    end_line_number: usize,
-    end_column: usize,
-    warning: bool,
-    error_type: String,
-    message: String,
-}
-
-/// Program compilation status.
-#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub(crate) enum ProgramStatus {
-    /// Compilation request received from the user; program has been placed
-    /// in the queue.
-    Pending,
-    /// Compilation of SQL -> Rust in progress.
-    CompilingSql,
-    /// Compiling Rust -> executable in progress.
-    CompilingRust,
-    /// Compilation succeeded.
-    #[cfg_attr(test, proptest(weight = 2))]
-    Success,
-    /// SQL compiler returned an error.
-    SqlError(Vec<SqlCompilerMessage>),
-    /// Rust compiler returned an error.
-    RustError(String),
-    /// System/OS returned an error when trying to invoke commands.
-    SystemError(String),
-}
-
-impl ProgramStatus {
-    /// Return true if program has been successfully compiled
-    pub(crate) fn is_compiled(&self) -> bool {
-        *self == ProgramStatus::Success
-    }
-
-    /// Return true if the program has failed to compile (for any reason).
-    pub(crate) fn has_failed_to_compile(&self) -> bool {
-        matches!(
-            self,
-            ProgramStatus::SqlError(_)
-                | ProgramStatus::RustError(_)
-                | ProgramStatus::SystemError(_)
-        )
-    }
-
-    /// Return true if program is currently compiling.
-    pub(crate) fn is_compiling(&self) -> bool {
-        *self == ProgramStatus::CompilingRust || *self == ProgramStatus::CompilingSql
-    }
-}
-
-/// Program configuration.
-#[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
-pub struct ProgramConfig {
-    /// Compilation profile.
-    /// If none is specified, the compiler default compilation profile is used.
-    pub profile: Option<CompilationProfile>,
-}
 
 pub struct Compiler {}
 
@@ -147,14 +68,14 @@ fn main() {
 }"#;
 
 // Simple endpoint to serve compiled binaries
-#[get("/binary/{program_id}/{version}")]
+#[get("/binary/{pipeline_id}/{version}")]
 async fn index(
     state: web::Data<CompilerConfig>,
     req: HttpRequest,
 ) -> Result<impl Responder, ManagerError> {
-    let program_id = match req.match_info().get("program_id") {
+    let pipeline_id = match req.match_info().get("pipeline_id") {
         None => Err(ManagerError::MissingUrlEncodedParam {
-            param: "program_id",
+            param: "pipeline_id",
         }),
         Some(id) => match id.parse::<Uuid>() {
             Err(e) => Err(ManagerError::InvalidUuidParam {
@@ -164,7 +85,7 @@ async fn index(
             Ok(uuid) => Ok(uuid),
         },
     }?;
-    let program_id = ProgramId(program_id);
+    let pipeline_id = PipelineId(pipeline_id);
     let version = match req.match_info().get("version") {
         None => Err(ManagerError::MissingUrlEncodedParam { param: "version" }),
         Some(version) => match version.parse::<i64>() {
@@ -173,7 +94,7 @@ async fn index(
         },
     }?;
     let version = Version(version);
-    let path = state.versioned_executable(program_id, version);
+    let path = state.versioned_executable(pipeline_id, version);
     Ok(NamedFile::open_async(path).await)
 }
 
@@ -186,7 +107,7 @@ async fn healthz(probe: web::Data<Arc<Mutex<Probe>>>) -> Result<impl Responder, 
 impl Compiler {
     pub async fn run(
         config: &CompilerConfig,
-        db: Arc<Mutex<ProjectDB>>,
+        db: Arc<Mutex<StoragePostgres>>,
     ) -> Result<(), ManagerError> {
         Self::create_working_directory(config).await?;
         let compiler_task = spawn(Self::compiler_task(config.clone(), db.clone()));
@@ -247,15 +168,15 @@ impl Compiler {
     /// file, making sure that subsequent `cargo` runs do not access the
     /// network.
     pub async fn precompile_dependencies(config: &CompilerConfig) -> Result<(), ManagerError> {
-        let program_id = ProgramId(Uuid::nil());
+        let pipeline_id = PipelineId(Uuid::nil());
 
         Self::create_working_directory(config).await?;
 
         // Create workspace-level Cargo.toml
-        Compiler::write_workspace_toml(config, program_id).await?;
+        Compiler::write_workspace_toml(config, pipeline_id).await?;
 
         // Create dummy package.
-        let rust_file_path = config.rust_program_path(program_id);
+        let rust_file_path = config.rust_program_path(pipeline_id);
         let rust_src_dir = rust_file_path.parent().unwrap();
         fs::create_dir_all(rust_src_dir).await.map_err(|e| {
             ManagerError::io_error(
@@ -267,7 +188,7 @@ impl Compiler {
             )
         })?;
 
-        Compiler::write_project_toml(config, program_id).await?;
+        Compiler::write_project_toml(config, pipeline_id).await?;
 
         fs::write(&rust_file_path, "fn main() {}")
             .await
@@ -277,7 +198,7 @@ impl Compiler {
 
         // `cargo build`.
         let mut cargo_process =
-            Compiler::run_cargo_build(config, program_id, &Some(CompilationProfile::Optimized))
+            Compiler::run_cargo_build(config, pipeline_id, &Some(CompilationProfile::Optimized))
                 .await?;
         let exit_status = cargo_process
             .wait()
@@ -285,24 +206,24 @@ impl Compiler {
             .map_err(|e| ManagerError::io_error("waiting for 'cargo build'".to_string(), e))?;
 
         if !exit_status.success() {
-            let stdout = fs::read_to_string(config.compiler_stdout_path(program_id))
+            let stdout = fs::read_to_string(config.compiler_stdout_path(pipeline_id))
                 .await
                 .map_err(|e| {
                     ManagerError::io_error(
                         format!(
                             "reading '{}'",
-                            config.compiler_stdout_path(program_id).display()
+                            config.compiler_stdout_path(pipeline_id).display()
                         ),
                         e,
                     )
                 })?;
-            let stderr = fs::read_to_string(config.compiler_stderr_path(program_id))
+            let stderr = fs::read_to_string(config.compiler_stderr_path(pipeline_id))
                 .await
                 .map_err(|e| {
                     ManagerError::io_error(
                         format!(
                             "reading '{}'",
-                            config.compiler_stderr_path(program_id).display()
+                            config.compiler_stderr_path(pipeline_id).display()
                         ),
                         e,
                     )
@@ -319,27 +240,27 @@ impl Compiler {
 
     async fn run_cargo_build(
         config: &CompilerConfig,
-        program_id: ProgramId,
+        pipeline_id: PipelineId,
         program_profile: &Option<CompilationProfile>,
     ) -> Result<Child, ManagerError> {
-        let err_file = File::create(&config.compiler_stderr_path(program_id))
+        let err_file = File::create(&config.compiler_stderr_path(pipeline_id))
             .await
             .map_err(|e| {
                 ManagerError::io_error(
                     format!(
                         "creating '{}'",
-                        config.compiler_stderr_path(program_id).display()
+                        config.compiler_stderr_path(pipeline_id).display()
                     ),
                     e,
                 )
             })?;
-        let out_file = File::create(&config.compiler_stdout_path(program_id))
+        let out_file = File::create(&config.compiler_stdout_path(pipeline_id))
             .await
             .map_err(|e| {
                 ManagerError::io_error(
                     format!(
                         "creating '{}'",
-                        config.compiler_stdout_path(program_id).display()
+                        config.compiler_stdout_path(pipeline_id).display()
                     ),
                     e,
                 )
@@ -347,7 +268,7 @@ impl Compiler {
 
         let mut command = Command::new("cargo");
         let profile = Compiler::pick_compilation_profile(config, program_profile);
-        info!("Compiling Rust for program {program_id} with profile {profile}");
+        info!("Compiling Rust for program {pipeline_id} with profile {profile}");
         command
             .current_dir(&config.workspace_dir())
             .arg("build")
@@ -365,22 +286,21 @@ impl Compiler {
 
     async fn version_binary(
         config: &CompilerConfig,
-        db: &ProjectDB,
-        program: &ProgramDescr,
-    ) -> Result<(), ManagerError> {
-        let program_id = program.program_id;
-        let version = program.version;
-        let profile = Compiler::pick_compilation_profile(config, &program.config.profile);
+        pipeline: &ExtendedPipelineDescr<String>,
+    ) -> Result<String, ManagerError> {
+        let pipeline_id = pipeline.id;
+        let version = pipeline.program_version;
+        let profile = Compiler::pick_compilation_profile(config, &pipeline.program_config.profile);
         info!(
             "Preserve binary {:?} as {:?}",
-            config.target_executable(program_id, &profile),
-            config.versioned_executable(program_id, version)
+            config.target_executable(pipeline_id, &profile),
+            config.versioned_executable(pipeline_id, version)
         );
 
         // Save the file locally and record a path to it as a "file://" scheme URL in the DB.
         // This requires any entity accessing it to have access to the same filesystem
-        let source = config.target_executable(program_id, &profile);
-        let destination = config.versioned_executable(program_id, version);
+        let source = config.target_executable(pipeline_id, &profile);
+        let destination = config.versioned_executable(pipeline_id, version);
         fs::copy(&source, &destination).await.map_err(|e| {
             ManagerError::io_error(
                 format!(
@@ -392,22 +312,16 @@ impl Compiler {
             )
         })?;
 
-        db.create_compiled_binary_ref(
-            program_id,
-            version,
-            format!(
-                "http://{}:{}/binary/{program_id}/{version}",
-                config.binary_ref_host, config.binary_ref_port
-            ),
-        )
-        .await?;
-        Ok(())
+        Ok(format!(
+            "http://{}:{}/binary/{pipeline_id}/{version}",
+            config.binary_ref_host, config.binary_ref_port
+        ))
     }
 
     /// Generate workspace-level `Cargo.toml`.
     async fn write_workspace_toml(
         config: &CompilerConfig,
-        program_id: ProgramId,
+        pipeline_id: PipelineId,
     ) -> Result<(), ManagerError> {
         let workspace_toml_code = format!(
             r#"
@@ -429,7 +343,7 @@ codegen-units = 256
 [profile.optimized]
 inherits = "release"
 "#,
-            CompilerConfig::crate_name(program_id),
+            CompilerConfig::crate_name(pipeline_id),
         );
         let toml_path = config.workspace_toml_path();
         fs::write(&toml_path, workspace_toml_code)
@@ -442,13 +356,13 @@ inherits = "release"
     /// Generate project-level `Cargo.toml`.
     async fn write_project_toml(
         config: &CompilerConfig,
-        program_id: ProgramId,
+        pipeline_id: PipelineId,
     ) -> Result<(), ManagerError> {
         let template_path = config.project_toml_template_path();
         let template_toml = fs::read_to_string(&template_path).await.map_err(|e| {
             ManagerError::io_error(format!("reading template '{}'", template_path.display()), e)
         })?;
-        let program_name = format!("name = \"{}\"", CompilerConfig::crate_name(program_id));
+        let program_name = format!("name = \"{}\"", CompilerConfig::crate_name(pipeline_id));
         let mut project_toml_code = template_toml
             .replace("name = \"temp\"", &program_name)
             .replace(
@@ -465,7 +379,7 @@ inherits = "release"
             .replace("../lib", &format!("{}", config.sql_lib_path().display()));
         debug!("TOML:\n{project_toml_code}");
 
-        let toml_path = config.project_toml_path(program_id);
+        let toml_path = config.project_toml_path(pipeline_id);
         fs::write(&toml_path, project_toml_code)
             .await
             .map_err(|e| ManagerError::io_error(format!("writing '{}'", toml_path.display()), e))?;
@@ -475,7 +389,7 @@ inherits = "release"
 
     async fn gc_task(
         config: CompilerConfig,
-        db: Arc<Mutex<ProjectDB>>,
+        db: Arc<Mutex<StoragePostgres>>,
     ) -> Result<(), ManagerError> {
         Self::do_gc_task(config, db).await.map_err(|e| {
             error!("gc task failed; error: '{e}'");
@@ -483,7 +397,7 @@ inherits = "release"
         })
     }
 
-    async fn binary_path_to_parts(path: &DirEntry) -> Option<(ProgramId, Version)> {
+    async fn binary_path_to_parts(path: &DirEntry) -> Option<(PipelineId, Version)> {
         let file_name = path.file_name();
         let file_name = file_name.to_str().unwrap();
         if file_name.starts_with("project") {
@@ -495,12 +409,12 @@ inherits = "release"
                 error!("Invalid binary file found: {}", file_name);
                 return None;
             }
-            if let (Ok(program_uuid), Ok(program_version)) =
+            if let (Ok(pipeline_uuid), Ok(program_version)) =
                 // parse file name with the following format:
                 // project_{uuid}_v{version}
                 (Uuid::parse_str(parts[1]), parts[2][1..].parse::<i64>())
             {
-                return Some((ProgramId(program_uuid), Version(program_version)));
+                return Some((PipelineId(pipeline_uuid), Version(program_version)));
             }
         }
         None
@@ -515,7 +429,7 @@ inherits = "release"
     /// them up so it can run forever and never aborts.
     async fn do_gc_task(
         config: CompilerConfig,
-        db: Arc<Mutex<ProjectDB>>,
+        db: Arc<Mutex<StoragePostgres>>,
     ) -> Result<(), ManagerError> {
         loop {
             sleep(GC_POLL_INTERVAL).await;
@@ -527,23 +441,18 @@ inherits = "release"
                         Ok(Some(path)) => {
                             let maybe_parts = Self::binary_path_to_parts(&path).await;
                             match maybe_parts {
-                                Some((program_uuid, program_version)) => {
-                                    let db = db.lock().await;
+                                Some((pipeline_id, program_version)) => {
                                     if let Ok(is_used) = db
-                                        .is_program_version_in_use(
-                                            program_uuid.0,
-                                            program_version.0,
+                                        .lock()
+                                        .await
+                                        .is_pipeline_program_in_use(
+                                            PipelineId(pipeline_id.0),
+                                            Version(program_version.0),
                                         )
                                         .await
                                     {
                                         if !is_used {
                                             warn!("About to remove binary file '{:?}' that is no longer in use by any program", path.file_name());
-                                            db.delete_compiled_binary_ref(
-                                                program_uuid,
-                                                program_version,
-                                            )
-                                            .await?;
-                                            drop(db);
                                             let r = fs::remove_file(path.path()).await;
                                             if let Err(e) = r {
                                                 error!(
@@ -583,7 +492,7 @@ inherits = "release"
 
     async fn compiler_task(
         config: CompilerConfig,
-        db: Arc<Mutex<ProjectDB>>,
+        db: Arc<Mutex<StoragePostgres>>,
     ) -> Result<(), ManagerError> {
         Self::do_compiler_task(config, db).await.map_err(|e| {
             error!("compiler task failed; error: '{e}'");
@@ -596,7 +505,7 @@ inherits = "release"
     /// It recovers from partially progressed compilation jobs.
     async fn reconcile_local_state(
         config: &CompilerConfig,
-        db: &Arc<Mutex<ProjectDB>>,
+        db: &Arc<Mutex<StoragePostgres>>,
     ) -> Result<(), DBError> {
         info!("Reconciling local state with API state");
         let mut map: HashSet<(Uuid, i64)> = HashSet::new();
@@ -638,20 +547,19 @@ inherits = "release"
             }
         }
 
+        // TODO: get rid of the shared DB, it should just handle pipelines no longer existing it tries again next time
         let db = db.lock().await;
-        let programs = db.all_programs().await?;
-        for (tenant_id, program) in programs {
+        let pipelines = db.list_pipelines_across_all_tenants().await?;
+        for (tenant_id, pipeline) in pipelines {
             // We have some artifact but the program status has not been updated to Success.
             // This could indicate a failure between when we began writing the versioned
             // executable to before we could update the program status. This
             // means, the best solution is to start over with the compilation
-            if program.status == ProgramStatus::CompilingRust
-                && map.contains(&(program.program_id.0, program.version.0))
+            if pipeline.program_status == ProgramStatus::CompilingRust
+                && map.contains(&(pipeline.id.0, pipeline.program_version.0))
             {
-                let path = config.versioned_executable(program.program_id, program.version);
+                let path = config.versioned_executable(pipeline.id, pipeline.program_version);
                 info!("File {:?} exists, but the program status is CompilingRust. Removing the file to start compilation again.", path.file_name());
-                db.delete_compiled_binary_ref(program.program_id, program.version)
-                    .await?;
                 let r = fs::remove_file(path.clone()).await;
                 if let Err(e) = r {
                     error!(
@@ -660,11 +568,10 @@ inherits = "release"
                         e
                     );
                 }
-                db.set_program_status_guarded(
+                db.transit_program_status_to_pending(
                     tenant_id,
-                    program.program_id,
-                    program.version,
-                    ProgramStatus::Pending,
+                    pipeline.id,
+                    pipeline.program_version,
                 )
                 .await?;
             }
@@ -672,22 +579,20 @@ inherits = "release"
             // we don't have the binary artifact available locally, we need to queue the program
             // for compilation again. TODO: this behavior will change when the compiler uploads
             // artifacts remotely and not on its local filesystem.
-            else if (program.status.is_compiling() || program.status == ProgramStatus::Success)
-                && !map.contains(&(program.program_id.0, program.version.0))
+            else if (pipeline.program_status.is_compiling()
+                || pipeline.program_status == ProgramStatus::Success)
+                && !map.contains(&(pipeline.id.0, pipeline.program_version.0))
             {
                 info!(
                     "Program {} does not have a local artifact despite being in the {:?} state. Removing binary references to the program and re-queuing it for compilation.",
-                    program.program_id, program.status
+                    pipeline.id, pipeline.program_status
                 );
-                db.set_program_status_guarded(
+                db.transit_program_status_to_pending(
                     tenant_id,
-                    program.program_id,
-                    program.version,
-                    ProgramStatus::Pending,
+                    pipeline.id,
+                    pipeline.program_version,
                 )
                 .await?;
-                db.delete_compiled_binary_ref(program.program_id, program.version)
-                    .await?;
             }
         }
         Ok(())
@@ -696,7 +601,7 @@ inherits = "release"
     async fn do_compiler_task(
         /* command_receiver: Receiver<CompilerCommand>, */
         config: CompilerConfig,
-        db: Arc<Mutex<ProjectDB>>,
+        db: Arc<Mutex<StoragePostgres>>,
     ) -> Result<(), ManagerError> {
         Self::reconcile_local_state(&config, &db).await?;
         loop {
@@ -716,7 +621,7 @@ inherits = "release"
 
     async fn compiler_task_inner(
         config: &CompilerConfig,
-        db: &Arc<Mutex<ProjectDB>>,
+        db: &Arc<Mutex<StoragePostgres>>,
     ) -> Result<(), ManagerError> {
         let mut job: Option<CompilationJob> = None;
         loop {
@@ -728,14 +633,14 @@ inherits = "release"
                     if let Some(job) = &job {
                         // Program was deleted, updated or the user changed its status
                         // to cancelled -- abort compilation.
-                        let descr = db.lock().await.get_program_by_id(job.tenant_id, job.program.program_id, false).await;
-                        match descr {
-                            Ok(descr) => {
-                                if descr.version != job.program.version || !descr.status.is_compiling() {
+                        let pipeline = db.lock().await.get_pipeline_by_id(job.tenant_id, job.pipeline.id).await;
+                        match pipeline {
+                            Ok(pipeline) => {
+                                if pipeline.program_version != job.pipeline.program_version || !pipeline.program_status.is_compiling() {
                                     cancel = true;
                                 }
                             },
-                            Err(DBError::UnknownProgram { .. }) => {
+                            Err(DBError::UnknownPipeline { .. }) => {
                                 cancel = true
                             }
                             Err(e) => {return Err(e.into())}
@@ -757,8 +662,8 @@ inherits = "release"
                     }
                 }, if job.is_some() => {
                     let tenant_id = job.as_ref().unwrap().tenant_id;
-                    let program_id = job.as_ref().unwrap().program.program_id;
-                    let version = job.as_ref().unwrap().program.version;
+                    let pipeline_id = job.as_ref().unwrap().pipeline.id;
+                    let version = job.as_ref().unwrap().pipeline.program_version;
                     let elapsed = job.as_ref().unwrap().stage_start_time.elapsed().as_secs_f64();
                     let db = db.lock().await;
 
@@ -768,39 +673,33 @@ inherits = "release"
                             // Read the schema so we can store it in the DB.
                             // We trust the compiler that it put the file
                             // there if it succeeded.
-                            let schema_path = config.schema_path(program_id);
+                            let schema_path = config.schema_path(pipeline_id);
                             let schema_json = fs::read_to_string(&schema_path).await
                                 .map_err(|e| {
                                     ManagerError::io_error(format!("reading '{}'", schema_path.display()), e)
                                 })?;
 
-                            let schema = serde_json::from_str(&schema_json)
+                            let schema = &serde_json::from_str(&schema_json)
                                 .map_err(|e| { ManagerError::invalid_program_schema(e.to_string()) })?;
                             // SQL compiler succeeded -- start the Rust job and update the
                             // program schema.
-                            db.update_program(
+                            // TODO: do a test deployment_config generation and if it fails, still throw a SqlError
+                            db.transit_program_status_to_compiling_rust(
                                 tenant_id,
-                                program_id,
-                                &None,
-                                &None,
-                                &None,
-                                &Some(ProgramStatus::CompilingRust),
-                                &Some(schema),
-                                &None,
-                                Some(version),
-                                None
+                                pipeline_id,
+                                version,
+                                schema
                             ).await?;
-
-                            info!("Invoking rust compiler for program {program_id} version {version} (tenant {tenant_id}). This will take a while.");
-                            debug!("Set ProgramStatus::CompilingRust '{program_id}', version '{version}'");
+                            info!("Invoking rust compiler for program {pipeline_id} version {version} (tenant {tenant_id}). This will take a while.");
+                            debug!("Set ProgramStatus::CompilingRust '{pipeline_id}', version '{version}'");
                             job = Some(CompilationJob::rust(config, job.as_ref().unwrap()).await?);
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
-                            Self::version_binary(config, &db, &job.as_ref().unwrap().program).await?;
+                            let program_binary_url = Self::version_binary(config, &job.as_ref().unwrap().pipeline).await?;
                             // Rust compiler succeeded -- declare victory.
-                            db.set_program_status_guarded(tenant_id, program_id, version, ProgramStatus::Success).await?;
-                            info!("Successfully invoked rust compiler for program {program_id} version {version} (tenant {tenant_id}).");
-                            debug!("Set ProgramStatus::Success '{program_id}', version '{version}'");
+                            db.transit_program_status_to_success(tenant_id, pipeline_id, version, &program_binary_url).await?;
+                            info!("Successfully fully compiled program {pipeline_id} version {version} (tenant {tenant_id})");
+                            debug!("Set ProgramStatus::Success '{pipeline_id}', version '{version}'");
                             histogram!(COMPILE_LATENCY_RUST, "status" => "success").record(elapsed);
                             job = None;
                         }
@@ -808,31 +707,39 @@ inherits = "release"
                             // Compilation failed - update program status with the compiler
                             // error message.
                             let output = job.as_ref().unwrap().error_output(config).await?;
-                            let status = if job.as_ref().unwrap().is_rust() {
-                                ProgramStatus::RustError(format!("{output}\nexit code: {status}"))
-                            } else if let Ok(messages) = serde_json::from_str(&output) {
+                            if job.as_ref().unwrap().is_rust() {
+                                db.transit_program_status_to_rust_error(
+                                    tenant_id, pipeline_id, version, &format!("{output}\nexit code: {status}")
+                                ).await?;
+                            } else if let Ok(messages) = serde_json::from_str::<Vec<SqlCompilerMessage>>(&output) {
                                 // If we can parse the SqlCompilerMessages
                                 // as JSON, we assume the compiler worked:
                                 histogram!(COMPILE_LATENCY_SQL, "status" => "error").record(elapsed);
-                                ProgramStatus::SqlError(messages)
+                                db.transit_program_status_to_sql_error(
+                                    tenant_id, pipeline_id, version, messages.clone()
+                                ).await?;
                             } else {
                                 // Otherwise something unexpected happened
                                 // and we return a system error:
                                 histogram!(COMPILE_LATENCY_SQL, "status" => "error").record(elapsed);
-                                ProgramStatus::SystemError(format!("{output}\nexit code: {status}"))
+                                db.transit_program_status_to_system_error(
+                                    tenant_id, pipeline_id, version, &format!("{output}\nexit code: {status}")
+                                ).await?;
                             };
-                            db.set_program_status_guarded(tenant_id, program_id, version, status).await?;
                             job = None;
                         }
                         Err(e) => {
-                            let status = if job.unwrap().is_rust() {
+                            if job.unwrap().is_rust() {
                                 histogram!(COMPILE_LATENCY_RUST, "status" => "error").record(elapsed);
-                                ProgramStatus::SystemError(format!("I/O error with rustc: {e}"))
+                                db.transit_program_status_to_rust_error(
+                                    tenant_id, pipeline_id, version, &format!("I/O error with rustc: {e}")
+                                ).await?;
                             } else {
                                 histogram!(COMPILE_LATENCY_SQL, "status" => "error").record(elapsed);
-                                ProgramStatus::SystemError(format!("I/O error with sql-to-dbsp: {e}"))
+                                db.transit_program_status_to_system_error(
+                                    tenant_id, pipeline_id, version, &format!("I/O error with sql-to-dbsp: {e}")
+                                ).await?;
                             };
-                            db.set_program_status_guarded(tenant_id, program_id, version, status).await?;
                             job = None;
                         }
                     }
@@ -840,28 +747,25 @@ inherits = "release"
             }
             // Pick the next program from the queue.
             if job.is_none() {
-                let program = {
-                    let db = db.lock().await;
-                    if let Some((tenant_id, program_id, version)) = db.next_job().await? {
-                        trace!("Next program in the queue: '{program_id}', version '{version}'");
-                        let program = db.get_program_by_id(tenant_id, program_id, true).await?;
-                        Some((tenant_id, program))
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some((tenant_id, program)) = program {
-                    job = Some(CompilationJob::sql(tenant_id, config, &program).await?);
+                let pipeline = db
+                    .lock()
+                    .await
+                    .get_next_pipeline_program_to_compile()
+                    .await?;
+                if let Some((tenant_id, pipeline)) = pipeline {
+                    job = Some(CompilationJob::sql(tenant_id, config, &pipeline).await?);
                     db.lock()
                         .await
-                        .set_program_status_guarded(
+                        .transit_program_status_to_compiling_sql(
                             tenant_id,
-                            program.program_id,
-                            program.version,
-                            ProgramStatus::CompilingSql,
+                            pipeline.id,
+                            pipeline.program_version,
                         )
                         .await?;
+                    info!(
+                        "Picked up the next program to compile: '{}', version '{}'",
+                        pipeline.id, pipeline.program_version
+                    );
                 }
             }
         }
@@ -879,7 +783,7 @@ struct CompilationJob {
     tenant_id: TenantId,
     compiler_process: Child,
     stage_start_time: Instant,
-    program: ProgramDescr,
+    pipeline: ExtendedPipelineDescr<String>,
 }
 
 impl CompilationJob {
@@ -895,18 +799,15 @@ impl CompilationJob {
     async fn sql(
         tenant_id: TenantId,
         config: &CompilerConfig,
-        program: &ProgramDescr,
+        pipeline: &ExtendedPipelineDescr<String>,
     ) -> Result<Self, ManagerError> {
-        let code = program
-            .code
-            .as_ref()
-            .expect("Invariant: SQL compiler cannot be invoked on programs without code");
-        let program_id = program.program_id;
-        let version = program.version;
-        debug!("Running SQL compiler on program '{program_id}', version '{version}'");
+        let code = pipeline.program_code.clone();
+        let pipeline_id = pipeline.id;
+        let version = pipeline.program_version;
+        debug!("Running SQL compiler on program '{pipeline_id}', version '{version}'");
 
         // Create project directory.
-        let sql_file_path = config.sql_file_path(program_id);
+        let sql_file_path = config.sql_file_path(pipeline_id);
         let project_directory = sql_file_path.parent().unwrap();
         fs::create_dir_all(&project_directory).await.map_err(|e| {
             ManagerError::io_error(
@@ -923,13 +824,13 @@ impl CompilationJob {
             ManagerError::io_error(format!("writing '{}'", sql_file_path.display()), e)
         })?;
 
-        let rust_file_path = config.rust_program_path(program_id);
+        let rust_file_path = config.rust_program_path(pipeline_id);
         let rust_source_dir = rust_file_path.parent().unwrap();
         fs::create_dir_all(&rust_source_dir).await.map_err(|e| {
             ManagerError::io_error(format!("creating '{}'", rust_source_dir.display()), e)
         })?;
 
-        let stderr_path = config.compiler_stderr_path(program_id);
+        let stderr_path = config.compiler_stderr_path(pipeline_id);
         let err_file = File::create(&stderr_path).await.map_err(|e| {
             ManagerError::io_error(format!("creating error log '{}'", stderr_path.display()), e)
         })?;
@@ -943,7 +844,7 @@ impl CompilationJob {
         })?;
 
         // Run compiler, direct output to `main.rs`.
-        let schema_path = config.schema_path(program_id);
+        let schema_path = config.schema_path(pipeline_id);
         let compiler_process = Command::new(config.sql_compiler_path())
             .arg("-js")
             .arg(schema_path)
@@ -968,7 +869,7 @@ impl CompilationJob {
         Ok(Self {
             tenant_id,
             stage: Stage::Sql,
-            program: program.clone(),
+            pipeline: pipeline.clone(),
             compiler_process,
             stage_start_time: Instant::now(),
         })
@@ -976,12 +877,12 @@ impl CompilationJob {
 
     // Run `cargo` on the generated Rust workspace.
     async fn rust(config: &CompilerConfig, job: &Self) -> Result<Self, ManagerError> {
-        let program_id = job.program.program_id;
-        let version = job.program.version;
+        let pipeline_id = job.pipeline.id;
+        let version = job.pipeline.program_version;
         let tenant_id = job.tenant_id;
-        debug!("Running Rust compiler on program '{program_id}', version '{version}'");
+        debug!("Running Rust compiler on program '{pipeline_id}', version '{version}'");
 
-        let rust_path = config.rust_program_path(program_id);
+        let rust_path = config.rust_program_path(pipeline_id);
         let mut main_rs = OpenOptions::new()
             .append(true)
             .open(&rust_path)
@@ -995,20 +896,21 @@ impl CompilationJob {
         drop(main_rs);
 
         // Write `project/Cargo.toml`.
-        Compiler::write_project_toml(config, program_id).await?;
+        Compiler::write_project_toml(config, pipeline_id).await?;
 
         // Write workspace `Cargo.toml`.  The workspace contains SQL libs and the
         // generated project crate.
-        Compiler::write_workspace_toml(config, program_id).await?;
+        Compiler::write_workspace_toml(config, pipeline_id).await?;
 
         // Run cargo, direct stdout and stderr to the same file.
         let compiler_process =
-            Compiler::run_cargo_build(config, program_id, &job.program.config.profile).await?;
+            Compiler::run_cargo_build(config, pipeline_id, &job.pipeline.program_config.profile)
+                .await?;
 
         Ok(Self {
             tenant_id,
             stage: Stage::Rust,
-            program: job.program.clone(),
+            pipeline: job.pipeline.clone(),
             compiler_process,
             stage_start_time: Instant::now(),
         })
@@ -1031,17 +933,17 @@ impl CompilationJob {
     async fn error_output(&self, config: &CompilerConfig) -> Result<String, ManagerError> {
         let output = match self.stage {
             Stage::Sql => {
-                let stderr_path = config.compiler_stderr_path(self.program.program_id);
+                let stderr_path = config.compiler_stderr_path(self.pipeline.id);
                 fs::read_to_string(&stderr_path).await.map_err(|e| {
                     ManagerError::io_error(format!("reading '{}'", stderr_path.display()), e)
                 })?
             }
             Stage::Rust => {
-                let stdout_path = config.compiler_stdout_path(self.program.program_id);
+                let stdout_path = config.compiler_stdout_path(self.pipeline.id);
                 let stdout = fs::read_to_string(&stdout_path).await.map_err(|e| {
                     ManagerError::io_error(format!("reading '{}'", stdout_path.display()), e)
                 })?;
-                let stderr_path = config.compiler_stderr_path(self.program.program_id);
+                let stderr_path = config.compiler_stderr_path(self.pipeline.id);
                 let stderr = fs::read_to_string(&stderr_path).await.map_err(|e| {
                     ManagerError::io_error(format!("reading '{}'", stderr_path.display()), e)
                 })?;
@@ -1067,14 +969,16 @@ mod test {
     use uuid::Uuid;
 
     use crate::compiler::Compiler;
+    use crate::db::storage_postgres::StoragePostgres;
+    use crate::db::types::program::ProgramConfig;
     use crate::{
         auth::TenantRecord,
         compiler::ProgramStatus,
         config::{CompilationProfile, CompilerConfig},
-        db::{storage::Storage, ProgramId, ProjectDB, Version},
+        db::storage::Storage,
     };
 
-    async fn create_program(db: &Arc<Mutex<ProjectDB>>, pname: &str) -> (ProgramId, Version) {
+    async fn create_program(db: &Arc<Mutex<StoragePostgres>>, pname: &str) -> (ProgramId, Version) {
         let tenant_id = TenantRecord::default().id;
         db.lock()
             .await
@@ -1084,7 +988,7 @@ mod test {
                 pname,
                 "program desc",
                 "ignored",
-                &super::ProgramConfig {
+                &ProgramConfig {
                     profile: Some(CompilationProfile::Unoptimized),
                 },
                 None,
@@ -1093,7 +997,7 @@ mod test {
             .unwrap()
     }
 
-    async fn check_program_status_pending(db: &Arc<Mutex<ProjectDB>>, pname: &str) {
+    async fn check_program_status_pending(db: &Arc<Mutex<StoragePostgres>>, pname: &str) {
         let tenant_id = TenantRecord::default().id;
         let programdesc = db
             .lock()
