@@ -388,11 +388,17 @@ where
         Self::Builder::new_builder(factories, time).done()
     }
 
-    fn persist(&mut self) {
-        if let Inner::Vec(vec) = &self.inner {
-            let mut file = FileWSetBuilder::with_capacity(&self.factories.file, (), 0);
-            copy_to_builder(&mut file, vec.cursor());
-            self.inner = Inner::File(file.done());
+    fn persisted(&self) -> Option<Self> {
+        match &self.inner {
+            Inner::Vec(vec) => {
+                let mut file = FileWSetBuilder::with_capacity(&self.factories.file, (), 0);
+                copy_to_builder(&mut file, vec.cursor());
+                Some(Self {
+                    inner: Inner::File(file.done()),
+                    factories: self.factories.clone(),
+                })
+            }
+            Inner::File(_) => None,
         }
     }
 
