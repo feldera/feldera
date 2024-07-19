@@ -43,7 +43,7 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWaterlineOperator(this.getNode(), this.init,
                     this.extractTs,
-                    this.getFunction().to(DBSPClosureExpression.class),
+                    this.getClosureFunction(),
                     newInputs.get(0))
                     .copyAnnotations(this);
         return this;

@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelStruct;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
@@ -77,6 +78,11 @@ public class TypeCompiler implements ICompilerComponent {
     public static DBSPTypeIndexedZSet makeIndexedZSet(
             DBSPType keyType, DBSPType elementType) {
         return new DBSPTypeIndexedZSet(elementType.getNode(), keyType, elementType);
+    }
+
+    public static DBSPTypeIndexedZSet makeIndexedZSet(DBSPTypeRawTuple kvtype) {
+        assert kvtype.size() == 2;
+        return new DBSPTypeIndexedZSet(kvtype.getNode(), kvtype.tupFields[0], kvtype.tupFields[1]);
     }
 
     public DBSPType convertType(

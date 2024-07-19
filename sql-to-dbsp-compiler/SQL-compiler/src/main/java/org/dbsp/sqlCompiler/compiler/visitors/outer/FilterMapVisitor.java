@@ -33,8 +33,8 @@ public class FilterMapVisitor extends CircuitCloneVisitor {
             // } else {
             //   None
             // }
-            DBSPClosureExpression map = source.getFunction().to(DBSPClosureExpression.class);
-            DBSPClosureExpression filter = operator.getFunction().to(DBSPClosureExpression.class);
+            DBSPClosureExpression map = source.getClosureFunction();
+            DBSPClosureExpression filter = operator.getClosureFunction();
             DBSPLetStatement let = new DBSPLetStatement("tmp", map.body);
             DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(errorReporter);
             DBSPExpression tmp = let.getVarReference();

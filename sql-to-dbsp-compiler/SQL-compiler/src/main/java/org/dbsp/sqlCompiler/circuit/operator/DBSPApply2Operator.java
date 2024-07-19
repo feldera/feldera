@@ -40,7 +40,7 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
         assert newInputs.size() == 2: "Expected 2 inputs " + newInputs;
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApply2Operator(
-                    this.getNode(), this.getFunction().to(DBSPClosureExpression.class),
+                    this.getNode(), this.getClosureFunction(),
                     this.getType(), newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         }

@@ -1199,10 +1199,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPClosureExpression entireKey =
                 new DBSPRawTupleExpression(
                         t.deref().applyClone(),
-                        new DBSPRawTupleExpression()).closure(
+                        new DBSPTupleExpression()).closure(
                 t.asParameter());
-        DBSPVariablePath l = new DBSPTypeRawTuple().ref().var();
-        DBSPVariablePath r = new DBSPTypeRawTuple().ref().var();
+        DBSPVariablePath l = new DBSPTypeTuple().ref().var();
+        DBSPVariablePath r = new DBSPTypeTuple().ref().var();
         DBSPVariablePath k = inputRowType.ref().var();
 
         DBSPClosureExpression closure = k.deref().applyClone().closure(
@@ -1210,13 +1210,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
         for (int i = 1; i < inputs.size(); i++) {
             DBSPOperator previousIndex = new DBSPMapIndexOperator(
                     node, entireKey,
-                    makeIndexedZSet(inputRowType, new DBSPTypeRawTuple()),
+                    makeIndexedZSet(inputRowType, new DBSPTypeTuple()),
                     previous);
             this.circuit.addOperator(previousIndex);
             DBSPOperator inputI = this.getInputAs(intersect.getInput(i), false);
             DBSPOperator index = new DBSPMapIndexOperator(
                     node, entireKey.deepCopy().to(DBSPClosureExpression.class),
-                    makeIndexedZSet(inputRowType, new DBSPTypeRawTuple()),
+                    makeIndexedZSet(inputRowType, new DBSPTypeTuple()),
                     inputI);
             this.circuit.addOperator(index);
             previous = new DBSPStreamJoinOperator(node, this.makeZSet(resultType),
