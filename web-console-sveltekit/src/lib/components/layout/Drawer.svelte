@@ -11,17 +11,20 @@
   let {
     open = $bindable(),
     side,
-    children
+    children,
+    width
   }: {
     open: boolean
     side: 'right' | 'left' | 'top' | 'bottom'
     children: Snippet
+    width: string
   } = $props()
 </script>
 
 <!-- {#if isMobile.matches} -->
 {#if $isMobile}
-  <ModalDrawer bind:open {side} {children} class="bg-surface-50 dark:bg-surface-950"></ModalDrawer>
+  <ModalDrawer {width} bind:open {side} {children} class="bg-surface-50 dark:bg-surface-950">
+  </ModalDrawer>
 {:else}
-  <InlineDrawer {open} {side} {children}></InlineDrawer>
+  <InlineDrawer {width} {open} {side} {children}></InlineDrawer>
 {/if}

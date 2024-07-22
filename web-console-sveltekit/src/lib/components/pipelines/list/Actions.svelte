@@ -14,6 +14,8 @@
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
   import JSONbig from 'true-json-bigint'
+  import { goto } from '$app/navigation'
+  import { base } from '$app/paths'
 
   let {
     name: pipelineName,
@@ -34,9 +36,10 @@
   })
 
   const globalDialog = useGlobalDialog()
-  const deletePipeline = (pipelineName: string) => {
-    _deletePipeline(pipelineName)
+  const deletePipeline = async (pipelineName: string) => {
+    await _deletePipeline(pipelineName)
     reload?.()
+    goto(`${base}/`)
   }
 
   const actions = {
@@ -81,8 +84,7 @@
 {#snippet deleteDialog()}
   <DeleteDialog
     {...deleteDialogProps('Delete', (name) => `${name} pipeline`, deletePipeline)(pipelineName)}
-    onClose={() => (globalDialog.dialog = null)}
-  ></DeleteDialog>
+    onClose={() => (globalDialog.dialog = null)}></DeleteDialog>
 {/snippet}
 
 {#snippet pipelineResourcesDialog()}
@@ -93,11 +95,11 @@
         await patchPipeline(pipeline.name, {
           config: JSONbig.parse(json),
           name: pipeline.name,
-          description: pipeline.description
+          description: pipeline.description,
+          program_name: pipeline._programName
         })
       }}
-      onClose={() => (globalDialog.dialog = null)}
-    >
+      onClose={() => (globalDialog.dialog = null)}>
       {#snippet title()}
         <div class="h5 text-center font-normal">
           {`Configure ${pipelineName} runtime resources`}
@@ -116,36 +118,31 @@
 {#snippet _delete()}
   <button
     class={'bx bx-trash-alt ' + buttonClass}
-    onclick={() => (globalDialog.dialog = deleteDialog)}
-  >
+    onclick={() => (globalDialog.dialog = deleteDialog)}>
   </button>
 {/snippet}
 {#snippet _start()}
   <button
     class={'bx bx-play-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'start').then(_reload)}
-  >
+    onclick={() => pipelineAction(pipelineName, 'start').then(_reload)}>
   </button>
 {/snippet}
 {#snippet _pause()}
   <button
     class={'bx bx-pause-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'pause').then(_reload)}
-  >
+    onclick={() => pipelineAction(pipelineName, 'pause').then(_reload)}>
   </button>
 {/snippet}
 {#snippet _shutdown()}
   <button
     class={'bx bx-stop-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'shutdown').then(_reload)}
-  >
+    onclick={() => pipelineAction(pipelineName, 'shutdown').then(_reload)}>
   </button>
 {/snippet}
 {#snippet _configure()}
   <button
     onclick={() => (globalDialog.dialog = pipelineResourcesDialog)}
-    class={'bx bx-cog ' + buttonClass}
-  >
+    class={'bx bx-cog ' + buttonClass}>
   </button>
 {/snippet}
 {#snippet _spacer()}

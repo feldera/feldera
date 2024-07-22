@@ -9,13 +9,13 @@
   let { pipelineName }: { pipelineName: string } = $props()
   let currentTab = useLocalStorage(
     'pipelines/' + pipelineName + '/currentInteractionTab',
-    'performance'
+    'query data'
   )
   const tabs = [
-    tuple('SQL errors', TabSQLErrors),
-    tuple('ad-hoc query', TabQueryData),
+    tuple('query data', TabQueryData),
     tuple('performance', TabPerformance),
-    tuple('query plan', TabDBSPGraph)
+    tuple('dbsp operator graph', TabDBSPGraph),
+    tuple('SQL errors', TabSQLErrors)
   ]
 </script>
 
@@ -33,10 +33,12 @@
 
 {#snippet tabPanels()}
   {#each tabs as [tabName, TabComponent]}
-    <Tabs.Panel bind:group={currentTab.value} value={tabName} classes="grow p-4 pt-0">
-      <TabComponent {pipelineName}></TabComponent>
+    <Tabs.Panel bind:group={currentTab.value} value={tabName}>
+      <div class=" p-4 pt-0">
+        <TabComponent {pipelineName}></TabComponent>
+      </div>
     </Tabs.Panel>
   {/each}
 {/snippet}
 
-<Tabs list={tabList} panels={tabPanels} classes="h-full"></Tabs>
+<Tabs list={tabList} panels={tabPanels}></Tabs>
