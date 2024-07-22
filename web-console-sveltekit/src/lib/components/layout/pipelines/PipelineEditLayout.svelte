@@ -109,7 +109,7 @@
   let editDisabled = $derived(status && !isPipelineIdle(status))
 </script>
 
-<div class="h-full">
+<div class="h-full w-full">
   <PaneGroup direction="vertical" class="!overflow-visible">
     <Pane defaultSize={60} minSize={20} class="flex flex-col-reverse !overflow-visible">
       <div class="flex flex-nowrap items-center gap-2 pr-2">
@@ -122,7 +122,7 @@
         {/if}
       </div>
       <div class="relative h-full w-full">
-        <div class="absolute h-full w-full" class:opacity-70={editDisabled}>
+        <div class="absolute h-full w-full" class:opacity-50={editDisabled}>
           <MonacoEditor
             markers={$errors ? { sql: extractSQLCompilerErrorMarkers($errors) } : undefined}
             on:ready={(x) => {

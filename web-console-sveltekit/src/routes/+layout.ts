@@ -1,14 +1,35 @@
+import '$lib/compositions/setupHttpClient'
+
 import { signIn } from '@auth/sveltekit/client'
-import { redirect } from '@sveltejs/kit'
+import { error } from '@sveltejs/kit'
+import { client } from '@hey-api/client-fetch';
 
 export const ssr = false
 export const trailingSlash = 'always'
-import '$lib/compositions/setupHttpClient'
 
-export const load = async ({data}) => {
-  if (data.authEnabled && !data.session) {
-    // redirect(302, `${base}/login`)
-    signIn('cognito')
+let accessToken: string | undefined
+const authMiddleware = (request: Request) => {
+  if (accessToken) {
+    request.headers.set('Authorization', `Bearer ${accessToken}`)
   }
-  console.log('f.data', data)
+  return request
+}
+
+export const load = async ({ data, fetch }) => {
+  if (data.authDetails.enabled && !data.session && !await signIn(data.authDetails.providerId)) {
+    error(401)
+  }
+  // if (data.session) {
+  //   if (data.session.accessToken) {
+  //     accessToken = data.session.accessToken
+  //   } else {
+  //     accessToken = undefined
+  //   }
+  // }
+  accessToken = data.session?.accessToken
+  client.interceptors.request.use(authMiddleware)
+  // if (data.session?.accessToken) {
+  //   client.interceptors.request.eject()
+  // }
+  console.log('root layout load', data.session)
 }

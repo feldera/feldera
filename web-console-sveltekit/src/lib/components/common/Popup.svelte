@@ -4,9 +4,9 @@
   const { trigger, content }: { trigger: Snippet<[() => void]>; content: Snippet<[() => void]> } =
     $props()
   let show = $state(false)
-  let contentNode: HTMLElement
+  let contentNode = $state<HTMLElement>()
   const onclick = (e: MouseEvent) => {
-    if (contentNode.contains(e.target as any)) {
+    if (!contentNode || contentNode.contains(e.target as any)) {
       return
     }
     e.stopPropagation()

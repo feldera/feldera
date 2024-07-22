@@ -107,7 +107,7 @@ export const updatePipeline = async (
 
 export const patchPipeline = async (
   pipelineName: string,
-  pipeline: Omit<UpdatePipelineRequest, 'connectors' | 'program_name'> & { code?: string }
+  pipeline: Omit<UpdatePipelineRequest, 'connectors'> & { code?: string }
 ) => {
   const { code, ...pipelinePatch } = pipeline
   await _updatePipeline({ body: pipelinePatch, path: { pipeline_name: pipelineName } })

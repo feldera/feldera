@@ -6,6 +6,6 @@ export const load = async (event) => {
   console.log('loading layout', event.locals)
   return {
     session: xx, // Provides $page.data.session with data from @auth/sveltekit
-    authEnabled: event.locals.authEnabled
+    authDetails: event.locals.authDetails
   }
 }

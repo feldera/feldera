@@ -11,10 +11,9 @@
     {downstreamChanged ? 'changed' : 'saved'}
   </div> -->
   <button
-    class="w-32 px-2 hover:preset-filled-primary-50-950"
+    class="hover:preset-filled-primary-50-950 w-32 px-2"
     tabindex={10}
-    onclick={() => (autoSavePipeline.value = !autoSavePipeline.value)}
-  >
+    onclick={() => (autoSavePipeline.value = !autoSavePipeline.value)}>
     autosave: {autoSavePipeline.value ? 'on' : 'off'}
   </button>
 </div>
