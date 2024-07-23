@@ -26,7 +26,8 @@
       {text}
       close={undefined}
       existing={pipeline.existing}
-      tabContentChanged={changedPipelines.has(pipeline.existing)}></ExistingPipelineTabControl>
+      tabContentChanged={changedPipelines.has(pipeline.existing)}
+    ></ExistingPipelineTabControl>
   {:else}
     {#snippet text()}
       <i>new pipeline</i>

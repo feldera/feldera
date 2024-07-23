@@ -18,7 +18,6 @@
   }
 
   let pipeline = writableNewPipeline()
-  console.log('new ppl', $pipeline)
 </script>
 
 <PipelineEditLayout {pipeline} status={undefined}></PipelineEditLayout>

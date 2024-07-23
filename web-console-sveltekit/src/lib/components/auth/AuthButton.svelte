@@ -9,21 +9,22 @@
 {#if $page.data.session}
   <Popup>
     {#snippet trigger(toggle)}
-      <button onclick={toggle} class="btn-icon preset-tonal-surface bx bx-lock-alt text-[24px]"
+      <button onclick={toggle} class="bx bx-lock-alt btn-icon text-[24px] preset-tonal-surface"
       ></button>
     {/snippet}
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="absolute right-0 z-10 max-h-[400px] w-[calc(100vw-100px)] max-w-[400px] justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black">
+        class="absolute right-0 z-10 max-h-[400px] w-[calc(100vw-100px)] max-w-[400px] justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black"
+      >
         <AuthPopupMenu user={$page.data.session!.user!}></AuthPopupMenu>
       </div>
     {/snippet}
   </Popup>
 {:else}
-  <button class="btn-icon bx bx-lock-open-alt text-surface-600-400 cursor-default text-[24px]"
+  <button class="bx bx-lock-open-alt btn-icon cursor-default text-[24px] text-surface-600-400"
   ></button>
-  <Tooltip class="text-surface-950-50 bg-white dark:bg-black" placement="left">
+  <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="left">
     Authentication is disabled
   </Tooltip>
 {/if}

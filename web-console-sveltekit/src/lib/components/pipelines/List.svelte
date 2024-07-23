@@ -1,6 +1,5 @@
 <script lang="ts">
   import PipelineStatus from '$lib/components/pipelines/list/Status.svelte'
-  import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
   import { base } from '$app/paths'
   import { createPipeline, type PipelineThumb } from '$lib/services/pipelineManager'
   import { goto, replaceState } from '$app/navigation'
@@ -42,15 +41,10 @@
   let showDrawer = useLocalStorage('layout/drawer', false)
   let assistCreatingPipeline = $derived($page.url.hash === '#new')
   const stopAssisting = () => {
-    console.log('stopAssisting')
-    // replaceState(window.location.href.split('#')[0], {})
     goto('')
   }
   $effect(() => {
-    console.log('$page.url.hash', $page.url.hash)
     if (assistCreatingPipeline) {
-      // window.location.href = window.location.href.split('#')[0]
-      // window.location.hash = ''
       showDrawer.value = true
       createPipelineInputRef.focus()
     }
@@ -64,7 +58,8 @@
     <div class="flex flex-nowrap items-center gap-2 break-all">
       <a
         class=" transition-none duration-0"
-        href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}>
+        href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
+      >
         {pipeline.name}
       </a>
       <PipelineStatus class="ml-auto" {...pipeline}></PipelineStatus>
@@ -86,10 +81,12 @@
         }
       }}
       placeholder="+ create pipeline"
-      class=" placeholder-surface-700 dark:placeholder-surface-300 bg-surface-50-950 outline-none" />
+      class=" placeholder-surface-700 outline-none bg-surface-50-950 dark:placeholder-surface-300"
+    />
     {#if assistCreatingPipeline}
       <div
-        class="text-surface-950-50 absolute top-8 text-nowrap rounded bg-white px-3 py-2 text-sm font-medium shadow-md dark:bg-black">
+        class="absolute top-8 text-nowrap rounded bg-white px-3 py-2 text-sm font-medium shadow-md text-surface-950-50 dark:bg-black"
+      >
         Enter pipeline name and press Enter
       </div>
     {/if}

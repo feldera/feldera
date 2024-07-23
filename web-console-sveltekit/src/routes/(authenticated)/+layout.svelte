@@ -15,7 +15,7 @@
   import { navItems } from '$lib/functions/navigation/items'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import AuthButton from '$lib/components/auth/AuthButton.svelte'
-  console.log('render layout 1-1')
+
   const dialog = useGlobalDialog()
 
   let { children } = $props<{ children: Snippet }>()
@@ -30,7 +30,6 @@
     }
   })
   let pipelines = new Store(pipelinesStore)
-  console.log('render layout 1-2')
 </script>
 
 <div class="flex h-full">
@@ -53,7 +52,8 @@
           class="btn-icon"
           onclick={() => {
             showDrawer.value = !showDrawer.value
-          }}>
+          }}
+        >
           <i class="bx bx-menu text-[24px]"></i>
         </button>
       </div>
@@ -62,7 +62,8 @@
         {#each navItems({ showSettings: false }) as item}
           <a
             href={Array.isArray(item.path) ? item.path[0] : item.path}
-            class="preset-grayout-surface flex flex-nowrap items-center justify-center">
+            class="preset-grayout-surface flex flex-nowrap items-center justify-center"
+          >
             <div class="flex w-9 justify-center">
               <div class={item.class + ' text-[24px]'}></div>
             </div>
