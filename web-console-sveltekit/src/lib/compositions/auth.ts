@@ -113,7 +113,7 @@ export const { handle, signIn, signOut } = (() => {
       .returnType<{ provider: OAuthConfig<any> & { id: string }; signOutUrl: string }[]>()
       .with({ AwsCognito: P.select() }, (config) => {
         const clientId = /client_id=(\w+)/.exec(config.login_url)?.[1]
-        const endpoint = /^(.*)login\\\?/.exec(config.login_url)?.[1]
+        const endpoint = /^(.*)login\?/.exec(config.login_url)?.[1]
         const issuer = /(.*)\/.well-known\/jwks.json/.exec(config.jwk_uri)?.[1]
         invariant(clientId, 'Cognito clientId is not valid')
         invariant(endpoint, 'Cognito endpoint is not valid')
