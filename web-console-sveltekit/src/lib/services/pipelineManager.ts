@@ -80,7 +80,7 @@ export const getFullPipeline = async (pipeline_name: string) => {
  * Fails if pipeline exists
  */
 export const createPipeline = async (pipeline: NewPipelineRequest) => {
-  return handled(newPipeline)({body: pipeline})
+  return handled(newPipeline)({ body: pipeline })
 }
 
 /**

@@ -40,22 +40,27 @@ declare global {
   }
 }
 
-declare module "@auth/core/types" {
-
+declare module '@auth/core/types' {
   // Extend session to hold the access_token
   interface Session {
-      accessToken: string
+    accessToken: string
   }
 }
 
-declare module "@auth/core/jwt" {
+declare module '@auth/core/jwt' {
   // Extend token to hold the access_token before it gets put into session
   interface JWT {
-      access_token: string
+    access_token: string
   }
 }
 
-const providerAuth0 = ({clientId, endpoint}:{clientId: string, endpoint: string}): OIDCConfig<Auth0Profile> => ({
+const providerAuth0 = ({
+  clientId,
+  endpoint
+}: {
+  clientId: string
+  endpoint: string
+}): OIDCConfig<Auth0Profile> => ({
   type: 'oidc',
   id: 'auth0',
   name: 'Auth0',
@@ -70,10 +75,18 @@ const providerAuth0 = ({clientId, endpoint}:{clientId: string, endpoint: string}
   checks: ['pkce' as const]
 })
 
-const signOutUrlAuth0 = ({clientId, endpoint}:{clientId: string, endpoint: string}) =>
+const signOutUrlAuth0 = ({ clientId, endpoint }: { clientId: string; endpoint: string }) =>
   `${endpoint}v2/logout?client_id=${clientId}&returnTo={redirect_uri}`
 
-const providerCognito = ({clientId, endpoint, issuer}:{clientId: string, endpoint: string, issuer: string}): OIDCConfig<CognitoProfile>  => ({
+const providerCognito = ({
+  clientId,
+  endpoint,
+  issuer
+}: {
+  clientId: string
+  endpoint: string
+  issuer: string
+}): OIDCConfig<CognitoProfile> => ({
   type: 'oidc' as const,
   id: 'cognito',
   name: 'Cognito',
@@ -88,7 +101,7 @@ const providerCognito = ({clientId, endpoint, issuer}:{clientId: string, endpoin
   checks: ['pkce' as const]
 })
 
-const signOutUrlCognito = ({clientId, endpoint}:{clientId: string, endpoint: string}) =>
+const signOutUrlCognito = ({ clientId, endpoint }: { clientId: string; endpoint: string }) =>
   `${endpoint}logout?client_id=${clientId}&logout_uri={redirect_uri}&redirect_uri={redirect_uri}%2Fauth%2Fcallback%2Fcognito&response_type=code&scope=openid+profile+email`
 
 export const { handle, signIn, signOut } = (() => {
@@ -97,29 +110,28 @@ export const { handle, signIn, signOut } = (() => {
   const { handle, signIn, signOut } = SvelteKitAuth(async (event) => {
     const authConfig = await getAuthConfig()
     const providers = match(authConfig)
-      .returnType<{provider: OAuthConfig<any> & {id: string}, signOutUrl: string}[]>()
+      .returnType<{ provider: OAuthConfig<any> & { id: string }; signOutUrl: string }[]>()
       .with({ AwsCognito: P.select() }, (config) => {
         const clientId = /client_id=(\w+)/.exec(config.login_url)?.[1]
         const endpoint = /^(.*)login\\\?/.exec(config.login_url)?.[1]
         const issuer = /(.*)\/.well-known\/jwks.json/.exec(config.jwk_uri)?.[1]
-        // console.log('zzcc', authConfig, clientId, issuer)
         invariant(clientId, 'Cognito clientId is not valid')
         invariant(endpoint, 'Cognito endpoint is not valid')
         invariant(issuer, 'Cognito issuer is not valid')
         return [
           {
-            provider: providerCognito({clientId, endpoint, issuer}),
-            signOutUrl: signOutUrlCognito({clientId, endpoint})
+            provider: providerCognito({ clientId, endpoint, issuer }),
+            signOutUrl: signOutUrlCognito({ clientId, endpoint })
           }
         ]
       })
       .with({ GoogleIdentity: P.select() }, (config) => [
         {
           provider: Google({
-          clientId: config.client_id,
-          checks: ['pkce']
-        }),
-        signOutUrl: ''
+            clientId: config.client_id,
+            checks: ['pkce']
+          }),
+          signOutUrl: ''
         }
       ])
       // .with({ Auth0: P.select() }, (config) => [
@@ -138,7 +150,7 @@ export const { handle, signIn, signOut } = (() => {
     providerId = providers[0]?.provider.id
     providerSignOutUrl = providers[0]?.signOutUrl
     return {
-      providers: providers.map(p => p.provider),
+      providers: providers.map((p) => p.provider),
       secret: import.meta.env.VITE_AUTH_SECRET,
       trustHost: true,
       callbacks: {
@@ -159,7 +171,7 @@ export const { handle, signIn, signOut } = (() => {
 
           return params.token
         }
-      },
+      }
       // basePath: `${base}/auth` // [origin]/auth/callback/[provider] ( /new/auth/callback/cognito )
     }
   })

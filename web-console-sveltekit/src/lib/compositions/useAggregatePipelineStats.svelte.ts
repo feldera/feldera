@@ -22,7 +22,6 @@ export const useAggregatePipelineStats = (
     })
 
   $effect(() => {
-    console.log('pipelineName updated!', pipelineName)
     // if (metrics.global.length) {
     metrics = emptyPipelineMetrics
     // }

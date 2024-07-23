@@ -16,9 +16,6 @@
   const memUsed = metrics.global.map((m) => tuple(m.timeMs, m.rss_bytes ?? 0))
   const valueMax = $derived(memUsed.length ? Math.max(...memUsed.map((v) => v[1])) : 0)
   const yMaxStep = $derived(Math.pow(2, Math.ceil(Math.log2(valueMax * 1.25))))
-  $effect(() => {
-    console.log('valueMax', valueMax, yMaxStep)
-  })
   const yMax = $derived(valueMax !== 0 ? yMaxStep : 1024 * 2048)
   const yMin = 0
 
