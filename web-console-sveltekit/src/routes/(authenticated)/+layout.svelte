@@ -69,11 +69,11 @@
             <span class="hidden md:inline">{item.title}</span>
           </a>
         {/each}
-        <HealthPopup></HealthPopup>
-        <button
+        <!-- <HealthPopup></HealthPopup> -->
+        <!-- <button
           onclick={toggleDarkMode}
           class={'btn-icon preset-tonal-surface text-[24px] ' +
-            (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}></button>
+            (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}></button> -->
         <AuthButton></AuthButton>
       </div>
     </div>
