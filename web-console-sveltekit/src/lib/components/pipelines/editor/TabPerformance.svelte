@@ -20,8 +20,6 @@
   const global = $derived(pipelineStats.metrics.global.at(-1))
 </script>
 
-<!-- <div class="relative h-full w-full">
-  <div class="absolute h-full w-full"> -->
 {#if pipelineStats.metrics.global.at(-1) && global}
   <div class="flex gap-4">
     <span>Pipeline Memory: {humanSize(global.rss_bytes)} </span>
@@ -56,5 +54,3 @@
   <span class="text-surface-600-400">Pipeline is not running</span>
 {/if}
 <!-- <PipelineMemoryGraph metrics={pipelineStats.metrics}></PipelineMemoryGraph> -->
-<!-- </div>
-</div> -->
