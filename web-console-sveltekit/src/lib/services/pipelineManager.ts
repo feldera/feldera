@@ -18,7 +18,9 @@ import {
   type ErrorResponse,
   getPrograms,
   updateProgram,
-  getAuthenticationConfig
+  getAuthenticationConfig,
+  type NewPipelineRequest,
+  newPipeline
 } from '$lib/services/manager'
 import { P, match } from 'ts-pattern'
 import { leftJoin } from 'array-join'
@@ -72,6 +74,13 @@ export const getFullPipeline = async (pipeline_name: string) => {
       })
     : emptyProgramDescr
   return toFullPipeline(pipeline, program)
+}
+
+/**
+ * Fails if pipeline exists
+ */
+export const createPipeline = async (pipeline: NewPipelineRequest) => {
+  return handled(newPipeline)({body: pipeline})
 }
 
 /**

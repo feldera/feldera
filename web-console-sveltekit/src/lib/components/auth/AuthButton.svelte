@@ -4,12 +4,6 @@
   import { fade } from 'svelte/transition'
   import Popup from '../common/Popup.svelte'
   import AuthPopupMenu from './AuthPopupMenu.svelte'
-
-  $effect(() => {
-    console.log('aaa')
-    console.log('$page.data.session?.user', $page.data.session)
-    console.log('aab')
-  })
 </script>
 
 {#if $page.data.session}

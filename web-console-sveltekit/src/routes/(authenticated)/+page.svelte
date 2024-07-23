@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { goto, replaceState } from '$app/navigation'
   import { base } from '$app/paths'
+  import { page } from '$app/stores'
 
   type Example = { name: string; title: string; description: string; code: string }
   const examples: Example[] = [
@@ -23,19 +25,20 @@
 
 <div class="grid grid-cols-1 gap-8 p-8 sm:grid-cols-2 md:gap-16 md:p-16 lg:grid-cols-3">
   <div class="card flex h-48 flex-col bg-white p-4 dark:bg-black">
-    <a href="{base}/pipeline/new/" class="btn mt-auto self-end text-sm preset-filled-primary-500">
+    <button
+      class="btn preset-filled-primary-500 mt-auto self-end text-sm"
+      onclick={() => goto('#new')}>
       CREATE PIPELINE
       <div class="bx bx-right-arrow-alt text-[24px]"></div>
-    </a>
+    </button>
   </div>
   {#each examples as example}
     <button
       onclick={() => createPipelineFromExample(example)}
-      class="card flex h-48 flex-col bg-white p-4 dark:bg-black"
-    >
+      class="card flex h-48 flex-col bg-white p-4 dark:bg-black">
       <span class="h5 font-normal">{example.title}</span>
       <span class="text-left">{example.description}</span>
-      <div class="btn mt-auto self-end text-sm preset-filled-primary-500">
+      <div class="btn preset-filled-primary-500 mt-auto self-end text-sm">
         TRY
         <div class="bx bx-right-arrow-alt text-[24px]"></div>
       </div>

@@ -6,9 +6,9 @@
 <script lang="ts">
   import FlowbiteTooltip, { type TooltipProps } from 'flowbite-svelte/Tooltip.svelte'
 
-  let { children, ...props }: TooltipProps = $props()
+  let { children, open = $bindable(), ...props }: TooltipProps = $props()
 </script>
 
-<FlowbiteTooltip {...props}>
+<FlowbiteTooltip {...props} bind:open>
   {@render children?.()}
 </FlowbiteTooltip>

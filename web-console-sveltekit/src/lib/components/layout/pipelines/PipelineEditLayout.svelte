@@ -111,7 +111,7 @@
 
 <div class="h-full w-full">
   <PaneGroup direction="vertical" class="!overflow-visible">
-    <Pane defaultSize={60} minSize={20} class="flex flex-col-reverse !overflow-visible">
+    <Pane defaultSize={60} minSize={15} class="flex flex-col-reverse !overflow-visible">
       <div class="flex flex-nowrap items-center gap-2 pr-2">
         <PipelineEditorStatusBar downstreamChanged={decoupledCode.downstreamChanged}
         ></PipelineEditorStatusBar>
@@ -152,7 +152,7 @@
       </div>
     </Pane>
     <PaneResizer class="bg-surface-100-900 h-2" />
-    <Pane minSize={20} class="!overflow-visible">
+    <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
       {#if $pipeline.name}
         <InteractionsPanel pipelineName={$pipeline.name}></InteractionsPanel>
       {/if}
