@@ -577,6 +577,7 @@ ui-playwright-tests-ct:
 
 benchmark:
     FROM +build-manager
+    COPY demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen
     COPY scripts/bench.bash scripts/bench.bash
     COPY benchmark/feldera-sql/run.py benchmark/feldera-sql/run.py
     COPY benchmark/feldera-sql/benchmarks benchmark/feldera-sql/benchmarks

@@ -9,7 +9,10 @@ members = [
   "sql-to-dbsp-compiler/lib/readers",
   "sql-to-dbsp-compiler/lib/sqllib",
 ]
-exclude = ["sql-to-dbsp-compiler/temp"]
+exclude = [
+  "sql-to-dbsp-compiler/temp",
+  "demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen"
+]
 resolver = "2"
 
 [workspace.metadata.release]
