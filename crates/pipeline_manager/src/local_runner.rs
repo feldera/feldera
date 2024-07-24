@@ -1,16 +1,16 @@
 //! A local runner that watches for pipeline objects in the API
 //! and instantiates them locally as processes.
 
-use crate::db::operations::pipeline::generate_pipeline_config;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
 use crate::db_notifier::{DbNotification, Operation};
+use crate::error::ManagerError;
 use crate::pipeline_automata::{fetch_binary_ref, PipelineAutomaton};
 use crate::pipeline_automata::{PipelineExecutionDesc, PipelineExecutor};
-use crate::{api::ManagerError, config::LocalRunnerConfig, runner::RunnerError};
+use crate::{config::LocalRunnerConfig, runner::RunnerError};
 use async_trait::async_trait;
 use log::trace;
-use pipeline_types::config::{StorageCacheConfig, StorageConfig};
+use pipeline_types::config::{generate_pipeline_config, StorageCacheConfig, StorageConfig};
 use std::{collections::BTreeMap, process::Stdio, sync::Arc};
 use tokio::process::{Child, Command};
 use tokio::sync::Notify;
@@ -56,10 +56,11 @@ impl PipelineExecutor for ProcessRunner {
         pipeline: &ExtendedPipelineDescr<String>,
     ) -> Result<PipelineExecutionDesc, ManagerError> {
         let mut deployment_config = generate_pipeline_config(
-            pipeline.id,
+            pipeline.id.0,
             &pipeline.runtime_config,
             &pipeline.program_schema.clone().unwrap(), // TODO: unwrap
-        )?;
+        )
+        .map_err(|e| RunnerError::PipelineConfigurationGenerationFailed { error: e })?;
 
         // The deployment configuration must be modified to fill in the details for storage,
         // which varies for each pipeline executor

@@ -86,8 +86,8 @@ pub enum DBError {
     UnknownPipelineName {
         pipeline_name: String,
     },
-    CannotUpdateRunningPipeline,
-    CannotDeleteRunningPipeline,
+    CannotUpdateNonShutdownPipeline,
+    CannotDeleteNonShutdownPipeline,
     CannotRenameNonExistingPipeline,
     OutdatedProgramVersion {
         latest_version: Version,
@@ -104,6 +104,12 @@ pub enum DBError {
     InvalidDeploymentStatusTransition {
         current: PipelineStatus,
         transition_to: PipelineStatus,
+    },
+    IllegalPipelineStateTransition {
+        hint: String,
+        status: PipelineStatus,
+        desired_status: PipelineStatus,
+        requested_desired_status: PipelineStatus,
     },
 }
 
@@ -353,11 +359,11 @@ impl Display for DBError {
             DBError::UnknownPipelineName { pipeline_name } => {
                 write!(f, "Unknown pipeline name '{pipeline_name}'")
             }
-            DBError::CannotUpdateRunningPipeline => {
-                write!(f, "Cannot update a pipeline which is not fully shutdown")
+            DBError::CannotUpdateNonShutdownPipeline => {
+                write!(f, "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.")
             }
-            DBError::CannotDeleteRunningPipeline => {
-                write!(f, "Cannot delete a pipeline which is not fully shutdown")
+            DBError::CannotDeleteNonShutdownPipeline => {
+                write!(f, "Cannot delete a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.")
             }
             DBError::CannotRenameNonExistingPipeline => {
                 write!(f, "Cannot rename a pipeline which does not exist")
@@ -395,6 +401,17 @@ impl Display for DBError {
                     "Cannot transition from deployment status '{current:?}' to '{transition_to:?}'"
                 )
             }
+            DBError::IllegalPipelineStateTransition {
+                hint,
+                status,
+                desired_status,
+                requested_desired_status,
+            } => {
+                write!(
+                    f,
+                    "Deployment status (current: '{status:?}', desired: '{desired_status:?}') cannot have desired changed to '{requested_desired_status:?}'. {hint}"
+                )
+            }
         }
     }
 }
@@ -419,8 +436,12 @@ impl DetailedError for DBError {
             Self::InvalidApiKey => Cow::from("InvalidApiKey"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
             Self::UnknownPipelineName { .. } => Cow::from("UnknownPipelineName"),
-            Self::CannotUpdateRunningPipeline { .. } => Cow::from("CannotUpdateRunningPipeline"),
-            Self::CannotDeleteRunningPipeline { .. } => Cow::from("CannotDeleteRunningPipeline"),
+            Self::CannotUpdateNonShutdownPipeline { .. } => {
+                Cow::from("CannotUpdateNonShutdownPipeline")
+            }
+            Self::CannotDeleteNonShutdownPipeline { .. } => {
+                Cow::from("CannotDeleteNonShutdownPipeline")
+            }
             Self::CannotRenameNonExistingPipeline { .. } => {
                 Cow::from("CannotRenameNonExistingPipeline")
             }
@@ -433,6 +454,9 @@ impl DetailedError for DBError {
             }
             Self::InvalidDeploymentStatusTransition { .. } => {
                 Cow::from("InvalidDeploymentStatusTransition")
+            }
+            Self::IllegalPipelineStateTransition { .. } => {
+                Cow::from("IllegalPipelineStateTransition")
             }
         }
     }
@@ -467,8 +491,8 @@ impl ResponseError for DBError {
             Self::InvalidApiKey => StatusCode::UNAUTHORIZED,
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
             Self::UnknownPipelineName { .. } => StatusCode::NOT_FOUND,
-            Self::CannotUpdateRunningPipeline { .. } => StatusCode::BAD_REQUEST,
-            Self::CannotDeleteRunningPipeline { .. } => StatusCode::BAD_REQUEST,
+            Self::CannotUpdateNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
+            Self::CannotDeleteNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::CannotRenameNonExistingPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
             Self::InvalidConnectorTransport { .. } => StatusCode::BAD_REQUEST,
@@ -476,6 +500,7 @@ impl ResponseError for DBError {
             Self::ProgramFailedToCompile => StatusCode::BAD_REQUEST, // User trying to start a pipeline whose program failed to compile
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
             Self::InvalidDeploymentStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
+            Self::IllegalPipelineStateTransition { .. } => StatusCode::BAD_REQUEST, // Runner error
         }
     }
 

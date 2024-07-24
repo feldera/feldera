@@ -1,4 +1,3 @@
-use crate::config::TransportConfigVariant;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -245,10 +244,4 @@ pub struct DatagenInputConfig {
     /// Setting this to a fixed value will make the generator produce the same sequence of records
     /// every time the pipeline is run.
     pub seed: Option<u64>,
-}
-
-impl TransportConfigVariant for DatagenInputConfig {
-    fn name(&self) -> String {
-        "datagen".to_string()
-    }
 }

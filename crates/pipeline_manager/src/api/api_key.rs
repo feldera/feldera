@@ -62,7 +62,7 @@ pub(crate) struct ApiKeyNameQuery {
             , description = "Specified API key name does not exist."
             , body = ErrorResponse
             , examples(
-                ("Unknown API key name" = (value = json!(examples::unknown_api_key()))),
+                ("Unknown API key name" = (value = json!(examples::error_unknown_api_key()))),
             ),
         )
     ),
@@ -98,7 +98,7 @@ pub(crate) async fn list_api_keys(
             , description = "Specified API key name does not exist."
             , body = ErrorResponse
             , examples(
-                ("Unknown API key name" = (value = json!(examples::unknown_api_key()))),
+                ("Unknown API key name" = (value = json!(examples::error_unknown_api_key()))),
             ),
         )
     ),
@@ -130,7 +130,7 @@ pub(crate) async fn get_api_key(
             , description = "Specified API key name does not exist."
             , body = ErrorResponse
             , examples(
-                ("Unknown API key name" = (value = json!(examples::unknown_api_key()))),
+                ("Unknown API key name" = (value = json!(examples::error_unknown_api_key()))),
             ),
         )
     ),
@@ -166,7 +166,7 @@ pub(crate) async fn delete_api_key(
         (status = CONFLICT
             , description = "An api key with this name already exists."
             , body = ErrorResponse
-            , example = json!(examples::duplicate_name())),
+            , example = json!(examples::error_duplicate_name())),
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
