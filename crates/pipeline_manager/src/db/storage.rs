@@ -200,7 +200,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         deployment_config: PipelineConfig,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError>;
+    ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Initializing`.
     async fn transit_deployment_status_to_initializing(
@@ -208,35 +208,35 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         deployment_location: &str,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError>;
+    ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Running`.
     async fn transit_deployment_status_to_running(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError>;
+    ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Paused`.
     async fn transit_deployment_status_to_paused(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError>;
+    ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `ShuttingDown`.
     async fn transit_deployment_status_to_shutting_down(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError>;
+    ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Shutdown`.
     async fn transit_deployment_status_to_shutdown(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError>;
+    ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Failed`.
     async fn transit_deployment_status_to_failed(
@@ -244,7 +244,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         deployment_error: &ErrorResponse,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError>;
+    ) -> Result<(), DBError>;
 
     /// Retrieves a list of all pipeline ids across all tenants.
     async fn list_pipeline_ids_across_all_tenants(

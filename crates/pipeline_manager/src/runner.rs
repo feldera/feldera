@@ -1,14 +1,15 @@
-use crate::api::ManagerError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{PipelineId, PipelineStatus};
 use crate::db::types::tenant::TenantId;
+use crate::error::ManagerError;
 use actix_web::{
     body::BoxBody,
     http::{Method, StatusCode},
     web::Payload,
     HttpRequest, HttpResponse, HttpResponseBuilder, ResponseError,
 };
+use pipeline_types::config::PipelineConfigGenerationError;
 use pipeline_types::error::{DetailedError, ErrorResponse};
 use serde::Serialize;
 use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, sync::Arc, time::Duration};
@@ -17,12 +18,17 @@ use tokio::sync::Mutex;
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum RunnerError {
-    PipelineShutdown {
+    // Endpoints
+    PipelineNotRunningOrPaused {
         pipeline_id: PipelineId,
     },
     HttpForwardError {
         pipeline_id: PipelineId,
         error: String,
+    },
+    // Runner internal
+    PipelineConfigurationGenerationFailed {
+        error: PipelineConfigGenerationError,
     },
     PortFileParseError {
         pipeline_id: PipelineId,
@@ -52,13 +58,6 @@ pub enum RunnerError {
         // similar to `DBSPError::IO`.
         error: String,
     },
-    IllegalPipelineStateTransition {
-        pipeline_id: PipelineId,
-        error: String,
-        current_status: PipelineStatus,
-        desired_status: PipelineStatus,
-        requested_status: Option<PipelineStatus>,
-    },
     BinaryFetchError {
         pipeline_id: PipelineId,
         error: String,
@@ -68,8 +67,11 @@ pub enum RunnerError {
 impl DetailedError for RunnerError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
-            Self::PipelineShutdown { .. } => Cow::from("PipelineShutdown"),
+            Self::PipelineNotRunningOrPaused { .. } => Cow::from("PipelineNotRunningOrPaused"),
             Self::HttpForwardError { .. } => Cow::from("HttpForwardError"),
+            Self::PipelineConfigurationGenerationFailed { .. } => {
+                Cow::from("PipelineConfigurationGenerationFailed")
+            }
             Self::PortFileParseError { .. } => Cow::from("PortFileParseError"),
             Self::PipelineProvisioningTimeout { .. } => Cow::from("PipelineProvisioningTimeout"),
             Self::PipelineInitializationTimeout { .. } => {
@@ -78,9 +80,6 @@ impl DetailedError for RunnerError {
             Self::PipelineShutdownTimeout { .. } => Cow::from("PipelineShutdownTimeout"),
             Self::PipelineStartupError { .. } => Cow::from("PipelineStartupError"),
             Self::PipelineShutdownError { .. } => Cow::from("PipelineShutdownError"),
-            Self::IllegalPipelineStateTransition { .. } => {
-                Cow::from("IllegalPipelineStateTransition")
-            }
             Self::BinaryFetchError { .. } => Cow::from("BinaryFetchError"),
         }
     }
@@ -89,14 +88,20 @@ impl DetailedError for RunnerError {
 impl Display for RunnerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PipelineShutdown { pipeline_id } => {
-                write!(f, "Pipeline {pipeline_id} is not currently running.")
+            Self::PipelineNotRunningOrPaused { pipeline_id } => {
+                write!(
+                    f,
+                    "Pipeline {pipeline_id} is not currently running or paused."
+                )
             }
             Self::HttpForwardError { pipeline_id, error } => {
                 write!(
                     f,
                     "Error forwarding HTTP request to pipeline {pipeline_id}: {error}"
                 )
+            }
+            Self::PipelineConfigurationGenerationFailed { error } => {
+                write!(f, "Error generating pipeline configuration: {error}")
             }
             Self::PipelineProvisioningTimeout {
                 pipeline_id,
@@ -137,12 +142,6 @@ impl Display for RunnerError {
             Self::PipelineShutdownError { pipeline_id, error } => {
                 write!(f, "Failed to shutdown pipeline '{pipeline_id}': '{error}'")
             }
-            Self::IllegalPipelineStateTransition { error, .. } => {
-                write!(
-                    f,
-                    "Action is not applicable in the current state of the pipeline: {error}"
-                )
-            }
             Self::BinaryFetchError { pipeline_id, error } => {
                 write!(
                     f,
@@ -164,15 +163,15 @@ impl StdError for RunnerError {}
 impl ResponseError for RunnerError {
     fn status_code(&self) -> StatusCode {
         match self {
-            Self::PipelineShutdown { .. } => StatusCode::NOT_FOUND,
+            Self::PipelineNotRunningOrPaused { .. } => StatusCode::BAD_REQUEST,
             Self::HttpForwardError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineConfigurationGenerationFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PortFileParseError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineProvisioningTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineInitializationTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineShutdownTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineStartupError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineShutdownError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::IllegalPipelineStateTransition { .. } => StatusCode::BAD_REQUEST,
             Self::BinaryFetchError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -217,8 +216,8 @@ impl RunnerApi {
         let pipeline_id = pipeline.id;
 
         match pipeline.deployment_status {
-            PipelineStatus::Shutdown | PipelineStatus::Failed | PipelineStatus::Provisioning => {
-                Err(RunnerError::PipelineShutdown { pipeline_id })?
+            PipelineStatus::Running | PipelineStatus::Paused => {
+                Err(RunnerError::PipelineNotRunningOrPaused { pipeline_id })?
             }
             _ => {}
         }
@@ -303,8 +302,8 @@ impl RunnerApi {
         let pipeline_id = pipeline.id;
 
         match pipeline.deployment_status {
-            PipelineStatus::Shutdown | PipelineStatus::Failed | PipelineStatus::Provisioning => {
-                Err(RunnerError::PipelineShutdown { pipeline_id })?
+            PipelineStatus::Running | PipelineStatus::Paused => {
+                Err(RunnerError::PipelineNotRunningOrPaused { pipeline_id })?
             }
             _ => {}
         }

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::BTreeMap;
 use utoipa::ToSchema;
 
 #[cfg(feature = "testing")]
@@ -62,6 +63,8 @@ pub struct Relation {
     pub fields: Vec<Field>,
     #[serde(default)]
     pub materialized: bool,
+    #[serde(default)]
+    pub properties: BTreeMap<String, String>,
 }
 
 impl Relation {
@@ -71,15 +74,23 @@ impl Relation {
             case_sensitive: false,
             fields: Vec::new(),
             materialized: false,
+            properties: BTreeMap::new(),
         }
     }
 
-    pub fn new(name: &str, case_sensitive: bool, fields: Vec<Field>, materialized: bool) -> Self {
+    pub fn new(
+        name: &str,
+        case_sensitive: bool,
+        fields: Vec<Field>,
+        materialized: bool,
+        properties: BTreeMap<String, String>,
+    ) -> Self {
         Self {
             name: name.to_string(),
             case_sensitive,
             fields,
             materialized,
+            properties,
         }
     }
 

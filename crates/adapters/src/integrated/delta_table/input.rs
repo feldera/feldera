@@ -28,7 +28,7 @@ use deltalake::{datafusion, DeltaTable, DeltaTableBuilder, Path};
 use env_logger::builder;
 use futures_util::StreamExt;
 use log::{debug, error, info, trace};
-use pipeline_types::config::{InputEndpointConfig, TransportConfigVariant};
+use pipeline_types::config::InputEndpointConfig;
 use pipeline_types::format::json::JsonFlavor;
 use pipeline_types::program_schema::Relation;
 use pipeline_types::transport::delta_table::{DeltaTableIngestMode, DeltaTableReaderConfig};
