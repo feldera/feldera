@@ -1,4 +1,3 @@
-use crate::config::TransportConfigVariant;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
@@ -43,12 +42,6 @@ pub struct DeltaTableWriterConfig {
     /// * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
     #[serde(flatten)]
     pub object_store_config: HashMap<String, String>,
-}
-
-impl TransportConfigVariant for DeltaTableWriterConfig {
-    fn name(&self) -> String {
-        "delta_table_output".to_string()
-    }
 }
 
 /// Delta table read mode.
@@ -192,11 +185,5 @@ impl DeltaTableReaderConfig {
             &self.mode,
             DeltaTableIngestMode::SnapshotAndFollow | DeltaTableIngestMode::Follow
         )
-    }
-}
-
-impl TransportConfigVariant for DeltaTableReaderConfig {
-    fn name(&self) -> String {
-        "delta_table_input".to_string()
     }
 }

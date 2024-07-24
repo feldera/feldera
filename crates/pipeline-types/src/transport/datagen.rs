@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::num::NonZeroU32;
 
-use crate::config::TransportConfigVariant;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use utoipa::ToSchema;
@@ -271,10 +270,4 @@ pub struct DatagenInputConfig {
     ///   apart from setting a seed, `workers` also needs to remain unchanged.
     /// - The input will arrive in non-deterministic order if `workers > 1`.
     pub seed: Option<u64>,
-}
-
-impl TransportConfigVariant for DatagenInputConfig {
-    fn name(&self) -> String {
-        "datagen".to_string()
-    }
 }

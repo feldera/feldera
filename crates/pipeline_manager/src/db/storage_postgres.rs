@@ -491,10 +491,10 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         deployment_config: PipelineConfig,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError> {
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let pipeline = operations::pipeline::set_deployment_status(
+        operations::pipeline::set_deployment_status(
             &txn,
             tenant_id,
             pipeline_id,
@@ -505,7 +505,7 @@ impl Storage for StoragePostgres {
         )
         .await?;
         txn.commit().await?;
-        Ok(pipeline)
+        Ok(())
     }
 
     async fn transit_deployment_status_to_initializing(
@@ -513,10 +513,10 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         deployment_location: &str,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError> {
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let pipeline = operations::pipeline::set_deployment_status(
+        operations::pipeline::set_deployment_status(
             &txn,
             tenant_id,
             pipeline_id,
@@ -527,17 +527,17 @@ impl Storage for StoragePostgres {
         )
         .await?;
         txn.commit().await?;
-        Ok(pipeline)
+        Ok(())
     }
 
     async fn transit_deployment_status_to_running(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError> {
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let pipeline = operations::pipeline::set_deployment_status(
+        operations::pipeline::set_deployment_status(
             &txn,
             tenant_id,
             pipeline_id,
@@ -548,17 +548,17 @@ impl Storage for StoragePostgres {
         )
         .await?;
         txn.commit().await?;
-        Ok(pipeline)
+        Ok(())
     }
 
     async fn transit_deployment_status_to_paused(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError> {
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let pipeline = operations::pipeline::set_deployment_status(
+        operations::pipeline::set_deployment_status(
             &txn,
             tenant_id,
             pipeline_id,
@@ -569,17 +569,17 @@ impl Storage for StoragePostgres {
         )
         .await?;
         txn.commit().await?;
-        Ok(pipeline)
+        Ok(())
     }
 
     async fn transit_deployment_status_to_shutting_down(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError> {
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let pipeline = operations::pipeline::set_deployment_status(
+        operations::pipeline::set_deployment_status(
             &txn,
             tenant_id,
             pipeline_id,
@@ -590,17 +590,17 @@ impl Storage for StoragePostgres {
         )
         .await?;
         txn.commit().await?;
-        Ok(pipeline)
+        Ok(())
     }
 
     async fn transit_deployment_status_to_shutdown(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError> {
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let pipeline = operations::pipeline::set_deployment_status(
+        operations::pipeline::set_deployment_status(
             &txn,
             tenant_id,
             pipeline_id,
@@ -611,7 +611,7 @@ impl Storage for StoragePostgres {
         )
         .await?;
         txn.commit().await?;
-        Ok(pipeline)
+        Ok(())
     }
 
     async fn transit_deployment_status_to_failed(
@@ -619,10 +619,10 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         deployment_error: &ErrorResponse,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError> {
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let pipeline = operations::pipeline::set_deployment_status(
+        operations::pipeline::set_deployment_status(
             &txn,
             tenant_id,
             pipeline_id,
@@ -633,7 +633,7 @@ impl Storage for StoragePostgres {
         )
         .await?;
         txn.commit().await?;
-        Ok(pipeline)
+        Ok(())
     }
 
     async fn list_pipeline_ids_across_all_tenants(
