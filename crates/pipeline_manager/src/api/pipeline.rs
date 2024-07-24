@@ -16,7 +16,7 @@ use actix_web::{
 };
 use log::{debug, info};
 use pipeline_types::config::RuntimeConfig;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -37,7 +37,13 @@ pub struct ListPipelinesQueryParameters {
     code: bool,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+/// Patch (partially) update the pipeline.
+///
+/// Note that the patching only applies to the main fields, not subfields.
+/// For instance, it is not possible to update only the number of workers;
+/// it is required to again pass the whole runtime configuration with the
+/// change.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct PatchPipeline {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -46,9 +52,8 @@ pub struct PatchPipeline {
     pub program_config: Option<ProgramConfig>,
 }
 
-/// GET: retrieve list of pipelines.
+/// Retrieve the list of pipelines.
 /// Inclusion of program code is configured with by the `code` boolean query parameter.
-/// TODO: reference example?
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -56,7 +61,8 @@ pub struct PatchPipeline {
     responses(
         (status = OK
             , description = "List of pipelines retrieved successfully"
-            , body = [ExtendedPipelineDescr<Option<String>>])
+            , body = [ExtendedPipelineDescr<Option<String>>]
+            , example = json!(examples::list_extended_pipeline()))
     ),
     tag = "Pipelines"
 )]
@@ -104,7 +110,7 @@ pub(crate) async fn list_pipelines(
         .json(pipelines))
 }
 
-/// GET: retrieve a pipeline.
+/// Retrieve a pipeline.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -115,11 +121,11 @@ pub(crate) async fn list_pipelines(
         (status = OK
             , description = "Pipeline retrieved successfully"
             , body = ExtendedPipelineDescr<String>
-            , example = json!(examples::extended_pipeline())),
+            , example = json!(examples::extended_pipeline_1())),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_pipeline()))
+            , example = json!(examples::error_unknown_pipeline()))
     ),
     tag = "Pipelines"
 )]
@@ -145,20 +151,22 @@ pub(crate) async fn get_pipeline(
         .json(&pipeline))
 }
 
-/// POST: create a new pipeline.
+/// Create a new pipeline.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
-    request_body = PipelineDescr,
+    request_body(
+        content = PipelineDescr, example = json!(examples::pipeline_1())
+    ),
     responses(
         (status = CREATED
             , description = "Pipeline successfully created"
-            , body = ExtendedPipeline<String>
-            , example = json!(examples::extended_pipeline())),
+            , body = ExtendedPipelineDescr<String>
+            , example = json!(examples::extended_pipeline_1())),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_pipeline()))
+            , example = json!(examples::error_unknown_pipeline()))
     ),
     tag = "Pipelines"
 )]
@@ -185,7 +193,7 @@ pub(crate) async fn post_pipeline(
         .json(pipeline))
 }
 
-/// PUT: if it does not exist, create a new pipeline, otherwise update existing pipeline.
+/// Fully update a pipeline if it already exists, otherwise create a new pipeline.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -193,21 +201,25 @@ pub(crate) async fn post_pipeline(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     request_body(
-        content = PipelineDescr, example = json!(examples::pipeline())
+        content = PipelineDescr, example = json!(examples::pipeline_1())
     ),
     responses(
         (status = CREATED
             , description = "Pipeline successfully created"
-            , body = ExtendedPipeline<String>
-            , example = json!(examples::extended_pipeline())),
+            , body = ExtendedPipelineDescr<String>
+            , example = json!(examples::extended_pipeline_1())),
         (status = OK
             , description = "Pipeline successfully updated"
-            , body = ExtendedPipeline<String>
-            , example = json!(examples::extended_pipeline())),
+            , body = ExtendedPipelineDescr<String>
+            , example = json!(examples::extended_pipeline_1())),
         (status = CONFLICT
             , description = "Cannot rename pipeline as the name already exists"
             , body = ErrorResponse
-            , example = json!(examples::duplicate_name())),
+            , example = json!(examples::error_duplicate_name())),
+        (status = BAD_REQUEST
+            , description = "Pipeline is not shutdown"
+            , body = ErrorResponse
+            , example = json!(examples::error_cannot_update_non_shutdown_pipeline()))
     ),
     tag = "Pipelines"
 )]
@@ -250,23 +262,33 @@ async fn put_pipeline(
     }
 }
 
-/// PATCH: (partially) update existing pipeline.
+/// Partially update a pipeline.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
-    request_body = PatchPipeline,
+    request_body(
+        content = PatchPipeline, example = json!(examples::patch_pipeline())
+    ),
     responses(
         (status = OK
             , description = "Pipeline successfully updated"
-            , body = ExtendedPipeline<String>
-            , example = json!(examples::extended_pipeline())),
+            , body = ExtendedPipelineDescr<String>
+            , example = json!(examples::extended_pipeline_1())),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_pipeline()))
+            , example = json!(examples::error_unknown_pipeline())),
+        (status = CONFLICT
+            , description = "Cannot rename pipeline as the name already exists"
+            , body = ErrorResponse
+            , example = json!(examples::error_duplicate_name())),
+        (status = BAD_REQUEST
+            , description = "Pipeline is not shutdown"
+            , body = ErrorResponse
+            , example = json!(examples::error_cannot_update_non_shutdown_pipeline()))
     ),
     tag = "Pipelines"
 )]
@@ -306,7 +328,7 @@ pub(crate) async fn patch_pipeline(
         .json(pipeline))
 }
 
-/// DELETE: delete an existing pipeline.
+/// Delete a pipeline.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -319,11 +341,11 @@ pub(crate) async fn patch_pipeline(
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_pipeline())),
+            , example = json!(examples::error_unknown_pipeline())),
         (status = BAD_REQUEST
             , description = "Pipeline is not shutdown"
             , body = ErrorResponse
-            , example = json!(examples::pipeline_not_shutdown()))
+            , example = json!(examples::error_cannot_delete_non_shutdown_pipeline()))
     ),
     tag = "Pipelines"
 )]
@@ -359,10 +381,10 @@ fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
     }
 }
 
-/// Change the desired runtime state of the pipeline.
+/// Change the desired deployment state of the pipeline.
 ///
 /// The endpoint returns immediately after performing initial request validation
-/// (e.g., upon start that the program is compiled) and initiating the relevant
+/// (e.g., upon start checking the program is compiled) and initiating the relevant
 /// procedure (e.g., informing the runner or the already running pipeline).
 /// The state changes completely asynchronously. On error, the pipeline
 /// transitions to the `Failed` state. The user can monitor the current status
@@ -370,19 +392,15 @@ fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
 /// `GET /pipelines/{pipeline_name}` endpoint.
 ///
 /// The following values of the `action` argument are accepted:
-/// - `start`: Start the pipeline (state must be shutdown)
-/// - `pause`: Pause the pipeline (state must be either shutdown or running)
-/// - `resume`: Resume (unpause) the pipeline (state must be paused)
+/// - `start`: Start the pipeline
+/// - `pause`: Pause the pipeline
 /// - `shutdown`: Terminate the pipeline
-///
-/// More information:
-/// - State model in [`PipelineStatus`] documentation
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("action" = String, Path, description = "Pipeline action (one of: start, pause, resume, shutdown)")
+        ("action" = String, Path, description = "Pipeline action (one of: start, pause, shutdown)")
     ),
     responses(
         (status = ACCEPTED
@@ -390,15 +408,15 @@ fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_pipeline())),
+            , example = json!(examples::error_unknown_pipeline())),
         (status = BAD_REQUEST
             , description = "Unable to accept action"
             , body = ErrorResponse
             , examples(
-                ("Program not compiled" = (description = "Pipeline program has not (yet) been compiled", value = json!(examples::program_not_compiled()))),
-                ("Program has compilation errors" = (description = "Pipeline program compilation has errors", value = json!(examples::program_has_errors()))),
-                ("Illegal action" = (description = "Action is not applicable in the current state", value = json!(examples::illegal_pipeline_action()))),
-                ("Unknown action" = (description = "Invalid action specified", value = json!(examples::invalid_pipeline_action()))),
+                ("Program not (yet) compiled" = (description = "Program has not (yet) been compiled", value = json!(examples::error_program_not_yet_compiled()))),
+                ("Program failed compilation" = (description = "Program failed compilation", value = json!(examples::error_program_failed_compilation()))),
+                ("Illegal action" = (description = "Action is not applicable in the current state", value = json!(examples::error_illegal_pipeline_action()))),
+                ("Invalid action" = (description = "Invalid action specified", value = json!(examples::error_invalid_pipeline_action()))),
             )
         ),
     ),
@@ -466,7 +484,7 @@ pub(crate) async fn post_pipeline_action(
         (status = NOT_FOUND
             , description = "Specified pipeline id does not exist."
             , body = ErrorResponse
-            , example = json!(examples::unknown_pipeline())),
+            , example = json!(examples::error_unknown_pipeline())),
         (status = NOT_FOUND
                 , description = "Specified endpoint does not exist."
                 , body = ErrorResponse),
@@ -507,7 +525,7 @@ pub(crate) async fn input_endpoint_action(
     Ok(HttpResponse::Accepted().finish())
 }
 
-/// GET: pipeline statistics (e.g., metrics, performance counters).
+/// Retrieve pipeline statistics (e.g., metrics, performance counters).
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -515,16 +533,19 @@ pub(crate) async fn input_endpoint_action(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     responses(
-        // TODO: Implement `ToSchema` for `ControllerStatus`, which is the
-        // actual type returned by this endpoint.
+        // TODO: implement `ToSchema` for `ControllerStatus`, which is the
+        //       actual type returned by this endpoint and move it to pipeline-types.
         (status = OK
             , description = "Pipeline metrics retrieved successfully."
             , body = Object),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_pipeline()))
-        // TODO: response when the pipeline is not running
+            , example = json!(examples::error_unknown_pipeline())),
+        (status = BAD_REQUEST
+            , description = "Pipeline is not running or paused"
+            , body = ErrorResponse
+            , example = json!(examples::error_pipeline_not_running_or_paused()))
     ),
     tag = "Pipelines"
 )]
@@ -545,7 +566,7 @@ pub(crate) async fn get_pipeline_stats(
         .await
 }
 
-/// POST: initiate a profile dump on a running pipeline.
+/// Retrieve the circuit performance profile of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -553,27 +574,29 @@ pub(crate) async fn get_pipeline_stats(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     responses(
-        // TODO: real return type
-        (status = OK // TODO: accepted?
+        (status = OK
             , description = "Obtains a circuit performance profile."
             , content_type = "application/zip"
             , body = Object),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_pipeline()))
-        // TODO: response when the pipeline is not running
+            , example = json!(examples::error_unknown_pipeline())),
+        (status = BAD_REQUEST
+            , description = "Pipeline is not running or paused"
+            , body = ErrorResponse
+            , example = json!(examples::error_pipeline_not_running_or_paused()))
     ),
     tag = "Pipelines"
 )]
-#[post("/pipelines/{pipeline_name}/dump_profile")]
-pub(crate) async fn post_dump_profile(
+#[get("/pipelines/{pipeline_name}/circuit_profile")]
+pub(crate) async fn get_pipeline_circuit_profile(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     debug!(
-        "API: tenant {} requests to POST dump profile {request:?}",
+        "API: tenant {} requests to GET circuit profile {request:?}",
         *tenant_id
     );
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
@@ -583,7 +606,7 @@ pub(crate) async fn post_dump_profile(
         .await
 }
 
-/// GET: retrieve the dumped profile of a running pipeline.
+/// Retrieve the heap profile of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -598,12 +621,16 @@ pub(crate) async fn post_dump_profile(
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
-            , example = json!(examples::unknown_pipeline()))
+            , example = json!(examples::error_unknown_pipeline())),
+        (status = BAD_REQUEST
+            , description = "Pipeline is not running or paused"
+            , body = ErrorResponse
+            , example = json!(examples::error_pipeline_not_running_or_paused()))
     ),
     tag = "Pipelines"
 )]
-#[get("/pipelines/{pipeline_name}/profile")]
-pub(crate) async fn get_profile(
+#[get("/pipelines/{pipeline_name}/heap_profile")]
+pub(crate) async fn get_pipeline_heap_profile(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,

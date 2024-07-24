@@ -5,5 +5,4 @@ pub mod program_schema;
 pub mod query;
 pub mod secret_ref;
 pub mod serde_with_context;
-pub mod service;
 pub mod transport;

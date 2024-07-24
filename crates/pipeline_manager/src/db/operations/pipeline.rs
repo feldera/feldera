@@ -10,13 +10,9 @@ use crate::db::types::pipeline::{
 use crate::db::types::program::{ProgramConfig, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use deadpool_postgres::Transaction;
-use pipeline_types::config::{
-    InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
-};
+use pipeline_types::config::{PipelineConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
 use pipeline_types::program_schema::ProgramSchema;
-use std::borrow::Cow;
-use std::collections::BTreeMap;
 use tokio_postgres::Row;
 use uuid::Uuid;
 
@@ -55,27 +51,6 @@ fn row_to_extended_pipeline_descriptor(
         deployment_error: deployment_error_str.map(|s| ErrorResponse::from_yaml(&s)),
         deployment_config: deployment_config_str.map(|s| PipelineConfig::from_yaml(&s)),
         deployment_location: row.get(20),
-    })
-}
-
-/// Generates the pipeline configuration derived from the runtime configuration and program schema.
-pub fn generate_pipeline_config(
-    pipeline_id: PipelineId,
-    runtime_config: &RuntimeConfig,
-    _program_schema: &ProgramSchema,
-) -> Result<PipelineConfig, DBError> {
-    // Input and output connectors
-    let inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
-    // TODO: populate inputs based on program_schema
-    let outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig> = BTreeMap::new();
-    // TODO: populate outputs based on program_schema
-
-    Ok(PipelineConfig {
-        name: Some(format!("pipeline-{pipeline_id}")),
-        global: runtime_config.clone(),
-        storage_config: None, // Set by the runner based on global field
-        inputs,
-        outputs,
     })
 }
 
@@ -214,7 +189,7 @@ pub(crate) async fn update_pipeline(
 
     // The pipeline must be fully shutdown to be updated
     if !current.is_fully_shutdown() {
-        return Err(DBError::CannotUpdateRunningPipeline);
+        return Err(DBError::CannotUpdateNonShutdownPipeline);
     }
 
     // If nothing changes in any of the core fields, return the current version
@@ -313,7 +288,7 @@ pub(crate) async fn delete_pipeline(
 ) -> Result<PipelineId, DBError> {
     let current = get_pipeline(txn, tenant_id, name).await?;
     if !current.is_fully_shutdown() {
-        return Err(DBError::CannotDeleteRunningPipeline);
+        return Err(DBError::CannotDeleteNonShutdownPipeline);
     }
 
     let stmt = txn
@@ -343,7 +318,7 @@ pub(crate) async fn set_program_status(
 
     // The pipeline must be fully shutdown to be have program status updated
     if !current.is_fully_shutdown() {
-        return Err(DBError::CannotUpdateRunningPipeline);
+        return Err(DBError::CannotUpdateNonShutdownPipeline);
     }
 
     // Only if the program whose status is being transitioned is the same one can it be updated
@@ -436,31 +411,63 @@ pub(crate) async fn set_desired_deployment_status(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_name: &str,
-    desired_status: PipelineStatus,
+    new_desired_status: PipelineStatus,
 ) -> Result<(), DBError> {
     assert!(
-        desired_status == PipelineStatus::Running
-            || desired_status == PipelineStatus::Paused
-            || desired_status == PipelineStatus::Shutdown
+        new_desired_status == PipelineStatus::Running
+            || new_desired_status == PipelineStatus::Paused
+            || new_desired_status == PipelineStatus::Shutdown
     );
 
     // The pipeline must be fully compiled to change deployment desired status
     let current = get_pipeline(txn, tenant_id, pipeline_name).await?;
 
-    // Program must not have failed to compiled
-    if current.program_status.has_failed_to_compile() {
-        return Err(DBError::ProgramFailedToCompile);
+    // Check that the desired status can be set
+    if new_desired_status == PipelineStatus::Paused || new_desired_status == PipelineStatus::Running
+    {
+        // Refuse to restart a pipeline that has not completed shutting down
+        if current.deployment_desired_status == PipelineStatus::Shutdown
+            && current.deployment_status != PipelineStatus::Shutdown
+        {
+            Err(DBError::IllegalPipelineStateTransition {
+                hint: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting the pipeline again.".to_string(),
+                status: current.deployment_status,
+                desired_status: current.deployment_desired_status,
+                requested_desired_status: new_desired_status,
+            })?;
+        };
+
+        // Refuse to restart a pipeline which is failed or shutting down until it's in the shutdown state
+        if current.deployment_desired_status != PipelineStatus::Shutdown
+            && (current.deployment_status == PipelineStatus::ShuttingDown
+                || current.deployment_status == PipelineStatus::Failed)
+        {
+            Err(DBError::IllegalPipelineStateTransition {
+                hint: "Cannot restart a pipeline which is failed or shutting down. If it is failed, clear the error state first by invoking the '/shutdown' endpoint.".to_string(),
+                status: current.deployment_status,
+                desired_status: current.deployment_desired_status,
+                requested_desired_status: new_desired_status,
+            })?;
+        }
     }
 
-    // Program must be fully compiled (and not still ongoing)
-    // Checked after compilation failure check, to give a more insightful error message.
-    if !current.program_status.is_fully_compiled() {
-        return Err(DBError::ProgramNotYetCompiled);
-    }
+    // The program must be fully compiled for any desired status besides shutdown
+    if new_desired_status != PipelineStatus::Shutdown {
+        // Program must not have failed to compiled
+        if current.program_status.has_failed_to_compile() {
+            return Err(DBError::ProgramFailedToCompile);
+        }
 
-    // If fully compiled, the following assertions must be upheld
-    assert!(current.program_schema.is_some());
-    assert!(current.program_binary_url.is_some());
+        // Program must be fully compiled (and not still ongoing)
+        // Checked after compilation failure check, to give a more insightful error message.
+        if !current.program_status.is_fully_compiled() {
+            return Err(DBError::ProgramNotYetCompiled);
+        }
+
+        // If fully compiled, the following assertions must be upheld
+        assert!(current.program_schema.is_some());
+        assert!(current.program_binary_url.is_some());
+    }
 
     let stmt = txn
         .prepare_cached(
@@ -472,7 +479,7 @@ pub(crate) async fn set_desired_deployment_status(
     let modified_rows = txn
         .execute(
             &stmt,
-            &[&desired_status.to_string(), &tenant_id.0, &current.id.0],
+            &[&new_desired_status.to_string(), &tenant_id.0, &current.id.0],
         )
         .await?;
     if modified_rows > 0 {
@@ -493,7 +500,7 @@ pub(crate) async fn set_deployment_status(
     new_deployment_error: Option<ErrorResponse>,
     new_deployment_config: Option<PipelineConfig>,
     new_deployment_location: Option<String>,
-) -> Result<ExtendedPipelineDescr<String>, DBError> {
+) -> Result<(), DBError> {
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
 
     // The pipeline must be fully compiled to change deployment status
@@ -519,6 +526,8 @@ pub(crate) async fn set_deployment_status(
             | (PipelineStatus::Paused, PipelineStatus::Failed)
             | (PipelineStatus::ShuttingDown, PipelineStatus::Shutdown)
             | (PipelineStatus::ShuttingDown, PipelineStatus::Failed)
+            | (PipelineStatus::Shutdown, PipelineStatus::Failed)
+            | (PipelineStatus::Failed, PipelineStatus::Shutdown)
     );
     if !valid_transition {
         return Err(DBError::InvalidDeploymentStatusTransition {
@@ -532,13 +541,20 @@ pub(crate) async fn set_deployment_status(
 
     // Deployment configuration is set when becoming...
     // - Failed: a value
+    // - Shutdown: NULL
     // - Otherwise: current value
     let final_deployment_error = if deployment_status == PipelineStatus::Failed {
         assert!(new_deployment_error.is_some());
         new_deployment_error
+    } else if deployment_status == PipelineStatus::Shutdown {
+        assert!(new_deployment_error.is_none());
+        None
     } else {
         assert!(new_deployment_error.is_none());
-        assert!(current.deployment_error.is_none());
+        assert!(
+            current.deployment_status == PipelineStatus::Failed
+                || current.deployment_error.is_none()
+        );
         current.deployment_error
     };
 
@@ -595,7 +611,7 @@ pub(crate) async fn set_deployment_status(
         )
         .await?;
     if rows_affected > 0 {
-        get_pipeline_by_id(txn, tenant_id, pipeline_id).await // TODO: no longer needed?
+        Ok(())
     } else {
         Err(DBError::UnknownPipeline { pipeline_id })
     }

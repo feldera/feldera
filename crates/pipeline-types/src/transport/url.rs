@@ -1,4 +1,3 @@
-use crate::config::TransportConfigVariant;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -22,10 +21,4 @@ pub struct UrlInputConfig {
 
 const fn default_pause_timeout() -> u32 {
     60
-}
-
-impl TransportConfigVariant for UrlInputConfig {
-    fn name(&self) -> String {
-        "url_input".to_string()
-    }
 }

@@ -1,4 +1,3 @@
-use crate::config::TransportConfigVariant;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -57,10 +56,4 @@ pub enum ConsumeStrategy {
     /// Write the entire object at once. Appropriate for formats like Parquet
     /// that cannot be streamed.
     Object,
-}
-
-impl TransportConfigVariant for S3InputConfig {
-    fn name(&self) -> String {
-        "s3_input".to_string()
-    }
 }
