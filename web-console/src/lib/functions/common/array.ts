@@ -99,12 +99,24 @@ export const intersperse = <T>(arr: T[], separator: T | ((i: number) => T)) => {
   return Array.from({ length: Math.max(0, arr.length * 2 - 1) }, (_, i) => (i % 2 ? getSeparator(i) : arr[i >> 1]))
 }
 
-export const groupBy = <T, K extends keyof any>(list: T[], getKey: (item: T) => K) => {
+const compare = <T extends string | number>(a: T, b: T) =>
+  typeof a === 'string'
+    ? a.localeCompare(b as string)
+    : typeof a === 'number'
+      ? a - (b as number)
+      : (() => {
+          throw new Error('Cannot compare unsupported types')
+        })()
+
+/**
+ * The groups are ordered by associated key. Order of items in a group is arbitrary
+ */
+export const groupBy = <T, K extends string | number>(list: T[], getKey: (item: T) => K) => {
   if (!list.length) {
     return []
   }
   const items = list.map(item => [getKey(item), item] as [K, T])
-  items.sort()
+  items.sort((a, b) => compare(a[0], b[0]))
   let lastKeyIndex = 0
   const groups = [] as [K, T[]][]
   while (lastKeyIndex < list.length) {

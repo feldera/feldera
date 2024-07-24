@@ -122,3 +122,14 @@ python3 run.py --api-url http://localhost:8080
 <br/>
 
 Now you can see the prepared demos on the Pipeline Management page of the Web Console.
+
+## Run benchmarks
+
+You can run bundled benchmarks in devcontainer.
+
+#### NEXMark benchmark
+Example running one of nexmark queries:
+```bash
+cd benchmark
+./run-nexmark.sh -L sql --query 9 --partitions 1 --events 10M --kafka-broker redpanda:9092
+```
