@@ -12,6 +12,7 @@ if ! cores=$(nproc 2>/dev/null) || test $cores -gt 16; then
     cores=16
 fi
 run=:
+storage=false
 parse=false
 
 # Feldera SQL options.
@@ -113,6 +114,9 @@ do
 	    ;;
 	--partitions)
 	    nextarg=partitions
+	    ;;
+	--storage)
+	    storage=:
 	    ;;
 	--project=*)
 	    project=${arg#--project=}
@@ -508,6 +512,7 @@ case $runner:$language in
 	    --poller-threads 10 \
 	    --input-topic-suffix="-$partitions-$events" \
 	    --csv results.csv \
+	    $(if $storage; then printf "%s" --storage; fi) \
 	    --query $(if test $query = all; then echo all; else echo q$query; fi)
 	;;
 
