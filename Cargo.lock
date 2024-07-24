@@ -7028,6 +7028,7 @@ dependencies = [
  "serde_yaml",
  "thiserror",
  "utoipa",
+ "uuid",
 ]
 
 [[package]]

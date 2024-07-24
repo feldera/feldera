@@ -1,7 +1,7 @@
-use crate::api::ManagerError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineStatus;
+use crate::error::ManagerError;
 use crate::runner::RunnerApi;
 use ::metrics::{describe_histogram, Unit};
 use actix_web::{

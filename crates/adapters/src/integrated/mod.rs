@@ -5,9 +5,7 @@
 
 use crate::controller::{ControllerInner, EndpointId};
 use crate::{ControllerError, Encoder, OutputEndpoint, TransportInputEndpoint};
-use pipeline_types::config::{
-    InputEndpointConfig, OutputEndpointConfig, TransportConfig, TransportConfigVariant,
-};
+use pipeline_types::config::{InputEndpointConfig, OutputEndpointConfig, TransportConfig};
 use pipeline_types::program_schema::Relation;
 use std::sync::Weak;
 

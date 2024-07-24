@@ -23,9 +23,9 @@ mod http_io;
 mod pipeline;
 
 use crate::auth::JwkCache;
-pub(crate) use crate::config::ApiServerConfig;
+use crate::config::ApiServerConfig;
 use crate::db::storage_postgres::StoragePostgres;
-pub use crate::error::ManagerError;
+use crate::error::ManagerError;
 use crate::probe::Probe;
 use crate::runner::RunnerApi;
 use actix_web::dev::Service;
@@ -53,33 +53,33 @@ use utoipa_swagger_ui::SwaggerUi;
     info(
         title = "Feldera API",
         description = r"
-With Feldera, users create data pipelines out of SQL programs and data connectors.
-A SQL program comprises tables and views.
-Connectors feed data to input tables in a program or receive outputs computed by views.
+With Feldera, users create data pipelines out of SQL programs.
+A SQL program comprises tables and views, and includes as well the definition of
+input and output connectors for each respectively. A connector defines a data
+source or data sink to feed input data into tables or receive output data
+computed by the views respectively.
 
-This API allows users to create and manage pipelines.
+## Pipeline
 
-* *Pipeline*.  A pipeline is a running instance of a program and
-some attached connectors. A client can create multiple pipelines that make use of
-the same program and connectors. Every pipeline has a unique name and identifier.
-Deploying a pipeline instantiates the pipeline with the then latest version of
-the referenced program and connectors. This allows the API to accumulate edits
-to programs and connectors before use in a pipeline.
+The API is centered around the **pipeline**, which most importantly consists
+out of the SQL program, but also has accompanying metadata and configuration parameters
+(e.g., compilation profile, number of workers, etc.).
 
-# Concurrency
+* A pipeline is identified and referred to by a user-provided unique name.
+* The pipeline program is asynchronously compiled when the pipeline is first created or
+  its program code or configuration is updated.
+* Running the pipeline (*deployment*) is only possible once the program is compiled
+* A pipeline cannot be updated while it is running
 
-All programs have an associated *version*. This is done to prevent
-race conditions due to multiple users accessing the same
-program concurrently.  An example is user 1 modifying the program,
-while user 2 is starting a pipeline for the same program. It would be confusing
-if the pipeline could end up running the old or the new version.
+## Concurrency
 
-A version is a monotonically increasing number, associated with each
-program and pipeline. Every request to compile the program or start a
-pipeline must include the program id and version number. If the version number
-isn't equal to the current version in the database, this means that the
-last version of the program observed by the client is outdated, so the
-request is rejected."
+Both the pipeline and its program have an associated *version*.
+A version is a monotonically increasing number.
+Anytime the core fields (name, description, runtime_config, program_code, program_config) are modified,
+the pipeline version is incremented.
+Anytime the program core fields (program_code, program_config) are modified,
+the program version is incremented.
+The program version is used internally by the compiler to know when to recompile."
     ),
     paths(
         // Regular pipeline endpoints
@@ -93,8 +93,8 @@ request is rejected."
         // Special pipeline endpoints
         pipeline::post_pipeline_action,
         pipeline::get_pipeline_stats,
-        pipeline::post_dump_profile,
-        pipeline::get_profile,
+        pipeline::get_pipeline_circuit_profile,
+        pipeline::get_pipeline_heap_profile,
 
         // HTTP input/output
         http_io::http_input,
@@ -145,6 +145,25 @@ request is rejected."
         crate::demo::Demo,
 
         // From the pipeline-types crate
+        pipeline_types::config::PipelineConfig,
+        pipeline_types::config::StorageConfig,
+        pipeline_types::config::StorageCacheConfig,
+        pipeline_types::config::RuntimeConfig,
+        pipeline_types::config::InputEndpointConfig,
+        pipeline_types::config::ConnectorConfig,
+        pipeline_types::config::OutputBufferConfig,
+        pipeline_types::config::OutputEndpointConfig,
+        pipeline_types::config::TransportConfig,
+        pipeline_types::config::FormatConfig,
+        pipeline_types::config::ResourceConfig,
+        pipeline_types::transport::file::FileInputConfig,
+        pipeline_types::transport::file::FileOutputConfig,
+        pipeline_types::transport::url::UrlInputConfig,
+        pipeline_types::transport::kafka::KafkaInputConfig,
+        pipeline_types::transport::kafka::KafkaOutputConfig,
+        pipeline_types::transport::s3::S3InputConfig,
+        pipeline_types::transport::delta_table::DeltaTableReaderConfig,
+        pipeline_types::transport::delta_table::DeltaTableWriterConfig,
         pipeline_types::program_schema::ProgramSchema,
         pipeline_types::program_schema::Relation,
         pipeline_types::program_schema::SqlType,
@@ -204,8 +223,8 @@ fn api_scope() -> Scope {
         // Special pipeline endpoints
         .service(pipeline::post_pipeline_action)
         .service(pipeline::get_pipeline_stats)
-        .service(pipeline::post_dump_profile)
-        .service(pipeline::get_profile)
+        .service(pipeline::get_pipeline_circuit_profile)
+        .service(pipeline::get_pipeline_heap_profile)
         // API keys endpoints
         .service(api_key::create_api_key)
         .service(api_key::list_api_keys)

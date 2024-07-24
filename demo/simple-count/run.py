@@ -16,14 +16,13 @@ def main():
     # Command-line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
-    api_url = parser.parse_args().api_url
+    parser.add_argument("--kafka", default="redpanda:9092", required=True, help="Kafka bootstrap servers")
+    args = parser.parse_args()
+    api_url = args.api_url
 
     # Hostname and port to reach the Kafka server
-    script_to_kafka_server = "redpanda:9092"
-    pipeline_to_kafka_server = "redpanda:9092"
-
-    # Test connectivity by fetching the existing programs
-    requests.get(f"{api_url}/v0/programs").raise_for_status()
+    script_to_kafka_server = args.kafka
+    pipeline_to_kafka_server = args.kafka
 
     # (Re-)create topics simple_count_input and simple_count_output
     print("(Re-)creating topics...")
@@ -54,125 +53,76 @@ def main():
         producer.send("simple_count_input", value={"insert": {"id": i}})
     print("Input topic contains data")
 
-    # Create a service
-    print("Creating service simple-count-kafka-service...")
-    requests.put(f"{api_url}/v0/services/simple-count-kafka-service", json={
-        "description": "Kafka service for the simple-count demo",
-        "config": {
-            "kafka": {
-                "bootstrap_servers": [pipeline_to_kafka_server],
-                "options": {}
-            }
-        }
-    }).raise_for_status()
-    print("Service created")
+    # Test connectivity by fetching the existing pipelines
+    print("Checking connectivity by listing pipelines...")
+    response = requests.get(f"{api_url}/v0/pipelines?code=false")
+    if response.ok:
+        print("SUCCESS: can reach the API")
+    else:
+        print("FAILURE: could not reach API")
+        exit(1)
 
-    # Create program
-    print("Creating program...")
-    program_name = "demo-simple-count-program"
-    program_sql = open(EXAMPLE_SQL).read()
-    response = requests.put(f"{api_url}/v0/programs/{program_name}", json={
-        "description": "",
-        "code": program_sql
-    })
-    response.raise_for_status()
-    program_version = response.json()["version"]
-    print("Program created")
+    # Pipeline name
+    pipeline_name = "simple-count"
 
-    # Connectors
-    print("Creating connectors...")
-    connectors = []
-    for (connector_name, stream, topic_or_topics, is_input) in [
-        ("simple-count-example-input", 'example',  ["simple_count_input"], True),
-        ("simple-count-example-output", 'example_count', "simple_count_output", False),
-    ]:
-        if is_input:
-            response = requests.put(f"{api_url}/v0/connectors/{connector_name}", json={
-                "description": "",
-                "config": {
-                    "transport": {
-                        "name": "kafka_input",
-                        "config": {
-                            "topics": topic_or_topics,
-                            "kafka_service": "simple-count-kafka-service",
-                            "auto.offset.reset": "earliest",
-                        }
-                    },
-                    "format": {
-                        "name": "json",
-                        "config": {
-                            "update_format": "insert_delete",
-                            "array": False
-                        }
-                    }
-                }
-            })
-            if not response.ok:
-                print(response.content)
-                response.raise_for_status()
-        else:
-            response = requests.put(f"{api_url}/v0/connectors/{connector_name}", json={
-                "description": "",
-                "config": {
-                    "transport": {
-                        "name": "kafka_output",
-                        "config": {
-                            "topic": topic_or_topics,
-                            "kafka_service": "simple-count-kafka-service",
-                        }
-                    },
-                    "format": {
-                        "name": "json",
-                        "config": {
-                            "update_format": "insert_delete",
-                            "array": True
-                        }
-                    }
-                }
-            })
-            if not response.ok:
-                print(response.content)
-                response.raise_for_status()
-        connectors.append({
-            "connector_name": connector_name,
-            "is_input": is_input,
-            "name": connector_name,
-            "relation_name": stream
-        })
-    print("Connectors created")
+    # Shut down the pipeline if it already exists such that it can be edited
+    print("Shutting down the pipeline...")
+    if requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").ok:
+        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
+        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["deployment_status"] != "Shutdown":
+            time.sleep(1)
 
     # Create pipeline
     print("Creating pipeline...")
-    pipeline_name = "demo-simple-count-pipeline"
-    requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
-        "description": "",
-        "config": {"workers": 8},
-        "program_name": program_name,
-        "connectors": connectors,
-    }).raise_for_status()
-    print("Pipeline created")
+    program_sql = open(EXAMPLE_SQL).read().replace("[REPLACE-BOOTSTRAP-SERVERS]", pipeline_to_kafka_server)
+    response = requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
+        "name": pipeline_name,
+        "description": "Description of the simple-count pipeline",
+        "runtime_config": {},
+        "program_code": program_sql,
+        "program_config": {}
+    })
+    if response.ok:
+        print("SUCCESS: created pipeline")
+        print(json.dumps(json.loads(response.content.decode("utf-8")), indent=4))
+    else:
+        print("FAILURE: could not create pipeline")
+        print(json.dumps(json.loads(response.content.decode("utf-8")), indent=4))
+        exit(1)
 
-    # Compile program
-    print(f"Compiling program {program_name} (version: {program_version})...")
+    # Wait for pipeline program compilation
+    check_interval_s = 2  # First is after 2s, then every 5s
     while True:
-        status = requests.get(f"{api_url}/v0/programs/{program_name}").json()["status"]
-        print(f"Program status: {status}")
-        if status == "Success":
-            break
-        elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
-            raise RuntimeError(f"Failed program compilation with status {status}")
-        time.sleep(5)
-    print("Program compiled")
+        response = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}")
 
-    # Start pipeline
-    print("(Re)starting pipeline...")
-    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
-    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Shutdown":
-        time.sleep(1)
+        if response.ok:
+            pipeline = json.loads(response.content.decode("utf-8"))
+            print("Program status: %s" % pipeline["program_status"])
+            if pipeline["program_status"] == "Success":
+                print("SUCCESS: pipeline program is compiled")
+                break
+            time.sleep(check_interval_s)
+            check_interval_s = 5
+        else:
+            print("FAILURE: could not check pipeline")
+            print(json.dumps(json.loads(response.content.decode("utf-8")), indent=4))
+            exit(1)
+
+    # (Re)start the pipeline
+    print("Starting pipeline...")
     requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start").raise_for_status()
-    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Running":
+    response = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}")
+    deployment_status = response.json()["deployment_status"]
+    while deployment_status != "Running":
+        print("Deployment status: %s" % deployment_status)
+        if deployment_status == "Failed":
+            print("FAILED: deployment status is Failed")
+            print(json.dumps(json.loads(response.content.decode("utf-8")), indent=4))
+            exit(1)
+        response = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}")
+        deployment_status = response.json()["deployment_status"]
         time.sleep(1)
-    print("Pipeline (re)started")
+    print("Pipeline started")
 
     # Consume rows from the output topic
     print("Consuming rows from output topic...")

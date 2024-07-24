@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Feldera API",
-    "description": "\nWith Feldera, users create data pipelines out of SQL programs and data connectors.\nA SQL program comprises tables and views.\nConnectors feed data to input tables in a program or receive outputs computed by views.\n\nThis API allows users to create and manage pipelines.\n\n* *Pipeline*.  A pipeline is a running instance of a program and\nsome attached connectors. A client can create multiple pipelines that make use of\nthe same program and connectors. Every pipeline has a unique name and identifier.\nDeploying a pipeline instantiates the pipeline with the then latest version of\nthe referenced program and connectors. This allows the API to accumulate edits\nto programs and connectors before use in a pipeline.\n\n# Concurrency\n\nAll programs have an associated *version*. This is done to prevent\nrace conditions due to multiple users accessing the same\nprogram concurrently.  An example is user 1 modifying the program,\nwhile user 2 is starting a pipeline for the same program. It would be confusing\nif the pipeline could end up running the old or the new version.\n\nA version is a monotonically increasing number, associated with each\nprogram and pipeline. Every request to compile the program or start a\npipeline must include the program id and version number. If the version number\nisn't equal to the current version in the database, this means that the\nlast version of the program observed by the client is outdated, so the\nrequest is rejected.",
+    "description": "\nWith Feldera, users create data pipelines out of SQL programs.\nA SQL program comprises tables and views, and includes as well the definition of\ninput and output connectors for each respectively. A connector defines a data\nsource or data sink to feed input data into tables or receive output data\ncomputed by the views respectively.\n\n## Pipeline\n\nThe API is centered around the **pipeline**, which most importantly consists\nout of the SQL program, but also has accompanying metadata and configuration parameters\n(e.g., compilation profile, number of workers, etc.).\n\n* A pipeline is identified and referred to by a user-provided unique name.\n* The pipeline program is asynchronously compiled when the pipeline is first created or\n  its program code or configuration is updated.\n* Running the pipeline (*deployment*) is only possible once the program is compiled\n* A pipeline cannot be updated while it is running\n\n## Concurrency\n\nBoth the pipeline and its program have an associated *version*.\nA version is a monotonically increasing number.\nAnytime the core fields (name, description, runtime_config, program_code, program_config) are modified,\nthe pipeline version is incremented.\nAnytime the program core fields (program_code, program_config) are modified,\nthe program version is incremented.\nThe program version is used internally by the compiler to know when to recompile.",
     "license": {
       "name": "MIT OR Apache-2.0"
     },
@@ -303,8 +303,8 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "GET: retrieve list of pipelines.",
-        "description": "Inclusion of program code is configured with by the `code` boolean query parameter.\nTODO: reference example?",
+        "summary": "Retrieve the list of pipelines.",
+        "description": "Inclusion of program code is configured with by the `code` boolean query parameter.",
         "operationId": "list_pipelines",
         "parameters": [
           {
@@ -327,7 +327,89 @@
                   "items": {
                     "$ref": "#/components/schemas/ExtendedPipelineDescr"
                   }
-                }
+                },
+                "example": [
+                  {
+                    "created_at": "1970-01-01T00:00:00Z",
+                    "deployment_config": null,
+                    "deployment_desired_status": "Shutdown",
+                    "deployment_error": null,
+                    "deployment_location": null,
+                    "deployment_status": "Shutdown",
+                    "deployment_status_since": "1970-01-01T00:00:00Z",
+                    "description": "Description of the pipeline example1",
+                    "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                    "name": "example1",
+                    "program_binary_url": null,
+                    "program_code": "CREATE TABLE table1 ( col1 INT );",
+                    "program_config": {
+                      "profile": "optimized"
+                    },
+                    "program_schema": null,
+                    "program_status": "Pending",
+                    "program_status_since": "1970-01-01T00:00:00Z",
+                    "program_version": 2,
+                    "runtime_config": {
+                      "cpu_profiler": false,
+                      "max_buffering_delay_usecs": 0,
+                      "min_batch_size_records": 0,
+                      "min_storage_bytes": null,
+                      "resources": {
+                        "cpu_cores_max": null,
+                        "cpu_cores_min": null,
+                        "memory_mb_max": null,
+                        "memory_mb_min": null,
+                        "storage_class": null,
+                        "storage_mb_max": null
+                      },
+                      "storage": false,
+                      "tracing": false,
+                      "tracing_endpoint_jaeger": "",
+                      "workers": 16
+                    },
+                    "version": 4
+                  },
+                  {
+                    "created_at": "1970-01-01T00:00:00Z",
+                    "deployment_config": null,
+                    "deployment_desired_status": "Shutdown",
+                    "deployment_error": null,
+                    "deployment_location": null,
+                    "deployment_status": "Shutdown",
+                    "deployment_status_since": "1970-01-01T00:00:00Z",
+                    "description": "Description of the pipeline example2",
+                    "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                    "name": "example2",
+                    "program_binary_url": null,
+                    "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
+                    "program_config": {
+                      "profile": "unoptimized"
+                    },
+                    "program_schema": null,
+                    "program_status": "Pending",
+                    "program_status_since": "1970-01-01T00:00:00Z",
+                    "program_version": 1,
+                    "runtime_config": {
+                      "cpu_profiler": false,
+                      "max_buffering_delay_usecs": 0,
+                      "min_batch_size_records": 100000,
+                      "min_storage_bytes": null,
+                      "resources": {
+                        "cpu_cores_max": null,
+                        "cpu_cores_min": null,
+                        "memory_mb_max": null,
+                        "memory_mb_min": 1000,
+                        "storage_class": null,
+                        "storage_mb_max": 10000
+                      },
+                      "storage": true,
+                      "tracing": false,
+                      "tracing_endpoint_jaeger": "",
+                      "workers": 10
+                    },
+                    "version": 1
+                  }
+                ]
               }
             }
           }
@@ -342,13 +424,39 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "POST: create a new pipeline.",
+        "summary": "Create a new pipeline.",
         "operationId": "post_pipeline",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PipelineDescr"
+              },
+              "example": {
+                "description": "Description of the pipeline example1",
+                "name": "example1",
+                "program_code": "CREATE TABLE table1 ( col1 INT );",
+                "program_config": {
+                  "profile": "optimized"
+                },
+                "runtime_config": {
+                  "cpu_profiler": false,
+                  "max_buffering_delay_usecs": 0,
+                  "min_batch_size_records": 0,
+                  "min_storage_bytes": null,
+                  "resources": {
+                    "cpu_cores_max": null,
+                    "cpu_cores_min": null,
+                    "memory_mb_max": null,
+                    "memory_mb_min": null,
+                    "storage_class": null,
+                    "storage_mb_max": null
+                  },
+                  "storage": false,
+                  "tracing": false,
+                  "tracing_endpoint_jaeger": "",
+                  "workers": 16
+                }
               }
             }
           },
@@ -360,7 +468,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExtendedPipeline"
+                  "$ref": "#/components/schemas/ExtendedPipelineDescr"
                 },
                 "example": {
                   "created_at": "1970-01-01T00:00:00Z",
@@ -370,9 +478,9 @@
                   "deployment_location": null,
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "description": "Description of the example pipeline",
+                  "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
-                  "name": "example",
+                  "name": "example1",
                   "program_binary_url": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "program_config": {
@@ -381,7 +489,7 @@
                   "program_schema": null,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
-                  "program_version": 1,
+                  "program_version": 2,
                   "runtime_config": {
                     "cpu_profiler": false,
                     "max_buffering_delay_usecs": 0,
@@ -400,7 +508,7 @@
                     "tracing_endpoint_jaeger": "",
                     "workers": 16
                   },
-                  "version": 1
+                  "version": 4
                 }
               }
             }
@@ -435,7 +543,7 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "GET: retrieve a pipeline.",
+        "summary": "Retrieve a pipeline.",
         "operationId": "get_pipeline",
         "parameters": [
           {
@@ -464,9 +572,9 @@
                   "deployment_location": null,
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "description": "Description of the example pipeline",
+                  "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
-                  "name": "example",
+                  "name": "example1",
                   "program_binary_url": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "program_config": {
@@ -475,7 +583,7 @@
                   "program_schema": null,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
-                  "program_version": 1,
+                  "program_version": 2,
                   "runtime_config": {
                     "cpu_profiler": false,
                     "max_buffering_delay_usecs": 0,
@@ -494,7 +602,7 @@
                     "tracing_endpoint_jaeger": "",
                     "workers": 16
                   },
-                  "version": 1
+                  "version": 4
                 }
               }
             }
@@ -527,7 +635,7 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "PUT: if it does not exist, create a new pipeline, otherwise update existing pipeline.",
+        "summary": "Fully update a pipeline if it already exists, otherwise create a new pipeline.",
         "operationId": "put_pipeline",
         "parameters": [
           {
@@ -547,8 +655,8 @@
                 "$ref": "#/components/schemas/PipelineDescr"
               },
               "example": {
-                "description": "Description of the example pipeline",
-                "name": "example",
+                "description": "Description of the pipeline example1",
+                "name": "example1",
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "program_config": {
                   "profile": "optimized"
@@ -582,7 +690,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExtendedPipeline"
+                  "$ref": "#/components/schemas/ExtendedPipelineDescr"
                 },
                 "example": {
                   "created_at": "1970-01-01T00:00:00Z",
@@ -592,9 +700,9 @@
                   "deployment_location": null,
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "description": "Description of the example pipeline",
+                  "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
-                  "name": "example",
+                  "name": "example1",
                   "program_binary_url": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "program_config": {
@@ -603,7 +711,7 @@
                   "program_schema": null,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
-                  "program_version": 1,
+                  "program_version": 2,
                   "runtime_config": {
                     "cpu_profiler": false,
                     "max_buffering_delay_usecs": 0,
@@ -622,7 +730,7 @@
                     "tracing_endpoint_jaeger": "",
                     "workers": 16
                   },
-                  "version": 1
+                  "version": 4
                 }
               }
             }
@@ -632,7 +740,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExtendedPipeline"
+                  "$ref": "#/components/schemas/ExtendedPipelineDescr"
                 },
                 "example": {
                   "created_at": "1970-01-01T00:00:00Z",
@@ -642,9 +750,9 @@
                   "deployment_location": null,
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "description": "Description of the example pipeline",
+                  "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
-                  "name": "example",
+                  "name": "example1",
                   "program_binary_url": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "program_config": {
@@ -653,7 +761,7 @@
                   "program_schema": null,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
-                  "program_version": 1,
+                  "program_version": 2,
                   "runtime_config": {
                     "cpu_profiler": false,
                     "max_buffering_delay_usecs": 0,
@@ -672,7 +780,22 @@
                     "tracing_endpoint_jaeger": "",
                     "workers": 16
                   },
-                  "version": 1
+                  "version": 4
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pipeline is not shutdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": null,
+                  "error_code": "CannotUpdateNonShutdownPipeline",
+                  "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint."
                 }
               }
             }
@@ -703,7 +826,7 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "DELETE: delete an existing pipeline.",
+        "summary": "Delete a pipeline.",
         "operationId": "delete_pipeline",
         "parameters": [
           {
@@ -728,15 +851,9 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "details": {
-                    "current_status": "Running",
-                    "desired_status": "Running",
-                    "error": "Cannot delete a running pipeline. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "requested_status": null
-                  },
-                  "error_code": "IllegalPipelineStateTransition",
-                  "message": "Action is not applicable in the current state of the pipeline: Cannot delete a running pipeline. Shutdown the pipeline first by invoking the '/shutdown' endpoint."
+                  "details": null,
+                  "error_code": "CannotDeleteNonShutdownPipeline",
+                  "message": "Cannot delete a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint."
                 }
               }
             }
@@ -769,7 +886,7 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "PATCH: (partially) update existing pipeline.",
+        "summary": "Partially update a pipeline.",
         "operationId": "patch_pipeline",
         "parameters": [
           {
@@ -787,6 +904,13 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PatchPipeline"
+              },
+              "example": {
+                "description": "This is a new description",
+                "name": null,
+                "program_code": "CREATE TABLE table3 ( col3 INT );",
+                "program_config": null,
+                "runtime_config": null
               }
             }
           },
@@ -798,7 +922,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExtendedPipeline"
+                  "$ref": "#/components/schemas/ExtendedPipelineDescr"
                 },
                 "example": {
                   "created_at": "1970-01-01T00:00:00Z",
@@ -808,9 +932,9 @@
                   "deployment_location": null,
                   "deployment_status": "Shutdown",
                   "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "description": "Description of the example pipeline",
+                  "description": "Description of the pipeline example1",
                   "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
-                  "name": "example",
+                  "name": "example1",
                   "program_binary_url": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "program_config": {
@@ -819,7 +943,7 @@
                   "program_schema": null,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
-                  "program_version": 1,
+                  "program_version": 2,
                   "runtime_config": {
                     "cpu_profiler": false,
                     "max_buffering_delay_usecs": 0,
@@ -838,7 +962,22 @@
                     "tracing_endpoint_jaeger": "",
                     "workers": 16
                   },
-                  "version": 1
+                  "version": 4
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pipeline is not shutdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": null,
+                  "error_code": "CannotUpdateNonShutdownPipeline",
+                  "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint."
                 }
               }
             }
@@ -859,6 +998,21 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Cannot rename pipeline as the name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": null,
+                  "error_code": "DuplicateName",
+                  "message": "An entity with this name already exists"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -868,13 +1022,13 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_name}/dump_profile": {
-      "post": {
+    "/v0/pipelines/{pipeline_name}/circuit_profile": {
+      "get": {
         "tags": [
           "Pipelines"
         ],
-        "summary": "POST: initiate a profile dump on a running pipeline.",
-        "operationId": "post_dump_profile",
+        "summary": "Retrieve the circuit performance profile of a running or paused pipeline.",
+        "operationId": "get_pipeline_circuit_profile",
         "parameters": [
           {
             "name": "pipeline_name",
@@ -893,6 +1047,23 @@
               "application/zip": {
                 "schema": {
                   "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pipeline is not running or paused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                  },
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
                 }
               }
             }
@@ -1077,8 +1248,8 @@
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
                   },
-                  "error_code": "PipelineShutdown",
-                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running."
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
                 }
               }
             }
@@ -1089,6 +1260,78 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/heap_profile": {
+      "get": {
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "Retrieve the heap profile of a running or paused pipeline.",
+        "operationId": "get_pipeline_heap_profile",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipeline's heap usage profile as a gzipped protobuf that can be inspected by the pprof tool",
+            "content": {
+              "application/protobuf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pipeline is not running or paused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                  },
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                  },
+                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
                 }
               }
             }
@@ -1207,8 +1450,8 @@
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
                   },
-                  "error_code": "PipelineShutdown",
-                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running."
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
                 }
               }
             }
@@ -1231,67 +1474,12 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_name}/profile": {
-      "get": {
-        "tags": [
-          "Pipelines"
-        ],
-        "summary": "GET: retrieve the dumped profile of a running pipeline.",
-        "operationId": "get_profile",
-        "parameters": [
-          {
-            "name": "pipeline_name",
-            "in": "path",
-            "description": "Unique pipeline name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Pipeline's heap usage profile as a gzipped protobuf that can be inspected by the pprof tool",
-            "content": {
-              "application/protobuf": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Pipeline with that name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
     "/v0/pipelines/{pipeline_name}/stats": {
       "get": {
         "tags": [
           "Pipelines"
         ],
-        "summary": "GET: pipeline statistics (e.g., metrics, performance counters).",
+        "summary": "Retrieve pipeline statistics (e.g., metrics, performance counters).",
         "operationId": "get_pipeline_stats",
         "parameters": [
           {
@@ -1311,6 +1499,23 @@
               "application/json": {
                 "schema": {
                   "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pipeline is not running or paused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                  },
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
                 }
               }
             }
@@ -1345,8 +1550,8 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "Change the desired runtime state of the pipeline.",
-        "description": "The endpoint returns immediately after performing initial request validation\n(e.g., upon start that the program is compiled) and initiating the relevant\nprocedure (e.g., informing the runner or the already running pipeline).\nThe state changes completely asynchronously. On error, the pipeline\ntransitions to the `Failed` state. The user can monitor the current status\nof the pipeline by polling the `GET /pipelines` and\n`GET /pipelines/{pipeline_name}` endpoint.\n\nThe following values of the `action` argument are accepted:\n- `start`: Start the pipeline (state must be shutdown)\n- `pause`: Pause the pipeline (state must be either shutdown or running)\n- `resume`: Resume (unpause) the pipeline (state must be paused)\n- `shutdown`: Terminate the pipeline\n\nMore information:\n- State model in [`PipelineStatus`] documentation",
+        "summary": "Change the desired deployment state of the pipeline.",
+        "description": "The endpoint returns immediately after performing initial request validation\n(e.g., upon start checking the program is compiled) and initiating the relevant\nprocedure (e.g., informing the runner or the already running pipeline).\nThe state changes completely asynchronously. On error, the pipeline\ntransitions to the `Failed` state. The user can monitor the current status\nof the pipeline by polling the `GET /pipelines` and\n`GET /pipelines/{pipeline_name}` endpoint.\n\nThe following values of the `action` argument are accepted:\n- `start`: Start the pipeline\n- `pause`: Pause the pipeline\n- `shutdown`: Terminate the pipeline",
         "operationId": "post_pipeline_action",
         "parameters": [
           {
@@ -1361,7 +1566,7 @@
           {
             "name": "action",
             "in": "path",
-            "description": "Pipeline action (one of: start, pause, resume, shutdown)",
+            "description": "Pipeline action (one of: start, pause, shutdown)",
             "required": true,
             "schema": {
               "type": "string"
@@ -1384,33 +1589,16 @@
                     "description": "Action is not applicable in the current state",
                     "value": {
                       "details": {
-                        "current_status": "ShuttingDown",
                         "desired_status": "Shutdown",
-                        "error": "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.",
-                        "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                        "requested_status": "Running"
+                        "hint": "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.",
+                        "requested_desired_status": "Running",
+                        "status": "ShuttingDown"
                       },
                       "error_code": "IllegalPipelineStateTransition",
-                      "message": "Action is not applicable in the current state of the pipeline: Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline."
+                      "message": "Deployment status (current: 'ShuttingDown', desired: 'Shutdown') cannot have desired changed to 'Running'. Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline."
                     }
                   },
-                  "Program has compilation errors": {
-                    "description": "Pipeline program compilation has errors",
-                    "value": {
-                      "details": null,
-                      "error_code": "ProgramFailedToCompile",
-                      "message": "The program did not compile successfully"
-                    }
-                  },
-                  "Program not compiled": {
-                    "description": "Pipeline program has not (yet) been compiled",
-                    "value": {
-                      "details": null,
-                      "error_code": "ProgramNotYetCompiled",
-                      "message": "The program hasn't been compiled yet"
-                    }
-                  },
-                  "Unknown action": {
+                  "Invalid action": {
                     "description": "Invalid action specified",
                     "value": {
                       "details": {
@@ -1418,6 +1606,22 @@
                       },
                       "error_code": "InvalidPipelineAction",
                       "message": "Invalid pipeline action 'dance'; valid actions are: 'deploy', 'start', 'pause', or 'shutdown'"
+                    }
+                  },
+                  "Program failed compilation": {
+                    "description": "Program failed compilation",
+                    "value": {
+                      "details": null,
+                      "error_code": "ProgramFailedToCompile",
+                      "message": "The program did not compile successfully"
+                    }
+                  },
+                  "Program not (yet) compiled": {
+                    "description": "Program has not (yet) been compiled",
+                    "value": {
+                      "details": null,
+                      "error_code": "ProgramNotYetCompiled",
+                      "message": "The program hasn't been compiled yet"
                     }
                   }
                 }
@@ -1582,6 +1786,101 @@
           "unoptimized",
           "optimized"
         ]
+      },
+      "ConnectorConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OutputBufferConfig"
+          },
+          {
+            "type": "object",
+            "required": [
+              "transport"
+            ],
+            "properties": {
+              "format": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FormatConfig"
+                  }
+                ],
+                "nullable": true
+              },
+              "max_queued_records": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Backpressure threshold.\n\nMaximal number of records queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of records that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit since the circuit, since the circuit is still busy processing\nprevious inputs.\n\nFor output endpoints, this setting bounds the number of records that have\nbeen produced by the circuit but not yet sent via the output transport endpoint\nnor stored in the output buffer (see `enable_output_buffer`).\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nThe default is 1 million.",
+                "minimum": 0
+              },
+              "transport": {
+                "$ref": "#/components/schemas/TransportConfig"
+              }
+            }
+          }
+        ],
+        "description": "A data connector's configuration"
+      },
+      "DeltaTableReaderConfig": {
+        "type": "object",
+        "description": "Delta table output connector configuration.",
+        "required": [
+          "uri",
+          "mode"
+        ],
+        "properties": {
+          "datetime": {
+            "type": "string",
+            "description": "Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,\n\"2024-12-09T16:09:53+00:00.\n\nWhen this option is set, the connector finds and opens the version of the table as of the\nspecified point in time.  In `snapshot` and `snapshot_and_follow` modes, it retrieves the\nsnapshot of this version of the table (based on the server time recorded in the transaction\nlog, not the event time encoded in the data).  In `follow` and `snapshot_and_follow` modes, it\nfollows transaction log records **after** this version.\n\nNote: at most one of `version` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
+            "nullable": true
+          },
+          "mode": {
+            "$ref": "#/components/schemas/DeltaTableIngestMode"
+          },
+          "snapshot_filter": {
+            "type": "string",
+            "description": "Optional row filter.\n\nThis option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.\n\nWhen specified, only rows that satisfy the filter condition are included in the\nsnapshot.  The condition must be a valid SQL Boolean expression that can be used in\nthe `where` clause of the `select * from snapshot where ...` query.\n\nThis option can be used to specify the range of event times to include in the snapshot,\ne.g.: `ts BETWEEN '2005-01-01 00:00:00' AND '2010-12-31 23:59:59'`.",
+            "nullable": true
+          },
+          "timestamp_column": {
+            "type": "string",
+            "description": "Table column that serves as an event timestamp.\n\n\nWhen this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,\nthe snapshot of the table is ingested in the timestamp order.  This setting is required\nfor tables declared with the\n[`LATENESS`](https://www.feldera.com/docs/sql/streaming#lateness-expressions) attribute\nin Feldera SQL. It impacts the performance of the connector, since data must be sorted\nbefore pushing it to the pipeline; therefore it is not recommended to use this\nsettings for tables without `LATENESS`.",
+            "nullable": true
+          },
+          "uri": {
+            "type": "string",
+            "description": "Table URI.\n\nExample: \"s3://feldera-fraud-detection-data/demographics_train\""
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Optional table version.\n\nWhen this option is set, the connector finds and opens the specified version of the table.\nIn `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of\nthe table.  In `follow` and `snapshot_and_follow` modes, it follows transaction log records\n**after** this version.\n\nNote: at most one of `version` and `datetime` options can be specified.\nWhen neither of the two options is specified, the latest committed version of the table\nis used.",
+            "nullable": true
+          }
+        },
+        "additionalProperties": {
+          "type": "string",
+          "description": "Storage options for configuring backend object store.\n\nFor specific options available for different storage backends, see:\n* [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)\n* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)\n* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)"
+        }
+      },
+      "DeltaTableWriterConfig": {
+        "type": "object",
+        "description": "Delta table output connector configuration.",
+        "required": [
+          "uri"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/DeltaTableWriteMode"
+          },
+          "uri": {
+            "type": "string",
+            "description": "Table URI."
+          }
+        },
+        "additionalProperties": {
+          "type": "string",
+          "description": "Storage options for configuring backend object store.\n\nFor specific options available for different storage backends, see:\n* [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)\n* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)\n* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)"
+        }
       },
       "Demo": {
         "type": "object",
@@ -1761,6 +2060,79 @@
           }
         }
       },
+      "FileInputConfig": {
+        "type": "object",
+        "description": "Configuration for reading data from a file with `FileInputTransport`",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "buffer_size_bytes": {
+            "type": "integer",
+            "description": "Read buffer size.\n\nDefault: when this parameter is not specified, a platform-specific\ndefault is used.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "follow": {
+            "type": "boolean",
+            "description": "Enable file following.\n\nWhen `false`, the endpoint outputs an `InputConsumer::eoi`\nmessage and stops upon reaching the end of file.  When `true`, the\nendpoint will keep watching the file and outputting any new content\nappended to it."
+          },
+          "path": {
+            "type": "string",
+            "description": "File path."
+          }
+        }
+      },
+      "FileOutputConfig": {
+        "type": "object",
+        "description": "Configuration for writing data to a file with `FileOutputTransport`.",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "File path."
+          }
+        }
+      },
+      "FormatConfig": {
+        "type": "object",
+        "description": "Data format specification used to parse raw data received from the\nendpoint or to encode data sent to the endpoint.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "config": {
+            "type": "object",
+            "description": "Format-specific parser or encoder configuration."
+          },
+          "name": {
+            "type": "string",
+            "description": "Format name, e.g., \"csv\", \"json\", \"bincode\", etc."
+          }
+        }
+      },
+      "InputEndpointConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ConnectorConfig"
+          },
+          {
+            "type": "object",
+            "required": [
+              "stream"
+            ],
+            "properties": {
+              "stream": {
+                "type": "string",
+                "description": "The name of the input stream of the circuit that this endpoint is\nconnected to."
+              }
+            }
+          }
+        ],
+        "description": "Describes an input connector configuration"
+      },
       "IntervalUnit": {
         "type": "string",
         "description": "The specified units for SQL Interval types.\n\n`INTERVAL 1 DAY`, `INTERVAL 1 DAY TO HOUR`, `INTERVAL 1 DAY TO MINUTE`,\nwould yield `Day`, `DayToHour`, `DayToMinute`, as the `IntervalUnit` respectively.",
@@ -1779,6 +2151,116 @@
           "YEAR",
           "YEARTOMONTH"
         ]
+      },
+      "KafkaInputConfig": {
+        "type": "object",
+        "description": "Configuration for reading data from Kafka topics with `InputTransport`.",
+        "required": [
+          "topics"
+        ],
+        "properties": {
+          "fault_tolerance": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KafkaInputFtConfig"
+              }
+            ],
+            "nullable": true
+          },
+          "group_join_timeout_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum timeout in seconds to wait for the endpoint to join the Kafka\nconsumer group during initialization.",
+            "minimum": 0
+          },
+          "kafka_service": {
+            "type": "string",
+            "description": "If specified, this service is used to provide defaults for the Kafka options.",
+            "nullable": true
+          },
+          "log_level": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KafkaLogLevel"
+              }
+            ],
+            "nullable": true
+          },
+          "poller_threads": {
+            "type": "integer",
+            "description": "Set to 1 or more to fix the number of threads used to poll\n`rdkafka`. Multiple threads can increase performance with small Kafka\nmessages; for large messages, one thread is enough. In either case, too\nmany threads can harm performance. If unset, the default is 3, which\nhelps with small messages but will not harm performance with large\nmessagee",
+            "nullable": true,
+            "minimum": 0
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of topics to subscribe to."
+          }
+        },
+        "additionalProperties": {
+          "type": "string",
+          "description": "Options passed directly to `rdkafka`.\n\n[`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)\nused to configure the Kafka consumer.  Not all options are valid with\nthis Kafka adapter:\n\n* \"enable.auto.commit\", if present, must be set to \"false\",\n* \"enable.auto.offset.store\", if present, must be set to \"false\""
+        }
+      },
+      "KafkaOutputConfig": {
+        "type": "object",
+        "description": "Configuration for writing data to a Kafka topic with `OutputTransport`.",
+        "required": [
+          "topic"
+        ],
+        "properties": {
+          "fault_tolerance": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KafkaOutputFtConfig"
+              }
+            ],
+            "nullable": true
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KafkaHeader"
+            },
+            "description": "Kafka headers to be added to each message produced by this connector."
+          },
+          "initialization_timeout_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum timeout in seconds to wait for the endpoint to connect to\na Kafka broker.\n\nDefaults to 60.",
+            "minimum": 0
+          },
+          "kafka_service": {
+            "type": "string",
+            "description": "If specified, this service is used to provide defaults for the Kafka options.",
+            "nullable": true
+          },
+          "log_level": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KafkaLogLevel"
+              }
+            ],
+            "nullable": true
+          },
+          "max_inflight_messages": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum number of unacknowledged messages buffered by the Kafka\nproducer.\n\nKafka producer buffers outgoing messages until it receives an\nacknowledgement from the broker.  This configuration parameter\nbounds the number of unacknowledged messages.  When the number of\nunacknowledged messages reaches this limit, sending of a new message\nblocks until additional acknowledgements arrive from the broker.\n\nDefaults to 1000.",
+            "minimum": 0
+          },
+          "topic": {
+            "type": "string",
+            "description": "Topic to write to."
+          }
+        },
+        "additionalProperties": {
+          "type": "string",
+          "description": "Options passed directly to `rdkafka`.\n\nSee [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)\nused to configure the Kafka producer."
+        }
       },
       "ListPipelinesQueryParameters": {
         "type": "object",
@@ -1869,6 +2351,7 @@
       },
       "PatchPipeline": {
         "type": "object",
+        "description": "Patch (partially) update the pipeline.\n\nNote that the patching only applies to the main fields, not subfields.\nFor instance, it is not possible to update only the number of workers;\nit is required to again pass the whole runtime configuration with the\nchange.",
         "properties": {
           "description": {
             "type": "string",
@@ -1899,6 +2382,95 @@
             "nullable": true
           }
         }
+      },
+      "PipelineConfig": {
+        "allOf": [
+          {
+            "type": "object",
+            "description": "Global pipeline configuration settings. This is the publicly\nexposed type for users to configure pipelines.",
+            "properties": {
+              "cpu_profiler": {
+                "type": "boolean",
+                "description": "Enable CPU profiler."
+              },
+              "max_buffering_delay_usecs": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Maximal delay in microseconds to wait for `min_batch_size_records` to\nget buffered by the controller, defaults to 0.",
+                "minimum": 0
+              },
+              "min_batch_size_records": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay_usecs` microseconds\nhave passed since at least one input records has been buffered.\nDefaults to 0.",
+                "minimum": 0
+              },
+              "min_storage_bytes": {
+                "type": "integer",
+                "description": "The minimum estimated number of bytes in a batch of data to write it to\nstorage.  This is provided for debugging and fine-tuning and should\nordinarily be left unset. It only has an effect when `storage` is set to\ntrue.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.",
+                "nullable": true,
+                "minimum": 0
+              },
+              "resources": {
+                "$ref": "#/components/schemas/ResourceConfig"
+              },
+              "storage": {
+                "type": "boolean",
+                "description": "Should persistent storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory data-structures.\nThis is useful if the pipeline is ephemeral and does not need to be recovered\nafter a restart. The pipeline will most likely run faster since it does not\nneed to read from, or write to disk\n\n- If `true`, the pipeline state is stored in the specified location,\nis persisted across restarts, and can be checkpointed and recovered.\nThis feature is currently experimental."
+              },
+              "tracing": {
+                "type": "boolean",
+                "description": "Enable pipeline tracing."
+              },
+              "tracing_endpoint_jaeger": {
+                "type": "string",
+                "description": "Jaeger tracing endpoint to send tracing information to."
+              },
+              "workers": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Number of DBSP worker threads.",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "inputs"
+            ],
+            "properties": {
+              "inputs": {
+                "type": "object",
+                "description": "Input endpoint configuration.",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/InputEndpointConfig"
+                }
+              },
+              "name": {
+                "type": "string",
+                "description": "Pipeline name.",
+                "nullable": true
+              },
+              "outputs": {
+                "type": "object",
+                "description": "Output endpoint configuration.",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/OutputEndpointConfig"
+                }
+              },
+              "storage_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StorageConfig"
+                  }
+                ],
+                "nullable": true
+              }
+            }
+          }
+        ],
+        "description": "Pipeline configuration specified by the user when creating\na new pipeline instance.\nTODO: change this description\n\nThis is the shape of the overall pipeline configuration. It encapsulates a\n[`RuntimeConfig`], which is the publicly exposed way for users to configure\npipelines."
       },
       "PipelineDescr": {
         "type": "object",
@@ -2113,6 +2685,135 @@
           },
           "name": {
             "type": "string"
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ResourceConfig": {
+        "type": "object",
+        "properties": {
+          "cpu_cores_max": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The maximum number of CPU cores to reserve\nfor an instance of this pipeline",
+            "nullable": true,
+            "minimum": 0
+          },
+          "cpu_cores_min": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The minimum number of CPU cores to reserve\nfor an instance of this pipeline",
+            "nullable": true,
+            "minimum": 0
+          },
+          "memory_mb_max": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The maximum memory in Megabytes to reserve\nfor an instance of this pipeline",
+            "nullable": true,
+            "minimum": 0
+          },
+          "memory_mb_min": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The minimum memory in Megabytes to reserve\nfor an instance of this pipeline",
+            "nullable": true,
+            "minimum": 0
+          },
+          "storage_class": {
+            "type": "string",
+            "description": "Storage class to use for an instance of this pipeline.\nThe class determines storage performance such as IOPS and throughput.",
+            "nullable": true
+          },
+          "storage_mb_max": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The total storage in Megabytes to reserve\nfor an instance of this pipeline",
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
+      "RuntimeConfig": {
+        "type": "object",
+        "description": "Global pipeline configuration settings. This is the publicly\nexposed type for users to configure pipelines.",
+        "properties": {
+          "cpu_profiler": {
+            "type": "boolean",
+            "description": "Enable CPU profiler."
+          },
+          "max_buffering_delay_usecs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximal delay in microseconds to wait for `min_batch_size_records` to\nget buffered by the controller, defaults to 0.",
+            "minimum": 0
+          },
+          "min_batch_size_records": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay_usecs` microseconds\nhave passed since at least one input records has been buffered.\nDefaults to 0.",
+            "minimum": 0
+          },
+          "min_storage_bytes": {
+            "type": "integer",
+            "description": "The minimum estimated number of bytes in a batch of data to write it to\nstorage.  This is provided for debugging and fine-tuning and should\nordinarily be left unset. It only has an effect when `storage` is set to\ntrue.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "resources": {
+            "$ref": "#/components/schemas/ResourceConfig"
+          },
+          "storage": {
+            "type": "boolean",
+            "description": "Should persistent storage be enabled for this pipeline?\n\n- If `false` (default), the pipeline's state is kept in in-memory data-structures.\nThis is useful if the pipeline is ephemeral and does not need to be recovered\nafter a restart. The pipeline will most likely run faster since it does not\nneed to read from, or write to disk\n\n- If `true`, the pipeline state is stored in the specified location,\nis persisted across restarts, and can be checkpointed and recovered.\nThis feature is currently experimental."
+          },
+          "tracing": {
+            "type": "boolean",
+            "description": "Enable pipeline tracing."
+          },
+          "tracing_endpoint_jaeger": {
+            "type": "string",
+            "description": "Jaeger tracing endpoint to send tracing information to."
+          },
+          "workers": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of DBSP worker threads.",
+            "minimum": 0
+          }
+        }
+      },
+      "S3InputConfig": {
+        "type": "object",
+        "description": "Configuration for reading data from AWS S3.",
+        "required": [
+          "credentials",
+          "region",
+          "bucket_name",
+          "read_strategy"
+        ],
+        "properties": {
+          "bucket_name": {
+            "type": "string",
+            "description": "S3 bucket name to access"
+          },
+          "consume_strategy": {
+            "$ref": "#/components/schemas/ConsumeStrategy"
+          },
+          "credentials": {
+            "$ref": "#/components/schemas/AwsCredentials"
+          },
+          "read_strategy": {
+            "$ref": "#/components/schemas/ReadStrategy"
+          },
+          "region": {
+            "type": "string",
+            "description": "AWS region"
           }
         }
       },
@@ -2304,6 +3005,230 @@
           }
         ],
         "description": "The available SQL types as specified in `CREATE` statements."
+      },
+      "StorageCacheConfig": {
+        "type": "string",
+        "description": "How to cache access to storage within a Feldera pipeline.",
+        "enum": [
+          "page_cache",
+          "feldera_cache"
+        ]
+      },
+      "StorageConfig": {
+        "type": "object",
+        "description": "Configuration for persistent storage in a [`PipelineConfig`].",
+        "required": [
+          "path",
+          "cache"
+        ],
+        "properties": {
+          "cache": {
+            "$ref": "#/components/schemas/StorageCacheConfig"
+          },
+          "path": {
+            "type": "string",
+            "description": "The location where the pipeline state is stored or will be stored.\n\nIt should point to a path on the file-system of the machine/container\nwhere the pipeline will run. If that path doesn't exist yet, or if it\ndoes not contain any checkpoints, then the pipeline creates it and\nstarts from an initial state in which no data has yet been received. If\nit does exist, then the pipeline starts from the most recent checkpoint\nthat already exists there. In either case, (further) checkpoints will be\nwritten there."
+          }
+        }
+      },
+      "TransportConfig": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/FileInputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "file_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/FileOutputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "file_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/KafkaInputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "kafka_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/KafkaOutputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "kafka_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/UrlInputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "url_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/S3InputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "s3_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/DeltaTableReaderConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "delta_table_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/DeltaTableWriterConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "delta_table_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "http_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "http_output"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Transport-specific endpoint configuration passed to\n`crate::OutputTransport::new_endpoint`\nand `crate::InputTransport::new_endpoint`.",
+        "discriminator": {
+          "propertyName": "name"
+        }
+      },
+      "UrlInputConfig": {
+        "type": "object",
+        "description": "Configuration for reading data from an HTTP or HTTPS URL with\n`UrlInputTransport`.",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "URL."
+          },
+          "pause_timeout": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Timeout before disconnection when paused.\n\nIf the pipeline is paused, or if the input adapter reads data faster\nthan the pipeline can process it, then the controller will pause the\ninput adapter. If the input adapter stays paused longer than this\ntimeout, it will drop the network connection to the server. It will\nautomatically reconnect when the input adapter starts running again.",
+            "minimum": 0
+          }
+        }
       },
       "Version": {
         "type": "integer",

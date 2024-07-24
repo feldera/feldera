@@ -1,12 +1,11 @@
-use std::{sync::Arc, time::Duration};
-
+use crate::db::storage::Storage;
+use crate::db::storage_postgres::StoragePostgres;
+use crate::error::ManagerError;
 use actix_web::{HttpResponse, ResponseError};
 use chrono::{DateTime, Local};
 use log::{error, trace};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
-
-use crate::db::storage_postgres::StoragePostgres;
-use crate::{api::ManagerError, db::storage::Storage};
 
 #[derive(Debug)]
 pub struct Probe {
