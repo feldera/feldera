@@ -14,7 +14,7 @@
         "tags": [
           "Authentication"
         ],
-        "summary": "Get authentication provider configuration",
+        "summary": "Retrieve authentication provider configuration.",
         "operationId": "get_config_authentication",
         "responses": {
           "200": {
@@ -45,7 +45,7 @@
         "tags": [
           "API keys"
         ],
-        "summary": "List all API keys",
+        "summary": "Retrieve the list of API keys.",
         "operationId": "list_api_keys",
         "parameters": [
           {
@@ -105,7 +105,7 @@
         "tags": [
           "API keys"
         ],
-        "summary": "Create an API key",
+        "summary": "Create a new API key.",
         "operationId": "create_api_key",
         "requestBody": {
           "description": "",
@@ -130,7 +130,7 @@
             }
           },
           "409": {
-            "description": "An api key with this name already exists.",
+            "description": "An API key with this name already exists.",
             "content": {
               "application/json": {
                 "schema": {
@@ -157,7 +157,7 @@
         "tags": [
           "API keys"
         ],
-        "summary": "Get an API key description",
+        "summary": "Retrieve an API key.",
         "operationId": "get_api_key",
         "parameters": [
           {
@@ -213,7 +213,7 @@
         "tags": [
           "API keys"
         ],
-        "summary": "Delete an API key",
+        "summary": "Delete an API key.",
         "operationId": "delete_api_key",
         "parameters": [
           {
@@ -264,7 +264,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "Get the list of demos.",
+        "summary": "Retrieve the list of demos.",
         "operationId": "get_config_demos",
         "responses": {
           "200": {
@@ -325,7 +325,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/ExtendedPipelineDescr"
+                    "$ref": "#/components/schemas/ExtendedPipelineDescrOptionalCode"
                   }
                 },
                 "example": [
@@ -341,7 +341,7 @@
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                     "name": "example1",
                     "program_binary_url": null,
-                    "program_code": "CREATE TABLE table1 ( col1 INT );",
+                    "program_code": null,
                     "program_config": {
                       "profile": "optimized"
                     },
@@ -381,7 +381,7 @@
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                     "name": "example2",
                     "program_binary_url": null,
-                    "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
+                    "program_code": null,
                     "program_config": {
                       "profile": "unoptimized"
                     },
@@ -1550,7 +1550,7 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "Change the desired deployment state of the pipeline.",
+        "summary": "Start, pause or shutdown a pipeline.",
         "description": "The endpoint returns immediately after performing initial request validation\n(e.g., upon start checking the program is compiled) and initiating the relevant\nprocedure (e.g., informing the runner or the already running pipeline).\nThe state changes completely asynchronously. On error, the pipeline\ntransitions to the `Failed` state. The user can monitor the current status\nof the pipeline by polling the `GET /pipelines` and\n`GET /pipelines/{pipeline_name}` endpoint.\n\nThe following values of the `action` argument are accepted:\n- `start`: Start the pipeline\n- `pause`: Pause the pipeline\n- `shutdown`: Terminate the pipeline",
         "operationId": "post_pipeline_action",
         "parameters": [
@@ -1718,6 +1718,81 @@
           }
         ]
       },
+      "AwsCredentials": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "NoSignRequest"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Authenticate using a long-lived AWS access key and secret",
+            "required": [
+              "aws_access_key_id",
+              "aws_secret_access_key",
+              "type"
+            ],
+            "properties": {
+              "aws_access_key_id": {
+                "type": "string"
+              },
+              "aws_secret_access_key": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "AccessKey"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Configuration to authenticate against AWS",
+        "discriminator": {
+          "propertyName": "type"
+        }
+      },
+      "Chunk": {
+        "type": "object",
+        "description": "A set of updates to a SQL table or view.\n\nThe `sequence_number` field stores the offset of the chunk relative to the\nstart of the stream and can be used to implement reliable delivery.\nThe payload is stored in the `bin_data`, `text_data`, or `json_data` field\ndepending on the data format used.",
+        "required": [
+          "sequence_number"
+        ],
+        "properties": {
+          "bin_data": {
+            "type": "string",
+            "format": "binary",
+            "description": "Base64 encoded binary payload, e.g., bincode.",
+            "nullable": true
+          },
+          "json_data": {
+            "type": "object",
+            "description": "JSON payload.",
+            "nullable": true
+          },
+          "sequence_number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "text_data": {
+            "type": "string",
+            "description": "Text payload, e.g., CSV.",
+            "nullable": true
+          }
+        }
+      },
       "ColumnType": {
         "type": "object",
         "description": "A SQL column type description.\n\nMatches the Calcite JSON format.",
@@ -1820,6 +1895,48 @@
         ],
         "description": "A data connector's configuration"
       },
+      "ConsumeStrategy": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Fragment"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Object"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Strategy to feed a fetched object into an InputConsumer."
+      },
+      "DeltaTableIngestMode": {
+        "type": "string",
+        "description": "Delta table read mode.\n\nThree options are available:\n\n* `snapshot` - read a snapshot of the table and stop.\n\n* `follow` - continuously ingest changes to the table, starting from a specified version\nor timestamp.\n\n* `snapshot_and_follow` - read a snapshot of the table before switching to continuous ingestion\nmode.",
+        "enum": [
+          "snapshot",
+          "follow",
+          "snapshot_and_follow"
+        ]
+      },
       "DeltaTableReaderConfig": {
         "type": "object",
         "description": "Delta table output connector configuration.",
@@ -1861,6 +1978,15 @@
           "type": "string",
           "description": "Storage options for configuring backend object store.\n\nFor specific options available for different storage backends, see:\n* [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)\n* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)\n* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)"
         }
+      },
+      "DeltaTableWriteMode": {
+        "type": "string",
+        "description": "Delta table write mode.\n\nDetermines how the Delta table connector handles an existing table at the target location.",
+        "enum": [
+          "append",
+          "truncate",
+          "error_if_exists"
+        ]
       },
       "DeltaTableWriterConfig": {
         "type": "object",
@@ -1909,6 +2035,13 @@
             "description": "Title of the demo."
           }
         }
+      },
+      "EgressMode": {
+        "type": "string",
+        "enum": [
+          "watch",
+          "snapshot"
+        ]
       },
       "ErrorResponse": {
         "type": "object",
@@ -2009,7 +2142,8 @@
             "nullable": true
           },
           "program_code": {
-            "$ref": "#/components/schemas/T"
+            "type": "string",
+            "description": "Program SQL code."
           },
           "program_config": {
             "$ref": "#/components/schemas/ProgramConfig"
@@ -2029,6 +2163,105 @@
             "type": "string",
             "format": "date-time",
             "description": "Timestamp when the current program status was set."
+          },
+          "program_version": {
+            "$ref": "#/components/schemas/Version"
+          },
+          "runtime_config": {
+            "$ref": "#/components/schemas/RuntimeConfig"
+          },
+          "version": {
+            "$ref": "#/components/schemas/Version"
+          }
+        }
+      },
+      "ExtendedPipelineDescrOptionalCode": {
+        "type": "object",
+        "description": "Extended pipeline descriptor with code being optionally included.",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "version",
+          "created_at",
+          "runtime_config",
+          "program_config",
+          "program_version",
+          "program_status",
+          "program_status_since",
+          "deployment_status",
+          "deployment_status_since",
+          "deployment_desired_status"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deployment_config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PipelineConfig"
+              }
+            ],
+            "nullable": true
+          },
+          "deployment_desired_status": {
+            "$ref": "#/components/schemas/PipelineStatus"
+          },
+          "deployment_error": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ErrorResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "deployment_location": {
+            "type": "string",
+            "nullable": true
+          },
+          "deployment_status": {
+            "$ref": "#/components/schemas/PipelineStatus"
+          },
+          "deployment_status_since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/PipelineId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "program_binary_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "program_code": {
+            "type": "string",
+            "nullable": true
+          },
+          "program_config": {
+            "$ref": "#/components/schemas/ProgramConfig"
+          },
+          "program_schema": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramSchema"
+              }
+            ],
+            "nullable": true
+          },
+          "program_status": {
+            "$ref": "#/components/schemas/ProgramStatus"
+          },
+          "program_status_since": {
+            "type": "string",
+            "format": "date-time"
           },
           "program_version": {
             "$ref": "#/components/schemas/Version"
@@ -2152,6 +2385,42 @@
           "YEARTOMONTH"
         ]
       },
+      "JsonUpdateFormat": {
+        "type": "string",
+        "description": "Supported JSON data change event formats.\n\nEach element in a JSON-formatted input stream specifies\nan update to one or more records in an input table.  We support\nseveral different ways to represent such updates.",
+        "enum": [
+          "insert_delete",
+          "weighted",
+          "debezium",
+          "snowflake",
+          "raw"
+        ]
+      },
+      "KafkaHeader": {
+        "type": "object",
+        "description": "Kafka message header.",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KafkaHeaderValue"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "KafkaHeaderValue": {
+        "type": "string",
+        "format": "binary",
+        "description": "Kafka header value encoded as a UTF-8 string or a byte array."
+      },
       "KafkaInputConfig": {
         "type": "object",
         "description": "Configuration for reading data from Kafka topics with `InputTransport`.",
@@ -2204,6 +2473,64 @@
           "type": "string",
           "description": "Options passed directly to `rdkafka`.\n\n[`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)\nused to configure the Kafka consumer.  Not all options are valid with\nthis Kafka adapter:\n\n* \"enable.auto.commit\", if present, must be set to \"false\",\n* \"enable.auto.offset.store\", if present, must be set to \"false\""
         }
+      },
+      "KafkaInputFtConfig": {
+        "type": "object",
+        "description": "Fault tolerance configuration for Kafka input connector.",
+        "properties": {
+          "consumer_options": {
+            "type": "object",
+            "description": "Options passed to `rdkafka` for consumers only, as documented at\n[`librdkafka`\noptions](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md).\n\nThese options override `kafka_options` for consumers, and may be empty.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "create_missing_index": {
+            "type": "boolean",
+            "description": "If this is true or unset, then the connector will create missing index\ntopics as needed.  If this is false, then a missing index topic is a\nfatal error.",
+            "nullable": true
+          },
+          "index_suffix": {
+            "type": "string",
+            "description": "Suffix to append to each data topic name, to give the name of a topic\nthat the connector uses for recording the division of the corresponding\ndata topic into steps.  Defaults to `_input-index`.\n\nAn index topic must have the same number of partitions as its\ncorresponding data topic.\n\nIf two or more fault-tolerant Kafka endpoints read from overlapping sets\nof topics, they must specify different `index_suffix` values.",
+            "nullable": true
+          },
+          "max_step_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum number of bytes in a step.  Any individual message bigger than\nthis will be given a step of its own.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "max_step_messages": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum number of messages in a step.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "producer_options": {
+            "type": "object",
+            "description": "Options passed to `rdkafka` for producers only, as documented at\n[`librdkafka`\noptions](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md).\n\nThese options override `kafka_options` for producers, and may be empty.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "KafkaLogLevel": {
+        "type": "string",
+        "description": "Kafka logging levels.",
+        "enum": [
+          "emerg",
+          "alert",
+          "critical",
+          "error",
+          "warning",
+          "notice",
+          "info",
+          "debug"
+        ]
       },
       "KafkaOutputConfig": {
         "type": "object",
@@ -2262,6 +2589,26 @@
           "description": "Options passed directly to `rdkafka`.\n\nSee [`librdkafka` options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)\nused to configure the Kafka producer."
         }
       },
+      "KafkaOutputFtConfig": {
+        "type": "object",
+        "description": "Fault tolerance configuration for Kafka output connector.",
+        "properties": {
+          "consumer_options": {
+            "type": "object",
+            "description": "Options passed to `rdkafka` for consumers only, as documented at\n[`librdkafka`\noptions](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md).\n\nThese options override `kafka_options` for consumers, and may be empty.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "producer_options": {
+            "type": "object",
+            "description": "Options passed to `rdkafka` for producers only, as documented at\n[`librdkafka`\noptions](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md).\n\nThese options override `kafka_options` for producers, and may be empty.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "ListPipelinesQueryParameters": {
         "type": "object",
         "description": "Query parameters for GET the list of pipelines.",
@@ -2269,6 +2616,30 @@
           "code": {
             "type": "boolean",
             "description": "Whether to include program code in the response (default: `true`).\nPassing `false` reduces the response size, which is particularly handy\nwhen frequently monitoring the endpoint over low bandwidth connections."
+          }
+        }
+      },
+      "NeighborhoodQuery": {
+        "type": "object",
+        "description": "A request to output a specific neighborhood of a table or view.\nThe neighborhood is defined in terms of its central point (`anchor`)\nand the number of rows preceding and following the anchor to output.",
+        "required": [
+          "before",
+          "after"
+        ],
+        "properties": {
+          "after": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "anchor": {
+            "type": "object",
+            "nullable": true
+          },
+          "before": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -2348,6 +2719,15 @@
           }
         ],
         "description": "Describes an output connector configuration"
+      },
+      "OutputQuery": {
+        "type": "string",
+        "description": "A query over an output stream.\n\nWe currently do not support ad hoc queries.  Instead the client can use\nthree pre-defined queries to inspect the contents of a table or view.",
+        "enum": [
+          "table",
+          "neighborhood",
+          "quantiles"
+        ]
       },
       "PatchPipeline": {
         "type": "object",
@@ -2661,6 +3041,52 @@
           "jwk_uri": {
             "type": "string"
           }
+        }
+      },
+      "ReadStrategy": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Read a single object specified by a key",
+            "required": [
+              "key",
+              "type"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SingleKey"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Read all objects whose keys match a prefix",
+            "required": [
+              "prefix",
+              "type"
+            ],
+            "properties": {
+              "prefix": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Prefix"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Strategy that determines which objects to read from a given bucket",
+        "discriminator": {
+          "propertyName": "type"
         }
       },
       "Relation": {
@@ -3247,12 +3673,24 @@
   },
   "tags": [
     {
-      "name": "Manager",
-      "description": "Configure system behavior"
+      "name": "Pipelines",
+      "description": "Manage pipelines and their deployment."
     },
     {
-      "name": "Pipelines",
-      "description": "Manage pipelines"
+      "name": "HTTP input/output",
+      "description": "Interact with running pipelines using HTTP."
+    },
+    {
+      "name": "Authentication",
+      "description": "Retrieve authentication configuration."
+    },
+    {
+      "name": "Configuration",
+      "description": "Retrieve general configuration."
+    },
+    {
+      "name": "API keys",
+      "description": "Manage API keys."
     }
   ]
 }

@@ -17,9 +17,7 @@ use tokio_postgres::Row;
 use uuid::Uuid;
 
 /// Converts a pipeline table row to its extended descriptor.
-fn row_to_extended_pipeline_descriptor(
-    row: &Row,
-) -> Result<ExtendedPipelineDescr<String>, DBError> {
+fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
     assert_eq!(row.len(), 21);
     let program_schema_str = row.get::<_, Option<String>>(13);
     let deployment_config_str = row.get::<_, Option<String>>(19);
@@ -57,7 +55,7 @@ fn row_to_extended_pipeline_descriptor(
 pub(crate) async fn list_pipelines(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
-) -> Result<Vec<ExtendedPipelineDescr<String>>, DBError> {
+) -> Result<Vec<ExtendedPipelineDescr>, DBError> {
     let stmt = txn
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
@@ -83,7 +81,7 @@ pub(crate) async fn get_pipeline(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     name: &str,
-) -> Result<ExtendedPipelineDescr<String>, DBError> {
+) -> Result<ExtendedPipelineDescr, DBError> {
     let stmt = txn
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
@@ -108,7 +106,7 @@ pub async fn get_pipeline_by_id(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
-) -> Result<ExtendedPipelineDescr<String>, DBError> {
+) -> Result<ExtendedPipelineDescr, DBError> {
     let stmt = txn
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
@@ -642,7 +640,7 @@ pub(crate) async fn list_pipeline_ids_across_all_tenants(
 /// Lists pipelines across all tenants.
 pub(crate) async fn list_pipelines_across_all_tenants(
     txn: &Transaction<'_>,
-) -> Result<Vec<(TenantId, ExtendedPipelineDescr<String>)>, DBError> {
+) -> Result<Vec<(TenantId, ExtendedPipelineDescr)>, DBError> {
     let stmt = txn
         .prepare_cached(
             "SELECT p.id,p. tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
@@ -669,7 +667,7 @@ pub(crate) async fn list_pipelines_across_all_tenants(
 /// Retrieves the pipeline whose program status has been Pending for the longest and whose program code is non-empty.
 pub(crate) async fn get_next_pipeline_program_to_compile(
     txn: &Transaction<'_>,
-) -> Result<Option<(TenantId, ExtendedPipelineDescr<String>)>, DBError> {
+) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
     let stmt = txn
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
