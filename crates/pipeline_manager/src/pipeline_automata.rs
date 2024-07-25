@@ -743,16 +743,18 @@ async fn pipeline_http_request_json_response(
 #[cfg(test)]
 mod test {
     use super::{PipelineExecutionDesc, PipelineExecutor};
-    use crate::config::CompilationProfile;
+    use crate::auth::TenantRecord;
     use crate::db::storage::Storage;
     use crate::db::storage_postgres::StoragePostgres;
-    use crate::db::types::pipeline::{PipelineId, PipelineStatus};
-    use crate::db::types::program::{ProgramConfig, ProgramStatus};
+    use crate::db::types::common::Version;
+    use crate::db::types::pipeline::{PipelineDescr, PipelineId, PipelineStatus};
+    use crate::db::types::program::{CompilationProfile, ProgramConfig};
+    use crate::error::ManagerError;
     use crate::logging;
     use crate::pipeline_automata::PipelineAutomaton;
-    use crate::{api::ManagerError, auth::TenantRecord};
     use async_trait::async_trait;
     use pipeline_types::config::RuntimeConfig;
+    use pipeline_types::program_schema::ProgramSchema;
     use std::sync::Arc;
     use tokio::sync::{Mutex, Notify};
     use uuid::Uuid;
@@ -783,31 +785,59 @@ mod test {
     }
 
     struct AutomatonTest {
-        conn: Arc<Mutex<StoragePostgres>>,
+        db: Arc<Mutex<StoragePostgres>>,
         automaton: PipelineAutomaton<MockPipeline>,
     }
 
     impl AutomatonTest {
         async fn set_desired_state(&self, status: PipelineStatus) {
             let automaton = &self.automaton;
-            self.conn
+            let pipeline = self
+                .db
                 .lock()
                 .await
-                .set_pipeline_desired_status(automaton.tenant_id, automaton.pipeline_id, status)
+                .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
                 .await
                 .unwrap();
+            match status {
+                PipelineStatus::Shutdown => {
+                    self.db
+                        .lock()
+                        .await
+                        .set_deployment_desired_status_shutdown(automaton.tenant_id, &pipeline.name)
+                        .await
+                        .unwrap();
+                }
+                PipelineStatus::Paused => {
+                    self.db
+                        .lock()
+                        .await
+                        .set_deployment_desired_status_paused(automaton.tenant_id, &pipeline.name)
+                        .await
+                        .unwrap();
+                }
+                PipelineStatus::Running => {
+                    self.db
+                        .lock()
+                        .await
+                        .set_deployment_desired_status_running(automaton.tenant_id, &pipeline.name)
+                        .await
+                        .unwrap();
+                }
+                _ => panic!("Invalid desired status"),
+            }
         }
 
         async fn check_current_state(&self, status: PipelineStatus) {
             let automaton = &self.automaton;
             let pipeline = self
-                .conn
+                .db
                 .lock()
                 .await
-                .get_pipeline_runtime_state_by_id(automaton.tenant_id, automaton.pipeline_id)
+                .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
                 .await
                 .unwrap();
-            assert_eq!(status, pipeline.current_status);
+            assert_eq!(status, pipeline.deployment_status);
         }
 
         async fn tick(&mut self) {
@@ -815,86 +845,73 @@ mod test {
         }
     }
 
-    async fn setup(conn: Arc<Mutex<StoragePostgres>>, uri: String) -> AutomatonTest {
-        // Create some programs and pipelines before listening for changes
+    async fn setup(db: Arc<Mutex<StoragePostgres>>, uri: String) -> AutomatonTest {
+        // Create a pipeline and a corresponding automaton
         let tenant_id = TenantRecord::default().id;
-        let program_id = Uuid::now_v7();
-
-        let (program_id, version) = conn
+        let pipeline_id = PipelineId(Uuid::now_v7());
+        let _ = db
             .lock()
             .await
-            .new_program(
+            .new_pipeline(
                 tenant_id,
-                program_id,
-                "test0",
-                "program desc",
-                "ignored",
-                &ProgramConfig {
-                    profile: Some(CompilationProfile::Unoptimized),
+                pipeline_id.0,
+                PipelineDescr {
+                    name: "example1".to_string(),
+                    description: "Description of example1".to_string(),
+                    runtime_config: RuntimeConfig::from_yaml(""),
+                    program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
+                    program_config: ProgramConfig {
+                        profile: Some(CompilationProfile::Unoptimized),
+                    },
                 },
-                None,
             )
             .await
             .unwrap();
-        let _ = conn
+
+        // Transition the pipeline program to success
+        let _ = db
             .lock()
             .await
-            .set_program_status_guarded(tenant_id, program_id, version, ProgramStatus::Success)
+            .transit_program_status_to_compiling_sql(tenant_id, pipeline_id, Version(1))
             .await
             .unwrap();
-        let _ = conn
+        let _ = db
             .lock()
             .await
-            .set_program_schema(
+            .transit_program_status_to_compiling_rust(
                 tenant_id,
-                program_id,
-                pipeline_types::program_schema::ProgramSchema {
+                pipeline_id,
+                Version(1),
+                &ProgramSchema {
                     inputs: vec![],
                     outputs: vec![],
                 },
             )
             .await
             .unwrap();
-        let rc = RuntimeConfig::from_yaml("");
-        let pipeline_id = Uuid::now_v7();
-        let _ = conn
+        let _ = db
             .lock()
             .await
-            .new_pipeline(
+            .transit_program_status_to_success(
                 tenant_id,
                 pipeline_id,
-                &Some("test0".to_string()),
-                "pipeline-id",
-                "2",
-                &rc,
-                &Some(vec![]),
-                None,
+                Version(1),
+                "not-used-program-binary-url",
             )
             .await
             .unwrap();
-        let pipeline_id = PipelineId(pipeline_id);
-        let _ = conn
-            .lock()
-            .await
-            .create_pipeline_deployment(Uuid::now_v7(), tenant_id, pipeline_id)
-            .await
-            .unwrap();
-        let _ = conn
-            .lock()
-            .await
-            .create_compiled_binary_ref(program_id, version, "ignored".to_string())
-            .await
-            .unwrap();
+
+        // Construct the automaton
         let notifier = Arc::new(Notify::new());
         let automaton = PipelineAutomaton::new(
             pipeline_id,
             tenant_id,
-            conn.clone(),
+            db.clone(),
             notifier.clone(),
             MockPipeline { uri },
         );
         AutomatonTest {
-            conn: conn.clone(),
+            db: db.clone(),
             automaton,
         }
     }
@@ -902,8 +919,8 @@ mod test {
     #[tokio::test]
     async fn pipeline_start() {
         logging::init_logging("foo".into());
-        let (conn, _temp) = crate::db::test::setup_pg().await;
-        let conn = Arc::new(tokio::sync::Mutex::new(conn));
+        let (db, _temp) = crate::db::test::setup_pg().await;
+        let db = Arc::new(Mutex::new(db));
         // Start a background HTTP server on a random local port
         let mock_server = MockServer::start().await;
         let template = ResponseTemplate::new(200).set_body_json(r#"{}"#);
@@ -916,7 +933,7 @@ mod test {
             .await;
 
         let addr = mock_server.address().to_string();
-        let mut test = setup(conn.clone(), addr).await;
+        let mut test = setup(db.clone(), addr).await;
         test.set_desired_state(PipelineStatus::Paused).await;
         test.check_current_state(PipelineStatus::Shutdown).await;
         test.tick().await;

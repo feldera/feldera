@@ -20,6 +20,7 @@ use rdkafka::{
     util::Timeout,
     ClientConfig, ClientContext, Message,
 };
+use std::collections::BTreeMap;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -245,7 +246,7 @@ impl BufferConsumer {
         let buffer = MockDeZSet::new();
 
         // Input parsers don't care about schema yet.
-        let schema = Relation::new("mock_schema", false, vec![], false);
+        let schema = Relation::new("mock_schema", false, vec![], false, BTreeMap::new());
 
         let mut parser = format
             .new_parser(

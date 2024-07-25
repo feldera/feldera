@@ -40,7 +40,7 @@ pub struct StoragePostgres {
     #[cfg(feature = "pg-embed")]
     #[allow(dead_code)]
     // It has to stay alive until StoragePostgres is dropped. // TODO: use _ instead?
-    pg_inst: Option<pg_embed::postgres::PgEmbed>,
+    pub(crate) pg_inst: Option<pg_embed::postgres::PgEmbed>,
 }
 
 #[async_trait]
@@ -716,7 +716,7 @@ impl StoragePostgres {
     /// Maybe this should become the preferred way to create a ProjectDb
     /// together with `pg-client-config` (and drop `connect_inner`).
     #[cfg(all(test, not(feature = "pg-embed")))]
-    async fn with_config(config: tokio_postgres::Config) -> Result<Self, DBError> {
+    pub(crate) async fn with_config(config: tokio_postgres::Config) -> Result<Self, DBError> {
         let db = StoragePostgres::initialize(
             config,
             #[cfg(feature = "pg-embed")]
@@ -730,7 +730,7 @@ impl StoragePostgres {
     ///
     /// # Arguments
     /// - `connection_str`: The connection string to the database.
-    async fn connect_inner(
+    pub(crate) async fn connect_inner(
         connection_str: &str,
         #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>,
     ) -> Result<Self, DBError> {
