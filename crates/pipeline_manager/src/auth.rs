@@ -727,7 +727,11 @@ mod test {
         let (conn, _temp) = crate::db::test::setup_pg().await;
         if api_key.is_some() {
             let tenant_id = conn
-                .get_or_create_tenant_id("some-name".to_string(), "some-provider".to_string())
+                .get_or_create_tenant_id(
+                    Uuid::now_v7(),
+                    "some-name".to_string(),
+                    "some-provider".to_string(),
+                )
                 .await
                 .unwrap();
             conn.store_api_key_hash(

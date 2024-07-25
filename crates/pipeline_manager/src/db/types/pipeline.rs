@@ -17,7 +17,7 @@ use uuid::Uuid;
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct PipelineId(
-    #[cfg_attr(test, proptest(strategy = "super::test::limited_uuid()"))] pub Uuid,
+    #[cfg_attr(test, proptest(strategy = "crate::db::test::limited_uuid()"))] pub Uuid,
 );
 impl Display for PipelineId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -256,6 +256,7 @@ pub struct PipelineDescr {
 
 /// Pipeline descriptor which besides the basic fields in direct regular control of the user
 /// also has all additional fields generated and maintained by the back-end.
+// TODO: add or derive proptest values
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub struct ExtendedPipelineDescr {
     /// Assigned globally unique pipeline identifier.
@@ -306,25 +307,22 @@ pub struct ExtendedPipelineDescr {
 
     /// Time when the pipeline was assigned its current status
     /// of the pipeline.
-    #[cfg_attr(test, proptest(value = "Utc::now()"))]
     pub deployment_status_since: DateTime<Utc>,
 
     /// Desired pipeline status, i.e., the status requested by the user.
     ///
-    /// Possible values are [`Shutdown`](`PipelineStatus::Shutdown`),
+    /// Possible values are:
+    /// [`Shutdown`](`PipelineStatus::Shutdown`),
     /// [`Paused`](`PipelineStatus::Paused`), and
     /// [`Running`](`PipelineStatus::Running`).
     pub deployment_desired_status: PipelineStatus,
 
     /// Error that caused the pipeline to fail.
     ///
-    /// This field is only used when the `current_status` of the pipeline
-    /// is [`Shutdown`](`PipelineStatus::Shutdown`) or
-    /// [`Failed`](`PipelineStatus::Failed`).
+    /// This field is only used when the `deployment_status` of the pipeline
+    /// is [`Failed`](`PipelineStatus::Failed`).
     /// When present, this field contains the error that caused
     /// the pipeline to terminate abnormally.
-    // TODO: impl `Arbitrary` for `ErrorResponse`.
-    #[cfg_attr(test, proptest(value = "None"))]
     pub deployment_error: Option<ErrorResponse>,
 
     // Pipeline configuration.
