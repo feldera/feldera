@@ -1,30 +1,10 @@
-// use super::storage::Storage;
-// use crate::auth::{self, TenantRecord};
-// use async_trait::async_trait;
-// use chrono::{DateTime, NaiveDateTime, Utc};
-// use deadpool_postgres::Transaction;
-// use openssl::sha::{self};
-// use pipeline_types::config::{ConnectorConfig, TransportConfigVariant};
-// use pipeline_types::service::{KafkaService, ServiceConfig};
-// use pipeline_types::{
-//     config::{ResourceConfig, RuntimeConfig},
-//     program_schema::Relation,
-// };
-// use pretty_assertions::assert_eq;
-// use proptest::test_runner::{Config, TestRunner};
-// use proptest::{bool, prelude::*};
-// use proptest_derive::Arbitrary;
-// use std::collections::BTreeMap;
-// use std::fmt::Debug;
-// use std::time::SystemTime;
-// use std::vec;
-// use tokio::sync::Mutex;
-// use uuid::Uuid;
-// use crate::db::error::DBError;
-// use crate::db::storage_postgres::StoragePostgres;
-//
+use crate::db::storage_postgres::StoragePostgres;
+use proptest::prelude::*;
+use std::vec;
+use uuid::Uuid;
+
 // type DBResult<T> = Result<T, DBError>;
-//
+
 // struct DbHandle {
 //     db: StoragePostgres,
 //     #[cfg(feature = "pg-embed")]
@@ -32,7 +12,7 @@
 //     #[cfg(not(feature = "pg-embed"))]
 //     config: tokio_postgres::Config,
 // }
-//
+
 // impl Drop for DbHandle {
 //     #[cfg(feature = "pg-embed")]
 //     fn drop(&mut self) {
@@ -70,14 +50,14 @@
 //         };
 //     }
 // }
-//
+
 // #[cfg(test)]
 // impl Version {
 //     fn increment(&self) -> Self {
 //         Self(self.0 + 1)
 //     }
 // }
-//
+
 // #[cfg(feature = "pg-embed")]
 // async fn test_setup() -> DbHandle {
 //     let (conn, _temp_dir) = setup_pg().await;
@@ -87,78 +67,104 @@
 //         _temp_dir,
 //     }
 // }
-//
-// #[cfg(feature = "pg-embed")]
-// pub(crate) async fn setup_pg() -> (StoragePostgres, tempfile::TempDir) {
-//     use std::net::TcpListener;
-//     use std::sync::atomic::{AtomicU16, Ordering};
-//
-//     // Find a free port to use for running the test database.
-//     let port = {
-//         /// This is a fallback method counter for port selection in case binding
-//         /// to port 0 on localhost fails (to select a random, open
-//         /// port).
-//         static DB_PORT_COUNTER: AtomicU16 = AtomicU16::new(5555);
-//
-//         let listener = TcpListener::bind(("127.0.0.1", 0)).expect("Failed to bind to port 0");
-//         listener
-//             .local_addr()
-//             .map(|l| l.port())
-//             .unwrap_or(DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed))
-//     };
-//
-//     let _temp_dir = tempfile::tempdir().unwrap();
-//     let temp_path = _temp_dir.path();
-//     let pg = crate::db::pg_setup::install(temp_path.into(), false, Some(port))
-//         .await
-//         .unwrap();
-//     let db_uri = pg.db_uri.clone();
-//     let conn = StoragePostgres::connect_inner(&db_uri, Some(pg)).await.unwrap();
-//     conn.run_migrations().await.unwrap();
-//     (conn, _temp_dir)
-// }
-//
+
+#[cfg(feature = "pg-embed")]
+pub(crate) async fn setup_pg() -> (StoragePostgres, tempfile::TempDir) {
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicU16, Ordering};
+
+    // Find a free port to use for running the test database.
+    let port = {
+        /// This is a fallback method counter for port selection in case binding
+        /// to port 0 on localhost fails (to select a random, open
+        /// port).
+        static DB_PORT_COUNTER: AtomicU16 = AtomicU16::new(5555);
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("Failed to bind to port 0");
+        listener
+            .local_addr()
+            .map(|l| l.port())
+            .unwrap_or(DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed))
+    };
+
+    let _temp_dir = tempfile::tempdir().unwrap();
+    let temp_path = _temp_dir.path();
+    let pg = crate::db::pg_setup::install(temp_path.into(), false, Some(port))
+        .await
+        .unwrap();
+    let db_uri = pg.db_uri.clone();
+    let conn = StoragePostgres::connect_inner(&db_uri, Some(pg))
+        .await
+        .unwrap();
+    conn.run_migrations().await.unwrap();
+    (conn, _temp_dir)
+}
+
 // #[cfg(not(feature = "pg-embed"))]
 // async fn test_setup() -> DbHandle {
 //     let (conn, config) = setup_pg().await;
 //     DbHandle { db: conn, config }
 // }
-//
-// #[cfg(not(feature = "pg-embed"))]
-// pub(crate) async fn setup_pg() -> (StoragePostgres, tokio_postgres::Config) {
-//     use pg_client_config::load_config;
-//
-//     let mut config = load_config(None).unwrap();
-//
-//     // Workaround for https://github.com/3liz/pg-event-server/issues/1.
-//     if let Ok(pguser) = std::env::var("PGUSER") {
-//         config.user(&pguser);
-//     };
-//
-//     let test_db = format!("test_{}", rand::thread_rng().gen::<u32>());
-//     let (client, conn) = config
-//         .connect(tokio_postgres::NoTls)
-//         .await
-//         .expect("Failure connecting to test PG instance");
-//     tokio::spawn(async move {
-//         if let Err(e) = conn.await {
-//             eprintln!("connection error: {}", e);
-//         }
-//     });
-//     client
-//         .execute(format!("CREATE DATABASE {}", test_db).as_str(), &[])
-//         .await
-//         .expect("Failure in test setup");
-//     drop(client);
-//
-//     log::debug!("tests connecting to: {config:#?}");
-//
-//     config.dbname(&test_db);
-//     let conn = StoragePostgres::with_config(config.clone()).await.unwrap();
-//     conn.run_migrations().await.unwrap();
-//
-//     (conn, config)
-// }
+
+#[cfg(not(feature = "pg-embed"))]
+pub(crate) async fn setup_pg() -> (StoragePostgres, tokio_postgres::Config) {
+    use pg_client_config::load_config;
+
+    let mut config = load_config(None).unwrap();
+
+    // Workaround for https://github.com/3liz/pg-event-server/issues/1.
+    if let Ok(pguser) = std::env::var("PGUSER") {
+        config.user(&pguser);
+    };
+
+    let test_db = format!("test_{}", rand::thread_rng().gen::<u32>());
+    let (client, conn) = config
+        .connect(tokio_postgres::NoTls)
+        .await
+        .expect("Failure connecting to test PG instance");
+    tokio::spawn(async move {
+        if let Err(e) = conn.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+    client
+        .execute(format!("CREATE DATABASE {}", test_db).as_str(), &[])
+        .await
+        .expect("Failure in test setup");
+    drop(client);
+
+    log::debug!("tests connecting to: {config:#?}");
+
+    config.dbname(&test_db);
+    let conn = StoragePostgres::with_config(config.clone()).await.unwrap();
+    conn.run_migrations().await.unwrap();
+
+    (conn, config)
+}
+
+/// Generate uuids but limits the the randomess to the first bits.
+///
+/// This ensures that we have a good chance of generating a uuid that is already
+/// in the database -- useful for testing error conditions.
+pub(crate) fn limited_uuid() -> impl Strategy<Value = Uuid> {
+    vec![any::<u8>()].prop_map(|mut bytes| {
+        // prepend a bunch of zero bytes so the buffer is big enough for
+        // building a uuid
+        bytes.resize(16, 0);
+        // restrict the any::<u8> (0..255) to 1..4 this enforces more
+        // interesting scenarios for testing (and we start at 1 because shaving
+        bytes[0] &= 0b11;
+        // a uuid of 0 is invalid and postgres will treat it as NULL
+        bytes[0] |= 0b1;
+        Uuid::from_bytes(
+            bytes
+                .as_slice()
+                .try_into()
+                .expect("slice with incorrect length"),
+        )
+    })
+}
+
 //
 // pub fn test_connector_config() -> ConnectorConfig {
 //     ConnectorConfig::from_yaml_str(
@@ -1149,28 +1155,7 @@
 //     }
 // }
 //
-// /// Generate uuids but limits the the randomess to the first bits.
-// ///
-// /// This ensures that we have a good chance of generating a uuid that is already
-// /// in the database -- useful for testing error conditions.
-// pub(crate) fn limited_uuid() -> impl Strategy<Value = Uuid> {
-//     vec![any::<u8>()].prop_map(|mut bytes| {
-//         // prepend a bunch of zero bytes so the buffer is big enough for
-//         // building a uuid
-//         bytes.resize(16, 0);
-//         // restrict the any::<u8> (0..255) to 1..4 this enforces more
-//         // interesting scenarios for testing (and we start at 1 because shaving
-//         bytes[0] &= 0b11;
-//         // a uuid of 0 is invalid and postgres will treat it as NULL
-//         bytes[0] |= 0b1;
-//         Uuid::from_bytes(
-//             bytes
-//                 .as_slice()
-//                 .try_into()
-//                 .expect("slice with incorrect length"),
-//         )
-//     })
-// }
+
 //
 // /// Generate different connector types
 // /// TODO: should we generate more configuration variants?

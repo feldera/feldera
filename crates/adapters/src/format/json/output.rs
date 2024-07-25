@@ -391,6 +391,7 @@ mod test {
     use pipeline_types::program_schema::Relation;
     use proptest::prelude::*;
     use serde::Deserialize;
+    use std::collections::BTreeMap;
     use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
 
     trait OutputUpdate: Debug + for<'de> Deserialize<'de> + Eq + Ord {
@@ -494,7 +495,13 @@ mod test {
         let mut encoder = JsonEncoder::new(
             Box::new(consumer),
             config,
-            &Relation::new("TestStruct", false, TestStruct::schema(), false),
+            &Relation::new(
+                "TestStruct",
+                false,
+                TestStruct::schema(),
+                false,
+                BTreeMap::new(),
+            ),
         );
         let zsets = batches
             .iter()
@@ -671,7 +678,13 @@ mod test {
         let mut encoder = JsonEncoder::new(
             Box::new(consumer),
             config,
-            &Relation::new("TestStruct", false, TestStruct::schema(), false),
+            &Relation::new(
+                "TestStruct",
+                false,
+                TestStruct::schema(),
+                false,
+                BTreeMap::new(),
+            ),
         );
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 

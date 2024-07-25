@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::Path;
@@ -115,7 +116,13 @@ fn parquet_output() {
     let mut encoder = ParquetEncoder::new(
         Box::new(consumer),
         config,
-        Relation::new("TestStruct2", false, TestStruct2::schema(), false),
+        Relation::new(
+            "TestStruct2",
+            false,
+            TestStruct2::schema(),
+            false,
+            BTreeMap::new(),
+        ),
     )
     .expect("Can't create encoder");
     let zset = OrdZSet::from_keys(
