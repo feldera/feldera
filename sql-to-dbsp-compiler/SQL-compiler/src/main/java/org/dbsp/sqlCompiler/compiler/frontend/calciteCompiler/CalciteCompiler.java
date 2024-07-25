@@ -520,8 +520,19 @@ public class CalciteCompiler implements IWritesLogs {
         Map<String, SqlNode> previous = new HashMap<>();
         assert list.size() % 2 == 0;
         for (int i = 0; i < list.size(); i += 2) {
-            SqlCharStringLiteral key = (SqlCharStringLiteral) list.get(i);
-            SqlCharStringLiteral value = (SqlCharStringLiteral) list.get(i+1);
+            SqlNode inode = list.get(i);
+            if (!(inode instanceof SqlCharStringLiteral key)) {
+                this.errorReporter.reportError(new SourcePositionRange(inode.getParserPosition()),
+                        "Expected a simple string", "Found " + Utilities.singleQuote(inode.toString()));
+                continue;
+            }
+            SqlNode iinode = list.get(i+1);
+            if (!(iinode instanceof SqlCharStringLiteral value)) {
+                this.errorReporter.reportError(new SourcePositionRange(iinode.getParserPosition()),
+                        "Expected a simple string", "Found " + Utilities.singleQuote(iinode.toString()));
+                continue;
+            }
+
             String keyString = key.toValue();
             assert keyString != null;
             if (result.containsKey(keyString)) {

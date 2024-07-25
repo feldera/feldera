@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -7,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Logger;
@@ -15,6 +17,18 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
+    @Test
+    public void issue2090() {
+        String sql = """
+                CREATE TABLE example (
+                    id INT
+                ) WITH (
+                    'connector' = 'value1'
+                                  'value2'
+                );""";
+        this.statementsFailingInCompilation(sql, "Expected a simple string");
+    }
+
     @Test
     public void issue2017() {
         String sql = """
