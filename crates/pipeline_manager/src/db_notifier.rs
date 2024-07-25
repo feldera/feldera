@@ -1,17 +1,14 @@
-/// Machinery to subscribe to notifications from database tables.
-/// Intended to be used by various reconciliation loops.
-use std::sync::Arc;
-
-use log::{debug, error, trace, warn};
-
-use tokio::sync::mpsc::UnboundedSender;
-
+// Machinery to subscribe to notifications from database tables.
+// Intended to be used by various reconciliation loops.
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::tenant::TenantId;
 use futures_util::{stream, StreamExt};
+use log::{debug, error, trace, warn};
+use std::sync::Arc;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio_postgres::AsyncMessage;
 use uuid::Uuid;
 
@@ -207,201 +204,126 @@ fn parse_notification(channel: &str, payload: &str) -> Result<DbNotification, No
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-
-    use pipeline_types::config::RuntimeConfig;
-    use uuid::Uuid;
-
-    use crate::db::types::pipeline::PipelineId;
-    use crate::db::types::program::CompilationProfile;
+    use super::listen;
+    use crate::db::types::pipeline::{PipelineDescr, PipelineId};
+    use crate::db::types::program::{CompilationProfile, ProgramConfig};
     use crate::{
         auth::TenantRecord,
         db::storage::Storage,
         db_notifier::{DbNotification, Operation},
     };
-
-    use super::listen;
+    use pipeline_types::config::RuntimeConfig;
+    use std::sync::Arc;
+    use uuid::Uuid;
 
     #[tokio::test]
     pub async fn notifier_changes() {
-        let (conn, _temp) = crate::db::test::setup_pg().await;
+        let (db, _temp) = crate::db::test::setup_pg().await;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let conn = Arc::new(tokio::sync::Mutex::new(conn));
-        tokio::spawn(listen(conn.clone(), tx));
+        let db = Arc::new(tokio::sync::Mutex::new(db));
+        tokio::spawn(listen(db.clone(), tx));
         let tenant_id = TenantRecord::default().id;
         for i in 0..10 {
-            // Test inserts
-            let program_id = Uuid::now_v7();
-            let _ = conn
-                .lock()
-                .await
-                .new_program(
-                    tenant_id,
-                    program_id,
-                    &format!("test{i}").to_string(),
-                    "program desc",
-                    "ignored",
-                    &ProgramConfig {
-                        profile: Some(CompilationProfile::Unoptimized),
-                    },
-                    None,
-                )
-                .await
-                .unwrap();
-            let rc = RuntimeConfig::from_yaml("");
-            let pipeline_id = Uuid::now_v7();
-            let _ = conn
+            // Create
+            let pipeline_id = PipelineId(Uuid::now_v7());
+            let _ = db
                 .lock()
                 .await
                 .new_pipeline(
                     tenant_id,
-                    pipeline_id,
-                    &None,
-                    &format!("{i}"),
-                    "2",
-                    &rc,
-                    &Some(vec![]),
-                    None,
+                    pipeline_id.0,
+                    PipelineDescr {
+                        name: format!("example{i}"),
+                        description: "Description of example".to_string(),
+                        runtime_config: RuntimeConfig::from_yaml(""),
+                        program_code: "CREATE TABLE example ( col1 INT );".to_string(),
+                        program_config: ProgramConfig {
+                            profile: Some(CompilationProfile::Unoptimized),
+                        },
+                    },
                 )
                 .await
                 .unwrap();
 
-            let program_id = ProgramId(program_id);
-            let pipeline_id = PipelineId(pipeline_id);
-            let n = rx.recv().await.unwrap();
-            assert_eq!(
-                DbNotification::Program(Operation::Add, tenant_id, program_id),
-                n,
-            );
-            let n = rx.recv().await.unwrap();
+            // Check creation notification was sent
+            let notification = rx.recv().await.unwrap();
             assert_eq!(
                 DbNotification::Pipeline(Operation::Add, tenant_id, pipeline_id),
-                n,
+                notification,
             );
 
-            // Updates
-            let updated_program_name = format!("updated_test{i}");
-            let _ = conn
-                .lock()
-                .await
-                .update_program(
-                    tenant_id,
-                    program_id,
-                    &Some(updated_program_name.clone()),
-                    &Some("some new description".to_string()),
-                    &None,
-                    &None,
-                    &None,
-                    &None,
-                    None,
-                    None,
-                )
-                .await;
-            let pipeline_name = &format!("{i}");
-            let _ = conn
+            // Update
+            let _ = db
                 .lock()
                 .await
                 .update_pipeline(
                     tenant_id,
-                    pipeline_id,
+                    &format!("example{i}"),
+                    &Some(format!("example{i}-renamed")),
+                    &Some("Description of example2".to_string()),
                     &None,
-                    pipeline_name,
-                    "some new description",
+                    &Some("CREATE TABLE example ( col1 VARCHAR );".to_string()),
                     &None,
-                    &None,
-                    None,
                 )
                 .await;
-            let n = rx.recv().await.unwrap();
-            assert_eq!(
-                DbNotification::Program(Operation::Update, tenant_id, program_id),
-                n,
-            );
-            let n = rx.recv().await.unwrap();
+
+            // Check update notification was sent
+            let notification = rx.recv().await.unwrap();
             assert_eq!(
                 DbNotification::Pipeline(Operation::Update, tenant_id, pipeline_id),
-                n,
+                notification,
             );
 
-            // Deletes
-            conn.lock()
+            // Delete
+            db.lock()
                 .await
-                .delete_program(tenant_id, &updated_program_name)
-                .await
-                .unwrap();
-            conn.lock()
-                .await
-                .delete_pipeline(tenant_id, pipeline_name)
+                .delete_pipeline(tenant_id, &format!("example{i}-renamed"))
                 .await
                 .unwrap();
 
-            let n = rx.recv().await.unwrap();
-            assert_eq!(
-                DbNotification::Program(Operation::Delete, tenant_id, program_id),
-                n,
-            );
-            let n = rx.recv().await.unwrap();
+            // Check delete notification was sent
+            let notification = rx.recv().await.unwrap();
             assert_eq!(
                 DbNotification::Pipeline(Operation::Delete, tenant_id, pipeline_id),
-                n,
+                notification,
             );
         }
     }
 
     #[tokio::test]
     pub async fn notifier_sync() {
-        let (conn, _temp) = crate::db::test::setup_pg().await;
+        let (db, _temp) = crate::db::test::setup_pg().await;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let conn = Arc::new(tokio::sync::Mutex::new(conn));
+        let db = Arc::new(tokio::sync::Mutex::new(db));
 
-        // Create some programs and pipelines before listening for changes
+        // Create a pipeline
         let tenant_id = TenantRecord::default().id;
-        let program_id = Uuid::now_v7();
-        let _ = conn
-            .lock()
-            .await
-            .new_program(
-                tenant_id,
-                program_id,
-                "test0",
-                "program desc",
-                "ignored",
-                &ProgramConfig {
-                    profile: Some(CompilationProfile::Unoptimized),
-                },
-                None,
-            )
-            .await
-            .unwrap();
-        let rc = RuntimeConfig::from_yaml("");
-        let pipeline_id = Uuid::now_v7();
-        let _ = conn
+        let pipeline_id = PipelineId(Uuid::now_v7());
+        let _ = db
             .lock()
             .await
             .new_pipeline(
                 tenant_id,
-                pipeline_id,
-                &None,
-                "test1",
-                "2",
-                &rc,
-                &Some(vec![]),
-                None,
+                pipeline_id.0,
+                PipelineDescr {
+                    name: "example1".to_string(),
+                    description: "Description of example1".to_string(),
+                    runtime_config: RuntimeConfig::from_yaml(""),
+                    program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
+                    program_config: ProgramConfig {
+                        profile: Some(CompilationProfile::Unoptimized),
+                    },
+                },
             )
             .await
             .unwrap();
-        let program_id = ProgramId(program_id);
-        let pipeline_id = PipelineId(pipeline_id);
-        tokio::spawn(listen(conn.clone(), tx));
-        let n = rx.recv().await.unwrap();
-        assert_eq!(
-            DbNotification::Program(Operation::Add, tenant_id, program_id),
-            n,
-        );
-        let n = rx.recv().await.unwrap();
+
+        // Check that a notifier which is created later still issues the add notification
+        tokio::spawn(listen(db.clone(), tx));
+        let notification = rx.recv().await.unwrap();
         assert_eq!(
             DbNotification::Pipeline(Operation::Add, tenant_id, pipeline_id),
-            n,
+            notification,
         );
     }
 }

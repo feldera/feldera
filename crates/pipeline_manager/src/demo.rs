@@ -75,8 +75,8 @@ pub fn read_demos_from_directory(demos_dir: &Path) -> Result<Vec<Demo>, ManagerE
 
 #[cfg(test)]
 mod test {
-    use crate::api::ManagerError;
     use crate::demo::{read_demos_from_directory, Demo, DemoError};
+    use crate::error::ManagerError;
     use std::fs;
     use std::fs::File;
     use std::io::Write;

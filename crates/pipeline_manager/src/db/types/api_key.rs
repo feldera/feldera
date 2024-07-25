@@ -10,7 +10,9 @@ use uuid::Uuid;
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[repr(transparent)]
 #[serde(transparent)]
-pub struct ApiKeyId(#[cfg_attr(test, proptest(strategy = "test::limited_uuid()"))] pub Uuid);
+pub struct ApiKeyId(
+    #[cfg_attr(test, proptest(strategy = "crate::db::test::limited_uuid()"))] pub Uuid,
+);
 impl Display for ApiKeyId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)

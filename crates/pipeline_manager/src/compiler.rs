@@ -962,50 +962,52 @@ impl CompilationJob {
 
 #[cfg(test)]
 mod test {
+    use crate::compiler::Compiler;
+    use crate::db::storage_postgres::StoragePostgres;
+    use crate::db::types::common::Version;
+    use crate::db::types::pipeline::{PipelineDescr, PipelineId};
+    use crate::db::types::program::{CompilationProfile, ProgramConfig};
+    use crate::{
+        auth::TenantRecord, compiler::ProgramStatus, config::CompilerConfig, db::storage::Storage,
+    };
+    use pipeline_types::config::RuntimeConfig;
+    use pipeline_types::program_schema::ProgramSchema;
     use std::{fs::File, sync::Arc};
-
     use tempfile::TempDir;
     use tokio::{fs, sync::Mutex};
     use uuid::Uuid;
 
-    use crate::compiler::Compiler;
-    use crate::db::storage_postgres::StoragePostgres;
-    use crate::db::types::program::ProgramConfig;
-    use crate::{
-        auth::TenantRecord,
-        compiler::ProgramStatus,
-        config::{CompilationProfile, CompilerConfig},
-        db::storage::Storage,
-    };
-
-    async fn create_program(db: &Arc<Mutex<StoragePostgres>>, pname: &str) -> (ProgramId, Version) {
+    async fn create_program(
+        db: &Arc<Mutex<StoragePostgres>>,
+        pname: &str,
+    ) -> (PipelineId, Version) {
         let tenant_id = TenantRecord::default().id;
-        db.lock()
-            .await
-            .new_program(
-                tenant_id,
-                Uuid::now_v7(),
-                pname,
-                "program desc",
-                "ignored",
-                &ProgramConfig {
-                    profile: Some(CompilationProfile::Unoptimized),
-                },
-                None,
-            )
-            .await
-            .unwrap()
-    }
-
-    async fn check_program_status_pending(db: &Arc<Mutex<StoragePostgres>>, pname: &str) {
-        let tenant_id = TenantRecord::default().id;
-        let programdesc = db
+        let pipeline_id = PipelineId(Uuid::now_v7());
+        let pipeline = db
             .lock()
             .await
-            .get_program_by_name(tenant_id, pname, false, None)
+            .new_pipeline(
+                tenant_id,
+                pipeline_id.0,
+                PipelineDescr {
+                    name: pname.to_string(),
+                    description: "Description of the pipeline".to_string(),
+                    runtime_config: RuntimeConfig::from_yaml(""),
+                    program_code: "code-not-used".to_string(),
+                    program_config: ProgramConfig {
+                        profile: Some(CompilationProfile::Unoptimized),
+                    },
+                },
+            )
             .await
             .unwrap();
-        assert_eq!(ProgramStatus::Pending, programdesc.status);
+        (pipeline.id, pipeline.program_version)
+    }
+
+    async fn check_program_status_pending(db: &Arc<Mutex<StoragePostgres>>, name: &str) {
+        let tenant_id = TenantRecord::default().id;
+        let pipeline = db.lock().await.get_pipeline(tenant_id, name).await.unwrap();
+        assert_eq!(ProgramStatus::Pending, pipeline.program_status);
     }
 
     #[tokio::test]
@@ -1016,7 +1018,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            compilation_profile: crate::config::CompilationProfile::Unoptimized,
+            compilation_profile: CompilationProfile::Unoptimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
@@ -1027,50 +1029,71 @@ mod test {
         let db = Arc::new(Mutex::new(db));
 
         // Empty binaries folder, no programs in API
-        super::Compiler::reconcile_local_state(&conf, &db)
-            .await
-            .unwrap();
+        Compiler::reconcile_local_state(&conf, &db).await.unwrap();
 
-        // Create uncompiled program
+        // Create not yet compiled program
         let (pid, vid) = create_program(&db, "p1").await;
-        super::Compiler::reconcile_local_state(&conf, &db)
-            .await
-            .unwrap();
-
-        // Now set the program to be queued for compilation
-        db.lock()
-            .await
-            .set_program_status_guarded(tid, pid, vid, super::ProgramStatus::Pending)
-            .await
-            .unwrap();
-        super::Compiler::reconcile_local_state(&conf, &db)
-            .await
-            .unwrap();
+        Compiler::reconcile_local_state(&conf, &db).await.unwrap();
         check_program_status_pending(&db, "p1").await;
 
-        // Now try all "compiling" states set the program to be compiled
-        for state in vec![
-            super::ProgramStatus::CompilingSql,
-            super::ProgramStatus::CompilingRust,
-            super::ProgramStatus::Success,
-        ] {
-            if state == super::ProgramStatus::Success {
-                db.lock()
-                    .await
-                    .create_compiled_binary_ref(pid, vid, "dummy".to_string())
-                    .await
-                    .unwrap();
-            }
-            db.lock()
-                .await
-                .set_program_status_guarded(tid, pid, vid, state)
-                .await
-                .unwrap();
-            super::Compiler::reconcile_local_state(&conf, &db)
-                .await
-                .unwrap();
-            check_program_status_pending(&db, "p1").await;
-        }
+        // Database claims the program status is CompilingSql
+        Compiler::reconcile_local_state(&conf, &db).await.unwrap();
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_sql(tid, pid, vid)
+            .await
+            .unwrap();
+        Compiler::reconcile_local_state(&conf, &db).await.unwrap();
+        check_program_status_pending(&db, "p1").await;
+
+        // Database claims the program status is CompilingRust
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_sql(tid, pid, vid)
+            .await
+            .unwrap();
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_rust(
+                tid,
+                pid,
+                vid,
+                &ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        Compiler::reconcile_local_state(&conf, &db).await.unwrap();
+        check_program_status_pending(&db, "p1").await;
+
+        // Database claims the program status is Success
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_sql(tid, pid, vid)
+            .await
+            .unwrap();
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_rust(
+                tid,
+                pid,
+                vid,
+                &ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        db.lock()
+            .await
+            .transit_program_status_to_success(tid, pid, vid, "dummy")
+            .await
+            .unwrap();
+        Compiler::reconcile_local_state(&conf, &db).await.unwrap();
+        check_program_status_pending(&db, "p1").await;
     }
 
     #[tokio::test]
@@ -1081,7 +1104,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            compilation_profile: crate::config::CompilationProfile::Unoptimized,
+            compilation_profile: CompilationProfile::Unoptimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
@@ -1093,28 +1116,55 @@ mod test {
 
         // Create successfully compiled program
         let (pid, vid) = create_program(&db, "p1").await;
-
         db.lock()
             .await
-            .set_program_status_guarded(tid, pid, vid, super::ProgramStatus::Success)
+            .transit_program_status_to_compiling_sql(tid, pid, vid)
             .await
             .unwrap();
-
         db.lock()
             .await
-            .create_compiled_binary_ref(pid, vid, "dummy".to_string())
+            .transit_program_status_to_compiling_rust(
+                tid,
+                pid,
+                vid,
+                &ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        db.lock()
+            .await
+            .transit_program_status_to_success(tid, pid, vid, "dummy")
             .await
             .unwrap();
 
         // Start without any local filesystem state
-        super::Compiler::reconcile_local_state(&conf, &db)
-            .await
-            .unwrap();
+        Compiler::reconcile_local_state(&conf, &db).await.unwrap();
 
-        // Attempt to create a new binary ref to simulate a successful compilation
+        // Simulate a new successful compilation
         db.lock()
             .await
-            .create_compiled_binary_ref(pid, vid, "dummy1".to_string())
+            .transit_program_status_to_compiling_sql(tid, pid, vid)
+            .await
+            .unwrap();
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_rust(
+                tid,
+                pid,
+                vid,
+                &ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        db.lock()
+            .await
+            .transit_program_status_to_success(tid, pid, vid, "dummy1")
             .await
             .unwrap();
     }
@@ -1127,7 +1177,7 @@ mod test {
         let conf = CompilerConfig {
             sql_compiler_home: "".to_owned(),
             dbsp_override_path: "../../".to_owned(),
-            compilation_profile: crate::config::CompilationProfile::Unoptimized,
+            compilation_profile: CompilationProfile::Unoptimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
             binary_ref_host: "127.0.0.1".to_string(),
@@ -1137,28 +1187,24 @@ mod test {
         let (db, _temp) = crate::db::test::setup_pg().await;
         let db = Arc::new(Mutex::new(db));
 
+        // Create two programs
         let (pid1, v1) = create_program(&db, "p1").await;
         let (pid2, v2) = create_program(&db, "p2").await;
-        for state in vec![
-            super::ProgramStatus::Pending,
-            super::ProgramStatus::CompilingSql,
-        ] {
-            db.lock()
-                .await
-                .set_program_status_guarded(tid, pid1, v1, state.clone())
-                .await
-                .unwrap();
-            db.lock()
-                .await
-                .set_program_status_guarded(tid, pid2, v2, state)
-                .await
-                .unwrap();
-            super::Compiler::reconcile_local_state(&conf, &db)
-                .await
-                .unwrap();
-            check_program_status_pending(&db, "p1").await;
-            check_program_status_pending(&db, "p2").await;
-        }
+
+        // Transition to CompilingSql and check reconciliation returns them to Pending
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_sql(tid, pid1, v1)
+            .await
+            .unwrap();
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_sql(tid, pid2, v2)
+            .await
+            .unwrap();
+        Compiler::reconcile_local_state(&conf, &db).await.unwrap();
+        check_program_status_pending(&db, "p1").await;
+        check_program_status_pending(&db, "p2").await;
 
         // Simulate compiled artifacts
         fs::create_dir(conf.binaries_dir()).await.unwrap();
@@ -1167,19 +1213,44 @@ mod test {
         File::create(path1.clone()).unwrap();
         File::create(path2.clone()).unwrap();
 
+        // Transition programs to CompilingRust
         db.lock()
             .await
-            .set_program_status_guarded(tid, pid1, v1, ProgramStatus::CompilingRust)
+            .transit_program_status_to_compiling_sql(tid, pid1, v1)
             .await
             .unwrap();
         db.lock()
             .await
-            .set_program_status_guarded(tid, pid2, v2, ProgramStatus::CompilingRust)
+            .transit_program_status_to_compiling_sql(tid, pid2, v2)
             .await
             .unwrap();
-        super::Compiler::reconcile_local_state(&conf, &db)
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_rust(
+                tid,
+                pid1,
+                v1,
+                &ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+            )
             .await
             .unwrap();
+        db.lock()
+            .await
+            .transit_program_status_to_compiling_rust(
+                tid,
+                pid2,
+                v2,
+                &ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        Compiler::reconcile_local_state(&conf, &db).await.unwrap();
         check_program_status_pending(&db, "p1").await;
         check_program_status_pending(&db, "p2").await;
         assert!(!path1.exists());
