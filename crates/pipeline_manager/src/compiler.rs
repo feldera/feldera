@@ -286,7 +286,7 @@ impl Compiler {
 
     async fn version_binary(
         config: &CompilerConfig,
-        pipeline: &ExtendedPipelineDescr<String>,
+        pipeline: &ExtendedPipelineDescr,
     ) -> Result<String, ManagerError> {
         let pipeline_id = pipeline.id;
         let version = pipeline.program_version;
@@ -783,7 +783,7 @@ struct CompilationJob {
     tenant_id: TenantId,
     compiler_process: Child,
     stage_start_time: Instant,
-    pipeline: ExtendedPipelineDescr<String>,
+    pipeline: ExtendedPipelineDescr,
 }
 
 impl CompilationJob {
@@ -799,7 +799,7 @@ impl CompilationJob {
     async fn sql(
         tenant_id: TenantId,
         config: &CompilerConfig,
-        pipeline: &ExtendedPipelineDescr<String>,
+        pipeline: &ExtendedPipelineDescr,
     ) -> Result<Self, ManagerError> {
         let code = pipeline.program_code.clone();
         let pipeline_id = pipeline.id;

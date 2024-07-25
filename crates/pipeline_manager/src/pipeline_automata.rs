@@ -53,7 +53,7 @@ pub trait PipelineExecutor: Sync + Send {
     /// into a execution descriptor which has no optional fields.
     async fn to_execution_desc(
         &self,
-        pipeline: &ExtendedPipelineDescr<String>,
+        pipeline: &ExtendedPipelineDescr,
     ) -> Result<PipelineExecutionDesc, ManagerError> {
         let deployment_config = generate_pipeline_config(
             pipeline.id.0,
@@ -517,10 +517,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         Ok(poll_timeout)
     }
 
-    async fn probe(
-        &mut self,
-        pipeline: &mut ExtendedPipelineDescr<String>,
-    ) -> Result<State, ManagerError> {
+    async fn probe(&mut self, pipeline: &mut ExtendedPipelineDescr) -> Result<State, ManagerError> {
         match pipeline_http_request_json_response(
             self.pipeline_id,
             Method::GET,

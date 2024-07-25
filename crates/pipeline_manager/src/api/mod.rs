@@ -123,11 +123,11 @@ The program version is used internally by the compiler to know when to recompile
         // Pipeline
         crate::db::types::pipeline::PipelineId,
         crate::db::types::pipeline::PipelineDescr,
-        crate::db::types::pipeline::ExtendedPipelineDescr<String>,
-        crate::db::types::pipeline::ExtendedPipelineDescr<Option<String>>,
+        crate::db::types::pipeline::ExtendedPipelineDescr,
         crate::db::types::pipeline::PipelineStatus,
         crate::api::pipeline::ListPipelinesQueryParameters,
         crate::api::pipeline::PatchPipeline,
+        crate::api::pipeline::ExtendedPipelineDescrOptionalCode,
 
         // Program
         crate::db::types::program::CompilationProfile,
@@ -197,8 +197,11 @@ The program version is used internally by the compiler to know when to recompile
         pipeline_types::config::OutputEndpointConfig,
     ),),
     tags(
-        (name = "Manager", description = "Configure system behavior"),
-        (name = "Pipelines", description = "Manage pipelines"),
+        (name = "Pipelines", description = "Manage pipelines and their deployment."),
+        (name = "HTTP input/output", description = "Interact with running pipelines using HTTP."),
+        (name = "Authentication", description = "Retrieve authentication configuration."),
+        (name = "Configuration", description = "Retrieve general configuration."),
+        (name = "API keys", description = "Manage API keys."),
     ),
 )]
 pub struct ApiDoc;

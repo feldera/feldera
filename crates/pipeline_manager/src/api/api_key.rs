@@ -46,7 +46,7 @@ pub(crate) struct NewApiKeyResponse {
     api_key: String,
 }
 
-/// Query for an APIkey name
+/// Query for an API key by name.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub(crate) struct ApiKeyNameQuery {
     /// API key name
@@ -54,7 +54,7 @@ pub(crate) struct ApiKeyNameQuery {
     name: Option<String>,
 }
 
-/// List all API keys
+/// Retrieve the list of API keys.
 #[utoipa::path(
     responses(
         (status = OK, description = "API keys retrieved successfully", body = [ApiKeyDescr]),
@@ -90,7 +90,7 @@ pub(crate) async fn list_api_keys(
     }
 }
 
-/// Get an API key description
+/// Retrieve an API key.
 #[utoipa::path(
     responses(
         (status = OK, description = "API key retrieved successfully", body = ApiKeyDescr),
@@ -122,7 +122,7 @@ pub(crate) async fn get_api_key(
         .json(&[api_key]))
 }
 
-/// Delete an API key
+/// Delete an API key.
 #[utoipa::path(
     responses(
         (status = OK, description = "API key deleted successfully"),
@@ -159,12 +159,12 @@ pub(crate) async fn delete_api_key(
     Ok(resp)
 }
 
-/// Create an API key
+/// Create a new API key.
 #[utoipa::path(
     responses(
         (status = OK, description = "API key created successfully.", body = NewApiKeyResponse),
         (status = CONFLICT
-            , description = "An api key with this name already exists."
+            , description = "An API key with this name already exists."
             , body = ErrorResponse
             , example = json!(examples::error_duplicate_name())),
     ),

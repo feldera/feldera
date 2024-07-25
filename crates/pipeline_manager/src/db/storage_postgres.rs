@@ -119,7 +119,7 @@ impl Storage for StoragePostgres {
     async fn list_pipelines(
         &self,
         tenant_id: TenantId,
-    ) -> Result<Vec<ExtendedPipelineDescr<String>>, DBError> {
+    ) -> Result<Vec<ExtendedPipelineDescr>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let pipelines = operations::pipeline::list_pipelines(&txn, tenant_id).await?;
@@ -131,7 +131,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         name: &str,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError> {
+    ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let pipeline = operations::pipeline::get_pipeline(&txn, tenant_id, name).await?;
@@ -143,7 +143,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError> {
+    ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let pipeline =
@@ -157,7 +157,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         new_id: Uuid,
         pipeline: PipelineDescr,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError> {
+    ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
 
@@ -178,7 +178,7 @@ impl Storage for StoragePostgres {
         new_id: Uuid,
         original_name: &str,
         pipeline: PipelineDescr,
-    ) -> Result<(bool, ExtendedPipelineDescr<String>), DBError> {
+    ) -> Result<(bool, ExtendedPipelineDescr), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
 
@@ -234,7 +234,7 @@ impl Storage for StoragePostgres {
         runtime_config: &Option<RuntimeConfig>,
         program_code: &Option<String>,
         program_config: &Option<ProgramConfig>,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError> {
+    ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
 
@@ -648,7 +648,7 @@ impl Storage for StoragePostgres {
 
     async fn list_pipelines_across_all_tenants(
         &self,
-    ) -> Result<Vec<(TenantId, ExtendedPipelineDescr<String>)>, DBError> {
+    ) -> Result<Vec<(TenantId, ExtendedPipelineDescr)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let pipelines = operations::pipeline::list_pipelines_across_all_tenants(&txn).await?;
@@ -658,7 +658,7 @@ impl Storage for StoragePostgres {
 
     async fn get_next_pipeline_program_to_compile(
         &self,
-    ) -> Result<Option<(TenantId, ExtendedPipelineDescr<String>)>, DBError> {
+    ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let next_pipeline_program =
