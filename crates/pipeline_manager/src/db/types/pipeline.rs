@@ -257,7 +257,7 @@ pub struct PipelineDescr {
 /// Pipeline descriptor which besides the basic fields in direct regular control of the user
 /// also has all additional fields generated and maintained by the back-end.
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
-pub struct ExtendedPipelineDescr<T> {
+pub struct ExtendedPipelineDescr {
     /// Assigned globally unique pipeline identifier.
     pub id: PipelineId,
 
@@ -278,7 +278,7 @@ pub struct ExtendedPipelineDescr<T> {
     pub runtime_config: RuntimeConfig,
 
     /// Program SQL code.
-    pub program_code: T, // Either String or Option<String> // TODO: see if works with OpenAPI!
+    pub program_code: String,
 
     /// Program compilation configuration.
     pub program_config: ProgramConfig,
@@ -335,7 +335,7 @@ pub struct ExtendedPipelineDescr<T> {
     pub deployment_location: Option<String>,
 }
 
-impl ExtendedPipelineDescr<String> {
+impl ExtendedPipelineDescr {
     /// Returns true if the pipeline is fully shutdown, which means both
     /// its current deployment status and desired status are `Shutdown`.
     pub(crate) fn is_fully_shutdown(&self) -> bool {

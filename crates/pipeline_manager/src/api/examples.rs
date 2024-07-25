@@ -1,5 +1,5 @@
 // Example errors for use in OpenApi docs.
-use crate::api::pipeline::PatchPipeline;
+use crate::api::pipeline::{ExtendedPipelineDescrOptionalCode, PatchPipeline};
 use crate::db::error::DBError;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
@@ -51,7 +51,7 @@ pub(crate) fn pipeline_1() -> PipelineDescr {
     }
 }
 
-pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr<String> {
+pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
         name: "example1".to_string(),
@@ -87,7 +87,7 @@ pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr<String> {
     }
 }
 
-pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr<String> {
+pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
         id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
         name: "example2".to_string(),
@@ -130,8 +130,11 @@ pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr<String> {
     }
 }
 
-pub(crate) fn list_extended_pipeline() -> Vec<ExtendedPipelineDescr<String>> {
-    vec![extended_pipeline_1(), extended_pipeline_2()]
+pub(crate) fn list_extended_pipeline_optional_code() -> Vec<ExtendedPipelineDescrOptionalCode> {
+    vec![
+        ExtendedPipelineDescrOptionalCode::new(extended_pipeline_1(), false),
+        ExtendedPipelineDescrOptionalCode::new(extended_pipeline_2(), false),
+    ]
 }
 
 pub(crate) fn patch_pipeline() -> PatchPipeline {
