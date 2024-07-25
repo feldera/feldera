@@ -228,10 +228,10 @@ impl From<PipelineStatus> for &'static str {
     }
 }
 
-impl ToString for PipelineStatus {
-    fn to_string(&self) -> String {
+impl Display for PipelineStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let status: &'static str = (*self).into();
-        status.to_string()
+        write!(f, "{status}")
     }
 }
 
