@@ -339,6 +339,7 @@ pub(crate) async fn set_program_status(
             | (ProgramStatus::CompilingRust, ProgramStatus::Success)
             | (ProgramStatus::CompilingRust, ProgramStatus::RustError(_))
             | (ProgramStatus::CompilingRust, ProgramStatus::SystemError(_))
+            | (ProgramStatus::Success, ProgramStatus::Pending)
     );
     if !valid_transition {
         return Err(DBError::InvalidProgramStatusTransition {
