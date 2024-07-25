@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 
 use super::{ManagerError, ServerState};
 
-/// Get authentication provider configuration
+/// Retrieve authentication provider configuration.
 #[utoipa::path(
     path="/config/authentication",
     responses(
@@ -36,7 +36,7 @@ async fn get_config_authentication(
     Ok(HttpResponse::Ok().json(&auth_config.provider))
 }
 
-/// Get the list of demos.
+/// Retrieve the list of demos.
 #[utoipa::path(
     path="/config/demos",
     responses(
