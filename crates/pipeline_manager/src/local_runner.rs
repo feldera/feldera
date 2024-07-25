@@ -53,7 +53,7 @@ impl PipelineExecutor for ProcessRunner {
     /// Convert a PipelineRevision into a PipelineExecutionDesc.
     async fn to_execution_desc(
         &self,
-        pipeline: &ExtendedPipelineDescr<String>,
+        pipeline: &ExtendedPipelineDescr,
     ) -> Result<PipelineExecutionDesc, ManagerError> {
         let mut deployment_config = generate_pipeline_config(
             pipeline.id.0,

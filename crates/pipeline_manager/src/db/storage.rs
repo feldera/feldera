@@ -55,21 +55,21 @@ pub(crate) trait Storage {
     async fn list_pipelines(
         &self,
         tenant_id: TenantId,
-    ) -> Result<Vec<ExtendedPipelineDescr<String>>, DBError>;
+    ) -> Result<Vec<ExtendedPipelineDescr>, DBError>;
 
     /// Retrieves a pipeline as extended descriptor.
     async fn get_pipeline(
         &self,
         tenant_id: TenantId,
         name: &str,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError>;
+    ) -> Result<ExtendedPipelineDescr, DBError>;
 
     /// Retrieves a pipeline as extended descriptor using its identifier.
     async fn get_pipeline_by_id(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError>;
+    ) -> Result<ExtendedPipelineDescr, DBError>;
 
     /// Creates a new pipeline.
     #[allow(clippy::too_many_arguments)]
@@ -78,7 +78,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         new_id: Uuid,
         pipeline: PipelineDescr,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError>;
+    ) -> Result<ExtendedPipelineDescr, DBError>;
 
     /// Creates a new pipeline if one with that name does not exist yet.
     /// If it already exists, update the existing one.
@@ -90,7 +90,7 @@ pub(crate) trait Storage {
         new_id: Uuid, // Only used if the pipeline happens to not exist
         original_name: &str,
         pipeline: PipelineDescr,
-    ) -> Result<(bool, ExtendedPipelineDescr<String>), DBError>;
+    ) -> Result<(bool, ExtendedPipelineDescr), DBError>;
 
     /// Updates an existing pipeline.
     #[allow(clippy::too_many_arguments)]
@@ -103,7 +103,7 @@ pub(crate) trait Storage {
         config: &Option<RuntimeConfig>,
         program_code: &Option<String>,
         program_config: &Option<ProgramConfig>,
-    ) -> Result<ExtendedPipelineDescr<String>, DBError>;
+    ) -> Result<ExtendedPipelineDescr, DBError>;
 
     /// Deletes an existing pipeline.
     async fn delete_pipeline(
@@ -254,13 +254,13 @@ pub(crate) trait Storage {
     /// Retrieves a list of all pipeline ids across all tenants.
     async fn list_pipelines_across_all_tenants(
         &self,
-    ) -> Result<Vec<(TenantId, ExtendedPipelineDescr<String>)>, DBError>;
+    ) -> Result<Vec<(TenantId, ExtendedPipelineDescr)>, DBError>;
 
     /// Retrieves the pipeline whose program has been Pending for the longest and has a non-empty program.
     /// Returns `None` if there are no pending programs.
     async fn get_next_pipeline_program_to_compile(
         &self,
-    ) -> Result<Option<(TenantId, ExtendedPipelineDescr<String>)>, DBError>;
+    ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError>;
 
     /// Checks whether the provided pipeline program version is in use.
     /// It is in use if the pipeline still exists AND the program version matches the one provided.

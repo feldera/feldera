@@ -3,8 +3,11 @@ use crate::api::ServerState;
 use crate::api::{examples, parse_string_param};
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
-use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineDescr};
-use crate::db::types::program::ProgramConfig;
+use crate::db::types::common::Version;
+use crate::db::types::pipeline::{
+    ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
+};
+use crate::db::types::program::{ProgramConfig, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use actix_web::{
     delete, get,
@@ -14,13 +17,70 @@ use actix_web::{
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
+use chrono::{DateTime, Utc};
 use log::{debug, info};
-use pipeline_types::config::RuntimeConfig;
+use pipeline_types::config::{PipelineConfig, RuntimeConfig};
+use pipeline_types::error::ErrorResponse;
+use pipeline_types::program_schema::ProgramSchema;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 // REGULAR ENDPOINTS
+
+/// Extended pipeline descriptor with code being optionally included.
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub struct ExtendedPipelineDescrOptionalCode {
+    pub id: PipelineId,
+    pub name: String,
+    pub description: String,
+    pub version: Version,
+    pub created_at: DateTime<Utc>,
+    pub runtime_config: RuntimeConfig,
+    pub program_code: Option<String>,
+    pub program_config: ProgramConfig,
+    pub program_version: Version,
+    pub program_status: ProgramStatus,
+    pub program_status_since: DateTime<Utc>,
+    pub program_schema: Option<ProgramSchema>,
+    pub program_binary_url: Option<String>,
+    pub deployment_status: PipelineStatus,
+    pub deployment_status_since: DateTime<Utc>,
+    pub deployment_desired_status: PipelineStatus,
+    pub deployment_error: Option<ErrorResponse>,
+    pub deployment_config: Option<PipelineConfig>,
+    pub deployment_location: Option<String>,
+}
+
+impl ExtendedPipelineDescrOptionalCode {
+    pub(crate) fn new(extended_pipeline: ExtendedPipelineDescr, include_code: bool) -> Self {
+        ExtendedPipelineDescrOptionalCode {
+            id: extended_pipeline.id,
+            name: extended_pipeline.name,
+            description: extended_pipeline.description,
+            version: extended_pipeline.version,
+            created_at: extended_pipeline.created_at,
+            runtime_config: extended_pipeline.runtime_config,
+            program_code: if include_code {
+                Some(extended_pipeline.program_code)
+            } else {
+                None
+            },
+            program_config: extended_pipeline.program_config,
+            program_version: extended_pipeline.program_version,
+            program_status: extended_pipeline.program_status,
+            program_status_since: extended_pipeline.program_status_since,
+            program_schema: extended_pipeline.program_schema,
+            program_binary_url: extended_pipeline.program_binary_url,
+            deployment_status: extended_pipeline.deployment_status,
+            deployment_status_since: extended_pipeline.deployment_status_since,
+            deployment_desired_status: extended_pipeline.deployment_desired_status,
+            deployment_error: extended_pipeline.deployment_error,
+            deployment_config: extended_pipeline.deployment_config,
+            deployment_location: extended_pipeline.deployment_location,
+        }
+    }
+}
 
 /// Default for the `code` query parameter when GET the list of pipelines.
 fn default_list_pipelines_query_parameter_code() -> bool {
@@ -61,8 +121,8 @@ pub struct PatchPipeline {
     responses(
         (status = OK
             , description = "List of pipelines retrieved successfully"
-            , body = [ExtendedPipelineDescr<Option<String>>]
-            , example = json!(examples::list_extended_pipeline()))
+            , body = [ExtendedPipelineDescrOptionalCode]
+            , example = json!(examples::list_extended_pipeline_optional_code()))
     ),
     tag = "Pipelines"
 )]
@@ -77,33 +137,9 @@ pub(crate) async fn list_pipelines(
         *tenant_id
     );
     let pipelines = state.db.lock().await.list_pipelines(*tenant_id).await?;
-    let pipelines: Vec<ExtendedPipelineDescr<Option<String>>> = pipelines
+    let pipelines: Vec<ExtendedPipelineDescrOptionalCode> = pipelines
         .iter()
-        .map(|v| ExtendedPipelineDescr {
-            id: v.id,
-            name: v.name.clone(),
-            description: v.description.clone(),
-            created_at: v.created_at,
-            version: v.version,
-            runtime_config: v.runtime_config.clone(),
-            program_code: if query.code {
-                Some(v.program_code.clone())
-            } else {
-                None
-            },
-            program_config: v.program_config.clone(),
-            program_version: v.program_version,
-            program_status: v.program_status.clone(),
-            program_status_since: v.program_status_since,
-            program_schema: v.program_schema.clone(),
-            program_binary_url: v.program_binary_url.clone(),
-            deployment_status: v.deployment_status,
-            deployment_status_since: v.deployment_status_since,
-            deployment_desired_status: v.deployment_desired_status,
-            deployment_error: v.deployment_error.clone(),
-            deployment_config: v.deployment_config.clone(),
-            deployment_location: v.deployment_location.clone(),
-        })
+        .map(|v| ExtendedPipelineDescrOptionalCode::new(v.clone(), query.code))
         .collect();
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -120,7 +156,7 @@ pub(crate) async fn list_pipelines(
     responses(
         (status = OK
             , description = "Pipeline retrieved successfully"
-            , body = ExtendedPipelineDescr<String>
+            , body = ExtendedPipelineDescr
             , example = json!(examples::extended_pipeline_1())),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
@@ -161,7 +197,7 @@ pub(crate) async fn get_pipeline(
     responses(
         (status = CREATED
             , description = "Pipeline successfully created"
-            , body = ExtendedPipelineDescr<String>
+            , body = ExtendedPipelineDescr
             , example = json!(examples::extended_pipeline_1())),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
@@ -206,11 +242,11 @@ pub(crate) async fn post_pipeline(
     responses(
         (status = CREATED
             , description = "Pipeline successfully created"
-            , body = ExtendedPipelineDescr<String>
+            , body = ExtendedPipelineDescr
             , example = json!(examples::extended_pipeline_1())),
         (status = OK
             , description = "Pipeline successfully updated"
-            , body = ExtendedPipelineDescr<String>
+            , body = ExtendedPipelineDescr
             , example = json!(examples::extended_pipeline_1())),
         (status = CONFLICT
             , description = "Cannot rename pipeline as the name already exists"
@@ -275,7 +311,7 @@ async fn put_pipeline(
     responses(
         (status = OK
             , description = "Pipeline successfully updated"
-            , body = ExtendedPipelineDescr<String>
+            , body = ExtendedPipelineDescr
             , example = json!(examples::extended_pipeline_1())),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
@@ -381,7 +417,7 @@ fn parse_pipeline_action(req: &HttpRequest) -> Result<&str, ManagerError> {
     }
 }
 
-/// Change the desired deployment state of the pipeline.
+/// Start, pause or shutdown a pipeline.
 ///
 /// The endpoint returns immediately after performing initial request validation
 /// (e.g., upon start checking the program is compiled) and initiating the relevant
