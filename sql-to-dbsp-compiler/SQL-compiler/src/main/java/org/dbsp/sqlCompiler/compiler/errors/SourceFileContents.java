@@ -34,11 +34,16 @@ public class SourceFileContents {
         return System.lineSeparator();
     }
 
-    public String lineNo(int no) {
+    public String lineNo(int no, boolean decorated) {
+        if (!decorated)
+            return "";
         return String.format("%5d|", no + 1);
     }
 
-    public String getFragment(SourcePositionRange range) {
+    /** Get the source code fragment at the specified position.
+     * @param range     Position to extract fragment from.
+     * @param decorated If true print additional decorations around, like ^^^^^ */
+    public String getFragment(SourcePositionRange range, boolean decorated) {
         if (!range.isValid())
             return "";
         int startLine = range.start.line - 1;
@@ -51,36 +56,51 @@ public class SourceFileContents {
                 // This should not really happen.
                 return "";
             String line = this.lines.get(startLine);
-            result.append(lineNo(startLine))
-                    .append(line)
-                    .append(SourceFileContents.newline());
-            result.append(" ".repeat(startCol + 6));
-            result.append("^".repeat(endCol - startCol));
+            if (!decorated)
+                line = line.substring(startCol, endCol);
+            result.append(lineNo(startLine, decorated))
+                    .append(line);
+            if (decorated)
+                result.append(SourceFileContents.newline());
+            if (decorated) {
+                result.append(" ".repeat(startCol + 6));
+                result.append("^".repeat(endCol - startCol));
+            }
             result.append(SourceFileContents.newline());
             if (this.lines.size() > startLine + 1) {
                 // Print one more line to help disambiguate location
-                line = this.lines.get(startLine + 1);
-                result.append(lineNo(startLine + 1))
-                        .append(line)
-                        .append(SourceFileContents.newline());
-            }
-        } else {
-            if (endLine - startLine < 5) {
-                for (int i = startLine; i < endLine; i++) {
-                    result.append(this.lineNo(i))
-                            .append(this.lines.get(i))
+                if (decorated) {
+                    line = this.lines.get(startLine + 1);
+                    result.append(lineNo(startLine + 1, decorated))
+                            .append(line)
                             .append(SourceFileContents.newline());
                 }
+            }
+        } else {
+            if (endLine - startLine < 5 || !decorated) {
+                for (int i = startLine; i < endLine; i++) {
+                    String line = this.lines.get(i);
+                    if (!decorated) {
+                        if (i == startLine)
+                            line = line.substring(startCol);
+                        else if (i == endLine - 1)
+                            line = line.substring(0, endCol);
+                    }
+                    result.append(this.lineNo(i, decorated))
+                            .append(line);
+                    if (decorated)
+                        result.append(SourceFileContents.newline());
+                }
             } else {
-                result.append(this.lineNo(startLine))
+                result.append(this.lineNo(startLine, decorated))
                         .append(this.lines.get(startLine))
                         .append(SourceFileContents.newline())
-                        .append(this.lineNo(startLine + 1))
+                        .append(this.lineNo(startLine + 1, decorated))
                         .append(this.lines.get(startLine + 1))
                         .append(SourceFileContents.newline())
                         .append("      ...")
                         .append(SourceFileContents.newline())
-                        .append(this.lineNo(endLine))
+                        .append(this.lineNo(endLine, decorated))
                         .append(this.lines.get(endLine))
                         .append(SourceFileContents.newline());
             }

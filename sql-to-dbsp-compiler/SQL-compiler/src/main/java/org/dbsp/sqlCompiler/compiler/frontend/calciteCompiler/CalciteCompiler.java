@@ -52,6 +52,7 @@ import org.apache.calcite.rel.type.RelProtoDataType;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
+import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.runtime.MapEntry;
 import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Schema;
@@ -80,6 +81,7 @@ import org.apache.calcite.sql.fun.SqlLibrary;
 import org.apache.calcite.sql.fun.SqlLibraryOperatorTableFactory;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
+import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.pretty.SqlPrettyWriter;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.type.SqlTypeName;
@@ -97,6 +99,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -187,7 +190,7 @@ public class CalciteCompiler implements IWritesLogs {
         this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
         this.copySchema(source.rootSchema);
         this.rootSchema.add(this.calciteCatalog.schemaName, this.calciteCatalog);
-        this.addOperatorTable(this.createOperatorTable());
+        this.addOperatorTable(Objects.requireNonNull(source.validator).getOperatorTable());
     }
 
     void copySchema(SchemaPlus source) {
@@ -770,11 +773,13 @@ public class CalciteCompiler implements IWritesLogs {
     }
 
     @Nullable
-    RexNode createFunction(SqlCreateFunctionDeclaration decl) {
+    RexNode createFunction(SqlCreateFunctionDeclaration decl, SourceFileContents sources) {
         SqlNode body = decl.getBody();
         if (body == null)
             return null;
 
+        int newLineNumber = 0;
+        SqlParserPos position = body.getParserPosition();
         try {
             /* To compile a function like
               CREATE FUNCTION fun(a type0, b type1) returning type2 as expression;
@@ -785,20 +790,39 @@ public class CalciteCompiler implements IWritesLogs {
               is used to obtain the body of the function.
             */
             StringBuilder builder = new StringBuilder();
-            SqlWriter writer = new SqlPrettyWriter(SqlPrettyWriter.config(), builder);
+            SqlWriter writer = new SqlPrettyWriter(
+                    SqlPrettyWriter.config(), builder);
             builder.append("CREATE TABLE TMP(");
-            decl.getParameters().unparse(writer, 0, 0);
+            if (decl.getParameters().isEmpty())
+                // Tables need to have at least one column, so create an unused one if needed
+                builder.append("__unused__ INT");
+            else
+                decl.getParameters().unparse(writer, 0, 0);
             builder.append(");\n");
-            builder.append("CREATE VIEW TMP0 AS SELECT ");
-            body.unparse(writer, 0, 0);
-            builder.append(" FROM TMP;");
+            builder.append("CREATE VIEW TMP0 AS SELECT\n");
+            newLineNumber = builder.toString().split("\n").length + 1;
+
+            if (false) {
+                // Switch to this when https://issues.apache.org/jira/browse/CALCITE-6502
+                // is fixed.  This is https://github.com/feldera/feldera/issues/2097
+                String bodyExpression = sources.getFragment(new SourcePositionRange(body.getParserPosition()), false);
+                builder.append(bodyExpression);
+            } else {
+                body.unparse(writer, 0, 0);
+            }
+            builder.append("\nFROM TMP;");
 
             String sql = builder.toString();
+            Logger.INSTANCE.belowLevel(this, 2)
+                    .append("Submitting for compilation ")
+                    .newline()
+                    .append(sql)
+                    .newline();
             CalciteCompiler clone = new CalciteCompiler(this);
             SqlNodeList list = clone.parseStatements(sql, true);
             FrontEndStatement statement = null;
             for (SqlNode node: list) {
-                statement = clone.compile(node.toString(), node);
+                statement = clone.compile(node.toString(), node, sources);
             }
 
             CreateViewStatement view = Objects.requireNonNull(statement).as(CreateViewStatement.class);
@@ -807,9 +831,31 @@ public class CalciteCompiler implements IWritesLogs {
             ProjectExtractor extractor = new ProjectExtractor();
             extractor.go(node);
             return Objects.requireNonNull(extractor.body);
+        } catch (CalciteContextException e) {
+            throw this.rewriteException(e, newLineNumber, position);
         } catch (SqlParseException e) {
+            // Do we need to rewrite other exceptions?
             throw new RuntimeException(e);
         }
+    }
+
+    // Adjust the source position in the exception to match the original position
+    CalciteContextException rewriteException(
+            CalciteContextException e,
+            int startLineNumberInGeneratedCode, SqlParserPos original) {
+        int line = original.getLineNum() - e.getPosLine() + startLineNumberInGeneratedCode;
+        int endLine = original.getEndLineNum() - e.getEndPosLine() + startLineNumberInGeneratedCode;
+        // If the error is on the first line, we need to adjust the column, otherwise we don't.
+        // The temporary generated code always starts after a newline.
+        int col = e.getPosColumn();
+        int endCol = e.getEndPosColumn();
+        if (e.getPosLine() == startLineNumberInGeneratedCode)
+            col += original.getColumnNum() - 1;
+        if (e.getEndPosLine() == startLineNumberInGeneratedCode)
+            endCol += original.getColumnNum() - 1;
+        return new CalciteContextException(
+                e.getMessage(), e.getCause(),
+                line, col, endLine, endCol);
     }
 
     /** Compile a SQL statement.
@@ -818,7 +864,8 @@ public class CalciteCompiler implements IWritesLogs {
     @Nullable
     public FrontEndStatement compile(
             String sqlStatement,
-            SqlNode node) {
+            SqlNode node,
+            SourceFileContents sources) {
         CalciteObject object = CalciteObject.create(node);
         Logger.INSTANCE.belowLevel(this, 3)
                 .append("Compiling ")
@@ -862,7 +909,7 @@ public class CalciteCompiler implements IWritesLogs {
                 Boolean nullableResult = retType.getNullable();
                 if (nullableResult != null)
                     returnType = this.typeFactory.createTypeWithNullability(returnType,  nullableResult);
-                RexNode bodyExp = this.createFunction(decl);
+                RexNode bodyExp = this.createFunction(decl, sources);
                 ExternalFunction function = this.customFunctions.createUDF(
                         CalciteObject.create(node), decl.getName(), structType, returnType, bodyExp);
                 return new CreateFunctionStatement(node, sqlStatement, function);

@@ -63,6 +63,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IWritesLogs;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
@@ -277,7 +278,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             this.toCompile.clear();
 
             // Compile first the statements that define functions, types, and lateness
-            List<SqlFunction> functions = new ArrayList<>();
+            List<SqlFunction> rustFunctions = new ArrayList<>();
             for (SqlNode node: parsed) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append("Parsing result: ")
@@ -285,7 +286,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         .newline();
                 SqlKind kind = node.getKind();
                 if (kind == SqlKind.CREATE_TYPE) {
-                    FrontEndStatement fe = this.frontend.compile(node.toString(), node);
+                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
                     if (fe == null)
                         // error during compilation
                         continue;
@@ -293,14 +294,24 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     continue;
                 }
                 if (kind == SqlKind.CREATE_FUNCTION) {
-                    FrontEndStatement fe = this.frontend.compile(node.toString(), node);
+                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
                     if (fe == null)
                         continue;
-                    functions.add(fe.to(CreateFunctionStatement.class).function);
+                    CreateFunctionStatement stat = fe.to(CreateFunctionStatement.class);
+                    SqlFunction function = stat.function;
+                    if (!stat.function.isSqlFunction()) {
+                        rustFunctions.add(function);
+                    } else {
+                        // Reload the operator table to include the newly defined SQL function.
+                        // This allows the functions ot be used in other function definitions.
+                        // There should be a better way to do this.
+                        SqlOperatorTable newFunctions = SqlOperatorTables.of(Linq.list(function));
+                        this.frontend.addOperatorTable(newFunctions);
+                    }
                     this.midend.compile(fe);
                 }
                 if (node instanceof SqlLateness) {
-                    FrontEndStatement fe = this.frontend.compile(node.toString(), node);
+                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
                     if (fe == null)
                         continue;
                     this.lateness.add(fe.to(LatenessStatement.class));
@@ -308,10 +319,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 }
             }
 
-            if (!functions.isEmpty()) {
-                // Reload the operator table to include all the newly defined functions
-                SqlOperatorTable newTable = SqlOperatorTables.of(functions);
-                this.frontend.addOperatorTable(newTable);
+            if (!rustFunctions.isEmpty()) {
+                // Reload the operator table to include the newly defined Rust function.
+                // These we can load all at the end, since they can't depend on each other.
+                SqlOperatorTable newFunctions = SqlOperatorTables.of(rustFunctions);
+                this.frontend.addOperatorTable(newFunctions);
                 if (this.options.ioOptions.udfs.isEmpty()) {
                     this.compiler().reportWarning(
                             SourcePositionRange.INVALID,
@@ -328,7 +340,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     continue;
                 if (node instanceof SqlLateness)
                     continue;
-                FrontEndStatement fe = this.frontend.compile(node.toString(), node);
+                FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
                 if (fe == null)
                     // error during compilation
                     continue;
