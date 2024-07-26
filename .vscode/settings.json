@@ -26,5 +26,14 @@
     "prettier.requireConfig": true,
     "rust-analyzer.showUnlinkedFileNotification": false,
     "svelte.ask-to-enable-ts-plugin": false,
-    "svelte.enable-ts-plugin": true
+    "svelte.enable-ts-plugin": true,
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        "./python",
+        "-p",
+        "test_*.py"
+    ],
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestEnabled": true
 }
