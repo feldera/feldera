@@ -256,16 +256,6 @@ pub struct ConnectorConfig {
     pub max_queued_records: u64,
 }
 
-impl ConnectorConfig {
-    pub fn from_yaml(s: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(s)
-    }
-
-    pub fn to_yaml(&self) -> String {
-        serde_yaml::to_string(&self).unwrap()
-    }
-}
-
 fn default_max_buffer_time_millis() -> usize {
     usize::MAX
 }
@@ -460,64 +450,104 @@ pub enum ConnectorGenerationError {
     ExpectedInputConnector,
     #[error("Expected an output connector but got an intput connector")]
     ExpectedOutputConnector,
+    #[error("Encountered collision for generated unique connector name: '{name}'")]
+    UniqueConnectorNameCollision { name: String },
 }
 
-/// Parses the properties to create a connector configuration.
-pub fn parse_connector_config(
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+struct NamedConnector {
+    pub name: String,
+
+    #[serde(flatten)]
+    pub config: ConnectorConfig,
+}
+
+/// Parses the properties to create a vector of connectors with name and configuration.
+fn parse_connectors(
     properties: &BTreeMap<String, String>,
-) -> Result<ConnectorConfig, ConnectorGenerationError> {
+) -> Result<Vec<NamedConnector>, ConnectorGenerationError> {
     if properties.len() != 1 {
         return Err(ConnectorGenerationError::IncorrectNumProperties {
             expected: 1,
             actual: properties.len(),
         });
     }
-    match properties.get("connector") {
-        Some(s) => ConnectorConfig::from_yaml(s).map_err(|e| {
+    match properties.get("connectors") {
+        Some(s) => serde_yaml::from_str::<Vec<NamedConnector>>(s).map_err(|e| {
             ConnectorGenerationError::InvalidPropertyValue {
-                key: "connector".to_string(),
+                key: "connectors".to_string(),
                 value: s.clone(),
                 reason: format!("Deserialization failed: {e}"),
             }
         }),
         None => Err(ConnectorGenerationError::PropertyKeyMissing {
-            key: "connector".to_string(),
+            key: "connectors".to_string(),
         }),
     }
 }
 
-/// Generates the input and output connectors derived from the program schema.
-pub fn generate_connectors_from_schema(
-    program_schema: &ProgramSchema,
-) -> Result<
-    (
-        BTreeMap<Cow<'static, str>, InputEndpointConfig>,
-        BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
-    ),
-    ConnectorGenerationError,
-> {
+/// Program information which includes schema, input connectors and output connectors.
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub struct ProgramInfo {
+    /// Schema of the compiled SQL program.
+    pub schema: ProgramSchema,
+
+    /// Input connectors derived from the schema.
+    pub input_connectors: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+
+    /// Output connectors derived from the schema.
+    pub output_connectors: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+}
+
+impl ProgramInfo {
+    pub fn from_yaml(s: &str) -> Self {
+        serde_yaml::from_str(s).unwrap()
+    }
+
+    pub fn to_yaml(&self) -> String {
+        serde_yaml::to_string(self).unwrap()
+    }
+}
+
+/// Generates the program info using the program schema.
+/// The info includes the schema and the input/output connectors derived from it.
+pub fn generate_program_info_from_schema(
+    program_schema: ProgramSchema,
+) -> Result<ProgramInfo, ConnectorGenerationError> {
     // Input connectors
     let mut inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
     for input_relation in &program_schema.inputs {
         if !input_relation.properties.is_empty() {
-            let connector_config = parse_connector_config(&input_relation.properties)?;
-            match connector_config.transport {
-                TransportConfig::FileInput(_)
-                | TransportConfig::KafkaInput(_)
-                | TransportConfig::UrlInput(_)
-                | TransportConfig::S3Input(_)
-                | TransportConfig::DeltaTableInput(_) => {}
-                _ => {
-                    return Err(ConnectorGenerationError::ExpectedInputConnector);
+            for connector in parse_connectors(&input_relation.properties)? {
+                // Must be an input connector
+                match connector.config.transport {
+                    TransportConfig::FileInput(_)
+                    | TransportConfig::KafkaInput(_)
+                    | TransportConfig::UrlInput(_)
+                    | TransportConfig::S3Input(_)
+                    | TransportConfig::DeltaTableInput(_) => {}
+                    _ => {
+                        return Err(ConnectorGenerationError::ExpectedInputConnector);
+                    }
                 }
+
+                // Must have an unique name
+                let connector_unique_name =
+                    Cow::from(format!("{}.{}", input_relation.name(), connector.name));
+                if inputs.contains_key::<Cow<'static, str>>(&connector_unique_name) {
+                    return Err(ConnectorGenerationError::UniqueConnectorNameCollision {
+                        name: connector_unique_name.to_string(),
+                    });
+                }
+
+                inputs.insert(
+                    connector_unique_name,
+                    InputEndpointConfig {
+                        stream: Cow::from(input_relation.name()),
+                        connector_config: connector.config,
+                    },
+                );
             }
-            inputs.insert(
-                Cow::from(input_relation.name()),
-                InputEndpointConfig {
-                    stream: Cow::from(input_relation.name()),
-                    connector_config,
-                },
-            );
         }
     }
 
@@ -525,27 +555,43 @@ pub fn generate_connectors_from_schema(
     let mut outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig> = BTreeMap::new();
     for output_relation in &program_schema.outputs {
         if !output_relation.properties.is_empty() {
-            let connector_config = parse_connector_config(&output_relation.properties)?;
-            match connector_config.transport {
-                TransportConfig::FileOutput(_)
-                | TransportConfig::KafkaOutput(_)
-                | TransportConfig::DeltaTableOutput(_) => {}
-                _ => {
-                    return Err(ConnectorGenerationError::ExpectedInputConnector);
+            for connector in parse_connectors(&output_relation.properties)? {
+                // Must be an output connector
+                match connector.config.transport {
+                    TransportConfig::FileOutput(_)
+                    | TransportConfig::KafkaOutput(_)
+                    | TransportConfig::DeltaTableOutput(_) => {}
+                    _ => {
+                        return Err(ConnectorGenerationError::ExpectedInputConnector);
+                    }
                 }
+
+                // Must have an unique name
+                let connector_unique_name =
+                    Cow::from(format!("{}.{}", output_relation.name(), connector.name));
+                if outputs.contains_key::<Cow<'static, str>>(&connector_unique_name) {
+                    return Err(ConnectorGenerationError::UniqueConnectorNameCollision {
+                        name: connector_unique_name.to_string(),
+                    });
+                }
+
+                outputs.insert(
+                    connector_unique_name,
+                    OutputEndpointConfig {
+                        stream: Cow::from(output_relation.name()),
+                        query: Default::default(),
+                        connector_config: connector.config,
+                    },
+                );
             }
-            outputs.insert(
-                Cow::from(output_relation.name()),
-                OutputEndpointConfig {
-                    stream: Cow::from(output_relation.name()),
-                    query: Default::default(),
-                    connector_config,
-                },
-            );
         }
     }
 
-    Ok((inputs, outputs))
+    Ok(ProgramInfo {
+        schema: program_schema,
+        input_connectors: inputs,
+        output_connectors: outputs,
+    })
 }
 
 /// Generates the pipeline configuration derived from the runtime configuration and the

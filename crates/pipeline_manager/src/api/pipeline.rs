@@ -7,7 +7,7 @@ use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
+use crate::db::types::program::{ProgramConfig, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use actix_web::{
     delete, get,
@@ -19,7 +19,7 @@ use actix_web::{
 };
 use chrono::{DateTime, Utc};
 use log::{debug, info};
-use pipeline_types::config::{PipelineConfig, RuntimeConfig};
+use pipeline_types::config::{PipelineConfig, ProgramInfo, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
