@@ -209,10 +209,7 @@ where
     R: DBWeight + Erase<B::R>,
 {
     fn default() -> Self {
-        Self::new(B::dyn_empty(
-            &BatchReaderFactories::new::<K, V, R>(),
-            B::Time::default(),
-        ))
+        Self::new(B::dyn_empty(&BatchReaderFactories::new::<K, V, R>()))
     }
 }
 
@@ -232,7 +229,7 @@ where
     R: DBWeight + Erase<B::R>,
 {
     fn zero() -> Self {
-        Self::new(B::dyn_empty(&BatchReaderFactories::new::<K, V, R>(), ()))
+        Self::new(B::dyn_empty(&BatchReaderFactories::new::<K, V, R>()))
     }
     fn is_zero(&self) -> bool {
         self.is_empty()
@@ -330,8 +327,8 @@ where
     R: DBWeight + Erase<B::R>,
 {
     /// Create an empty batch.
-    pub fn empty(time: B::Time) -> Self {
-        Self::new(B::dyn_empty(&BatchReaderFactories::new::<K, V, R>(), time))
+    pub fn empty() -> Self {
+        Self::new(B::dyn_empty(&BatchReaderFactories::new::<K, V, R>()))
     }
 
     /// Build a batch out of `tuples`.

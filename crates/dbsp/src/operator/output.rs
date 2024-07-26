@@ -441,7 +441,7 @@ mod test {
             guard.set_for_all(false);
             dbsp.step().unwrap();
             let output1 = output.consolidate();
-            assert_eq!(output1, OrdZSet::empty(()));
+            assert_eq!(output1, OrdZSet::empty());
 
             input.append(&mut input_vec);
             guard.set_for_all(true);

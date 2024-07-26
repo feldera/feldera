@@ -429,14 +429,6 @@ where
 
     fn recede_to(&mut self, _frontier: &()) {}
 
-    fn dyn_empty(factories: &Self::Factories, _time: Self::Time) -> Self {
-        Self {
-            factories: factories.clone(),
-            file: Reader::empty(&Runtime::storage()).unwrap(),
-            lower_bound: 0,
-        }
-    }
-
     fn persistent_id(&self) -> Option<PathBuf> {
         Some(self.file.path())
     }

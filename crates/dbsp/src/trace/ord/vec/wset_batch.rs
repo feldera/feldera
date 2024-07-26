@@ -373,15 +373,6 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Batch for VecWSet<K, R> {
     }
 
     fn recede_to(&mut self, _frontier: &()) {}
-
-    fn dyn_empty(factories: &Self::Factories, _time: Self::Time) -> Self {
-        Self {
-            layer: Leaf::new(&factories.layer_factories),
-            factories: factories.clone(),
-            //weighted_item_factory: vtables.weighted_item_factory,
-            //batch_item_factory: vtables.batch_item_factory,
-        }
-    }
 }
 
 /// State for an in-progress merge.

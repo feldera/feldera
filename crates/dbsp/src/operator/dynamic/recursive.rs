@@ -65,7 +65,7 @@ where
 
     fn new(circuit: &C, factories: &Self::Factories) -> (Self::Feedback, Self) {
         let feedback =
-            DelayedFeedback::with_default(circuit, B::dyn_empty(&factories.input_factories, ()));
+            DelayedFeedback::with_default(circuit, B::dyn_empty(&factories.input_factories));
         let stream = feedback.stream().clone();
         (feedback, stream)
     }

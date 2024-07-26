@@ -384,10 +384,6 @@ where
 
     fn recede_to(&mut self, _frontier: &()) {}
 
-    fn dyn_empty(factories: &Self::Factories, time: Self::Time) -> Self {
-        Self::Builder::new_builder(factories, time).done()
-    }
-
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
             Inner::Vec(vec) => {

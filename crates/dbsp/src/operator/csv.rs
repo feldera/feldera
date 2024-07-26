@@ -80,7 +80,7 @@ where
 
             OrdZSet::<T>::from_tuples((), data)
         } else {
-            OrdZSet::<T>::empty(())
+            OrdZSet::<T>::empty()
         };
         self.time += 1;
 

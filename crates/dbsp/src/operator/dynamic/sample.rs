@@ -241,7 +241,7 @@ where
             }
             builder.done()
         } else {
-            <VecZSet<_>>::dyn_empty(&self.output_factories, ())
+            <VecZSet<_>>::dyn_empty(&self.output_factories)
         }
     }
 }
@@ -329,7 +329,7 @@ where
 
             builder.done()
         } else {
-            <VecZSet<_>>::dyn_empty(&self.output_factories, ())
+            <VecZSet<_>>::dyn_empty(&self.output_factories)
         }
     }
 }

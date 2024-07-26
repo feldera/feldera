@@ -936,10 +936,10 @@ mod test {
 
     #[test]
     fn distinct_indexed_test() {
-        let output1 = Arc::new(Mutex::new(OrdIndexedZSet::empty(())));
+        let output1 = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
         let output1_clone = output1.clone();
 
-        let output2 = Arc::new(Mutex::new(OrdIndexedZSet::empty(())));
+        let output2 = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
         let output2_clone = output2.clone();
 
         let (mut circuit, input) = Runtime::init_circuit(4, move |circuit| {
