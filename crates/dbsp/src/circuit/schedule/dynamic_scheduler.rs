@@ -44,6 +44,7 @@ use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
     sync::{Arc, Mutex},
+    thread::Thread,
 };
 
 use crate::circuit::{
@@ -55,7 +56,6 @@ use crate::circuit::{
     trace::SchedulerEvent,
     Circuit, GlobalNodeId, NodeId,
 };
-use crossbeam_utils::sync::Unparker;
 use petgraph::algo::toposort;
 use priority_queue::PriorityQueue;
 
@@ -103,11 +103,11 @@ struct Notifications {
     nodes: Arc<Mutex<HashSet<NodeId>>>,
 
     /// Handle to wake up the scheduler thread when a notification arrives.
-    unparker: Unparker,
+    unparker: Thread,
 }
 
 impl Notifications {
-    fn new(size: usize, unparker: Unparker) -> Self {
+    fn new(size: usize, unparker: Thread) -> Self {
         Self {
             nodes: Arc::new(Mutex::new(HashSet::with_capacity(size))),
             unparker,
@@ -293,10 +293,9 @@ impl Inner {
             });
         }
 
-        let unparker = Runtime::parker().with(|parker| parker.unparker().clone());
         let scheduler = Self {
             tasks,
-            notifications: Notifications::new(num_async_nodes, unparker),
+            notifications: Notifications::new(num_async_nodes, std::thread::current()),
             runnable: RunQueue::with_capacity(num_nodes),
         };
 
@@ -355,7 +354,7 @@ impl Inner {
                         circuit.log_scheduler_event(&SchedulerEvent::wait_start(
                             circuit.global_id().deref(),
                         ));
-                        Runtime::parker().with(|parker| parker.park());
+                        std::thread::park();
                         circuit.log_scheduler_event(&SchedulerEvent::wait_end(
                             circuit.global_id().deref(),
                         ));

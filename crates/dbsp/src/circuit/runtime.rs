@@ -14,7 +14,6 @@ use crate::{
     },
     DetailedError,
 };
-use crossbeam_utils::sync::{Parker, Unparker};
 use lazy_static::lazy_static;
 use log::warn;
 use once_cell::sync::Lazy;
@@ -34,7 +33,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock,
     },
-    thread::{Builder, JoinHandle, LocalKey, Result as ThreadResult},
+    thread::{Builder, JoinHandle, Result as ThreadResult},
 };
 use typedmap::{TypedDashMap, TypedMapKey};
 use uuid::Uuid;
@@ -89,10 +88,6 @@ impl StdError for Error {}
 
 // Thread-local variables used by the termination protocol.
 thread_local! {
-    // Parker that must be used by all schedulers within the worker
-    // thread so that the scheduler gets woken up by `RuntimeHandle::kill`.
-    static PARKER: Parker = Parker::new();
-
     // Set to `true` by `RuntimeHandle::kill`.
     // Schedulers must check this signal before evaluating each operator
     // and exit immediately returning `SchedulerError::Terminated`.
@@ -329,7 +324,7 @@ fn mk_background_thread(
     runtime: Option<Runtime>,
     worker_index: usize,
     bg_work_receiver: Receiver<BackgroundOperation>,
-    init_sender: Option<SyncSender<(Unparker, Arc<AtomicBool>)>>,
+    init_sender: Option<SyncSender<Arc<AtomicBool>>>,
 ) -> JoinHandle<()> {
     if thread_name.len() > 15 {
         warn!("thread name {thread_name:?} will appear truncated in system tools");
@@ -343,15 +338,10 @@ fn mk_background_thread(
             IS_BACKGROUND_THREAD.set(true);
             WORKER_INDEX.set(worker_index);
 
-            // Send the main thread our parker and kill signal
+            // Send the main thread our kill signal
             // TODO: Share a single kill signal across all workers
             if let Some(init_sender) = init_sender {
-                init_sender
-                    .send((
-                        PARKER.with(|parker| parker.unparker().clone()),
-                        KILL_SIGNAL.with(|s| s.clone()),
-                    ))
-                    .unwrap();
+                init_sender.send(KILL_SIGNAL.with(|s| s.clone())).unwrap();
             }
 
             let mut merger = BatchMerger::new(bg_work_receiver);
@@ -469,8 +459,8 @@ impl Runtime {
         // tries to access reach background thread channels before they are fully initialized.
         let mut background_workers = Vec::with_capacity(nworkers);
         background_workers.extend(background_handles.into_iter().map(|(handle, recv)| {
-            let (unparker, kill_signal) = recv.recv().unwrap();
-            BackgroundWorkerHandle::new(handle, unparker, kill_signal)
+            let kill_signal = recv.recv().unwrap();
+            BackgroundWorkerHandle::new(handle, kill_signal)
         }));
 
         let mut handles = Vec::with_capacity(nworkers);
@@ -486,14 +476,9 @@ impl Runtime {
                     RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
                     WORKER_INDEX.set(worker_index);
 
-                    // Send the main thread our parker and kill signal
+                    // Send the main thread our kill signal
                     // TODO: Share a single kill signal across all workers
-                    init_sender
-                        .send((
-                            PARKER.with(|parker| parker.unparker().clone()),
-                            KILL_SIGNAL.with(|s| s.clone()),
-                        ))
-                        .unwrap();
+                    init_sender.send(KILL_SIGNAL.with(|s| s.clone())).unwrap();
 
                     // Build the worker's circuit
                     build_circuit();
@@ -507,8 +492,8 @@ impl Runtime {
 
         let mut workers = Vec::with_capacity(nworkers);
         workers.extend(handles.into_iter().map(|(handle, recv)| {
-            let (unparker, kill_signal) = recv.recv().unwrap();
-            WorkerHandle::new(handle, unparker, kill_signal)
+            let kill_signal = recv.recv().unwrap();
+            WorkerHandle::new(handle, kill_signal)
         }));
 
         Ok(RuntimeHandle::new(
@@ -664,17 +649,6 @@ impl Runtime {
         result
     }
 
-    /// Returns current worker's parker to be used by schedulers.
-    ///
-    /// Whenever a circuit scheduler needs to block waiting for
-    /// an operator to become ready, it must use this parker.
-    /// This ensures that the thread will be woken up when the
-    /// user tries to terminate the runtime using
-    /// [`RuntimeHandle::kill`].
-    pub fn parker() -> &'static LocalKey<Parker> {
-        &PARKER
-    }
-
     /// `true` if the current worker thread has received a kill signal
     /// and should exit asap.  Schedulers should use this method before
     /// scheduling the next operator and after parking.
@@ -704,21 +678,19 @@ impl Runtime {
 #[derive(Debug)]
 struct WorkerHandle {
     join_handle: JoinHandle<()>,
-    unparker: Unparker,
     kill_signal: Arc<AtomicBool>,
 }
 
 impl WorkerHandle {
-    fn new(join_handle: JoinHandle<()>, unparker: Unparker, kill_signal: Arc<AtomicBool>) -> Self {
+    fn new(join_handle: JoinHandle<()>, kill_signal: Arc<AtomicBool>) -> Self {
         Self {
             join_handle,
-            unparker,
             kill_signal,
         }
     }
 
     fn unpark(&self) {
-        self.unparker.unpark();
+        self.join_handle.thread().unpark();
     }
 }
 
@@ -726,21 +698,19 @@ impl WorkerHandle {
 #[derive(Debug)]
 struct BackgroundWorkerHandle {
     join_handle: JoinHandle<()>,
-    unparker: Unparker,
     kill_signal: Arc<AtomicBool>,
 }
 
 impl BackgroundWorkerHandle {
-    fn new(join_handle: JoinHandle<()>, unparker: Unparker, kill_signal: Arc<AtomicBool>) -> Self {
+    fn new(join_handle: JoinHandle<()>, kill_signal: Arc<AtomicBool>) -> Self {
         Self {
             join_handle,
-            unparker,
             kill_signal,
         }
     }
 
     fn unpark(&self) {
-        self.unparker.unpark();
+        self.join_handle.thread().unpark();
     }
 }
 
@@ -774,7 +744,7 @@ impl RuntimeHandle {
     /// This method unparks a thread after sending a command to it or
     /// when killing a circuit.
     pub(super) fn unpark_worker(&self, worker: usize) {
-        self.workers[worker].unpark();
+        self.workers[worker].join_handle.thread().unpark();
     }
 
     /// Returns reference to the runtime.
