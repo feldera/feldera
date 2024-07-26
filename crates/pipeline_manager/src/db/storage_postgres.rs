@@ -10,13 +10,13 @@ use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus, SqlCompilerMessage};
+use crate::db::types::program::{ProgramConfig, ProgramStatus, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use log::{debug, info};
-use pipeline_types::config::{PipelineConfig, RuntimeConfig};
+use pipeline_types::config::{PipelineConfig, ProgramInfo, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
 use tokio_postgres::NoTls;
 use uuid::Uuid;
