@@ -480,8 +480,8 @@ where
     }
 
     /// Creates an empty batch.
-    fn dyn_empty(factories: &Self::Factories, time: Self::Time) -> Self {
-        Self::Builder::new_builder(factories, time).done()
+    fn dyn_empty(factories: &Self::Factories) -> Self {
+        Self::Builder::new_builder(factories, Self::Time::default()).done()
     }
 
     /// Pushes all timestamps in the trace back to `frontier` or less, by
@@ -665,7 +665,7 @@ where
             batches.insert(position, new);
         }
     }
-    batches.pop().unwrap_or(B::dyn_empty(factories, ()))
+    batches.pop().unwrap_or(B::dyn_empty(factories))
 }
 
 /// Copies a batch.  This uses the [`Builder`] interface to produce the output

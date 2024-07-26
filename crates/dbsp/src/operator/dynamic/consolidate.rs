@@ -78,6 +78,6 @@ where
     #[trace]
     fn eval_owned(&mut self, i: T) -> T::Batch {
         i.consolidate()
-            .unwrap_or_else(|| T::Batch::dyn_empty(&self.factories, ()))
+            .unwrap_or_else(|| T::Batch::dyn_empty(&self.factories))
     }
 }

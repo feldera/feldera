@@ -376,6 +376,6 @@ where
 {
     #[trace]
     fn eval(&mut self) -> T {
-        T::dyn_empty(&self.factories, ())
+        T::dyn_empty(&self.factories)
     }
 }

@@ -277,7 +277,7 @@ where
                     &stream.dyn_integrate_trace(&factories.input_factories),
                     neighborhood_descr,
                 )
-                .differentiate_with_initial_value(Batch::dyn_empty(&factories.local_factories, ()));
+                .differentiate_with_initial_value(Batch::dyn_empty(&factories.local_factories));
 
             // Gather all results in worker 0.  Worker 0 then computes
             // the final neighborhood.
@@ -294,7 +294,6 @@ where
 
             output.differentiate_with_initial_value(DynNeighborhood::dyn_empty(
                 &factories.output_factories,
-                (),
             ))
         })
     }
@@ -437,7 +436,7 @@ where
 
             builder.done()
         } else {
-            Batch::dyn_empty(&self.output_factories, ())
+            Batch::dyn_empty(&self.output_factories)
         }
     }
 }
@@ -574,7 +573,7 @@ where
 
             builder.done()
         } else {
-            Batch::dyn_empty(&self.output_factories, ())
+            Batch::dyn_empty(&self.output_factories)
         }
     }
 }

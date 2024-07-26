@@ -1333,7 +1333,7 @@ mod test {
                     if Runtime::worker_index() == 0 {
                         input1.next().unwrap()
                     } else {
-                        <OrdZSet<_>>::empty(())
+                        <OrdZSet<_>>::empty()
                     }
                 }))
                 .map_index(|Tup2(k, v)| (*k, v.clone()));
@@ -1342,7 +1342,7 @@ mod test {
                     if Runtime::worker_index() == 0 {
                         input2.next().unwrap()
                     } else {
-                        <OrdZSet<_>>::empty(())
+                        <OrdZSet<_>>::empty()
                     }
                 }))
                 .map_index(|Tup2(k, v)| (*k, v.clone()));
@@ -1735,7 +1735,7 @@ mod test {
 
     #[test]
     fn antijoin_test() {
-        let output = Arc::new(Mutex::new(OrdIndexedZSet::empty(())));
+        let output = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
         let output_clone = output.clone();
 
         let (mut circuit, (input1, input2)) = Runtime::init_circuit(4, move |circuit| {
