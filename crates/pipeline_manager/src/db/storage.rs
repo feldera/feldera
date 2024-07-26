@@ -71,7 +71,6 @@ pub(crate) trait Storage {
     ) -> Result<ExtendedPipelineDescr, DBError>;
 
     /// Creates a new pipeline.
-    #[allow(clippy::too_many_arguments)]
     async fn new_pipeline(
         &self,
         tenant_id: TenantId,
@@ -82,7 +81,6 @@ pub(crate) trait Storage {
     /// Creates a new pipeline if one with that name does not exist yet.
     /// If it already exists, update the existing one.
     /// The boolean returned is true iff the pipeline was newly created.
-    #[allow(clippy::too_many_arguments)]
     async fn new_or_update_pipeline(
         &self,
         tenant_id: TenantId,
@@ -99,7 +97,7 @@ pub(crate) trait Storage {
         original_name: &str,
         name: &Option<String>,
         description: &Option<String>,
-        config: &Option<RuntimeConfig>,
+        runtime_config: &Option<RuntimeConfig>,
         program_code: &Option<String>,
         program_config: &Option<ProgramConfig>,
     ) -> Result<ExtendedPipelineDescr, DBError>;
@@ -255,7 +253,7 @@ pub(crate) trait Storage {
         &self,
     ) -> Result<Vec<(TenantId, ExtendedPipelineDescr)>, DBError>;
 
-    /// Retrieves the pipeline whose program has been Pending for the longest and has a non-empty program.
+    /// Retrieves the pipeline whose program has been Pending for the longest.
     /// Returns `None` if there are no pending programs.
     async fn get_next_pipeline_program_to_compile(
         &self,

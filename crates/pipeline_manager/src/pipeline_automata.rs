@@ -747,12 +747,12 @@ mod test {
     use crate::db::storage_postgres::StoragePostgres;
     use crate::db::types::common::Version;
     use crate::db::types::pipeline::{PipelineDescr, PipelineId, PipelineStatus};
-    use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramInfo};
+    use crate::db::types::program::{CompilationProfile, ProgramConfig};
     use crate::error::ManagerError;
     use crate::logging;
     use crate::pipeline_automata::PipelineAutomaton;
     use async_trait::async_trait;
-    use pipeline_types::config::RuntimeConfig;
+    use pipeline_types::config::{ProgramInfo, RuntimeConfig};
     use pipeline_types::program_schema::ProgramSchema;
     use std::sync::Arc;
     use tokio::sync::{Mutex, Notify};
