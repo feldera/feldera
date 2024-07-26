@@ -91,7 +91,7 @@ public class CalciteOptimizer implements IWritesLogs {
 
     public CalciteOptimizer(int level) {
         this.steps = new ArrayList<>();
-        if (level < 1)
+        if (level <= 1)
             // For optimization levels below 1 we don't even apply Calcite optimizations.
             // Note that this may cause compilation to fail, since our compiler does not
             // handle all possible RelNode programs.

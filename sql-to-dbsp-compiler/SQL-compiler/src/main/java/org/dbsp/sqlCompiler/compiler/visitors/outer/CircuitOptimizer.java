@@ -93,8 +93,10 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         }
         passes.add(new EliminateFunctions(reporter).circuitRewriter());
         passes.add(new ExpandWriteLog(reporter).circuitRewriter());
-        passes.add(new Simplify(reporter).circuitRewriter());
-        passes.add(new CSE(reporter));
+        if (options.languageOptions.optimizationLevel >= 2) {
+            passes.add(new Simplify(reporter).circuitRewriter());
+            passes.add(new CSE(reporter));
+        }
         return new Passes(reporter, passes);
     }
 

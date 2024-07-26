@@ -180,6 +180,15 @@ The result is a 32-bit integer.  `DATEDIFF` is a synonym for
 month has increased and the calendar day and time is greater than or equal
 to the start. Weeks, quarters, and years follow from that.
 
+`TIMESTAMPADD(<unit>, integer, timestamp)` adds an interval in the
+specified unit to a timestamp.  `DATEADD` is a synonym for
+`TIMESTAMPADD`.  The added value can be negative.  The type of the
+result is as follows:
+
+- Adding anything to a `TIMESTAMP` value produces a `TIMESTAMP` result
+- Adding a interval of hours, minutes, or seconds to a `DATE` produces a `TIMESTAMP` result
+- Adding a an interval of days, months, or longer to a `DATE` produces a `DATE` result
+
 ## Time intervals
 
 ### The interval types
