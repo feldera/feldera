@@ -111,6 +111,11 @@ public class ExternalFunction extends SqlFunction {
         return checkers[0];
     }
 
+    /** True if this function's body is provided in SQL */
+    public boolean isSqlFunction() {
+        return this.body != null;
+    }
+
     static SqlOperandTypeInference createTypeinference(List<RelDataTypeField> parameters) {
         return InferTypes.explicit(Linq.map(parameters, RelDataTypeField::getType));
     }
