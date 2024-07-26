@@ -273,7 +273,8 @@ When a program uses the `NOW` function, the following input table is
 automatically injected by the compiler:
 
 ```sql
-CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
+-- the quotes around "NOW" are very important!
+CREATE TABLE "NOW"(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
 ```
 
 All invocations of the `NOW()` function within the program
