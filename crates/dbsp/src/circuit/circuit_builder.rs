@@ -3003,11 +3003,11 @@ where
                     let exchange_id = runtime.sequence_next(worker_index);
                     let exchange = Exchange::with_runtime(&runtime, exchange_id);
 
-                    let unparker = Runtime::parker().with(|parker| parker.unparker().clone());
-                    exchange.register_sender_callback(worker_index, move || unparker.unpark());
+                    let thread = std::thread::current();
+                    exchange.register_sender_callback(worker_index, move || thread.unpark());
 
-                    let unparker = Runtime::parker().with(|parker| parker.unparker().clone());
-                    exchange.register_receiver_callback(worker_index, move || unparker.unpark());
+                    let thread = std::thread::current();
+                    exchange.register_receiver_callback(worker_index, move || thread.unpark());
 
                     let termination_check = move || {
                         // Send local fixed point status to all peers.
@@ -3016,7 +3016,7 @@ where
                             if Runtime::kill_in_progress() {
                                 return Err(SchedulerError::Killed);
                             }
-                            Runtime::parker().with(|parker| parker.park());
+                            std::thread::park();
                         }
                         // Receive the fixed point status of each peer, compute global fixedpoint
                         // state as a logical and of all peer states.
@@ -3027,7 +3027,7 @@ where
                                 return Err(SchedulerError::Killed);
                             }
                             // Sleep if other threads are still working.
-                            Runtime::parker().with(|parker| parker.park());
+                            std::thread::park();
                         }
                         Ok(global_fixedpoint)
                     };

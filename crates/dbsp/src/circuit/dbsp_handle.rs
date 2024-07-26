@@ -416,9 +416,7 @@ impl Runtime {
                     }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
-                    Err(TryRecvError::Empty) => {
-                        Runtime::parker().with(|parker| parker.park());
-                    }
+                    Err(TryRecvError::Empty) => std::thread::park(),
                     Err(_) => {
                         break;
                     }
