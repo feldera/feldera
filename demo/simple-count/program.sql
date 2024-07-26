@@ -2,43 +2,49 @@
 CREATE TABLE example (
     id INT NOT NULL PRIMARY KEY
 ) WITH (
-    'connector' = '{
-        "transport": {
-            "name": "kafka_input",
-            "config": {
-                "bootstrap.servers": "[REPLACE-BOOTSTRAP-SERVERS]",
-                "topics": ["simple_count_input"],
-                "auto.offset.reset": "earliest"
-            }
-        },
-        "format": {
-            "name": "json",
-            "config": {
-                "update_format": "insert_delete",
-                "array": false
+    'connectors' = '[
+        {
+            "name": "kafka-1",
+            "transport": {
+                "name": "kafka_input",
+                "config": {
+                    "bootstrap.servers": "[REPLACE-BOOTSTRAP-SERVERS]",
+                    "topics": ["simple_count_input"],
+                    "auto.offset.reset": "earliest"
+                }
+            },
+            "format": {
+                "name": "json",
+                "config": {
+                    "update_format": "insert_delete",
+                    "array": false
+                }
             }
         }
-    }'
+    ]'
 );
 
 -- Example output
 CREATE VIEW example_count WITH (
-    'connector' = '{
-        "transport": {
-            "name": "kafka_output",
-            "config": {
-                "bootstrap.servers": "[REPLACE-BOOTSTRAP-SERVERS]",
-                "topic": "simple_count_output"
-            }
-        },
-        "format": {
-            "name": "json",
-            "config": {
-                "update_format": "insert_delete",
-                "array": True
+    'connectors' = '[
+        {
+            "name": "kafka-1",
+            "transport": {
+                "name": "kafka_output",
+                "config": {
+                    "bootstrap.servers": "[REPLACE-BOOTSTRAP-SERVERS]",
+                    "topic": "simple_count_output"
+                }
+            },
+            "format": {
+                "name": "json",
+                "config": {
+                    "update_format": "insert_delete",
+                    "array": True
+                }
             }
         }
-    }'
+    ]'
 ) AS (
     SELECT COUNT(*) AS num_rows FROM example
 );

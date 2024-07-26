@@ -7,10 +7,10 @@ use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
+use crate::db::types::program::{ProgramConfig, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use deadpool_postgres::Transaction;
-use pipeline_types::config::{PipelineConfig, RuntimeConfig};
+use pipeline_types::config::{PipelineConfig, ProgramInfo, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
 use tokio_postgres::Row;
 use uuid::Uuid;
