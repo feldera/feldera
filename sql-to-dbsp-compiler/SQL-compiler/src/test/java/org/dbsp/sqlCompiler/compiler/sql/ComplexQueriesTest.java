@@ -309,13 +309,6 @@ public class ComplexQueriesTest extends BaseSQLTests {
         this.addRustTestCase("ComplexQueriesTest.demographicsTest", ccs);
     }
 
-    // Test for https://github.com/feldera/feldera/issues/1151
-    @Test
-    public void primaryKeyTest() {
-        String sql = "CREATE TABLE event_t ( id BIGINT NOT NULL PRIMARY KEY, local_event_dt DATE )";
-        this.compileRustTestCase(sql);
-    }
-
     @Test
     public void fraudDetectionTest() {
         // fraudDetection-352718.cc_data.demo_

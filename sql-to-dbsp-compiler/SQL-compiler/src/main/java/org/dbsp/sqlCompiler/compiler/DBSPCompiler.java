@@ -63,6 +63,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IWritesLogs;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
@@ -285,7 +286,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         .newline();
                 SqlKind kind = node.getKind();
                 if (kind == SqlKind.CREATE_TYPE) {
-                    FrontEndStatement fe = this.frontend.compile(node.toString(), node);
+                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
                     if (fe == null)
                         // error during compilation
                         continue;
@@ -293,14 +294,20 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     continue;
                 }
                 if (kind == SqlKind.CREATE_FUNCTION) {
-                    FrontEndStatement fe = this.frontend.compile(node.toString(), node);
+                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
                     if (fe == null)
                         continue;
-                    functions.add(fe.to(CreateFunctionStatement.class).function);
+                    SqlFunction function = fe.to(CreateFunctionStatement.class).function;
+                    functions.add(function);
+                    // Reload the operator table to include all the newly defined functions.
+                    // This allows the functions ot be used in other function definitions.
+                    // There should be a better way to do this.
+                    SqlOperatorTable newTable = SqlOperatorTables.of(Linq.list(function));
+                    this.frontend.addOperatorTable(newTable);
                     this.midend.compile(fe);
                 }
                 if (node instanceof SqlLateness) {
-                    FrontEndStatement fe = this.frontend.compile(node.toString(), node);
+                    FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
                     if (fe == null)
                         continue;
                     this.lateness.add(fe.to(LatenessStatement.class));
@@ -309,9 +316,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             }
 
             if (!functions.isEmpty()) {
-                // Reload the operator table to include all the newly defined functions
-                SqlOperatorTable newTable = SqlOperatorTables.of(functions);
-                this.frontend.addOperatorTable(newTable);
                 if (this.options.ioOptions.udfs.isEmpty()) {
                     this.compiler().reportWarning(
                             SourcePositionRange.INVALID,
@@ -328,7 +332,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     continue;
                 if (node instanceof SqlLateness)
                     continue;
-                FrontEndStatement fe = this.frontend.compile(node.toString(), node);
+                FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
                 if (fe == null)
                     // error during compilation
                     continue;

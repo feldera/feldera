@@ -72,7 +72,7 @@ public class CompilerMessages {
                     .append(": ")
                     .append(this.message)
                     .append(SourceFileContents.newline());
-            output.append(contents.getFragment(this.range));
+            output.append(contents.getFragment(this.range, true));
         }
 
         public JsonNode toJson(SourceFileContents contents, ObjectMapper mapper) {
@@ -84,7 +84,7 @@ public class CompilerMessages {
             result.put("warning", this.warning);
             result.put("errorType", this.errorType);
             result.put("message", this.message);
-            String snippet = contents.getFragment(this.range);
+            String snippet = contents.getFragment(this.range, true);
             result.put("snippet", snippet);
             return result;
         }

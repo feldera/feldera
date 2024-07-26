@@ -124,10 +124,11 @@ public class ParserTests {
         String ddl = """
                 CREATE FUNCTION to_json(data VARCHAR) RETURNS VARBINARY;
                 CREATE FUNCTION from_json(data VARBINARY) RETURNS VARCHAR;
+                CREATE FUNCTION no_args() RETURNS TIMESTAMP AS TIMESTAMP '2024-01-01 00:00:00';
                 """;
         SqlNodeList list = calcite.parseStatements(ddl);
         Assert.assertNotNull(list);
-        Assert.assertEquals(2, list.size());
+        Assert.assertEquals(3, list.size());
     }
 
     @Test

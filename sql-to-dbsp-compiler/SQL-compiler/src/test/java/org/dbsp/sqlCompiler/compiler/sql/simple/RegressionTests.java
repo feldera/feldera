@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.apache.calcite.sql.parser.SqlParseException;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -8,10 +7,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -87,6 +84,37 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2094() {
+        String sql = "CREATE FUNCTION F() RETURNS INT NOT NULL AS 0;";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue2095() {
+        String sql = """
+        CREATE FUNCTION F() RETURNS INT NOT NULL AS 0;
+        CREATE FUNCTION G() RETURNS INT NOT NULL AS F();
+        """;
+        this.compileRustTestCase(sql);
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/2097")
+    public void testErrorPosition() {
+        // Test that errors for functions report correct source position
+        String sql = """
+                CREATE FUNCTION ANCHOR_TIMESTAMP() RETURNS TIMESTAMP NOT NULL
+                  AS TIMESTAMP '2024-01-01 00:00:00';
+                
+                CREATE FUNCTION ROUND_TIMESTAMP(ts TIMESTAMP, billing_interval_days INT) RETURNS TIMESTAMP
+                  AS TRUNC(DATEDIFF(DAYS, ts, ANCHOR_TIMESTAMP())) + ANCHOR_TIMESTAMP();
+                """;
+        this.statementsFailingInCompilation(sql, """
+                    5|  AS TRUNC(DATEDIFF(DAYS, ts, ANCHOR_TIMESTAMP())) + ANCHOR_TIMESTAMP();
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                """);
+    }
+
+    @Test
     public void issue1868() {
         String sql = """
                 CREATE TABLE example_a (
@@ -103,6 +131,13 @@ public class RegressionTests extends SqlIoTest {
                          FULL JOIN example_b
                          ON example_a.id = example_b.id
                 );""";
+        this.compileRustTestCase(sql);
+    }
+
+    // Test for https://github.com/feldera/feldera/issues/1151
+    @Test
+    public void issue1151() {
+        String sql = "CREATE TABLE event_t ( id BIGINT NOT NULL PRIMARY KEY, local_event_dt DATE )";
         this.compileRustTestCase(sql);
     }
 
