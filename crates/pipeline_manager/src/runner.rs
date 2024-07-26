@@ -9,7 +9,7 @@ use actix_web::{
     web::Payload,
     HttpRequest, HttpResponse, HttpResponseBuilder, ResponseError,
 };
-use pipeline_types::config::PipelineConfigGenerationError;
+use pipeline_types::config::ConnectorGenerationError;
 use pipeline_types::error::{DetailedError, ErrorResponse};
 use serde::Serialize;
 use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, sync::Arc, time::Duration};
@@ -28,7 +28,7 @@ pub enum RunnerError {
     },
     // Runner internal
     PipelineConfigurationGenerationFailed {
-        error: PipelineConfigGenerationError,
+        error: ConnectorGenerationError,
     },
     PortFileParseError {
         pipeline_id: PipelineId,

@@ -1,10 +1,9 @@
 use crate::db::error::DBError;
 use crate::db::types::common::Version;
-use crate::db::types::program::{ProgramConfig, ProgramStatus};
+use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
 use chrono::{DateTime, Utc};
 use pipeline_types::config::{PipelineConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
-use pipeline_types::program_schema::ProgramSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
@@ -293,10 +292,10 @@ pub struct ExtendedPipelineDescr {
     /// Timestamp when the current program status was set.
     pub program_status_since: DateTime<Utc>,
 
-    /// Schema of the compiled SQL program. It is set once SQL compilation
-    /// has been successfully completed (i.e., the `program_status` field
-    /// reaches >= `ProgramStatus::CompilingRust`).
-    pub program_schema: Option<ProgramSchema>,
+    /// Program information which includes schema, input connectors and output connectors.
+    /// It is set once SQL compilation has been successfully completed
+    /// (i.e., the `program_status` field reaches >= `ProgramStatus::CompilingRust`).
+    pub program_info: Option<ProgramInfo>,
 
     /// URL where to download the program binary from.
     /// TODO: should this be in here or not?

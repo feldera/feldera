@@ -461,7 +461,7 @@ pub struct ResourceConfig {
 }
 
 #[derive(ThisError, Serialize, Deserialize, Debug, ToSchema)]
-pub enum PipelineConfigGenerationError {
+pub enum ConnectorGenerationError {
     #[error("Required property '{key}' is missing")]
     PropertyKeyMissing { key: String },
     #[error("Property '{key}' has value '{value}' which is invalid: {reason}")]
@@ -481,33 +481,37 @@ pub enum PipelineConfigGenerationError {
 /// Parses the properties to create a connector configuration.
 pub fn parse_connector_config(
     properties: &BTreeMap<String, String>,
-) -> Result<ConnectorConfig, PipelineConfigGenerationError> {
+) -> Result<ConnectorConfig, ConnectorGenerationError> {
     if properties.len() != 1 {
-        return Err(PipelineConfigGenerationError::IncorrectNumProperties {
+        return Err(ConnectorGenerationError::IncorrectNumProperties {
             expected: 1,
             actual: properties.len(),
         });
     }
     match properties.get("connector") {
         Some(s) => ConnectorConfig::from_yaml(s).map_err(|e| {
-            PipelineConfigGenerationError::InvalidPropertyValue {
+            ConnectorGenerationError::InvalidPropertyValue {
                 key: "connector".to_string(),
                 value: s.clone(),
                 reason: format!("Deserialization failed: {e}"),
             }
         }),
-        None => Err(PipelineConfigGenerationError::PropertyKeyMissing {
+        None => Err(ConnectorGenerationError::PropertyKeyMissing {
             key: "connector".to_string(),
         }),
     }
 }
 
-/// Generates the pipeline configuration derived from the runtime configuration and program schema.
-pub fn generate_pipeline_config(
-    pipeline_id: Uuid,
-    runtime_config: &RuntimeConfig,
+/// Generates the input and output connectors derived from the program schema.
+pub fn generate_connectors_from_schema(
     program_schema: &ProgramSchema,
-) -> Result<PipelineConfig, PipelineConfigGenerationError> {
+) -> Result<
+    (
+        BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+        BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+    ),
+    ConnectorGenerationError,
+> {
     // Input connectors
     let mut inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
     for input_relation in &program_schema.inputs {
@@ -520,7 +524,7 @@ pub fn generate_pipeline_config(
                 | TransportConfig::S3Input(_)
                 | TransportConfig::DeltaTableInput(_) => {}
                 _ => {
-                    return Err(PipelineConfigGenerationError::ExpectedInputConnector);
+                    return Err(ConnectorGenerationError::ExpectedInputConnector);
                 }
             }
             inputs.insert(
@@ -543,7 +547,7 @@ pub fn generate_pipeline_config(
                 | TransportConfig::KafkaOutput(_)
                 | TransportConfig::DeltaTableOutput(_) => {}
                 _ => {
-                    return Err(PipelineConfigGenerationError::ExpectedInputConnector);
+                    return Err(ConnectorGenerationError::ExpectedInputConnector);
                 }
             }
             outputs.insert(
@@ -557,11 +561,22 @@ pub fn generate_pipeline_config(
         }
     }
 
-    Ok(PipelineConfig {
+    Ok((inputs, outputs))
+}
+
+/// Generates the pipeline configuration derived from the runtime configuration and the
+/// input/output connectors derived from the program schema.
+pub fn generate_pipeline_config(
+    pipeline_id: Uuid,
+    runtime_config: &RuntimeConfig,
+    inputs: &BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+    outputs: &BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+) -> PipelineConfig {
+    PipelineConfig {
         name: Some(format!("pipeline-{pipeline_id}")),
         global: runtime_config.clone(),
         storage_config: None, // Set by the runner based on global field
-        inputs,
-        outputs,
-    })
+        inputs: inputs.clone(),
+        outputs: outputs.clone(),
+    }
 }
