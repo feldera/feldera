@@ -64,7 +64,7 @@ pub(crate) async fn list_pipelines(
                     p.deployment_error, p.deployment_config, p.deployment_location
              FROM pipeline AS p
              WHERE p.tenant_id = $1
-             ORDER BY p.created_at
+             ORDER BY p.id
             ",
         )
         .await?;
@@ -623,7 +623,7 @@ pub(crate) async fn list_pipeline_ids_across_all_tenants(
         .prepare_cached(
             "SELECT p.tenant_id, p.id
              FROM pipeline AS p
-             ORDER BY p.created_at
+             ORDER BY p.id
             ",
         )
         .await?;
@@ -649,7 +649,7 @@ pub(crate) async fn list_pipelines_across_all_tenants(
                     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
                     p.deployment_error, p.deployment_config, p.deployment_location
              FROM pipeline AS p
-             ORDER BY p.created_at
+             ORDER BY p.id
             ",
         )
         .await?;
@@ -664,7 +664,7 @@ pub(crate) async fn list_pipelines_across_all_tenants(
     Ok(result)
 }
 
-/// Retrieves the pipeline whose program status has been Pending for the longest and whose program code is non-empty.
+/// Retrieves the pipeline whose program status has been Pending for the longest.
 pub(crate) async fn get_next_pipeline_program_to_compile(
     txn: &Transaction<'_>,
 ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
@@ -680,7 +680,7 @@ pub(crate) async fn get_next_pipeline_program_to_compile(
                    AND program_status_since = (
                        SELECT MIN(p2.program_status_since)
                        FROM pipeline AS p2
-                       WHERE p2.program_status = 'pending' AND p2.program_code != ''
+                       WHERE p2.program_status = 'pending'
                    )
             "
         )
