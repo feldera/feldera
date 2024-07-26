@@ -5,7 +5,7 @@ import org.junit.Test;
 
 public class TimestampdiffTests extends SqlIoTest {
     // Test data obtained from
-    // https://github.com/mysql/mysql-server/blob/ea1efa9822d81044b726aab20c857d5e1b7e046a/mysql-test/r/func_time.result#L715
+    // https://github.com/mysql/mysql-server/blob/mysql-test/r/func_time.result#L715
     @Test
     public void testDateDiff() {
         this.qs("""
@@ -57,7 +57,60 @@ public class TimestampdiffTests extends SqlIoTest {
                 89
                 (1 row)""");
     }
-    
+
+    @Test
+    public void testDateAdd() {
+        // This is manually written and validated using MySQL
+        this.qs("""
+                select timestampadd(MONTH, 3, DATE '2001-02-01') as a;
+                a
+                -----
+                 2001-05-01
+                (1 row)
+
+                select timestampadd(YEAR, -1, DATE '2002-05-01') as a;
+                a
+                -----
+                 2001-05-01
+                (1 row)
+
+                select timestampadd(QUARTER, -5, DATE '2002-05-01') as a;
+                a
+                -----
+                 2001-02-01
+                (1 row)
+
+                select timestampadd(MONTH, -1, DATE '2000-03-28') as a;
+                a
+                -----
+                 2000-02-28
+                (1 row)
+
+                select timestampadd(MONTH, 107, DATE '1991-03-28') as a;
+                a
+                -----
+                 2000-02-28
+                (1 row)
+
+                select timestampadd(SQL_TSI_WEEK, 12, DATE '2001-02-01') as a;
+                a
+                -----
+                 2001-04-26
+                (1 row)
+
+                select timestampadd(SQL_TSI_HOUR, 2136, DATE '2001-02-01') as a;
+                a
+                -----
+                 2001-05-01 00:00:00
+                (1 row)
+
+                select timestampadd(SQL_TSI_DAY, 89, DATE '2001-02-01') as a;
+                a
+                -----
+                 2001-05-01
+                (1 row)""");
+    }
+
     @Test
     public void testDateDayDiff() {
         this.qs("""
