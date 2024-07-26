@@ -46,9 +46,10 @@ CREATE TABLE IF NOT EXISTS pipeline (
     program_error VARCHAR NULL,             -- Error (if any) that occurred during compilation.
                                             -- * Non-NULL: sql_error, rust_error, system_error
                                             -- * NULL: pending, success, compiling_sql, compiling_rust
-    program_schema VARCHAR NULL,            -- After SQL compilation, this is populated and contains all information
-                                            -- the program such as tables, views, and data sources/sinks.
-                                            -- Serialized type: optional ProgramSchema
+    program_info VARCHAR NULL,              -- After SQL compilation, this is populated and contains all information
+                                            -- the program such as schema (tables, views, properties) and the
+                                            -- connectors derived from the schema.
+                                            -- Serialized type: optional ProgramInfo
                                             -- * Non-NULL: success, compiling_rust, rust_error
                                             -- * NULL: pending, sql_error
                                             -- * Non-NULL or NULL: system_error

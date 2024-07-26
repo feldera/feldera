@@ -345,7 +345,7 @@
                     "program_config": {
                       "profile": "optimized"
                     },
-                    "program_schema": null,
+                    "program_info": null,
                     "program_status": "Pending",
                     "program_status_since": "1970-01-01T00:00:00Z",
                     "program_version": 2,
@@ -385,7 +385,7 @@
                     "program_config": {
                       "profile": "unoptimized"
                     },
-                    "program_schema": null,
+                    "program_info": null,
                     "program_status": "Pending",
                     "program_status_since": "1970-01-01T00:00:00Z",
                     "program_version": 1,
@@ -486,7 +486,7 @@
                   "program_config": {
                     "profile": "optimized"
                   },
-                  "program_schema": null,
+                  "program_info": null,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
                   "program_version": 2,
@@ -580,7 +580,7 @@
                   "program_config": {
                     "profile": "optimized"
                   },
-                  "program_schema": null,
+                  "program_info": null,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
                   "program_version": 2,
@@ -708,7 +708,7 @@
                   "program_config": {
                     "profile": "optimized"
                   },
-                  "program_schema": null,
+                  "program_info": null,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
                   "program_version": 2,
@@ -758,7 +758,7 @@
                   "program_config": {
                     "profile": "optimized"
                   },
-                  "program_schema": null,
+                  "program_info": null,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
                   "program_version": 2,
@@ -940,7 +940,7 @@
                   "program_config": {
                     "profile": "optimized"
                   },
-                  "program_schema": null,
+                  "program_info": null,
                   "program_status": "Pending",
                   "program_status_since": "1970-01-01T00:00:00Z",
                   "program_version": 2,
@@ -2211,10 +2211,10 @@
           "program_config": {
             "$ref": "#/components/schemas/ProgramConfig"
           },
-          "program_schema": {
+          "program_info": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/ProgramSchema"
+                "$ref": "#/components/schemas/ProgramInfo"
               }
             ],
             "nullable": true
@@ -2311,10 +2311,10 @@
           "program_config": {
             "$ref": "#/components/schemas/ProgramConfig"
           },
-          "program_schema": {
+          "program_info": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/ProgramSchema"
+                "$ref": "#/components/schemas/ProgramInfo"
               }
             ],
             "nullable": true
@@ -2975,6 +2975,34 @@
               }
             ],
             "nullable": true
+          }
+        }
+      },
+      "ProgramInfo": {
+        "type": "object",
+        "description": "Program information which includes schema, input connectors and output connectors.",
+        "required": [
+          "schema",
+          "input_connectors",
+          "output_connectors"
+        ],
+        "properties": {
+          "input_connectors": {
+            "type": "object",
+            "description": "Input connectors derived from the schema.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InputEndpointConfig"
+            }
+          },
+          "output_connectors": {
+            "type": "object",
+            "description": "Output connectors derived from the schema.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OutputEndpointConfig"
+            }
+          },
+          "schema": {
+            "$ref": "#/components/schemas/ProgramSchema"
           }
         }
       },
