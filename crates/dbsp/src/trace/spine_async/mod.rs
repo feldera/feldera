@@ -5,44 +5,37 @@ use crate::{
     dynamic::{DynVec, Factory, Weight},
     time::{Antichain, AntichainRef, Timestamp},
     trace::{
-        cursor::CursorList, spine_async::merger::BatchMerger, Batch, BatchLocation, BatchReader,
-        BatchReaderFactories, Cursor, Filter, Trace,
+        cursor::CursorList, merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor,
+        Filter, Trace,
     },
     Error, NumEntries,
 };
 
-use crate::circuit::metrics::{
-    COMPACTION_DURATION, COMPACTION_SIZE, COMPACTION_SIZE_SAVINGS, COMPACTION_STALL_TIME,
-    TOTAL_COMPACTIONS,
-};
 use crate::dynamic::{ClonableTrait, DeserializableDyn};
-use crate::storage::backend::StorageError;
 use crate::storage::file::to_bytes;
 use crate::storage::{checkpoint_path, write_commit_metadata};
-use crate::trace::spine_async::merger::{BackgroundOperation, MergeResult};
 use crate::trace::spine_fueled::CommittedSpine;
 use crate::trace::Merger;
-use metrics::{counter, histogram};
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver, Sender, SyncSender, TryRecvError};
 use std::sync::Arc;
-use std::time::Instant;
+use std::sync::Mutex;
 use std::{
-    fmt::{self, Debug, Display, Formatter, Write},
+    fmt::{self, Debug, Display, Formatter},
     fs,
     ops::DerefMut,
+    sync::Condvar,
 };
 use textwrap::indent;
 use uuid::Uuid;
 
-mod merger;
+use self::thread::{BackgroundThread, WorkerStatus};
 
-#[cfg(test)]
-mod tests;
+use super::BatchLocation;
+
+mod thread;
 
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;
@@ -50,7 +43,7 @@ pub(crate) const MAX_LEVELS: usize = 9;
 impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
     fn from(value: &Spine<B>) -> Self {
         let mut batches = vec![];
-        value.map_batches(|b| {
+        for b in &value.batches {
             if b.persistent_id().is_none() {
                 eprintln!("Batch is missing a persistent id has len: {:?}", b.len());
             }
@@ -60,7 +53,7 @@ impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
                     .to_string_lossy()
                     .to_string(),
             );
-        });
+        }
 
         // Transform the lower key bound into a serialized form and store it as a byte vector.
         // This is necessary because the key type is not sized.
@@ -83,73 +76,348 @@ impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
     }
 }
 
-/// A unique identifier for batches we hold within levels.
-#[derive(SizeOf, Ord, Default, PartialOrd, Debug, Copy, Clone, Eq, PartialEq)]
-struct BatchIdent {
-    /// The number of nested batches, either 1 if no merging is going on or 2 if
-    /// this represents a pair of batches being merged. (Larger values would
-    /// represent multiway merges, which we currently don't do.)
-    #[size_of(skip)]
-    n: usize,
-    /// Which level this batch is from.
-    ///
-    /// We use this to find the two batches we want to remove when
-    /// we finished a merge.
-    level: usize,
-    /// A key that is unique within the level.
-    ///
-    /// We use this to find the two batches we want to remove when
-    /// we finished a merge.
-    #[size_of(skip)]
-    key: u64,
-}
-
-/// Describes the state of a layer.
-///
-/// A layer can be empty, contain a single batch, or contain multiple batches
-/// (currently just 2) that are being merged in the background.
-///
-/// If there's only one batch then the `Arc` has a reference count of 1,
-/// otherwise they are higher than that because the background merger thread
-/// holds a reference.
-#[derive(SizeOf)]
-pub struct BatchState<B>(Vec<Arc<B>>)
-where
-    B: Batch;
-
-impl<B> BatchState<B>
+/// A group of batches with similar sizes (as determined by [size_from_level]).
+struct Slot<B>
 where
     B: Batch,
 {
-    /// The number of actual updates contained in the level.
-    fn n_updates(&self) -> usize {
-        self.0.iter().map(|b| b.len()).sum()
-    }
+    /// Optionally, a pair of batches that are currently being merged.  These
+    /// batches are not in `loose_batches`.
+    merging_batches: Option<[Arc<B>; 2]>,
 
-    fn batch_count(&self) -> usize {
-        self.0.len()
-    }
-
-    fn is_merging(&self) -> bool {
-        self.0.len() > 1
-    }
+    /// Zero or more batches not currently being merged.
+    loose_batches: Vec<Arc<B>>,
 }
 
-struct CompactStrategy {
-    /// Minimum number of batches that need to belong to the same size
-    /// bucket before compaction is triggered on that bucket.
-    min_threshold: usize,
-    /// Maximum number of batches that will be
-    /// compacted together in one compaction step.
-    max_threshold: usize,
-}
-
-impl Default for CompactStrategy {
+impl<B> Default for Slot<B>
+where
+    B: Batch,
+{
     fn default() -> Self {
-        CompactStrategy {
-            min_threshold: 2,
-            max_threshold: 64,
+        Self {
+            merging_batches: None,
+            loose_batches: Vec::new(),
         }
+    }
+}
+
+impl<B> Slot<B>
+where
+    B: Batch,
+{
+    /// If this slot doesn't currently have an ongoing merge, and it does have
+    /// at least two loose batches, picks two of the loose batches and makes
+    /// them into merging batches, and returns those batches. Otherwise, returns
+    /// `None` without changing anything.
+    fn try_start_merge(&mut self) -> Option<[Arc<B>; 2]> {
+        if self.merging_batches.is_none() && self.loose_batches.len() >= 2 {
+            let a = self.loose_batches.pop().unwrap();
+            let b = self.loose_batches.pop().unwrap();
+            self.merging_batches = Some([Arc::clone(&a), Arc::clone(&b)]);
+            Some([a, b])
+        } else {
+            None
+        }
+    }
+}
+
+/// State shared between the merger thread and the main thread.
+///
+/// This shared state is accessed through a `Mutex`, which we try to hold for as
+/// short a time as possible.
+struct SharedState<B>
+where
+    B: Batch,
+{
+    key_filter: Option<Filter<B::Key>>,
+    value_filter: Option<Filter<B::Val>>,
+    slots: [Slot<B>; MAX_LEVELS],
+    request_exit: bool,
+    merge_stats: MergeStats,
+}
+
+impl<B> SharedState<B>
+where
+    B: Batch,
+{
+    pub fn new() -> Self {
+        Self {
+            key_filter: None,
+            value_filter: None,
+            slots: std::array::from_fn(|_| Slot::default()),
+            request_exit: false,
+            merge_stats: MergeStats::default(),
+        }
+    }
+
+    /// Adds all of `batches` as (initially) loose batches.  They will be merged
+    /// when the merger thread has a chance (although it might not be awake).
+    fn add_batches(&mut self, batches: impl IntoIterator<Item = Arc<B>>) {
+        for batch in batches {
+            self.slots[Spine::<B>::size_to_level(batch.len())]
+                .loose_batches
+                .push(batch);
+        }
+    }
+
+    /// Add `batches` as an (initially) loose batch, which will be merged when
+    /// the merger thread has a chance (although it might not be awake).
+    ///
+    /// Returns a copy of all of the batches (whether loose or being merged).
+    fn add_batch(&mut self, batch: Arc<B>) -> Vec<Arc<B>> {
+        self.add_batches([batch]);
+        self.get_batches()
+    }
+
+    fn get_filters(&self) -> (Option<Filter<B::Key>>, Option<Filter<B::Val>>) {
+        (self.key_filter.clone(), self.value_filter.clone())
+    }
+
+    /// Gets a copy of all of the batches (whether loose or being merged).
+    fn get_batches(&self) -> Vec<Arc<B>> {
+        let mut batches = Vec::new();
+        for slot in &self.slots {
+            batches.extend(slot.loose_batches.iter().map(Arc::clone));
+            if let Some(merging_batches) = &slot.merging_batches {
+                batches.extend(merging_batches.iter().map(Arc::clone));
+            }
+        }
+        batches
+    }
+
+    /// Removes the loose batches and returns them.  This ensures that the
+    /// merger thread will not initiate any more merges.
+    fn take_loose_batches(&mut self) -> Vec<Arc<B>> {
+        let mut loose_batches = Vec::new();
+        for slot in &mut self.slots {
+            loose_batches.append(&mut slot.loose_batches);
+        }
+        loose_batches
+    }
+
+    /// Returns true if any merging work is currently going on.
+    ///
+    /// If this returns false, a new merge might still start without any further
+    /// batches being submitted if there are enough loose batches.
+    fn is_merging(&self) -> bool {
+        self.slots.iter().any(|slot| slot.merging_batches.is_some())
+    }
+
+    /// Returns true if the merger is empty: it is not doing any merging work
+    /// and there are no loose batches.
+    fn is_empty(&self) -> bool {
+        self.slots
+            .iter()
+            .all(|slot| slot.merging_batches.is_none() && slot.loose_batches.is_empty())
+    }
+
+    /// Finishes up the ongoing merge at the given `level`, which has completed
+    /// with `new_batch` as the result.
+    fn merge_complete(&mut self, level: usize, new_batch: Arc<B>) {
+        let [a, b] = self.slots[level].merging_batches.take().unwrap();
+        self.merge_stats
+            .report_merge(a.len() + b.len(), new_batch.len());
+        self.slots[Spine::<B>::size_to_level(new_batch.len())]
+            .loose_batches
+            .push(new_batch);
+    }
+
+    /// Returns information that the caller can use to construct a metadata
+    /// report. The vector consists of each of the batches and a bool that
+    /// indicates whether it is now being merged.
+    ///
+    /// This is better than getting the full metadata here because part of that
+    /// is measuring the size of the batches, which can require I/O.
+    fn metadata_snapshot(&self) -> (Vec<(Arc<B>, bool)>, MergeStats) {
+        let mut batches = Vec::new();
+        for slot in &self.slots {
+            batches.extend(slot.loose_batches.iter().map(|b| (Arc::clone(b), false)));
+            if let Some(merging_batches) = &slot.merging_batches {
+                batches.extend(merging_batches.iter().map(|b| (Arc::clone(b), true)));
+            }
+        }
+        (batches, self.merge_stats.clone())
+    }
+}
+
+/// A fully asynchronous merger.
+struct AsyncMerger<B>
+where
+    B: Batch,
+{
+    /// State shared with the background thread.
+    state: Arc<Mutex<SharedState<B>>>,
+
+    /// Allows us to wait for the background worker to become idle.
+    idle: Arc<Condvar>,
+}
+
+impl<B> AsyncMerger<B>
+where
+    B: Batch,
+{
+    fn new() -> Self {
+        let idle = Arc::new(Condvar::new());
+        let state = Arc::new(Mutex::new(SharedState::new()));
+        BackgroundThread::add_worker({
+            let state = Arc::clone(&state);
+            let idle = Arc::clone(&idle);
+            let mut mergers = std::array::from_fn(|_| None);
+            Box::new(move || Self::run(&mut mergers, &state, &idle))
+        });
+        Self { state, idle }
+    }
+    fn set_key_filter(&self, key_filter: &Filter<B::Key>) {
+        self.state.lock().unwrap().key_filter = Some(key_filter.clone());
+    }
+    fn set_value_filter(&self, value_filter: &Filter<B::Val>) {
+        self.state.lock().unwrap().value_filter = Some(value_filter.clone());
+    }
+
+    /// Adds `batch` to the shared merging state and wakes up the merger.
+    /// Returns the new complete set of batches to include in the spine.
+    fn add_batch(&self, batch: Arc<B>) -> Vec<Arc<B>> {
+        let batches = self.state.lock().unwrap().add_batch(batch);
+        BackgroundThread::wake();
+        batches
+    }
+
+    /// Adds `batches` to the shared merging state and wakes up the merger.
+    fn add_batches(&self, batches: impl IntoIterator<Item = Arc<B>>) {
+        self.state.lock().unwrap().add_batches(batches);
+        BackgroundThread::wake();
+    }
+
+    /// Gets the complete set of batches to include in the spine.
+    fn get_batches(&self) -> Vec<Arc<B>> {
+        self.state.lock().unwrap().get_batches()
+    }
+
+    /// Pauses merging, by stopping the initiation of new merges and waiting for
+    /// ongoing merges to finish.  Removes all of the batches from the merger
+    /// and returns them. The caller can resume merging by passing those batches
+    /// back to [Self::resume].
+    fn pause(&self) -> Vec<Arc<B>> {
+        let mut state = self.state.lock().unwrap();
+        let mut batches = state.take_loose_batches();
+        let mut state = self
+            .idle
+            .wait_while(state, |state| state.is_merging())
+            .unwrap();
+        batches.extend(state.take_loose_batches());
+        batches
+    }
+
+    /// Starts merging again with `batches`, which are presumably what
+    /// [Self::pause] returned.
+    fn resume(&self, batches: impl IntoIterator<Item = Arc<B>>) {
+        debug_assert!(self.is_empty());
+        self.add_batches(batches);
+    }
+
+    /// Returns true if the merger is empty: it is not doing any merging work
+    /// and there are no loose batches.
+    fn is_empty(&self) -> bool {
+        self.state.lock().unwrap().is_empty()
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        let (batches, merge_stats) = self.state.lock().unwrap().metadata_snapshot();
+
+        let n_batches = batches.len();
+        let n_merging = batches.iter().filter(|(_batch, merging)| *merging).count();
+        let mut storage_size = 0;
+        let mut merging_size = 0;
+        for (batch, merging) in batches {
+            let on_storage = batch.location() == BatchLocation::Storage;
+            if on_storage || merging {
+                let size = batch.approximate_byte_size();
+                if on_storage {
+                    storage_size += size;
+                }
+                if merging {
+                    merging_size += size;
+                }
+            }
+        }
+
+        meta.extend(metadata! {
+            // Number of batches currently in the spine.
+            "batches" => n_batches,
+
+            // The amount of data in the spine currently stored on disk (not
+            // including any in-progress merges).
+            "storage size" => MetaItem::bytes(storage_size),
+
+            // The number of batches currently being merged (currently this
+            // is always an even number because batches are merged in
+            // pairs).
+            "merging batches" => n_merging,
+
+            // The number of bytes of batches being merged.
+            "merging size" => MetaItem::bytes(merging_size),
+
+            // For merges already completed, the percentage of the updates input
+            // to merges that merging eliminated, whether by weights adding to
+            // zero or through key or value filters.
+            "merge reduction" => MetaItem::Percent(merge_stats.reduction_percent())
+        });
+    }
+    fn run(
+        mergers: &mut [Option<(B::Merger, [Arc<B>; 2])>; MAX_LEVELS],
+        state: &Arc<Mutex<SharedState<B>>>,
+        idle: &Arc<Condvar>,
+    ) -> WorkerStatus {
+        // Run in-progress merges.
+        let (key_filter, value_filter) = state.lock().unwrap().get_filters();
+        for (level, m) in mergers.iter_mut().enumerate() {
+            if let Some((merger, [a, b])) = m.as_mut() {
+                let mut fuel = 10_000;
+                merger.work(a, b, &key_filter, &value_filter, &mut fuel);
+                if fuel >= 0 {
+                    let (merger, _batches) = m.take().unwrap();
+                    let new_batch = Arc::new(merger.done());
+                    state.lock().unwrap().merge_complete(level, new_batch);
+                }
+            }
+        }
+
+        // Start new merges out of loose batches.
+        //
+        // Figuring out what merges to start requires the lock. Then we drop
+        // the lock to actually start them, in case that's expensive (it
+        // might require creating a file, for example).
+        let start_merges = state
+            .lock()
+            .unwrap()
+            .slots
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(level, slot)| slot.try_start_merge().map(|batches| (level, batches)))
+            .collect::<Vec<_>>();
+        for (level, [a, b]) in start_merges {
+            let merger = B::Merger::new_merger(&a, &b, None);
+            mergers[level] = Some((merger, [a, b]));
+        }
+
+        if state.lock().unwrap().request_exit {
+            WorkerStatus::Done
+        } else if mergers.iter().all(|m| m.is_none()) {
+            idle.notify_all(); // XXX is there a race here?
+            WorkerStatus::Idle
+        } else {
+            WorkerStatus::Busy
+        }
+    }
+}
+
+impl<B> Drop for AsyncMerger<B>
+where
+    B: Batch,
+{
+    fn drop(&mut self) {
+        self.state.lock().unwrap().request_exit = true;
+        BackgroundThread::wake();
     }
 }
 
@@ -157,7 +425,7 @@ impl Default for CompactStrategy {
 ///
 /// The difference between `post_len` and `pre_len` reflects updates that were
 /// dropped because weights added to zero or because of key or value filters.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct MergeStats {
     /// Number of updates before merging.
     pre_len: u64,
@@ -187,6 +455,14 @@ impl MergeStats {
 
 /// Persistence optimized [trace][crate::trace::Trace] implementation based on
 /// collection and merging immutable batches of updates.
+///
+/// This spine works asynchronously.  The batches exposed to cursors are
+/// maintained separately from the batches currently being merged by an
+/// asynchronous thread. When one or more merges complete, the spine fetches the
+/// new (smaller) collection of batches from the thread in the next step. (It
+/// could fetch them earlier, but it might be unfriendly to expose potentially
+/// one form of data to a given cursor and then a different form to the next one
+/// within a single step.)
 #[derive(SizeOf)]
 pub struct Spine<B>
 where
@@ -194,8 +470,10 @@ where
 {
     #[size_of(skip)]
     factories: B::Factories,
-    /// `levels` holds `MAX_LEVEL` number of BTrees which contain batches.
-    levels: Vec<BTreeMap<BatchIdent, BatchState<B>>>,
+
+    /// All the batches in the spine, in no particular order.
+    batches: Vec<Arc<B>>,
+
     lower: Antichain<B::Time>,
     upper: Antichain<B::Time>,
     #[size_of(skip)]
@@ -206,28 +484,10 @@ where
     key_filter: Option<Filter<B::Key>>,
     #[size_of(skip)]
     value_filter: Option<Filter<B::Val>>,
-    /// The channel where we send merge requests to the compactor thread.
+
+    /// The asynchronous merger.
     #[size_of(skip)]
-    merger_tx: Arc<SyncSender<BackgroundOperation>>,
-    /// The closure of the compactor thread uses this channel to send completed
-    /// merges back to us.
-    #[size_of(skip)]
-    completion_tx: Arc<Sender<MergeResult<B>>>,
-    /// The endpoint where we receive completed merges sent to us.
-    #[size_of(skip)]
-    completion_rx: Receiver<MergeResult<B>>,
-    next_batch_key: u64,
-    /// How many batch merges are outstanding.
-    ///
-    /// This is a shortcut of summing everything in `levels` that's `BatchState::Merging`.
-    #[size_of(skip)]
-    outstanding: Vec<usize>,
-    /// Decision logic for compaction.
-    #[size_of(skip)]
-    strategy: CompactStrategy,
-    /// Merge statistics.
-    #[size_of(skip)]
-    merge_stats: MergeStats,
+    merger: AsyncMerger<B>,
 }
 
 impl<B> Display for Spine<B>
@@ -235,9 +495,10 @@ where
     B: Batch + Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.try_fold_batches((), |_, batch| {
-            writeln!(f, "batch:\n{}", indent(&batch.to_string(), "    "),)
-        })
+        for batch in &self.batches {
+            writeln!(f, "batch:\n{}", indent(&batch.to_string(), "    "))?
+        }
+        Ok(())
     }
 }
 
@@ -307,7 +568,7 @@ where
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
     fn num_entries_shallow(&self) -> usize {
-        self.fold_batches(0, |acc, batch| acc + batch.len())
+        self.batches.iter().map(|batch| batch.len()).sum()
     }
 
     fn num_entries_deep(&self) -> usize {
@@ -333,15 +594,18 @@ where
     }
 
     fn key_count(&self) -> usize {
-        self.fold_batches(0, |acc, batch| acc + batch.key_count())
+        self.batches.iter().map(|batch| batch.key_count()).sum()
     }
 
     fn len(&self) -> usize {
-        self.fold_batches(0, |acc, batch| acc + batch.len())
+        self.batches.iter().map(|batch| batch.len()).sum()
     }
 
     fn approximate_byte_size(&self) -> usize {
-        self.fold_batches(0, |acc, batch| acc + batch.approximate_byte_size())
+        self.batches
+            .iter()
+            .map(|batch| batch.approximate_byte_size())
+            .sum()
     }
 
     fn lower(&self) -> AntichainRef<'_, Self::Time> {
@@ -353,27 +617,18 @@ where
     }
 
     fn cursor(&self) -> Self::Cursor<'_> {
-        let mut cursors = Vec::with_capacity(
-            self.levels
+        SpineCursor::new(
+            &self.factories,
+            self.batches
                 .iter()
-                .flat_map(|level| level.values())
-                .map(|l| l.batch_count())
-                .sum(),
-        );
-        for level in self.levels.iter().rev() {
-            for merge_state in level.values() {
-                for batch in merge_state.0.iter() {
-                    if !batch.is_empty() {
-                        cursors.push(batch.cursor());
-                    }
-                }
-            }
-        }
-        SpineCursor::new(&self.factories, cursors)
+                .filter(|batch| !batch.is_empty())
+                .map(|batch| batch.cursor())
+                .collect(),
+        )
     }
 
     fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        self.complete_merges();
+        self.pause();
 
         if let Some(bound) = &mut self.lower_key_bound {
             if bound.as_ref() < lower_bound {
@@ -387,7 +642,17 @@ where
         let mut bound = self.factories.key_factory().default_box();
         self.lower_key_bound.as_ref().unwrap().clone_to(&mut *bound);
 
-        self.map_batches_mut(|batch| batch.truncate_keys_below(&bound));
+        self.batches = self
+            .batches
+            .drain(..)
+            .map(|batch| {
+                let mut batch = Arc::into_inner(batch).unwrap();
+                batch.truncate_keys_below(&bound);
+                Arc::new(batch)
+            })
+            .collect();
+
+        self.resume();
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -407,14 +672,14 @@ where
         let mut intermediate = self.factories.keys_factory().default_box();
         intermediate.reserve(sample_size);
 
-        self.map_batches(|batch| {
+        for batch in self.batches.iter() {
             batch.sample_keys(
                 rng,
                 ((batch.key_count() as u128) * (sample_size as u128) / (total_keys as u128))
                     as usize,
                 intermediate.as_mut(),
             );
-        });
+        }
 
         // Drop duplicate keys and keys that appear with 0 weight, i.e.,
         // get canceled out across multiple batches.
@@ -444,78 +709,6 @@ impl<B> Spine<B>
 where
     B: Batch,
 {
-    /// Display the structure of the spine, including the type of each bin and
-    /// the sizes of batches.
-    pub fn sketch(&self) -> String {
-        let mut s = String::new();
-
-        for level in self.levels.iter() {
-            for batch in level.values() {
-                if batch.0.len() != 1 {
-                    s.write_char('[').unwrap();
-                    for b in batch.0.iter() {
-                        s.write_fmt(format_args!("{},", b.num_entries_deep()))
-                            .unwrap();
-                    }
-                    s.write_char(']').unwrap();
-                } else {
-                    let b = &batch.0[0];
-                    s.write_fmt(format_args!("{},", b.num_entries_deep()))
-                        .unwrap();
-                }
-            }
-        }
-
-        s
-    }
-
-    #[allow(dead_code)]
-    fn map_batches<F>(&self, mut map: F)
-    where
-        F: FnMut(&B),
-    {
-        for level in self.levels.iter().rev() {
-            for batch in level.values() {
-                for b in batch.0.iter() {
-                    map(b);
-                }
-            }
-        }
-    }
-
-    fn fold_batches<T, F>(&self, init: T, mut fold: F) -> T
-    where
-        F: FnMut(T, &B) -> T,
-    {
-        self.levels
-            .iter()
-            .rev()
-            .flat_map(|inner| inner.values())
-            .fold(init, |mut acc, batch| {
-                for b in batch.0.iter() {
-                    acc = fold(acc, b);
-                }
-                acc
-            })
-    }
-
-    // TODO: Use the `Try` trait when stable
-    fn try_fold_batches<T, E, F>(&self, init: T, mut fold: F) -> Result<T, E>
-    where
-        F: FnMut(T, &B) -> Result<T, E>,
-    {
-        self.levels
-            .iter()
-            .rev()
-            .flat_map(|innser| innser.values())
-            .try_fold(init, |mut acc, batch| {
-                for b in batch.0.iter() {
-                    acc = fold(acc, b)?;
-                }
-                Ok(acc)
-            })
-    }
-
     /// Return the absolute path of the file for this Spine checkpoint.
     ///
     /// # Arguments
@@ -536,75 +729,6 @@ where
         let mut path = checkpoint_path(cid);
         path.push(format!("pspine-batches-{}.dat", persistent_id.as_ref()));
         path
-    }
-
-    /// Dequeue a completed merge if there is one available.
-    fn try_dequeue_merge(&mut self) -> Result<(BatchIdent, B), StorageError> {
-        match self.completion_rx.try_recv()? {
-            MergeResult::MergeCompleted(r) => r,
-        }
-    }
-
-    /// Waits until there is a completed merge, then return it.
-    fn dequeue_merge(&mut self) -> Result<(BatchIdent, B), StorageError> {
-        match self.completion_rx.recv()? {
-            MergeResult::MergeCompleted(r) => r,
-        }
-    }
-
-    /// Starts a new merge.
-    fn enqueue(
-        sender: &Arc<SyncSender<BackgroundOperation>>,
-        key: BatchIdent,
-        mut batches: Vec<Arc<B>>,
-        key_filter: Option<Filter<B::Key>>,
-        value_filter: Option<Filter<B::Val>>,
-        completed_merge_sender: Arc<Sender<MergeResult<B>>>,
-    ) {
-        assert_eq!(batches.len(), 2);
-        let a = batches.pop().unwrap();
-        let b = batches.pop().unwrap();
-        let mut merger = None;
-
-        if let Ok(()) = sender.send(BackgroundOperation::Merge(Box::new(
-            move |fuel: &mut isize| {
-                let start = Instant::now();
-                if merger.is_none() {
-                    // We initialize this here because to ensure we create the new file we're
-                    // writing to on the background thread that's running the closure.
-                    merger = Some(<B as Batch>::Merger::new_merger(&a, &b, None));
-                }
-
-                merger
-                    .as_mut()
-                    .unwrap()
-                    .work(&a, &b, &key_filter, &value_filter, fuel);
-
-                if *fuel > 0 {
-                    let old_length = a.len() + b.len();
-                    let done_merger = merger.take().unwrap();
-                    let current = Arc::new(done_merger.done());
-                    counter!(TOTAL_COMPACTIONS).increment(1);
-                    histogram!(COMPACTION_SIZE).record(current.len() as f64);
-                    counter!(COMPACTION_SIZE_SAVINGS)
-                        .increment((old_length - current.len()) as u64);
-                    histogram!(COMPACTION_DURATION).record(start.elapsed().as_secs_f64());
-                    match completed_merge_sender.send(MergeResult::MergeCompleted(Ok((
-                        key,
-                        // unwrap is fine, we haven't shared the batch with anyone yet.
-                        Arc::into_inner(current).unwrap(),
-                    )))) {
-                        Ok(()) => {
-                            // The merge was sent back successfully.
-                        }
-                        Err(_e) => {
-                            // The receiver has been dropped, so the spine is no longer interested in this,
-                            // because it already exited.
-                        }
-                    }
-                }
-            },
-        ))) {}
     }
 }
 
@@ -758,77 +882,63 @@ where
     fn recede_to(&mut self, frontier: &B::Time) {
         // Complete all in-progress merges, as we don't have an easy way to update
         // timestamps in an ongoing merge.
-        self.complete_merges();
-        self.map_batches_mut(|b| b.recede_to(frontier));
+        self.pause();
+
+        self.batches = self
+            .batches
+            .drain(..)
+            .map(|batch| {
+                let mut batch = Arc::into_inner(batch).unwrap();
+                batch.recede_to(frontier);
+                Arc::new(batch)
+            })
+            .collect();
+
+        self.resume();
     }
 
     fn exert(&mut self, _effort: &mut isize) {}
 
     fn consolidate(mut self) -> Option<B> {
-        self.complete_merges();
-
-        let mut batches: Vec<Arc<B>> = self
-            .levels
-            .into_iter()
-            .flat_map(|inner| inner.into_values())
-            .map(|mut batch| {
-                // This shouldn't happen because we call complete_merges first.
-                // we could also just add them to `batches and don't wait for
-                // `complete_merges`
-                assert_eq!(
-                    batch.0.len(),
-                    1,
-                    "In-progress Merge op found during consolidation"
-                );
-                batch.0.pop().unwrap()
-            })
-            .collect();
-
-        match batches.len() {
-            0 => None,
-            1 => Arc::into_inner(batches.pop().unwrap()),
-            _ => {
-                // We send everything to the merge thread
-                // for consolidation into a single batch.
-                // Currently self.enqueue needs `batches.len() == 2`
-                // so this happens in a loop until there is one batch left.
-                while batches.len() > 1 {
-                    let to_merge = vec![batches.pop().unwrap(), batches.pop().unwrap()];
-                    Self::enqueue(
-                        &self.merger_tx,
-                        BatchIdent::default(),
-                        to_merge,
-                        self.key_filter.clone(),
-                        self.value_filter.clone(),
-                        self.completion_tx.clone(),
-                    );
-                    let MergeResult::MergeCompleted(r) = self.completion_rx.recv().unwrap();
-                    batches.push(Arc::new(r.unwrap().1));
-                }
-                assert!(batches.len() == 1);
-                Arc::into_inner(batches.pop().unwrap())
-            }
+        self.pause();
+        let result = merge_batches(
+            &self.factories,
+            self.batches
+                .drain(..)
+                .map(|batch| Arc::into_inner(batch).unwrap()),
+        );
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
         }
     }
 
     fn insert(&mut self, mut batch: Self::Batch) {
         assert!(batch.lower() != batch.upper());
-        if batch.is_empty() {
-            return;
-        }
-
-        self.try_complete_merges()
-            .expect("Failed to complete merges");
-
         if let Some(bound) = &self.lower_key_bound {
             batch.truncate_keys_below(bound);
         }
 
-        self.dirty = true;
-        self.lower = self.lower.as_ref().meet(batch.lower());
-        self.upper = self.upper.as_ref().join(batch.upper());
-
-        self.introduce_batch(batch);
+        if batch.is_empty() {
+            // Refresh the set of batches from the merger, in case some merges
+            // completed.
+            self.batches = self.merger.get_batches();
+        } else {
+            // XXX This always inserts the new batch asynchronously. This is
+            // usually what we want to do, but it means that in theory we could
+            // continue building up batches until we run out of memory (or disk
+            // space), if merging is slow. Thus, we should figure out at what
+            // point it makes sense to wait until the backlog is reduced. We
+            // wouldn't have to just block; instead, we could grab some of the
+            // loose batches and do some merging ourselves while we wait,
+            // thereby actually speeding up the merges by devoting two threads
+            // instead of just one.
+            self.dirty = true;
+            self.lower = self.lower.as_ref().meet(batch.lower());
+            self.upper = self.upper.as_ref().join(batch.upper());
+            self.batches = self.merger.add_batch(Arc::new(batch));
+        }
     }
 
     fn clear_dirty_flag(&mut self) {
@@ -840,10 +950,12 @@ where
     }
 
     fn retain_keys(&mut self, filter: Filter<Self::Key>) {
+        self.merger.set_key_filter(&filter);
         self.key_filter = Some(filter);
     }
 
     fn retain_values(&mut self, filter: Filter<Self::Val>) {
+        self.merger.set_value_filter(&filter);
         self.value_filter = Some(filter);
     }
 
@@ -857,13 +969,9 @@ where
 
     fn commit<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
         // Persist all the batches.
-        for level in self.levels.iter_mut() {
-            for batch in level.values_mut() {
-                batch.0 = batch
-                    .0
-                    .drain(..)
-                    .map(|b| b.persisted().map_or(b, Arc::new))
-                    .collect();
+        for batch in self.batches.iter_mut() {
+            if let Some(persisted) = batch.persisted() {
+                *batch = Arc::new(persisted);
             }
         }
 
@@ -912,53 +1020,7 @@ where
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
-        let mut n_batches = 0;
-        let mut n_merging = 0;
-        let mut storage_size = 0;
-        let mut merging_size = 0;
-        for level in self.levels.iter().rev() {
-            for batch in level.values() {
-                n_batches += batch.0.len();
-                let merging = batch.0.len() > 1;
-                if merging {
-                    n_merging += batch.0.len();
-                }
-                for b in batch.0.iter() {
-                    let on_storage = b.location() == BatchLocation::Storage;
-                    if on_storage || merging {
-                        let size = b.approximate_byte_size();
-                        if on_storage {
-                            storage_size += size;
-                        }
-                        if merging {
-                            merging_size += size;
-                        }
-                    }
-                }
-            }
-        }
-
-        meta.extend(metadata! {
-            // Number of batches currently in the spine.
-            "batches" => n_batches,
-
-            // The amount of data in the spine currently stored on disk (not
-            // including any in-progress merges).
-            "storage size" => MetaItem::bytes(storage_size),
-
-            // The number of batches currently being merged (currently this
-            // is always an even number because batches are merged in
-            // pairs).
-            "merging batches" => n_merging,
-
-            // The number of bytes of batches being merged.
-            "merging size" => MetaItem::bytes(merging_size),
-
-            // For merges already completed, the percentage of the updates input
-            // to merges that merging eliminated, whether by weights adding to
-            // zero or through key or value filters.
-            "merge reduction" => MetaItem::Percent(self.merge_stats.reduction_percent())
-        });
+        self.merger.metadata(meta);
     }
 }
 
@@ -987,18 +1049,6 @@ where
         self.factories.key_factory()
     }
 
-    /// Describes the merge progress of layers in the trace.
-    ///
-    /// Intended for diagnostics rather than public consumption.
-    #[allow(dead_code)]
-    fn describe(&self) -> Vec<(usize, usize)> {
-        self.levels
-            .iter()
-            .flat_map(|inner| inner.values())
-            .map(|b| (b.0.len(), b.n_updates()))
-            .collect()
-    }
-
     /// Allocates a fueled `Spine` with a specified effort multiplier.
     ///
     /// This trace will merge batches progressively, with each inserted batch
@@ -1006,186 +1056,29 @@ where
     /// The `effort` parameter is that multiplier. This value should be at
     /// least one for the merging to happen; a value of zero is not helpful.
     pub fn with_effort(factories: &B::Factories, _effort: usize) -> Self {
-        let (tx, rx) = channel();
         Spine {
             factories: factories.clone(),
             lower: Antichain::from_elem(B::Time::minimum()),
             upper: Antichain::new(),
-            levels: (0..MAX_LEVELS).map(|_| BTreeMap::new()).collect(),
+            batches: Vec::new(),
             dirty: false,
             lower_key_bound: None,
             key_filter: None,
             value_filter: None,
-            next_batch_key: 0,
-            merger_tx: BatchMerger::get(),
-            completion_tx: Arc::new(tx),
-            completion_rx: rx,
-            outstanding: (0..MAX_LEVELS).map(|_| 0).collect(),
-            strategy: CompactStrategy::default(),
-            merge_stats: MergeStats::default(),
+            merger: AsyncMerger::new(),
         }
     }
 
-    /// Introduces a batch at an indicated level.
-    fn introduce_batch(&mut self, batch: B) {
-        if batch.is_empty() {
-            return;
-        }
-        let level = Self::size_to_level(batch.len());
-        self.insert_batch_at(level, BatchState(vec![Arc::new(batch)]));
-        self.maybe_initiate_merges(level);
+    pub fn complete_merges(&mut self) {
+        self.pause();
+        self.resume();
     }
 
-    /// Dequeue any completed merges and update the trace.
-    fn try_complete_merges(&mut self) -> Result<(), Error> {
-        loop {
-            let dequeued = self.try_complete_merge()?;
-            if !dequeued {
-                break;
-            }
-        }
-        Ok(())
+    fn pause(&mut self) {
+        self.batches = self.merger.pause();
     }
 
-    /// We remove the old two batches and insert the new one.
-    fn handle_completed_batch(&mut self, r: (BatchIdent, B)) {
-        let (old_key, new_batch) = r;
-        let input_batches = self.levels[old_key.level].remove(&old_key).unwrap();
-        let old_len = input_batches.0.iter().map(|b| b.len()).sum();
-        assert!(
-            input_batches.is_merging(),
-            "We should have found a double batch"
-        );
-        let new_len = new_batch.len();
-        self.introduce_batch(new_batch);
-
-        self.outstanding[old_key.level] -= 1;
-        self.merge_stats.report_merge(old_len, new_len);
-    }
-
-    /// Check if the RX queue from the merger thread has any completed merges,
-    /// dequeue the new batch and update the trace by inserting it and removing
-    /// the older two.
-    ///
-    /// Returns true if it dequeued something, or false if the queue was empty.
-    fn try_complete_merge(&mut self) -> Result<bool, Error> {
-        match self.try_dequeue_merge() {
-            Ok(completion) => {
-                self.handle_completed_batch(completion);
-                Ok(true)
-            }
-            Err(StorageError::TryRx(TryRecvError::Empty)) => Ok(false),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    pub fn apply_fuel(&mut self, _fuel: &mut isize) {}
-
-    /// Inserts the `bs` at `level` and returns the key used to insert it.
-    fn insert_batch_at(&mut self, level: usize, bs: BatchState<B>) -> BatchIdent {
-        let key = BatchIdent {
-            n: bs.0.len(),
-            level,
-            key: self.next_batch_key,
-        };
-        let r = self.levels[level].insert(key, bs);
-        assert!(r.is_none(), "We will never overwrite an existing entry");
-        self.next_batch_key += 1;
-        key
-    }
-
-    /// Checks if the current level needs compaction and if
-    /// so initiates it.
-    fn maybe_initiate_merges(&mut self, level: usize) {
-        if self.levels[level].keys().filter(|id| id.n == 1).count() >= self.strategy.min_threshold {
-            self.initiate_merges_at(level, self.strategy.max_threshold);
-        }
-    }
-
-    /// Initiates a round of merging at a specified `level`.
-    ///
-    /// # Arguments
-    /// - `level`: At which level to merge things
-    /// - `max_initiations`: An upper bound of new merges we initiate.
-    ///
-    /// # Returns
-    /// - The number of new merges initiated.
-    fn initiate_merges_at(&mut self, level: usize, max_initiations: usize) -> usize {
-        let mut merges_initiated = 0;
-        while merges_initiated < max_initiations && self.levels[level].len() >= 2 {
-            // We try to get two single-batch entries from the level,
-            // the sort order is such that they are in the front of the tree
-            let (key1, mut val1) = self.levels[level].pop_first().unwrap();
-            let (key2, mut val2) = self.levels[level].pop_first().unwrap();
-            if val1.0.len() != 1 || val2.0.len() != 1 {
-                self.levels[level].insert(key1, val1);
-                self.levels[level].insert(key2, val2);
-                break;
-            }
-
-            // We found two single batches, merge them
-            let b1 = val1.0.pop().unwrap();
-            let b2 = val2.0.pop().unwrap();
-            let key = self.insert_batch_at(level, BatchState(vec![b1.clone(), b2.clone()]));
-            let start = Instant::now();
-            Self::enqueue(
-                &self.merger_tx,
-                key,
-                vec![b1, b2],
-                self.key_filter.clone(),
-                self.value_filter.clone(),
-                self.completion_tx.clone(),
-            );
-            counter!(COMPACTION_STALL_TIME).increment(start.elapsed().as_millis() as u64);
-            self.outstanding[level] += 1;
-
-            merges_initiated += 1;
-        }
-
-        merges_initiated
-    }
-
-    /// Waits for completion of all outstanding merges at a specified `level`.
-    fn complete_merges_at(&mut self, level: usize) -> Result<(), Error> {
-        while self.outstanding[level] > 0 {
-            let r = self.dequeue_merge()?;
-            self.handle_completed_batch(r);
-        }
-        Ok(())
-    }
-
-    /// Complete all in-progress merges (without starting any new ones).
-    pub(crate) fn complete_merges(&mut self) {
-        for level in 0..MAX_LEVELS {
-            let r = self.complete_merges_at(level);
-            assert!(r.is_ok(), "We should not fail to complete merges");
-        }
-        debug_assert!(self.outstanding.iter().all(|&x| x == 0));
-        debug_assert!(!self
-            .levels
-            .iter()
-            .flat_map(|bs| bs.values())
-            .any(|b| b.is_merging()));
-    }
-
-    /// Mutate all batches.
-    ///
-    /// Can only be invoked when there are no in-progress batches in the trace.
-    fn map_batches_mut<F: FnMut(&mut <Self as Trace>::Batch)>(&mut self, mut f: F) {
-        for batch in self
-            .levels
-            .iter_mut()
-            .flat_map(|level| level.values_mut())
-            .rev()
-        {
-            assert_eq!(
-                batch.0.len(),
-                1,
-                "map_batches_mut called on an in-progress batch"
-            );
-            let mut b = Arc::unwrap_or_clone(batch.0.pop().unwrap());
-            f(&mut b);
-            batch.0.push(Arc::new(b));
-        }
+    fn resume(&mut self) {
+        self.merger.resume(self.batches.iter().map(Arc::clone));
     }
 }
