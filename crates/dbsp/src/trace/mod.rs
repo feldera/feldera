@@ -644,7 +644,7 @@ where
 pub fn merge_batches<B, T>(factories: &B::Factories, batches: T) -> B
 where
     T: IntoIterator<Item = B>,
-    B: Batch<Time = ()>,
+    B: Batch,
 {
     // Repeatedly merge the smallest two batches until no more than one batch is
     // left.
