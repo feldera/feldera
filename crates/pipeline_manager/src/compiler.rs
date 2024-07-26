@@ -4,6 +4,7 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
+use crate::db::types::program::ProgramInfo;
 use crate::db::types::program::{CompilationProfile, ProgramStatus, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
@@ -15,6 +16,8 @@ use futures_util::join;
 use log::warn;
 use log::{debug, error, info};
 use metrics::histogram;
+use pipeline_types::config::generate_connectors_from_schema;
+use pipeline_types::program_schema::ProgramSchema;
 use std::collections::HashSet;
 use std::time::Instant;
 use std::{
@@ -679,20 +682,36 @@ inherits = "release"
                                     ManagerError::io_error(format!("reading '{}'", schema_path.display()), e)
                                 })?;
 
-                            let schema = &serde_json::from_str(&schema_json)
+                            let schema: &ProgramSchema = &serde_json::from_str(&schema_json)
                                 .map_err(|e| { ManagerError::invalid_program_schema(e.to_string()) })?;
-                            // SQL compiler succeeded -- start the Rust job and update the
-                            // program schema.
-                            // TODO: do a test deployment_config generation and if it fails, still throw a SqlError
-                            db.transit_program_status_to_compiling_rust(
-                                tenant_id,
-                                pipeline_id,
-                                version,
-                                schema
-                            ).await?;
-                            info!("Invoking rust compiler for program {pipeline_id} version {version} (tenant {tenant_id}). This will take a while.");
-                            debug!("Set ProgramStatus::CompilingRust '{pipeline_id}', version '{version}'");
-                            job = Some(CompilationJob::rust(config, job.as_ref().unwrap()).await?);
+                            match generate_connectors_from_schema(schema) {
+                                Ok((input_connectors, output_connectors)) => {
+                                    let info = ProgramInfo {
+                                        schema: schema.clone(),
+                                        input_connectors,
+                                        output_connectors
+                                    };
+                                    // SQL compiler succeeded -- start the Rust job and update the
+                                    // program schema.
+                                    db.transit_program_status_to_compiling_rust(
+                                        tenant_id,
+                                        pipeline_id,
+                                        version,
+                                        &info
+                                    ).await?;
+                                    info!("Invoking rust compiler for program {pipeline_id} version {version} (tenant {tenant_id}). This will take a while.");
+                                    debug!("Set ProgramStatus::CompilingRust '{pipeline_id}', version '{version}'");
+                                    job = Some(CompilationJob::rust(config, job.as_ref().unwrap()).await?);
+                                }
+                                Err(e) => {
+                                    let message = SqlCompilerMessage::new_from_connector_generation_error(e);
+                                    db.transit_program_status_to_sql_error(
+                                        tenant_id, pipeline_id, version, vec![message]
+                                    ).await?;
+                                    job = None;
+                                }
+                            }
+
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
                             let program_binary_url = Self::version_binary(config, &job.as_ref().unwrap().pipeline).await?;
@@ -966,7 +985,7 @@ mod test {
     use crate::db::storage_postgres::StoragePostgres;
     use crate::db::types::common::Version;
     use crate::db::types::pipeline::{PipelineDescr, PipelineId};
-    use crate::db::types::program::{CompilationProfile, ProgramConfig};
+    use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramInfo};
     use crate::{
         auth::TenantRecord, compiler::ProgramStatus, config::CompilerConfig, db::storage::Storage,
     };
@@ -1058,9 +1077,13 @@ mod test {
                 tid,
                 pid,
                 vid,
-                &ProgramSchema {
-                    inputs: vec![],
-                    outputs: vec![],
+                &ProgramInfo {
+                    schema: ProgramSchema {
+                        inputs: vec![],
+                        outputs: vec![],
+                    },
+                    input_connectors: Default::default(),
+                    output_connectors: Default::default(),
                 },
             )
             .await
@@ -1080,9 +1103,13 @@ mod test {
                 tid,
                 pid,
                 vid,
-                &ProgramSchema {
-                    inputs: vec![],
-                    outputs: vec![],
+                &ProgramInfo {
+                    schema: ProgramSchema {
+                        inputs: vec![],
+                        outputs: vec![],
+                    },
+                    input_connectors: Default::default(),
+                    output_connectors: Default::default(),
                 },
             )
             .await
@@ -1127,9 +1154,13 @@ mod test {
                 tid,
                 pid,
                 vid,
-                &ProgramSchema {
-                    inputs: vec![],
-                    outputs: vec![],
+                &ProgramInfo {
+                    schema: ProgramSchema {
+                        inputs: vec![],
+                        outputs: vec![],
+                    },
+                    input_connectors: Default::default(),
+                    output_connectors: Default::default(),
                 },
             )
             .await
@@ -1155,9 +1186,13 @@ mod test {
                 tid,
                 pid,
                 vid,
-                &ProgramSchema {
-                    inputs: vec![],
-                    outputs: vec![],
+                &ProgramInfo {
+                    schema: ProgramSchema {
+                        inputs: vec![],
+                        outputs: vec![],
+                    },
+                    input_connectors: Default::default(),
+                    output_connectors: Default::default(),
                 },
             )
             .await
@@ -1230,9 +1265,13 @@ mod test {
                 tid,
                 pid1,
                 v1,
-                &ProgramSchema {
-                    inputs: vec![],
-                    outputs: vec![],
+                &ProgramInfo {
+                    schema: ProgramSchema {
+                        inputs: vec![],
+                        outputs: vec![],
+                    },
+                    input_connectors: Default::default(),
+                    output_connectors: Default::default(),
                 },
             )
             .await
@@ -1243,9 +1282,13 @@ mod test {
                 tid,
                 pid2,
                 v2,
-                &ProgramSchema {
-                    inputs: vec![],
-                    outputs: vec![],
+                &ProgramInfo {
+                    schema: ProgramSchema {
+                        inputs: vec![],
+                        outputs: vec![],
+                    },
+                    input_connectors: Default::default(),
+                    output_connectors: Default::default(),
                 },
             )
             .await

@@ -10,7 +10,7 @@ use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{ProgramConfig, ProgramStatus, SqlCompilerMessage};
+use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
@@ -18,7 +18,6 @@ use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use log::{debug, info};
 use pipeline_types::config::{PipelineConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
-use pipeline_types::program_schema::ProgramSchema;
 use tokio_postgres::NoTls;
 use uuid::Uuid;
 
@@ -322,7 +321,7 @@ impl Storage for StoragePostgres {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         program_version_guard: Version,
-        program_schema: &ProgramSchema,
+        program_info: &ProgramInfo,
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
@@ -332,7 +331,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             program_version_guard,
             &ProgramStatus::CompilingRust,
-            &Some(program_schema.clone()),
+            &Some(program_info.clone()),
             &None,
         )
         .await?;

@@ -58,9 +58,9 @@ impl PipelineExecutor for ProcessRunner {
         let mut deployment_config = generate_pipeline_config(
             pipeline.id.0,
             &pipeline.runtime_config,
-            &pipeline.program_schema.clone().unwrap(), // TODO: unwrap
-        )
-        .map_err(|e| RunnerError::PipelineConfigurationGenerationFailed { error: e })?;
+            &pipeline.program_info.clone().unwrap().input_connectors, // TODO: unwrap
+            &pipeline.program_info.clone().unwrap().output_connectors, // TODO: unwrap
+        );
 
         // The deployment configuration must be modified to fill in the details for storage,
         // which varies for each pipeline executor

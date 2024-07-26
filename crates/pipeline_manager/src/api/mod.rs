@@ -133,6 +133,7 @@ The program version is used internally by the compiler to know when to recompile
         crate::db::types::program::SqlCompilerMessage,
         crate::db::types::program::ProgramStatus,
         crate::db::types::program::ProgramConfig,
+        crate::db::types::program::ProgramInfo,
 
         // API key
         crate::db::types::api_key::ApiKeyId,
