@@ -7,19 +7,18 @@ use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{ProgramConfig, ProgramStatus};
+use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use deadpool_postgres::Transaction;
 use pipeline_types::config::{PipelineConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
-use pipeline_types::program_schema::ProgramSchema;
 use tokio_postgres::Row;
 use uuid::Uuid;
 
 /// Converts a pipeline table row to its extended descriptor.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
     assert_eq!(row.len(), 21);
-    let program_schema_str = row.get::<_, Option<String>>(13);
+    let program_info_str = row.get::<_, Option<String>>(13);
     let deployment_config_str = row.get::<_, Option<String>>(19);
     let deployment_error_str = row.get::<_, Option<String>>(18);
     Ok(ExtendedPipelineDescr {
@@ -38,7 +37,7 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
             "pipeline.program_status_since",
             row.get(11),
         )?,
-        program_schema: program_schema_str.map(|s| ProgramSchema::from_yaml(&s)),
+        program_info: program_info_str.map(|s| ProgramInfo::from_yaml(&s)),
         program_binary_url: row.get(14),
         deployment_status: row.get::<_, String>(15).try_into()?,
         deployment_status_since: convert_unix_timestamp_to_datetime(
@@ -60,7 +59,7 @@ pub(crate) async fn list_pipelines(
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
                     p.program_code, p.program_config, p.program_version, p.program_status,
-                    p.program_status_since, p.program_error, p.program_schema, p.program_binary_url,
+                    p.program_status_since, p.program_error, p.program_info, p.program_binary_url,
                     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
                     p.deployment_error, p.deployment_config, p.deployment_location
              FROM pipeline AS p
@@ -86,7 +85,7 @@ pub(crate) async fn get_pipeline(
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
                     p.program_code, p.program_config, p.program_version, p.program_status,
-                    p.program_status_since, p.program_error, p.program_schema, p.program_binary_url,
+                    p.program_status_since, p.program_error, p.program_info, p.program_binary_url,
                     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
                     p.deployment_error, p.deployment_config, p.deployment_location
              FROM pipeline AS p
@@ -111,7 +110,7 @@ pub async fn get_pipeline_by_id(
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
                     p.program_code, p.program_config, p.program_version, p.program_status,
-                    p.program_status_since, p.program_error, p.program_schema, p.program_binary_url,
+                    p.program_status_since, p.program_error, p.program_info, p.program_binary_url,
                     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
                     p.deployment_error, p.deployment_config, p.deployment_location
              FROM pipeline AS p
@@ -137,7 +136,7 @@ pub(crate) async fn new_pipeline(
         .prepare_cached(
             "INSERT INTO pipeline (id, tenant_id, name, description, created_at, version, runtime_config,
                                    program_code, program_config, program_version, program_status,
-                                   program_status_since, program_error, program_schema, program_binary_url,
+                                   program_status_since, program_error, program_info, program_binary_url,
                                    deployment_status, deployment_status_since, deployment_desired_status,
                                    deployment_error, deployment_config, deployment_location)
             VALUES ($1, $2, $3, $4, extract(epoch from now()), $5, $6,
@@ -255,7 +254,7 @@ pub(crate) async fn update_pipeline(
             .prepare_cached(
                 "UPDATE pipeline
                  SET program_version = program_version + 1,
-                     program_schema = NULL,
+                     program_info = NULL,
                      program_status = $1,
                      program_status_since = extract(epoch from now()),
                      program_error = NULL,
@@ -309,7 +308,7 @@ pub(crate) async fn set_program_status(
     pipeline_id: PipelineId,
     program_version_guard: Version,
     new_program_status: &ProgramStatus,
-    new_program_schema: &Option<ProgramSchema>,
+    new_program_info: &Option<ProgramInfo>,
     new_program_binary_url: &Option<String>,
 ) -> Result<(), DBError> {
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
@@ -350,26 +349,26 @@ pub(crate) async fn set_program_status(
 
     // Determine new values depending on where to transition to
     // Note that None becomes NULL as there is no coalescing in the query.
-    let (final_program_schema, final_program_binary_url) = match &new_program_status {
+    let (final_program_info, final_program_binary_url) = match &new_program_status {
         ProgramStatus::Pending => {
-            assert!(new_program_schema.is_none() && new_program_binary_url.is_none());
+            assert!(new_program_info.is_none() && new_program_binary_url.is_none());
             (None, None)
         }
         ProgramStatus::CompilingSql => {
-            assert!(new_program_schema.is_none() && new_program_binary_url.is_none());
+            assert!(new_program_info.is_none() && new_program_binary_url.is_none());
             (None, None)
         }
         ProgramStatus::CompilingRust => {
-            assert!(new_program_schema.is_some() && new_program_binary_url.is_none());
-            (new_program_schema.clone(), None)
+            assert!(new_program_info.is_some() && new_program_binary_url.is_none());
+            (new_program_info.clone(), None)
         }
         ProgramStatus::Success => {
-            assert!(new_program_schema.is_none() && new_program_binary_url.is_some());
-            (current.program_schema, new_program_binary_url.clone())
+            assert!(new_program_info.is_none() && new_program_binary_url.is_some());
+            (current.program_info, new_program_binary_url.clone())
         }
         ProgramStatus::SqlError(_) => (None, None),
-        ProgramStatus::RustError(_) => (current.program_schema, None),
-        ProgramStatus::SystemError(_) => (current.program_schema, None),
+        ProgramStatus::RustError(_) => (current.program_info, None),
+        ProgramStatus::SystemError(_) => (current.program_info, None),
     };
 
     // Perform query
@@ -379,7 +378,7 @@ pub(crate) async fn set_program_status(
              SET program_status = $1,
                  program_status_since = extract(epoch from now()),
                  program_error = $2,
-                 program_schema = $3,
+                 program_info = $3,
                  program_binary_url = $4
              WHERE tenant_id = $5 AND id = $6",
         )
@@ -391,7 +390,7 @@ pub(crate) async fn set_program_status(
             &[
                 &new_program_status_columns.0,
                 &new_program_status_columns.1,
-                &final_program_schema.as_ref().map(|v| v.to_yaml()),
+                &final_program_info.as_ref().map(|v| v.to_yaml()),
                 &final_program_binary_url,
                 &tenant_id.0,
                 &pipeline_id.0,
@@ -464,7 +463,7 @@ pub(crate) async fn set_desired_deployment_status(
         }
 
         // If fully compiled, the following assertions must be upheld
-        assert!(current.program_schema.is_some());
+        assert!(current.program_info.is_some());
         assert!(current.program_binary_url.is_some());
     }
 
@@ -646,7 +645,7 @@ pub(crate) async fn list_pipelines_across_all_tenants(
         .prepare_cached(
             "SELECT p.id,p. tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
                     p.program_code, p.program_config, p.program_version, p.program_status,
-                    p.program_status_since, p.program_error, p.program_schema, p.program_binary_url,
+                    p.program_status_since, p.program_error, p.program_info, p.program_binary_url,
                     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
                     p.deployment_error, p.deployment_config, p.deployment_location
              FROM pipeline AS p
@@ -673,7 +672,7 @@ pub(crate) async fn get_next_pipeline_program_to_compile(
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
                     p.program_code, p.program_config, p.program_version, p.program_status,
-                    p.program_status_since, p.program_error, p.program_schema, p.program_binary_url,
+                    p.program_status_since, p.program_error, p.program_info, p.program_binary_url,
                     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
                     p.deployment_error, p.deployment_config, p.deployment_location
              FROM pipeline AS p

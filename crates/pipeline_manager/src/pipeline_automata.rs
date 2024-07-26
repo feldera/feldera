@@ -58,15 +58,14 @@ pub trait PipelineExecutor: Sync + Send {
         let deployment_config = generate_pipeline_config(
             pipeline.id.0,
             &pipeline.runtime_config,
-            &pipeline.program_schema.clone().unwrap(),
-        )
-        .map_err(|e| RunnerError::PipelineConfigurationGenerationFailed { error: e })?;
-        // Error should be RunnerError
+            &pipeline.program_info.clone().unwrap().input_connectors, // TODO: unwrap
+            &pipeline.program_info.clone().unwrap().output_connectors, // TODO: unwrap
+        );
         Ok(PipelineExecutionDesc {
             pipeline_id: pipeline.id,
             pipeline_name: pipeline.name.clone(),
             program_version: pipeline.program_version,
-            program_binary_url: pipeline.program_binary_url.clone().unwrap(), // TODO: throw a proper error if not there
+            program_binary_url: pipeline.program_binary_url.clone().unwrap(), // TODO: unwrap
             deployment_config,
         })
     }
@@ -748,7 +747,7 @@ mod test {
     use crate::db::storage_postgres::StoragePostgres;
     use crate::db::types::common::Version;
     use crate::db::types::pipeline::{PipelineDescr, PipelineId, PipelineStatus};
-    use crate::db::types::program::{CompilationProfile, ProgramConfig};
+    use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramInfo};
     use crate::error::ManagerError;
     use crate::logging;
     use crate::pipeline_automata::PipelineAutomaton;
@@ -882,9 +881,13 @@ mod test {
                 tenant_id,
                 pipeline_id,
                 Version(1),
-                &ProgramSchema {
-                    inputs: vec![],
-                    outputs: vec![],
+                &ProgramInfo {
+                    schema: ProgramSchema {
+                        inputs: vec![],
+                        outputs: vec![],
+                    },
+                    input_connectors: Default::default(),
+                    output_connectors: Default::default(),
                 },
             )
             .await

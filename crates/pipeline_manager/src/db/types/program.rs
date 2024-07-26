@@ -1,7 +1,11 @@
 use crate::db::error::DBError;
 use clap::Parser;
 use log::error;
+use pipeline_types::config::{ConnectorGenerationError, InputEndpointConfig, OutputEndpointConfig};
+use pipeline_types::program_schema::ProgramSchema;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::str::FromStr;
 use std::string::ParseError;
@@ -86,6 +90,20 @@ pub struct SqlCompilerMessage {
     warning: bool,
     error_type: String,
     message: String,
+}
+
+impl SqlCompilerMessage {
+    pub(crate) fn new_from_connector_generation_error(error: ConnectorGenerationError) -> Self {
+        SqlCompilerMessage {
+            start_line_number: 0,
+            start_column: 0,
+            end_line_number: 0,
+            end_column: 0,
+            warning: false,
+            error_type: "connector".to_string(),
+            message: error.to_string(),
+        }
+    }
 }
 
 /// Program compilation status.
@@ -192,6 +210,29 @@ pub struct ProgramConfig {
 }
 
 impl ProgramConfig {
+    pub fn from_yaml(s: &str) -> Self {
+        serde_yaml::from_str(s).unwrap()
+    }
+
+    pub fn to_yaml(&self) -> String {
+        serde_yaml::to_string(self).unwrap()
+    }
+}
+
+/// Program information which includes schema, input connectors and output connectors.
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub struct ProgramInfo {
+    /// Schema of the compiled SQL program.
+    pub schema: ProgramSchema,
+
+    /// Input connectors derived from the schema.
+    pub input_connectors: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+
+    /// Output connectors derived from the schema.
+    pub output_connectors: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+}
+
+impl ProgramInfo {
     pub fn from_yaml(s: &str) -> Self {
         serde_yaml::from_str(s).unwrap()
     }

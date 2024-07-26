@@ -7,7 +7,7 @@ use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{ProgramConfig, ProgramStatus};
+use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use actix_web::{
     delete, get,
@@ -21,7 +21,6 @@ use chrono::{DateTime, Utc};
 use log::{debug, info};
 use pipeline_types::config::{PipelineConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
-use pipeline_types::program_schema::ProgramSchema;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -42,7 +41,7 @@ pub struct ExtendedPipelineDescrOptionalCode {
     pub program_version: Version,
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
-    pub program_schema: Option<ProgramSchema>,
+    pub program_info: Option<ProgramInfo>,
     pub program_binary_url: Option<String>,
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
@@ -70,7 +69,7 @@ impl ExtendedPipelineDescrOptionalCode {
             program_version: extended_pipeline.program_version,
             program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
-            program_schema: extended_pipeline.program_schema,
+            program_info: extended_pipeline.program_info,
             program_binary_url: extended_pipeline.program_binary_url,
             deployment_status: extended_pipeline.deployment_status,
             deployment_status_since: extended_pipeline.deployment_status_since,
