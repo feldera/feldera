@@ -1,0 +1,147 @@
+\section{Implementation}\label{sec:implementation}
+
+%\subsection{Practicality and limitations}
+
+\dbsp does not make any simplifying assumptions that would make it
+impractical.  In fact, Feldera Inc. has built an open-source
+implementation of \dbsp as a query engine in Rust~\cite{dbsp-crate};
+and also a compiler from SQL to \dbsp~\cite{sql-to-dbsp-compiler}.
+This compiler handles essentially the entire SQL language.  The
+compiler generates execution plans for incrementally maintaining any
+number of views defined in SQL.
+
+\textbf{Plan quality.}  A relational algebra query can be implemented
+by multiple plans, each with a different data-dependent cost.  The
+input of Algorithm~\ref{algorithm-inc} is a non-incremental query
+plan, produced by a query planner.  The algorithm produces an
+incremental plan that is ``similar'' to the input plan.
+
+Standard query planners use cost-based heuristics and data statistics
+to optimize plans.  A generic IVM planner does not have this luxury,
+since the plan must be generated \emph{before} any data has been fed
+to the query.  Nevertheless, all standard query optimization
+techniques, perhaps based on historical statistics, can be used to
+generate the query plan that is supplied to our Algorithm.  The
+question of optimality in the context of IVM plan is a much more
+difficult topic than optimization of ad-hoc queries, since the chosen
+IVM plan will execute for \emph{all future database updates}.
+
+\textbf{Tradeoffs.}  Incremental computation is not free.  It is in
+fact a trade-off between time and space.  In the cost analysis we have
+to consider both the time and the space used by each operator.  While
+many incremental database operations can be implemented using work
+proportional to the size of the changes, and no storage overhead,
+several classes of database operations, such as joins, ``distinct'',
+and aggregates can be implemented efficiently only using additional
+storage in the form of \emph{indexes}.  The size of these indexes is
+proportional to the size of the total data in the database (and not
+just to the size of the changes) --- and since some indexes are over
+intermediate relations, they can even exceed the size of the original
+database.  In \dbsp the indexes are represented by delay operators
+$\zm$.  In fact, the delay operator (and its lifted variant
+$\lift{\zm}$) are the only operators that maintains state.  This is
+also the only state that needs to be persisted, checkpointed, or
+migrated to make \dbsp computations fault-tolerant.
+
+\dbsp is an ``eager'' or ``top-down'' execution model: it constantly
+maintains the entire contents of any number of views, even if no one
+really wants to inspect the views.  In contrast, ``lazy'' or
+``bottom-up'' models only build part of the views when the views are
+inspected.  Such models have the potential to be more efficient.
+Eager models can be converted into lazy ones if something is known
+about the class of operations that will be executed against the views.
+
+\textbf{Start-up costs.}  When a new view is installed, the IVM system
+must compute the first change, which is the same as the initial
+contents of the view.  This computation is in proportional to the size
+of the whole database.  This is known as the ``backfill'' problem.
+Likewise, changes to the definition of a view or the data schema
+require recomputing the affected queries from scratch.
+
+\textbf{Adopting \dbsp.} Traditional databases do not offer efficient
+IVM implementations for arbitrary queries.  Databases could in
+principle be retrofitted to use the algorithms in this paper, but the
+existing query engines are not built around structures that can
+represent negative changes (like \zrs), so this effort will require a
+significant redesign.
+
+Moreover, we argue that databases should not only compute views
+incrementally, but should use ``changes'' as the fundamental data
+structure to communicate with their environment: a database service
+should offer the following API: users register to receive
+notifications for changes in one or more views.  Then, for any
+transaction committed, each user receives a notification containing
+the list of changes for the all the views they registered.  Databases
+today do not have convenient mechanism for reporting changes to the
+outside world.  In fact, entire industries have sprung up around the
+concept of Change Data Capture~\cite{cdc}, which is building ad-hoc
+solutions for extracting changes from databases, usually by inspecting
+the write-ahead transaction log.
+
+%The scope of this paper is the \dbsp theory of IVM, so we only briefly touch upon
+%the implementation aspects.  We defer a full description and evaluation of the
+%system to a future paper.
+%
+%\subsection{\dbsp Rust library}
+%
+%\dbsp circuits can be immediately translated to dataflow graphs, which
+%have very natural implementations where each node is a simple
+%automaton waiting for inputs and emitting inputs.  A simple control
+%plane manages the nested clocks for loops.
+%
+%We have built an implementation of \dbsp as part of an open-source
+%project with an MIT license: \url{https://github.com/feldera/feldera}.
+%The implementation consists of a Rust library and a runtime.  The
+%library provides APIs for basic algebraic data types: such as groups,
+%finite maps, \zr, indexed \zr.  A separate circuit construction API
+%allows users to create \dbsp circuits by placing operator nodes
+%(corresponding to boxes in our diagrams) and connecting them with
+%streams, which correspond to the arrows in our diagrams.  The library
+%provides pre-built generic operators for integration, differentiation,
+%delay, nested integration and differentiation, and a rich library of
+%\zr basic incremental operators: corresponding to plus, negation,
+%grouping, joining, aggregation, $\distinct$, flatmap, window
+%aggregates, etc.
+%
+%For iterative computations the library provides the $\delta_0$ operator and
+%an operator that approximates $\int$ by terminating iteration of
+%a loop at a user-specified condition (usually the condition is the
+%requirement for a zero to appear in a specified stream).
+%The low level library allows users to construct incremental
+%circuits manually by stitching together incremental versions of primitive operators.
+%
+%The library supports data-parallel multicore evaluation of circuits
+%using a natural sharding strategy, and a variety of adapters for
+%external data sources (e.g., Kafka, CSV files, etc).  The library can
+%also spill internal operator state to persistent storage.  Benchmark
+%results (which are very promising) are available in the code
+%repository and will be discussed in future work.
+%
+%\paragraph{SQL compiler}
+%
+%We have also built a SQL to \dbsp compiler, which translates standard
+%SQL queries into \dbsp circuits.  The compiler implements
+%Algorithm~\ref{algorithm-inc}, to generate a streaming version of any
+%SQL query.  The compiler is open-source
+%\url{https://github.com/feldera/feldera/tree/main/sql-to-dbsp-compiler} with
+%an MIT license.  The compiler front-end parser and optimizer are based
+%on the Apache Calcite~\cite{begoli-icmd18} infrastructure.  The
+%project is mature enough to pass all 7 million SQL Logic
+%Tests~\cite{sqllogictest}.  The compiler handles all aspects of SQL,
+%including NULLs, ternary logic, grouping, aggregation, multiset
+%queries, etc.  Currently correlated sub-queries and outer joins are
+%essentially converted to equivalent relational plans using multiple
+%joins.
+%
+%\paragraph{Formal verification}
+%
+%We have formalized and verified all the definitions, lemmas,
+%propositions, theorems, and examples in this paper using the Lean theorem prover; we make
+%these proofs available at~\cite{dbsp-theory}.
+%% This amounted to roughly 5K lines of Lean code.
+%The formalization builds on mathlib~\cite{mathlib2020}, which provides
+%support for groups and functions with finite support (modeling
+%\zrs). We believe the simplicity of \dbsp enabled completing these
+%proofs in relatively few lines of Lean code (5K) and keeping a close
+%correspondence between the paper proofs in~\cite{tr} and Lean.
+%

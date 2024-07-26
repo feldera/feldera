@@ -1,0 +1,214 @@
+\subsection{Incremental recursive programs}\label{sec:nested}
+
+In \secref{sec:streams}--\ref{sec:relational} we showed how to
+incrementalize a relational query by compiling it into a circuit,
+lifting the circuit to compute on streams, and applying the
+$\inc{\cdot}$ operator.  In \secref{sec:recursion} we showed how to
+compile a recursive query into a circuit that employs incremental
+computation internally, to compute the fixed point.  Here we combine
+these results to construct a circuit that evaluates a \emph{recursive
+query incrementally}.  The circuit receives a stream of updates to
+input relations, and for every update recomputes the fixed point.  To
+do this incrementally, it preserves the stream of changes to recursive
+relations produced by the iterative fixed point computation, and
+adjusts this stream to account for the modified inputs.  Thus, every
+element of the input stream yields a stream of adjustments to the
+fixed point computation, using \emph{nested streams}.
+
+In the same way streams are infinite vectors, streams of streams are
+infinite matrices.  We denote streams of streams with triple arrows in
+our diagrams.
+
+%Equivalently, a nested stream is a value in $\N \times \N \to A$,
+%i.e., a matrix with an infinite number of rows, indexed by
+%two-dimensional time $(t_0, t_1)$.  where each row is a stream.
+%Please refer to our companion report for example computations on
+%nested streams~\cite{tr}.
+
+%In the Appendix in
+%\secref{sec:nested-examples} we show a few example nested stream
+%computations.
+
+The same way we lift functions to produce stream operators, we can
+lift stream operators to produce operators on streams of streams.
+%Lifting a stream operator $S: \stream{A} \to \stream{B}$ yields an operator over
+%nested streams $\lift{S}: \stream{\stream{A}} \to \stream{\stream{B}}$, such
+%that $(\lift{S})(s) = S \circ s$, or, pointwise: $(\lift{S}(s))[t_0][t_1] =
+%S(s[t_0])[t_1], \forall t_0, t_1 \in \N$.
+A scalar function $f$ can be lifted twice to produce an operator
+between streams of streams:
+%$\lift{\lift{f}}: \stream{\stream{A}} \rightarrow
+%\stream{\stream{B}}$.
+%
+\begin{center}
+\begin{tikzpicture}[>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (I) {$\lift{\lift{{f}}}$};
+  \node[right of=I] (output)  {$o$};
+  \draw[->>>] (input) -- (I);
+  \draw[->>>] (I) -- (output);
+\end{tikzpicture}
+\end{center}
+\vspace{-2ex}
+%To define recursive nested queries, we need a slightly different definition of strictness. If we think of a nested stream $F: \stream{\stream{A}} \to \stream{\stream{B}}$ as a function of timestamps $(i, j)$, then the prior definition of strictness corresponds to strictness in the first dimension $i$, which we extend here to allow $F$ to be strict in its second dimension $j$: for any $s, s' \in \stream{\stream{A}}$ and all times $t \in \N$, $\forall i, j < t.\, s[i][j] = s'[i][j]$ implies $F(s)[i][t] = F(s')[i][t]$.
+%Proposition~\ref{prop-unique-fix} holds for this extended notion of strictness, i.e., the fixed point operator $\fix{\alpha}{F(\alpha)}$ is well defined for a strict operator $F$.
+
+%\begin{proposition}\label{prop-liftz}
+%The operator $\lift{\zm}: \stream{\stream{A}} \to \stream{\stream{A}}$ is strict (in its second dimension).
+%\end{proposition}
+
+The operator $\zm$ on nested streams delays ``rows'' of the matrix,
+while $\lift{\zm}$ delays ``columns''.
+%The $\I$ operator on $\stream{\stream{A}}$ operates on rows
+%of the matrix, treating each row as a single value.
+%Lifting a stream operator computing on $\stream{A}$,
+%such as $\I: \stream{A} \to \stream{A}$, also produces an operator on nested streams, but
+%this time computing on the columns of the matrix
+%$\lift{\I}: \stream{\stream{A}} \to \stream{\stream{A}}.$
+
+%\begin{proposition}[Lifting cycles]
+%\label{prop-lift-cycle}
+%For a binary, causal $T$ we have:
+%$\lift{(\lambda s. \fix{\alpha}{T(s,\zm(\alpha)}))} = \lambda s. \fix{\alpha}{(\lift{T})(s,(\lift{\zm})(\alpha))}$
+%\noindent i.e., lifting a circuit containing a ``cycle'' can be accomplished by
+%lifting all operators independently, including the $\zm$ back-edge.
+%\end{proposition}
+
+We have seen in equation (**) that lifting a graph entails lifting all
+operators.  This extends to graphs with cycles, e.g:
+%This means that lifting a \dbsp stream operator can be expressed within \dbsp
+%itself.
+
+
+\begin{tabular}{m{2cm}m{.5cm}m{4cm}}
+\begin{tikzpicture}[>=latex]
+  \node[] (input) {$i$};
+  \node[block, right of=input] (I) {$\lift{\I}$};
+  \node[right of=I] (output)  {$o$};
+  \draw[->>>] (input) -- (I);
+  \draw[->>>] (I) -- (output);
+\end{tikzpicture}
+& $\cong$ &
+\begin{tikzpicture}[>=latex]
+  \node[] (input) {$i$};
+  \node[block, circle, right of=input, inner sep=0cm] (p) {$+$};
+  \node[right of=p, node distance=1.8cm] (output)  {$o$};
+  \node[block, below of=p, node distance=1cm] (z) {$\lift{\zm}$};
+  \draw[->>>] (input) -- (p);
+  \draw[->>>] (p) -- node (mid) {} (output);
+  \draw[->>>] (z) -- (p);
+  \draw[->>>] (mid.center) |- (z);
+\end{tikzpicture}
+\end{tabular}
+
+This gives us the ability to lift entire circuits, including circuits
+computing on streams and having feedback edges.  With this machinery
+we can now apply Algorithm~\ref{algorithm-inc} to arbitrary circuits,
+even circuits for recursive relations.
+
+\noindent Step 1: Start with the ``semi-naive'' circuit:
+\begin{center}
+\begin{tikzpicture}[>=latex]
+  \node[] (Iinput) {$x$};
+  \node[block, right of=Iinput] (Idelta) {$\delta_0$};
+  \node[block, right of=Idelta, node distance=1.2cm] (f) {$\inc{(\lift{R})}$};
+  \node[block, right of=f, node distance=1.5cm] (S) {$\int$};
+  \node[right of=S] (output)  {$O$};
+  \draw[->>] (f) -- node (o) {} (S);
+  \node[block, below of=o, node distance=.7cm] (z) {$\zm$};
+  \draw[->] (Iinput) -- (Idelta);
+  \draw[->] (S) -- (output);
+  \draw[->>] (o.center) -- (z);
+  \draw[->>] (z) -| (f);
+  \draw[->>] (Idelta) -- (f);
+\end{tikzpicture}
+\end{center}
+\vspace{-1ex}
+\noindent Step 2: nothing to do for $\distinct$. \\
+\noindent Steps 3 and 4: Lift the circuit and incrementalize:
+\begin{center}
+\begin{tikzpicture}[>=latex]
+  \node[] (Iinput) {$\Delta x$};
+  \node[block, right of=Iinput] (I) {$\I$};
+  \node[block, right of=I] (Idelta) {$\lift{\delta_0}$};
+  \node[block, right of=Idelta, node distance=1.5cm] (f) {$\lift{\inc{(\lift{R})}}$};
+  \node[block, right of=f, node distance=1.5cm] (S) {$\lift{\int}$};
+  \node[block, right of=S] (D) {$\D$};
+  \node[right of=D] (output)  {$\Delta O$};
+  \draw[->>>] (f) -- node (o) {} (S);
+  \node[block, below of=o, node distance=.7cm] (z) {$\lift{\zm}$};
+  \draw[->>] (Iinput) -- (I);
+  \draw[->>>] (I) -- (Idelta);
+  \draw[->>>] (S) -- (D);
+  \draw[->>] (D) -- (output);
+  \draw[->>>] (o.center) -- (z);
+  \draw[->>>] (z) -| (f);
+  \draw[->>>] (Idelta) -- (f);
+\end{tikzpicture}
+\end{center}
+\vspace{-1ex}
+\noindent Step 5: apply the chain rule and the linearity of
+$\lift{\delta_0}$ and $\lift{\int}$:
+
+\begin{tikzpicture}[>=latex]
+  \node[] (Iinput) {$\Delta x$};
+  \node[block, right of=Iinput] (Idelta) {$\lift{\delta_0}$};
+  \node[block, right of=Idelta, node distance=1.8cm] (f) {$\inc{(\lift{\inc{(\lift{R})}})}$};
+  \node[block, right of=f, node distance=2cm] (S) {$\lift{\int}$};
+  \node[right of=S] (output)  {$\Delta O$};
+  \draw[->>>] (f) -- node (o) {} (S);
+  \node[block, below of=o, node distance=.9cm] (z) {$\lift{\zm}$};
+  \draw[->>] (Iinput) -- (Idelta);
+  \draw[->>] (S) -- (output);
+  \draw[->>>] (o.center) -- (z);
+  \draw[->>>] (z) -| (f);
+  \draw[->>>] (Idelta) -- (f);
+\end{tikzpicture}
+
+\noindent This is the incremental version of a recursive query.  A
+concrete example for a transitive closure query is Section~9.1 of
+our technical report~\cite{tr}.
+
+%\refsec{sec:recursive-incremental-example} shows how Algorithm~\ref{algorithm-inc} is
+%applied to the \dbsp circuit produced by the example from~\refsec{sec:recursive-example},
+%which implements the recursive query computing the transitive closure of a graph.
+
+%\subsection{Cost of incremental recursive queries}
+%
+%\paragraph{Time complexity}
+%
+%The time complexity of an incremental recursive query can be estimated as a product of
+%the number of fixed point iterations and the complexity of each iteration. The
+%incrementalized circuit (\ref{eq:increcursive}) never performs more
+%iterations than the non-incremental circuit (\ref{eq:seminaive}):
+%once the non-incremental circuit reaches the fixed point, its output is constant,
+%and the derivative of corresponding value in the incrementalized circuit becomes 0.
+%
+%Moreover, the work performed by each operator in the incremental
+%circuit is asymptotically less than the non-incremental one.  A
+%detailed analysis can be found in our companion report~\cite{tr}.
+%
+%%As a concrete example, consider a join in a recursive circuit.
+%%A non-incremental implementation is shown in the Appendix in
+%%example~\ref{recursive-join}.  The incremental implementation
+%%of the same circuit is in circuit~\ref{join-expansion}, and contains
+%%4 join operators.  The work performed by the non-incremental join is $O(|DB|^2)$ for
+%%each iteration.  The size of the inputs of each of the joins in the incremental
+%%circuit is shown in \ref{sec:work}.  We notice that the four join operators
+%%perform work $O(|\Delta DB|^2)$, $O(|DB| |\Delta DB|)$, $(O|DB| |\Delta DB|)$,
+%%and $O(|DB|, 0)$ \leonid{strange notation} respectively (the last operator performs work only in the first iteration),
+%%so each of them is asymptotically better than the non-incremental version.
+%
+%\paragraph{Space complexity} Integration ($\I$) and differentiation ($\D$) of a
+%stream $\Delta s \in \stream{\stream{A}}$ use memory proportional to
+%$\sum_{t_2}\sum_{t_1}|s[t_1][t_2]|$, i.e., the total size of changes
+%aggregated over columns of the matrix.  The unoptimized circuit integrates
+%and differentiates respectively inputs and outputs of the recursive program
+%fragment.  As we move $\I$ and $\D$ inside the circuit using the chain rule, we
+%additionally store changes to intermediate streams.  Effectively we cache results of
+%fixed point iterations from earlier timestamps to update them efficiently as new input changes arrive.
+%Notice that space usage is proportional to the \emph{number of iterations of the inner loop}
+%that computes the fixed-point.
+%Fortunately, many recursive algorithms converge in a relatively small number of steps
+%(for example, transitive closure requires a number of steps  log(graph diameter).
+%

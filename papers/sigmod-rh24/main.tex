@@ -1,0 +1,239 @@
+\documentclass{research4cacm}
+
+%%% Note to copy editors: the following fixes are needed
+%%% in order to get decent output in the temporary version
+%%% for the submission
+\makeatletter
+\renewcommand{\secfnt}{\fontfamily{ptm}\fontsize{12}{14}\bfseries}
+\renewcommand{\subsecfnt}{\fontfamily{ptm}\fontsize{11}{13}\itshape}
+\def\section{%
+    \@startsection{section}{1}{\z@}{-10\p@ \@plus -4\p@ \@minus -2\p@}% GM
+    {14\p@}{\secfnt\@ucheadtrue}%
+}
+
+\def\subsection{%
+    \@startsection{subsection}{2}{\z@}{-8\p@ \@plus -2\p@ \@minus -\p@}
+    {14\p@}{\secfnt}%
+}
+\def\subsubsection{%
+    \@startsection{subsubsection}{3}{\z@}{-8\p@ \@plus -2\p@ \@minus -\p@}%
+    {14\p@}{\subsecfnt}%
+}
+\expandafter\def\expandafter\abstract\expandafter{\abstract\vspace{-\baselineskip}}
+\makeatother
+%%% end of fixes
+
+%\usepackage[T1]{fontenc}
+%\usepackage{lmodern}
+%\usepackage[a-2b]{pdfx}
+%\usepackage{amsmath}
+%\usepackage{amsfonts}
+%%\usepackage[utf8]{inputenc}
+\usepackage{array}
+%\usepackage{stmaryrd}
+\usepackage{tikz}
+\usepackage{comment}
+\usepackage{xspace}
+\usepackage{listofitems}
+%\usepackage{graphicx}
+\usepackage[final]{listings}
+\usepackage{enumitem}
+%%\usepackage{amsthm}
+\usepackage{ifthen}
+\usepackage{url}
+%\renewcommand{\floatpagefraction}{.8}
+
+% space saving tricks
+\newif\ifstreamexamples
+\streamexamplestrue
+\newif\ifzsetexamples
+\zsetexamplestrue
+%%\newtheoremstyle{note} % name
+%%{2pt} % Space above
+%%{2pt} % Space below
+%%{}    % Body font
+%%{}    % Indent amount
+%%{\bfseries} % Theorem head font
+%%{:}   % Punctuation after theorem head
+%%{.5em}% ⟨Space after theorem head
+%%{}    % Theorem head spec (can be left empty, meaning ‘normal’
+%
+%\numberwithin{equation}{section}
+%
+%\graphicspath{ {.} }
+\lstset{basicstyle=\ttfamily}
+\lstset{language=Java,
+  commentstyle=\color{brown},
+  keywordstyle=\color{blue},
+  stringstyle=\color{red}}
+
+\lstdefinelanguage{ddlog}{
+  language=Java, % we base it on Java, just for comments
+  morekeywords={input, output, typedef, relation, typedef, bool, not,
+    string, bit, extern, function, var, for, match, skip, in, integer, % not really in DDlog
+    Aggregate, FlatMap},
+  deletestring=[b]{'}
+}
+%\hypersetup{
+%  colorlinks   = true,    % Colours links instead of ugly boxes
+%  urlcolor     = blue,    % Colour for external hyperlinks
+%  linkcolor    = blue,    % Colour of internal links
+%  citecolor    = red      % Colour of citations
+%}
+%\hypersetup{final}
+%
+\usetikzlibrary{shapes, arrows.meta, positioning,
+  decorations.pathreplacing, matrix}
+\tikzstyle{block}=[draw,rectangle]
+\tikzstyle{every node}=[font=\small]
+%\theoremstyle{note}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{algorithm}[theorem]{Algorithm}
+
+\permission{Copyright is held by the owner/author(s). Publication
+  rights licensed to the VLDB Endowment. This is a simplified version
+  of the paper entitled \dbsp: Automatic Incremental View Maintenance
+  for Rich Query Languages, published in PVLDB, Vol. 16, Issue 7, ISSN
+  2150-8097~\cite{budiu-vldb23}.  DOI:
+  https://doi.org/10.14778/3587136.3587137}
+\copyrightetc{}
+
+\begin{document}
+
+% Used when a term is first defined.  Adds the term to the index.
+\newcommand{\defined}[1]{\textbf{#1}\index{}}
+\newcommand{\zr}{$\Z$-set\xspace}
+\newcommand{\zrs}{$\Z$-sets\xspace} % plural
+\newcommand{\means}[1]{\ensuremath{\llbracket #1 \rrbracket}}
+\newcommand{\code}[1]{\mbox{\texttt{#1}}}
+\newcommand{\Z}{\mathbb{Z}}  % integers
+\newcommand{\N}{\mathbb{N}}  % naturals
+\newcommand{\B}{\mathbb{B}}  % Booleans
+\newcommand{\R}{\mathbb{R}}  % reals
+% stream with elements of a given type
+\newcommand{\stream}[1]{\ensuremath{\mathcal{S}_{#1}}}
+% finite stream with elements of a given type (zero almost everywhere)
+\newcommand{\streamf}[1]{\ensuremath{\overline{\mathcal{S}_{#1}}}}
+\newcommand{\zm}{\ensuremath{z^{-1}}} % stream delay operator
+\ifthenelse{\equal{1}{1}}{ % allows switching to mathit/mathcal
+\newcommand{\I}{\mathcal{I}}  % stream integration
+\newcommand{\D}{\mathcal{D}}  % stream derivative
+}{
+\newcommand{\I}{\mathit{I}}  % stream integration
+\newcommand{\D}{\mathit{D}}  % stream derivative
+}
+\newcommand{\inc}[1]{{#1}^{\Delta}}
+\newcommand{\distinct}{\mathit{distinct}}  % distinct operator
+% set with elements of given type
+\newcommand{\secref}[1]{Section~\ref{#1}}  % reference to a section
+\newcommand{\refsec}[1]{\secref{#1}}
+\newcommand{\set}[1]{\mathit{set}_{#1}}
+\newcommand{\id}{\ensuremath{\mathit{id}}} % identity function
+\newcommand{\isset}{\mbox{isset}}
+\newcommand{\ispositive}{\mbox{ispositive}}
+\newcommand{\defn}{\stackrel{\textrm{\scriptsize def}}{=}}
+\newcommand{\map}{\mbox{map}}
+\newcommand{\fix}[2]{\mbox{fix}\,#1.#2}
+\newcommand{\lift}[1]{{\uparrow}#1}
+\newcommand{\rew}{\ensuremath{\mapsto}} % rewriting
+\newcommand{\birew}{\ensuremath{\mapsfrom\!\mapsto}} % bidirectional rewriting
+\newcommand{\pair}[2]{\ensuremath{\langle #1,#2 \rangle}} % pairing
+\newcommand{\norm}[1]{\| #1 \|} % norm; requires math mode
+%\newcommand{\zpp}[1]{\mbox{zpp}(#1)}
+\newcommand{\makeset}{\ensuremath{\mbox{makeset}}}
+\newcommand{\sv}[1]{ % simple stream value, supplied as a space-separated list of 5 values
+\setsepchar{ }
+\readlist\arg{#1}
+\begin{tabular}{|c|c|c|c|c|} \hline
+  % notice that this is in reverse
+  \!\ensuremath{\cdots}\! &
+  \!\arg[4]\! &
+  \!\arg[3]\! &
+  \!\arg[2]\! &
+  \!\arg[1]\!
+  % \arg[5] &
+  \\ \hline
+\end{tabular}
+}
+\newcommand{\dbsp}{DBSP\xspace}
+
+\numberofauthors{5}
+\author{
+  \alignauthor Mihai Budiu \\
+  \affaddr{Feldera} \\
+  \email{mbudiu@feldera.com} \\
+  \alignauthor Tej Chajed \\
+  \affaddr{Univ. of Wisconsin-Madison} \\
+  \email{chajed@wisc.edu} \\
+  \alignauthor Frank McSherry \\
+  \affaddr{Materialize Inc.} \\
+  \email{mcsherry@materialize.com} \\
+  \and
+  \alignauthor Leonid Ryzhyk \\
+  \affaddr{Feldera} \\
+  \email{leonid@feldera.com} \\
+  \alignauthor Val Tannen \\
+  \affaddr{University of Pennsylvania} \\
+  \email{val@seas.upenn.edu} \\
+}
+
+\title{\dbsp: Incremental Computation on Streams and Its Applications
+  to Databases} \maketitle
+
+\begin{abstract}
+  We describe \dbsp, a framework for incremental computation.
+  Incremental computations repeatedly evaluate a function on some
+  input values that are ``changing''.  The goal of an efficient
+  implementation is to ``reuse'' previously computed results.
+  Ideally, when presented with a new change to the input, an
+  incremental computation should only perform work proportional to the
+  size of the changes of the input, rather than to the size of the
+  entire dataset.
+
+  In databases ``incremental computation'' is known as Incremental
+  View Maintenance (IVM); IVM has long been a central problem of
+  database theory and practice.  Many solutions have been proposed for
+  restricted classes of computation or of changes, but we are seeking
+  a general solution.
+
+  We start by defining incremental computations as computations on
+  data streams, i.e., sequences of data values, by borrowing ideas
+  from Digital Signal Processing.
+
+  Using these tools, we give a general solution to the incremental
+  computation problem in 4 steps: (1) we describe a simple but
+  expressive language called \dbsp for describing computations over
+  data streams; (2) we give a new mathematical definition of
+  incremental computation for \dbsp programs; (3) we give a general
+  algorithm for converting any \dbsp program into an incremental
+  program.  The algorithm reduces the problem of incrementalizing a
+  complex query to the problem of incrementalizing the primitive
+  operations that compose the query. Finally, (4) we show that
+  practical database query languages, such as SQL and Datalog, can be
+  directly implemented on top of \dbsp, using primitives with
+  efficient incremental implementations.  As a consequence, we obtain
+  a general recipe for efficient IVM for essentially arbitrary queries
+  written in all these languages.
+\end{abstract}
+
+\input{intro}
+\input{streams}
+\input{relational}
+\input{recursion}
+\input{nested}
+%\input{extensions}
+\input{implementation}
+%\input{related}
+\input{conclusions}
+
+\newpage
+
+\bibliographystyle{abbrv}
+\bibliography{main}
+
+\end{document}
