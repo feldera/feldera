@@ -415,7 +415,7 @@ impl Runtime {
         for idx in 0..nworkers {
             runtime
                 .local_store()
-                .insert(BufferCacheId(idx), Arc::new(BufferCache::new(idx)));
+                .insert(BufferCacheId(idx), Arc::new(BufferCache::new()));
         }
 
         // Install custom panic hook.
@@ -524,7 +524,7 @@ impl Runtime {
     pub fn storage() -> Arc<BufferCache<FileCacheEntry>> {
         lazy_static! {
             pub static ref NO_RUNTIME_CACHE: Arc<BufferCache<FileCacheEntry>> =
-                Arc::new(BufferCache::new(0xdead));
+                Arc::new(BufferCache::new());
         }
         if let Some(rt) = Runtime::runtime() {
             // The goal is to share the cache between the worker and the
