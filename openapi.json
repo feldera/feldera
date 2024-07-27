@@ -816,6 +816,7 @@
                       "max_output_buffer_size_records": 18446744073709551615,
                       "max_output_buffer_time_millis": 18446744073709551615,
                       "max_queued_records": 1000000,
+                      "paused": false,
                       "stream": "my_input_table",
                       "transport": {
                         "config": {
@@ -849,6 +850,7 @@
                       "max_output_buffer_size_records": 18446744073709551615,
                       "max_output_buffer_time_millis": 18446744073709551615,
                       "max_queued_records": 1000000,
+                      "paused": false,
                       "stream": "my_output_view",
                       "transport": {
                         "config": {
@@ -3170,6 +3172,10 @@
                 "format": "int64",
                 "description": "Backpressure threshold.\n\nMaximal number of records queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of records that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit since the circuit, since the circuit is still busy processing\nprevious inputs.\n\nFor output endpoints, this setting bounds the number of records that have\nbeen produced by the circuit but not yet sent via the output transport endpoint\nnor stored in the output buffer (see `enable_output_buffer`).\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nThe default is 1 million.",
                 "minimum": 0
+              },
+              "paused": {
+                "type": "boolean",
+                "description": "Create connector in paused state.\n\nThe default is `false`."
               },
               "transport": {
                 "$ref": "#/components/schemas/TransportConfig"

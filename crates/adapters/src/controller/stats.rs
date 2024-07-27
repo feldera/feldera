@@ -419,6 +419,18 @@ impl ControllerStatus {
         );
     }
 
+    pub fn pause_input_endpoint(&self, endpoint: &EndpointId) {
+        if let Some(ep) = self.inputs.write().unwrap().get_mut(endpoint) {
+            ep.paused = true;
+        }
+    }
+
+    pub fn start_input_endpoint(&self, endpoint: &EndpointId) {
+        if let Some(ep) = self.inputs.write().unwrap().get_mut(endpoint) {
+            ep.paused = false;
+        }
+    }
+
     pub fn remove_input(&self, endpoint_id: &EndpointId) {
         self.inputs.write().unwrap().remove(endpoint_id);
     }
@@ -518,6 +530,14 @@ impl ControllerStatus {
         };
 
         buffered_records >= max_queued_records
+    }
+
+    /// True if the endpoint's `paused_by_user` flag is set to `true`.
+    pub fn input_endpoint_paused_by_user(&self, endpoint_id: &EndpointId) -> bool {
+        match self.inputs.read().unwrap().get(endpoint_id) {
+            None => false,
+            Some(endpoint) => endpoint.paused,
+        }
     }
 
     /// Update counters after receiving a new input batch.
@@ -846,16 +866,29 @@ pub struct InputEndpointStatus {
 
     /// Whether this input endpoint is [fault tolerant](crate#fault-tolerance).
     pub is_fault_tolerant: bool,
+
+    /// Endpoint has been paused by the user.
+    ///
+    /// When `true`, the endpoint doesn't produce any data even when the pipeline
+    /// is running.
+    ///
+    /// This flag is set to `true` on startup if the `paused` flag in the
+    /// endpoint configuration is `true`. At runtime, the value of the flag is
+    /// controlled via the `/tables/<table_name>/connectors/<connector_name>/start` and
+    /// `/tables/<table_name>/connectors/<connector_name>/pause` endpoints.
+    pub paused: bool,
 }
 
 impl InputEndpointStatus {
     fn new(endpoint_name: &str, config: InputEndpointConfig, is_fault_tolerant: bool) -> Self {
+        let paused_by_user = config.connector_config.paused;
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
             metrics: Default::default(),
             fatal_error: Mutex::new(None),
             is_fault_tolerant,
+            paused: paused_by_user,
         }
     }
 

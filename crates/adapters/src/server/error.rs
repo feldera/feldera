@@ -300,6 +300,7 @@ impl ResponseError for ControllerError {
                 config_error: ConfigError::UnknownOutputStream { .. },
             } => StatusCode::NOT_FOUND,
             Self::Config { .. } => StatusCode::BAD_REQUEST,
+            Self::UnknownInputEndpoint { .. } => StatusCode::NOT_FOUND,
             Self::ParseError { .. } => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }

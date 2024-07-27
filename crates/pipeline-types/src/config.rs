@@ -243,6 +243,12 @@ pub struct ConnectorConfig {
     /// The default is 1 million.
     #[serde(default = "default_max_queued_records")]
     pub max_queued_records: u64,
+
+    /// Create connector in paused state.
+    ///
+    /// The default is `false`.
+    #[serde(default)]
+    pub paused: bool,
 }
 
 impl ConnectorConfig {

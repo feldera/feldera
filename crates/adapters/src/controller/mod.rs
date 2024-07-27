@@ -391,6 +391,22 @@ impl Controller {
         self.inner.pause();
     }
 
+    /// Pause specified input endpoint.
+    ///
+    /// Sets `paused_by_user` flag of the endpoint to `true`.
+    /// This method is asynchronous and may return before the endpoint has been
+    /// fully paused.
+    pub fn pause_input_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        self.inner.pause_input_endpoint(endpoint_name)
+    }
+
+    // Start or resume specified input endpoint.
+    //
+    // Sets `paused_by_user` flag of the endpoint to `false`.
+    pub fn start_input_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        self.inner.start_input_endpoint(endpoint_name)
+    }
+
     /// Returns controller status.
     pub fn status(&self) -> &ControllerStatus {
         // Update pipeline metrics computed on-demand.
@@ -714,7 +730,10 @@ impl Controller {
 
             for (epid, ep) in controller.inputs.lock().unwrap().iter() {
                 let current_state = endpoint_states.entry(*epid).or_insert(EndpointState::Pause);
-                let desired_state = if global_pause || controller.status.input_endpoint_full(epid) {
+                let desired_state = if global_pause
+                    || controller.status.input_endpoint_paused_by_user(epid)
+                    || controller.status.input_endpoint_full(epid)
+                {
                     EndpointState::Pause
                 } else {
                     EndpointState::Run(step)
@@ -1021,6 +1040,21 @@ impl ControllerInner {
         }
     }
 
+    fn input_endpoint_id_by_name(
+        &self,
+        endpoint_name: &str,
+    ) -> Result<EndpointId, ControllerError> {
+        let inputs = self.inputs.lock().unwrap();
+
+        for (endpoint_id, descr) in inputs.iter() {
+            if descr.endpoint_name == endpoint_name {
+                return Ok(*endpoint_id);
+            }
+        }
+
+        Err(ControllerError::unknown_input_endpoint(endpoint_name))
+    }
+
     /// Sets the global metrics recorder and returns a `Snapshotter` and
     /// a `PrometheusHandle` to get metrics in a prometheus compatible format.
     fn install_metrics_recorder(pipeline_name: String) -> (Arc<Snapshotter>, PrometheusHandle) {
@@ -1075,6 +1109,7 @@ impl ControllerInner {
         endpoint: Option<Box<dyn TransportInputEndpoint>>,
     ) -> Result<EndpointId, ControllerError> {
         let mut inputs = self.inputs.lock().unwrap();
+        let paused = endpoint_config.connector_config.paused;
 
         if inputs.values().any(|ep| ep.endpoint_name == endpoint_name) {
             Err(ControllerError::duplicate_input_endpoint(endpoint_name))?;
@@ -1154,7 +1189,7 @@ impl ControllerInner {
             }
         };
 
-        if self.state() == PipelineState::Running {
+        if self.state() == PipelineState::Running && !paused {
             reader
                 .start(0)
                 .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
@@ -1520,6 +1555,20 @@ impl ControllerInner {
 
         self.unpark_circuit();
         self.unpark_backpressure();
+    }
+
+    fn pause_input_endpoint(self: &Arc<Self>, endpoint_name: &str) -> Result<(), ControllerError> {
+        let endpoint_id = self.input_endpoint_id_by_name(endpoint_name)?;
+        self.status.pause_input_endpoint(&endpoint_id);
+        self.unpark_backpressure();
+        Ok(())
+    }
+
+    fn start_input_endpoint(self: &Arc<Self>, endpoint_name: &str) -> Result<(), ControllerError> {
+        let endpoint_id = self.input_endpoint_id_by_name(endpoint_name)?;
+        self.status.start_input_endpoint(&endpoint_id);
+        self.unpark_backpressure();
+        Ok(())
     }
 
     fn graph_profile(&self, cb: GraphProfileCallbackFn) {
