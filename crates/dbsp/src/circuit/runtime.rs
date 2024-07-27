@@ -86,14 +86,6 @@ impl Display for Error {
 
 impl StdError for Error {}
 
-// Thread-local variables used by the termination protocol.
-thread_local! {
-    // Set to `true` by `RuntimeHandle::kill`.
-    // Schedulers must check this signal before evaluating each operator
-    // and exit immediately returning `SchedulerError::Terminated`.
-    static KILL_SIGNAL: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
-}
-
 // Thread-local variables used to store per-worker context.
 thread_local! {
     // Reference to the `Runtime` that manages this worker thread or `None`
@@ -200,6 +192,7 @@ struct RuntimeInner {
     cache: StorageCacheConfig,
     min_storage_bytes: usize,
     store: LocalStore,
+    kill_signal: AtomicBool,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
 }
@@ -270,6 +263,7 @@ impl RuntimeInner {
             storage,
             min_storage_bytes: config.min_storage_bytes,
             store: TypedDashMap::new(),
+            kill_signal: AtomicBool::new(false),
             panic_info,
         })
     }
@@ -324,7 +318,6 @@ fn mk_background_thread(
     runtime: Option<Runtime>,
     worker_index: usize,
     bg_work_receiver: Receiver<BackgroundOperation>,
-    init_sender: Option<SyncSender<Arc<AtomicBool>>>,
 ) -> JoinHandle<()> {
     if thread_name.len() > 15 {
         warn!("thread name {thread_name:?} will appear truncated in system tools");
@@ -337,12 +330,6 @@ fn mk_background_thread(
             }
             IS_BACKGROUND_THREAD.set(true);
             WORKER_INDEX.set(worker_index);
-
-            // Send the main thread our kill signal
-            // TODO: Share a single kill signal across all workers
-            if let Some(init_sender) = init_sender {
-                init_sender.send(KILL_SIGNAL.with(|s| s.clone())).unwrap();
-            }
 
             let mut merger = BatchMerger::new(bg_work_receiver);
             merger.run();
@@ -437,64 +424,46 @@ impl Runtime {
             panic_hook(panic_info, default_hook)
         }));
 
-        let mut background_handles = Vec::with_capacity(nworkers);
-        background_handles.extend(workers.clone().map(|worker_index| {
-            let cloned_runtime = runtime.clone();
-            let (init_sender, init_receiver) = sync_channel(1);
-            let (bg_work_sender, bg_work_receiver) = sync_channel(BatchMerger::RX_QUEUE_SIZE);
-            let join_handle = mk_background_thread(
-                format!("dbsp-bg-{}", worker_index),
-                Some(cloned_runtime),
-                worker_index,
-                bg_work_receiver,
-                Some(init_sender),
-            );
-            runtime
-                .local_store()
-                .insert(BackgroundChannel(worker_index), Arc::new(bg_work_sender));
-            (join_handle, init_receiver)
-        }));
+        // Instantiate background workers before `workers` to avoid any races
+        // where code in workers tries to access reach background thread
+        // channels before they are fully initialized.
+        let background_workers = workers
+            .clone()
+            .map(|worker_index| {
+                let cloned_runtime = runtime.clone();
+                let (bg_work_sender, bg_work_receiver) = sync_channel(BatchMerger::RX_QUEUE_SIZE);
+                let join_handle = mk_background_thread(
+                    format!("dbsp-bg-{}", worker_index),
+                    Some(cloned_runtime),
+                    worker_index,
+                    bg_work_receiver,
+                );
+                runtime
+                    .local_store()
+                    .insert(BackgroundChannel(worker_index), Arc::new(bg_work_sender));
+                join_handle
+            })
+            .collect::<Vec<_>>();
 
-        // We instantiate them before `workers` to avoid any races where code in workers
-        // tries to access reach background thread channels before they are fully initialized.
-        let mut background_workers = Vec::with_capacity(nworkers);
-        background_workers.extend(background_handles.into_iter().map(|(handle, recv)| {
-            let kill_signal = recv.recv().unwrap();
-            BackgroundWorkerHandle::new(handle, kill_signal)
-        }));
+        let workers = workers
+            .map(|worker_index| {
+                let runtime = runtime.clone();
+                let build_circuit = circuit.clone();
+                Builder::new()
+                    .name(format!("dbsp-worker-{worker_index}"))
+                    .spawn(move || {
+                        // Set the worker's runtime handle and index
+                        RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
+                        WORKER_INDEX.set(worker_index);
 
-        let mut handles = Vec::with_capacity(nworkers);
-        handles.extend(workers.clone().map(|worker_index| {
-            let runtime = runtime.clone();
-            let build_circuit = circuit.clone();
-
-            let (init_sender, init_receiver) = sync_channel(1);
-            let join_handle = Builder::new()
-                .name(format!("dbsp-worker-{worker_index}"))
-                .spawn(move || {
-                    // Set the worker's runtime handle and index
-                    RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
-                    WORKER_INDEX.set(worker_index);
-
-                    // Send the main thread our kill signal
-                    // TODO: Share a single kill signal across all workers
-                    init_sender.send(KILL_SIGNAL.with(|s| s.clone())).unwrap();
-
-                    // Build the worker's circuit
-                    build_circuit();
-                })
-                .unwrap_or_else(|error| {
-                    panic!("failed to spawn worker thread {worker_index}: {error}");
-                });
-
-            (join_handle, init_receiver)
-        }));
-
-        let mut workers = Vec::with_capacity(nworkers);
-        workers.extend(handles.into_iter().map(|(handle, recv)| {
-            let kill_signal = recv.recv().unwrap();
-            WorkerHandle::new(handle, kill_signal)
-        }));
+                        // Build the worker's circuit
+                        build_circuit();
+                    })
+                    .unwrap_or_else(|error| {
+                        panic!("failed to spawn worker thread {worker_index}: {error}");
+                    })
+            })
+            .collect::<Vec<_>>();
 
         Ok(RuntimeHandle::new(
             runtime,
@@ -522,7 +491,6 @@ impl Runtime {
                 None,
                 worker_index,
                 bg_work_receiver,
-                None,
             );
             Arc::new(bg_work_sender)
         }
@@ -653,7 +621,16 @@ impl Runtime {
     /// and should exit asap.  Schedulers should use this method before
     /// scheduling the next operator and after parking.
     pub fn kill_in_progress() -> bool {
-        KILL_SIGNAL.with(|signal| signal.load(Ordering::SeqCst))
+        // Only a circuit with a `Runtime` can receive a kill signal, which is
+        // OK because a kill request can only be sent via a `RuntimeHandle`
+        // anyway.
+        RUNTIME.with(|runtime| {
+            runtime
+                .borrow()
+                .as_ref()
+                .map(|runtime| runtime.inner().kill_signal.load(Ordering::SeqCst))
+                .unwrap_or(false)
+        })
     }
 
     pub fn worker_panic_info(&self, worker: usize) -> Option<WorkerPanicInfo> {
@@ -674,60 +651,20 @@ impl Runtime {
     }
 }
 
-/// Per-worker controls.
-#[derive(Debug)]
-struct WorkerHandle {
-    join_handle: JoinHandle<()>,
-    kill_signal: Arc<AtomicBool>,
-}
-
-impl WorkerHandle {
-    fn new(join_handle: JoinHandle<()>, kill_signal: Arc<AtomicBool>) -> Self {
-        Self {
-            join_handle,
-            kill_signal,
-        }
-    }
-
-    fn unpark(&self) {
-        self.join_handle.thread().unpark();
-    }
-}
-
-/// Background-worker controls.
-#[derive(Debug)]
-struct BackgroundWorkerHandle {
-    join_handle: JoinHandle<()>,
-    kill_signal: Arc<AtomicBool>,
-}
-
-impl BackgroundWorkerHandle {
-    fn new(join_handle: JoinHandle<()>, kill_signal: Arc<AtomicBool>) -> Self {
-        Self {
-            join_handle,
-            kill_signal,
-        }
-    }
-
-    fn unpark(&self) {
-        self.join_handle.thread().unpark();
-    }
-}
-
 /// Handle returned by `Runtime::run`.
 #[derive(Debug)]
 pub struct RuntimeHandle {
     runtime: Runtime,
-    workers: Vec<WorkerHandle>,
-    background_workers: Vec<BackgroundWorkerHandle>,
+    workers: Vec<JoinHandle<()>>,
+    background_workers: Vec<JoinHandle<()>>,
     storage: StorageLocation,
 }
 
 impl RuntimeHandle {
     fn new(
         runtime: Runtime,
-        workers: Vec<WorkerHandle>,
-        background_workers: Vec<BackgroundWorkerHandle>,
+        workers: Vec<JoinHandle<()>>,
+        background_workers: Vec<JoinHandle<()>>,
         storage: StorageLocation,
     ) -> Self {
         Self {
@@ -744,7 +681,7 @@ impl RuntimeHandle {
     /// This method unparks a thread after sending a command to it or
     /// when killing a circuit.
     pub(super) fn unpark_worker(&self, worker: usize) {
-        self.workers[worker].join_handle.thread().unpark();
+        self.workers[worker].thread().unpark();
     }
 
     /// Returns reference to the runtime.
@@ -767,13 +704,15 @@ impl RuntimeHandle {
     // Signals all worker threads to exit, and returns immediately without
     // waiting for them to exit.
     pub fn kill_async(&self) {
+        self.runtime
+            .inner()
+            .kill_signal
+            .store(true, Ordering::SeqCst);
         for worker in self.workers.iter() {
-            worker.kill_signal.store(true, Ordering::SeqCst);
-            worker.unpark();
+            worker.thread().unpark();
         }
         for background_worker in self.background_workers.iter() {
-            background_worker.kill_signal.store(true, Ordering::SeqCst);
-            background_worker.unpark();
+            background_worker.thread().unpark();
         }
     }
 
@@ -785,11 +724,7 @@ impl RuntimeHandle {
 
         // Insist on joining all threads even if some of them fail.
         #[allow(clippy::needless_collect)]
-        let results: Vec<ThreadResult<()>> = self
-            .workers
-            .into_iter()
-            .map(|h| h.join_handle.join())
-            .collect();
+        let results: Vec<ThreadResult<()>> = self.workers.into_iter().map(|h| h.join()).collect();
 
         // Dropping the background channels here is important because it will drop the
         // last references the communication channel with the background threads and
@@ -801,7 +736,7 @@ impl RuntimeHandle {
         let _background_results: Vec<ThreadResult<()>> = self
             .background_workers
             .into_iter()
-            .map(|h| h.join_handle.join())
+            .map(|h| h.join())
             .collect();
         self.runtime.local_store().clear();
 
