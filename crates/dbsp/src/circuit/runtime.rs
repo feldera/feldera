@@ -363,18 +363,11 @@ fn mk_background_thread(
 }
 
 impl Runtime {
-    /// Create a new runtime with the specified `layout` and run user-provided
-    /// closure `f` in each thread.  The closure should build a circuit and
-    /// return handles for this function to pass along to its own caller.  The
-    /// closure takes a reference to the `Runtime` as an argument, so that
-    /// workers can access shared services provided by the runtime.
+    /// Creates a new runtime with the specified `layout` and run user-provided
+    /// closure `f` in each thread, and returns a handle to the runtime.
     ///
     /// The `layout` may be specified as a number of worker threads or as a
     /// [`Layout`].
-    ///
-    /// Returns a handle to the runtime as well as the closure's own return
-    /// value. The closure should return the same value in each thread; this
-    /// function returns one of them arbitrarily.
     ///
     /// # Examples
     /// ```
