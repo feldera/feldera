@@ -460,6 +460,8 @@ where
         .service(dump_profile)
         .service(input_endpoint)
         .service(output_endpoint)
+        .service(pause_input_endpoint)
+        .service(start_input_endpoint)
 }
 
 #[get("/start")]
@@ -644,6 +646,7 @@ async fn input_endpoint(
             )?),
             output_buffer_config: Default::default(),
             max_queued_records: HttpInputTransport::default_max_buffered_records(),
+            paused: false,
         },
     };
 
@@ -846,6 +849,7 @@ async fn output_endpoint(
             )?),
             output_buffer_config: Default::default(),
             max_queued_records: HttpOutputTransport::default_max_buffered_records(),
+            paused: false,
         },
     };
 
@@ -959,6 +963,48 @@ async fn output_endpoint(
     Ok(response)
 }
 
+#[get("/input_endpoints/{endpoint_name}/pause")]
+async fn pause_input_endpoint(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let endpoint_name = match req.match_info().get("endpoint_name") {
+        None => {
+            return Err(PipelineError::MissingUrlEncodedParam {
+                param: "endpoint_name",
+            });
+        }
+        Some(table_name) => table_name.to_string(),
+    };
+
+    match &*state.controller.lock().unwrap() {
+        Some(controller) => controller.pause_input_endpoint(&endpoint_name)?,
+        None => {
+            return Err(missing_controller_error(&state));
+        }
+    };
+
+    Ok(HttpResponse::Ok())
+}
+
+#[get("/input_endpoints/{endpoint_name}/start")]
+async fn start_input_endpoint(state: WebData<ServerState>, req: HttpRequest) -> impl Responder {
+    let endpoint_name = match req.match_info().get("endpoint_name") {
+        None => {
+            return Err(PipelineError::MissingUrlEncodedParam {
+                param: "endpoint_name",
+            });
+        }
+        Some(table_name) => table_name.to_string(),
+    };
+
+    match &*state.controller.lock().unwrap() {
+        Some(controller) => controller.start_input_endpoint(&endpoint_name)?,
+        None => {
+            return Err(missing_controller_error(&state));
+        }
+    };
+
+    Ok(HttpResponse::Ok())
+}
+
 #[cfg(test)]
 #[cfg(feature = "with-kafka")]
 mod test_with_kafka {
@@ -1020,6 +1066,7 @@ name: test
 inputs:
     test_input1:
         stream: test_input1
+        paused: true
         transport:
             name: kafka_input
             config:
@@ -1076,13 +1123,13 @@ outputs:
 
         // Request quantiles while the table is empty.  This should return an empty
         // quantile.
-        let mut quantiles_resp1 = server
+        let mut quantiles_resp = server
             .post("/egress/test_output1?mode=snapshot&query=quantiles")
             .send()
             .await
             .unwrap();
-        assert!(quantiles_resp1.status().is_success());
-        let body = quantiles_resp1.body().await.unwrap();
+        assert!(quantiles_resp.status().is_success());
+        let body = quantiles_resp.body().await.unwrap();
         assert_eq!(
             body,
             Bytes::from_static(b"{\"sequence_number\":0,\"text_data\":\"\"}\r\n")
@@ -1096,11 +1143,36 @@ outputs:
         sleep(Duration::from_millis(2000));
         assert!(buffer_consumer.is_empty());
 
-        // Start command; wait for data.
+        // Start pipeline.
         println!("/start");
         let resp = server.get("/start").send().await.unwrap();
         assert!(resp.status().is_success());
 
+        sleep(Duration::from_millis(3000));
+
+        // Input connector is still paused: expect empty outputs.
+        let mut quantiles_resp = server
+            .post("/egress/test_output1?mode=snapshot&query=quantiles")
+            .send()
+            .await
+            .unwrap();
+        assert!(quantiles_resp.status().is_success());
+        let body = quantiles_resp.body().await.unwrap();
+        assert_eq!(
+            body,
+            Bytes::from_static(b"{\"sequence_number\":0,\"text_data\":\"\"}\r\n")
+        );
+
+        // Unpause input endpoint.
+        println!("/input_endpoints/test_input1/start");
+        let resp = server
+            .get("/input_endpoints/test_input1/start")
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+
+        // Wait for data.
         buffer_consumer.wait_for_output_unordered(&data);
         buffer_consumer.clear();
 
@@ -1112,19 +1184,41 @@ outputs:
         let resp = server.get("/metadata").send().await.unwrap();
         assert!(resp.status().is_success());
 
-        // Pause command; send more data, receive none.
+        // Pause input endpoint.
+        println!("/input_endpoints/test_input1/pause");
+        let resp = server
+            .get("/input_endpoints/test_input1/pause")
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+
+        // Pause pipeline.
         println!("/pause");
         let resp = server.get("/pause").send().await.unwrap();
         assert!(resp.status().is_success());
         sleep(Duration::from_millis(1000));
 
+        // Send more data, receive none
         producer.send_to_topic(&data, "test_server_input_topic");
         sleep(Duration::from_millis(2000));
         assert_eq!(buffer_consumer.len(), 0);
 
-        // Start; wait for data
+        // Start pipeline; still no data because the endpoint is paused.
         println!("/start");
         let resp = server.get("/start").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        sleep(Duration::from_millis(2000));
+        assert_eq!(buffer_consumer.len(), 0);
+
+        // Resume input endpoint, receive data.
+        println!("/input_endpoints/test_input1/start");
+        let resp = server
+            .get("/input_endpoints/test_input1/start")
+            .send()
+            .await
+            .unwrap();
         assert!(resp.status().is_success());
 
         buffer_consumer.wait_for_output_unordered(&data);
@@ -1222,13 +1316,13 @@ outputs:
         sleep(Duration::from_millis(5000));
 
         // Request quantiles.
-        let mut quantiles_resp1 = server
+        let mut quantiles_resp = server
             .post("/egress/test_output1?mode=snapshot&query=quantiles&backpressure=true")
             .send()
             .await
             .unwrap();
-        assert!(quantiles_resp1.status().is_success());
-        let body = quantiles_resp1.body().await;
+        assert!(quantiles_resp.status().is_success());
+        let body = quantiles_resp.body().await;
         // println!("Response: {body:?}");
         let body = serde_json::from_slice::<JsonValue>(&body.unwrap()).unwrap();
         println!("Quantiles: {body}");

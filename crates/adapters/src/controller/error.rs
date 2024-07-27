@@ -496,6 +496,9 @@ pub enum ControllerError {
     /// Invalid controller configuration.
     Config { config_error: ConfigError },
 
+    /// Unknown input endpoint name.
+    UnknownInputEndpoint { endpoint_name: String },
+
     /// Error parsing input data.
     ///
     /// Parser errors are expected to be
@@ -629,6 +632,7 @@ impl DetailedError for ControllerError {
             Self::Config { config_error } => {
                 Cow::from(format!("ConfigError.{}", config_error.error_code()))
             }
+            Self::UnknownInputEndpoint { .. } => Cow::from("UnknownInputEndpoint"),
             Self::ParseError { .. } => Cow::from("ParseError"),
             Self::EncodeError { .. } => Cow::from("EncodeError"),
             Self::InputTransportError { .. } => Cow::from("InputTransportError"),
@@ -669,6 +673,9 @@ impl Display for ControllerError {
             }
             Self::Config { config_error } => {
                 write!(f, "invalid controller configuration: {config_error}")
+            }
+            Self::UnknownInputEndpoint { endpoint_name } => {
+                write!(f, "unknown input endpoint name '{endpoint_name}'")
             }
             Self::InputTransportError {
                 endpoint_name,
@@ -768,6 +775,12 @@ impl ControllerError {
     {
         Self::CliArgsError {
             error: error.to_string(),
+        }
+    }
+
+    pub fn unknown_input_endpoint(endpoint_name: &str) -> Self {
+        Self::UnknownInputEndpoint {
+            endpoint_name: endpoint_name.to_string(),
         }
     }
 
