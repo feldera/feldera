@@ -92,9 +92,6 @@ struct CacheInner<E>
 where
     E: CacheEntry,
 {
-    /// Unique identifier for this cache within a runtime.
-    id: usize,
-
     /// Cache contents.
     cache: BTreeMap<CacheKey, CacheValue<E>>,
 
@@ -117,7 +114,7 @@ where
     E: CacheEntry,
 {
     fn default() -> Self {
-        Self::new(0)
+        Self::new()
     }
 }
 
@@ -125,9 +122,8 @@ impl<E> CacheInner<E>
 where
     E: CacheEntry,
 {
-    fn new(id: usize) -> Self {
+    fn new() -> Self {
         Self {
-            id,
             cache: BTreeMap::new(),
             lru: BTreeMap::new(),
             next_serial: 0,
@@ -227,9 +223,7 @@ where
     E: CacheEntry,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BufferCache")
-            .field("id", &self.inner.lock().unwrap().id)
-            .finish()
+        f.debug_struct("BufferCache").finish()
     }
 }
 
@@ -238,7 +232,7 @@ where
     E: CacheEntry,
 {
     fn default() -> Self {
-        Self::new(0)
+        Self::new()
     }
 }
 
@@ -250,9 +244,9 @@ where
     ///
     /// It's best to use a single `StorageCache` for all uses of a given
     /// `backend`, because otherwise the cache will end up with duplicates.
-    pub fn new(id: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            inner: Mutex::new(CacheInner::new(id)),
+            inner: Mutex::new(CacheInner::new()),
         }
     }
 
