@@ -51,11 +51,56 @@ import java.util.List;
 
 /** Base class for SQL-based tests. */
 public class BaseSQLTests {
+    /** Override this method to prepare the tables on
+     * which the tests are built. */
+    public void prepareInputs(DBSPCompiler compiler) {}
+
+    /** Run a query that is expected to fail in compilation.
+     * @param query             Query to run.
+     * @param messageFragment   This fragment should appear in the error message. */
+    public void queryFailingInCompilation(String query, String messageFragment) {
+        this.statementsFailingInCompilation("CREATE VIEW VV AS " + query, messageFragment);
+    }
+
+    /** Run one or more statements that are expected to fail in compilation.
+     * @param statements        Statements to compile.
+     * @param messageFragment   This fragment should appear in the error message. */
+    public void statementsFailingInCompilation(String statements, String messageFragment) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        this.prepareInputs(compiler);
+        compiler.compileStatements(statements);
+        getCircuit(compiler);
+        Assert.assertTrue(compiler.messages.exitCode != 0);
+        String message = compiler.messages.toString();
+        boolean contains = message.contains(messageFragment);
+        if (!contains)
+            Assert.fail("Error message\n" + Utilities.singleQuote(message) +
+                    "\ndoes not contain the expected fragment\n" + Utilities.singleQuote(messageFragment));
+    }
+
+    /** Compile a set of statements that are expected to give a warning at compile time.
+     * @param statements        Statement to run.
+     * @param messageFragment   This fragment should appear in the warning message. */
+    public void shouldWarn(String statements, String messageFragment) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        this.prepareInputs(compiler);
+        compiler.compileStatements(statements);
+        getCircuit(compiler);
+        Assert.assertTrue(compiler.hasWarnings);
+        String warnings = compiler.messages.messages.stream()
+                .filter(error -> error.warning).toList().toString();
+        boolean contains = warnings.contains(messageFragment);
+        if (!contains)
+            Assert.fail("Error message\n" + Utilities.singleQuote(warnings) +
+                    "\ndoes not contain the expected fragment\n" + Utilities.singleQuote(messageFragment));
+    }
+
     /** Helper class for testing.  Holds together
      * - the compiler that is used to compile a program,
      * - the circuit, and
-     * - the input/output data that is used to test the circuit.
-     */
+     * - the input/output data that is used to test the circuit. */
     public static class CompilerCircuitStream {
         final DBSPCompiler compiler;
         public final DBSPCircuit circuit;

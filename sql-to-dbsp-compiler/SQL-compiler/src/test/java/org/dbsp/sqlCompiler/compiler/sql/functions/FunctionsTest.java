@@ -268,7 +268,7 @@ public class FunctionsTest extends SqlIoTest {
     @Test
     public void issue1187divisorZero() {
         this.runtimeConstantFail("SELECT 8 % 0", "attempt to calculate the remainder with a divisor of zero");
-        this.shouldWarn("SELECT 8 % 0", "Modulus by constant zero value as divisor.");
+        this.shouldWarn("CREATE VIEW V AS SELECT 8 % 0", "Modulus by constant zero value as divisor.");
     }
 
     @Test

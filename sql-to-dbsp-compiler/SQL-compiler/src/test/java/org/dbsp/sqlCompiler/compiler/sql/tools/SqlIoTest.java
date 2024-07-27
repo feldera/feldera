@@ -11,7 +11,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
-import org.dbsp.util.Utilities;
 import org.junit.Assert;
 
 import java.io.IOException;
@@ -32,10 +31,6 @@ import java.util.regex.Pattern;
  * one or multiple queries.
  */
 public abstract class SqlIoTest extends BaseSQLTests {
-    /** Override this method to prepare the tables on
-     * which the tests are built. */
-    public void prepareInputs(DBSPCompiler compiler) {}
-
     public CompilerOptions getOptions(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
         options.ioOptions.quiet = true;
@@ -128,23 +123,26 @@ public abstract class SqlIoTest extends BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.showErrors();
         if (!compiler.options.languageOptions.throwOnError)
             compiler.throwIfErrorsOccurred();
         InputOutputChange iochange = new InputOutputChange(
                 this.getPreparedInputs(compiler),
                 new Change(expected)
         );
-        this.addRustTestCase(query, new CompilerCircuitStream(compiler, iochange.toStream()));
+        ccs.addChange(iochange);
+        this.addRustTestCase(query, ccs);
     }
 
     public void compare(String query, String expected, boolean optimize) {
         DBSPCompiler compiler = this.testCompiler(optimize);
         this.prepareInputs(compiler);
         compiler.compileStatement("CREATE VIEW VV AS " + query);
-        if (!compiler.options.languageOptions.throwOnError)
-            compiler.throwIfErrorsOccurred();
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.showErrors();
+        if (!compiler.options.languageOptions.throwOnError)
+            compiler.throwIfErrorsOccurred();
         DBSPType outputType = ccs.circuit.getSingleOutputType();
         Change result = TableParser.parseTable(expected, outputType);
         InputOutputChange change = new InputOutputChange(
@@ -196,30 +194,6 @@ public abstract class SqlIoTest extends BaseSQLTests {
 
     /** Run a query that is expected to fail in compilation.
      * @param query             Query to run.
-     * @param messageFragment   This fragment should appear in the error message. */
-    public void queryFailingInCompilation(String query, String messageFragment) {
-        this.statementsFailingInCompilation("CREATE VIEW VV AS " + query, messageFragment);
-    }
-
-    /** Run one or more statements that are expected to fail in compilation.
-     * @param statements        Statements to compile.
-     * @param messageFragment   This fragment should appear in the error message. */
-    public void statementsFailingInCompilation(String statements, String messageFragment) {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        this.prepareInputs(compiler);
-        compiler.compileStatements(statements);
-        getCircuit(compiler);
-        Assert.assertTrue(compiler.messages.exitCode != 0);
-        String message = compiler.messages.toString();
-        boolean contains = message.contains(messageFragment);
-        if (!contains)
-            Assert.fail("Error message\n" + Utilities.singleQuote(message) +
-                    "\ndoes not contain the expected fragment\n" + Utilities.singleQuote(messageFragment));
-    }
-
-    /** Run a query that is expected to fail in compilation.
-     * @param query             Query to run.
      * @param messageFragment   This fragment should appear in the error message.
      * @param optimize          Boolean that indicates if the query should be compiled with optimizations. */
     public void queryFailingInCompilation(String query, String messageFragment, boolean optimize) {
@@ -235,22 +209,6 @@ public abstract class SqlIoTest extends BaseSQLTests {
     }
 
     /**
-     * Run a query that is expected to give a warning at compile time.
-     * @param query             Query to run.
-     * @param messageFragment   This fragment should appear in the warning message.
-     */
-    public void shouldWarn(String query, String messageFragment) {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        this.prepareInputs(compiler);
-        compiler.compileStatement("CREATE VIEW VV AS " + query);
-        getCircuit(compiler);
-        Assert.assertTrue(compiler.hasWarnings);
-        String warnings = compiler.messages.messages.stream().filter(error -> error.warning).toList().toString();
-        Assert.assertTrue(warnings.contains(messageFragment));
-    }
-
-    /**
      * Test a sequence of queries, each followed by its expected output.
      * Two queries are separated by a whitespace line.
      * Here is an example legal input:
@@ -259,8 +217,8 @@ public abstract class SqlIoTest extends BaseSQLTests {
      * --------
      *  1004.3
      * (1 row)
-     * <p>
-     * SELECT f.* FROM FLOAT4_TBL f WHERE '1004.3' > f.f1;
+     *
+     * <p>SELECT f.* FROM FLOAT4_TBL f WHERE '1004.3' > f.f1;
      *       f1
      * ---------------
      *              0

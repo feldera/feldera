@@ -24,8 +24,10 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.sql.SqlNode;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 
 import javax.annotation.Nullable;
@@ -34,11 +36,15 @@ import java.util.Map;
 
 /** Describes a table as produced by a CREATE TABLE DDL statement. */
 public class CreateTableStatement extends CreateRelationStatement {
+    public final List<ForeignKey> foreignKeys;
+
     public CreateTableStatement(SqlNode node, String statement,
                                 String tableName, boolean nameIsQuoted,
                                 List<RelColumnMetadata> columns,
+                                List<ForeignKey> foreignKeys,
                                 @Nullable Map<String, String> properties) {
         super(node, statement, tableName, nameIsQuoted, columns, properties);
+        this.foreignKeys = foreignKeys;
     }
 
     public boolean isMaterialized() {
@@ -53,6 +59,9 @@ public class CreateTableStatement extends CreateRelationStatement {
         JsonNode node = super.asJson();
         ObjectNode object = (ObjectNode) node;
         object.put("materialized", this.isMaterialized());
+        ArrayNode fk = object.putArray("foreign_keys");
+        for (ForeignKey key: this.foreignKeys)
+            fk.add(key.asJson());
         return object;
     }
 }

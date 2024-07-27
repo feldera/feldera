@@ -29,6 +29,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.sql.SqlFunction;
+import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
@@ -38,6 +39,7 @@ import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
@@ -46,12 +48,14 @@ import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
@@ -257,10 +261,100 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.compileInternal(statements, many, true);
     }
 
+    void validateForeignKeys(DBSPCircuit circuit, List<ForeignKey> foreignKeys) {
+        // Invoked after all statements have been compiled and thus
+        // all tables in the program are known.
+        for (ForeignKey fk: foreignKeys) {
+            ForeignKey.TableAndColumns self = fk.thisTable;
+            ForeignKey.TableAndColumns other = fk.otherTable;
+            String thisTableName = self.tableName.getSimple();
+
+            if (self.columns.size() != other.columns.size()) {
+                this.reportError(new SourcePositionRange(self.listpos), "Size mismatch",
+                        "FOREIGN KEY section of table " +
+                                Utilities.singleQuote(thisTableName) +
+                                " contains " + self.columns.size() + " columns," +
+                                " which does not match the size the REFERENCES, which is " +
+                                other.columns.size());
+                continue;
+            }
+
+            // Check that the referred columns exist and have proper types
+            String otherTableName = other.tableName.getSimple();
+            DBSPSourceTableOperator otherTable = circuit.getInput(otherTableName);
+            if (otherTable == null) {
+                this.reportWarning(new SourcePositionRange(other.tableName.getParserPosition()),
+                        "Table not found",
+                        "Table " + Utilities.singleQuote(otherTableName)
+                                + ", referred in FOREIGN KEY constraint of table " +
+                                Utilities.singleQuote(thisTableName) + ", does not exist");
+                continue;
+            }
+
+            DBSPSourceTableOperator thisTable = circuit.getInput(thisTableName);
+            assert thisTable != null;
+
+            List<InputColumnMetadata> otherKeys = otherTable.metadata.getPrimaryKeys();
+            if (otherKeys.size() != self.columns.size()) {
+                this.reportError(new SourcePositionRange(self.listpos),
+                        "PRIMARY KEY does not match",
+                        "The PRIMARY KEY of table " + Utilities.singleQuote(otherTableName) +
+                                " does not match the FOREIGN KEY of " + Utilities.singleQuote(thisTableName));
+                continue;
+            }
+
+            for (int i = 0; i < self.columns.size(); i++) {
+                SqlIdentifier selfColumn = self.columns.get(i);
+                SqlIdentifier otherColumn = other.columns.get(i);
+                String selfColumnName = selfColumn.getSimple();
+                String otherColumnName = otherColumn.getSimple();
+                InputColumnMetadata selfMeta = thisTable.metadata.getColumnMetadata(selfColumnName);
+                if (selfMeta == null) {
+                    this.reportError(new SourcePositionRange(selfColumn.getParserPosition()),
+                            "Column not found",
+                            "Table " + Utilities.singleQuote(thisTableName) +
+                                    " does not have a column named " + Utilities.singleQuote(selfColumnName));
+                    continue;
+                }
+                InputColumnMetadata otherMeta = otherTable.metadata.getColumnMetadata(otherColumnName);
+                if (otherMeta == null) {
+                    this.reportError(new SourcePositionRange(selfColumn.getParserPosition()),
+                            "Column not found",
+                            "Table " + Utilities.singleQuote(otherTableName) +
+                                    " does not have a column named " + Utilities.singleQuote(otherColumnName));
+                    continue;
+                }
+                if (!otherMeta.isPrimaryKey) {
+                    this.reportError(new SourcePositionRange(selfColumn.getParserPosition()),
+                            "FOREIGN KEY points to non-key column",
+                            "FOREIGN KEY column " +
+                                    Utilities.singleQuote(thisTableName + "." + selfColumnName) +
+                                    " refers to column " +
+                                    Utilities.singleQuote(otherTableName + "." + otherColumnName) +
+                                    " which is not a PRIMARY KEY");
+                    continue;
+                }
+                if (!selfMeta.type.setMayBeNull(false).sameType(otherMeta.type.setMayBeNull(false))) {
+                    this.reportError(new SourcePositionRange(selfColumn.getParserPosition()),
+                            "Mismatched FOREIGN KEY column types",
+                            "FOREIGN KEY column " +
+                                    Utilities.singleQuote(thisTableName + "." + selfColumnName) +
+                                    " has type " + selfMeta.type.asSqlString() +
+                                    " which does not match the type " + otherMeta.type.asSqlString() +
+                                    " of the referenced column " +
+                                    Utilities.singleQuote(otherTableName + "." + otherColumnName));
+                }
+            }
+        }
+    }
+
     void runAllCompilerStages() {
         try {
             // Parse using Calcite
             SqlNodeList parsed = new SqlNodeList(SqlParserPos.ZERO);
+            // across all tables
+            List<ForeignKey> foreignKeys = new ArrayList<>();
+
             for (SqlStatements stat: this.toCompile) {
                 if (stat.many) {
                     if (stat.statement.isEmpty())
@@ -347,10 +441,15 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 if (fe.is(CreateViewStatement.class)) {
                     CreateViewStatement cv = fe.to(CreateViewStatement.class);
                     this.views.put(cv.getName(), cv);
+                } else if (fe.is(CreateTableStatement.class)) {
+                    CreateTableStatement ct = fe.to(CreateTableStatement.class);
+                    foreignKeys.addAll(ct.foreignKeys);
                 }
                 this.midend.compile(fe);
             }
 
+            this.circuit = this.midend.getFinalCircuit().seal("parsed");
+            this.validateForeignKeys(this.circuit, foreignKeys);
             this.optimize();
         } catch (SqlParseException e) {
             if (e.getCause() instanceof BaseCompilerException) {

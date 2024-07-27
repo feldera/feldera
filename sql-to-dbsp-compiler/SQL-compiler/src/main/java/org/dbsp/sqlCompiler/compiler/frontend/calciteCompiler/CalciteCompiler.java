@@ -104,8 +104,11 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
@@ -514,6 +517,37 @@ public class CalciteCompiler implements IWritesLogs {
         return result;
     }
 
+    List<ForeignKey> createForeignKeys(SqlCreateTable table) {
+        List<ForeignKey> result = new ArrayList<>();
+        // Extract foreign key information from two places:
+        // - column declaration
+        // - foreign key fields
+        for (SqlNode cfk: table.columnsOrForeignKeys) {
+            if (cfk instanceof SqlForeignKey fk) {
+                ForeignKey.TableAndColumns thisTable = new ForeignKey.TableAndColumns(
+                        fk.columnList.getParserPosition(), table.name, Linq.map(fk.columnList, c -> (SqlIdentifier) c));
+                ForeignKey.TableAndColumns otherTable = new ForeignKey.TableAndColumns(
+                        fk.otherColumnList.getParserPosition(), fk.otherTable, Linq.map(fk.otherColumnList, c -> (SqlIdentifier) c));
+                ForeignKey foreignKey = new ForeignKey(thisTable, otherTable);
+                result.add(foreignKey);
+            } else if (cfk instanceof SqlExtendedColumnDeclaration decl) {
+                for (int i = 0; i < decl.foreignKeyColumns.size(); i++) {
+                    SqlIdentifier otherColumn = decl.foreignKeyColumns.get(i);
+                    SqlIdentifier otherTable = decl.foreignKeyTables.get(i);
+                    ForeignKey.TableAndColumns thisTable =
+                            new ForeignKey.TableAndColumns(
+                                    decl.name.getParserPosition(), table.name, Linq.list(decl.name));
+                    ForeignKey.TableAndColumns ot =
+                            new ForeignKey.TableAndColumns(
+                                    otherColumn.getParserPosition(), otherTable, Linq.list(otherColumn));
+                    ForeignKey foreignKey = new ForeignKey(thisTable, ot);
+                    result.add(foreignKey);
+                }
+            }
+        }
+        return result;
+    }
+
     @Nullable Map<String, String> createConnectorProperties(@Nullable SqlNodeList list) {
         if (list == null)
             return null;
@@ -638,7 +672,8 @@ public class CalciteCompiler implements IWritesLogs {
                     if (defaultValue == null)
                         defaultValue = converter.convertExpression(cd.defaultValue);
                 }
-            } else if (col instanceof SqlKeyConstraint) {
+            } else if (col instanceof SqlKeyConstraint ||
+                       col instanceof SqlForeignKey) {
                 continue;
             } else {
                 throw new UnimplementedException(CalciteObject.create(col));
@@ -884,10 +919,11 @@ public class CalciteCompiler implements IWritesLogs {
                 if (ct.ifNotExists)
                     throw new UnsupportedException("IF NOT EXISTS not supported", object);
                 String tableName = ct.name.getSimple();
-                List<RelColumnMetadata> cols = this.createTableColumnsMetadata(Objects.requireNonNull(ct.columnList));
+                List<RelColumnMetadata> cols = this.createTableColumnsMetadata(Objects.requireNonNull(ct.columnsOrForeignKeys));
                 @Nullable Map<String, String> properties = this.createConnectorProperties(ct.connectorProperties);
+                List<ForeignKey> fk = this.createForeignKeys(ct);
                 CreateTableStatement table = new CreateTableStatement(
-                        node, sqlStatement, tableName, Utilities.identifierIsQuoted(ct.name), cols, properties);
+                        node, sqlStatement, tableName, Utilities.identifierIsQuoted(ct.name), cols, fk, properties);
                 boolean success = this.calciteCatalog.addTable(
                         tableName, table.getEmulatedTable(), this.errorReporter, table);
                 if (!success)

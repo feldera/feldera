@@ -82,8 +82,11 @@ keyValue
   : stringLiteral '=' stringLiteral
 ```
 
-Note: `FOREIGN KEY` information is parsed, but it is not validated,
-and is currently ignored.
+Columns that are part of a `PRIMARY KEY` cannot have nullable types.
+
+Columns that are part of a `FOREIGN KEY` must refer to `PRIMARY KEY`
+columns in some table.  Their types must must match (but `FOREIGN KEY`
+columns may be nullable).
 
 `CREATE TABLE` is used to declare tables.  Tables correspond to input
 data sources.  A table declaration must list the table columns and
@@ -91,8 +94,8 @@ their types.  Here is an example:
 
 ```sql
 CREATE TABLE empsalary (
-    depname varchar,
-    empno bigint,
+    depname varchar not null PRIMARY KEY,
+    empno bigint FOREIGN KEY REFERENCES employee(empid),
     salary int,
     enroll_date date
 );

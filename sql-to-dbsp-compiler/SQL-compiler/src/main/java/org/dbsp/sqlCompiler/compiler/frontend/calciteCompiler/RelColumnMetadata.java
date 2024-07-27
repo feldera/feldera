@@ -27,18 +27,6 @@ public class RelColumnMetadata {
     /** True if the column name was quoted. */
     public final boolean nameIsQuoted;
 
-    @Override
-    public String toString() {
-        return "RelColumnMetadata{" +
-                "field=" + this.field +
-                ", isPrimaryKey=" + this.isPrimaryKey +
-                ", lateness=" + this.lateness +
-                ", watermark=" + this.watermark +
-                ", defaultValue=" + this.defaultValue +
-                ", nameIsQuoted=" + this.nameIsQuoted +
-                '}';
-    }
-
     public RelColumnMetadata(
             CalciteObject node, RelDataTypeField field, boolean isPrimaryKey, boolean nameIsQuoted,
             @Nullable RexNode lateness, @Nullable RexNode watermark, @Nullable RexNode defaultValue) {
@@ -49,6 +37,18 @@ public class RelColumnMetadata {
         this.lateness = lateness;
         this.watermark = watermark;
         this.defaultValue = defaultValue;
+    }
+
+    @Override
+    public String toString() {
+        return "RelColumnMetadata{" +
+                "field=" + this.field +
+                ", isPrimaryKey=" + this.isPrimaryKey +
+                ", lateness=" + this.lateness +
+                ", watermark=" + this.watermark +
+                ", defaultValue=" + this.defaultValue +
+                ", nameIsQuoted=" + this.nameIsQuoted +
+                '}';
     }
 
     public String getName() {

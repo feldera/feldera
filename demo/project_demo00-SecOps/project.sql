@@ -1,6 +1,6 @@
 -- CI/CD pipeline.
 create table pipeline (
-    pipeline_id bigint not null,
+    pipeline_id bigint not null primary key,
     create_date timestamp not null,
     createdby_user_id bigint not null,
     update_date timestamp,
@@ -15,7 +15,7 @@ create table pipeline_sources (
 
 -- Binary artifact created by a CI pipeline.
 create table artifact (
-    artifact_id bigint not null,
+    artifact_id bigint not null primary key,
     artifact_uri varchar not null,
     create_date timestamp not null,
     createdby_user_id bigint not null,
@@ -47,7 +47,7 @@ create table vulnerability (
 
 -- K8s clusters.
 create table k8scluster (
-    k8scluster_id bigint not null,
+    k8scluster_id bigint not null primary key,
     k8s_uri varchar not null,
     name varchar not null,
     k8s_service_provider varchar not null

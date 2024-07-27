@@ -28,18 +28,23 @@ public class TestUtil {
         return result.toString();
     }
 
-    /**
-     * Check that the messsages contain the specified substring.
-     * @param compiler  Compiler.
-     * @param contents  Substring that we expect to find.
-     */
-    public static void assertMessagesContain(DBSPCompiler compiler, String contents) {
-        compiler.runAllCompilerStages();
-        CompilerMessages messages = compiler.messages;
+    /** Check that the messages contain the specified substring.
+     * @param messages  Compiler messages.
+     * @param contents  Substring that we expect to find. */
+    public static void assertMessagesContain(CompilerMessages messages, String contents) {
         String text = messages.toString();
         if (text.contains(contents))
             return;
         System.out.println(text);
         Assert.fail("Expected message to contain " + Utilities.singleQuote(contents));
+    }
+
+    /** Check that the messages contain the specified substring.
+     * @param compiler  Compiler.
+     * @param contents  Substring that we expect to find. */
+    public static void assertMessagesContain(DBSPCompiler compiler, String contents) {
+        compiler.runAllCompilerStages();
+        CompilerMessages messages = compiler.messages;
+        assertMessagesContain(messages, contents);
     }
 }

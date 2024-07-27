@@ -22,7 +22,7 @@ public class CatalogTests extends BaseSQLTests {
     public void issue2028() {
         String sql = """
                 CREATE TABLE varchar_pk (
-                    pk VARCHAR PRIMARY KEY
+                    pk VARCHAR NOT NULL PRIMARY KEY
                 );
                 
                 CREATE VIEW V AS SELECT * FROM varchar_pk;""";
@@ -288,7 +288,7 @@ public class CatalogTests extends BaseSQLTests {
         String sql = """
                 create table t1(
                    id1 bigint not null,
-                   id2 bigint,
+                   id2 bigint not null,
                    str1 varchar not null,
                    str2 varchar,
                    int1 bigint not null,

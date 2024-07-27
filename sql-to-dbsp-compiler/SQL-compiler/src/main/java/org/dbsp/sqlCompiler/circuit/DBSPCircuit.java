@@ -23,7 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -65,7 +65,7 @@ public final class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
     }
 
     @Nullable
-    public DBSPOperator getInput(String tableName) {
+    public DBSPSourceTableOperator getInput(String tableName) {
         return this.circuit.getInput(tableName);
     }
 
