@@ -1,7 +1,7 @@
-# Additional services needed to test/demo the Debezium JDBC connector.
-
+# Additional services needed to test/demo Debezium Postgres integration
+name: feldera-debezium-postgres
 services:
-  # Postgres container for testing Debezium JDBC sink connector.
+  # Postgres container for testing Debezium Postgres connector.
   postgres:
     image: debezium/example-postgres:2.5
     ports:
@@ -11,13 +11,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
 
-  # Feldera demo container that creates a Debezium JDBC sink connector to
-  # write to a Postgres DB from Feldera.
-  debezium-jdbc-demo:
-    build:
-      context: ../
-      dockerfile: deploy/Dockerfile
-      target: client
+  # Feldera demo container that creates a Debezium Postgres connector to
+  # sync the Postgres database with Feldera.
+  debezium-demo:
     depends_on:
       pipeline-manager:
         condition: service_healthy
@@ -25,14 +21,13 @@ services:
         condition: service_healthy
       postgres:
         condition: service_started
-    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.9.0}
+    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.21.0}
     environment:
       RUST_BACKTRACE: "1"
       REDPANDA_BROKERS: "redpanda:9092"
       RUST_LOG: "info"
       KAFKA_CONNECT_SERVER: "http://connect:8083"
-      POSTGRES_SERVER: "postgres:5432"
     command:
       - bash
       - -c
-      - "sleep 5 && cd demo/project_demo08-DebeziumJDBC/ && python3 run.py --api-url http://pipeline-manager:8080 --start"
+      - "sleep 20 && cd demo/project_demo13-DebeziumPostgres/ && python3 run.py --api-url http://pipeline-manager:8080 --kafka-url-from-script redpanda:9092  --start"

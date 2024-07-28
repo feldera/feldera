@@ -52,7 +52,8 @@ release() {
     # Patch the docker-compose.yml file with the new version. Check this
     # change in only after we confirm the new containers are available.
     sed -i.backup "s/\:\-${old_version}/\:\-${new_version}/g" ../deploy/docker-compose.yml
-    sed -i.backup "s/\:\-${old_version}/\:\-${new_version}/g" ../deploy/docker-compose-debezium.yml
+    sed -i.backup "s/\:\-${old_version}/\:\-${new_version}/g" ../deploy/docker-compose-debezium-mysql.yml
+    sed -i.backup "s/\:\-${old_version}/\:\-${new_version}/g" ../deploy/docker-compose-debezium-postgres.yml
 
     # Patch the last stable pipeline manager version in the Earthlfile
     sed -i.backup "s/FELDERA_VERSION=${old_version}/FELDERA_VERSION=${new_version}/g" ../Earthfile

@@ -3896,6 +3896,7 @@
         "enum": [
           "default",
           "debezium_mysql",
+          "debezium_postgres",
           "snowflake",
           "kafka_connect_json_converter",
           "pandas"

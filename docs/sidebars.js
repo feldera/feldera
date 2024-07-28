@@ -159,6 +159,11 @@ const sidebars = {
                       },
                       {
                           type: 'doc',
+                          id: 'connectors/sources/debezium-postgres',
+                          label: 'Debezium-Postgres'
+                      },
+                      {
+                          type: 'doc',
                           id: 'connectors/sources/datagen',
                           label: 'Data Generator'
                       }
