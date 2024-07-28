@@ -130,6 +130,7 @@ request is rejected."
         pipeline::get_pipeline_config,
         pipeline::pipeline_validate,
         pipeline::pipeline_action,
+        pipeline::input_endpoint_action,
         pipeline::pipeline_deployed,
         pipeline::pipeline_delete,
         pipeline::dump_profile,
@@ -319,6 +320,7 @@ fn api_scope() -> Scope {
         .service(pipeline::get_pipeline)
         .service(pipeline::get_pipeline_config)
         .service(pipeline::pipeline_action)
+        .service(pipeline::input_endpoint_action)
         .service(pipeline::pipeline_validate)
         .service(pipeline::pipeline_deployed)
         .service(pipeline::pipeline_delete)

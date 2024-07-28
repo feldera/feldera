@@ -8,6 +8,12 @@ from plumbum.cmd import rpk
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
 PROJECT_SQL = os.path.join(SCRIPT_DIR, "project.sql")
 
+def find_endpoint(endpoints, name):
+    for endpoint in endpoints:
+        if endpoint.get("endpoint_name") == name:
+            return endpoint
+    return None
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -16,10 +22,11 @@ def main():
     )
     parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
     parser.add_argument('--start', action='store_true', default=False, help="Start the Feldera pipeline")
+    parser.add_argument('--kafka-url', required=False, default="redpanda:9092", help="Kafka URL reachable from the pipeline")
     args = parser.parse_args()
     api_url = args.api_url
     start_pipeline = args.start
-    pipeline_to_redpanda_server = "redpanda:9092"
+    pipeline_to_redpanda_server = args.kafka_url
 
     # Kafka topics
     print("(Re-)creating topics price and preferred_vendor...")
@@ -97,6 +104,7 @@ def main():
             }
         }, True),
         ("tutorial-price-redpanda", 'price', {
+            "paused": True,
             "format": {
                 "name": "json",
                 "config": {
@@ -109,7 +117,7 @@ def main():
                     "topics": ["price"],
                     "bootstrap.servers": pipeline_to_redpanda_server,
                     "auto.offset.reset": "earliest",
-                    "group.id": "tutorial-price",
+                    #"group.id": "tutorial-price",
                 }
             }
         }, True),
@@ -160,6 +168,13 @@ def main():
             time.sleep(1)
         print("Pipeline (re)started")
 
+        # Wait for the `tutorial-price-s3` connector to reach end of input
+        # before enabling `tutorial-price-redpanda.`
+        print("Waiting for 'tutorial-price-s3' connector to finish reading")
+        while find_endpoint(requests.get(f"{api_url}/v0/pipelines/{pipeline_name}/stats").json()["inputs"],"tutorial-price-s3")["metrics"]["end_of_input"] != True:
+            time.sleep(1)
+        print("Starting the 'tutorial-price-redpanda' connector")
+        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/input_endpoints/tutorial-price-redpanda/start").raise_for_status()
 
 if __name__ == "__main__":
     main()
