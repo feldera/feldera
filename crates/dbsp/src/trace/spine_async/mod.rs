@@ -5,10 +5,10 @@ use crate::{
     dynamic::{DynVec, Factory, Weight},
     time::{Antichain, AntichainRef, Timestamp},
     trace::{
-        cursor::CursorList, Batch, BatchLocation, BatchReader, BatchReaderFactories, Cursor,
-        Filter, Trace,
+        cursor::CursorList, spine_async::merger::BatchMerger, Batch, BatchLocation, BatchReader,
+        BatchReaderFactories, Cursor, Filter, Trace,
     },
-    Error, NumEntries, Runtime,
+    Error, NumEntries,
 };
 
 use crate::circuit::metrics::{
@@ -39,7 +39,7 @@ use std::{
 use textwrap::indent;
 use uuid::Uuid;
 
-pub(crate) mod merger;
+mod merger;
 
 #[cfg(test)]
 mod tests;
@@ -1017,7 +1017,7 @@ where
             key_filter: None,
             value_filter: None,
             next_batch_key: 0,
-            merger_tx: Runtime::background_channel(),
+            merger_tx: BatchMerger::get(),
             completion_tx: Arc::new(tx),
             completion_rx: rx,
             outstanding: (0..MAX_LEVELS).map(|_| 0).collect(),
