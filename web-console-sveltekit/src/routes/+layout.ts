@@ -15,10 +15,13 @@ const authMiddleware = (request: Request) => {
   return request
 }
 
-export const load = async ({ data, fetch }) => {
-  if (data.authDetails.enabled && !data.session && !(await signIn(data.authDetails.providerId))) {
+export const load = async () => {
+  const auth = authenticate()
+
+  if (auth.authDetails.enabled && !auth.session && !(await signIn(auth.authDetails.providerId))) {
     error(401)
   }
-  accessToken = data.session?.accessToken
+  accessToken = auth.session?.accessToken
   client.interceptors.request.use(authMiddleware)
+  return auth
 }

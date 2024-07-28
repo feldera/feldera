@@ -6,6 +6,7 @@
   import PipelineTabControl from '$lib/components/pipelines/tabs/PipelineTabControl.svelte'
   import type { Snippet } from 'svelte'
   import { useChangedPipelines } from '$lib/compositions/pipelines/useChangedPipelines.svelte'
+  import { base } from '$app/paths'
 
   let {
     existing,
@@ -24,6 +25,18 @@
   let store = $derived(
     writablePipelineName(useWritablePipeline(readable(existing)), onRenamePipeline)
   )
+  $effect(() => {
+    if (!$store) {
+      return
+    }
+    const currentUrl = window.location.pathname
+    const newUrl = `${base}/pipelines/${$store}/`
+    console.log('zz', currentUrl, newUrl)
+    if (newUrl === currentUrl) {
+      return
+    }
+    window.location.replace(newUrl)
+  })
 </script>
 
 <PipelineTabControl {text} bind:value={$store} {close} {tabContentChanged}></PipelineTabControl>

@@ -1,22 +1,17 @@
-import { newPipeline, newProgram, type NewPipelineRequest } from '$lib/services/manager'
-import type { FullPipeline } from '$lib/services/pipelineManager'
+import type { PipelineDescr } from '$lib/services/pipelineManager'
+import { postPipeline, type ExtendedPipelineDescr } from '$lib/services/pipelineManager'
 
 import { asyncWritable, get, persisted } from '@square/svelte-store'
 
-const emptyPipeline: FullPipeline = {
+const emptyPipeline: PipelineDescr = {
   name: '',
   description: '',
-  config: {},
-  code: '',
-  schema: {
-    inputs: [],
-    outputs: []
-  },
-  _programName: null,
-  _connectors: []
+  runtime_config: {},
+  program_config: {},
+  program_code: '',
 }
 
-const persistedNewPipeline = persisted<FullPipeline>(emptyPipeline, 'pipelines/new', {
+const persistedNewPipeline = persisted<PipelineDescr>(emptyPipeline, 'pipelines/new', {
   storageType: 'LOCAL_STORAGE'
 }) // localStore<NewPipelineRequest & {code: string}>('pipelines/new', {name: '', description: '', config: {}, code: '' }).value
 
@@ -29,11 +24,7 @@ export const writableNewPipeline = () =>
         persistedNewPipeline.set(pipeline)
         return pipeline
       }
-      const program_name = pipeline.name + '_program'
-      await newProgram({ body: { name: program_name, description: '', code: pipeline.code } })
-      await newPipeline({
-        body: { name: pipeline.name, description: '', program_name, config: {} }
-      })
+      await postPipeline(pipeline)
       persistedNewPipeline.set(emptyPipeline)
       return pipeline
     },

@@ -1,186 +1,150 @@
 import { handled } from '$lib/functions/request'
 import {
-  createOrReplaceProgram,
-  deleteProgram,
-  pipelineDelete,
-  getPipeline,
-  getProgram,
+  getPipeline as _getPipeline,
+  getPipelineStats as _getPipelineStats,
   listPipelines,
-  newProgram,
-  updatePipeline as _updatePipeline,
-  type UpdatePipelineRequest,
+  putPipeline as _putPipeline,
+  patchPipeline as _patchPipeline,
+  deletePipeline as _deletePipeline,
   type PipelineStatus as _PipelineStatus,
   type ProgramStatus,
-  type Pipeline,
-  type ProgramDescr,
-  pipelineAction as _pipelineAction,
-  pipelineStats,
+  postPipelineAction as _postPipelineAction,
   type ErrorResponse,
-  getPrograms,
-  updateProgram,
-  getAuthenticationConfig,
-  type NewPipelineRequest,
-  newPipeline
+  postPipeline as _postPipeline,
+  type PipelineDescr,
+  type PatchPipeline,
+  getConfigAuthentication,
+  type ExtendedPipelineDescr,
 } from '$lib/services/manager'
+export type { PipelineDescr, ExtendedPipelineDescr, SqlCompilerMessage, InputEndpointConfig,
+  OutputEndpointConfig,
+  RuntimeConfig } from '$lib/services/manager'
 import { P, match } from 'ts-pattern'
-import { leftJoin } from 'array-join'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
 
-const emptyProgramDescr: ProgramDescr = {
-  code: '',
-  config: {},
-  description: '',
-  name: '',
-  program_id: '',
-  schema: { inputs: [], outputs: [] },
-  status: 'Success',
-  version: -1
-}
+import { createClient } from '@hey-api/client-fetch'
+import JSONbig from 'true-json-bigint'
+import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 
-const toPipelineThumb = (pipeline: Pipeline, program: ProgramDescr) => ({
-  name: pipeline.descriptor.name,
-  description: pipeline.descriptor.description,
-  config: pipeline.descriptor.config,
+const unauthenticatedClient = createClient({
+  bodySerializer: JSONbig.stringify,
+  responseTransformer: JSONbig.parse as any,
+  baseUrl: felderaEndpoint
+})
+
+export type ExtendedPipelineDescrNoCode = Omit<ExtendedPipelineDescr, 'program_code'>
+
+// const emptyProgramDescr: ProgramDescr = {
+//   code: '',
+//   config: {},
+//   description: '',
+//   name: '',
+//   program_id: '',
+//   schema: { inputs: [], outputs: [] },
+//   status: 'Success',
+//   version: -1
+// }
+
+const toPipelineThumb = (pipeline: Omit<ExtendedPipelineDescr, 'program_code'>) => ({
+  name: pipeline.name,
+  description: pipeline.description,
+  runtimeConfig: pipeline.runtime_config,
+  programConfig: pipeline.program_config,
+  config: pipeline.runtime_config,
   status: consolidatePipelineStatus(
-    pipeline.state.current_status,
-    pipeline.state.error,
-    program.status
+    pipeline.program_status,
+    pipeline.deployment_status,
+    pipeline.deployment_error
   )
 })
 
 export type PipelineThumb = ReturnType<typeof toPipelineThumb>
 
-const toFullPipeline = (pipeline: Pipeline, program: ProgramDescr) => ({
-  name: pipeline.descriptor.name,
-  description: pipeline.descriptor.description,
-  config: pipeline.descriptor.config,
-  code: program?.code ?? '',
-  schema: program?.schema ?? {
-    inputs: [],
-    outputs: []
-  },
-  _programName: pipeline.descriptor.program_name,
-  _connectors: pipeline.descriptor.attached_connectors
-})
+export const getPipeline = async (pipeline_name: string): Promise<PipelineDescr> => {
+  const {
+    description,
+    name,
+    program_code,
+    program_config,
+    runtime_config} = await handled(_getPipeline)({ path: { pipeline_name } })
+  return {
+    description,
+    name,
+    program_code,
+    program_config,
+    runtime_config
+  }
+}
 
-export type FullPipeline = ReturnType<typeof toFullPipeline>
-
-export const getFullPipeline = async (pipeline_name: string) => {
-  const pipeline = await handled(getPipeline)({ path: { pipeline_name } })
-  const program = pipeline.descriptor.program_name
-    ? await handled(getProgram)({
-        path: { program_name: pipeline.descriptor.program_name },
-        query: { with_code: true }
-      })
-    : emptyProgramDescr
-  return toFullPipeline(pipeline, program)
+export const getExtendedPipeline = async (pipeline_name: string) => {
+  const {program_status, deployment_status, deployment_error, ...pipeline} = await handled(_getPipeline)({ path: { pipeline_name } })
+  return {...pipeline, status: consolidatePipelineStatus(program_status, deployment_status, deployment_error)}
 }
 
 /**
  * Fails if pipeline exists
  */
-export const createPipeline = async (pipeline: NewPipelineRequest) => {
-  return handled(newPipeline)({ body: pipeline })
+export const postPipeline = async (pipeline: PipelineDescr) => {
+  return handled(_postPipeline)({ body: pipeline })
 }
 
 /**
  * Pipeline should already exist
  */
-export const updatePipeline = async (
-  oldPipeline: { name: string; _programName: string | null | undefined } | undefined,
-  newPipeline: FullPipeline
+export const putPipeline = async (
+  pipelineName: string,
+  newPipeline: PipelineDescr
 ) => {
-  const program_name =
-    (oldPipeline?.name !== newPipeline.name ? undefined : newPipeline._programName) ??
-    newPipeline.name + '_program'
-
-  await createOrReplaceProgram({
-    body: { code: newPipeline.code, description: '' },
-    path: { program_name }
-  })
-  await _updatePipeline({
-    body: ((p) =>
-      ({
-        name: p.name,
-        description: p.description,
-        connectors: p._connectors,
-        config: p.config,
-        program_name
-      }) satisfies UpdatePipelineRequest)(newPipeline),
-    path: { pipeline_name: oldPipeline!.name }
-  })
-  if (oldPipeline?._programName && oldPipeline._programName !== program_name) {
-    await deleteProgram({ path: { program_name: oldPipeline._programName } })
-  }
+  await _putPipeline({body: newPipeline, path: {pipeline_name: pipelineName}})
 }
 
 export const patchPipeline = async (
   pipelineName: string,
-  pipeline: Omit<UpdatePipelineRequest, 'connectors'> & { code?: string }
+  pipeline: PatchPipeline
 ) => {
-  const { code, ...pipelinePatch } = pipeline
-  await _updatePipeline({ body: pipelinePatch, path: { pipeline_name: pipelineName } })
-  if (code) {
-    await updateProgram({
-      body: { code, name: (pipelinePatch.name || pipelineName) + '_program' },
-      path: { program_name: pipelineName + '_program' }
-    })
-  }
+  await _patchPipeline({path: {pipeline_name: pipelineName}, body: pipeline})
 }
 
-export const getPipelines = async () => {
-  const pipelines = await handled(listPipelines)()
-  const programs = await handled(getPrograms)()
-  return leftJoin(
-    pipelines,
-    programs,
-    (p) => p.descriptor.program_name ?? p.descriptor.name + '_program',
-    (p) => p.name,
-    (pipeline, program) => toPipelineThumb(pipeline, program ?? emptyProgramDescr)
-  )
+export const getPipelines = async (): Promise<PipelineThumb[]> => {
+  const pipelines = await handled(listPipelines)({query: {code: false}})
+  return pipelines.map(toPipelineThumb)
 }
 
 export const getPipelineStatus = async (pipeline_name: string) => {
-  const pipeline = await handled(getPipeline)({ path: { pipeline_name } })
-  const program = pipeline.descriptor.program_name
-    ? await handled(getProgram)({
-        path: { program_name: pipeline.descriptor.program_name },
-        query: { with_code: true }
-      })
-    : undefined
+  const pipeline = await handled(_getPipeline)({ path: { pipeline_name } })
   return {
-    status: consolidatePipelineStatus(
-      pipeline.state.current_status,
-      pipeline.state.error,
-      program?.status ?? 'Success'
-    )
+    status: consolidatePipelineStatus(pipeline.program_status, pipeline.deployment_status, pipeline.deployment_error)
   }
 }
 
 export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>
 
 export const getPipelineStats = async (pipeline_name: string) => {
-  return handled(pipelineStats)({ path: { pipeline_name } }).then(
+  return handled(_getPipelineStats)({ path: { pipeline_name } }).then(
     (status) => ({
       pipelineName: pipeline_name,
       status: status as ControllerStatus | null
     }),
     (e) => {
-      if (e.error_code !== 'PipelineShutdown') {
-        throw new Error(e)
+      if (e.error_code === 'PipelineShutdown') {
+        return {
+          pipelineName: pipeline_name,
+          status: 'not running' as const
+        }
       }
-      return {
-        pipelineName: pipeline_name,
-        status: 'not running' as const
+      if (e instanceof TypeError && e.message === 'Failed to fetch') {
+        return {
+          pipelineName: pipeline_name,
+          status: 'not running' as const}
       }
-    }
-  )
+      throw e
+    })
 }
 
 const consolidatePipelineStatus = (
+  programStatus: ProgramStatus,
   pipelineStatus: _PipelineStatus,
   pipelineError: ErrorResponse | null | undefined,
-  programStatus: ProgramStatus
 ) => {
   return match([pipelineStatus, pipelineError, programStatus])
     .with(['Shutdown', P.nullish, 'CompilingSql'], () => 'Compiling sql' as const)
@@ -208,14 +172,10 @@ const consolidatePipelineStatus = (
 }
 
 export const deletePipeline = async (pipeline_name: string) => {
-  const pipeline = await handled(getPipeline)({ path: { pipeline_name } })
-  await pipelineDelete({ path: { pipeline_name } })
-  if (pipeline.descriptor.program_name) {
-    await deleteProgram({ path: { program_name: pipeline.descriptor.program_name } })
-  }
+  await handled(_deletePipeline)({ path: { pipeline_name } })
 }
 
-export const pipelineAction = (pipeline_name: string, action: 'start' | 'pause' | 'shutdown') =>
-  handled(_pipelineAction)({ path: { pipeline_name, action } })
+export const postPipelineAction = (pipeline_name: string, action: 'start' | 'pause' | 'shutdown') =>
+  handled(_postPipelineAction)({ path: { pipeline_name, action } })
 
-export const getAuthConfig = () => handled(getAuthenticationConfig)()
+export const getAuthConfig = () => handled(getConfigAuthentication)({client: unauthenticatedClient})

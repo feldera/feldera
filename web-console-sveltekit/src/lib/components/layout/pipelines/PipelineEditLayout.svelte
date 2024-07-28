@@ -23,11 +23,9 @@
   import { extractSQLCompilerErrorMarkers } from '$lib/functions/pipelines/monaco'
   import { page } from '$app/stores'
   import type {
-    FullPipeline,
+    PipelineDescr,
     PipelineStatus as PipelineStatusType
   } from '$lib/services/pipelineManager'
-  import { pipelineStats } from '$lib/services/manager'
-  import { match } from 'ts-pattern'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
@@ -37,21 +35,21 @@
     errors,
     status
   }: {
-    pipeline: WritableLoadable<FullPipeline>
+    pipeline: WritableLoadable<PipelineDescr>
     status: PipelineStatusType | undefined
     errors?: Readable<SystemError[]>
   } = $props()
 
   const pipelineCodeStore = asyncWritable(
     pipeline,
-    (pipeline) => pipeline.code,
+    (pipeline) => pipeline.program_code,
     async (newCode, pipeline, oldCode) => {
       if (!pipeline || !newCode) {
         return oldCode
       }
       $pipeline = {
         ...pipeline,
-        code: newCode
+        program_code: newCode
       }
       return newCode
     }
@@ -147,12 +145,11 @@
                 vertical: 'visible'
               },
               language: 'sql'
-            }}
-          />
+            }} />
         </div>
       </div>
     </Pane>
-    <PaneResizer class="h-2 bg-surface-100-900" />
+    <PaneResizer class="bg-surface-100-900 h-2" />
     <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
       {#if $pipeline.name}
         <InteractionsPanel pipelineName={$pipeline.name}></InteractionsPanel>

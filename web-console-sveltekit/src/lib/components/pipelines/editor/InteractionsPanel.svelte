@@ -7,10 +7,7 @@
   import { tuple } from '$lib/functions/common/tuple'
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
   let { pipelineName }: { pipelineName: string } = $props()
-  let currentTab = useLocalStorage(
-    'pipelines/' + pipelineName + '/currentInteractionTab',
-    'performance'
-  )
+  let currentTab = useLocalStorage('pipelines/' + pipelineName + '/currentInteractionTab', 'errors')
   const tabs = [
     tuple('errors', TabPipelineErrors),
     tuple('ad-hoc query', TabQueryData),

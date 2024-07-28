@@ -23,12 +23,7 @@
 
 <!-- {#if isMobile.matches} -->
 {#if $isMobile}
-  <ModalDrawer
-    {width}
-    bind:open
-    {side}
-    {children}
-    class="bg-surface-50 dark:bg-surface-950"
+  <ModalDrawer {width} bind:open {side} {children} class="bg-surface-50 dark:bg-surface-950"
   ></ModalDrawer>
 {:else}
   <InlineDrawer {width} {open} {side} {children}></InlineDrawer>

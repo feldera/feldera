@@ -1,14 +1,5 @@
 import { handled } from '$lib/functions/request'
-import {
-  createOrReplaceProgram,
-  deleteProgram,
-  getPipeline,
-  getProgram,
-  newProgram,
-  updatePipeline as _updatePipeline,
-  type UpdatePipelineRequest
-} from '$lib/services/manager'
-import { getFullPipeline, updatePipeline, type FullPipeline } from '$lib/services/pipelineManager'
+import { getPipeline, putPipeline, type ExtendedPipelineDescr, type PipelineDescr } from '$lib/services/pipelineManager'
 import {
   asyncWritable,
   readable,
@@ -17,16 +8,19 @@ import {
   type Readable
 } from '@square/svelte-store'
 
-export const useWritablePipeline = <T extends FullPipeline>(
+export const useWritablePipeline = <T extends PipelineDescr>(
   pipelineName: Readable<string>,
   preloaded?: T
 ) =>
   asyncWritable(
     pipelineName,
-    rebounce(getFullPipeline),
+    rebounce(getPipeline),
     async (newPipeline, _, oldPipeline) => {
-      await updatePipeline(oldPipeline, newPipeline)
-      return getFullPipeline(newPipeline.name)
+      if (!oldPipeline) {
+        throw new Error('useWritablePipeline called on non-existent pipeline')
+      }
+      await putPipeline(oldPipeline.name, newPipeline)
+      return getPipeline(newPipeline.name)
     },
     { initial: preloaded }
   )

@@ -1,7 +1,7 @@
 <script lang="ts">
   import PipelineStatus from '$lib/components/pipelines/list/Status.svelte'
   import { base } from '$app/paths'
-  import { createPipeline, type PipelineThumb } from '$lib/services/pipelineManager'
+  import { postPipeline, type PipelineThumb } from '$lib/services/pipelineManager'
   import { goto, replaceState } from '$app/navigation'
   import { page } from '$app/stores'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
@@ -58,8 +58,7 @@
     <div class="flex flex-nowrap items-center gap-2 break-all">
       <a
         class=" transition-none duration-0"
-        href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
-      >
+        href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}>
         {pipeline.name}
       </a>
       <PipelineStatus class="ml-auto" {...pipeline}></PipelineStatus>
@@ -75,18 +74,22 @@
       onkeydown={async (e) => {
         if (e.key === 'Enter') {
           const name = e.currentTarget.value
-          await createPipeline({ name, config: {}, description: '' })
+          await postPipeline({
+            name,
+            runtime_config: {},
+            program_config: {},
+            description: '',
+            program_code: ''
+          })
           goto(`${base}/pipelines/${name}`)
           e.currentTarget.blur()
         }
       }}
       placeholder="+ create pipeline"
-      class=" placeholder-surface-700 outline-none bg-surface-50-950 dark:placeholder-surface-300"
-    />
+      class=" placeholder-surface-700 bg-surface-50-950 dark:placeholder-surface-300 outline-none" />
     {#if assistCreatingPipeline}
       <div
-        class="absolute top-8 text-nowrap rounded bg-white px-3 py-2 text-sm font-medium shadow-md text-surface-950-50 dark:bg-black"
-      >
+        class="text-surface-950-50 absolute top-8 text-nowrap rounded bg-white px-3 py-2 text-sm font-medium shadow-md dark:bg-black">
         Enter pipeline name and press Enter
       </div>
     {/if}

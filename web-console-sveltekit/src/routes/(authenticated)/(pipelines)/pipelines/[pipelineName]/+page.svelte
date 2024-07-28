@@ -8,7 +8,6 @@
   import { useDebounce } from 'runed'
   import MonacoEditor from 'svelte-monaco'
   import { pipelineTabEq, useOpenPipelines } from '$lib/compositions/useOpenPipelines'
-  import type { Pipeline } from '$lib/services/manager'
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import { asyncDebounced } from '$lib/compositions/asyncDebounced'
   import { useSqlErrors } from '$lib/compositions/health/systemErrors'

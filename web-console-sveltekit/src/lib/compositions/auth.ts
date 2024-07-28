@@ -3,7 +3,7 @@ import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
 import { decode } from '@auth/core/jwt'
 
-import { SvelteKitAuth, type DefaultSession } from '@auth/sveltekit'
+import { SvelteKitAuth } from '$lib/functions/common/authjs/client'
 import Auth0, { type Auth0Profile } from '@auth/sveltekit/providers/auth0'
 import Cognito, { type CognitoProfile } from '@auth/sveltekit/providers/cognito'
 import Google from '@auth/sveltekit/providers/google'
@@ -104,10 +104,10 @@ const providerCognito = ({
 const signOutUrlCognito = ({ clientId, endpoint }: { clientId: string; endpoint: string }) =>
   `${endpoint}logout?client_id=${clientId}&logout_uri={redirect_uri}&redirect_uri={redirect_uri}%2Fauth%2Fcallback%2Fcognito&response_type=code&scope=openid+profile+email`
 
-export const { handle, signIn, signOut } = (() => {
+export const { authenticate } = (() => {
   let providerId: string | undefined
   let providerSignOutUrl: string | undefined
-  const { handle, signIn, signOut } = SvelteKitAuth(async (event) => {
+  const { authenticate } = SvelteKitAuth(async (event) => {
     const authConfig = await getAuthConfig()
     const providers = match(authConfig)
       .returnType<{ provider: OAuthConfig<any> & { id: string }; signOutUrl: string }[]>()
@@ -176,14 +176,12 @@ export const { handle, signIn, signOut } = (() => {
     }
   })
   return {
-    handle: ((input) => {
+    authenticate: ((input) => {
       input.event.locals.authDetails =
         providerId && providerSignOutUrl
           ? { enabled: true, providerId, providerSignOutUrl } // fetch('https://dev-jzraqtxsr8a3hhhv.us.auth0.com/oidc/logout?id_token_hint={yourIdToken}&post_logout_redirect_uri={yourCallbackUrl}')}
           : { enabled: false }
       return handle(input)
-    }) satisfies typeof handle,
-    signIn,
-    signOut
+    }) satisfies typeof authenticate,
   }
 })()
