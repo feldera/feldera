@@ -131,9 +131,15 @@ pub enum JsonFlavor {
     #[serde(rename = "default")]
     Default,
     /// Debezium MySQL JSON produced by the default configuration of the
-    /// Debezium [Kafka Connect connector](https://debezium.io/documentation/reference/stable/connectors/mysql.html#mysql-data-types).
+    /// Debezium [Kafka Connect connector](https://debezium.io/documentation/reference/stable/connectors/mysql.html#mysql-data-types)
+    /// with `decimal.handling.mode` set to "string".
     #[serde(rename = "debezium_mysql")]
     DebeziumMySql,
+    /// Debezium Postgres JSON produced by the default configuration of the
+    /// Debezium [Kafka Connect connector](https://debezium.io/documentation/reference/stable/connectors/postgresql.html#postgresql-data-types)
+    /// with `decimal.handling.mode` set to "string".
+    #[serde(rename = "debezium_postgres")]
+    DebeziumPostgres,
     /// JSON format accepted by Snowflake using default settings.
     #[serde(rename = "snowflake")]
     Snowflake,

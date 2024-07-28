@@ -134,6 +134,12 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%Z"),
                 decimal_format: DecimalFormat::String,
             },
+            JsonFlavor::DebeziumPostgres => Self {
+                time_format: TimeFormat::Micros,
+                date_format: DateFormat::DaysSinceEpoch,
+                timestamp_format: TimestampFormat::MillisSinceEpoch,
+                decimal_format: DecimalFormat::String,
+            },
             JsonFlavor::Snowflake => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
                 date_format: DateFormat::String("%Y-%m-%d"),

@@ -419,14 +419,27 @@ test-docker-compose-stable:
 test-debezium-mysql:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    COPY deploy/docker-compose-debezium.yml .
+    COPY deploy/docker-compose-debezium-mysql.yml .
     ENV FELDERA_VERSION=latest
     WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
                 --pull debezium/example-mysql:2.5 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
                 --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
-        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml -f docker-compose-debezium.yml --profile debezium up --force-recreate --exit-code-from debezium-demo
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml -f docker-compose-debezium-mysql.yml --profile debezium up --force-recreate --exit-code-from debezium-demo
+    END
+
+test-debezium-postgres:
+    FROM earthly/dind:alpine
+    COPY deploy/docker-compose.yml .
+    COPY deploy/docker-compose-debezium-postgres.yml .
+    ENV FELDERA_VERSION=latest
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+                --pull debezium/example-postgres:2.5 \
+                --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
+                --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
+                --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
+        RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml -f docker-compose-debezium-postgres.yml --profile debezium up --force-recreate --exit-code-from debezium-demo
     END
 
 test-debezium-jdbc-sink:
@@ -638,6 +651,7 @@ all-tests:
     BUILD +test-docker-compose
     # BUILD +test-docker-compose-stable
     BUILD +test-debezium-mysql
+    BUILD +test-debezium-postgres
     BUILD +test-debezium-jdbc-sink
     # BUILD +test-snowflake
     BUILD +test-s3

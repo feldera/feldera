@@ -1,23 +1,5 @@
 # Debezium-MySQL input connector
 
-:::caution Under Construction
-
-This section is under construction.
-This draft is for demo purposes with test databases.
-Several aspects such as secret management are not yet included.
-Database configuration provided is currently limited to the minimum to enable Debezium to function.
-
-:::
-
-
-:::caution Experimental feature
-
-MySQL-Debezium support is an experimental feature of Feldera. Setting up a MySQL-Debezium
-connector currently involves a number of manual steps, which will be automated
-in the production release of the connector.
-
-:::
-
 Feldera can consume a stream of changes to a MySQL database through the use of
 [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html)
 with the [Debezium](https://debezium.io/) plug-in installed.
@@ -112,7 +94,7 @@ We will now connect the MySQL database with Kafka Connect.
    For more information, see the notes in the 
    [official Debezium tutorial](https://debezium.io/documentation/reference/tutorial.html)
    as well as [KIP-297](https://cwiki.apache.org/confluence/display/KAFKA/KIP-297%3A+Externalizing+Secrets+for+Connect+Configurations)
-   to which they refer. There is an [experimental secret management](../../enterprise/kubernetes-guides/secret-management)
+   to which they refer. There is an [experimental secret management](../../enterprise/kubernetes-guides/secret-management) guide
    to externalize secrets via Kubernetes.**
 
    ```
