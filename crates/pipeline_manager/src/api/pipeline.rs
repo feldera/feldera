@@ -619,6 +619,64 @@ pub(crate) async fn pipeline_action(
     Ok(HttpResponse::Accepted().finish())
 }
 
+/// Change the desired state of an input endpoint.
+///
+/// The following values of the `action` argument are accepted by this endpoint:
+///
+/// - 'start': Start processing data.
+/// - 'pause': Pause the pipeline.
+#[utoipa::path(
+    responses(
+        (status = ACCEPTED
+            , description = "Request accepted."),
+        (status = NOT_FOUND
+            , description = "Specified pipeline id does not exist."
+            , body = ErrorResponse
+            , example = json!(examples::unknown_pipeline())),
+        (status = NOT_FOUND
+                , description = "Specified endpoint does not exist."
+                , body = ErrorResponse),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Timeout waiting for the pipeline to initialize."
+            , body = ErrorResponse
+            , example = json!(examples::pipeline_timeout())),
+    ),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("endpoint_name" = String, Path, description = "Input endpoint name"),
+        ("action" = String, Path, description = "Endpoint action [start, pause]")
+    ),
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    tag = "Pipelines"
+)]
+#[post("/pipelines/{pipeline_name}/input_endpoints/{endpoint_name}/{action}")]
+pub(crate) async fn input_endpoint_action(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = parse_string_param(&req, "pipeline_name")?;
+    let endpoint_name = parse_string_param(&req, "endpoint_name")?;
+    let action = parse_pipeline_action(&req)?;
+
+    state
+        .runner
+        .forward_to_pipeline(
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            &format!("input_endpoints/{endpoint_name}/{action}"),
+        )
+        .await?;
+
+    info!(
+        "Accepted '{action}' action for pipeline '{pipeline_name}', endpoint '{endpoint_name}' (tenant:{})",
+        *tenant_id
+    );
+    Ok(HttpResponse::Accepted().finish())
+}
+
 /// Delete a pipeline. The pipeline must be in the shutdown state.
 #[utoipa::path(
     responses(

@@ -1703,6 +1703,86 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/input_endpoints/{endpoint_name}/{action}": {
+      "post": {
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "Change the desired state of an input endpoint.",
+        "description": "The following values of the `action` argument are accepted by this endpoint:\n\n- 'start': Start processing data.\n- 'pause': Pause the pipeline.",
+        "operationId": "input_endpoint_action",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endpoint_name",
+            "in": "path",
+            "description": "Input endpoint name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "description": "Endpoint action [start, pause]",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Request accepted."
+          },
+          "404": {
+            "description": "Specified endpoint does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Timeout waiting for the pipeline to initialize.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
+                    "timeout": {
+                      "nanos": 0,
+                      "secs": 10
+                    }
+                  },
+                  "error_code": "PipelineInitializationTimeout",
+                  "message": "Waiting for pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 initialization timed out after 10s"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/stats": {
       "get": {
         "tags": [
