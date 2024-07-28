@@ -545,17 +545,6 @@ impl Runtime {
         WORKER_INDEX.get()
     }
 
-    /// Returns 0-based index of the current background thread within its runtime.
-    /// For threads that run without a runtime or aren't a background thread,
-    /// this method always returns `0`.
-    pub fn background_index() -> usize {
-        if IS_BACKGROUND_THREAD.get() {
-            WORKER_INDEX.get()
-        } else {
-            0
-        }
-    }
-
     /// Returns the minimum number of bytes in a batch to spill it to
     /// storage. For threads that run without a runtime, this method returns
     /// `usize::MAX`.
