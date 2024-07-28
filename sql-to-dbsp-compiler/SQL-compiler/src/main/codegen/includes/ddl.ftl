@@ -142,7 +142,8 @@ SqlNodeList AttributeDefList() :
 }
 {
     <LPAREN> { s = span(); }
-    ( AttributeDef(list)
+    (
+        AttributeDef(list)
         (
             <COMMA> AttributeDef(list)
         )*

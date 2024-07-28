@@ -6,6 +6,7 @@ use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use futures::executor::block_on;
 use log::{debug, error, info, warn};
+use pipeline_types::program_schema::Relation;
 use pipeline_types::transport::kafka::KafkaInputConfig;
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic};
 use rdkafka::config::{FromClientConfig, FromClientConfigAndContext};
@@ -685,6 +686,7 @@ impl TransportInputEndpoint for Endpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         start_step: Step,
+        _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(Reader::new(&self.0, start_step, consumer)))
     }

@@ -11,6 +11,7 @@ use crate::{InputConsumer, InputReader, PipelineState, TransportInputEndpoint};
 use dbsp::circuit::tokio::TOKIO;
 #[cfg(test)]
 use mockall::automock;
+use pipeline_types::program_schema::Relation;
 
 use crate::transport::InputEndpoint;
 use pipeline_types::transport::s3::{AwsCredentials, ConsumeStrategy, ReadStrategy, S3InputConfig};
@@ -38,6 +39,7 @@ impl TransportInputEndpoint for S3InputEndpoint {
         &self,
         consumer: Box<dyn crate::InputConsumer>,
         _start_step: super::Step,
+        _schema: Relation,
     ) -> anyhow::Result<Box<dyn crate::InputReader>> {
         Ok(Box::new(S3InputReader::new(&self.config, consumer)))
     }

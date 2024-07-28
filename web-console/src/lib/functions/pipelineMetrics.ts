@@ -1,6 +1,7 @@
 import { nonNull } from '$lib/functions/common/function'
 import { tuple } from '$lib/functions/common/tuple'
 import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
+import { groupBy } from '$lib/functions/common/array'
 import {
   ControllerStatus,
   GlobalMetricsTimestamp,
@@ -57,14 +58,70 @@ export const accumulatePipelineMetrics = (refetchMs: number, keepMs?: number) =>
     ...newData.global_metrics,
     timeMs: newTimestamp
   }
-
   return {
     lastTimestamp: oldData?.lastTimestamp,
     input: new Map(
-      newData.inputs.map(cs => tuple(normalizeCaseIndependentName({ name: cs.config.stream }), cs.metrics))
+      groupBy(newData.inputs, i => normalizeCaseIndependentName({ name: i.config.stream })).map(
+        ([relationName, metrics]) =>
+          tuple(
+            relationName,
+            metrics.reduce(
+              (acc: InputEndpointMetrics, cur) => {
+                const metrics = cur.metrics
+                return {
+                  total_bytes: acc.total_bytes + metrics.total_bytes,
+                  total_records: acc.total_records + metrics.total_records,
+                  buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes,
+                  buffered_records: acc.buffered_records + metrics.buffered_records,
+                  num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
+                  num_parse_errors: acc.num_parse_errors + metrics.num_parse_errors,
+                  end_of_input: acc.end_of_input || metrics.end_of_input
+                }
+              },
+              {
+                total_bytes: 0,
+                total_records: 0,
+                buffered_bytes: 0,
+                buffered_records: 0,
+                num_transport_errors: 0,
+                num_parse_errors: 0,
+                end_of_input: false
+              }
+            )
+          )
+      )
     ),
     output: new Map(
-      newData.outputs.map(cs => tuple(normalizeCaseIndependentName({ name: cs.config.stream }), cs.metrics))
+      groupBy(newData.outputs, i => normalizeCaseIndependentName({ name: i.config.stream })).map(
+        ([relationName, metrics]) =>
+          tuple(
+            relationName,
+            metrics.reduce(
+              (acc: OutputEndpointMetrics, cur) => {
+                const metrics = cur.metrics
+                return {
+                  buffered_batches: acc.buffered_batches + metrics.buffered_batches,
+                  buffered_records: acc.buffered_records + metrics.buffered_records,
+                  num_encode_errors: acc.num_encode_errors + metrics.num_encode_errors,
+                  num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
+                  total_processed_input_records:
+                    acc.total_processed_input_records + metrics.total_processed_input_records,
+                  transmitted_bytes: acc.transmitted_bytes + metrics.transmitted_bytes,
+                  transmitted_records: acc.transmitted_records + metrics.transmitted_records
+                }
+              },
+              {
+                buffered_batches: 0,
+                buffered_records: 0,
+                num_encode_errors: 0,
+                num_transport_errors: 0,
+                total_processed_input_records: 0,
+                transmitted_bytes: 0,
+                transmitted_records: 0
+              }
+            )
+          )
+      )
     ),
     global: reconcileHistoricData(oldData?.global ?? [], globalWithTimestamp, refetchMs, keepMs)
   } as any

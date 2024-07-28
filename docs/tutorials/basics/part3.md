@@ -1,6 +1,6 @@
 # Part 3: Input and Output Connectors
 
-This is the final part of the tutorial where we will
+In this part of the tutorial where we will
 
 - Learn to connect Feldera pipelines to external data sources and sinks using
   connectors.

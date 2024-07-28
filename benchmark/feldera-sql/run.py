@@ -23,11 +23,17 @@ def load_table(folder, with_lateness):
     p = os.path.join(FILE_DIR, folder + '/table.sql')
     file = open(p, 'r')
     text = file.read()
+    table_start_string = 'create table '
+    inputs = [] 
+    for line in text.lower().split('\n'):
+        i = line.find(table_start_string)
+        if i >= 0:
+            inputs += [line[i + len(table_start_string):].split(' ')[0]]
     lateness = ''
     if with_lateness:
         lateness = "LATENESS INTERVAL 4 SECONDS"
     text = text.replace('{lateness}', lateness)
-    return text
+    return [text, inputs]
 
 def sort_queries(queries):
     return sorted(queries, key=lambda q: int(q[1:]))
@@ -165,7 +171,7 @@ def main():
     merge = parser.parse_args().merge
     folder = parser.parse_args().folder
     all_queries = load_queries(folder)
-    table = load_table(folder, with_lateness)
+    table, inputs = load_table(folder, with_lateness)
     queries = sort_queries(parse_queries(all_queries, parser.parse_args().query))
     cores = int(parser.parse_args().cores)
     storage = parser.parse_args().storage
@@ -217,7 +223,7 @@ def main():
                 raise RuntimeError(f"Failed program compilation with status {status}")
             time.sleep(5)
 
-    input_connectors = [add_input_connector(s + suffix, s) for s in ("auction", "bid", "person")]
+    input_connectors = [add_input_connector(s + suffix, s) for s in inputs]
     if save_output:
         output_connectors = {}
         for name in output_connector_names:

@@ -45,12 +45,13 @@ public class SqlCreateFunctionDeclaration extends SqlCreate {
             writer.keyword("IF NOT EXISTS");
         }
         this.name.unparse(writer, 0, 0);
-        final SqlWriter.Frame frame = writer.startList(SqlWriter.FrameTypeEnum.SIMPLE);
+        final SqlWriter.Frame frame = writer.startList(SqlWriter.FrameTypeEnum.SIMPLE, "(", ")");
         for (SqlNode parameter : this.parameters) {
             writer.sep(",");
             parameter.unparse(writer, 0, 0);
         }
         writer.endList(frame);
+        writer.keyword("RETURNS");
         this.returnType.unparse(writer, 0, 0);
         if (this.body != null) {
             writer.keyword("AS");

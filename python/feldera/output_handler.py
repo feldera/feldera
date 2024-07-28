@@ -48,3 +48,13 @@ class OutputHandler:
             self.buffer.clear()
 
         return res
+
+    def to_dict(self, clear_buffer: bool = True):
+        """
+        Returns the output of the pipeline as a list of python dictionaries
+
+        :param clear_buffer: Whether to clear the buffer after getting the output.
+        """
+
+        return self.to_pandas(clear_buffer).to_dict(orient='records')
+

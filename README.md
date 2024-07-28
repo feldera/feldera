@@ -114,9 +114,9 @@ Feldera WebConsole.
 ## Documentation
 
 To learn more about Feldera Platform, we recommend going through the
-[documentation](https://www.feldera.com/docs/intro).
+[documentation](https://www.feldera.com/docs).
 
-* [Getting started](https://www.feldera.com/docs/intro)
+* [Getting started](https://www.feldera.com/docs/get-started)
 * [UI tour](https://www.feldera.com/docs/tour)
 * [Tutorials](https://www.feldera.com/docs/tutorials)
 * [Demo](https://www.feldera.com/docs/demo)

@@ -6,6 +6,7 @@ use anyhow::{anyhow, Result as AnyResult};
 use awc::{Client, Connector};
 use futures::StreamExt;
 use lazy_static::lazy_static;
+use pipeline_types::program_schema::Relation;
 use pipeline_types::transport::url::UrlInputConfig;
 use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
 use std::{cmp::Ordering, str::FromStr, sync::Arc, thread::spawn, time::Duration};
@@ -39,6 +40,7 @@ impl TransportInputEndpoint for UrlInputEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         _start_step: Step,
+        _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(UrlInputReader::new(&self.config, consumer)?))
     }
@@ -296,6 +298,7 @@ mod test {
     use async_stream::stream;
     use futures_timer::Delay;
     use pipeline_types::deserialize_without_context;
+    use pipeline_types::program_schema::Relation;
     use serde::{Deserialize, Serialize};
     use std::{
         io::Error as IoError,
@@ -370,8 +373,11 @@ format:
 "#
         );
 
-        mock_input_pipeline::<TestStruct, TestStruct>(serde_yaml::from_str(&config_str).unwrap())
-            .unwrap()
+        mock_input_pipeline::<TestStruct, TestStruct>(
+            serde_yaml::from_str(&config_str).unwrap(),
+            Relation::empty(),
+        )
+        .unwrap()
     }
 
     /// Test normal successful data retrieval.

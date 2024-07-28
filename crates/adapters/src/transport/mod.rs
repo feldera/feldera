@@ -30,6 +30,8 @@ pub mod http;
 
 pub mod url;
 
+mod datagen;
+
 mod s3;
 mod secret_resolver;
 
@@ -38,7 +40,9 @@ pub(crate) mod kafka;
 
 use crate::catalog::InputCollectionHandle;
 use pipeline_types::config::TransportConfig;
+use pipeline_types::program_schema::Relation;
 
+use crate::transport::datagen::GeneratorEndpoint;
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
 #[cfg(feature = "with-kafka")]
 use crate::transport::kafka::{
@@ -77,6 +81,9 @@ pub fn input_transport_config_to_endpoint(
         },
         TransportConfig::UrlInput(config) => Ok(Some(Box::new(UrlInputEndpoint::new(config)))),
         TransportConfig::S3Input(config) => Ok(Some(Box::new(S3InputEndpoint::new(config)))),
+        TransportConfig::Datagen(config) => {
+            Ok(Some(Box::new(GeneratorEndpoint::new(config.clone()))))
+        }
         _ => Ok(None),
     }
 }
@@ -142,6 +149,7 @@ pub trait TransportInputEndpoint: InputEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         start_step: Step,
+        schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>>;
 }
 

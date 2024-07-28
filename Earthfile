@@ -399,13 +399,13 @@ test-docker-compose:
 test-docker-compose-stable:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    ENV FELDERA_VERSION=0.20.0
+    ENV FELDERA_VERSION=0.21.0
     RUN apk --no-cache add curl
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
-                --pull ghcr.io/feldera/pipeline-manager:0.20.0 \
+                --pull ghcr.io/feldera/pipeline-manager:0.21.0 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
-                --pull ghcr.io/feldera/demo-container:0.20.0
+                --pull ghcr.io/feldera/demo-container:0.21.0
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo && \
             # This should run the latest version of the code and in the process, trigger a migration.
             COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" FELDERA_VERSION=latest RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml up -d db pipeline-manager redpanda && \
@@ -577,6 +577,7 @@ ui-playwright-tests-ct:
 
 benchmark:
     FROM +build-manager
+    COPY demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen
     COPY scripts/bench.bash scripts/bench.bash
     COPY benchmark/feldera-sql/run.py benchmark/feldera-sql/run.py
     COPY benchmark/feldera-sql/benchmarks benchmark/feldera-sql/benchmarks

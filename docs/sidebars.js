@@ -82,7 +82,8 @@ const sidebars = {
               items: [
                   'tutorials/basics/part1',
                   'tutorials/basics/part2',
-                  'tutorials/basics/part3'
+                  'tutorials/basics/part3',
+                  'tutorials/basics/part4'
               ]
           },
           'tutorials/rest_api/index',
@@ -155,6 +156,11 @@ const sidebars = {
                           type: 'doc',
                           id: 'connectors/sources/debezium-mysql',
                           label: 'Debezium-MySQL'
+                      },
+                      {
+                          type: 'doc',
+                          id: 'connectors/sources/datagen',
+                          label: 'Data Generator'
                       }
                   ]
               },

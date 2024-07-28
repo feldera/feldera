@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 pipeline_types = { path = "../../../crates/pipeline-types" }
-ijson = { git = "https://github.com/abhizer/ijson" }
+ijson = { git = "https://github.com/abhizer/ijson.git", rev = "08f2abf" }
 serde_json = "1.0.115"
 serde = { version = "1.0.197", features = ["derive"] }
 
