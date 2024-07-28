@@ -86,7 +86,7 @@ It can take some time for the container images to be downloaded. About ten secon
 web console will become available. Visit [http://localhost:8080](http://localhost:8080) on your browser
 to bring it up. We suggest going through our [demo](https://www.feldera.com/docs/demo) next.
 
-Our [Getting Started](https://www.feldera.com/docs/intro) guide has more detailed instructions on running the demo.
+Our [Getting Started](https://www.feldera.com/docs/get-started) guide has more detailed instructions on running the demo.
 
 ## Running Feldera from sources
 
