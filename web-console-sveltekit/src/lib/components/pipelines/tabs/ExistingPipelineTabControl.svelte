@@ -31,7 +31,6 @@
     }
     const currentUrl = window.location.pathname
     const newUrl = `${base}/pipelines/${$store}/`
-    console.log('zz', currentUrl, newUrl)
     if (newUrl === currentUrl) {
       return
     }

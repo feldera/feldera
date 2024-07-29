@@ -145,11 +145,12 @@
                 vertical: 'visible'
               },
               language: 'sql'
-            }} />
+            }}
+          />
         </div>
       </div>
     </Pane>
-    <PaneResizer class="bg-surface-100-900 h-2" />
+    <PaneResizer class="h-2 bg-surface-100-900" />
     <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
       {#if $pipeline.name}
         <InteractionsPanel pipelineName={$pipeline.name}></InteractionsPanel>

@@ -1,5 +1,10 @@
 import { handled } from '$lib/functions/request'
-import { getPipeline, putPipeline, type ExtendedPipelineDescr, type PipelineDescr } from '$lib/services/pipelineManager'
+import {
+  getPipeline,
+  putPipeline,
+  type ExtendedPipelineDescr,
+  type PipelineDescr
+} from '$lib/services/pipelineManager'
 import {
   asyncWritable,
   readable,

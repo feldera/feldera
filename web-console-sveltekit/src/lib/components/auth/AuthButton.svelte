@@ -6,18 +6,21 @@
   import AuthPopupMenu from './AuthPopupMenu.svelte'
 </script>
 
-{#if $page.data.session}
+{#if 'logout' in $page.data.auth}
   <Popup>
     {#snippet trigger(toggle)}
-      <button onclick={toggle} class="bx bx-lock-alt btn-icon text-[24px] preset-tonal-surface"
-      ></button>
+      <button onclick={toggle} class="bx bx-lock-alt btn-icon text-[24px] preset-tonal-surface">
+      </button>
     {/snippet}
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
         class="absolute right-0 z-10 max-h-[400px] w-[calc(100vw-100px)] max-w-[400px] justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black"
       >
-        <AuthPopupMenu user={$page.data.session!.user!}></AuthPopupMenu>
+        <AuthPopupMenu
+          user={$page.data.auth.userInfo}
+          signOut={$page.data.auth.logout}
+        ></AuthPopupMenu>
       </div>
     {/snippet}
   </Popup>

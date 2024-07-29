@@ -15,10 +15,11 @@
   import { navItems } from '$lib/functions/navigation/items'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import AuthButton from '$lib/components/auth/AuthButton.svelte'
+  import type { LayoutData } from './$types'
 
   const dialog = useGlobalDialog()
 
-  let { children } = $props<{ children: Snippet }>()
+  let { children, data }: { children: Snippet; data: LayoutData } = $props()
   let { darkMode, toggleDarkMode } = useDarkMode()
   let showDrawer = useLocalStorage('layout/drawer', false)
 

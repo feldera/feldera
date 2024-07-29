@@ -1,7 +1,21 @@
 <script lang="ts">
-  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import type { Snippet } from 'svelte'
   let { dialog, onClose }: { dialog: Snippet | null; onClose: () => void } = $props()
+
+  let contentNode = $state<HTMLElement>()
+  const onclick = (e: MouseEvent) => {
+    if (!contentNode) {
+      return
+    }
+    if (contentNode.contains(e.target as any)) {
+      return
+    }
+    onClose()
+  }
+  $effect(() => {
+    window.addEventListener('click', onclick, { capture: true })
+    return () => window.removeEventListener('click', onclick)
+  })
 </script>
 
 {#if dialog}
@@ -39,9 +53,12 @@
           To: "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
       -->
         <div
-          class="relative transform overflow-hidden rounded-lg text-left shadow-xl transition-all bg-surface-50-950 sm:my-8 sm:w-full sm:max-w-lg"
+          class="relative transform overflow-hidden overflow-y-auto rounded-lg text-left shadow-xl transition-all bg-surface-50-950 sm:my-8 sm:w-full sm:max-w-lg"
           role="presentation"
-          onclick={(e) => e.stopPropagation()}
+          onclick={(e) => {
+            e.stopPropagation()
+          }}
+          bind:this={contentNode}
         >
           {@render dialog()}
         </div>

@@ -75,7 +75,10 @@ const programErrorReport = async (pipeline: { name: string }, message: string) =
     '1-description':
       '```\n' + limitMessage(message, 1000, '\n...Beginning of the error...') + '\n```',
     '6-extra': await getPipeline(pipeline.name).then(
-      (p) => 'SQL:\n```\n' + limitMessage(p.program_code, 7000, '\n...Beginning of the code...') + '\n```'
+      (p) =>
+        'SQL:\n```\n' +
+        limitMessage(p.program_code, 7000, '\n...Beginning of the code...') +
+        '\n```'
     )
   }) as ReportDetails
 

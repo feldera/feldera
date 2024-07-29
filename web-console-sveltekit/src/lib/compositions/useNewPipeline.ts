@@ -8,7 +8,7 @@ const emptyPipeline: PipelineDescr = {
   description: '',
   runtime_config: {},
   program_config: {},
-  program_code: '',
+  program_code: ''
 }
 
 const persistedNewPipeline = persisted<PipelineDescr>(emptyPipeline, 'pipelines/new', {

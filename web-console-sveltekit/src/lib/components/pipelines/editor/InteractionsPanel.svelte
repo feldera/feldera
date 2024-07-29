@@ -21,7 +21,8 @@
     <Tabs.Control
       bind:group={currentTab.value}
       name={tabName}
-      contentClasses="group-hover:preset-tonal-surface">
+      contentClasses="group-hover:preset-tonal-surface"
+    >
       <span>{tabName}</span>
     </Tabs.Control>
   {/each}
@@ -32,7 +33,8 @@
     <Tabs.Panel
       bind:group={currentTab.value}
       value={tabName}
-      classes="h-full overflow-y-auto relative">
+      classes="h-full overflow-y-auto relative"
+    >
       <div class="absolute h-full w-full p-4 pt-0">
         <TabComponent {pipelineName}></TabComponent>
       </div>

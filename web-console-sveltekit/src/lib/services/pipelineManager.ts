@@ -15,10 +15,18 @@ import {
   type PatchPipeline,
   getConfigAuthentication,
   type ExtendedPipelineDescr,
+  listApiKeys,
+  createApiKey,
+  deleteApiKey as _deleteApiKey
 } from '$lib/services/manager'
-export type { PipelineDescr, ExtendedPipelineDescr, SqlCompilerMessage, InputEndpointConfig,
+export type {
+  PipelineDescr,
+  ExtendedPipelineDescr,
+  SqlCompilerMessage,
+  InputEndpointConfig,
   OutputEndpointConfig,
-  RuntimeConfig } from '$lib/services/manager'
+  RuntimeConfig
+} from '$lib/services/manager'
 import { P, match } from 'ts-pattern'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
 
@@ -61,12 +69,9 @@ const toPipelineThumb = (pipeline: Omit<ExtendedPipelineDescr, 'program_code'>) 
 export type PipelineThumb = ReturnType<typeof toPipelineThumb>
 
 export const getPipeline = async (pipeline_name: string): Promise<PipelineDescr> => {
-  const {
-    description,
-    name,
-    program_code,
-    program_config,
-    runtime_config} = await handled(_getPipeline)({ path: { pipeline_name } })
+  const { description, name, program_code, program_config, runtime_config } = await handled(
+    _getPipeline
+  )({ path: { pipeline_name } })
   return {
     description,
     name,
@@ -77,8 +82,13 @@ export const getPipeline = async (pipeline_name: string): Promise<PipelineDescr>
 }
 
 export const getExtendedPipeline = async (pipeline_name: string) => {
-  const {program_status, deployment_status, deployment_error, ...pipeline} = await handled(_getPipeline)({ path: { pipeline_name } })
-  return {...pipeline, status: consolidatePipelineStatus(program_status, deployment_status, deployment_error)}
+  const { program_status, deployment_status, deployment_error, ...pipeline } = await handled(
+    _getPipeline
+  )({ path: { pipeline_name } })
+  return {
+    ...pipeline,
+    status: consolidatePipelineStatus(program_status, deployment_status, deployment_error)
+  }
 }
 
 /**
@@ -91,29 +101,27 @@ export const postPipeline = async (pipeline: PipelineDescr) => {
 /**
  * Pipeline should already exist
  */
-export const putPipeline = async (
-  pipelineName: string,
-  newPipeline: PipelineDescr
-) => {
-  await _putPipeline({body: newPipeline, path: {pipeline_name: pipelineName}})
+export const putPipeline = async (pipelineName: string, newPipeline: PipelineDescr) => {
+  await _putPipeline({ body: newPipeline, path: { pipeline_name: pipelineName } })
 }
 
-export const patchPipeline = async (
-  pipelineName: string,
-  pipeline: PatchPipeline
-) => {
-  await _patchPipeline({path: {pipeline_name: pipelineName}, body: pipeline})
+export const patchPipeline = async (pipelineName: string, pipeline: PatchPipeline) => {
+  await _patchPipeline({ path: { pipeline_name: pipelineName }, body: pipeline })
 }
 
 export const getPipelines = async (): Promise<PipelineThumb[]> => {
-  const pipelines = await handled(listPipelines)({query: {code: false}})
+  const pipelines = await handled(listPipelines)({ query: { code: false } })
   return pipelines.map(toPipelineThumb)
 }
 
 export const getPipelineStatus = async (pipeline_name: string) => {
   const pipeline = await handled(_getPipeline)({ path: { pipeline_name } })
   return {
-    status: consolidatePipelineStatus(pipeline.program_status, pipeline.deployment_status, pipeline.deployment_error)
+    status: consolidatePipelineStatus(
+      pipeline.program_status,
+      pipeline.deployment_status,
+      pipeline.deployment_error
+    )
   }
 }
 
@@ -135,16 +143,18 @@ export const getPipelineStats = async (pipeline_name: string) => {
       if (e instanceof TypeError && e.message === 'Failed to fetch') {
         return {
           pipelineName: pipeline_name,
-          status: 'not running' as const}
+          status: 'not running' as const
+        }
       }
       throw e
-    })
+    }
+  )
 }
 
 const consolidatePipelineStatus = (
   programStatus: ProgramStatus,
   pipelineStatus: _PipelineStatus,
-  pipelineError: ErrorResponse | null | undefined,
+  pipelineError: ErrorResponse | null | undefined
 ) => {
   return match([pipelineStatus, pipelineError, programStatus])
     .with(['Shutdown', P.nullish, 'CompilingSql'], () => 'Compiling sql' as const)
@@ -178,4 +188,12 @@ export const deletePipeline = async (pipeline_name: string) => {
 export const postPipelineAction = (pipeline_name: string, action: 'start' | 'pause' | 'shutdown') =>
   handled(_postPipelineAction)({ path: { pipeline_name, action } })
 
-export const getAuthConfig = () => handled(getConfigAuthentication)({client: unauthenticatedClient})
+export const getAuthConfig = () =>
+  handled(getConfigAuthentication)({ client: unauthenticatedClient })
+
+export const getApiKeys = () => handled(listApiKeys)()
+
+export const postApiKey = (name: string) => handled(createApiKey)({ body: { name } })
+
+export const deleteApiKey = (name: string) =>
+  handled(_deleteApiKey)({ path: { api_key_name: name } })
