@@ -143,22 +143,30 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 Ok(new_poll_timeout) => {
                     poll_timeout = new_poll_timeout;
                 }
-                Err(e) => match &e {
-                    ManagerError::DBError { db_error } => {
-                        match db_error {
-                            // Pipeline deletions should not lead to errors in the logs.
-                            DBError::UnknownPipeline { pipeline_id } => {
-                                info!("Pipeline {pipeline_id} no longer exists. Shutting down pipeline automaton.");
-                            }
-                            _ => {
-                                error!("Pipeline automaton '{pipeline_id}' terminated with database error: '{e}'")
+                Err(e) => {
+                    match &e {
+                        ManagerError::DBError { db_error } => {
+                            match db_error {
+                                // Pipeline deletions should not lead to errors in the logs.
+                                DBError::UnknownPipeline { pipeline_id } => {
+                                    info!("Pipeline {pipeline_id} no longer exists. Shutting down pipeline automaton.");
+                                }
+                                _ => {
+                                    error!("Pipeline automaton '{pipeline_id}' terminated with database error: '{e}'")
+                                }
                             }
                         }
-                    }
-                    _ => {
-                        error!("Pipeline automaton '{pipeline_id}' terminated with error: '{e}'");
-                    }
-                },
+                        _ => {
+                            error!(
+                                "Pipeline automaton '{pipeline_id}' terminated with error: '{e}'"
+                            );
+                        }
+                    };
+                    // By stopping the run, the automata will consume itself.
+                    // As such, the pipeline_handle it owns will be dropped,
+                    // which in turn will shutdown by itself as a consequence.
+                    return Err(e);
+                }
             }
         }
     }

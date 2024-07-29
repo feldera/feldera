@@ -216,10 +216,8 @@ impl RunnerApi {
         let pipeline_id = pipeline.id;
 
         match pipeline.deployment_status {
-            PipelineStatus::Running | PipelineStatus::Paused => {
-                Err(RunnerError::PipelineNotRunningOrPaused { pipeline_id })?
-            }
-            _ => {}
+            PipelineStatus::Running | PipelineStatus::Paused => {}
+            _ => Err(RunnerError::PipelineNotRunningOrPaused { pipeline_id })?,
         }
 
         Self::do_forward_to_pipeline(
@@ -302,10 +300,8 @@ impl RunnerApi {
         let pipeline_id = pipeline.id;
 
         match pipeline.deployment_status {
-            PipelineStatus::Running | PipelineStatus::Paused => {
-                Err(RunnerError::PipelineNotRunningOrPaused { pipeline_id })?
-            }
-            _ => {}
+            PipelineStatus::Running | PipelineStatus::Paused => {}
+            _ => Err(RunnerError::PipelineNotRunningOrPaused { pipeline_id })?,
         }
         let location = pipeline.deployment_location.unwrap(); // TODO: unwrap
 
