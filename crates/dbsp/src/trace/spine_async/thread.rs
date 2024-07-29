@@ -77,11 +77,11 @@ impl BackgroundThread {
         } else {
             String::from("dbsp-bg")
         };
-        let join_handle = Runtime::spawn_background_thread(Builder::new().name(name), {
+        let thread = Runtime::spawn_background_thread(Builder::new().name(name), {
             let bg = bg.clone();
             move || bg.run()
         });
-        bg.0.lock().unwrap().thread = Some(join_handle.thread().clone());
+        bg.0.lock().unwrap().thread = Some(thread);
         Arc::downgrade(&bg)
     }
 
@@ -119,7 +119,13 @@ impl BackgroundThread {
                 WorkerStatus::Done => false,
             });
 
-            if idle {
+            // If there's at least one worker and all of them are idle, wait for
+            // something to change.
+            //
+            // If there are no workers, go around again to get a new worker or
+            // exit (if we just exit immediately then that could drop a new
+            // worker).
+            if idle && !workers.is_empty() {
                 std::thread::park();
             }
         }

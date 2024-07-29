@@ -17,6 +17,8 @@ use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use pipeline_types::config::StorageCacheConfig;
 use serde::Serialize;
+use std::sync::Mutex;
+use std::thread::Thread;
 use std::{
     backtrace::Backtrace,
     borrow::Cow,
@@ -186,6 +188,7 @@ struct RuntimeInner {
     min_storage_bytes: usize,
     store: LocalStore,
     kill_signal: AtomicBool,
+    background_threads: Mutex<Vec<JoinHandle<()>>>,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
 }
@@ -257,6 +260,7 @@ impl RuntimeInner {
             min_storage_bytes: config.min_storage_bytes,
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
+            background_threads: Mutex::new(Vec::new()),
             panic_info,
         })
     }
@@ -560,14 +564,13 @@ impl Runtime {
     /// Spawn a new thread using `builder` and `f`. If the current thread is
     /// associated with a runtime, then the new thread will also be associated
     /// with the same runtime and worker index.
-    pub(crate) fn spawn_background_thread<F, T>(builder: Builder, f: F) -> JoinHandle<T>
+    pub(crate) fn spawn_background_thread<F>(builder: Builder, f: F) -> Thread
     where
-        F: FnOnce() -> T + Send + 'static,
-        T: Send + 'static,
+        F: FnOnce() + Send + 'static,
     {
         let runtime = Self::runtime();
         let worker_index = Self::worker_index();
-        builder
+        let join_handle = builder
             .spawn(move || {
                 RUNTIME.with(|rt| *rt.borrow_mut() = runtime);
                 WORKER_INDEX.set(worker_index);
@@ -575,7 +578,17 @@ impl Runtime {
             })
             .unwrap_or_else(|error| {
                 panic!("failed to spawn background worker thread {worker_index}: {error}");
-            })
+            });
+        let thread = join_handle.thread().clone();
+        if let Some(runtime) = Self::runtime() {
+            runtime
+                .inner()
+                .background_threads
+                .lock()
+                .unwrap()
+                .push(join_handle);
+        }
+        thread
     }
 }
 
@@ -645,6 +658,19 @@ impl RuntimeHandle {
         let results: Vec<ThreadResult<()>> = self.workers.into_iter().map(|h| h.join()).collect();
 
         self.runtime.local_store().clear();
+
+        // Wait for the background threads. They will exit automatically without
+        // explicit signaling from us because the worker threads removed all of
+        // their background work.
+        self.runtime
+            .inner()
+            .background_threads
+            .lock()
+            .unwrap()
+            .drain(..)
+            .for_each(|h| {
+                let _ = h.join();
+            });
 
         let did_runtime_panic = results.iter().any(|r| r.is_err());
         RuntimeHandle::cleanup_storage_dir(&storage, did_runtime_panic);
