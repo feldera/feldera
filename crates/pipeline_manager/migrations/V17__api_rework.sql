@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
     tenant_id UUID NOT NULL,                -- Tenant identifier
     name VARCHAR NOT NULL,                  -- Name
     description VARCHAR NOT NULL,           -- Description
-    created_at BIGINT NOT NULL,             -- Epoch timestamp when the pipeline was created.
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,  -- Timestamp when the pipeline was created.
     version BIGINT NOT NULL,                -- Pipeline version code, incremented each time if any of the columns
                                             -- name, description, runtime_config, program_code or program_config
                                             -- is changed.
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
                                             -- Value is one of: pending, compiling_sql, compiling_rust, success,
                                             --                  sql_error, rust_error, system_error
                                             -- Serialized type: together with program_error into ProgramStatus
-    program_status_since BIGINT NOT NULL,   -- Epoch timestamp when the current program status was set.
+    program_status_since TIMESTAMP WITH TIME ZONE NOT NULL,  -- Timestamp when the current program status was set.
     program_error VARCHAR NULL,             -- Error (if any) that occurred during compilation.
                                             -- * Non-NULL: sql_error, rust_error, system_error
                                             -- * NULL: pending, success, compiling_sql, compiling_rust
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS pipeline (
     deployment_status VARCHAR NOT NULL,          -- Deployment status, which evolves as the stages take place.
                                                  -- Value is one of: shutdown, provisioning, initializing,
                                                  --                  running, paused, failed, shutting_down
-    deployment_status_since BIGINT NOT NULL,     -- Epoch timestamp when the deployment status was set.
+    deployment_status_since TIMESTAMP WITH TIME ZONE NOT NULL,  -- Timestamp when the deployment status was set.
     deployment_desired_status VARCHAR NOT NULL,  -- Desired deployment status, which affects the upcoming transitions.
                                                  -- Value is one of: running, paused, shutdown
     deployment_error VARCHAR NULL,               -- Critical error (if any) that occurred during deployment.

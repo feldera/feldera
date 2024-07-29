@@ -198,6 +198,34 @@ impl ProgramStatus {
     }
 }
 
+/// Validates the program status transition from current status to a new one.
+pub fn validate_program_status_transition(
+    current_status: &ProgramStatus,
+    new_status: &ProgramStatus,
+) -> Result<(), DBError> {
+    if matches!(
+        (current_status, new_status),
+        (ProgramStatus::Pending, ProgramStatus::CompilingSql)
+            | (ProgramStatus::Pending, ProgramStatus::SystemError(_))
+            | (ProgramStatus::CompilingSql, ProgramStatus::Pending)
+            | (ProgramStatus::CompilingSql, ProgramStatus::CompilingRust)
+            | (ProgramStatus::CompilingSql, ProgramStatus::SqlError(_))
+            | (ProgramStatus::CompilingSql, ProgramStatus::SystemError(_))
+            | (ProgramStatus::CompilingRust, ProgramStatus::Pending)
+            | (ProgramStatus::CompilingRust, ProgramStatus::Success)
+            | (ProgramStatus::CompilingRust, ProgramStatus::RustError(_))
+            | (ProgramStatus::CompilingRust, ProgramStatus::SystemError(_))
+            | (ProgramStatus::Success, ProgramStatus::Pending)
+    ) {
+        Ok(())
+    } else {
+        Err(DBError::InvalidProgramStatusTransition {
+            current: current_status.clone(),
+            transition_to: new_status.clone(),
+        })
+    }
+}
+
 /// Program configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 pub struct ProgramConfig {
