@@ -5,14 +5,16 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
+    validate_deployment_desired_status_transition, validate_deployment_status_transition,
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{
-    CompilationProfile, ProgramConfig, ProgramStatus, SqlCompilerMessage,
+    validate_program_status_transition, CompilationProfile, ProgramConfig, ProgramStatus,
+    SqlCompilerMessage,
 };
 use crate::db::types::tenant::TenantId;
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{TimeZone, Utc};
 use openssl::sha;
 use pipeline_types::config::{PipelineConfig, ProgramInfo, ResourceConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
@@ -20,6 +22,8 @@ use pipeline_types::program_schema::ProgramSchema;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
 use proptest_derive::Arbitrary;
+use serde_json::json;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::vec;
@@ -313,6 +317,17 @@ fn limited_pipeline_config() -> impl Strategy<Value = PipelineConfig> {
             inputs: program_info.input_connectors,
             outputs: program_info.output_connectors,
         }
+    })
+}
+
+/// Generates different error responses.
+fn limited_error_response() -> impl Strategy<Value = ErrorResponse> {
+    any::<u8>().prop_map(|val| ErrorResponse {
+        message: "This is an example error response".to_string(),
+        error_code: Cow::from("SomeExampleError"),
+        details: json!({
+            "extra-info": val
+        }),
     })
 }
 
@@ -1288,24 +1303,37 @@ enum StorageAction {
         Version,
         #[proptest(strategy = "limited_program_info()")] ProgramInfo,
     ),
-    TransitProgramStatusToSuccess(TenantId, PipelineId, Version),
+    TransitProgramStatusToSuccess(TenantId, PipelineId, Version, String),
     TransitProgramStatusToSqlError(TenantId, PipelineId, Version, Vec<SqlCompilerMessage>),
     TransitProgramStatusToRustError(TenantId, PipelineId, Version, String),
     TransitProgramStatusToSystemError(TenantId, PipelineId, Version, String),
-    SetDeploymentDesiredStatusRunning(TenantId, String),
-    SetDeploymentDesiredStatusPaused(TenantId, String),
-    SetDeploymentDesiredStatusShutdown(TenantId, String),
+    SetDeploymentDesiredStatusRunning(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+    ),
+    SetDeploymentDesiredStatusPaused(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+    ),
+    SetDeploymentDesiredStatusShutdown(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+    ),
     TransitDeploymentStatusToProvisioning(
         TenantId,
         PipelineId,
         #[proptest(strategy = "limited_pipeline_config()")] PipelineConfig,
     ),
-    TransitDeploymentStatusToInitializing(TenantId, PipelineId),
+    TransitDeploymentStatusToInitializing(TenantId, PipelineId, String),
     TransitDeploymentStatusToRunning(TenantId, PipelineId),
     TransitDeploymentStatusToPaused(TenantId, PipelineId),
     TransitDeploymentStatusToShuttingDown(TenantId, PipelineId),
     TransitDeploymentStatusToShutdown(TenantId, PipelineId),
-    TransitDeploymentStatusToFailed(TenantId, PipelineId),
+    TransitDeploymentStatusToFailed(
+        TenantId,
+        PipelineId,
+        #[proptest(strategy = "limited_error_response()")] ErrorResponse,
+    ),
     ListPipelineIdsAcrossAllTenants,
     ListPipelinesAcrossAllTenants,
     GetNextPipelineProgramToCompile,
@@ -1315,118 +1343,162 @@ enum StorageAction {
 /// Alias for a result from the database.
 type DBResult<T> = Result<T, DBError>;
 
-fn check_responses<T: Debug + PartialEq>(step: usize, model: DBResult<T>, impl_: DBResult<T>) {
-    match (model, impl_) {
-        (Ok(mr), Ok(ir)) => assert_eq!(
-            mr, ir,
+/// Converts the pipeline to a variant with constant timestamps, which
+/// is useful for comparison between model and result which will generate
+/// different timestamps.
+fn convert_pipeline_with_constant_timestamps(
+    mut pipeline: ExtendedPipelineDescr,
+) -> ExtendedPipelineDescr {
+    let timestamp = Utc.timestamp_nanos(0);
+    pipeline.created_at = timestamp;
+    pipeline.program_status_since = timestamp;
+    pipeline.deployment_status_since = timestamp;
+    pipeline
+}
+
+/// Check database responses by direct comparison.
+fn check_responses<T: Debug + PartialEq>(
+    step: usize,
+    result_model: DBResult<T>,
+    result_impl: DBResult<T>,
+) {
+    match (result_model, result_impl) {
+        (Ok(val_model), Ok(val_impl)) => assert_eq!(
+            val_model, val_impl,
             "mismatch detected with model (left) and right (impl)"
         ),
-        (Err(me), Ok(ir)) => {
-            panic!("Step({step}): model returned error: {me:?}, but impl returned result: {ir:?}");
+        (Err(err_model), Ok(val_impl)) => {
+            panic!("step({step}): model returned error: {err_model:?}, but impl returned result: {val_impl:?}");
         }
-        (Ok(mr), Err(ie)) => {
-            panic!("Step({step}): model returned result: {mr:?}, but impl returned error: {ie:?}");
+        (Ok(val_model), Err(err_impl)) => {
+            panic!("step({step}): model returned result: {val_model:?}, but impl returned error: {err_impl:?}");
         }
-        (Err(me), Err(ie)) => {
+        (Err(err_model), Err(err_impl)) => {
             assert_eq!(
-                me.to_string(),
-                ie.to_string(),
-                "Step({step}): Error return mismatch"
+                err_model.to_string(),
+                err_impl.to_string(),
+                "step({step}): error return mismatch (left = model, right = impl)"
             );
         }
     }
 }
 
-// Compare everything except the timestamp fields which gets set inside the database.
-fn compare_pipeline(
+/// Ignores timestamps.
+fn check_response_pipeline(
     step: usize,
-    model: DBResult<ExtendedPipelineDescr>,
-    impl_: DBResult<ExtendedPipelineDescr>,
+    mut result_model: DBResult<ExtendedPipelineDescr>,
+    mut result_impl: DBResult<ExtendedPipelineDescr>,
 ) {
-    match (model, impl_) {
-        (Ok(mut mr), Ok(ir)) => {
-            mr.created_at = ir.created_at;
-            mr.program_status_since = ir.program_status_since;
-            mr.deployment_status_since = ir.deployment_status_since;
-            assert_eq!(
-                mr, ir,
-                "mismatch detected with model (left) and impl (right)"
-            );
-        }
-        (Err(me), Ok(ir)) => {
-            panic!("Step({step}): model returned error: {me:?}, but impl returned result: {ir:?}");
-        }
-        (Ok(mr), Err(ie)) => {
-            panic!("Step({step}): model returned result: {mr:?}, but impl returned error: {ie:?}");
-        }
-        (Err(me), Err(ie)) => {
-            assert_eq!(
-                me.to_string(),
-                ie.to_string(),
-                "Step({step}): Error return mismatch"
-            );
-        }
-    }
+    result_model = result_model.map(convert_pipeline_with_constant_timestamps);
+    result_impl = result_impl.map(convert_pipeline_with_constant_timestamps);
+    check_responses(step, result_model, result_impl);
 }
 
-// Compare everything except the timestamp fields which gets set inside the database.
-fn compare_pipeline_with_created(
+/// Ignores timestamps.
+fn check_response_pipeline_with_created(
     step: usize,
-    model: DBResult<(bool, ExtendedPipelineDescr)>,
-    impl_: DBResult<(bool, ExtendedPipelineDescr)>,
+    mut result_model: DBResult<(bool, ExtendedPipelineDescr)>,
+    mut result_impl: DBResult<(bool, ExtendedPipelineDescr)>,
 ) {
-    if let (Ok(mr), Ok(ir)) = (&model, &impl_) {
-        assert_eq!(
-            mr.0, ir.0,
-            "mismatch detected with model (left) and impl (right)"
-        );
-    }
-    compare_pipeline(step, model.map(|v| v.1), impl_.map(|v| v.1));
+    result_model = result_model
+        .map(|(created, pipeline)| (created, convert_pipeline_with_constant_timestamps(pipeline)));
+    result_impl = result_impl
+        .map(|(created, pipeline)| (created, convert_pipeline_with_constant_timestamps(pipeline)));
+    check_responses(step, result_model, result_impl);
 }
 
-// Compare everything except ordering and the timestamp fields which gets set inside the database.
-fn compare_pipelines(
+/// Ignores timestamps.
+fn check_response_optional_pipeline_with_tenant_id(
     step: usize,
-    model: DBResult<Vec<ExtendedPipelineDescr>>,
-    impl_: DBResult<Vec<ExtendedPipelineDescr>>,
+    mut result_model: DBResult<Option<(TenantId, ExtendedPipelineDescr)>>,
+    mut result_impl: DBResult<Option<(TenantId, ExtendedPipelineDescr)>>,
 ) {
-    match (model, impl_) {
-        (Ok(mut mr), Ok(mut ir)) => {
-            // Order both sides by pipeline identifier
-            mr.sort_by(|a, b| a.id.cmp(&b.id));
-            ir.sort_by(|a, b| a.id.cmp(&b.id));
+    result_model = result_model.map(|v| {
+        v.map(|(tenant_id, pipeline)| {
+            (
+                tenant_id,
+                convert_pipeline_with_constant_timestamps(pipeline),
+            )
+        })
+    });
+    result_impl = result_impl.map(|v| {
+        v.map(|(tenant_id, pipeline)| {
+            (
+                tenant_id,
+                convert_pipeline_with_constant_timestamps(pipeline),
+            )
+        })
+    });
+    check_responses(step, result_model, result_impl);
+}
 
-            // Same timestamp value such that it equals in comparison
-            let now = Utc::now();
-            for pipeline in mr.iter_mut() {
-                pipeline.created_at = now;
-                pipeline.program_status_since = now;
-                pipeline.deployment_status_since = now;
-            }
-            for pipeline in ir.iter_mut() {
-                pipeline.created_at = now;
-                pipeline.program_status_since = now;
-                pipeline.deployment_status_since = now;
-            }
-            assert_eq!(
-                mr, ir,
-                "mismatch detected with model (left) and impl (right)"
-            );
-        }
-        (Err(me), Ok(ir)) => {
-            panic!("Step({step}): model returned error: {me:?}, but impl returned result: {ir:?}");
-        }
-        (Ok(mr), Err(ie)) => {
-            panic!("Step({step}): model returned result: {mr:?}, but impl returned error: {ie:?}");
-        }
-        (Err(me), Err(ie)) => {
-            assert_eq!(
-                me.to_string(),
-                ie.to_string(),
-                "Step({step}): Error return mismatch"
-            );
-        }
-    }
+/// Ignores timestamps.
+fn check_response_pipelines(
+    step: usize,
+    mut result_model: DBResult<Vec<ExtendedPipelineDescr>>,
+    mut result_impl: DBResult<Vec<ExtendedPipelineDescr>>,
+) {
+    result_model = result_model.map(|mut v| {
+        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.into_iter()
+            .map(convert_pipeline_with_constant_timestamps)
+            .collect()
+    });
+    result_impl = result_impl.map(|mut v| {
+        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.into_iter()
+            .map(convert_pipeline_with_constant_timestamps)
+            .collect()
+    });
+    check_responses(step, result_model, result_impl);
+}
+
+/// Ignores timestamps and ordering.
+fn check_response_pipelines_with_tenant_id(
+    step: usize,
+    mut result_model: DBResult<Vec<(TenantId, ExtendedPipelineDescr)>>,
+    mut result_impl: DBResult<Vec<(TenantId, ExtendedPipelineDescr)>>,
+) {
+    result_model = result_model.map(|mut v| {
+        v.sort_by(|(t1, p1), (t2, p2)| (t1, p1.id).cmp(&(t2, p2.id)));
+        v.into_iter()
+            .map(|(tenant_id, pipeline)| {
+                (
+                    tenant_id,
+                    convert_pipeline_with_constant_timestamps(pipeline),
+                )
+            })
+            .collect()
+    });
+    result_impl = result_impl.map(|mut v| {
+        v.sort_by(|(t1, p1), (t2, p2)| (t1, p1.id).cmp(&(t2, p2.id)));
+        v.into_iter()
+            .map(|(tenant_id, pipeline)| {
+                (
+                    tenant_id,
+                    convert_pipeline_with_constant_timestamps(pipeline),
+                )
+            })
+            .collect()
+    });
+    check_responses(step, result_model, result_impl);
+}
+
+/// Ignores ordering.
+fn check_response_pipeline_ids_with_tenant_id(
+    step: usize,
+    mut result_model: DBResult<Vec<(TenantId, PipelineId)>>,
+    mut result_impl: DBResult<Vec<(TenantId, PipelineId)>>,
+) {
+    result_model = result_model.map(|mut v| {
+        v.sort_by(|(t1, p1), (t2, p2)| (t1, p1).cmp(&(t2, p2)));
+        v
+    });
+    result_impl = result_impl.map(|mut v| {
+        v.sort_by(|(t1, p1), (t2, p2)| (t1, p1).cmp(&(t2, p2)));
+        v
+    });
+    check_responses(step, result_model, result_impl);
 }
 
 async fn create_tenants_if_not_exists(
@@ -1535,37 +1607,37 @@ fn db_impl_behaves_like_model() {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.list_pipelines(tenant_id).await;
                                 let impl_response = handle.db.list_pipelines(tenant_id).await;
-                                compare_pipelines(i, model_response, impl_response);
+                                check_response_pipelines(i, model_response, impl_response);
                             }
                             StorageAction::GetPipeline(tenant_id, pipeline_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.get_pipeline(tenant_id, &pipeline_name).await;
                                 let impl_response = handle.db.get_pipeline(tenant_id, &pipeline_name).await;
-                                compare_pipeline(i, model_response, impl_response);
+                                check_response_pipeline(i, model_response, impl_response);
                             }
                             StorageAction::GetPipelineById(tenant_id, pipeline_id) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.get_pipeline_by_id(tenant_id, pipeline_id).await;
                                 let impl_response = handle.db.get_pipeline_by_id(tenant_id, pipeline_id).await;
-                                compare_pipeline(i, model_response, impl_response);
+                                check_response_pipeline(i, model_response, impl_response);
                             }
                             StorageAction::NewPipeline(tenant_id, new_id, pipeline_descr) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.new_pipeline(tenant_id, new_id, pipeline_descr.clone()).await;
                                 let impl_response = handle.db.new_pipeline(tenant_id, new_id, pipeline_descr.clone()).await;
-                                compare_pipeline(i, model_response, impl_response);
+                                check_response_pipeline(i, model_response, impl_response);
                             }
                             StorageAction::NewOrUpdatePipeline(tenant_id, new_id, original_name, pipeline_descr) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.new_or_update_pipeline(tenant_id, new_id, &original_name, pipeline_descr.clone()).await;
                                 let impl_response = handle.db.new_or_update_pipeline(tenant_id, new_id, &original_name, pipeline_descr.clone()).await;
-                                compare_pipeline_with_created(i, model_response, impl_response);
+                                check_response_pipeline_with_created(i, model_response, impl_response);
                             }
                             StorageAction::UpdatePipeline(tenant_id, original_name, name, description, runtime_config, program_code, program_config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.update_pipeline(tenant_id, &original_name, &name, &description, &runtime_config, &program_code, &program_config).await;
                                 let impl_response = handle.db.update_pipeline(tenant_id, &original_name, &name, &description, &runtime_config, &program_code, &program_config).await;
-                                compare_pipeline(i, model_response, impl_response);
+                                check_response_pipeline(i, model_response, impl_response);
                             }
                             StorageAction::DeletePipeline(tenant_id, pipeline_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
@@ -1573,27 +1645,128 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.delete_pipeline(tenant_id, &pipeline_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitProgramStatusToPending(_, _, _) => {}
-                            StorageAction::TransitProgramStatusToCompilingSql(_, _, _) => {}
-                            StorageAction::TransitProgramStatusToCompilingRust(_, _, _, _) => {}
-                            StorageAction::TransitProgramStatusToSuccess(_, _, _) => {}
-                            StorageAction::TransitProgramStatusToSqlError(_, _, _, _) => {}
-                            StorageAction::TransitProgramStatusToRustError(_, _, _, _) => {}
-                            StorageAction::TransitProgramStatusToSystemError(_, _, _, _) => {}
-                            StorageAction::SetDeploymentDesiredStatusRunning(_, _) => {}
-                            StorageAction::SetDeploymentDesiredStatusPaused(_, _) => {}
-                            StorageAction::SetDeploymentDesiredStatusShutdown(_, _) => {}
-                            StorageAction::TransitDeploymentStatusToProvisioning(_, _, _) => {}
-                            StorageAction::TransitDeploymentStatusToInitializing(_, _) => {}
-                            StorageAction::TransitDeploymentStatusToRunning(_, _) => {}
-                            StorageAction::TransitDeploymentStatusToPaused(_, _) => {}
-                            StorageAction::TransitDeploymentStatusToShuttingDown(_, _) => {}
-                            StorageAction::TransitDeploymentStatusToShutdown(_, _) => {}
-                            StorageAction::TransitDeploymentStatusToFailed(_, _) => {}
-                            StorageAction::ListPipelineIdsAcrossAllTenants => {}
-                            StorageAction::ListPipelinesAcrossAllTenants => {}
-                            StorageAction::GetNextPipelineProgramToCompile => {}
-                            StorageAction::IsPipelineProgramInUse(_, _) => {}
+                            StorageAction::TransitProgramStatusToPending(tenant_id, pipeline_id, program_version_guard) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_program_status_to_pending(tenant_id, pipeline_id, program_version_guard).await;
+                                let impl_response = handle.db.transit_program_status_to_pending(tenant_id, pipeline_id, program_version_guard).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitProgramStatusToCompilingSql(tenant_id, pipeline_id, program_version_guard) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_program_status_to_compiling_sql(tenant_id, pipeline_id, program_version_guard).await;
+                                let impl_response = handle.db.transit_program_status_to_compiling_sql(tenant_id, pipeline_id, program_version_guard).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitProgramStatusToCompilingRust(tenant_id, pipeline_id, program_version_guard, program_info) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_program_status_to_compiling_rust(tenant_id, pipeline_id, program_version_guard, &program_info).await;
+                                let impl_response = handle.db.transit_program_status_to_compiling_rust(tenant_id, pipeline_id, program_version_guard, &program_info).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitProgramStatusToSuccess(tenant_id, pipeline_id, program_version_guard, program_binary_url) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &program_binary_url).await;
+                                let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &program_binary_url).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitProgramStatusToSqlError(tenant_id, pipeline_id, program_version_guard, internal_sql_error) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_program_status_to_sql_error(tenant_id, pipeline_id, program_version_guard, internal_sql_error.clone()).await;
+                                let impl_response = handle.db.transit_program_status_to_sql_error(tenant_id, pipeline_id, program_version_guard, internal_sql_error.clone()).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitProgramStatusToRustError(tenant_id, pipeline_id, program_version_guard, internal_rust_error) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_program_status_to_rust_error(tenant_id, pipeline_id, program_version_guard, &internal_rust_error).await;
+                                let impl_response = handle.db.transit_program_status_to_rust_error(tenant_id, pipeline_id, program_version_guard, &internal_rust_error).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitProgramStatusToSystemError(tenant_id, pipeline_id, program_version_guard, internal_system_error) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_program_status_to_system_error(tenant_id, pipeline_id, program_version_guard, &internal_system_error).await;
+                                let impl_response = handle.db.transit_program_status_to_system_error(tenant_id, pipeline_id, program_version_guard, &internal_system_error).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::SetDeploymentDesiredStatusRunning(tenant_id, pipeline_name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.set_deployment_desired_status_running(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.set_deployment_desired_status_running(tenant_id, &pipeline_name).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::SetDeploymentDesiredStatusPaused(tenant_id, pipeline_name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.set_deployment_desired_status_paused(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.set_deployment_desired_status_paused(tenant_id, &pipeline_name).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::SetDeploymentDesiredStatusShutdown(tenant_id, pipeline_name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.set_deployment_desired_status_shutdown(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.set_deployment_desired_status_shutdown(tenant_id, &pipeline_name).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitDeploymentStatusToProvisioning(tenant_id, pipeline_id, pipeline_config) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_deployment_status_to_provisioning(tenant_id, pipeline_id, pipeline_config.clone()).await;
+                                let impl_response = handle.db.transit_deployment_status_to_provisioning(tenant_id, pipeline_id, pipeline_config.clone()).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitDeploymentStatusToInitializing(tenant_id, pipeline_id, deployment_location) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_deployment_status_to_initializing(tenant_id, pipeline_id, &deployment_location).await;
+                                let impl_response = handle.db.transit_deployment_status_to_initializing(tenant_id, pipeline_id, &deployment_location).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitDeploymentStatusToRunning(tenant_id, pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_deployment_status_to_running(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.transit_deployment_status_to_running(tenant_id, pipeline_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitDeploymentStatusToPaused(tenant_id, pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_deployment_status_to_paused(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.transit_deployment_status_to_paused(tenant_id, pipeline_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitDeploymentStatusToShuttingDown(tenant_id, pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_deployment_status_to_shutting_down(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.transit_deployment_status_to_shutting_down(tenant_id, pipeline_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitDeploymentStatusToShutdown(tenant_id, pipeline_id) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_deployment_status_to_shutdown(tenant_id, pipeline_id).await;
+                                let impl_response = handle.db.transit_deployment_status_to_shutdown(tenant_id, pipeline_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitDeploymentStatusToFailed(tenant_id, pipeline_id, deployment_error) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_deployment_status_to_failed(tenant_id, pipeline_id, &deployment_error).await;
+                                let impl_response = handle.db.transit_deployment_status_to_failed(tenant_id, pipeline_id, &deployment_error).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::ListPipelineIdsAcrossAllTenants => {
+                                let model_response = model.list_pipeline_ids_across_all_tenants().await;
+                                let impl_response = handle.db.list_pipeline_ids_across_all_tenants().await;
+                                check_response_pipeline_ids_with_tenant_id(i, model_response, impl_response);
+                            }
+                            StorageAction::ListPipelinesAcrossAllTenants => {
+                                let model_response = model.list_pipelines_across_all_tenants().await;
+                                let impl_response = handle.db.list_pipelines_across_all_tenants().await;
+                                check_response_pipelines_with_tenant_id(i, model_response, impl_response);
+                            }
+                            StorageAction::GetNextPipelineProgramToCompile => {
+                                let model_response = model.get_next_pipeline_program_to_compile().await;
+                                let impl_response = handle.db.get_next_pipeline_program_to_compile().await;
+                                check_response_optional_pipeline_with_tenant_id(i, model_response, impl_response);
+                            }
+                            StorageAction::IsPipelineProgramInUse(pipeline_id, program_version) => {
+                                let model_response = model.is_pipeline_program_in_use(pipeline_id, program_version).await;
+                                let impl_response = handle.db.is_pipeline_program_in_use(pipeline_id, program_version).await;
+                                check_responses(i, model_response, impl_response);
+                            }
                         }
                     }
                 });
@@ -1612,6 +1785,123 @@ struct DbModel {
     pub tenants: BTreeMap<TenantId, TenantRecord>,
     pub api_keys: BTreeMap<(TenantId, String), (ApiKeyId, String, Vec<ApiPermission>)>,
     pub pipelines: BTreeMap<(TenantId, PipelineId), ExtendedPipelineDescr>,
+}
+
+#[async_trait]
+trait ModelHelpers {
+    /// Fetches the existing pipeline, checks the version guard matches,
+    /// checks the transition is valid. Returns the pipeline.
+    async fn help_transit_program_status(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+        new_status: &ProgramStatus,
+    ) -> Result<ExtendedPipelineDescr, DBError>;
+
+    /// Fetches the existing pipeline, checks the program is compiled,
+    /// and checks the transition is valid. Returns the pipeline.
+    async fn help_transit_deployment_status(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        new_status: &PipelineStatus,
+    ) -> Result<ExtendedPipelineDescr, DBError>;
+
+    /// Fetches the existing pipeline, checks the transition is valid,
+    /// and checks the program is compiled. Returns the pipeline.
+    async fn help_transit_deployment_desired_status(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        new_desired_status: &PipelineStatus,
+    ) -> Result<ExtendedPipelineDescr, DBError>;
+}
+
+#[async_trait]
+impl ModelHelpers for Mutex<DbModel> {
+    async fn help_transit_program_status(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+        new_status: &ProgramStatus,
+    ) -> Result<ExtendedPipelineDescr, DBError> {
+        // Fetch existing pipeline
+        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+
+        // Pipeline must be shutdown
+        if !pipeline.is_fully_shutdown() {
+            return Err(DBError::CannotUpdateNonShutdownPipeline);
+        }
+
+        // Check version guard
+        if pipeline.program_version != program_version_guard {
+            return Err(DBError::OutdatedProgramVersion {
+                latest_version: pipeline.program_version,
+            });
+        }
+
+        // Check transition
+        validate_program_status_transition(&pipeline.program_status, &new_status)?;
+
+        // Return fetched pipeline
+        Ok(pipeline)
+    }
+
+    async fn help_transit_deployment_status(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        new_status: &PipelineStatus,
+    ) -> Result<ExtendedPipelineDescr, DBError> {
+        // Fetch existing pipeline
+        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+
+        // Check program is compiled
+        if pipeline.program_status.has_failed_to_compile() {
+            return Err(DBError::ProgramFailedToCompile);
+        }
+        if !pipeline.program_status.is_fully_compiled() {
+            return Err(DBError::ProgramNotYetCompiled);
+        }
+
+        // Check transition
+        validate_deployment_status_transition(&pipeline.deployment_status, &new_status)?;
+
+        // Return fetched pipeline
+        Ok(pipeline)
+    }
+
+    async fn help_transit_deployment_desired_status(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        new_desired_status: &PipelineStatus,
+    ) -> Result<ExtendedPipelineDescr, DBError> {
+        // Fetch existing pipeline
+        let pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+
+        // Check transition
+        validate_deployment_desired_status_transition(
+            &pipeline.deployment_status,
+            &pipeline.deployment_desired_status,
+            new_desired_status,
+        )?;
+
+        // Check program is compiled
+        if *new_desired_status != PipelineStatus::Shutdown {
+            if pipeline.program_status.has_failed_to_compile() {
+                return Err(DBError::ProgramFailedToCompile);
+            }
+            if !pipeline.program_status.is_fully_compiled() {
+                return Err(DBError::ProgramNotYetCompiled);
+            }
+        }
+
+        // Return fetched pipeline
+        Ok(pipeline)
+    }
 }
 
 #[async_trait]
@@ -1934,8 +2224,8 @@ impl Storage for Mutex<DbModel> {
         }
 
         // Insert into state (will overwrite)
-        let mut state = self.lock().await;
-        state
+        self.lock()
+            .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
 
@@ -1957,8 +2247,10 @@ impl Storage for Mutex<DbModel> {
         }
 
         // Delete from state
-        let mut state = self.lock().await;
-        state.pipelines.remove(&(tenant_id, pipeline.id));
+        self.lock()
+            .await
+            .pipelines
+            .remove(&(tenant_id, pipeline.id));
         Ok(pipeline.id)
     }
 
@@ -1968,7 +2260,19 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         program_version_guard: Version,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = ProgramStatus::Pending;
+        let mut pipeline = self
+            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
+            .await?;
+        pipeline.program_status = new_status;
+        pipeline.program_status_since = Utc::now();
+        pipeline.program_info = None;
+        pipeline.program_binary_url = None;
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_program_status_to_compiling_sql(
@@ -1977,7 +2281,17 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         program_version_guard: Version,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = ProgramStatus::CompilingSql;
+        let mut pipeline = self
+            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
+            .await?;
+        pipeline.program_status = new_status;
+        pipeline.program_status_since = Utc::now();
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_program_status_to_compiling_rust(
@@ -1987,7 +2301,18 @@ impl Storage for Mutex<DbModel> {
         program_version_guard: Version,
         program_info: &ProgramInfo,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = ProgramStatus::CompilingRust;
+        let mut pipeline = self
+            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
+            .await?;
+        pipeline.program_status = new_status;
+        pipeline.program_status_since = Utc::now();
+        pipeline.program_info = Some(program_info.clone());
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_program_status_to_success(
@@ -1997,7 +2322,18 @@ impl Storage for Mutex<DbModel> {
         program_version_guard: Version,
         program_binary_url: &str,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = ProgramStatus::Success;
+        let mut pipeline = self
+            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
+            .await?;
+        pipeline.program_status = new_status;
+        pipeline.program_status_since = Utc::now();
+        pipeline.program_binary_url = Some(program_binary_url.to_string());
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_program_status_to_sql_error(
@@ -2007,7 +2343,17 @@ impl Storage for Mutex<DbModel> {
         program_version_guard: Version,
         internal_sql_error: Vec<SqlCompilerMessage>,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = ProgramStatus::SqlError(internal_sql_error);
+        let mut pipeline = self
+            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
+            .await?;
+        pipeline.program_status = new_status;
+        pipeline.program_status_since = Utc::now();
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_program_status_to_rust_error(
@@ -2017,7 +2363,17 @@ impl Storage for Mutex<DbModel> {
         program_version_guard: Version,
         internal_rust_error: &str,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = ProgramStatus::RustError(internal_rust_error.to_string());
+        let mut pipeline = self
+            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
+            .await?;
+        pipeline.program_status = new_status;
+        pipeline.program_status_since = Utc::now();
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_program_status_to_system_error(
@@ -2027,7 +2383,17 @@ impl Storage for Mutex<DbModel> {
         program_version_guard: Version,
         internal_system_error: &str,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = ProgramStatus::SystemError(internal_system_error.to_string());
+        let mut pipeline = self
+            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, &new_status)
+            .await?;
+        pipeline.program_status = new_status;
+        pipeline.program_status_since = Utc::now();
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn set_deployment_desired_status_running(
@@ -2035,7 +2401,16 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_desired_status = PipelineStatus::Running;
+        let mut pipeline = self
+            .help_transit_deployment_desired_status(tenant_id, pipeline_name, &new_desired_status)
+            .await?;
+        pipeline.deployment_desired_status = new_desired_status;
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn set_deployment_desired_status_paused(
@@ -2043,7 +2418,16 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_desired_status = PipelineStatus::Paused;
+        let mut pipeline = self
+            .help_transit_deployment_desired_status(tenant_id, pipeline_name, &new_desired_status)
+            .await?;
+        pipeline.deployment_desired_status = new_desired_status;
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn set_deployment_desired_status_shutdown(
@@ -2051,7 +2435,16 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_desired_status = PipelineStatus::Shutdown;
+        let mut pipeline = self
+            .help_transit_deployment_desired_status(tenant_id, pipeline_name, &new_desired_status)
+            .await?;
+        pipeline.deployment_desired_status = new_desired_status;
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_deployment_status_to_provisioning(
@@ -2060,7 +2453,18 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         deployment_config: PipelineConfig,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = PipelineStatus::Provisioning;
+        let mut pipeline = self
+            .help_transit_deployment_status(tenant_id, pipeline_id, &new_status)
+            .await?;
+        pipeline.deployment_status = new_status;
+        pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_config = Some(deployment_config);
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_deployment_status_to_initializing(
@@ -2069,7 +2473,18 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         deployment_location: &str,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = PipelineStatus::Initializing;
+        let mut pipeline = self
+            .help_transit_deployment_status(tenant_id, pipeline_id, &new_status)
+            .await?;
+        pipeline.deployment_status = new_status;
+        pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_location = Some(deployment_location.to_string());
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_deployment_status_to_running(
@@ -2077,7 +2492,17 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = PipelineStatus::Running;
+        let mut pipeline = self
+            .help_transit_deployment_status(tenant_id, pipeline_id, &new_status)
+            .await?;
+        pipeline.deployment_status = new_status;
+        pipeline.deployment_status_since = Utc::now();
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_deployment_status_to_paused(
@@ -2085,7 +2510,17 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = PipelineStatus::Paused;
+        let mut pipeline = self
+            .help_transit_deployment_status(tenant_id, pipeline_id, &new_status)
+            .await?;
+        pipeline.deployment_status = new_status;
+        pipeline.deployment_status_since = Utc::now();
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_deployment_status_to_shutting_down(
@@ -2093,7 +2528,17 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = PipelineStatus::ShuttingDown;
+        let mut pipeline = self
+            .help_transit_deployment_status(tenant_id, pipeline_id, &new_status)
+            .await?;
+        pipeline.deployment_status = new_status;
+        pipeline.deployment_status_since = Utc::now();
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_deployment_status_to_shutdown(
@@ -2101,7 +2546,20 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = PipelineStatus::Shutdown;
+        let mut pipeline = self
+            .help_transit_deployment_status(tenant_id, pipeline_id, &new_status)
+            .await?;
+        pipeline.deployment_status = new_status;
+        pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_config = None;
+        pipeline.deployment_location = None;
+        pipeline.deployment_error = None;
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn transit_deployment_status_to_failed(
@@ -2110,25 +2568,63 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         deployment_error: &ErrorResponse,
     ) -> Result<(), DBError> {
-        todo!()
+        let new_status = PipelineStatus::Failed;
+        let mut pipeline = self
+            .help_transit_deployment_status(tenant_id, pipeline_id, &new_status)
+            .await?;
+        pipeline.deployment_status = new_status;
+        pipeline.deployment_status_since = Utc::now();
+        pipeline.deployment_error = Some(deployment_error.clone());
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn list_pipeline_ids_across_all_tenants(
         &self,
     ) -> Result<Vec<(TenantId, PipelineId)>, DBError> {
-        todo!()
+        Ok(self
+            .lock()
+            .await
+            .pipelines
+            .iter()
+            .map(|((tid, pid), _)| (*tid, *pid))
+            .collect())
     }
 
     async fn list_pipelines_across_all_tenants(
         &self,
     ) -> Result<Vec<(TenantId, ExtendedPipelineDescr)>, DBError> {
-        todo!()
+        Ok(self
+            .lock()
+            .await
+            .pipelines
+            .iter()
+            .map(|((tid, _), pipeline)| (*tid, pipeline.clone()))
+            .collect())
     }
 
     async fn get_next_pipeline_program_to_compile(
         &self,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
-        todo!()
+        let mut pipelines: Vec<(TenantId, ExtendedPipelineDescr)> = self
+            .lock()
+            .await
+            .pipelines
+            .iter()
+            .filter(|(_, p)| p.program_status == ProgramStatus::Pending)
+            .map(|((tid, _), pipeline)| (*tid, pipeline.clone()))
+            .collect();
+        if pipelines.is_empty() {
+            return Ok(None);
+        }
+        pipelines.sort_by(|(_, p1), (_, p2)| {
+            (p1.program_status_since, p1.id).cmp(&(p2.program_status_since, p2.id))
+        });
+        let chosen = pipelines.get(0).unwrap().clone(); // Already checked for empty
+        Ok(Some((chosen.0, chosen.1)))
     }
 
     async fn is_pipeline_program_in_use(
@@ -2136,6 +2632,16 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         program_version: Version,
     ) -> Result<bool, DBError> {
-        todo!()
+        let state = self.lock().await;
+        let pipeline = state
+            .pipelines
+            .iter()
+            .find(|((_, pid), _)| *pid == pipeline_id)
+            .map(|(_, pipeline)| pipeline);
+        if let Some(pipeline) = pipeline {
+            Ok(pipeline.program_version == program_version)
+        } else {
+            Ok(false)
+        }
     }
 }
