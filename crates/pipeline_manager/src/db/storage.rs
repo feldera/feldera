@@ -260,7 +260,8 @@ pub(crate) trait Storage {
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError>;
 
     /// Checks whether the provided pipeline program version is in use.
-    /// It is in use if the pipeline still exists AND the program version matches the one provided.
+    /// It is in use if the pipeline exists and the program version provided is the current one.
+    /// If the pipeline does not exist or the program version is not the latest, false is returned.
     async fn is_pipeline_program_in_use(
         &self,
         pipeline_id: PipelineId,

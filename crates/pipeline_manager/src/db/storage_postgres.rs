@@ -38,7 +38,7 @@ pub struct StoragePostgres {
     /// It will not be persisted after termination.
     #[cfg(feature = "pg-embed")]
     #[allow(dead_code)]
-    // It has to stay alive until StoragePostgres is dropped. // TODO: use _ instead?
+    // It has to stay alive until StoragePostgres is dropped.
     pub(crate) pg_inst: Option<pg_embed::postgres::PgEmbed>,
 }
 
@@ -438,7 +438,7 @@ impl Storage for StoragePostgres {
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::pipeline::set_desired_deployment_status(
+        operations::pipeline::set_deployment_desired_status(
             &txn,
             tenant_id,
             pipeline_name,
@@ -456,7 +456,7 @@ impl Storage for StoragePostgres {
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::pipeline::set_desired_deployment_status(
+        operations::pipeline::set_deployment_desired_status(
             &txn,
             tenant_id,
             pipeline_name,
@@ -474,7 +474,7 @@ impl Storage for StoragePostgres {
     ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        operations::pipeline::set_desired_deployment_status(
+        operations::pipeline::set_deployment_desired_status(
             &txn,
             tenant_id,
             pipeline_name,
