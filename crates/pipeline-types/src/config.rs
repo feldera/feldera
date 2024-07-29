@@ -452,16 +452,16 @@ pub struct ResourceConfig {
 
 #[derive(ThisError, Serialize, Deserialize, Debug, ToSchema)]
 pub enum ConnectorGenerationError {
+    #[error("Property '{key}' does not exist")]
+    PropertyDoesNotExist { key: String },
     #[error("Required property '{key}' is missing")]
-    PropertyKeyMissing { key: String },
+    PropertyMissing { key: String },
     #[error("Property '{key}' has value '{value}' which is invalid: {reason}")]
     InvalidPropertyValue {
         key: String,
         value: String,
         reason: String,
     },
-    #[error("Incorrect number of properties: expected {expected} but got {actual}")]
-    IncorrectNumProperties { expected: usize, actual: usize },
     #[error("Expected an input connector but got an output connector")]
     ExpectedInputConnector,
     #[error("Expected an output connector but got an intput connector")]
@@ -482,11 +482,12 @@ struct NamedConnector {
 fn parse_connectors(
     properties: &BTreeMap<String, String>,
 ) -> Result<Vec<NamedConnector>, ConnectorGenerationError> {
-    if properties.len() != 1 {
-        return Err(ConnectorGenerationError::IncorrectNumProperties {
-            expected: 1,
-            actual: properties.len(),
-        });
+    for property in properties.keys() {
+        if property != "connectors" && property != "materialized" {
+            return Err(ConnectorGenerationError::PropertyDoesNotExist {
+                key: property.to_string(),
+            });
+        }
     }
     match properties.get("connectors") {
         Some(s) => serde_yaml::from_str::<Vec<NamedConnector>>(s).map_err(|e| {
@@ -496,9 +497,7 @@ fn parse_connectors(
                 reason: format!("Deserialization failed: {e}"),
             }
         }),
-        None => Err(ConnectorGenerationError::PropertyKeyMissing {
-            key: "connectors".to_string(),
-        }),
+        None => Ok(vec![]),
     }
 }
 
@@ -533,73 +532,69 @@ pub fn generate_program_info_from_schema(
     // Input connectors
     let mut inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
     for input_relation in &program_schema.inputs {
-        if !input_relation.properties.is_empty() {
-            for connector in parse_connectors(&input_relation.properties)? {
-                // Must be an input connector
-                match connector.config.transport {
-                    TransportConfig::FileInput(_)
-                    | TransportConfig::KafkaInput(_)
-                    | TransportConfig::UrlInput(_)
-                    | TransportConfig::S3Input(_)
-                    | TransportConfig::DeltaTableInput(_) => {}
-                    _ => {
-                        return Err(ConnectorGenerationError::ExpectedInputConnector);
-                    }
+        for connector in parse_connectors(&input_relation.properties)? {
+            // Must be an input connector
+            match connector.config.transport {
+                TransportConfig::FileInput(_)
+                | TransportConfig::KafkaInput(_)
+                | TransportConfig::UrlInput(_)
+                | TransportConfig::S3Input(_)
+                | TransportConfig::DeltaTableInput(_) => {}
+                _ => {
+                    return Err(ConnectorGenerationError::ExpectedInputConnector);
                 }
-
-                // Must have an unique name
-                let connector_unique_name =
-                    Cow::from(format!("{}.{}", input_relation.name(), connector.name));
-                if inputs.contains_key::<Cow<'static, str>>(&connector_unique_name) {
-                    return Err(ConnectorGenerationError::UniqueConnectorNameCollision {
-                        name: connector_unique_name.to_string(),
-                    });
-                }
-
-                inputs.insert(
-                    connector_unique_name,
-                    InputEndpointConfig {
-                        stream: Cow::from(input_relation.name()),
-                        connector_config: connector.config,
-                    },
-                );
             }
+
+            // Must have an unique name
+            let connector_unique_name =
+                Cow::from(format!("{}.{}", input_relation.name(), connector.name));
+            if inputs.contains_key::<Cow<'static, str>>(&connector_unique_name) {
+                return Err(ConnectorGenerationError::UniqueConnectorNameCollision {
+                    name: connector_unique_name.to_string(),
+                });
+            }
+
+            inputs.insert(
+                connector_unique_name,
+                InputEndpointConfig {
+                    stream: Cow::from(input_relation.name()),
+                    connector_config: connector.config,
+                },
+            );
         }
     }
 
     // Output connectors
     let mut outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig> = BTreeMap::new();
     for output_relation in &program_schema.outputs {
-        if !output_relation.properties.is_empty() {
-            for connector in parse_connectors(&output_relation.properties)? {
-                // Must be an output connector
-                match connector.config.transport {
-                    TransportConfig::FileOutput(_)
-                    | TransportConfig::KafkaOutput(_)
-                    | TransportConfig::DeltaTableOutput(_) => {}
-                    _ => {
-                        return Err(ConnectorGenerationError::ExpectedInputConnector);
-                    }
+        for connector in parse_connectors(&output_relation.properties)? {
+            // Must be an output connector
+            match connector.config.transport {
+                TransportConfig::FileOutput(_)
+                | TransportConfig::KafkaOutput(_)
+                | TransportConfig::DeltaTableOutput(_) => {}
+                _ => {
+                    return Err(ConnectorGenerationError::ExpectedOutputConnector);
                 }
-
-                // Must have an unique name
-                let connector_unique_name =
-                    Cow::from(format!("{}.{}", output_relation.name(), connector.name));
-                if outputs.contains_key::<Cow<'static, str>>(&connector_unique_name) {
-                    return Err(ConnectorGenerationError::UniqueConnectorNameCollision {
-                        name: connector_unique_name.to_string(),
-                    });
-                }
-
-                outputs.insert(
-                    connector_unique_name,
-                    OutputEndpointConfig {
-                        stream: Cow::from(output_relation.name()),
-                        query: Default::default(),
-                        connector_config: connector.config,
-                    },
-                );
             }
+
+            // Must have an unique name
+            let connector_unique_name =
+                Cow::from(format!("{}.{}", output_relation.name(), connector.name));
+            if outputs.contains_key::<Cow<'static, str>>(&connector_unique_name) {
+                return Err(ConnectorGenerationError::UniqueConnectorNameCollision {
+                    name: connector_unique_name.to_string(),
+                });
+            }
+
+            outputs.insert(
+                connector_unique_name,
+                OutputEndpointConfig {
+                    stream: Cow::from(output_relation.name()),
+                    query: Default::default(),
+                    connector_config: connector.config,
+                },
+            );
         }
     }
 
