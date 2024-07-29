@@ -123,6 +123,19 @@ where
             None
         }
     }
+
+    /// Returns the number of batches in the slot, whether loose or merging.
+    fn n_batches(&self) -> usize {
+        self.all_batches().count()
+    }
+
+    /// Returns an iterator over all batches in the slot, whether loose or
+    /// merging.
+    fn all_batches(&self) -> impl Iterator<Item = &Arc<B>> {
+        self.loose_batches
+            .iter()
+            .chain(self.merging_batches.iter().flatten())
+    }
 }
 
 /// State shared between the merger thread and the main thread.
@@ -181,12 +194,9 @@ where
 
     /// Gets a copy of all of the batches (whether loose or being merged).
     fn get_batches(&self) -> Vec<Arc<B>> {
-        let mut batches = Vec::new();
+        let mut batches = Vec::with_capacity(self.slots.iter().map(Slot::n_batches).sum());
         for slot in &self.slots {
-            batches.extend(slot.loose_batches.iter().map(Arc::clone));
-            if let Some(merging_batches) = &slot.merging_batches {
-                batches.extend(merging_batches.iter().map(Arc::clone));
-            }
+            batches.extend(slot.all_batches().cloned());
         }
         batches
     }
@@ -194,7 +204,8 @@ where
     /// Removes the loose batches and returns them.  This ensures that the
     /// merger thread will not initiate any more merges.
     fn take_loose_batches(&mut self) -> Vec<Arc<B>> {
-        let mut loose_batches = Vec::new();
+        let mut loose_batches =
+            Vec::with_capacity(self.slots.iter().map(|slot| slot.loose_batches.len()).sum());
         for slot in &mut self.slots {
             loose_batches.append(&mut slot.loose_batches);
         }
@@ -212,9 +223,7 @@ where
     /// Returns true if the merger is empty: it is not doing any merging work
     /// and there are no loose batches.
     fn is_empty(&self) -> bool {
-        self.slots
-            .iter()
-            .all(|slot| slot.merging_batches.is_none() && slot.loose_batches.is_empty())
+        self.slots.iter().all(|slot| slot.n_batches() == 0)
     }
 
     /// Finishes up the ongoing merge at the given `level`, which has completed
