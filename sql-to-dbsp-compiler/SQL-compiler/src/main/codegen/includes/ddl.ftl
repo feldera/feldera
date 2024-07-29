@@ -33,6 +33,7 @@ void ExtendedTableElement(List<SqlNode> list) :
     final boolean nullable;
     SqlIdentifier name = null;
     final SqlNodeList columnList;
+    final SqlNodeList otherColumnList;
     final Span s = Span.of();
     final ColumnStrategy strategy;
     SqlExtendedColumnDeclaration column = null;
@@ -64,9 +65,9 @@ void ExtendedTableElement(List<SqlNode> list) :
         columnList = ParenthesizedSimpleIdentifierList() {
             list.add(SqlDdlNodes.primary(s.end(columnList), name, columnList));
         }
-    |   <FOREIGN> <KEY> ParenthesizedSimpleIdentifierList() <REFERENCES>
-                 SimpleIdentifier() ParenthesizedSimpleIdentifierList() {
-            // TODO: this is currently completely ignored
+    |   <FOREIGN> <KEY> columnList = ParenthesizedSimpleIdentifierList() <REFERENCES>
+                 id = SimpleIdentifier() otherColumnList = ParenthesizedSimpleIdentifierList() {
+            list.add(new SqlForeignKey(s.end(otherColumnList), columnList, id, otherColumnList));
         }
     )
 }

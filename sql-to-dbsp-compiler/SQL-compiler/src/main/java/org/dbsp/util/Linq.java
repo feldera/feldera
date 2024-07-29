@@ -203,7 +203,7 @@ public class Linq {
         return result;
     }
 
-    public static <T> List<T> where(List<T> data, Predicate<T> function) {
+    public static <T> List<T> where(Collection<T> data, Predicate<T> function) {
         List<T> result = new ArrayList<>();
         for (T aData : data)
             if (function.test(aData))

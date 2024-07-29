@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
@@ -52,7 +52,7 @@ import java.util.Set;
  * A complete circuit can be obtained by calling the "seal" method. */
 public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode, IWritesLogs {
     public final List<DBSPDeclaration> declarations = new ArrayList<>();
-    public final LinkedHashMap<String, DBSPSourceBaseOperator> sourceOperators = new LinkedHashMap<>();
+    public final LinkedHashMap<String, DBSPSourceTableOperator> sourceOperators = new LinkedHashMap<>();
     public final LinkedHashMap<String, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
     public final LinkedHashMap<String, DBSPSinkOperator> sinkOperators = new LinkedHashMap<>();
     public final List<DBSPOperator> allOperators = new ArrayList<>();
@@ -93,7 +93,7 @@ public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode
                 .newline();
         assert !this.operators.contains(operator): "Operator " + operator + " already inserted";
         this.operators.add(operator);
-        DBSPSourceBaseOperator source = operator.as(DBSPSourceBaseOperator.class);
+        DBSPSourceTableOperator source = operator.as(DBSPSourceTableOperator.class);
         if (source != null)
             Utilities.putNew(this.sourceOperators, source.tableName, source);
         DBSPViewOperator view = operator.as(DBSPViewOperator.class);
@@ -110,7 +110,7 @@ public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode
     /** Get the table with the specified name.
      * @param tableName must use the proper casing */
     @Nullable
-    public DBSPSourceBaseOperator getInput(String tableName) {
+    public DBSPSourceTableOperator getInput(String tableName) {
         return this.sourceOperators.get(tableName);
     }
 

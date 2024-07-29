@@ -174,6 +174,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -759,7 +760,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 HasSchema withSchema = new HasSchema(CalciteObject.EMPTY, tableName, false, tableRowType);
                 this.metadata.addTable(withSchema);
                 TableMetadata tableMeta = new TableMetadata(
-                        Linq.map(withSchema.getColumns(), this::convertMetadata), false);
+                        Linq.map(withSchema.getColumns(), this::convertMetadata), Linq.list(), false);
                 source = new DBSPSourceMultisetOperator(
                         node, CalciteObject.EMPTY,
                         this.makeZSet(rowType), originalRowType,
@@ -2090,6 +2091,20 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 watermark = null;
             }
         }
+        if (metadata.isPrimaryKey) {
+            if (type.mayBeNull) {
+                this.compiler.reportError(metadata.getNode().getPositionRange(),
+                        "PRIMARY KEY cannot be nullable",
+                        "PRIMARY KEY column " + Utilities.singleQuote(metadata.getName()) +
+                                " has type " + metadata.getType().getFullTypeString() + ", which is nullable");
+            }
+            if (type.is(DBSPTypeVec.class) || type.is(DBSPTypeMap.class)) {
+                this.compiler.reportError(metadata.getNode().getPositionRange(),
+                        "Illegal PRIMARY KEY type",
+                        "PRIMARY KEY column " + Utilities.singleQuote(metadata.getName()) +
+                                " cannot have type " + metadata.getType().getFullTypeString());
+            }
+        }
         DBSPExpression defaultValue = null;
         if (metadata.defaultValue != null)
             defaultValue = expressionCompiler.compile(metadata.defaultValue).cast(type);
@@ -2280,7 +2295,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
         boolean materialized = create.isMaterialized();
-        TableMetadata tableMeta = new TableMetadata(metadata, materialized);
+        TableMetadata tableMeta = new TableMetadata(metadata, create.foreignKeys, materialized);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
                 tableMeta, tableName, def.statement);

@@ -30,10 +30,11 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlCreateFunctionDeclaration;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlExtendedColumnDeclaration;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -186,8 +187,8 @@ public class ParserTests {
         Assert.assertNotNull(node);
         Assert.assertTrue(node instanceof SqlCreateTable);
         SqlCreateTable create = (SqlCreateTable) node;
-        Assert.assertNotNull(create.columnList);
-        SqlExtendedColumnDeclaration decl = (SqlExtendedColumnDeclaration) create.columnList.get(0);
+        Assert.assertNotNull(create.columnsOrForeignKeys);
+        SqlExtendedColumnDeclaration decl = (SqlExtendedColumnDeclaration) create.columnsOrForeignKeys.get(0);
         Assert.assertNotNull(decl.lateness);
     }
 
@@ -202,8 +203,8 @@ public class ParserTests {
         Assert.assertNotNull(node);
         Assert.assertTrue(node instanceof SqlCreateTable);
         SqlCreateTable create = (SqlCreateTable) node;
-        Assert.assertNotNull(create.columnList);
-        SqlExtendedColumnDeclaration decl = (SqlExtendedColumnDeclaration) create.columnList.get(0);
+        Assert.assertNotNull(create.columnsOrForeignKeys);
+        SqlExtendedColumnDeclaration decl = (SqlExtendedColumnDeclaration) create.columnsOrForeignKeys.get(0);
         Assert.assertNotNull(decl.watermark);
     }
 
@@ -321,7 +322,7 @@ public class ParserTests {
         String query =
                 """
                 create table git_commit (
-                    git_commit_id bigint not null,
+                    git_commit_id bigint not null primary key,
                     repository_id bigint not null,
                     commit_id varchar not null,
                     commit_date timestamp not null,
@@ -332,8 +333,18 @@ public class ParserTests {
                     pipeline_id bigint not null
                 )""";
         CalciteCompiler calcite = this.getCompiler();
-        SqlNode node = calcite.parseStatements(query);
+        SqlNodeList node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
+        Assert.assertEquals(2, node.size());
+        SqlNode table = node.get(1);
+        Assert.assertTrue(table instanceof SqlCreateTable);
+        SqlCreateTable ct = (SqlCreateTable) table;
+        Assert.assertEquals(2, ct.columnsOrForeignKeys.size());
+        SqlNode first = ct.columnsOrForeignKeys.get(0);
+        Assert.assertTrue(first instanceof SqlExtendedColumnDeclaration);
+        SqlExtendedColumnDeclaration decl = (SqlExtendedColumnDeclaration) first;
+        Assert.assertEquals(1, decl.foreignKeyColumns.size());
+        Assert.assertEquals(1, decl.foreignKeyTables.size());
     }
 
     @Test
@@ -344,8 +355,23 @@ public class ParserTests {
                     FOREIGN KEY (id) REFERENCES inventoryitem_t (id)
                 );""";
         CalciteCompiler calcite = this.getCompiler();
-        SqlNode node = calcite.parseStatements(query);
+        SqlNodeList node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
+        Assert.assertEquals(1, node.size());
+        SqlNode table = node.get(0);
+        Assert.assertTrue(table instanceof SqlCreateTable);
+        SqlCreateTable ct = (SqlCreateTable) table;
+        Assert.assertEquals(2, ct.columnsOrForeignKeys.size());
+        SqlNode first = ct.columnsOrForeignKeys.get(0);
+        Assert.assertTrue(first instanceof SqlExtendedColumnDeclaration);
+        SqlExtendedColumnDeclaration decl = (SqlExtendedColumnDeclaration) first;
+        Assert.assertTrue(decl.primaryKey);
+        SqlNode second = ct.columnsOrForeignKeys.get(1);
+        Assert.assertTrue(second instanceof SqlForeignKey);
+        SqlForeignKey fk = (SqlForeignKey) second;
+        Assert.assertEquals(1, fk.columnList.size());
+        Assert.assertEquals(1, fk.otherColumnList.size());
+        Assert.assertEquals("INVENTORYITEM_T", fk.otherTable.getSimple());
     }
 
     @Test

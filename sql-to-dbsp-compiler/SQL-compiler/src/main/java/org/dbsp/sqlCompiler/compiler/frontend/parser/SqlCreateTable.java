@@ -19,7 +19,8 @@ import java.util.Objects;
 /** Parse tree for {@code CREATE TABLE} statement. */
 public class SqlCreateTable extends SqlCreate {
     public final SqlIdentifier name;
-    public final SqlNodeList columnList;
+    /** The column list can also contain foreign key declarations */
+    public final SqlNodeList columnsOrForeignKeys;
     /** Key-value list of string literals */
     public final @Nullable SqlNodeList connectorProperties;
 
@@ -27,17 +28,18 @@ public class SqlCreateTable extends SqlCreate {
             new SqlSpecialOperator("CREATE TABLE", SqlKind.CREATE_TABLE);
 
     public SqlCreateTable(SqlParserPos pos, boolean replace, boolean ifNotExists,
-                             SqlIdentifier name, SqlNodeList columnList, @Nullable SqlNodeList connectorProperties) {
+                          SqlIdentifier name, SqlNodeList columnsOrForeignKeys,
+                          @Nullable SqlNodeList connectorProperties) {
         super(OPERATOR, pos, replace, ifNotExists);
         this.name = Objects.requireNonNull(name, "name");
-        this.columnList = columnList;
+        this.columnsOrForeignKeys = columnsOrForeignKeys;
         this.connectorProperties = connectorProperties;
         assert connectorProperties == null || connectorProperties.size() % 2 == 0;
     }
 
     @SuppressWarnings("nullness")
     @Override public List<SqlNode> getOperandList() {
-        return ImmutableNullableList.of(name, columnList, connectorProperties);
+        return ImmutableNullableList.of(name, columnsOrForeignKeys, connectorProperties);
     }
 
     public static void writeProperties(SqlWriter writer, @Nullable SqlNodeList connectorProperties) {
@@ -68,7 +70,7 @@ public class SqlCreateTable extends SqlCreate {
         name.unparse(writer, leftPrec, rightPrec);
         {
             SqlWriter.Frame frame = writer.startList("(", ")");
-            for (SqlNode c : columnList) {
+            for (SqlNode c : columnsOrForeignKeys) {
                 writer.sep(",");
                 c.unparse(writer, 0, 0);
             }

@@ -83,7 +83,7 @@ public class TimeTests extends BaseSQLTests {
     public void issue1844() {
         String sql = """
                 create table credit_card_transactions(transaction_time timestamp);
-                create table my_timer(id int primary key, t timestamp);\s
+                create table my_timer(id int NOT NULL primary key, t timestamp);\s
                 
                 create view recent_transactions as
                 SELECT * FROM credit_card_transactions

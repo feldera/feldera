@@ -1549,7 +1549,7 @@ async fn upsert() {
         &config,
         r#"create table t1(
             id1 bigint not null,
-            id2 bigint,
+            id2 bigint not null,
             str1 varchar not null,
             str2 varchar,
             int1 bigint not null,
@@ -1586,7 +1586,7 @@ async fn upsert() {
                 "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             ),
             // Add several identical records with different id's
-            r#"[{"insert":{"id1":1, "str1": "1", "int1": 1}},{"insert":{"id1":2, "str1": "1", "int1": 1}},{"insert":{"id1":3, "str1": "1", "int1": 1}}]"#
+            r#"[{"insert":{"id1":1, "id2":1, "str1": "1", "int1": 1}},{"insert":{"id1":2, "id2":1, "str1": "1", "int1": 1}},{"insert":{"id1":3, "id2":1, "str1": "1", "int1": 1}}]"#
                 .to_string(),
         )
         .await;
@@ -1597,9 +1597,9 @@ async fn upsert() {
             &mut response,
             Duration::from_millis(10_000),
             &[
-                json!({"insert": {"id1":1,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
-                json!({"insert": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
-                json!({"insert": {"id1":3,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
+                json!({"insert": {"id1":1,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
+                json!({"insert": {"id1":2,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
+                json!({"insert": {"id1":3,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
             ],
         )
         .await;
@@ -1612,7 +1612,7 @@ async fn upsert() {
             // 1: Update 'str1'.
             // 2: Update 'str2'.
             // 3: Overwrite entire record.
-            r#"[{"update":{"id1":1, "str1": "2"}},{"update":{"id1":2, "str2": "foo"}},{"insert":{"id1":3, "str1": "1", "str2": "2", "int1":3, "int2":33}}]"#
+            r#"[{"update":{"id1":1, "id2":1, "str1": "2"}},{"update":{"id1":2, "id2":1, "str2": "foo"}},{"insert":{"id1":3, "id2":1, "str1": "1", "str2": "2", "int1":3, "int2":33}}]"#
                 .to_string(),
         )
         .await;
@@ -1622,12 +1622,14 @@ async fn upsert() {
         .read_expected_response_json(
             &mut response,
             Duration::from_millis(10_000),
-            &[json!({"delete": {"id1":1,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
-                json!({"delete": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
-                json!({"delete": {"id1":3,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}}),
-                json!({"insert": {"id1":1,"id2":null,"str1":"2","str2":null,"int1":1,"int2":null}}),
-                json!({"insert": {"id1":2,"id2":null,"str1":"1","str2":"foo","int1":1,"int2":null}}),
-                json!({"insert": {"id1":3,"id2":null,"str1":"1","str2":"2","int1":3,"int2":33}})]
+            &[
+                json!({"delete": {"id1":1,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
+                json!({"delete": {"id1":2,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
+                json!({"delete": {"id1":3,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
+                json!({"insert": {"id1":1,"id2":1,"str1":"2","str2":null,"int1":1,"int2":null}}),
+                json!({"insert": {"id1":2,"id2":1,"str1":"1","str2":"foo","int1":1,"int2":null}}),
+                json!({"insert": {"id1":3,"id2":1,"str1":"1","str2":"2","int1":3,"int2":33}}),
+            ],
         )
         .await;
 
@@ -1641,7 +1643,7 @@ async fn upsert() {
             // 3: Delete record.
             // 4: Delete non-existing key - noop.
             // 5: Update non-existing key - noop.
-            r#"[{"update":{"id1":1}},{"update":{"id1":2, "str2": null}},{"delete":{"id1":3}},{"delete":{"id1":4}},{"update":{"id1":4, "int1":0, "str1":""}}]"#
+            r#"[{"update":{"id1":1, "id2":1}},{"update":{"id1":2, "id2":1, "str2": null}},{"delete":{"id1":3, "id2":1}},{"delete":{"id1":4, "id2":1}},{"update":{"id1":4, "id2":1, "int1":0, "str1":""}}]"#
                 .to_string(),
         )
         .await;
@@ -1651,9 +1653,11 @@ async fn upsert() {
         .read_expected_response_json(
             &mut response,
             Duration::from_millis(10_000),
-            &[json!({"delete": {"id1":2,"id2":null,"str1":"1","str2":"foo","int1":1,"int2":null}}),
-                json!({"delete": {"id1":3,"id2":null,"str1":"1","str2":"2","int1":3,"int2":33}}),
-                json!({"insert": {"id1":2,"id2":null,"str1":"1","str2":null,"int1":1,"int2":null}})]
+            &[
+                json!({"delete": {"id1":2,"id2":1,"str1":"1","str2":"foo","int1":1,"int2":null}}),
+                json!({"delete": {"id1":3,"id2":1,"str1":"1","str2":"2","int1":3,"int2":33}}),
+                json!({"insert": {"id1":2,"id2":1,"str1":"1","str2":null,"int1":1,"int2":null}}),
+            ],
         )
         .await;
 

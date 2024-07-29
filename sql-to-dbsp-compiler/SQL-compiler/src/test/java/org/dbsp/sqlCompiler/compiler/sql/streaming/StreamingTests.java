@@ -273,7 +273,7 @@ public class StreamingTests extends StreamingTestBase {
         // now() used in WHERE
         String sql = """
                 CREATE TABLE transactions (
-                  id INT PRIMARY KEY,
+                  id INT NOT NULL PRIMARY KEY,
                   ts TIMESTAMP,
                   users INT,
                   AMOUNT DECIMAL

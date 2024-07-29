@@ -14,12 +14,13 @@ data: {
       "org.apache.calcite.sql.SqlDrop"
       "org.apache.calcite.sql.ddl.SqlDdlNodes"
       "org.apache.calcite.sql.ddl.SqlCreateType"
-      "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlExtendedColumnDeclaration"
-      "org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlCreateFunctionDeclaration"
+      "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration"
+      "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable"
+      "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey"
     ]
 
     # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is

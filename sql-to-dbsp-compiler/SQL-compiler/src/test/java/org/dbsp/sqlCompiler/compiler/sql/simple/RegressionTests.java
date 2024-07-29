@@ -30,9 +30,9 @@ public class RegressionTests extends SqlIoTest {
     public void issue2017() {
         String sql = """
                 CREATE TABLE customer (
-                    c_id INT,
-                    c_d_id INT,
-                    c_w_id INT,
+                    c_id INT NOT NULL,
+                    c_d_id INT NOT NULL,
+                    c_w_id INT NOT NULL,
                     c_first VARCHAR(16),
                     c_middle CHAR(2),
                     c_last VARCHAR(16),
@@ -56,7 +56,7 @@ public class RegressionTests extends SqlIoTest {
                 );
                 
                 CREATE TABLE transaction_parameters (
-                    txn_id INT PRIMARY KEY,
+                    txn_id INT NOT NULL PRIMARY KEY,
                     w_id INT,
                     d_id INT,
                     c_id INT,
@@ -375,13 +375,13 @@ public class RegressionTests extends SqlIoTest {
     public void issue1956() {
         String sql = """
                 CREATE TABLE auctions (
-                  id INT PRIMARY KEY,
+                  id INT NOT NULL PRIMARY KEY,
                   seller INT,
                   item TEXT
                 );
                 
                 CREATE TABLE bids (
-                  id INT PRIMARY KEY,
+                  id INT NOT NULL PRIMARY KEY,
                   buyer INT,
                   auction_id INT,
                   amount INT
@@ -398,7 +398,7 @@ public class RegressionTests extends SqlIoTest {
     public void issue1957() {
         String sql = """
                 CREATE TABLE warehouse (
-                   id INT PRIMARY KEY,
+                   id INT NOT NULL PRIMARY KEY,
                    parentId INT
                 );
                 

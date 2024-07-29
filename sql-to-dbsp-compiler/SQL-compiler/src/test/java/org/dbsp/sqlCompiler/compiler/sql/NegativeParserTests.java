@@ -29,9 +29,7 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null,
                     PRIMARY KEY (unknown)
                 )""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement(ddl);
-        TestUtil.assertMessagesContain(compiler, "does not correspond to a column");
+        this.statementsFailingInCompilation(ddl, "does not correspond to a column");
     }
 
     @Test
@@ -40,35 +38,25 @@ public class NegativeParserTests extends BaseSQLTests {
                 CREATE TABLE T(T INT);
                 CREATE TABLE T(T INT);
                 """;
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(ddl);
-        TestUtil.assertMessagesContain(compiler, "Duplicate declaration");
+        this.statementsFailingInCompilation(ddl, "Duplicate declaration");
     }
 
     @Test
     public void testConnectorProperties() {
         String ddl = "CREATE TABLE T(T INT) WITH ( 5 )";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement(ddl);
-        TestUtil.assertMessagesContain(compiler, "Error parsing SQL: Encountered \"5\" at");
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"5\" at");
 
         // properties need to be SQL strings
         ddl = "CREATE TABLE T(T INT) WITH ( a = b )";
-        compiler = this.testCompiler();
-        compiler.compileStatement(ddl);
-        TestUtil.assertMessagesContain(compiler, "Error parsing SQL: Encountered \"a\" at");
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"a\" at");
 
         // properties need to be SQL strings
         ddl = "CREATE TABLE T(T INT) WITH ( NULL = 'NULL' )";
-        compiler = this.testCompiler();
-        compiler.compileStatement(ddl);
-        TestUtil.assertMessagesContain(compiler, "Error parsing SQL: Encountered \"NULL\" at");
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"NULL\" at");
 
         // properties cannot be an empty list
         ddl = "CREATE TABLE T(T INT) WITH ( )";
-        compiler = this.testCompiler();
-        compiler.compileStatement(ddl);
-        TestUtil.assertMessagesContain(compiler, "Error parsing SQL: Encountered \")\" at");
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \")\" at");
     }
 
     @Test
@@ -78,9 +66,7 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null PRIMARY KEY,
                     PRIMARY KEY (git_commit_id)
                 )""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement(ddl);
-        TestUtil.assertMessagesContain(compiler, "in table with another PRIMARY KEY constraint");
+        this.statementsFailingInCompilation(ddl,  "in table with another PRIMARY KEY constraint");
     }
 
     @Test
@@ -89,18 +75,14 @@ public class NegativeParserTests extends BaseSQLTests {
                 CREATE TABLE productvariant_t (
                     id BIGINT DEFAULT NULL DEFAULT 1
                 );""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement(ddl);
-        TestUtil.assertMessagesContain(compiler, "Column ID already has a default value");
+        this.statementsFailingInCompilation(ddl,  "Column ID already has a default value");
     }
 
     @Test
     public void duplicatedKey2() {
         String ddl = "create table git_commit (\n" +
                 "    git_commit_id bigint not null PRIMARY KEY PRIMARY KEY)";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement(ddl);
-        TestUtil.assertMessagesContain(compiler, "Column GIT_COMMIT_ID already declared a primary key");
+        this.statementsFailingInCompilation(ddl, "Column GIT_COMMIT_ID already declared a primary key");
     }
 
     @Test
@@ -110,9 +92,7 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null,
                     PRIMARY KEY (git_commit_id, git_commit_id)
                 )""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement(ddl);
-        TestUtil.assertMessagesContain(compiler, "already declared as key");
+        this.statementsFailingInCompilation(ddl,  "already declared as key");
     }
 
     @Test
@@ -122,9 +102,7 @@ public class NegativeParserTests extends BaseSQLTests {
                     git_commit_id bigint not null,
                     PRIMARY KEY ()
                 )""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement(ddl);
-        TestUtil.assertMessagesContain(compiler, "Error parsing SQL");
+        this.statementsFailingInCompilation(ddl,  "Error parsing SQL");
     }
 
     @Test
@@ -164,31 +142,23 @@ public class NegativeParserTests extends BaseSQLTests {
     @Test
     public void testTypeErrorMessage() {
         // TODO: this test may become invalid once we add support for ROW types
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements("CREATE VIEW V AS SELECT ROW(2, 2);\n");
-        TestUtil.assertMessagesContain(compiler, "error: Not yet implemented: ROW");
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT ROW(2, 2);",
+                "error: Not yet implemented: ROW");
     }
 
     @Test
     public void duplicateColumnTest() {
-        DBSPCompiler compiler = this.testCompiler();
-        // allow multiple errors to be reported
         String ddl = "CREATE TABLE T (\n" +
                 "COL1 INT" +
                 ", COL1 DOUBLE" +
-                ")";
-        compiler.compileStatement(ddl);
-        TestUtil.assertMessagesContain(compiler, "Column with name 'COL1' already defined");
+                ");";
+        this.statementsFailingInCompilation(ddl, "Column with name 'COL1' already defined");
     }
 
     @Test
     public void testRejectFloatType() {
-        String statement = "CREATE TABLE T(c1 FLOAT)";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatement(statement);
-        getCircuit(compiler);
-        Assert.assertTrue(compiler.hasErrors());
-        TestUtil.assertMessagesContain(compiler, "Do not use");
+        String statement = "CREATE TABLE T(c1 FLOAT);";
+        this.statementsFailingInCompilation(statement, "Do not use");
     }
 
     @Test
@@ -249,7 +219,6 @@ public class NegativeParserTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT * FROM S""";
         File file = createInputScript(statements);
         CompilerMessages messages = CompilerMain.execute(file.getPath(), "-o", "/dev/null");
-        System.out.println(messages);
         Assert.assertEquals(messages.exitCode, 0);
         Assert.assertEquals(messages.warningCount(), 1);
         Assert.assertEquals(messages.errorCount(), 0);
