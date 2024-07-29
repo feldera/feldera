@@ -234,6 +234,78 @@ impl Display for PipelineStatus {
     }
 }
 
+/// Validates the deployment status transition from current status to a new one.
+pub fn validate_deployment_status_transition(
+    current_status: &PipelineStatus,
+    new_status: &PipelineStatus,
+) -> Result<(), DBError> {
+    if matches!(
+        (current_status, new_status),
+        (PipelineStatus::Shutdown, PipelineStatus::Provisioning)
+            | (PipelineStatus::Provisioning, PipelineStatus::Initializing)
+            | (PipelineStatus::Provisioning, PipelineStatus::Shutdown)
+            | (PipelineStatus::Provisioning, PipelineStatus::Failed)
+            | (PipelineStatus::Initializing, PipelineStatus::Paused)
+            | (PipelineStatus::Initializing, PipelineStatus::Shutdown)
+            | (PipelineStatus::Initializing, PipelineStatus::Failed)
+            | (PipelineStatus::Running, PipelineStatus::Paused)
+            | (PipelineStatus::Running, PipelineStatus::ShuttingDown)
+            | (PipelineStatus::Running, PipelineStatus::Failed)
+            | (PipelineStatus::Paused, PipelineStatus::Running)
+            | (PipelineStatus::Paused, PipelineStatus::ShuttingDown)
+            | (PipelineStatus::Paused, PipelineStatus::Failed)
+            | (PipelineStatus::ShuttingDown, PipelineStatus::Shutdown)
+            | (PipelineStatus::ShuttingDown, PipelineStatus::Failed)
+            | (PipelineStatus::Shutdown, PipelineStatus::Failed)
+            | (PipelineStatus::Failed, PipelineStatus::Shutdown)
+    ) {
+        Ok(())
+    } else {
+        Err(DBError::InvalidDeploymentStatusTransition {
+            current: *current_status,
+            transition_to: *new_status,
+        })
+    }
+}
+
+/// Validates the deployment desired status transition from current status to a new one.
+pub fn validate_deployment_desired_status_transition(
+    current_status: &PipelineStatus,
+    current_desired_status: &PipelineStatus,
+    new_desired_status: &PipelineStatus,
+) -> Result<(), DBError> {
+    // Check that the desired status can be set
+    if *new_desired_status == PipelineStatus::Paused
+        || *new_desired_status == PipelineStatus::Running
+    {
+        // Refuse to restart a pipeline that has not completed shutting down
+        if *current_desired_status == PipelineStatus::Shutdown
+            && *current_status != PipelineStatus::Shutdown
+        {
+            Err(DBError::IllegalPipelineStateTransition {
+                hint: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting the pipeline again.".to_string(),
+                status: *current_status,
+                desired_status: *current_desired_status,
+                requested_desired_status: *new_desired_status,
+            })?;
+        };
+
+        // Refuse to restart a pipeline which is failed or shutting down until it's in the shutdown state
+        if *current_desired_status != PipelineStatus::Shutdown
+            && (*current_status == PipelineStatus::ShuttingDown
+                || *current_status == PipelineStatus::Failed)
+        {
+            Err(DBError::IllegalPipelineStateTransition {
+                hint: "Cannot restart a pipeline which is failed or shutting down. If it is failed, clear the error state first by invoking the '/shutdown' endpoint.".to_string(),
+                status: *current_status,
+                desired_status: *current_desired_status,
+                requested_desired_status: *new_desired_status,
+            })?;
+        }
+    }
+    Ok(())
+}
+
 /// Pipeline descriptor.
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub struct PipelineDescr {

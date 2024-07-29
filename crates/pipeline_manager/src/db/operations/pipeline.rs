@@ -1,13 +1,13 @@
 use crate::db::error::DBError;
 use crate::db::operations::utils::{
-    convert_unix_timestamp_to_datetime, maybe_tenant_id_foreign_key_constraint_err,
-    maybe_unique_violation,
+    maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
+    validate_deployment_desired_status_transition, validate_deployment_status_transition,
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{ProgramConfig, ProgramStatus};
+use crate::db::types::program::{validate_program_status_transition, ProgramConfig, ProgramStatus};
 use crate::db::types::tenant::TenantId;
 use deadpool_postgres::Transaction;
 use pipeline_types::config::{PipelineConfig, ProgramInfo, RuntimeConfig};
@@ -26,24 +26,18 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         // tenant_id is not used
         name: row.get(2),
         description: row.get(3),
-        created_at: convert_unix_timestamp_to_datetime("pipeline.created_at", row.get(4))?,
+        created_at: row.get(4),
         version: Version(row.get(5)),
         runtime_config: RuntimeConfig::from_yaml(row.get(6)),
         program_code: row.get(7),
         program_config: ProgramConfig::from_yaml(row.get(8)),
         program_version: Version(row.get(9)),
         program_status: ProgramStatus::from_columns(row.get(10), row.get(12))?,
-        program_status_since: convert_unix_timestamp_to_datetime(
-            "pipeline.program_status_since",
-            row.get(11),
-        )?,
+        program_status_since: row.get(11),
         program_info: program_info_str.map(|s| ProgramInfo::from_yaml(&s)),
         program_binary_url: row.get(14),
         deployment_status: row.get::<_, String>(15).try_into()?,
-        deployment_status_since: convert_unix_timestamp_to_datetime(
-            "pipeline.deployment_status_since",
-            row.get(16),
-        )?,
+        deployment_status_since: row.get(16),
         deployment_desired_status: row.get::<_, String>(17).try_into()?,
         deployment_error: deployment_error_str.map(|s| ErrorResponse::from_yaml(&s)),
         deployment_config: deployment_config_str.map(|s| PipelineConfig::from_yaml(&s)),
@@ -139,10 +133,10 @@ pub(crate) async fn new_pipeline(
                                    program_status_since, program_error, program_info, program_binary_url,
                                    deployment_status, deployment_status_since, deployment_desired_status,
                                    deployment_error, deployment_config, deployment_location)
-            VALUES ($1, $2, $3, $4, extract(epoch from now()), $5, $6,
+            VALUES ($1, $2, $3, $4, now(), $5, $6,
                     $7, $8, $9, $10,
-                    extract(epoch from now()), NULL, NULL, NULL,
-                    $11, extract(epoch from now()), $12,
+                    now(), NULL, NULL, NULL,
+                    $11, now(), $12,
                     NULL, NULL, NULL)",
         )
         .await?;
@@ -256,7 +250,7 @@ pub(crate) async fn update_pipeline(
                  SET program_version = program_version + 1,
                      program_info = NULL,
                      program_status = $1,
-                     program_status_since = extract(epoch from now()),
+                     program_status_since = now(),
                      program_error = NULL,
                      program_binary_url = NULL
                  WHERE tenant_id = $2 AND name = $3",
@@ -326,26 +320,7 @@ pub(crate) async fn set_program_status(
     }
 
     // Check that the transition from the current status to the new status is permitted
-    let valid_transition = matches!(
-        (current.program_status.clone(), new_program_status),
-        (ProgramStatus::Pending, ProgramStatus::CompilingSql)
-            | (ProgramStatus::Pending, ProgramStatus::SystemError(_))
-            | (ProgramStatus::CompilingSql, ProgramStatus::Pending)
-            | (ProgramStatus::CompilingSql, ProgramStatus::CompilingRust)
-            | (ProgramStatus::CompilingSql, ProgramStatus::SqlError(_))
-            | (ProgramStatus::CompilingSql, ProgramStatus::SystemError(_))
-            | (ProgramStatus::CompilingRust, ProgramStatus::Pending)
-            | (ProgramStatus::CompilingRust, ProgramStatus::Success)
-            | (ProgramStatus::CompilingRust, ProgramStatus::RustError(_))
-            | (ProgramStatus::CompilingRust, ProgramStatus::SystemError(_))
-            | (ProgramStatus::Success, ProgramStatus::Pending)
-    );
-    if !valid_transition {
-        return Err(DBError::InvalidProgramStatusTransition {
-            current: current.program_status,
-            transition_to: new_program_status.clone(),
-        });
-    }
+    validate_program_status_transition(&current.program_status, new_program_status)?;
 
     // Determine new values depending on where to transition to
     // Note that None becomes NULL as there is no coalescing in the query.
@@ -376,7 +351,7 @@ pub(crate) async fn set_program_status(
         .prepare_cached(
             "UPDATE pipeline
              SET program_status = $1,
-                 program_status_since = extract(epoch from now()),
+                 program_status_since = now(),
                  program_error = $2,
                  program_info = $3,
                  program_binary_url = $4
@@ -405,7 +380,7 @@ pub(crate) async fn set_program_status(
 }
 
 /// Sets pipeline deployment desired status.
-pub(crate) async fn set_desired_deployment_status(
+pub(crate) async fn set_deployment_desired_status(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_name: &str,
@@ -421,33 +396,11 @@ pub(crate) async fn set_desired_deployment_status(
     let current = get_pipeline(txn, tenant_id, pipeline_name).await?;
 
     // Check that the desired status can be set
-    if new_desired_status == PipelineStatus::Paused || new_desired_status == PipelineStatus::Running
-    {
-        // Refuse to restart a pipeline that has not completed shutting down
-        if current.deployment_desired_status == PipelineStatus::Shutdown
-            && current.deployment_status != PipelineStatus::Shutdown
-        {
-            Err(DBError::IllegalPipelineStateTransition {
-                hint: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting the pipeline again.".to_string(),
-                status: current.deployment_status,
-                desired_status: current.deployment_desired_status,
-                requested_desired_status: new_desired_status,
-            })?;
-        };
-
-        // Refuse to restart a pipeline which is failed or shutting down until it's in the shutdown state
-        if current.deployment_desired_status != PipelineStatus::Shutdown
-            && (current.deployment_status == PipelineStatus::ShuttingDown
-                || current.deployment_status == PipelineStatus::Failed)
-        {
-            Err(DBError::IllegalPipelineStateTransition {
-                hint: "Cannot restart a pipeline which is failed or shutting down. If it is failed, clear the error state first by invoking the '/shutdown' endpoint.".to_string(),
-                status: current.deployment_status,
-                desired_status: current.deployment_desired_status,
-                requested_desired_status: new_desired_status,
-            })?;
-        }
-    }
+    validate_deployment_desired_status_transition(
+        &current.deployment_status,
+        &current.deployment_desired_status,
+        &new_desired_status,
+    )?;
 
     // The program must be fully compiled for any desired status besides shutdown
     if new_desired_status != PipelineStatus::Shutdown {
@@ -501,38 +454,19 @@ pub(crate) async fn set_deployment_status(
 ) -> Result<(), DBError> {
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
 
-    // The pipeline must be fully compiled to change deployment status
-    if current.program_status != ProgramStatus::Success {
+    // Program must not have failed to compiled
+    if current.program_status.has_failed_to_compile() {
+        return Err(DBError::ProgramFailedToCompile);
+    }
+
+    // Program must be fully compiled (and not still ongoing)
+    // Checked after compilation failure check, to give a more insightful error message.
+    if !current.program_status.is_fully_compiled() {
         return Err(DBError::ProgramNotYetCompiled);
     }
 
     // Check that the transition from the current status to the new status is permitted
-    let valid_transition = matches!(
-        (current.deployment_status, deployment_status),
-        (PipelineStatus::Shutdown, PipelineStatus::Provisioning)
-            | (PipelineStatus::Provisioning, PipelineStatus::Initializing)
-            | (PipelineStatus::Provisioning, PipelineStatus::Shutdown)
-            | (PipelineStatus::Provisioning, PipelineStatus::Failed)
-            | (PipelineStatus::Initializing, PipelineStatus::Paused)
-            | (PipelineStatus::Initializing, PipelineStatus::Shutdown)
-            | (PipelineStatus::Initializing, PipelineStatus::Failed)
-            | (PipelineStatus::Running, PipelineStatus::Paused)
-            | (PipelineStatus::Running, PipelineStatus::ShuttingDown)
-            | (PipelineStatus::Running, PipelineStatus::Failed)
-            | (PipelineStatus::Paused, PipelineStatus::Running)
-            | (PipelineStatus::Paused, PipelineStatus::ShuttingDown)
-            | (PipelineStatus::Paused, PipelineStatus::Failed)
-            | (PipelineStatus::ShuttingDown, PipelineStatus::Shutdown)
-            | (PipelineStatus::ShuttingDown, PipelineStatus::Failed)
-            | (PipelineStatus::Shutdown, PipelineStatus::Failed)
-            | (PipelineStatus::Failed, PipelineStatus::Shutdown)
-    );
-    if !valid_transition {
-        return Err(DBError::InvalidDeploymentStatusTransition {
-            current: current.deployment_status,
-            transition_to: deployment_status,
-        });
-    }
+    validate_deployment_status_transition(&current.deployment_status, &deployment_status)?;
 
     // Determine the final values of the additional fields using the current default.
     // Note that None becomes NULL as there is no coalescing in the query.
@@ -588,7 +522,7 @@ pub(crate) async fn set_deployment_status(
         .prepare_cached(
             "UPDATE pipeline
                  SET deployment_status = $1,
-                     deployment_status_since = extract(epoch from now()),
+                     deployment_status_since = now(),
                      deployment_error = $2,
                      deployment_config = $3,
                      deployment_location = $4
@@ -677,11 +611,8 @@ pub(crate) async fn get_next_pipeline_program_to_compile(
                     p.deployment_error, p.deployment_config, p.deployment_location
              FROM pipeline AS p
              WHERE p.program_status = 'pending'
-                   AND program_status_since = (
-                       SELECT MIN(p2.program_status_since)
-                       FROM pipeline AS p2
-                       WHERE p2.program_status = 'pending'
-                   )
+             ORDER BY p.program_status_since ASC, p.id ASC
+             LIMIT 1
             "
         )
         .await?;
@@ -696,7 +627,8 @@ pub(crate) async fn get_next_pipeline_program_to_compile(
 }
 
 /// Checks whether the provided pipeline program version is in use.
-/// It is in use if the pipeline still exists AND the program version matches the one provided.
+/// It is in use if the pipeline exists and the program version provided is the current one.
+/// If the pipeline does not exist or the program version is not the latest, false is returned.
 pub(crate) async fn is_pipeline_program_in_use(
     txn: &Transaction<'_>,
     pipeline_id: PipelineId,
