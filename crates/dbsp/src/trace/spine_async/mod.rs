@@ -83,9 +83,13 @@ where
 {
     /// Optionally, a pair of batches that are currently being merged.  These
     /// batches are not in `loose_batches`.
+    ///
+    /// Invariant: the batches (if present) must be non-empty.
     merging_batches: Option<[Arc<B>; 2]>,
 
     /// Zero or more batches not currently being merged.
+    ///
+    /// Invariant: the batches must be non-empty.
     loose_batches: Vec<Arc<B>>,
 }
 
@@ -154,9 +158,11 @@ where
     /// when the merger thread has a chance (although it might not be awake).
     fn add_batches(&mut self, batches: impl IntoIterator<Item = Arc<B>>) {
         for batch in batches {
-            self.slots[Spine::<B>::size_to_level(batch.len())]
-                .loose_batches
-                .push(batch);
+            if !batch.is_empty() {
+                self.slots[Spine::<B>::size_to_level(batch.len())]
+                    .loose_batches
+                    .push(batch);
+            }
         }
     }
 
@@ -164,7 +170,7 @@ where
     /// the merger thread has a chance (although it might not be awake).
     ///
     /// Returns a copy of all of the batches (whether loose or being merged).
-    fn add_batch(&mut self, batch: Arc<B>) -> Vec<Arc<B>> {
+    fn add_batch_and_get_batches(&mut self, batch: Arc<B>) -> Vec<Arc<B>> {
         self.add_batches([batch]);
         self.get_batches()
     }
@@ -217,9 +223,7 @@ where
         let [a, b] = self.slots[level].merging_batches.take().unwrap();
         self.merge_stats
             .report_merge(a.len() + b.len(), new_batch.len());
-        self.slots[Spine::<B>::size_to_level(new_batch.len())]
-            .loose_batches
-            .push(new_batch);
+        self.add_batches([new_batch]);
     }
 
     /// Returns information that the caller can use to construct a metadata
@@ -277,7 +281,7 @@ where
     /// Adds `batch` to the shared merging state and wakes up the merger.
     /// Returns the new complete set of batches to include in the spine.
     fn add_batch(&self, batch: Arc<B>) -> Vec<Arc<B>> {
-        let batches = self.state.lock().unwrap().add_batch(batch);
+        let batches = self.state.lock().unwrap().add_batch_and_get_batches(batch);
         BackgroundThread::wake();
         batches
     }
@@ -472,6 +476,8 @@ where
     factories: B::Factories,
 
     /// All the batches in the spine, in no particular order.
+    ///
+    /// Each batch must be non-empty.
     batches: Vec<Arc<B>>,
 
     lower: Antichain<B::Time>,
