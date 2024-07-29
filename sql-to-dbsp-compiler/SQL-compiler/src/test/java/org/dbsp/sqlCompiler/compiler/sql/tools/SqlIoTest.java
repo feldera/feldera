@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Utilities;
 import org.junit.Assert;
 
 import java.io.IOException;
@@ -190,6 +191,66 @@ public abstract class SqlIoTest extends BaseSQLTests {
 
     public void q(String queryAndOutput) {
         this.q(queryAndOutput, true);
+    }
+
+    /** Run a query that is expected to fail in compilation.
+     * @param query             Query to run.
+     * @param messageFragment   This fragment should appear in the error message. */
+    public void queryFailingInCompilation(String query, String messageFragment) {
+        this.statementsFailingInCompilation("CREATE VIEW VV AS " + query, messageFragment);
+    }
+
+    /** Run a query that is expected to fail in compilation or at runtime, depending on the
+     * optimization level.
+     * @param query             Query to run.
+     * @param messageFragment   This fragment should appear in the error message at compile time
+     * @param error             This fragment should appear in the error at runtime */
+    public void queryFailing(String query, String messageFragment, String error) {
+        query = "CREATE VIEW VV AS " + query;
+        // Optimize: fail at compile time
+        DBSPCompiler compiler = this.testCompiler(true);
+        compiler.options.languageOptions.throwOnError = false;
+        this.prepareInputs(compiler);
+        compiler.compileStatements(query);
+        getCircuit(compiler);
+        Assert.assertTrue(compiler.messages.exitCode != 0);
+        String message = compiler.messages.toString();
+        boolean contains = message.contains(messageFragment);
+        if (!contains)
+            Assert.fail("Error message\n" + Utilities.singleQuote(message) +
+                    "\ndoes not contain the expected fragment\n" + Utilities.singleQuote(messageFragment));
+
+        // Do not optimize: fail at runtime
+        compiler = this.testCompiler(false);
+        compiler.compileStatement(query);
+        InputOutputChangeStream stream = new InputOutputChangeStream();
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, stream);
+        DBSPType outputType = ccs.circuit.getSingleOutputType();
+        Change result = new Change(
+                DBSPZSetLiteral.emptyWithElementType(outputType.to(DBSPTypeZSet.class).getElementType()));
+        InputOutputChange ioChange = new InputOutputChange(
+                this.getPreparedInputs(compiler),
+                result
+        );
+        stream.addChange(ioChange);
+        this.addFailingRustTestCase(query, error, ccs);
+    }
+
+    /** Run one or more statements that are expected to fail in compilation.
+     * @param statements        Statements to compile.
+     * @param messageFragment   This fragment should appear in the error message. */
+    public void statementsFailingInCompilation(String statements, String messageFragment) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        this.prepareInputs(compiler);
+        compiler.compileStatements(statements);
+        getCircuit(compiler);
+        Assert.assertTrue(compiler.messages.exitCode != 0);
+        String message = compiler.messages.toString();
+        boolean contains = message.contains(messageFragment);
+        if (!contains)
+            Assert.fail("Error message\n" + Utilities.singleQuote(message) +
+                    "\ndoes not contain the expected fragment\n" + Utilities.singleQuote(messageFragment));
     }
 
     /** Run a query that is expected to fail in compilation.

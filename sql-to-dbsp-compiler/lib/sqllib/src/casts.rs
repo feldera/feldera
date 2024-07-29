@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 
-use crate::{geopoint::*, interval::*, timestamp::*};
+use crate::{binary::ByteArray, geopoint::*, interval::*, timestamp::*};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
@@ -1349,7 +1349,7 @@ pub fn cast_to_ShortIntervalN_nullN(_value: Option<()>) -> Option<ShortInterval>
 #[inline]
 pub fn cast_to_Timestamp_s(value: String) -> Timestamp {
     if let Ok(v) = NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S%.f") {
-        // round the number of milliseconds
+        // round the number of microseconds
         let nanos = v.and_utc().timestamp_subsec_nanos();
         let nanos = (nanos + 500000) / 1000000;
         let result = Timestamp::new(v.and_utc().timestamp() * 1000 + (nanos as i64));
@@ -1406,4 +1406,8 @@ pub fn cast_to_u_i64(value: i64) -> usize {
     value
         .try_into()
         .unwrap_or_else(|_| panic!("Value '{}' out of range for type 'usize'", value))
+}
+
+pub fn cast_to_bytesN_nullN(_value: Option<()>) -> Option<ByteArray> {
+    None
 }

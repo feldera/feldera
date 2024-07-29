@@ -1019,10 +1019,7 @@ const BILLION: u64 = 1_000_000_000;
 
 impl Time {
     pub const fn new(nanoseconds: u64) -> Self {
-        // Calcite cannot represent precisions higher than milliseconds
-        Self {
-            nanoseconds: (nanoseconds / 1_000_000) * 1_000_000,
-        }
+        Self { nanoseconds }
     }
 
     pub fn nanoseconds(&self) -> u64 {
