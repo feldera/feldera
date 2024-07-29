@@ -1,13 +1,13 @@
 -- Product
 CREATE TABLE product (
-    id INT PRIMARY KEY,
+    id INT NOT NULL PRIMARY KEY,
     name VARCHAR NOT NULL,
     description VARCHAR NOT NULL
 );
 
 -- Items belong to a Product
 CREATE TABLE item (
-    id INT PRIMARY KEY,
+    id INT NOT NULL PRIMARY KEY,
     product_id INT NOT NULL FOREIGN KEY REFERENCES product(id),
     manufactured_at TIMESTAMP NOT NULL,
     bought_at TIMESTAMP NOT NULL,

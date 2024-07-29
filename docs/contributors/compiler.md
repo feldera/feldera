@@ -395,7 +395,7 @@ example of the generated JSON for the following program:
 CREATE TABLE T (
   COL1 INT NOT NULL
 , COL2 DOUBLE NOT NULL
-, COL3 VARCHAR(3) PRIMARY KEY
+, COL3 VARCHAR(3) NOT NULL PRIMARY KEY
 , COL4 VARCHAR(3) ARRAY
 )
 
@@ -428,7 +428,7 @@ Output:
       "case_sensitive" : false,
       "columntype" : {
         "type" : "VARCHAR",
-        "nullable" : true,
+        "nullable" : false,
         "precision" : 3
       }
     }, {

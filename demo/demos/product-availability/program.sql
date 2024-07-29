@@ -1,6 +1,6 @@
 -- Warehouse
 CREATE TABLE warehouse (
-    id INT PRIMARY KEY,
+    id INT NOT NULL PRIMARY KEY,
     name VARCHAR NOT NULL,
     address VARCHAR NOT NULL
 ) WITH (
@@ -9,7 +9,7 @@ CREATE TABLE warehouse (
 
 -- Product
 CREATE TABLE product (
-    id INT PRIMARY KEY,
+    id INT NOT NULL PRIMARY KEY,
     name VARCHAR NOT NULL,
     mass DOUBLE NOT NULL,
     volume DOUBLE NOT NULL
@@ -19,8 +19,8 @@ CREATE TABLE product (
 
 -- Each warehouse stores products
 CREATE TABLE storage (
-    warehouse_id INT FOREIGN KEY REFERENCES warehouse(id),
-    product_id INT FOREIGN KEY REFERENCES product(id),
+    warehouse_id INT NOT NULL FOREIGN KEY REFERENCES warehouse(id),
+    product_id INT NOT NULL FOREIGN KEY REFERENCES product(id),
     num_available INT NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     PRIMARY KEY (warehouse_id, product_id)
