@@ -6,6 +6,7 @@
   import InteractionsPanel from '$lib/components/pipelines/editor/InteractionsPanel.svelte'
   import {
     asyncWritable,
+    get,
     type Readable,
     type Writable,
     type WritableLoadable
@@ -27,16 +28,19 @@
     PipelineStatus as PipelineStatusType
   } from '$lib/services/pipelineManager'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
+  import { nonNull } from '$lib/functions/common/function'
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
   const {
     pipeline,
-    errors,
-    status
+    status,
+    reloadStatus,
+    errors
   }: {
     pipeline: WritableLoadable<PipelineDescr>
     status: PipelineStatusType | undefined
+    reloadStatus?: () => void
     errors?: Readable<SystemError[]>
   } = $props()
 
@@ -44,7 +48,7 @@
     pipeline,
     (pipeline) => pipeline.program_code,
     async (newCode, pipeline, oldCode) => {
-      if (!pipeline || !newCode) {
+      if (!pipeline) {
         return oldCode
       }
       $pipeline = {
@@ -52,13 +56,14 @@
         program_code: newCode
       }
       return newCode
-    }
+    },
+    { initial: get(pipeline).program_code }
   )
 
-  const decoupledCode = asyncDecoupled(
-    pipelineCodeStore,
+  const decoupledCode = asyncDecoupled(pipelineCodeStore, () =>
     autoSavePipeline.value ? 1000 : 'decoupled'
   )
+
   const changedPipelines = useChangedPipelines()
   $effect(() => {
     autoSavePipeline.value ? decoupledCode.debounce(1000) : decoupledCode.decouple()
@@ -104,19 +109,26 @@
       window.location.hash = ''
     }, 50)
   })
-  let editDisabled = $derived(status && !isPipelineIdle(status))
+  let editDisabled = $derived(nonNull(status) && !isPipelineIdle(status))
 </script>
 
 <div class="h-full w-full">
   <PaneGroup direction="vertical" class="!overflow-visible">
     <Pane defaultSize={60} minSize={15} class="flex flex-col-reverse !overflow-visible">
-      <div class="flex flex-nowrap items-center gap-2 pr-2">
-        <PipelineEditorStatusBar downstreamChanged={decoupledCode.downstreamChanged}
+      <div class="flex flex-nowrap items-center gap-8 pr-2">
+        <PipelineEditorStatusBar
+          downstreamChanged={decoupledCode.downstreamChanged}
+          saveCode={decoupledCode.push}
         ></PipelineEditorStatusBar>
         {#if status}
-          <PipelineStatus class="ml-auto" {status}></PipelineStatus>
-
-          <PipelineActions name={$pipeline.name} {status}></PipelineActions>
+          <PipelineStatus class="ml-auto h-full w-36 text-[1rem] " {status}></PipelineStatus>
+          <PipelineActions
+            name={$pipeline.name}
+            {status}
+            {reloadStatus}
+            pipelineBusy={editDisabled}
+            unsavedChanges={decoupledCode.downstreamChanged}
+          ></PipelineActions>
         {/if}
       </div>
       <div class="relative h-full w-full">

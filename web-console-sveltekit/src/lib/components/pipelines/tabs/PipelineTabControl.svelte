@@ -21,7 +21,7 @@
 <div class="relative">
   <div class="mr-5">
     {#if nonNull(value)}
-      <DoubleClickInput bind:value>
+      <DoubleClickInput bind:value class="input -my-2 -ml-3">
         {@render text()}
       </DoubleClickInput>
     {:else}

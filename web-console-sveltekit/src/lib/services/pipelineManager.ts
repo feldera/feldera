@@ -134,7 +134,7 @@ export const getPipelineStats = async (pipeline_name: string) => {
       status: status as ControllerStatus | null
     }),
     (e) => {
-      if (e.error_code === 'PipelineShutdown') {
+      if (e.error_code === 'PipelineNotRunningOrPaused') {
         return {
           pipelineName: pipeline_name,
           status: 'not running' as const
@@ -146,6 +146,7 @@ export const getPipelineStats = async (pipeline_name: string) => {
           status: 'not running' as const
         }
       }
+      console.log('stats err', e)
       throw e
     }
   )

@@ -5,8 +5,14 @@
   let {
     value = $bindable(),
     children,
-    onvalue
-  } = $props<{ value: string; children?: Snippet; onvalue?: (value: string) => void }>()
+    onvalue,
+    class: _class = ''
+  }: {
+    value: string
+    children?: Snippet
+    onvalue?: (value: string) => void
+    class?: string
+  } = $props()
   let showInput = $state(false)
 
   const autofocus: Action = (e) => {
@@ -35,9 +41,10 @@
       }
       handleSubmit(e)
     }}
+    class={_class}
   />
 {:else}
   <span role="button" tabindex={0} ondblclick={() => (showInput = true)}>
-    {@render children()}
+    {@render children?.()}
   </span>
 {/if}

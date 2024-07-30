@@ -18,7 +18,7 @@
       {#if user.image}
         <img class="h-10 w-10 rounded-full" src={user.image} alt="User avatar" />
       {:else}
-        <div class="h-10 w-10 rounded-full bg-surface-500"></div>
+        <div class="bx bx-user h-10 w-10 rounded-full text-[40px]"></div>
       {/if}
       <div>
         <div class="h4 font-normal" class:italic={!user.name}>{user.name || 'anonymous'}</div>

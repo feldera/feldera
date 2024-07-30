@@ -34,4 +34,5 @@
   const status = usePipelineStatus(derived(pipeline, (pipeline) => pipeline.name))
 </script>
 
-<PipelineEditLayout {pipeline} status={status.current.status} {errors}></PipelineEditLayout>
+<PipelineEditLayout {pipeline} status={status.current.status} {errors} reloadStatus={status.reload}
+></PipelineEditLayout>

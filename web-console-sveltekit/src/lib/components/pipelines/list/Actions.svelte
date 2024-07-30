@@ -16,20 +16,25 @@
   import JSONbig from 'true-json-bigint'
   import { goto } from '$app/navigation'
   import { base } from '$app/paths'
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
 
   let {
     name: pipelineName,
     status,
-    reload,
+    reloadStatus,
+    pipelineBusy,
+    unsavedChanges,
     class: _class = ''
   }: {
     name: string
     status: PipelineStatus
-    reload?: () => void
+    reloadStatus?: () => void
+    pipelineBusy: boolean
+    unsavedChanges: boolean
     class?: string
   } = $props()
   $effect(() => {
-    let interval = setInterval(() => reload?.(), 2000)
+    let interval = setInterval(() => reloadStatus?.(), 2000)
     return () => {
       clearInterval(interval)
     }
@@ -38,7 +43,7 @@
   const globalDialog = useGlobalDialog()
   const deletePipeline = async (pipelineName: string) => {
     await _deletePipeline(pipelineName)
-    reload?.()
+    reloadStatus?.()
     goto(`${base}/`)
   }
 
@@ -74,10 +79,10 @@
       .exhaustive()
   )
 
-  const buttonClass = 'btn-icon preset-tonal-surface text-[24px]'
+  const buttonClass = ' btn-icon h-9 w-9 preset-tonal-surface text-[36px]'
   const _reload = () => {
-    setTimeout(() => reload?.(), 300)
-    setTimeout(() => reload?.(), 500)
+    setTimeout(() => reloadStatus?.(), 100)
+    setTimeout(() => reloadStatus?.(), 300)
   }
 </script>
 
@@ -88,29 +93,7 @@
   ></DeleteDialog>
 {/snippet}
 
-{#snippet pipelineResourcesDialog()}
-  {#await getPipeline(pipelineName) then pipeline}
-    <JSONDialog
-      json={JSONbig.stringify(pipeline.runtime_config, undefined, '  ')}
-      onApply={async (json) => {
-        await patchPipeline(pipeline.name, {
-          runtime_config: JSONbig.parse(json)
-          // name: pipeline.name,
-          // description: pipeline.description
-        })
-      }}
-      onClose={() => (globalDialog.dialog = null)}
-    >
-      {#snippet title()}
-        <div class="h5 text-center font-normal">
-          {`Configure ${pipelineName} runtime resources`}
-        </div>
-      {/snippet}
-    </JSONDialog>
-  {/await}
-{/snippet}
-
-<div class={'flex flex-nowrap ' + _class}>
+<div class={'flex flex-nowrap gap-2 ' + _class}>
   {#each active as name}
     {@render actions[name]()}
   {/each}
@@ -118,38 +101,73 @@
 
 {#snippet _delete()}
   <button
-    class={'bx bx-trash-alt ' + buttonClass}
+    class={'bx bx-trash-alt  ' + buttonClass}
     onclick={() => (globalDialog.dialog = deleteDialog)}
   >
   </button>
 {/snippet}
 {#snippet _start()}
-  <button
-    class={'bx bx-play-circle ' + buttonClass}
-    onclick={() => postPipelineAction(pipelineName, 'start').then(_reload)}
-  >
-  </button>
+  <div class={buttonClass}>
+    <button
+      class:disabled={unsavedChanges}
+      class={'bx bx-play !bg-success-200 !text-success-900 '}
+      onclick={() => postPipelineAction(pipelineName, 'start').then(_reload)}
+    >
+    </button>
+  </div>
+  {#if unsavedChanges}
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      Save the pipeline before running
+    </Tooltip>
+  {/if}
 {/snippet}
 {#snippet _pause()}
   <button
-    class={'bx bx-pause-circle ' + buttonClass}
+    class={'bx bx-pause ' + buttonClass}
     onclick={() => postPipelineAction(pipelineName, 'pause').then(_reload)}
   >
   </button>
 {/snippet}
 {#snippet _shutdown()}
   <button
-    class={'bx bx-stop-circle ' + buttonClass}
+    class={'bx bx-stop ' + buttonClass}
     onclick={() => postPipelineAction(pipelineName, 'shutdown').then(_reload)}
   >
   </button>
 {/snippet}
 {#snippet _configure()}
+  {#snippet pipelineResourcesDialog()}
+    {#await getPipeline(pipelineName) then pipeline}
+      <JSONDialog
+        disabled={pipelineBusy}
+        json={JSONbig.stringify(pipeline.runtime_config, undefined, '  ')}
+        onApply={async (json) => {
+          await patchPipeline(pipeline.name, {
+            runtime_config: JSONbig.parse(json)
+            // name: pipeline.name,
+            // description: pipeline.description
+          })
+        }}
+        onClose={() => (globalDialog.dialog = null)}
+      >
+        {#snippet title()}
+          <div class="h5 text-center font-normal">
+            {`Configure ${pipelineName} runtime resources`}
+          </div>
+        {/snippet}
+      </JSONDialog>
+    {/await}
+  {/snippet}
   <button
     onclick={() => (globalDialog.dialog = pipelineResourcesDialog)}
     class={'bx bx-cog ' + buttonClass}
   >
   </button>
+  {#if pipelineBusy}
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      Stop the pipeline to edit configuration
+    </Tooltip>
+  {/if}
 {/snippet}
 {#snippet _spacer()}
   <div class="w-9"></div>

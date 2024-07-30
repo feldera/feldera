@@ -15,10 +15,7 @@ import { useDebounce } from 'runed'
  * On `.pull()` upstream is applied to downstream
  * On `.push()` downstream is applied to upstream
  */
-export const asyncDecoupled = <T>(
-  store: WritableLoadable<T>,
-  wait: number | (() => number) | 'decoupled'
-) => {
+export const asyncDecoupled = <T>(store: WritableLoadable<T>, wait: () => number | 'decoupled') => {
   let upstreamChanged = $state(false)
   let downstreamChanged = $state(false)
   const state = writable(get(store))
@@ -31,7 +28,7 @@ export const asyncDecoupled = <T>(
       downstreamChanged = false
       upstreamChanged = false
     },
-    () => (wait === 'decoupled' ? 0 : wait instanceof Function ? wait() : wait)
+    () => ((wait) => (wait === 'decoupled' ? 0 : wait))(wait())
   )
   const debounceUpdate = useDebounce(
     (updater: (value: T) => T) => {
@@ -39,7 +36,7 @@ export const asyncDecoupled = <T>(
       downstreamChanged = false
       upstreamChanged = false
     },
-    () => (wait === 'decoupled' ? 0 : wait instanceof Function ? wait() : wait)
+    () => ((wait) => (wait === 'decoupled' ? 0 : wait))(wait())
   )
   return {
     subscribe(run: Subscriber<T>, invalidate?: ((value?: T) => void) | undefined) {
@@ -53,10 +50,11 @@ export const asyncDecoupled = <T>(
       }
     },
     async set(value: T) {
+      console.log('asyncDecoupled set')
       state.set(value)
       downstreamChanged = true
       const wait = get(shouldWait).wait
-      if (wait === 'decoupled') {
+      if (wait() === 'decoupled') {
         return
       }
       debounceSet(value)
@@ -64,7 +62,7 @@ export const asyncDecoupled = <T>(
     async update(updater: (value: T) => T) {
       state.update(updater)
       downstreamChanged = true
-      if (wait === 'decoupled') {
+      if (wait() === 'decoupled') {
         return
       }
       debounceUpdate(updater)
@@ -76,6 +74,7 @@ export const asyncDecoupled = <T>(
       downstreamChanged = false
     },
     push() {
+      console.log('asyncDecoupled push')
       store.set(get(state))
       upstreamChanged = false
       downstreamChanged = false
@@ -87,10 +86,10 @@ export const asyncDecoupled = <T>(
       return downstreamChanged
     },
     decouple() {
-      shouldWait.update((old) => ({ wait: 'decoupled', last: old.wait }))
+      shouldWait.update((old) => ({ wait: () => 'decoupled', last: old.wait }))
     },
-    debounce(wait: number | (() => number)) {
-      shouldWait.update((old) => ({ wait, last: old.wait }))
+    debounce(wait: number) {
+      shouldWait.update((old) => ({ wait: () => wait, last: old.wait }))
     },
     toggle() {
       shouldWait.update((old) => ({ wait: old.last, last: old.wait }))

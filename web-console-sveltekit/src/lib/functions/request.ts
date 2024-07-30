@@ -14,10 +14,21 @@ export const handled =
     >
   ) =>
   (...a: Args) =>
-    x(...a).then((res) =>
-      res.data
-        ? res.data
-        : (() => {
-            throw res.error
-          })()
+    x(...a).then(
+      (res) =>
+        res.data
+          ? res.data
+          : (() => {
+              throw res.error
+            })(),
+      (e) => {
+        // if (e instanceof TypeError && e.message === 'Failed to fetch') {
+        //   return {
+        //     pipelineName: pipeline_name,
+        //     status: 'not running' as const
+        //   }
+        // }
+        console.log('handled err', e)
+        throw e
+      }
     )

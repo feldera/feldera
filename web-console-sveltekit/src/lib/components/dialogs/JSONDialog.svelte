@@ -1,17 +1,21 @@
 <script lang="ts">
   import MonacoEditor from '$lib/components/MonacoEditor.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
   import type { Snippet } from 'svelte'
+  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   let {
     json,
     onApply,
     onClose,
-    title
+    title,
+    disabled
   }: {
     json: string
     onApply: (json: string) => Promise<void>
     onClose: () => void
     title: Snippet
+    disabled?: boolean
   } = $props()
   const mode = useDarkMode()
   let value = $state(json)
@@ -36,13 +40,25 @@
         scrollbar: {
           vertical: 'visible'
         },
-        language: 'json'
+        language: 'json',
+        ...isMonacoEditorDisabled(disabled)
       }}
     />
   </div>
   <div class="flex w-full justify-end">
-    <button onclick={() => onApply(value).then(onClose)} class="btn preset-filled-primary-500">
-      APPLY
-    </button>
+    <div>
+      <button
+        {disabled}
+        onclick={() => onApply(value).then(onClose)}
+        class="btn preset-filled-primary-500"
+      >
+        APPLY
+      </button>
+    </div>
+    {#if disabled}
+      <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="top">
+        Stop the pipeline to edit configuration
+      </Tooltip>
+    {/if}
   </div>
 </div>

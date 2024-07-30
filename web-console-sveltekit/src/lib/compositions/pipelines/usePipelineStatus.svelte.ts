@@ -17,5 +17,8 @@ export const usePipelineStatus = (pipelineName: Readable<string>) => {
     pipelineName
     status.reload?.()
   })
-  return new Store(status)
+  const store = new Store(status)
+  const reload = status.reload!
+  Object.assign(store, { reload })
+  return store as typeof store & { reload: typeof reload }
 }

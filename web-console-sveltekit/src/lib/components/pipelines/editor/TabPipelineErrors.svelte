@@ -27,7 +27,7 @@
         {/snippet}
       </ErrorTile> -->
       <span class="bx bx-x-circle text-error-500"></span>
-      <span>
+      <span class="whitespace-pre">
         {systemError.message}
       </span>
     </div>

@@ -11,6 +11,7 @@ export const ssr = false
 export const trailingSlash = 'always'
 
 let accessToken: string | undefined
+
 const authRequestMiddleware = (request: Request) => {
   if (accessToken) {
     request.headers.set('Authorization', `Bearer ${accessToken}`)
@@ -18,13 +19,14 @@ const authRequestMiddleware = (request: Request) => {
   return request
 }
 
+/**
+ * In case of auth error try to refresh tokens and re-fetch original request
+ */
 const authResponseMiddleware = async (response: Response, request: Request) => {
   if (response.status === 401) {
-    console.log('trying to relogin')
     const client = OidcClient.get()
     await client.renewTokensAsync()
     accessToken = client.tokens.accessToken
-    console.log('succ!')
     return fetch(request)
   }
   return response

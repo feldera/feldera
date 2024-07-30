@@ -21,6 +21,7 @@ export const useWritablePipeline = <T extends PipelineDescr>(
     pipelineName,
     rebounce(getPipeline),
     async (newPipeline, _, oldPipeline) => {
+      console.log('useWritablePipeline set', newPipeline)
       if (!oldPipeline) {
         throw new Error('useWritablePipeline called on non-existent pipeline')
       }
