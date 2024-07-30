@@ -60,6 +60,8 @@ pub enum TimestampFormat {
     MillisSinceEpoch,
     /// Time specified in microseconds since UNIX epoch.
     MicrosSinceEpoch,
+    /// Time specified in the RFC 3339 format.
+    Rfc3339,
 }
 
 impl Default for TimestampFormat {
@@ -122,6 +124,9 @@ impl From<JsonFlavor> for SqlSerdeConfig {
     fn from(flavor: JsonFlavor) -> Self {
         match flavor {
             JsonFlavor::Default => Default::default(),
+            JsonFlavor::Datagen => {
+                SqlSerdeConfig::default().with_timestamp_format(TimestampFormat::Rfc3339)
+            }
             JsonFlavor::KafkaConnectJsonConverter { .. } => Self {
                 time_format: TimeFormat::Millis,
                 date_format: DateFormat::DaysSinceEpoch,

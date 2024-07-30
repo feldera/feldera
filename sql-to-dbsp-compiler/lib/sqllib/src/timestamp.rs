@@ -87,17 +87,25 @@ impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
         S: Serializer,
     {
         match context.timestamp_format {
+            TimestampFormat::Rfc3339 => {
+                let datetime =
+                    DateTime::from_timestamp_millis(self.milliseconds).ok_or_else(|| {
+                        S::Error::custom(format!(
+                            "timestamp value '{}' out of range",
+                            self.milliseconds
+                        ))
+                    })?;
+
+                serializer.serialize_str(&datetime.to_rfc3339())
+            }
             TimestampFormat::String(format_string) => {
-                let datetime = DateTime::from_timestamp(
-                    self.milliseconds / 1000,
-                    ((self.milliseconds % 1000) * 1000) as u32,
-                )
-                .ok_or_else(|| {
-                    S::Error::custom(format!(
-                        "timestamp value '{}' out of range",
-                        self.milliseconds
-                    ))
-                })?;
+                let datetime =
+                    DateTime::from_timestamp_millis(self.milliseconds).ok_or_else(|| {
+                        S::Error::custom(format!(
+                            "timestamp value '{}' out of range",
+                            self.milliseconds
+                        ))
+                    })?;
 
                 serializer.serialize_str(&datetime.format(format_string).to_string())
             }
@@ -116,6 +124,16 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Timestamp {
         D: Deserializer<'de>,
     {
         match config.timestamp_format {
+            TimestampFormat::Rfc3339 => {
+                let timestamp_str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+
+                let timestamp =
+                    DateTime::parse_from_rfc3339(timestamp_str.trim()).map_err(|e| {
+                        D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
+                    })?;
+
+                Ok(Self::new(timestamp.timestamp_millis()))
+            }
             TimestampFormat::String(format) => {
                 // `timestamp_str: &'de` doesn't work for JSON, which escapes strings
                 // and can only deserialize into an owned string.

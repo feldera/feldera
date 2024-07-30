@@ -244,6 +244,11 @@ pub struct DatagenInputConfig {
     ///
     /// Setting this to a fixed value will make the generator produce the same sequence of records
     /// every time the pipeline is run.
+    ///
+    /// # Notes
+    /// - To ensure the set of generated input records is deterministic across multiple runs,
+    ///   apart from setting a seed, `workers` also needs to remain unchanged.
+    /// - The input will arrive in non-deterministic order if `workers > 1`.
     pub seed: Option<u64>,
 }
 

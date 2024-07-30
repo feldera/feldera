@@ -1,12 +1,16 @@
 //! A datagen input adapter that generates random data based on a schema and config.
 
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
+use crate::transport::Step;
+use crate::{InputConsumer, InputEndpoint, InputReader, PipelineState, TransportInputEndpoint};
 use anyhow::{anyhow, Result as AnyResult};
+use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime};
 use crossbeam::sync::{Parker, Unparker};
 use dbsp::circuit::tokio::TOKIO;
@@ -25,10 +29,7 @@ use rand::distributions::{Alphanumeric, Uniform};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Zipf};
-use serde_json::{Map, Value};
-
-use crate::transport::Step;
-use crate::{InputConsumer, InputEndpoint, InputReader, PipelineState, TransportInputEndpoint};
+use serde_json::{to_writer, Map, Value};
 
 pub(crate) struct GeneratorEndpoint {
     config: DatagenInputConfig,
@@ -144,12 +145,26 @@ impl InputGenerator {
         status: Arc<AtomicU32>,
         generated: Arc<AtomicUsize>,
     ) {
+        let mut buffer = Vec::new();
+        // Inserting in batches improves performance by around ~80k records/s for
+        // me, so we always do it rather than giving the user the option.
+        static BATCH_SIZE: usize = 10_000;
+        static START_ARR: &[u8; 1] = b"[";
+        static END_ARR: &[u8; 1] = b"]";
+        static REC_DELIM: &[u8; 1] = b",";
+
         for (plan, rate_limiter) in config.plan.into_iter().zip(rate_limiters.iter()) {
             let schema = schema.clone();
             let generated = generated.clone();
+
+            let mut batch_idx = 0;
             let mut generator =
                 RecordGenerator::new(worker_idx, config.seed, plan, schema, generated);
-            for record in &mut generator {
+
+            while generator.current.load(Ordering::Relaxed)
+                < generator.config.limit.unwrap_or(usize::MAX)
+            {
+                let record = generator.make_json_record();
                 match PipelineState::from_u32(status.load(Ordering::Acquire)) {
                     Some(PipelineState::Paused) => parker.park(),
                     Some(PipelineState::Running) => { /* continue */ }
@@ -158,8 +173,23 @@ impl InputGenerator {
                 }
                 match record {
                     Ok(record) => {
-                        let s = record.to_string();
-                        consumer.input_chunk(s.as_bytes());
+                        if batch_idx == 0 {
+                            buffer.clear();
+                            buffer.extend(START_ARR);
+                        } else {
+                            buffer.extend(REC_DELIM);
+                        }
+
+                        to_writer(&mut buffer, &record).unwrap();
+                        batch_idx += 1;
+
+                        if batch_idx % BATCH_SIZE == 0 {
+                            buffer.extend(END_ARR);
+                            consumer.input_chunk(&buffer);
+                            buffer.clear();
+                            buffer.extend(START_ARR);
+                            batch_idx = 0;
+                        }
                     }
                     Err(e) => {
                         // We skip this plan and continue with the next one.
@@ -171,6 +201,11 @@ impl InputGenerator {
                 rate_limiter
                     .until_ready_with_jitter(Jitter::up_to(StdDuration::from_millis(20)))
                     .await;
+            }
+
+            if !buffer.is_empty() {
+                buffer.extend(END_ARR);
+                consumer.input_chunk(&buffer);
             }
         }
         consumer.eoi();
@@ -215,6 +250,8 @@ struct RecordGenerator {
     schema: Relation,
     current: Arc<AtomicUsize>,
     rng: Option<SmallRng>,
+    ymd_format: Vec<Item<'static>>,
+    json_obj: Option<Value>,
 }
 
 impl RecordGenerator {
@@ -231,11 +268,41 @@ impl RecordGenerator {
             SmallRng::from_entropy()
         };
 
+        let ymd_format = StrftimeItems::new("%Y-%m-%d")
+            .parse_to_owned()
+            .expect("%Y-%m-%d is a valid date format");
+
         Self {
             config,
             schema,
             current,
+            ymd_format,
             rng: Some(rng),
+            json_obj: Some(Value::Object(Map::with_capacity(8))),
+        }
+    }
+
+    fn typ_to_default(typ: SqlType) -> Value {
+        match typ {
+            SqlType::Boolean => Value::Bool(false),
+            SqlType::TinyInt
+            | SqlType::SmallInt
+            | SqlType::Int
+            | SqlType::BigInt
+            | SqlType::Real
+            | SqlType::Double
+            | SqlType::Decimal => Value::Number(serde_json::Number::from(0)),
+            SqlType::Char
+            | SqlType::Varchar
+            | SqlType::Binary
+            | SqlType::Varbinary
+            | SqlType::Timestamp
+            | SqlType::Date
+            | SqlType::Time => Value::String(String::new()),
+            SqlType::Interval(_unit) => Value::Null,
+            SqlType::Array => Value::Array(Vec::new()),
+            SqlType::Map | SqlType::Struct => Value::Object(Map::new()),
+            SqlType::Null => Value::Null,
         }
     }
 
@@ -244,20 +311,29 @@ impl RecordGenerator {
         fields: &[Field],
         settings: &HashMap<String, Box<RngFieldSettings>>,
         rng: &mut SmallRng,
-    ) -> AnyResult<Value> {
+        obj: &mut Value,
+    ) -> AnyResult<()> {
+        let map = obj.as_object_mut().unwrap();
+
         let default_settings = Box::<RngFieldSettings>::default();
-        let map = fields
-            .iter()
-            .try_fold(serde_json::Map::new(), |mut map, field| {
-                let field_settings = settings.get(&field.name).unwrap_or(&default_settings);
-                let r = map.insert(
-                    field.name.clone(),
-                    self.generate_field(field, field_settings, rng)?,
-                );
-                assert!(r.is_none());
-                Ok::<Map<String, Value>, anyhow::Error>(map)
-            })?;
-        Ok(Value::Object(map))
+        for field in fields {
+            let field_settings = settings.get(&field.name).unwrap_or(&default_settings);
+            let obj = map
+                .entry(&field.name)
+                .and_modify(|v| {
+                    // If a `null_percentage` is set it can happen that a field in the
+                    // map got set to NULL previously, however our generator methods
+                    // depend on the field being set to the correct type, so we
+                    // need reallocate a new default value again.
+                    if v.is_null() {
+                        *v = Self::typ_to_default(field.columntype.typ)
+                    }
+                })
+                .or_insert_with(|| Self::typ_to_default(field.columntype.typ));
+            self.generate_field(field, field_settings, rng, obj)?;
+        }
+
+        Ok(())
     }
 
     fn generate_field(
@@ -265,31 +341,40 @@ impl RecordGenerator {
         field: &Field,
         settings: &RngFieldSettings,
         rng: &mut SmallRng,
-    ) -> AnyResult<Value> {
+        obj: &mut Value,
+    ) -> AnyResult<()> {
         match field.columntype.typ {
-            SqlType::Boolean => self.generate_boolean(field, settings, rng),
-            SqlType::TinyInt => self.generate_integer::<i8>(field, settings, rng),
-            SqlType::SmallInt => self.generate_integer::<i16>(field, settings, rng),
-            SqlType::Int => self.generate_integer::<i32>(field, settings, rng),
-            SqlType::BigInt => self.generate_integer::<i64>(field, settings, rng),
-            SqlType::Real => self.generate_real::<f64>(field, settings, rng),
-            SqlType::Double => self.generate_real::<f64>(field, settings, rng),
-            SqlType::Decimal => self.generate_real::<f64>(field, settings, rng),
+            SqlType::Boolean => self.generate_boolean(field, settings, rng, obj),
+            SqlType::TinyInt => self.generate_integer::<i8>(field, settings, rng, obj),
+            SqlType::SmallInt => self.generate_integer::<i16>(field, settings, rng, obj),
+            SqlType::Int => self.generate_integer::<i32>(field, settings, rng, obj),
+            SqlType::BigInt => self.generate_integer::<i64>(field, settings, rng, obj),
+            SqlType::Real => self.generate_real::<f64>(field, settings, rng, obj),
+            SqlType::Double => self.generate_real::<f64>(field, settings, rng, obj),
+            SqlType::Decimal => self.generate_real::<f64>(field, settings, rng, obj),
             SqlType::Char | SqlType::Varchar | SqlType::Binary | SqlType::Varbinary => {
-                self.generate_string(field, settings, rng)
+                self.generate_string(field, settings, rng, obj)
             }
-            SqlType::Timestamp => self.generate_timestamp(field, settings, rng),
-            SqlType::Date => self.generate_date(field, settings, rng),
-            SqlType::Time => self.generate_time(field, settings, rng),
-            SqlType::Interval(_unit) => Ok(Value::Null), // I don't think this can show up in a table schema
-            SqlType::Array => self.generate_array(field, settings, rng),
-            SqlType::Map => self.generate_map(field, settings, rng),
+            SqlType::Timestamp => self.generate_timestamp(field, settings, rng, obj),
+            SqlType::Date => self.generate_date(field, settings, rng, obj),
+            SqlType::Time => self.generate_time(field, settings, rng, obj),
+            SqlType::Interval(_unit) => {
+                // I don't think this can show up in a table schema
+                *obj = Value::Null;
+                Ok(())
+            }
+            SqlType::Array => self.generate_array(field, settings, rng, obj),
+            SqlType::Map => self.generate_map(field, settings, rng, obj),
             SqlType::Struct => self.generate_fields(
                 field.columntype.fields.as_ref().unwrap(),
                 settings.fields.as_ref().unwrap_or(&HashMap::new()),
                 rng,
+                obj,
             ),
-            SqlType::Null => Ok(Value::Null),
+            SqlType::Null => {
+                *obj = Value::Null;
+                Ok(())
+            }
         }
     }
 
@@ -314,8 +399,10 @@ impl RecordGenerator {
         _field: &Field,
         _settings: &RngFieldSettings,
         _rng: &mut SmallRng,
-    ) -> AnyResult<Value> {
-        Ok(Value::Object(Map::new()))
+        obj: &mut Value,
+    ) -> AnyResult<()> {
+        *obj = Value::Object(Map::new());
+        Ok(())
     }
 
     fn generate_array(
@@ -323,78 +410,86 @@ impl RecordGenerator {
         field: &Field,
         settings: &RngFieldSettings,
         rng: &mut SmallRng,
-    ) -> AnyResult<Value> {
-        let (min, max) = settings
-            .range
-            .map(|(a, b)| (a.try_into().unwrap_or(0), b.try_into().unwrap_or(5)))
-            .unwrap_or((0usize, 5usize));
-        if min > max {
-            return Err(anyhow!(
-                "Invalid range, min > max for field {:?}",
-                field.name
-            ));
-        }
-
-        let value_settings = settings.value.clone().unwrap_or_default();
-        let columntype = *field.columntype.component.as_ref().unwrap().clone();
-        let arr_field = Field {
-            name: "array_element".to_string(),
-            case_sensitive: false,
-            columntype,
-        };
-
-        if let Some(nl) = Self::maybe_null(field, settings, rng) {
-            return Ok(nl);
-        }
-
-        Ok(match (&settings.strategy, &settings.values) {
-            (DatagenStrategy::Increment { scale }, None) => {
-                let val =
-                    self.current.load(Ordering::Relaxed) * (*scale).try_into().unwrap_or(1usize);
-                let range = max - min;
-                let len = min + (val % range);
-                let values: Result<Vec<_>, _> = (0..len)
-                    .map(|_| self.generate_field(&arr_field, &value_settings, rng))
-                    .collect();
-                Value::Array(values?)
-            }
-            (DatagenStrategy::Increment { scale }, Some(values)) => {
-                values[(self.current.load(Ordering::Relaxed)
-                    * (*scale).try_into().unwrap_or(1usize))
-                    % values.len()]
-                .clone()
-            }
-            (DatagenStrategy::Uniform, None) => {
-                let len = rng.sample(Uniform::from(min..max));
-                let values: Result<Vec<_>, _> = (0..len)
-                    .map(|_| self.generate_field(&arr_field, settings, rng))
-                    .collect();
-                Value::Array(values?)
-            }
-            (DatagenStrategy::Uniform, Some(values)) => {
-                values[rng.sample(Uniform::from(0..values.len()))].clone()
-            }
-            (DatagenStrategy::Zipf { s }, None) => {
-                let range = max - min;
-                let zipf = Zipf::new(range as u64, *s as f64).unwrap();
-                let len = rng.sample(zipf) as usize - 1;
-                let values: Result<Vec<_>, _> = (min..(min + len))
-                    .map(|_| self.generate_field(field, settings, rng))
-                    .collect();
-                Value::Array(values?)
-            }
-            (DatagenStrategy::Zipf { s }, Some(values)) => {
-                let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
-                let idx = rng.sample(zipf) as usize - 1;
-                values[idx].clone()
-            }
-            (DatagenStrategy::String { .. }, _) => {
+        obj: &mut Value,
+    ) -> AnyResult<()> {
+        if let Value::Array(arr) = obj {
+            let (min, max) = settings
+                .range
+                .map(|(a, b)| (a.try_into().unwrap_or(0), b.try_into().unwrap_or(5)))
+                .unwrap_or((0usize, 5usize));
+            if min > max {
                 return Err(anyhow!(
-                    "Invalid method `string` for non-string field: `{:?}`",
+                    "Invalid range, min > max for field {:?}",
                     field.name
                 ));
             }
-        })
+
+            let value_settings = settings.value.clone().unwrap_or_default();
+            let columntype = *field.columntype.component.as_ref().unwrap().clone();
+            let arr_field = Field {
+                name: "array_element".to_string(),
+                case_sensitive: false,
+                columntype,
+            };
+
+            if let Some(nl) = Self::maybe_null(field, settings, rng) {
+                *obj = nl;
+                return Ok(());
+            }
+
+            match (&settings.strategy, &settings.values) {
+                (DatagenStrategy::Increment { scale }, None) => {
+                    let val = self.current.load(Ordering::Relaxed)
+                        * (*scale).try_into().unwrap_or(1usize);
+                    let range = max - min;
+                    let len = min + (val % range);
+                    arr.resize_with(len, || Self::typ_to_default(arr_field.columntype.typ));
+                    for e in arr.iter_mut() {
+                        self.generate_field(&arr_field, &value_settings, rng, e)?;
+                    }
+                }
+                (DatagenStrategy::Increment { scale }, Some(values)) => {
+                    *obj = values[(self.current.load(Ordering::Relaxed)
+                        * (*scale).try_into().unwrap_or(1usize))
+                        % values.len()]
+                    .clone();
+                }
+                (DatagenStrategy::Uniform, None) => {
+                    let len = rng.sample(Uniform::from(min..max));
+                    arr.resize_with(len, || Self::typ_to_default(arr_field.columntype.typ));
+                    for e in arr.iter_mut() {
+                        self.generate_field(&arr_field, &value_settings, rng, e)?;
+                    }
+                }
+                (DatagenStrategy::Uniform, Some(values)) => {
+                    *obj = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                }
+                (DatagenStrategy::Zipf { s }, None) => {
+                    let range = max - min;
+                    let zipf = Zipf::new(range as u64, *s as f64).unwrap();
+                    let len = rng.sample(zipf) as usize - 1;
+                    arr.resize_with(len, || Self::typ_to_default(arr_field.columntype.typ));
+                    for e in arr.iter_mut() {
+                        self.generate_field(&arr_field, &value_settings, rng, e)?;
+                    }
+                }
+                (DatagenStrategy::Zipf { s }, Some(values)) => {
+                    let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
+                    let idx = rng.sample(zipf) as usize - 1;
+                    *obj = values[idx].clone()
+                }
+                (DatagenStrategy::String { .. }, _) => {
+                    return Err(anyhow!(
+                        "Invalid method `string` for non-string field: `{:?}`",
+                        field.name
+                    ));
+                }
+            };
+
+            Ok(())
+        } else {
+            unreachable!("Value is not an array");
+        }
     }
 
     fn generate_time(
@@ -402,65 +497,76 @@ impl RecordGenerator {
         field: &Field,
         settings: &RngFieldSettings,
         rng: &mut SmallRng,
-    ) -> AnyResult<Value> {
+        obj: &mut Value,
+    ) -> AnyResult<()> {
         const MAX_TIME_VALUE: u64 = 86400000; // 24h in milliseconds
-        let (min, max) = settings
-            .range
-            .map(|(a, b)| {
-                (
-                    a.try_into().unwrap_or(0u64),
-                    b.try_into().unwrap_or(MAX_TIME_VALUE),
-                )
-            })
-            .unwrap_or((0, MAX_TIME_VALUE));
-        if min > max {
-            return Err(anyhow!(
-                "Invalid range, min > max for field {:?}",
-                field.name
-            ));
-        }
+        if let Value::String(str) = obj {
+            str.clear();
 
-        let start_time = NaiveTime::MIN;
+            let (min, max) = settings
+                .range
+                .map(|(a, b)| {
+                    (
+                        a.try_into().unwrap_or(0u64),
+                        b.try_into().unwrap_or(MAX_TIME_VALUE),
+                    )
+                })
+                .unwrap_or((0, MAX_TIME_VALUE));
+            if min > max {
+                return Err(anyhow!(
+                    "Invalid range, min > max for field {:?}",
+                    field.name
+                ));
+            }
 
-        match (&settings.strategy, &settings.values) {
-            (DatagenStrategy::Increment { scale }, None) => {
-                let val = (self.current.load(Ordering::Relaxed) as u64
-                    * (*scale).try_into().unwrap_or(1u64))
-                    % max;
-                let t = start_time + Duration::milliseconds(val as i64);
-                Ok(Value::String(t.to_string()))
-            }
-            (DatagenStrategy::Increment { scale }, Some(values)) => {
-                Ok(values[(self.current.load(Ordering::Relaxed)
-                    * (*scale).try_into().unwrap_or(1usize))
-                    % values.len()]
-                .clone())
-            }
-            (DatagenStrategy::Uniform, None) => {
-                let dist = Uniform::from(min..max);
-                let val = rng.sample(dist);
-                let t = start_time + Duration::milliseconds(val as i64);
-                Ok(Value::String(t.to_string()))
-            }
-            (DatagenStrategy::Uniform, Some(values)) => {
-                Ok(values[rng.sample(Uniform::from(0..values.len()))].clone())
-            }
-            (DatagenStrategy::Zipf { s }, None) => {
-                let range = max - min;
-                let zipf = Zipf::new(range, *s as f64).unwrap();
-                let val = rng.sample(zipf) as u64 - 1;
-                let t = start_time + Duration::milliseconds(val as i64);
-                Ok(Value::String(t.to_string()))
-            }
-            (DatagenStrategy::Zipf { s }, Some(values)) => {
-                let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
-                let idx = rng.sample(zipf) as usize - 1;
-                Ok(values[idx].clone())
-            }
-            (DatagenStrategy::String { .. }, _) => Err(anyhow!(
-                "Invalid method `string` for non-string field: `{:?}`",
-                field.name
-            )),
+            let start_time = NaiveTime::MIN;
+
+            match (&settings.strategy, &settings.values) {
+                (DatagenStrategy::Increment { scale }, None) => {
+                    let val = (self.current.load(Ordering::Relaxed) as u64
+                        * (*scale).try_into().unwrap_or(1u64))
+                        % max;
+                    let t = start_time + Duration::milliseconds(val as i64);
+                    write!(str, "{}", t)?;
+                }
+                (DatagenStrategy::Increment { scale }, Some(values)) => {
+                    *obj = values[(self.current.load(Ordering::Relaxed)
+                        * (*scale).try_into().unwrap_or(1usize))
+                        % values.len()]
+                    .clone();
+                }
+                (DatagenStrategy::Uniform, None) => {
+                    let dist = Uniform::from(min..max);
+                    let val = rng.sample(dist);
+                    let t = start_time + Duration::milliseconds(val as i64);
+                    write!(str, "{}", t)?;
+                }
+                (DatagenStrategy::Uniform, Some(values)) => {
+                    *obj = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                }
+                (DatagenStrategy::Zipf { s }, None) => {
+                    let range = max - min;
+                    let zipf = Zipf::new(range, *s as f64).unwrap();
+                    let val = rng.sample(zipf) as u64 - 1;
+                    let t = start_time + Duration::milliseconds(val as i64);
+                    write!(str, "{}", t)?;
+                }
+                (DatagenStrategy::Zipf { s }, Some(values)) => {
+                    let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
+                    let idx = rng.sample(zipf) as usize - 1;
+                    *obj = values[idx].clone();
+                }
+                (DatagenStrategy::String { .. }, _) => {
+                    return Err(anyhow!(
+                        "Invalid method `string` for non-string field: `{:?}`",
+                        field.name
+                    ))
+                }
+            };
+
+            Ok(())
+        } else {
+            unreachable!("Value is not a string");
         }
     }
 
@@ -469,70 +575,93 @@ impl RecordGenerator {
         field: &Field,
         settings: &RngFieldSettings,
         rng: &mut SmallRng,
-    ) -> AnyResult<Value> {
+        obj: &mut Value,
+    ) -> AnyResult<()> {
         const MAX_DATE_VALUE: i64 = 54787; // 2100-01-01
-        let (min, max) = settings.range.unwrap_or((0, MAX_DATE_VALUE));
-        if min > max {
-            return Err(anyhow!(
-                "Invalid range, min > max for field {:?}",
-                field.name
-            ));
-        }
-        let unix_date: NaiveDate = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+        if let Value::String(str) = obj {
+            str.clear();
 
-        if let Some(nl) = Self::maybe_null(field, settings, rng) {
-            return Ok(nl);
-        }
-
-        Ok(match (&settings.strategy, &settings.values) {
-            (DatagenStrategy::Increment { scale }, None) => {
-                let val = (self.current.load(Ordering::Relaxed) as i64 * *scale) % (max - min);
-                let d = unix_date + Days::new(val as u64);
-                Value::String(d.format("%Y-%m-%d").to_string())
-            }
-            (DatagenStrategy::Increment { scale }, Some(values)) => {
-                values[(self.current.load(Ordering::Relaxed)
-                    * (*scale).try_into().unwrap_or(1usize))
-                    % values.len()]
-                .clone()
-            }
-            (DatagenStrategy::Uniform, None) => {
-                let dist = Uniform::from(min..max);
-                let days = rng.sample(dist);
-                let d = if days > 0 {
-                    unix_date + Days::new(days.unsigned_abs())
-                } else {
-                    unix_date - Days::new(days.unsigned_abs())
-                };
-                Value::String(d.format("%Y-%m-%d").to_string())
-            }
-            (DatagenStrategy::Uniform, Some(values)) => {
-                values[rng.sample(Uniform::from(0..values.len()))].clone()
-            }
-            (DatagenStrategy::Zipf { s }, None) => {
-                let range = max - min;
-                let zipf = Zipf::new(range as u64, *s as f64).unwrap();
-                let val = rng.sample(zipf) as i64 - 1;
-                let days = clamp(min + val, min, max);
-                let d = if days > 0 {
-                    unix_date + Days::new(days as u64)
-                } else {
-                    unix_date - Days::new(days.unsigned_abs())
-                };
-                Value::String(d.format("%Y-%m-%d").to_string())
-            }
-            (DatagenStrategy::Zipf { s }, Some(values)) => {
-                let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
-                let idx = rng.sample(zipf) as usize - 1;
-                values[idx].clone()
-            }
-            (DatagenStrategy::String { .. }, _) => {
+            let (min, max) = settings.range.unwrap_or((0, MAX_DATE_VALUE));
+            if min > max {
                 return Err(anyhow!(
-                    "Invalid method `string` for non-string field: `{:?}`",
+                    "Invalid range, min > max for field {:?}",
                     field.name
                 ));
             }
-        })
+            let unix_date: NaiveDate = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+
+            if let Some(nl) = Self::maybe_null(field, settings, rng) {
+                *obj = nl;
+                return Ok(());
+            }
+
+            match (&settings.strategy, &settings.values) {
+                (DatagenStrategy::Increment { scale }, None) => {
+                    let val = (self.current.load(Ordering::Relaxed) as i64 * *scale) % (max - min);
+                    let d = unix_date + Days::new(val as u64);
+
+                    write!(
+                        str,
+                        "{}",
+                        d.format_with_items(self.ymd_format.as_slice().iter())
+                    )?;
+                }
+                (DatagenStrategy::Increment { scale }, Some(values)) => {
+                    *obj = values[(self.current.load(Ordering::Relaxed)
+                        * (*scale).try_into().unwrap_or(1usize))
+                        % values.len()]
+                    .clone();
+                }
+                (DatagenStrategy::Uniform, None) => {
+                    let dist = Uniform::from(min..max);
+                    let days = rng.sample(dist);
+                    let d = if days > 0 {
+                        unix_date + Days::new(days.unsigned_abs())
+                    } else {
+                        unix_date - Days::new(days.unsigned_abs())
+                    };
+                    write!(
+                        str,
+                        "{}",
+                        d.format_with_items(self.ymd_format.as_slice().iter())
+                    )?;
+                }
+                (DatagenStrategy::Uniform, Some(values)) => {
+                    *obj = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                }
+                (DatagenStrategy::Zipf { s }, None) => {
+                    let range = max - min;
+                    let zipf = Zipf::new(range as u64, *s as f64).unwrap();
+                    let val = rng.sample(zipf) as i64 - 1;
+                    let days = clamp(min + val, min, max);
+                    let d = if days > 0 {
+                        unix_date + Days::new(days as u64)
+                    } else {
+                        unix_date - Days::new(days.unsigned_abs())
+                    };
+                    write!(
+                        str,
+                        "{}",
+                        d.format_with_items(self.ymd_format.as_slice().iter())
+                    )?;
+                }
+                (DatagenStrategy::Zipf { s }, Some(values)) => {
+                    let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
+                    let idx = rng.sample(zipf) as usize - 1;
+                    *obj = values[idx].clone();
+                }
+                (DatagenStrategy::String { .. }, _) => {
+                    return Err(anyhow!(
+                        "Invalid method `string` for non-string field: `{:?}`",
+                        field.name
+                    ));
+                }
+            };
+
+            Ok(())
+        } else {
+            unreachable!("Value is not a string");
+        }
     }
 
     fn generate_timestamp(
@@ -540,63 +669,85 @@ impl RecordGenerator {
         field: &Field,
         settings: &RngFieldSettings,
         rng: &mut SmallRng,
-    ) -> AnyResult<Value> {
+        obj: &mut Value,
+    ) -> AnyResult<()> {
         const MAX_DATETIME_VALUE: i64 = 4102444800000; // 2100-01-01 00:00:00.000
 
-        let (min, max) = settings.range.unwrap_or((0, MAX_DATETIME_VALUE)); // 4102444800 => 2100-01-01
-        if min > max {
-            return Err(anyhow!(
-                "Invalid range, min > max for field {:?}",
-                field.name
-            ));
-        }
+        if let Value::String(str) = obj {
+            str.clear();
 
-        if let Some(nl) = Self::maybe_null(field, settings, rng) {
-            return Ok(nl);
-        }
-
-        Ok(match (&settings.strategy, &settings.values) {
-            (DatagenStrategy::Increment { scale }, None) => {
-                let val = (self.current.load(Ordering::Relaxed) as i64 * *scale) % (max - min);
-                let dt = DateTime::from_timestamp_millis(min).unwrap_or(DateTime::UNIX_EPOCH)
-                    + Duration::milliseconds(val);
-                Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
-            }
-            (DatagenStrategy::Increment { scale }, Some(values)) => {
-                values[(self.current.load(Ordering::Relaxed)
-                    * (*scale).try_into().unwrap_or(1usize))
-                    % values.len()]
-                .clone()
-            }
-            (DatagenStrategy::Uniform, None) => {
-                let dist = Uniform::from(min..max);
-                let dt = DateTime::from_timestamp_millis(min).unwrap_or(DateTime::UNIX_EPOCH)
-                    + Duration::milliseconds(rng.sample(dist));
-                Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
-            }
-            (DatagenStrategy::Uniform, Some(values)) => {
-                values[rng.sample(Uniform::from(0..values.len()))].clone()
-            }
-            (DatagenStrategy::Zipf { s }, None) => {
-                let range = max - min;
-                let zipf = Zipf::new(range as u64, *s as f64).unwrap();
-                let val = rng.sample(zipf) as i64 - 1;
-                let dt = DateTime::from_timestamp_millis(min).unwrap_or(DateTime::UNIX_EPOCH)
-                    + Duration::milliseconds(val);
-                Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
-            }
-            (DatagenStrategy::Zipf { s }, Some(values)) => {
-                let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
-                let idx = rng.sample(zipf) as usize - 1;
-                values[idx].clone()
-            }
-            (DatagenStrategy::String { .. }, _) => {
+            let (min, max) = settings.range.unwrap_or((0, MAX_DATETIME_VALUE)); // 4102444800 => 2100-01-01
+            if min > max {
                 return Err(anyhow!(
-                    "Invalid method `string` for non-string field: `{:?}`",
+                    "Invalid range, min > max for field {:?}",
                     field.name
                 ));
             }
-        })
+
+            if let Some(nl) = Self::maybe_null(field, settings, rng) {
+                *obj = nl;
+                return Ok(());
+            }
+
+            // We're allocating new strings here with `to_rfc_3339` instead of
+            // `write!(str, "{}", dt.format_with_items(self.rfc3339_format.as_slice().iter()))`
+            //
+            // You'd think this would be slower, but it turned out to be faster,
+            // maybe it uses a more optimized parser that isn't taken when creating
+            // a parser with `StrftimeItems::new()`?
+            //
+            // ```
+            // StrftimeItems::new("%+")
+            //    .parse_to_owned()
+            //    .expect("%+ is a valid date format");
+            // ```
+            match (&settings.strategy, &settings.values) {
+                (DatagenStrategy::Increment { scale }, None) => {
+                    let val = (self.current.load(Ordering::Relaxed) as i64 * *scale) % (max - min);
+                    let dt = DateTime::from_timestamp_millis(min).unwrap_or(DateTime::UNIX_EPOCH)
+                        + Duration::milliseconds(val);
+                    *obj = Value::String(dt.to_rfc3339());
+                }
+                (DatagenStrategy::Increment { scale }, Some(values)) => {
+                    *obj = values[(self.current.load(Ordering::Relaxed)
+                        * (*scale).try_into().unwrap_or(1usize))
+                        % values.len()]
+                    .clone();
+                }
+                (DatagenStrategy::Uniform, None) => {
+                    let dist = Uniform::from(min..max);
+                    let dt = DateTime::from_timestamp_millis(min).unwrap_or(DateTime::UNIX_EPOCH)
+                        + Duration::milliseconds(rng.sample(dist));
+                    *obj = Value::String(dt.to_rfc3339());
+                }
+                (DatagenStrategy::Uniform, Some(values)) => {
+                    *obj = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                }
+                (DatagenStrategy::Zipf { s }, None) => {
+                    let range = max - min;
+                    let zipf = Zipf::new(range as u64, *s as f64).unwrap();
+                    let val = rng.sample(zipf) as i64 - 1;
+                    let dt = DateTime::from_timestamp_millis(min).unwrap_or(DateTime::UNIX_EPOCH)
+                        + Duration::milliseconds(val);
+                    *obj = Value::String(dt.to_rfc3339());
+                }
+                (DatagenStrategy::Zipf { s }, Some(values)) => {
+                    let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
+                    let idx = rng.sample(zipf) as usize - 1;
+                    *obj = values[idx].clone();
+                }
+                (DatagenStrategy::String { .. }, _) => {
+                    return Err(anyhow!(
+                        "Invalid method `string` for non-string field: `{:?}`",
+                        field.name
+                    ));
+                }
+            };
+
+            Ok(())
+        } else {
+            unreachable!("Value is not a string");
+        }
     }
 
     fn generate_string(
@@ -604,62 +755,68 @@ impl RecordGenerator {
         field: &Field,
         settings: &RngFieldSettings,
         rng: &mut SmallRng,
-    ) -> AnyResult<Value> {
-        let (min, max) = settings
-            .range
-            .map(|(a, b)| (a.try_into().unwrap_or(0), b.try_into().unwrap_or(25)))
-            .unwrap_or((0, 25));
-        if min > max {
-            return Err(anyhow!(
-                "Invalid range, min > max for field {:?}",
-                field.name
-            ));
-        }
+        obj: &mut Value,
+    ) -> AnyResult<()> {
+        if let Value::String(str) = obj {
+            str.clear();
 
-        if let Some(nl) = Self::maybe_null(field, settings, rng) {
-            return Ok(nl);
-        }
+            let (min, max) = settings
+                .range
+                .map(|(a, b)| (a.try_into().unwrap_or(0), b.try_into().unwrap_or(25)))
+                .unwrap_or((0, 25));
+            if min > max {
+                return Err(anyhow!(
+                    "Invalid range, min > max for field {:?}",
+                    field.name
+                ));
+            }
 
-        Ok(match (&settings.strategy, &settings.values) {
-            (DatagenStrategy::Increment { scale }, None) => Value::String(format!(
-                "{}",
-                self.current.load(Ordering::Relaxed) as i64 * *scale
-            )),
-            (DatagenStrategy::Increment { scale }, Some(values)) => {
-                values[(self.current.load(Ordering::Relaxed)
-                    * (*scale).try_into().unwrap_or(1usize))
-                    % values.len()]
-                .clone()
+            if let Some(nl) = Self::maybe_null(field, settings, rng) {
+                *obj = nl;
+                return Ok(());
             }
-            (DatagenStrategy::Uniform, None) => {
-                let len = rng.sample(Uniform::from(min..max));
-                Value::String(
-                    rng.sample_iter(&Alphanumeric)
-                        .map(char::from)
-                        .take(len)
-                        .collect::<String>(),
-                )
-            }
-            (DatagenStrategy::Uniform, Some(values)) => {
-                values[rng.sample(Uniform::from(0..values.len()))].clone()
-            }
-            (DatagenStrategy::Zipf { s }, None) => {
-                let zipf = Zipf::new(max as u64, *s as f64).unwrap();
-                let len = rng.sample(zipf) as usize - 1;
-                Value::String(
-                    rng.sample_iter(&Alphanumeric)
-                        .map(char::from)
-                        .take(len)
-                        .collect::<String>(),
-                )
-            }
-            (DatagenStrategy::Zipf { s }, Some(values)) => {
-                let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
-                let idx = rng.sample(zipf) as usize - 1;
-                values[idx].clone()
-            }
-            (DatagenStrategy::String { method }, _) => generate_fake_string(settings, method, rng),
-        })
+
+            match (&settings.strategy, &settings.values) {
+                (DatagenStrategy::Increment { scale }, None) => {
+                    write!(
+                        str,
+                        "{}",
+                        self.current.load(Ordering::Relaxed) as i64 * *scale
+                    )?;
+                }
+                (DatagenStrategy::Increment { scale }, Some(values)) => {
+                    *obj = values[(self.current.load(Ordering::Relaxed)
+                        * (*scale).try_into().unwrap_or(1usize))
+                        % values.len()]
+                    .clone()
+                }
+                (DatagenStrategy::Uniform, None) => {
+                    let len = rng.sample(Uniform::from(min..max));
+                    str.extend(rng.sample_iter(&Alphanumeric).map(char::from).take(len));
+                }
+                (DatagenStrategy::Uniform, Some(values)) => {
+                    *obj = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                }
+                (DatagenStrategy::Zipf { s }, None) => {
+                    let zipf = Zipf::new(max as u64, *s as f64).unwrap();
+                    let len = rng.sample(zipf) as usize - 1;
+                    str.extend(rng.sample_iter(&Alphanumeric).map(char::from).take(len));
+                }
+                (DatagenStrategy::Zipf { s }, Some(values)) => {
+                    let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
+                    let idx = rng.sample(zipf) as usize - 1;
+                    *obj = values[idx].clone()
+                }
+                (DatagenStrategy::String { method }, _) => {
+                    // TODO: This should ideally write into `str` rather than allocating a new one.
+                    *obj = generate_fake_string(settings, method, rng);
+                }
+            };
+
+            Ok(())
+        } else {
+            unreachable!("Value is not a string");
+        }
     }
 
     fn generate_integer<N: Bounded + ToPrimitive>(
@@ -667,7 +824,8 @@ impl RecordGenerator {
         field: &Field,
         settings: &RngFieldSettings,
         rng: &mut SmallRng,
-    ) -> AnyResult<Value> {
+        obj: &mut Value,
+    ) -> AnyResult<()> {
         let min = N::min_value().to_i64().unwrap_or(i64::MIN);
         let max = N::max_value().to_i64().unwrap_or(i64::MAX);
         if let Some((a, b)) = settings.range {
@@ -680,65 +838,65 @@ impl RecordGenerator {
         }
 
         if let Some(nl) = Self::maybe_null(field, settings, rng) {
-            return Ok(nl);
+            *obj = nl;
+            return Ok(());
         }
 
-        Ok(
-            match (&settings.strategy, &settings.values, &settings.range) {
-                (DatagenStrategy::Increment { scale }, None, None) => {
-                    let val = (self.current.load(Ordering::Relaxed) as i64 * *scale) % max;
-                    Value::Number(serde_json::Number::from(val))
-                }
-                (DatagenStrategy::Increment { scale }, None, Some((a, b))) => {
-                    let range = b - a;
-                    let val_in_range =
-                        (self.current.load(Ordering::Relaxed) as i64 * *scale) % range;
-                    let val = a + val_in_range;
-                    debug_assert!(val >= *a && val < *b);
-                    Value::Number(serde_json::Number::from(val))
-                }
-                (DatagenStrategy::Increment { scale }, Some(values), _) => {
-                    values[(self.current.load(Ordering::Relaxed)
-                        * (*scale).try_into().unwrap_or(1usize))
-                        % values.len()]
-                    .clone()
-                }
-                (DatagenStrategy::Uniform, None, None) => {
-                    let dist = Uniform::from(min..max);
-                    Value::Number(serde_json::Number::from(rng.sample(dist)))
-                }
-                (DatagenStrategy::Uniform, None, Some((a, b))) => {
-                    let dist = Uniform::from(*a..*b);
-                    Value::Number(serde_json::Number::from(rng.sample(dist)))
-                }
-                (DatagenStrategy::Uniform, Some(values), _) => {
-                    let dist = Uniform::from(0..values.len());
-                    values[rng.sample(dist)].clone()
-                }
-                (DatagenStrategy::Zipf { s }, None, None) => {
-                    let zipf = Zipf::new(max as u64, *s as f64).unwrap();
-                    let val_in_range = rng.sample(zipf) as i64 - 1;
-                    Value::Number(serde_json::Number::from(val_in_range))
-                }
-                (DatagenStrategy::Zipf { s }, None, Some((a, b))) => {
-                    let range = b - a;
-                    let zipf = Zipf::new(range as u64, *s as f64).unwrap();
-                    let val_in_range = rng.sample(zipf) as i64 - 1;
-                    Value::Number(serde_json::Number::from(val_in_range + a))
-                }
-                (DatagenStrategy::Zipf { s }, Some(values), _) => {
-                    let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
-                    let idx = rng.sample(zipf) as usize - 1;
-                    values[idx].clone()
-                }
-                (DatagenStrategy::String { .. }, _, _) => {
-                    return Err(anyhow!(
-                        "Invalid method `string` for non-string field: `{:?}`",
-                        field.name
-                    ));
-                }
-            },
-        )
+        match (&settings.strategy, &settings.values, &settings.range) {
+            (DatagenStrategy::Increment { scale }, None, None) => {
+                let val = (self.current.load(Ordering::Relaxed) as i64 * *scale) % max;
+                *obj = Value::Number(serde_json::Number::from(val));
+            }
+            (DatagenStrategy::Increment { scale }, None, Some((a, b))) => {
+                let range = b - a;
+                let val_in_range = (self.current.load(Ordering::Relaxed) as i64 * *scale) % range;
+                let val = a + val_in_range;
+                debug_assert!(val >= *a && val < *b);
+                *obj = Value::Number(serde_json::Number::from(val));
+            }
+            (DatagenStrategy::Increment { scale }, Some(values), _) => {
+                *obj = values[(self.current.load(Ordering::Relaxed)
+                    * (*scale).try_into().unwrap_or(1usize))
+                    % values.len()]
+                .clone();
+            }
+            (DatagenStrategy::Uniform, None, None) => {
+                let dist = Uniform::from(min..max);
+                *obj = Value::Number(serde_json::Number::from(rng.sample(dist)));
+            }
+            (DatagenStrategy::Uniform, None, Some((a, b))) => {
+                let dist = Uniform::from(*a..*b);
+                *obj = Value::Number(serde_json::Number::from(rng.sample(dist)));
+            }
+            (DatagenStrategy::Uniform, Some(values), _) => {
+                let dist = Uniform::from(0..values.len());
+                *obj = values[rng.sample(dist)].clone()
+            }
+            (DatagenStrategy::Zipf { s }, None, None) => {
+                let zipf = Zipf::new(max as u64, *s as f64).unwrap();
+                let val_in_range = rng.sample(zipf) as i64 - 1;
+                *obj = Value::Number(serde_json::Number::from(val_in_range));
+            }
+            (DatagenStrategy::Zipf { s }, None, Some((a, b))) => {
+                let range = b - a;
+                let zipf = Zipf::new(range as u64, *s as f64).unwrap();
+                let val_in_range = rng.sample(zipf) as i64 - 1;
+                *obj = Value::Number(serde_json::Number::from(val_in_range + a));
+            }
+            (DatagenStrategy::Zipf { s }, Some(values), _) => {
+                let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
+                let idx = rng.sample(zipf) as usize - 1;
+                *obj = values[idx].clone()
+            }
+            (DatagenStrategy::String { .. }, _, _) => {
+                return Err(anyhow!(
+                    "Invalid method `string` for non-string field: `{:?}`",
+                    field.name
+                ));
+            }
+        };
+
+        Ok(())
     }
 
     fn generate_real<N: Bounded + ToPrimitive>(
@@ -746,7 +904,8 @@ impl RecordGenerator {
         field: &Field,
         settings: &RngFieldSettings,
         rng: &mut SmallRng,
-    ) -> AnyResult<Value> {
+        obj: &mut Value,
+    ) -> AnyResult<()> {
         let min = N::min_value().to_f64().unwrap_or(f64::MIN);
         let max = N::max_value().to_f64().unwrap_or(f64::MAX);
         if let Some((a, b)) = settings.range {
@@ -759,15 +918,16 @@ impl RecordGenerator {
         }
         let range = settings.range.map(|(a, b)| (a as f64, b as f64));
         if let Some(nl) = Self::maybe_null(field, settings, rng) {
-            return Ok(nl);
+            *obj = nl;
+            return Ok(());
         }
 
-        Ok(match (&settings.strategy, &settings.values, &range) {
+        match (&settings.strategy, &settings.values, &range) {
             (DatagenStrategy::Increment { scale }, None, None) => {
                 let val = (self.current.load(Ordering::Relaxed) as f64 * *scale as f64) % max;
-                Value::Number(
+                *obj = Value::Number(
                     serde_json::Number::from_f64(val).unwrap_or(serde_json::Number::from(0)),
-                )
+                );
             }
             (DatagenStrategy::Increment { scale }, None, Some((a, b))) => {
                 let range = b - a;
@@ -775,52 +935,52 @@ impl RecordGenerator {
                     (self.current.load(Ordering::Relaxed) as f64 * *scale as f64) % range;
                 let val = a + val_in_range;
                 debug_assert!(val >= *a && val < *b);
-                Value::Number(
+                *obj = Value::Number(
                     serde_json::Number::from_f64(val).unwrap_or(serde_json::Number::from(0)),
-                )
+                );
             }
             (DatagenStrategy::Increment { scale }, Some(values), _) => {
-                values[(self.current.load(Ordering::Relaxed)
+                *obj = values[(self.current.load(Ordering::Relaxed)
                     * (*scale).try_into().unwrap_or(1usize))
                     % values.len()]
-                .clone()
+                .clone();
             }
             (DatagenStrategy::Uniform, None, None) => {
                 let dist = Uniform::from(min..max);
-                Value::Number(
+                *obj = Value::Number(
                     serde_json::Number::from_f64(rng.sample(dist))
                         .unwrap_or(serde_json::Number::from(0)),
-                )
+                );
             }
             (DatagenStrategy::Uniform, None, Some((a, b))) => {
                 let dist = Uniform::from(*a..*b);
-                Value::Number(
+                *obj = Value::Number(
                     serde_json::Number::from_f64(rng.sample(dist))
                         .unwrap_or(serde_json::Number::from(0)),
-                )
+                );
             }
             (DatagenStrategy::Uniform, Some(values), _) => {
                 let dist = Uniform::from(0..values.len());
-                values[rng.sample(dist)].clone()
+                *obj = values[rng.sample(dist)].clone();
             }
             (DatagenStrategy::Zipf { s }, None, None) => {
                 let zipf = Zipf::new(max as u64, *s as f64).unwrap();
                 let val_in_range = rng.sample(zipf) as i64 - 1;
-                Value::Number(serde_json::Number::from(val_in_range))
+                *obj = Value::Number(serde_json::Number::from(val_in_range));
             }
             (DatagenStrategy::Zipf { s }, None, Some((a, b))) => {
                 let range = b - a;
                 let zipf = Zipf::new(range as u64, *s as f64).unwrap();
                 let val_in_range = rng.sample(zipf) - 1.0;
-                Value::Number(
+                *obj = Value::Number(
                     serde_json::Number::from_f64(*a + val_in_range)
                         .unwrap_or(serde_json::Number::from(0)),
-                )
+                );
             }
             (DatagenStrategy::Zipf { s }, Some(values), _) => {
                 let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
                 let idx = rng.sample(zipf) as usize - 1;
-                values[idx].clone()
+                *obj = values[idx].clone();
             }
             (DatagenStrategy::String { .. }, _, _) => {
                 return Err(anyhow!(
@@ -828,7 +988,9 @@ impl RecordGenerator {
                     field.name
                 ));
             }
-        })
+        };
+
+        Ok(())
     }
 
     fn generate_boolean(
@@ -836,12 +998,14 @@ impl RecordGenerator {
         field: &Field,
         settings: &RngFieldSettings,
         rng: &mut SmallRng,
-    ) -> AnyResult<Value> {
+        obj: &mut Value,
+    ) -> AnyResult<()> {
         if let Some(nl) = Self::maybe_null(field, settings, rng) {
-            return Ok(nl);
+            *obj = nl;
+            return Ok(());
         }
 
-        Ok(match (&settings.strategy, &settings.values) {
+        *obj = match (&settings.strategy, &settings.values) {
             (DatagenStrategy::Increment { scale }, None) => Value::Bool(
                 (self.current.load(Ordering::Relaxed) * (*scale).try_into().unwrap_or(1usize)) % 2
                     == 1,
@@ -872,27 +1036,20 @@ impl RecordGenerator {
                     field.name
                 ));
             }
-        })
+        };
+
+        Ok(())
     }
 
-    fn make_json_record(&mut self) -> AnyResult<Value> {
+    fn make_json_record(&mut self) -> AnyResult<&Value> {
         let mut rng = self.rng.take().unwrap();
-        let value = self.generate_fields(&self.schema.fields, &self.config.fields, &mut rng);
+        let mut obj = self.json_obj.take().unwrap();
+        self.generate_fields(&self.schema.fields, &self.config.fields, &mut rng, &mut obj)?;
         self.current.fetch_add(1, Ordering::Relaxed);
         self.rng = Some(rng);
-        value
-    }
-}
 
-impl Iterator for RecordGenerator {
-    type Item = AnyResult<Value>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current.load(Ordering::Relaxed) < self.config.limit.unwrap_or(usize::MAX) {
-            Some(self.make_json_record())
-        } else {
-            None
-        }
+        self.json_obj = Some(obj);
+        Ok(self.json_obj.as_ref().unwrap())
     }
 }
 
@@ -1007,8 +1164,10 @@ mod test {
     use crate::test::{mock_input_pipeline, MockDeZSet, MockInputConsumer, TestStruct2};
     use crate::InputReader;
     use anyhow::Result as AnyResult;
+    use pipeline_types::config::{InputEndpointConfig, TransportConfig};
     use pipeline_types::program_schema::{Field, Relation};
     use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+    use pipeline_types::transport::datagen::GenerationPlan;
     use std::thread;
     use std::time::Duration;
 
@@ -1137,6 +1296,23 @@ transport:
     }
 
     #[test]
+    fn missing_config_does_something_sane() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+      workers: 3
+"#;
+        let cfg: InputEndpointConfig = serde_yaml::from_str(config_str).unwrap();
+
+        if let TransportConfig::Datagen(dtg) = cfg.connector_config.transport {
+            assert_eq!(dtg.plan.len(), 1);
+            assert_eq!(dtg.plan[0], GenerationPlan::default());
+        }
+    }
+
+    #[test]
     fn test_null() {
         let config_str = r#"
 stream: test_input
@@ -1158,5 +1334,59 @@ transport:
             let record = upd.unwrap_insert();
             assert!(record.field_0.is_none());
         }
+    }
+
+    #[test]
+    fn test_null_percentage() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 100, fields: { "name": { null_percentage: 50 } } } ]
+"#;
+        let (_endpoint, consumer, zset) =
+            mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        let zst = zset.state();
+        let iter = zst.flushed.iter();
+        for upd in iter {
+            let record = upd.unwrap_insert();
+            // This assert is not asserting anything useful, but it's just running this test
+            // checks that datagen doesn't panic when null_percentage is set
+            // as we always need a proper Value::String type in the &mut Value field and
+            // with null percentage it sometimes can get set to Value::Null
+            assert!(record.field_0.is_none() || record.field_0.is_some());
+        }
+    }
+
+    #[test]
+    fn test_tput() {
+        static SIZE: usize = 5_000_000;
+        let config_str = format!(
+            "
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ {{ limit: {SIZE}, fields: {{}} }} ]
+        workers: 2
+"
+        );
+        let (_endpoint, consumer, _zset) =
+            mk_pipeline::<TestStruct2, TestStruct2>(config_str.as_str(), TestStruct2::schema())
+                .unwrap();
+
+        let start = std::time::Instant::now();
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(25));
+        }
+        let elapsed = start.elapsed();
+        let tput = SIZE as f64 / elapsed.as_secs_f64();
+        println!("Tput: {:.2} records/sec", tput);
     }
 }
