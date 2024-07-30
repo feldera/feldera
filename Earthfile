@@ -527,11 +527,9 @@ flink-benchmark:
     RUN apt-get install maven
     RUN benchmark/flink/setup-flink.sh
 
-    RUN echo "when,runner,mode,language,name,num_cores,num_events,elapsed" >> flink_results.csv
+    RUN echo "when,runner,mode,language,name,num_cores,num_events,elapsed,peak_memory_kb" >> flink_results.csv
     WITH DOCKER
-        RUN docker compose -f benchmark/flink/docker-compose.yml -p nexmark up --build --force-recreate --renew-anon-volumes -d && \
-            docker exec -i nexmark-jobmanager-1 run.sh 2>&1 | tee flink_log.txt && \
-            ./benchmark/run-nexmark.sh --runner flink --parse < flink_log.txt >> flink_results.csv
+        RUN ./benchmark/flink/run-flink-ci.sh
     END
     SAVE ARTIFACT flink_results.csv AS LOCAL .
 
