@@ -9,14 +9,14 @@ use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{
-    validate_program_status_transition, CompilationProfile, ProgramConfig, ProgramStatus,
-    SqlCompilerMessage,
+    validate_program_status_transition, CompilationProfile, ProgramConfig, ProgramInfo,
+    ProgramStatus, SqlCompilerMessage,
 };
 use crate::db::types::tenant::TenantId;
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use openssl::sha;
-use pipeline_types::config::{PipelineConfig, ProgramInfo, ResourceConfig, RuntimeConfig};
+use pipeline_types::config::{PipelineConfig, ResourceConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
 use pipeline_types::program_schema::ProgramSchema;
 use proptest::prelude::*;
