@@ -1370,10 +1370,10 @@ mod test {
             vec![Tup2(1, Update::Insert(80))],
             vec![Tup2(1, Update::Insert(91))],
             // bump watermark more
-            vec![Tup2(1, Update::Insert(200))],
+            vec![Tup2(5, Update::Insert(200))],
             // below watermark
-            vec![Tup2(1, Update::Insert(91))],
-            vec![Tup2(1, Update::Insert(191))],
+            vec![Tup2(5, Update::Insert(91))],
+            vec![Tup2(5, Update::Insert(191))],
         ]
     }
 
@@ -1385,9 +1385,9 @@ mod test {
             indexed_zset! { 1 => {6 => -1, 100 => 1}},
             indexed_zset! {},
             indexed_zset! { 1 => {91 => 1, 100 => -1}},
-            indexed_zset! { 1 => {200 => 1, 91 => -1}},
+            indexed_zset! { 5 => {200 => 1}},
             indexed_zset! {},
-            indexed_zset! { 1 => {191 => 1, 200 => -1}},
+            indexed_zset! { 5 => {191 => 1, 200 => -1}},
         ]
     }
     fn input_map_updates2() -> Vec<Vec<Tup2<u64, Update<u64, i64>>>> {
@@ -1446,8 +1446,15 @@ mod test {
                 Tup2(4, Update::Insert(1)),
             ],
             vec![
-                // Attempt to insert new value overwriting value below waterline - ignored.
-                Tup2(1, Update::Insert(20)),
+                // Attempt to insert new value overwriting value below waterline.
+                //
+                // This is commented out because the behavior depends on whether
+                // the spine has already filtered out (1,1):
+                //
+                // - If it has, then the insertion succeeds.
+                //
+                // - If it hasn't, then the insertion is ignored.
+                //Tup2(1, Update::Insert(20)),
                 // Overwrite value above waterline with a new value above waterline - accepted
                 Tup2(2, Update::Insert(10)),
                 // Create new value above waterline - accepted, try to overwrite it with a value
@@ -1456,9 +1463,17 @@ mod test {
                 Tup2(4, Update::Insert(4)),
             ],
             vec![
-                // Attempt to update value below waterline - ignored, even though the new value
-                // would have been above waterline.
-                Tup2(1, Update::Update(20)),
+                // Attempt to update value below waterline.
+                //
+                // This is commented out because the behavior depends on whether
+                // the spine has already filtered out (1,1):
+                //
+                // - If it has, then the update succeeds.
+                //
+                // - If it hasn't, then the update is ignored because the
+                //   previous value was below waterline, even though the new value
+                //   is above it.
+                //Tup2(1, Update::Update(20)),
             ],
         ]
     }
@@ -1562,7 +1577,6 @@ mod test {
     /// merging (and dropping values that should not be retained) in the time
     /// that the test expects, and sometimes does not.
     #[test]
-    #[ignore]
     fn map_test_mt1() {
         map_test_mt(1, input_map_updates1, output_map_updates1);
         map_test_mt(1, input_map_updates2, output_map_updates2);
@@ -1572,7 +1586,6 @@ mod test {
     /// merging (and dropping values that should not be retained) in the time
     /// that the test expects, and sometimes does not.
     #[test]
-    #[ignore]
     fn map_test_mt4() {
         map_test_mt(4, input_map_updates1, output_map_updates1);
         map_test_mt(4, input_map_updates2, output_map_updates2);
