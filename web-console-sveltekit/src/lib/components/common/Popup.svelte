@@ -4,13 +4,18 @@
   const { trigger, content }: { trigger: Snippet<[() => void]>; content: Snippet<[() => void]> } =
     $props()
   let show = $state(false)
-  let contentNode: HTMLElement
+  let onClose = () => {
+    show = false
+  }
+  let contentNode = $state<HTMLElement>()
   const onclick = (e: MouseEvent) => {
+    if (!contentNode) {
+      return
+    }
     if (contentNode.contains(e.target as any)) {
       return
     }
-    e.stopPropagation()
-    show = false
+    onClose()
   }
   $effect(() => {
     if (show) {
@@ -18,6 +23,7 @@
     } else {
       window.removeEventListener('click', onclick)
     }
+    return () => window.removeEventListener('click', onclick)
   })
 </script>
 

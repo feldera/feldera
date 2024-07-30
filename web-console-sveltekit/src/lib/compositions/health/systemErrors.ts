@@ -2,12 +2,11 @@ import { base } from '$app/paths'
 import { nonNull } from '$lib/functions/common/function'
 import { handled } from '$lib/functions/request'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
-import { getProgram, type Pipeline, type ProgramDescr } from '$lib/services/manager'
 import {
-  getFullPipeline,
+  getPipeline,
   getPipelines,
   getPipelineStats,
-  type FullPipeline,
+  type ExtendedPipelineDescr,
   type PipelineStatus,
   type PipelineThumb
 } from '$lib/services/pipelineManager'
@@ -51,10 +50,10 @@ const extractPipelineErrors = (pipeline: PipelineThumb) => {
           '1-description':
             '```\n' + limitMessage(error.message, 1000, '\n...Beginning of the error...') + '\n```',
           '6-extra': await (async () => {
-            const fullPipeline = await getFullPipeline(pipeline.name)
+            const fullPipeline = await getPipeline(pipeline.name)
             const programCode =
               'SQL:\n```\n' +
-              limitMessage(fullPipeline.code, 6600, '\n...Beginning of the code...') +
+              limitMessage(fullPipeline.program_code, 6600, '\n...Beginning of the code...') +
               '\n```'
             const pipelineConfig =
               'Pipelince config:\n```\n' +
@@ -75,8 +74,11 @@ const programErrorReport = async (pipeline: { name: string }, message: string) =
     name: 'Report: program compilation error',
     '1-description':
       '```\n' + limitMessage(message, 1000, '\n...Beginning of the error...') + '\n```',
-    '6-extra': await getFullPipeline(pipeline.name).then(
-      (p) => 'SQL:\n```\n' + limitMessage(p.code, 7000, '\n...Beginning of the code...') + '\n```'
+    '6-extra': await getPipeline(pipeline.name).then(
+      (p) =>
+        'SQL:\n```\n' +
+        limitMessage(p.program_code, 7000, '\n...Beginning of the code...') +
+        '\n```'
     )
   }) as ReportDetails
 

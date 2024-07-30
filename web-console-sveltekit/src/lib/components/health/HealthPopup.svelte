@@ -1,6 +1,6 @@
 <script lang="ts">
   import { useSystemErrors } from '$lib/compositions/health/systemErrors'
-  import { Tooltip } from 'flowbite-svelte'
+  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import Popup from '$lib/components/common/Popup.svelte'
   import { fade } from 'svelte/transition'
   import HealthMenu from './HealthMenu.svelte'
@@ -29,9 +29,8 @@
     {/snippet}
   </Popup>
 {:else}
-  <button class="bx bx-check-circle btn-icon text-[24px] !text-success-500 preset-tonal-surface">
-  </button>
-  <Tooltip class="!bg-surface-950-50 text-surface-50-950" placement="left">
+  <button class="bx bx-check-circle btn-icon cursor-default text-[24px] text-success-500"> </button>
+  <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="left">
     No errors detected in Feldera deployment
   </Tooltip>
 {/if}

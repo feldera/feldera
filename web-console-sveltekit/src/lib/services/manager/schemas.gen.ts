@@ -2,7 +2,7 @@
 
 export const $ApiKeyDescr = {
   type: 'object',
-  description: 'ApiKey descriptor.',
+  description: 'API key descriptor.',
   required: ['id', 'name', 'scopes'],
   properties: {
     id: {
@@ -23,46 +23,13 @@ export const $ApiKeyDescr = {
 export const $ApiKeyId = {
   type: 'string',
   format: 'uuid',
-  description: 'ApiKey ID.'
+  description: 'API key identifier.'
 } as const
 
 export const $ApiPermission = {
   type: 'string',
-  description: 'Permission types for invoking pipeline manager APIs',
+  description: 'Permission types for invoking API endpoints.',
   enum: ['Read', 'Write']
-} as const
-
-export const $AttachedConnector = {
-  type: 'object',
-  description: 'Format to add attached connectors during a config update.',
-  required: ['name', 'is_input', 'connector_name', 'relation_name'],
-  properties: {
-    connector_name: {
-      type: 'string',
-      description: 'The name of the connector to attach.'
-    },
-    is_input: {
-      type: 'boolean',
-      description: 'True for input connectors, false for output connectors.'
-    },
-    name: {
-      type: 'string',
-      description: 'A unique identifier for this attachement.'
-    },
-    relation_name: {
-      type: 'string',
-      description: `The table or view this connector is attached to. Unquoted
-table/view names in the SQL program need to be capitalized
-here. Quoted table/view names have to exactly match the
-casing from the SQL program.`
-    }
-  }
-} as const
-
-export const $AttachedConnectorId = {
-  type: 'string',
-  format: 'uuid',
-  description: 'Unique attached connector id.'
 } as const
 
 export const $AuthProvider = {
@@ -201,6 +168,14 @@ ColumnType { name: "address", fields: [ ... ] }
 \`\`\``,
       nullable: true
     },
+    key: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ColumnType'
+        }
+      ],
+      nullable: true
+    },
     nullable: {
       type: 'boolean',
       description: 'Does the type accept NULL values?'
@@ -229,6 +204,14 @@ to None
     },
     type: {
       $ref: '#/components/schemas/SqlType'
+    },
+    value: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ColumnType'
+        }
+      ],
+      nullable: true
     }
   }
 } as const
@@ -240,17 +223,6 @@ as an argument via \`cargo build --profile <>\`. A compilation profile affects a
 other things the compilation speed (how long till the program is ready to be run)
 and runtime speed (the performance while running).`,
   enum: ['dev', 'unoptimized', 'optimized']
-} as const
-
-export const $CompileProgramRequest = {
-  type: 'object',
-  description: 'Request to queue a program for compilation.',
-  required: ['version'],
-  properties: {
-    version: {
-      $ref: '#/components/schemas/Version'
-    }
-  }
 } as const
 
 export const $ConnectorConfig = {
@@ -303,32 +275,6 @@ The default is 1 million.`,
   description: "A data connector's configuration"
 } as const
 
-export const $ConnectorDescr = {
-  type: 'object',
-  description: 'Connector descriptor.',
-  required: ['connector_id', 'name', 'description', 'config'],
-  properties: {
-    config: {
-      $ref: '#/components/schemas/ConnectorConfig'
-    },
-    connector_id: {
-      $ref: '#/components/schemas/ConnectorId'
-    },
-    description: {
-      type: 'string'
-    },
-    name: {
-      type: 'string'
-    }
-  }
-} as const
-
-export const $ConnectorId = {
-  type: 'string',
-  format: 'uuid',
-  description: 'Unique connector id.'
-} as const
-
 export const $ConsumeStrategy = {
   oneOf: [
     {
@@ -353,161 +299,6 @@ export const $ConsumeStrategy = {
     }
   ],
   description: 'Strategy to feed a fetched object into an InputConsumer.'
-} as const
-
-export const $CreateOrReplaceConnectorRequest = {
-  type: 'object',
-  description: 'Request to create or replace a connector.',
-  required: ['description', 'config'],
-  properties: {
-    config: {
-      $ref: '#/components/schemas/ConnectorConfig'
-    },
-    description: {
-      type: 'string',
-      description: 'New connector description.'
-    }
-  }
-} as const
-
-export const $CreateOrReplaceConnectorResponse = {
-  type: 'object',
-  description: 'Response to a create or replace connector request.',
-  required: ['connector_id'],
-  properties: {
-    connector_id: {
-      $ref: '#/components/schemas/ConnectorId'
-    }
-  }
-} as const
-
-export const $CreateOrReplacePipelineRequest = {
-  type: 'object',
-  description: 'Request to create or replace an existing pipeline.',
-  required: ['description', 'config'],
-  properties: {
-    config: {
-      $ref: '#/components/schemas/RuntimeConfig'
-    },
-    connectors: {
-      type: 'array',
-      items: {
-        $ref: '#/components/schemas/AttachedConnector'
-      },
-      description: 'Attached connectors.',
-      nullable: true
-    },
-    description: {
-      type: 'string',
-      description: 'Pipeline description.'
-    },
-    program_name: {
-      type: 'string',
-      description: 'Name of the program to create a pipeline for.',
-      nullable: true
-    }
-  },
-  additionalProperties: false
-} as const
-
-export const $CreateOrReplacePipelineResponse = {
-  type: 'object',
-  description: 'Response to a pipeline create or replace request.',
-  required: ['pipeline_id', 'version'],
-  properties: {
-    pipeline_id: {
-      $ref: '#/components/schemas/PipelineId'
-    },
-    version: {
-      $ref: '#/components/schemas/Version'
-    }
-  }
-} as const
-
-export const $CreateOrReplaceProgramRequest = {
-  type: 'object',
-  description: 'Request to create or replace a program.',
-  required: ['description', 'code'],
-  properties: {
-    code: {
-      type: 'string',
-      description: 'SQL code of the program.',
-      example: 'CREATE TABLE example(name VARCHAR);'
-    },
-    config: {
-      $ref: '#/components/schemas/ProgramConfig'
-    },
-    description: {
-      type: 'string',
-      description: 'Program description.',
-      example: 'Example description'
-    }
-  }
-} as const
-
-export const $CreateOrReplaceProgramResponse = {
-  type: 'object',
-  description: 'Response to a create or replace program request.',
-  required: ['program_id', 'version'],
-  properties: {
-    program_id: {
-      $ref: '#/components/schemas/ProgramId'
-    },
-    version: {
-      $ref: '#/components/schemas/Version'
-    }
-  }
-} as const
-
-export const $CreateOrReplaceServiceRequest = {
-  type: 'object',
-  description: 'Request to create or replace a service.',
-  required: ['description', 'config'],
-  properties: {
-    config: {
-      $ref: '#/components/schemas/ServiceConfig'
-    },
-    description: {
-      type: 'string',
-      description: 'Service description.'
-    }
-  }
-} as const
-
-export const $CreateOrReplaceServiceResponse = {
-  type: 'object',
-  description: 'Response to a create or replace service request.',
-  required: ['service_id'],
-  properties: {
-    service_id: {
-      $ref: '#/components/schemas/ServiceId'
-    }
-  }
-} as const
-
-export const $CreateServiceProbeResponse = {
-  type: 'object',
-  description: 'Response to a create service probe request.',
-  required: ['service_probe_id'],
-  properties: {
-    service_probe_id: {
-      $ref: '#/components/schemas/ServiceProbeId'
-    }
-  }
-} as const
-
-export const $CsvEncoderConfig = {
-  type: 'object',
-  properties: {
-    buffer_size_records: {
-      type: 'integer',
-      minimum: 0
-    }
-  }
-} as const
-
-export const $CsvParserConfig = {
-  type: 'object'
 } as const
 
 export const $DeltaTableIngestMode = {
@@ -643,6 +434,30 @@ For specific options available for different storage backends, see:
   }
 } as const
 
+export const $Demo = {
+  type: 'object',
+  required: ['title', 'description', 'prefix', 'steps'],
+  properties: {
+    description: {
+      type: 'string',
+      description: 'Description of the demo.'
+    },
+    prefix: {
+      type: 'string',
+      description: 'Demo prefix prepended to each of the entities.'
+    },
+    steps: {
+      type: 'array',
+      items: {},
+      description: 'The steps which define the entities to create.'
+    },
+    title: {
+      type: 'string',
+      description: 'Title of the demo.'
+    }
+  }
+} as const
+
 export const $EgressMode = {
   type: 'string',
   enum: ['watch', 'snapshot']
@@ -667,6 +482,218 @@ The contents of this field is determined by \`error_code\`.`
       type: 'string',
       description: 'Human-readable error message.',
       example: "Unknown input format 'xml'."
+    }
+  }
+} as const
+
+export const $ExtendedPipelineDescr = {
+  type: 'object',
+  description: `Pipeline descriptor which besides the basic fields in direct regular control of the user
+also has all additional fields generated and maintained by the back-end.`,
+  required: [
+    'id',
+    'name',
+    'description',
+    'version',
+    'created_at',
+    'runtime_config',
+    'program_code',
+    'program_config',
+    'program_version',
+    'program_status',
+    'program_status_since',
+    'deployment_status',
+    'deployment_status_since',
+    'deployment_desired_status'
+  ],
+  properties: {
+    created_at: {
+      type: 'string',
+      format: 'date-time',
+      description: 'Timestamp when the pipeline was originally created.'
+    },
+    deployment_config: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/PipelineConfig'
+        }
+      ],
+      nullable: true
+    },
+    deployment_desired_status: {
+      $ref: '#/components/schemas/PipelineStatus'
+    },
+    deployment_error: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ErrorResponse'
+        }
+      ],
+      nullable: true
+    },
+    deployment_location: {
+      type: 'string',
+      description: `Location where the pipeline can be reached at runtime.
+e.g., a TCP port number or a URI.`,
+      nullable: true
+    },
+    deployment_status: {
+      $ref: '#/components/schemas/PipelineStatus'
+    },
+    deployment_status_since: {
+      type: 'string',
+      format: 'date-time',
+      description: `Time when the pipeline was assigned its current status
+of the pipeline.`
+    },
+    description: {
+      type: 'string',
+      description: 'Pipeline description.'
+    },
+    id: {
+      $ref: '#/components/schemas/PipelineId'
+    },
+    name: {
+      type: 'string',
+      description: 'Pipeline name.'
+    },
+    program_binary_url: {
+      type: 'string',
+      description: `URL where to download the program binary from.
+TODO: should this be in here or not?`,
+      nullable: true
+    },
+    program_code: {
+      type: 'string',
+      description: 'Program SQL code.'
+    },
+    program_config: {
+      $ref: '#/components/schemas/ProgramConfig'
+    },
+    program_schema: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ProgramSchema'
+        }
+      ],
+      nullable: true
+    },
+    program_status: {
+      $ref: '#/components/schemas/ProgramStatus'
+    },
+    program_status_since: {
+      type: 'string',
+      format: 'date-time',
+      description: 'Timestamp when the current program status was set.'
+    },
+    program_version: {
+      $ref: '#/components/schemas/Version'
+    },
+    runtime_config: {
+      $ref: '#/components/schemas/RuntimeConfig'
+    },
+    version: {
+      $ref: '#/components/schemas/Version'
+    }
+  }
+} as const
+
+export const $ExtendedPipelineDescrOptionalCode = {
+  type: 'object',
+  description: 'Extended pipeline descriptor with code being optionally included.',
+  required: [
+    'id',
+    'name',
+    'description',
+    'version',
+    'created_at',
+    'runtime_config',
+    'program_config',
+    'program_version',
+    'program_status',
+    'program_status_since',
+    'deployment_status',
+    'deployment_status_since',
+    'deployment_desired_status'
+  ],
+  properties: {
+    created_at: {
+      type: 'string',
+      format: 'date-time'
+    },
+    deployment_config: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/PipelineConfig'
+        }
+      ],
+      nullable: true
+    },
+    deployment_desired_status: {
+      $ref: '#/components/schemas/PipelineStatus'
+    },
+    deployment_error: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ErrorResponse'
+        }
+      ],
+      nullable: true
+    },
+    deployment_location: {
+      type: 'string',
+      nullable: true
+    },
+    deployment_status: {
+      $ref: '#/components/schemas/PipelineStatus'
+    },
+    deployment_status_since: {
+      type: 'string',
+      format: 'date-time'
+    },
+    description: {
+      type: 'string'
+    },
+    id: {
+      $ref: '#/components/schemas/PipelineId'
+    },
+    name: {
+      type: 'string'
+    },
+    program_binary_url: {
+      type: 'string',
+      nullable: true
+    },
+    program_code: {
+      type: 'string',
+      nullable: true
+    },
+    program_config: {
+      $ref: '#/components/schemas/ProgramConfig'
+    },
+    program_schema: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ProgramSchema'
+        }
+      ],
+      nullable: true
+    },
+    program_status: {
+      $ref: '#/components/schemas/ProgramStatus'
+    },
+    program_status_since: {
+      type: 'string',
+      format: 'date-time'
+    },
+    program_version: {
+      $ref: '#/components/schemas/Version'
+    },
+    runtime_config: {
+      $ref: '#/components/schemas/RuntimeConfig'
+    },
+    version: {
+      $ref: '#/components/schemas/Version'
     }
   }
 } as const
@@ -792,90 +819,6 @@ would yield \`Day\`, \`DayToHour\`, \`DayToMinute\`, as the \`IntervalUnit\` res
   ]
 } as const
 
-export const $JsonEncoderConfig = {
-  type: 'object',
-  properties: {
-    array: {
-      type: 'boolean'
-    },
-    buffer_size_records: {
-      type: 'integer',
-      minimum: 0
-    },
-    json_flavor: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/JsonFlavor'
-        }
-      ],
-      nullable: true
-    },
-    update_format: {
-      $ref: '#/components/schemas/JsonUpdateFormat'
-    }
-  }
-} as const
-
-export const $JsonFlavor = {
-  type: 'string',
-  description: 'Specifies JSON encoding used of table records.',
-  enum: ['default', 'debezium_mysql', 'snowflake', 'kafka_connect_json_converter', 'pandas']
-} as const
-
-export const $JsonParserConfig = {
-  type: 'object',
-  description: `JSON parser configuration.
-
-Describes the shape of an input JSON stream.
-
-# Examples
-
-A configuration with \`update_format="raw"\` and \`array=false\`
-is used to parse a stream of JSON objects without any envelope
-that get inserted in the input table.
-
-\`\`\`json
-{"b": false, "i": 100, "s": "foo"}
-{"b": true, "i": 5, "s": "bar"}
-\`\`\`
-
-A configuration with \`update_format="insert_delete"\` and
-\`array=false\` is used to parse a stream of JSON data change events
-in the insert/delete format:
-
-\`\`\`json
-{"delete": {"b": false, "i": 15, "s": ""}}
-{"insert": {"b": false, "i": 100, "s": "foo"}}
-\`\`\`
-
-A configuration with \`update_format="insert_delete"\` and
-\`array=true\` is used to parse a stream of JSON arrays
-where each array contains multiple data change events in
-the insert/delete format.
-
-\`\`\`json
-[{"insert": {"b": true, "i": 0}}, {"delete": {"b": false, "i": 100, "s": "foo"}}]
-\`\`\``,
-  properties: {
-    array: {
-      type: 'boolean',
-      description: `Set to \`true\` if updates in this stream are packaged into JSON arrays.
-
-# Example
-
-\`\`\`json
-[{"b": true, "i": 0},{"b": false, "i": 100, "s": "foo"}]
-\`\`\``
-    },
-    json_flavor: {
-      $ref: '#/components/schemas/JsonFlavor'
-    },
-    update_format: {
-      $ref: '#/components/schemas/JsonUpdateFormat'
-    }
-  }
-} as const
-
 export const $JsonUpdateFormat = {
   type: 'string',
   description: `Supported JSON data change event formats.
@@ -943,6 +886,17 @@ consumer group during initialization.`,
         }
       ],
       nullable: true
+    },
+    poller_threads: {
+      type: 'integer',
+      description: `Set to 1 or more to fix the number of threads used to poll
+\`rdkafka\`. Multiple threads can increase performance with small Kafka
+messages; for large messages, one thread is enough. In either case, too
+many threads can harm performance. If unset, the default is 3, which
+helps with small messages but will not harm performance with large
+messagee`,
+      nullable: true,
+      minimum: 0
     },
     topics: {
       type: 'array',
@@ -1135,32 +1089,15 @@ These options override \`kafka_options\` for producers, and may be empty.`,
   }
 } as const
 
-export const $KafkaService = {
+export const $ListPipelinesQueryParameters = {
   type: 'object',
-  description: 'Configuration for accessing a Kafka service.',
-  required: ['bootstrap_servers', 'options'],
+  description: 'Query parameters for GET the list of pipelines.',
   properties: {
-    bootstrap_servers: {
-      type: 'array',
-      items: {
-        type: 'string'
-      },
-      description: `List of bootstrap servers, each formatted as hostname:port (e.g.,
-"example.com:1234"). It will be used to set the \`bootstrap.servers\`
-Kafka option.`
-    },
-    options: {
-      type: 'object',
-      description: `Additional Kafka options.
-
-Should not contain the bootstrap.servers key
-as it is passed explicitly via its field.
-
-These options will likely encompass things
-like SSL and authentication configuration.`,
-      additionalProperties: {
-        type: 'string'
-      }
+    code: {
+      type: 'boolean',
+      description: `Whether to include program code in the response (default: \`true\`).
+Passing \`false\` reduces the response size, which is particularly handy
+when frequently monitoring the endpoint over low bandwidth connections.`
     }
   }
 } as const
@@ -1222,153 +1159,6 @@ pipeline-manager, so store it securely.`,
       type: 'string',
       description: 'API key name',
       example: 'my-api-key'
-    }
-  }
-} as const
-
-export const $NewConnectorRequest = {
-  type: 'object',
-  description: 'Request to create a new connector.',
-  required: ['name', 'description', 'config'],
-  properties: {
-    config: {
-      $ref: '#/components/schemas/ConnectorConfig'
-    },
-    description: {
-      type: 'string',
-      description: 'Connector description.'
-    },
-    name: {
-      type: 'string',
-      description: 'Connector name.'
-    }
-  }
-} as const
-
-export const $NewConnectorResponse = {
-  type: 'object',
-  description: 'Response to a connector creation request.',
-  required: ['connector_id'],
-  properties: {
-    connector_id: {
-      $ref: '#/components/schemas/ConnectorId'
-    }
-  }
-} as const
-
-export const $NewPipelineRequest = {
-  type: 'object',
-  description: 'Request to create a new pipeline.',
-  required: ['name', 'description', 'config'],
-  properties: {
-    config: {
-      $ref: '#/components/schemas/RuntimeConfig'
-    },
-    connectors: {
-      type: 'array',
-      items: {
-        $ref: '#/components/schemas/AttachedConnector'
-      },
-      description: 'Attached connectors.',
-      nullable: true
-    },
-    description: {
-      type: 'string',
-      description: 'Pipeline description.'
-    },
-    name: {
-      type: 'string',
-      description: 'Unique pipeline name.'
-    },
-    program_name: {
-      type: 'string',
-      description: 'Name of the program to create a pipeline for.',
-      nullable: true
-    }
-  },
-  additionalProperties: false
-} as const
-
-export const $NewPipelineResponse = {
-  type: 'object',
-  description: 'Response to a pipeline creation request.',
-  required: ['pipeline_id', 'version'],
-  properties: {
-    pipeline_id: {
-      $ref: '#/components/schemas/PipelineId'
-    },
-    version: {
-      $ref: '#/components/schemas/Version'
-    }
-  }
-} as const
-
-export const $NewProgramRequest = {
-  type: 'object',
-  description: 'Request to create a new program.',
-  required: ['name', 'description', 'code'],
-  properties: {
-    code: {
-      type: 'string',
-      description: 'SQL code of the program.',
-      example: 'CREATE TABLE example(name VARCHAR);'
-    },
-    config: {
-      $ref: '#/components/schemas/ProgramConfig'
-    },
-    description: {
-      type: 'string',
-      description: 'Program description.',
-      example: 'Example description'
-    },
-    name: {
-      type: 'string',
-      description: 'Program name.',
-      example: 'example-program'
-    }
-  }
-} as const
-
-export const $NewProgramResponse = {
-  type: 'object',
-  description: 'Response to a new program request.',
-  required: ['program_id', 'version'],
-  properties: {
-    program_id: {
-      $ref: '#/components/schemas/ProgramId'
-    },
-    version: {
-      $ref: '#/components/schemas/Version'
-    }
-  }
-} as const
-
-export const $NewServiceRequest = {
-  type: 'object',
-  description: 'Request to create a new service.',
-  required: ['name', 'description', 'config'],
-  properties: {
-    config: {
-      $ref: '#/components/schemas/ServiceConfig'
-    },
-    description: {
-      type: 'string',
-      description: 'Service description.'
-    },
-    name: {
-      type: 'string',
-      description: 'Service name.'
-    }
-  }
-} as const
-
-export const $NewServiceResponse = {
-  type: 'object',
-  description: 'Response to a service creation request.',
-  required: ['service_id'],
-  properties: {
-    service_id: {
-      $ref: '#/components/schemas/ServiceId'
     }
   }
 } as const
@@ -1461,35 +1251,42 @@ three pre-defined queries to inspect the contents of a table or view.`,
   enum: ['table', 'neighborhood', 'quantiles']
 } as const
 
-export const $ParquetEncoderConfig = {
+export const $PatchPipeline = {
   type: 'object',
+  description: `Patch (partially) update the pipeline.
+
+Note that the patching only applies to the main fields, not subfields.
+For instance, it is not possible to update only the number of workers;
+it is required to again pass the whole runtime configuration with the
+change.`,
   properties: {
-    buffer_size_records: {
-      type: 'integer',
-      description: `Number of records before a new parquet file is written.
-
-The default is 100_000.`,
-      minimum: 0
-    }
-  }
-} as const
-
-export const $ParquetParserConfig = {
-  type: 'object',
-  description: 'Configuration for the parquet parser.'
-} as const
-
-export const $Pipeline = {
-  type: 'object',
-  description: `State of a pipeline, including static configuration
-and runtime status.`,
-  required: ['descriptor', 'state'],
-  properties: {
-    descriptor: {
-      $ref: '#/components/schemas/PipelineDescr'
+    description: {
+      type: 'string',
+      nullable: true
     },
-    state: {
-      $ref: '#/components/schemas/PipelineRuntimeState'
+    name: {
+      type: 'string',
+      nullable: true
+    },
+    program_code: {
+      type: 'string',
+      nullable: true
+    },
+    program_config: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ProgramConfig'
+        }
+      ],
+      nullable: true
+    },
+    runtime_config: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RuntimeConfig'
+        }
+      ],
+      nullable: true
     }
   }
 } as const
@@ -1524,11 +1321,12 @@ have passed since at least one input records has been buffered.
 Defaults to 0.`,
           minimum: 0
         },
-        min_storage_rows: {
+        min_storage_bytes: {
           type: 'integer',
-          description: `The minimum estimated number of rows in a batch to write it to storage.
-This is provided for debugging and fine-tuning and should ordinarily be
-left unset. It only has an effect when \`storage\` is set to true.
+          description: `The minimum estimated number of bytes in a batch of data to write it to
+storage.  This is provided for debugging and fine-tuning and should
+ordinarily be left unset. It only has an effect when \`storage\` is set to
+true.
 
 A value of 0 will write even empty batches to storage, and nonzero
 values provide a threshold.  \`usize::MAX\` would effectively disable
@@ -1552,16 +1350,13 @@ need to read from, or write to disk
 is persisted across restarts, and can be checkpointed and recovered.
 This feature is currently experimental.`
         },
-        tcp_metrics_exporter: {
+        tracing: {
           type: 'boolean',
-          description: `Enable the TCP metrics exporter.
-
-This is used for development purposes only.
-If enabled, the \`metrics-observer\` CLI tool
-can be used to inspect metrics from the pipeline.
-
-Because of how Rust metrics work, this is only honored for the first
-pipeline to be instantiated within a given process.`
+          description: 'Enable pipeline tracing.'
+        },
+        tracing_endpoint_jaeger: {
+          type: 'string',
+          description: 'Jaeger tracing endpoint to send tracing information to.'
         },
         workers: {
           type: 'integer',
@@ -1607,6 +1402,7 @@ pipeline to be instantiated within a given process.`
   ],
   description: `Pipeline configuration specified by the user when creating
 a new pipeline instance.
+TODO: change this description
 
 This is the shape of the overall pipeline configuration. It encapsulates a
 [\`RuntimeConfig\`], which is the publicly exposed way for users to configure
@@ -1616,32 +1412,25 @@ pipelines.`
 export const $PipelineDescr = {
   type: 'object',
   description: 'Pipeline descriptor.',
-  required: ['pipeline_id', 'version', 'name', 'description', 'config', 'attached_connectors'],
+  required: ['name', 'description', 'runtime_config', 'program_code', 'program_config'],
   properties: {
-    attached_connectors: {
-      type: 'array',
-      items: {
-        $ref: '#/components/schemas/AttachedConnector'
-      }
-    },
-    config: {
-      $ref: '#/components/schemas/RuntimeConfig'
-    },
     description: {
-      type: 'string'
+      type: 'string',
+      description: 'Pipeline description.'
     },
     name: {
-      type: 'string'
-    },
-    pipeline_id: {
-      $ref: '#/components/schemas/PipelineId'
-    },
-    program_name: {
       type: 'string',
-      nullable: true
+      description: 'Pipeline name.'
     },
-    version: {
-      $ref: '#/components/schemas/Version'
+    program_code: {
+      type: 'string',
+      description: 'Program SQL code.'
+    },
+    program_config: {
+      $ref: '#/components/schemas/ProgramConfig'
+    },
+    runtime_config: {
+      $ref: '#/components/schemas/RuntimeConfig'
     }
   }
 } as const
@@ -1649,93 +1438,7 @@ export const $PipelineDescr = {
 export const $PipelineId = {
   type: 'string',
   format: 'uuid',
-  description: 'Unique pipeline id.'
-} as const
-
-export const $PipelineRevision = {
-  type: 'object',
-  description: `A pipeline revision is a versioned, immutable configuration struct that
-contains all information necessary to run a pipeline.`,
-  required: ['revision', 'pipeline', 'connectors', 'services_for_connectors', 'program', 'config'],
-  properties: {
-    config: {
-      $ref: '#/components/schemas/PipelineConfig'
-    },
-    connectors: {
-      type: 'array',
-      items: {
-        $ref: '#/components/schemas/ConnectorDescr'
-      },
-      description: 'The versioned connectors.'
-    },
-    pipeline: {
-      $ref: '#/components/schemas/PipelineDescr'
-    },
-    program: {
-      $ref: '#/components/schemas/ProgramDescr'
-    },
-    revision: {
-      $ref: '#/components/schemas/Revision'
-    },
-    services_for_connectors: {
-      type: 'array',
-      items: {
-        type: 'array',
-        items: {
-          $ref: '#/components/schemas/ServiceDescr'
-        }
-      },
-      description: 'The versioned services for each connector.'
-    }
-  }
-} as const
-
-export const $PipelineRuntimeState = {
-  type: 'object',
-  description: 'Runtime state of the pipeine.',
-  required: [
-    'pipeline_id',
-    'location',
-    'desired_status',
-    'current_status',
-    'status_since',
-    'created'
-  ],
-  properties: {
-    created: {
-      type: 'string',
-      format: 'date-time',
-      description: 'Time when the pipeline started executing.'
-    },
-    current_status: {
-      $ref: '#/components/schemas/PipelineStatus'
-    },
-    desired_status: {
-      $ref: '#/components/schemas/PipelineStatus'
-    },
-    error: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/ErrorResponse'
-        }
-      ],
-      nullable: true
-    },
-    location: {
-      type: 'string',
-      description: `Location where the pipeline can be reached at runtime.
-e.g., a TCP port number or a URI.`
-    },
-    pipeline_id: {
-      $ref: '#/components/schemas/PipelineId'
-    },
-    status_since: {
-      type: 'string',
-      format: 'date-time',
-      description: `Time when the pipeline was assigned its current status
-of the pipeline.`
-    }
-  }
+  description: 'Pipeline identifier.'
 } as const
 
 export const $PipelineStatus = {
@@ -1758,7 +1461,7 @@ with the pipeline and thereby forces a shutdown.
 * States labeled with the hourglass symbol (⌛) are **timed** states.  The
 automaton stays in timed state until the corresponding operation completes
 or until the runner performs a forced shutdown of the pipeline after a
-pre-defined timeout perioud.
+pre-defined timeout period.
 
 * State transitions labeled with API endpoint names (\`/deploy\`, \`/start\`,
 \`/pause\`, \`/shutdown\`) are triggered by invoking corresponding endpoint,
@@ -1827,53 +1530,6 @@ export const $ProgramConfig = {
       nullable: true
     }
   }
-} as const
-
-export const $ProgramDescr = {
-  type: 'object',
-  description: 'Program descriptor.',
-  required: ['program_id', 'name', 'description', 'version', 'status', 'config'],
-  properties: {
-    code: {
-      type: 'string',
-      description: 'SQL code',
-      nullable: true
-    },
-    config: {
-      $ref: '#/components/schemas/ProgramConfig'
-    },
-    description: {
-      type: 'string',
-      description: 'Program description.'
-    },
-    name: {
-      type: 'string',
-      description: "Program name (doesn't have to be unique)."
-    },
-    program_id: {
-      $ref: '#/components/schemas/ProgramId'
-    },
-    schema: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/ProgramSchema'
-        }
-      ],
-      nullable: true
-    },
-    status: {
-      $ref: '#/components/schemas/ProgramStatus'
-    },
-    version: {
-      $ref: '#/components/schemas/Version'
-    }
-  }
-} as const
-
-export const $ProgramId = {
-  type: 'string',
-  format: 'uuid',
-  description: 'Unique program id.'
 } as const
 
 export const $ProgramSchema = {
@@ -2040,8 +1696,17 @@ Matches the Calcite JSON format.`,
         $ref: '#/components/schemas/Field'
       }
     },
+    materialized: {
+      type: 'boolean'
+    },
     name: {
       type: 'string'
+    },
+    properties: {
+      type: 'object',
+      additionalProperties: {
+        type: 'string'
+      }
     }
   }
 } as const
@@ -2098,12 +1763,6 @@ for an instance of this pipeline`,
   }
 } as const
 
-export const $Revision = {
-  type: 'string',
-  format: 'uuid',
-  description: 'Revision number.'
-} as const
-
 export const $RuntimeConfig = {
   type: 'object',
   description: `Global pipeline configuration settings. This is the publicly
@@ -2132,11 +1791,12 @@ have passed since at least one input records has been buffered.
 Defaults to 0.`,
       minimum: 0
     },
-    min_storage_rows: {
+    min_storage_bytes: {
       type: 'integer',
-      description: `The minimum estimated number of rows in a batch to write it to storage.
-This is provided for debugging and fine-tuning and should ordinarily be
-left unset. It only has an effect when \`storage\` is set to true.
+      description: `The minimum estimated number of bytes in a batch of data to write it to
+storage.  This is provided for debugging and fine-tuning and should
+ordinarily be left unset. It only has an effect when \`storage\` is set to
+true.
 
 A value of 0 will write even empty batches to storage, and nonzero
 values provide a threshold.  \`usize::MAX\` would effectively disable
@@ -2160,16 +1820,13 @@ need to read from, or write to disk
 is persisted across restarts, and can be checkpointed and recovered.
 This feature is currently experimental.`
     },
-    tcp_metrics_exporter: {
+    tracing: {
       type: 'boolean',
-      description: `Enable the TCP metrics exporter.
-
-This is used for development purposes only.
-If enabled, the \`metrics-observer\` CLI tool
-can be used to inspect metrics from the pipeline.
-
-Because of how Rust metrics work, this is only honored for the first
-pipeline to be instantiated within a given process.`
+      description: 'Enable pipeline tracing.'
+    },
+    tracing_endpoint_jaeger: {
+      type: 'string',
+      description: 'Jaeger tracing endpoint to send tracing information to.'
     },
     workers: {
       type: 'integer',
@@ -2203,220 +1860,6 @@ export const $S3InputConfig = {
       description: 'AWS region'
     }
   }
-} as const
-
-export const $ServiceConfig = {
-  oneOf: [
-    {
-      type: 'object',
-      required: ['kafka'],
-      properties: {
-        kafka: {
-          $ref: '#/components/schemas/KafkaService'
-        }
-      }
-    }
-  ],
-  description: `Configuration for a Service, which typically includes how to establish a
-connection (e.g., hostname, port) and authenticate (e.g., credentials).
-
-This configuration can be used to easily derive connectors for the service
-as well as probe it for information.`
-} as const
-
-export const $ServiceDescr = {
-  type: 'object',
-  description: 'Service descriptor.',
-  required: ['service_id', 'name', 'description', 'config', 'config_type'],
-  properties: {
-    config: {
-      $ref: '#/components/schemas/ServiceConfig'
-    },
-    config_type: {
-      type: 'string'
-    },
-    description: {
-      type: 'string'
-    },
-    name: {
-      type: 'string'
-    },
-    service_id: {
-      $ref: '#/components/schemas/ServiceId'
-    }
-  }
-} as const
-
-export const $ServiceId = {
-  type: 'string',
-  format: 'uuid',
-  description: 'Unique service id.'
-} as const
-
-export const $ServiceProbeDescr = {
-  type: 'object',
-  description: 'Service probe descriptor.',
-  required: ['service_probe_id', 'status', 'probe_type', 'request', 'created_at'],
-  properties: {
-    created_at: {
-      type: 'string',
-      format: 'date-time'
-    },
-    finished_at: {
-      type: 'string',
-      format: 'date-time',
-      nullable: true
-    },
-    probe_type: {
-      $ref: '#/components/schemas/ServiceProbeType'
-    },
-    request: {
-      $ref: '#/components/schemas/ServiceProbeRequest'
-    },
-    response: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/ServiceProbeResponse'
-        }
-      ],
-      nullable: true
-    },
-    service_probe_id: {
-      $ref: '#/components/schemas/ServiceProbeId'
-    },
-    started_at: {
-      type: 'string',
-      format: 'date-time',
-      nullable: true
-    },
-    status: {
-      $ref: '#/components/schemas/ServiceProbeStatus'
-    }
-  }
-} as const
-
-export const $ServiceProbeError = {
-  oneOf: [
-    {
-      type: 'string',
-      enum: ['timeout_exceeded']
-    },
-    {
-      type: 'object',
-      required: ['unsupported_request'],
-      properties: {
-        unsupported_request: {
-          type: 'object',
-          required: ['service_type', 'probe_type'],
-          properties: {
-            probe_type: {
-              type: 'string'
-            },
-            service_type: {
-              type: 'string'
-            }
-          }
-        }
-      }
-    },
-    {
-      type: 'object',
-      required: ['other'],
-      properties: {
-        other: {
-          type: 'string'
-        }
-      }
-    }
-  ],
-  description: `Range of possible errors that can occur during a service probe.
-These are shared across all services.`
-} as const
-
-export const $ServiceProbeId = {
-  type: 'string',
-  format: 'uuid',
-  description: 'Unique service probe id.'
-} as const
-
-export const $ServiceProbeRequest = {
-  type: 'string',
-  description: 'Enumeration of all possible service probe requests.',
-  enum: ['test_connectivity', 'kafka_get_topics']
-} as const
-
-export const $ServiceProbeResponse = {
-  oneOf: [
-    {
-      type: 'object',
-      required: ['success'],
-      properties: {
-        success: {
-          $ref: '#/components/schemas/ServiceProbeResult'
-        }
-      }
-    },
-    {
-      type: 'object',
-      required: ['error'],
-      properties: {
-        error: {
-          $ref: '#/components/schemas/ServiceProbeError'
-        }
-      }
-    }
-  ],
-  description: 'Response being either success or error.'
-} as const
-
-export const $ServiceProbeResult = {
-  oneOf: [
-    {
-      type: 'string',
-      description: 'A connection to the service was established.',
-      enum: ['connected']
-    },
-    {
-      type: 'object',
-      required: ['kafka_topics'],
-      properties: {
-        kafka_topics: {
-          type: 'array',
-          items: {
-            type: 'string'
-          },
-          description: 'The names of all Kafka topics of the service.'
-        }
-      }
-    }
-  ],
-  description: 'Enumeration of all possible service probe success responses.'
-} as const
-
-export const $ServiceProbeStatus = {
-  type: 'string',
-  description: `Service probe status.
-
-State transition diagram:
-\`\`\`text
-Pending
-│
-│ (Prober server picks up the probe)
-│
-▼
-⌛Running ───► Failure
-│
-▼
-Success
-\`\`\``,
-  enum: ['pending', 'running', 'success', 'failure']
-} as const
-
-export const $ServiceProbeType = {
-  type: 'string',
-  description: `Enumeration of all possible service probe types.
-Each type maps to exactly one request variant.`,
-  enum: ['test_connectivity', 'kafka_get_topics']
 } as const
 
 export const $SqlCompilerMessage = {
@@ -2573,6 +2016,11 @@ export const $SqlType = {
     },
     {
       type: 'string',
+      description: 'SQL `MAP` type.',
+      enum: ['MAP']
+    },
+    {
+      type: 'string',
       description: 'SQL `NULL` type.',
       enum: ['NULL']
     }
@@ -2607,11 +2055,6 @@ that already exists there. In either case, (further) checkpoints will be
 written there.`
     }
   }
-} as const
-
-export const $TenantId = {
-  type: 'string',
-  format: 'uuid'
 } as const
 
 export const $TransportConfig = {
@@ -2749,174 +2192,6 @@ and \`crate::InputTransport::new_endpoint\`.`,
   }
 } as const
 
-export const $UpdateConnectorRequest = {
-  type: 'object',
-  description: 'Request to update an existing connector.',
-  properties: {
-    config: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/ConnectorConfig'
-        }
-      ],
-      nullable: true
-    },
-    description: {
-      type: 'string',
-      description: `New connector description. If absent, existing name will be kept
-unmodified.`,
-      nullable: true
-    },
-    name: {
-      type: 'string',
-      description: 'New connector name. If absent, existing name will be kept unmodified.',
-      nullable: true
-    }
-  }
-} as const
-
-export const $UpdateConnectorResponse = {
-  type: 'object',
-  description: 'Response to a connector update request.'
-} as const
-
-export const $UpdatePipelineRequest = {
-  type: 'object',
-  description: 'Request to update an existing pipeline.',
-  required: ['name', 'description'],
-  properties: {
-    config: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/RuntimeConfig'
-        }
-      ],
-      nullable: true
-    },
-    connectors: {
-      type: 'array',
-      items: {
-        $ref: '#/components/schemas/AttachedConnector'
-      },
-      description: `Attached connectors.
-
-- If absent, existing connectors will be kept unmodified.
-
-- If present all existing connectors will be replaced with the new
-specified list.`,
-      nullable: true
-    },
-    description: {
-      type: 'string',
-      description: 'New pipeline description.'
-    },
-    name: {
-      type: 'string',
-      description: 'New pipeline name.'
-    },
-    program_name: {
-      type: 'string',
-      description: `New program to create a pipeline for. If absent, program will be set to
-NULL.`,
-      nullable: true
-    }
-  },
-  additionalProperties: false
-} as const
-
-export const $UpdatePipelineResponse = {
-  type: 'object',
-  description: 'Response to a config update request.',
-  required: ['version'],
-  properties: {
-    version: {
-      $ref: '#/components/schemas/Version'
-    }
-  }
-} as const
-
-export const $UpdateProgramRequest = {
-  type: 'object',
-  description: 'Request to update an existing program.',
-  properties: {
-    code: {
-      type: 'string',
-      description: `New SQL code for the program. If absent, existing program code will be
-kept unmodified.`,
-      nullable: true
-    },
-    config: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/ProgramConfig'
-        }
-      ],
-      nullable: true
-    },
-    description: {
-      type: 'string',
-      description: `New program description. If absent, existing description will be kept
-unmodified.`,
-      nullable: true
-    },
-    guard: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/Version'
-        }
-      ],
-      nullable: true
-    },
-    name: {
-      type: 'string',
-      description: 'New program name. If absent, existing name will be kept unmodified.',
-      nullable: true
-    }
-  }
-} as const
-
-export const $UpdateProgramResponse = {
-  type: 'object',
-  description: 'Response to a program update request.',
-  required: ['version'],
-  properties: {
-    version: {
-      $ref: '#/components/schemas/Version'
-    }
-  }
-} as const
-
-export const $UpdateServiceRequest = {
-  type: 'object',
-  description: 'Request to update an existing service.',
-  properties: {
-    config: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/ServiceConfig'
-        }
-      ],
-      nullable: true
-    },
-    description: {
-      type: 'string',
-      description: `New service description. If absent, existing name will be kept
-unmodified.`,
-      nullable: true
-    },
-    name: {
-      type: 'string',
-      description: 'New service name. If absent, existing name will be kept unmodified.',
-      nullable: true
-    }
-  }
-} as const
-
-export const $UpdateServiceResponse = {
-  type: 'object',
-  description: 'Response to a service update request.'
-} as const
-
 export const $UrlInputConfig = {
   type: 'object',
   description: `Configuration for reading data from an HTTP or HTTPS URL with
@@ -2926,6 +2201,18 @@ export const $UrlInputConfig = {
     path: {
       type: 'string',
       description: 'URL.'
+    },
+    pause_timeout: {
+      type: 'integer',
+      format: 'int32',
+      description: `Timeout before disconnection when paused.
+
+If the pipeline is paused, or if the input adapter reads data faster
+than the pipeline can process it, then the controller will pause the
+input adapter. If the input adapter stays paused longer than this
+timeout, it will drop the network connection to the server. It will
+automatically reconnect when the input adapter starts running again.`,
+      minimum: 0
     }
   }
 } as const

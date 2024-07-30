@@ -1,6 +1,7 @@
 import { join } from 'path'
 
 import { skeleton } from '@skeletonlabs/skeleton/plugin'
+import forms from '@tailwindcss/forms'
 
 import { felderaTheme } from './src/felderaTheme'
 
@@ -20,6 +21,7 @@ const config = {
     }
   },
   plugins: [
+    forms,
     skeleton({
       themes: [felderaTheme]
     })
