@@ -7,10 +7,12 @@ use crate::db::types::pipeline::{
     validate_deployment_desired_status_transition, validate_deployment_status_transition,
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::{validate_program_status_transition, ProgramConfig, ProgramStatus};
+use crate::db::types::program::{
+    validate_program_status_transition, ProgramConfig, ProgramInfo, ProgramStatus,
+};
 use crate::db::types::tenant::TenantId;
 use deadpool_postgres::Transaction;
-use pipeline_types::config::{PipelineConfig, ProgramInfo, RuntimeConfig};
+use pipeline_types::config::{PipelineConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
 use tokio_postgres::Row;
 use uuid::Uuid;

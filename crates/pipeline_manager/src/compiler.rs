@@ -4,7 +4,9 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
-use crate::db::types::program::{CompilationProfile, ProgramStatus, SqlCompilerMessage};
+use crate::db::types::program::{
+    generate_program_info_from_schema, CompilationProfile, ProgramStatus, SqlCompilerMessage,
+};
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::metrics::{COMPILE_LATENCY_RUST, COMPILE_LATENCY_SQL};
@@ -15,7 +17,6 @@ use futures_util::join;
 use log::warn;
 use log::{debug, error, info};
 use metrics::histogram;
-use pipeline_types::config::generate_program_info_from_schema;
 use pipeline_types::program_schema::ProgramSchema;
 use std::collections::HashSet;
 use std::time::Instant;
@@ -979,11 +980,11 @@ mod test {
     use crate::db::storage_postgres::StoragePostgres;
     use crate::db::types::common::Version;
     use crate::db::types::pipeline::{PipelineDescr, PipelineId};
-    use crate::db::types::program::{CompilationProfile, ProgramConfig};
+    use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramInfo};
     use crate::{
         auth::TenantRecord, compiler::ProgramStatus, config::CompilerConfig, db::storage::Storage,
     };
-    use pipeline_types::config::{ProgramInfo, RuntimeConfig};
+    use pipeline_types::config::RuntimeConfig;
     use pipeline_types::program_schema::ProgramSchema;
     use std::{fs::File, sync::Arc};
     use tempfile::TempDir;
