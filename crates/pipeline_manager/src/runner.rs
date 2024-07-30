@@ -1,6 +1,7 @@
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{PipelineId, PipelineStatus};
+use crate::db::types::program::ConnectorGenerationError;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_web::{
@@ -9,7 +10,6 @@ use actix_web::{
     web::Payload,
     HttpRequest, HttpResponse, HttpResponseBuilder, ResponseError,
 };
-use pipeline_types::config::ConnectorGenerationError;
 use pipeline_types::error::{DetailedError, ErrorResponse};
 use serde::Serialize;
 use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, sync::Arc, time::Duration};

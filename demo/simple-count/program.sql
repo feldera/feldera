@@ -4,6 +4,23 @@ CREATE TABLE example (
 ) WITH (
     'connectors' = '[
         {
+            "transport": {
+                "name": "kafka_input",
+                "config": {
+                    "bootstrap.servers": "[REPLACE-BOOTSTRAP-SERVERS]",
+                    "topics": ["simple_count_input"],
+                    "auto.offset.reset": "earliest"
+                }
+            },
+            "format": {
+                "name": "json",
+                "config": {
+                    "update_format": "insert_delete",
+                    "array": false
+                }
+            }
+        },
+        {
             "name": "kafka-1",
             "transport": {
                 "name": "kafka_input",
@@ -20,7 +37,24 @@ CREATE TABLE example (
                     "array": false
                 }
             }
-        }
+        },
+        {
+            "transport": {
+                "name": "kafka_input",
+                "config": {
+                    "bootstrap.servers": "[REPLACE-BOOTSTRAP-SERVERS]",
+                    "topics": ["simple_count_input"],
+                    "auto.offset.reset": "earliest"
+                }
+            },
+            "format": {
+                "name": "json",
+                "config": {
+                    "update_format": "insert_delete",
+                    "array": false
+                }
+            }
+        },
     ]'
 );
 
@@ -29,6 +63,38 @@ CREATE VIEW example_count WITH (
     'connectors' = '[
         {
             "name": "kafka-1",
+            "transport": {
+                "name": "kafka_output",
+                "config": {
+                    "bootstrap.servers": "[REPLACE-BOOTSTRAP-SERVERS]",
+                    "topic": "simple_count_output"
+                }
+            },
+            "format": {
+                "name": "json",
+                "config": {
+                    "update_format": "insert_delete",
+                    "array": True
+                }
+            }
+        },
+        {
+            "transport": {
+                "name": "kafka_output",
+                "config": {
+                    "bootstrap.servers": "[REPLACE-BOOTSTRAP-SERVERS]",
+                    "topic": "simple_count_output"
+                }
+            },
+            "format": {
+                "name": "json",
+                "config": {
+                    "update_format": "insert_delete",
+                    "array": True
+                }
+            }
+        },
+        {
             "transport": {
                 "name": "kafka_output",
                 "config": {
