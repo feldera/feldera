@@ -26,29 +26,27 @@
     open = $bindable(),
     side,
     children,
-    class: _class
+    class: _class,
+    width
   }: {
     open: boolean
     side: keyof typeof classNames
     children: Snippet
     class: string
+    width: string
   } = $props()
-  console.log('open modal', open)
 </script>
 
 <div
   role="presentation"
   class="relative z-20"
   onclick={() => {
-    console.log('toggle2')
     open = !open
   }}
 >
   <div
-    class={'fixed inset-0 bg-gray-500 bg-opacity-75 transition-all ' +
-      (open
-        ? 'visible opacity-100 duration-300 ease-in-out'
-        : 'invisible opacity-0 duration-300 ease-in-out')}
+    class={'fixed inset-0 bg-gray-500 bg-opacity-75 transition-all duration-300 ease-in-out ' +
+      (open ? 'visible opacity-100 ' : 'invisible opacity-0')}
   ></div>
   <div class={open ? 'fixed inset-0 overflow-hidden' : ''}>
     <div class="absolute inset-0 overflow-hidden">
@@ -64,7 +62,7 @@
           <div
             role="dialog"
             aria-modal="true"
-            class={'flex h-full flex-col ' + (open ? ' shadow-xl ' : '') + _class}
+            class={'flex h-full flex-col ' + (open ? ' shadow-xl ' : '') + `${width} ` + _class}
           >
             {@render children()}
           </div>

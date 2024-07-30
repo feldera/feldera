@@ -4,5 +4,8 @@ import svg from '@poppanator/sveltekit-svg'
 import { sveltekit } from '@sveltejs/kit/vite'
 
 export default defineConfig({
-  plugins: [sveltekit(), svg()]
+  plugins: [sveltekit(), svg()],
+  build: {
+    minify: false
+  }
 })

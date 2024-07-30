@@ -38,9 +38,9 @@ test('Accrual demo test', async ({ page, request }) => {
 
     // Ensure storage is disabled
     await page.getByTestId('button-configure-resources').click()
-    if (await page.getByTestId('input-enable-storage').inputValue() === 'false') {
+    if ((await page.getByTestId('input-enable-storage').inputValue()) === 'false') {
       // Double switch to force `false` value from an undefined state
-    await page.waitForTimeout(200)
+      await page.waitForTimeout(200)
       await page.getByTestId('input-enable-storage').click()
     }
     await page.waitForTimeout(200)

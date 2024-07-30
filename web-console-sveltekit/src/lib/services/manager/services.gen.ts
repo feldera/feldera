@@ -2,8 +2,8 @@
 
 import { client, type Options } from '@hey-api/client-fetch'
 import type {
-  GetAuthenticationConfigError,
-  GetAuthenticationConfigResponse,
+  GetConfigAuthenticationError,
+  GetConfigAuthenticationResponse,
   ListApiKeysData,
   ListApiKeysError,
   ListApiKeysResponse,
@@ -16,122 +16,53 @@ import type {
   DeleteApiKeyData,
   DeleteApiKeyError,
   DeleteApiKeyResponse,
-  GetDemosError,
-  GetDemosResponse,
-  ListConnectorsData,
-  ListConnectorsError,
-  ListConnectorsResponse,
-  NewConnectorData,
-  NewConnectorError,
-  NewConnectorResponse2,
-  GetConnectorData,
-  GetConnectorError,
-  GetConnectorResponse,
-  CreateOrReplaceConnectorData,
-  CreateOrReplaceConnectorError,
-  CreateOrReplaceConnectorResponse2,
-  DeleteConnectorData,
-  DeleteConnectorError,
-  DeleteConnectorResponse,
-  UpdateConnectorData,
-  UpdateConnectorError,
-  UpdateConnectorResponse2,
+  GetConfigDemosError,
+  GetConfigDemosResponse,
   ListPipelinesData,
   ListPipelinesError,
   ListPipelinesResponse,
-  NewPipelineData,
-  NewPipelineError,
-  NewPipelineResponse2,
+  PostPipelineData,
+  PostPipelineError,
+  PostPipelineResponse,
   GetPipelineData,
   GetPipelineError,
   GetPipelineResponse,
-  CreateOrReplacePipelineData,
-  CreateOrReplacePipelineError,
-  CreateOrReplacePipelineResponse2,
-  PipelineDeleteData,
-  PipelineDeleteError,
-  PipelineDeleteResponse,
-  UpdatePipelineData,
-  UpdatePipelineError,
-  UpdatePipelineResponse2,
-  GetPipelineConfigData,
-  GetPipelineConfigError,
-  GetPipelineConfigResponse,
-  PipelineDeployedData,
-  PipelineDeployedError,
-  PipelineDeployedResponse,
-  DumpProfileData,
-  DumpProfileError,
-  DumpProfileResponse,
+  PutPipelineData,
+  PutPipelineError,
+  PutPipelineResponse,
+  DeletePipelineData,
+  DeletePipelineError,
+  DeletePipelineResponse,
+  PatchPipelineData,
+  PatchPipelineError,
+  PatchPipelineResponse,
+  GetPipelineCircuitProfileData,
+  GetPipelineCircuitProfileError,
+  GetPipelineCircuitProfileResponse,
   HttpOutputData,
   HttpOutputError,
   HttpOutputResponse,
-  HeapProfileData,
-  HeapProfileError,
-  HeapProfileResponse,
+  GetPipelineHeapProfileData,
+  GetPipelineHeapProfileError,
+  GetPipelineHeapProfileResponse,
   HttpInputData,
   HttpInputError,
   HttpInputResponse,
-  PipelineStatsData,
-  PipelineStatsError,
-  PipelineStatsResponse,
-  PipelineValidateData,
-  PipelineValidateError,
-  PipelineValidateResponse,
-  PipelineActionData,
-  PipelineActionError,
-  PipelineActionResponse,
-  GetProgramsData,
-  GetProgramsError,
-  GetProgramsResponse,
-  NewProgramData,
-  NewProgramError,
-  NewProgramResponse2,
-  GetProgramData,
-  GetProgramError,
-  GetProgramResponse,
-  CreateOrReplaceProgramData,
-  CreateOrReplaceProgramError,
-  CreateOrReplaceProgramResponse2,
-  DeleteProgramData,
-  DeleteProgramError,
-  DeleteProgramResponse,
-  UpdateProgramData,
-  UpdateProgramError,
-  UpdateProgramResponse2,
-  CompileProgramData,
-  CompileProgramError,
-  CompileProgramResponse,
-  ListServicesData,
-  ListServicesError,
-  ListServicesResponse,
-  NewServiceData,
-  NewServiceError,
-  NewServiceResponse2,
-  GetServiceData,
-  GetServiceError,
-  GetServiceResponse,
-  DeleteServiceData,
-  DeleteServiceError,
-  DeleteServiceResponse,
-  UpdateServiceData,
-  UpdateServiceError,
-  UpdateServiceResponse2,
-  ListServiceProbesData,
-  ListServiceProbesError,
-  ListServiceProbesResponse,
-  NewServiceProbeData,
-  NewServiceProbeError,
-  NewServiceProbeResponse
+  GetPipelineStatsData,
+  GetPipelineStatsError,
+  GetPipelineStatsResponse,
+  PostPipelineActionData,
+  PostPipelineActionError,
+  PostPipelineActionResponse
 } from './types.gen'
 
 /**
- * Get authentication provider configuration
+ * Retrieve authentication provider configuration.
  */
-export const getAuthenticationConfig = (options?: Options) => {
+export const getConfigAuthentication = (options?: Options) => {
   return (options?.client ?? client).get<
-    GetAuthenticationConfigResponse,
-    GetAuthenticationConfigError
+    GetConfigAuthenticationResponse,
+    GetConfigAuthenticationError
   >({
     ...options,
     url: '/config/authentication'
@@ -139,7 +70,7 @@ export const getAuthenticationConfig = (options?: Options) => {
 }
 
 /**
- * List all API keys
+ * Retrieve the list of API keys.
  */
 export const listApiKeys = (options?: Options<ListApiKeysData>) => {
   return (options?.client ?? client).get<ListApiKeysResponse, ListApiKeysError>({
@@ -149,7 +80,7 @@ export const listApiKeys = (options?: Options<ListApiKeysData>) => {
 }
 
 /**
- * Create an API key
+ * Create a new API key.
  */
 export const createApiKey = (options: Options<CreateApiKeyData>) => {
   return (options?.client ?? client).post<CreateApiKeyResponse, CreateApiKeyError>({
@@ -159,7 +90,7 @@ export const createApiKey = (options: Options<CreateApiKeyData>) => {
 }
 
 /**
- * Get an API key description
+ * Retrieve an API key.
  */
 export const getApiKey = (options: Options<GetApiKeyData>) => {
   return (options?.client ?? client).get<GetApiKeyResponse, GetApiKeyError>({
@@ -169,7 +100,7 @@ export const getApiKey = (options: Options<GetApiKeyData>) => {
 }
 
 /**
- * Delete an API key
+ * Delete an API key.
  */
 export const deleteApiKey = (options: Options<DeleteApiKeyData>) => {
   return (options?.client ?? client).delete<DeleteApiKeyResponse, DeleteApiKeyError>({
@@ -179,80 +110,18 @@ export const deleteApiKey = (options: Options<DeleteApiKeyData>) => {
 }
 
 /**
- * Get the list of demo URLs.
+ * Retrieve the list of demos.
  */
-export const getDemos = (options?: Options) => {
-  return (options?.client ?? client).get<GetDemosResponse, GetDemosError>({
+export const getConfigDemos = (options?: Options) => {
+  return (options?.client ?? client).get<GetConfigDemosResponse, GetConfigDemosError>({
     ...options,
     url: '/v0/config/demos'
   })
 }
 
 /**
- * Fetch connectors, optionally filtered by name or ID
- */
-export const listConnectors = (options?: Options<ListConnectorsData>) => {
-  return (options?.client ?? client).get<ListConnectorsResponse, ListConnectorsError>({
-    ...options,
-    url: '/v0/connectors'
-  })
-}
-
-/**
- * Create a new connector.
- */
-export const newConnector = (options: Options<NewConnectorData>) => {
-  return (options?.client ?? client).post<NewConnectorResponse2, NewConnectorError>({
-    ...options,
-    url: '/v0/connectors'
-  })
-}
-
-/**
- * Fetch a connector by name.
- */
-export const getConnector = (options: Options<GetConnectorData>) => {
-  return (options?.client ?? client).get<GetConnectorResponse, GetConnectorError>({
-    ...options,
-    url: '/v0/connectors/{connector_name}'
-  })
-}
-
-/**
- * Create or replace a connector.
- */
-export const createOrReplaceConnector = (options: Options<CreateOrReplaceConnectorData>) => {
-  return (options?.client ?? client).put<
-    CreateOrReplaceConnectorResponse2,
-    CreateOrReplaceConnectorError
-  >({
-    ...options,
-    url: '/v0/connectors/{connector_name}'
-  })
-}
-
-/**
- * Delete an existing connector.
- */
-export const deleteConnector = (options: Options<DeleteConnectorData>) => {
-  return (options?.client ?? client).delete<DeleteConnectorResponse, DeleteConnectorError>({
-    ...options,
-    url: '/v0/connectors/{connector_name}'
-  })
-}
-
-/**
- * Update the name, description and/or configuration of a connector.
- */
-export const updateConnector = (options: Options<UpdateConnectorData>) => {
-  return (options?.client ?? client).patch<UpdateConnectorResponse2, UpdateConnectorError>({
-    ...options,
-    url: '/v0/connectors/{connector_name}'
-  })
-}
-
-/**
- * Fetch pipelines, optionally filtered by name or ID.
+ * Retrieve the list of pipelines.
+ * Inclusion of program code is configured with by the `code` boolean query parameter.
  */
 export const listPipelines = (options?: Options<ListPipelinesData>) => {
   return (options?.client ?? client).get<ListPipelinesResponse, ListPipelinesError>({
@@ -264,15 +133,15 @@ export const listPipelines = (options?: Options<ListPipelinesData>) => {
 /**
  * Create a new pipeline.
  */
-export const newPipeline = (options: Options<NewPipelineData>) => {
-  return (options?.client ?? client).post<NewPipelineResponse2, NewPipelineError>({
+export const postPipeline = (options: Options<PostPipelineData>) => {
+  return (options?.client ?? client).post<PostPipelineResponse, PostPipelineError>({
     ...options,
     url: '/v0/pipelines'
   })
 }
 
 /**
- * Fetch a pipeline by ID.
+ * Retrieve a pipeline.
  */
 export const getPipeline = (options: Options<GetPipelineData>) => {
   return (options?.client ?? client).get<GetPipelineResponse, GetPipelineError>({
@@ -282,72 +151,45 @@ export const getPipeline = (options: Options<GetPipelineData>) => {
 }
 
 /**
- * Create or replace a pipeline.
+ * Fully update a pipeline if it already exists, otherwise create a new pipeline.
  */
-export const createOrReplacePipeline = (options: Options<CreateOrReplacePipelineData>) => {
-  return (options?.client ?? client).put<
-    CreateOrReplacePipelineResponse2,
-    CreateOrReplacePipelineError
+export const putPipeline = (options: Options<PutPipelineData>) => {
+  return (options?.client ?? client).put<PutPipelineResponse, PutPipelineError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}'
+  })
+}
+
+/**
+ * Delete a pipeline.
+ */
+export const deletePipeline = (options: Options<DeletePipelineData>) => {
+  return (options?.client ?? client).delete<DeletePipelineResponse, DeletePipelineError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}'
+  })
+}
+
+/**
+ * Partially update a pipeline.
+ */
+export const patchPipeline = (options: Options<PatchPipelineData>) => {
+  return (options?.client ?? client).patch<PatchPipelineResponse, PatchPipelineError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}'
+  })
+}
+
+/**
+ * Retrieve the circuit performance profile of a running or paused pipeline.
+ */
+export const getPipelineCircuitProfile = (options: Options<GetPipelineCircuitProfileData>) => {
+  return (options?.client ?? client).get<
+    GetPipelineCircuitProfileResponse,
+    GetPipelineCircuitProfileError
   >({
     ...options,
-    url: '/v0/pipelines/{pipeline_name}'
-  })
-}
-
-/**
- * Delete a pipeline. The pipeline must be in the shutdown state.
- */
-export const pipelineDelete = (options: Options<PipelineDeleteData>) => {
-  return (options?.client ?? client).delete<PipelineDeleteResponse, PipelineDeleteError>({
-    ...options,
-    url: '/v0/pipelines/{pipeline_name}'
-  })
-}
-
-/**
- * Change a pipeline's name, description, code, configuration, or connectors.
- * On success, increments the pipeline's version by 1.
- */
-export const updatePipeline = (options: Options<UpdatePipelineData>) => {
-  return (options?.client ?? client).patch<UpdatePipelineResponse2, UpdatePipelineError>({
-    ...options,
-    url: '/v0/pipelines/{pipeline_name}'
-  })
-}
-
-/**
- * Fetch a pipeline's configuration.
- * When defining a pipeline, clients have to provide an optional
- * `RuntimeConfig` for the pipelines and references to existing
- * connectors to attach to the pipeline. This endpoint retrieves
- * the *expanded* definition of the pipeline's configuration,
- * which comprises both the `RuntimeConfig` and the complete
- * definitions of the attached connectors.
- */
-export const getPipelineConfig = (options: Options<GetPipelineConfigData>) => {
-  return (options?.client ?? client).get<GetPipelineConfigResponse, GetPipelineConfigError>({
-    ...options,
-    url: '/v0/pipelines/{pipeline_name}/config'
-  })
-}
-
-/**
- * Return the currently deployed version of the pipeline, if any.
- */
-export const pipelineDeployed = (options: Options<PipelineDeployedData>) => {
-  return (options?.client ?? client).get<PipelineDeployedResponse, PipelineDeployedError>({
-    ...options,
-    url: '/v0/pipelines/{pipeline_name}/deployed'
-  })
-}
-
-/**
- * Initiate profile dump.
- */
-export const dumpProfile = (options: Options<DumpProfileData>) => {
-  return (options?.client ?? client).get<DumpProfileResponse, DumpProfileError>({
-    ...options,
-    url: '/v0/pipelines/{pipeline_name}/dump_profile'
+    url: '/v0/pipelines/{pipeline_name}/circuit_profile'
   })
 }
 
@@ -374,10 +216,13 @@ export const httpOutput = (options: Options<HttpOutputData>) => {
 }
 
 /**
- * Retrieve heap profile of the pipeline.
+ * Retrieve the heap profile of a running or paused pipeline.
  */
-export const heapProfile = (options: Options<HeapProfileData>) => {
-  return (options?.client ?? client).get<HeapProfileResponse, HeapProfileError>({
+export const getPipelineHeapProfile = (options: Options<GetPipelineHeapProfileData>) => {
+  return (options?.client ?? client).get<
+    GetPipelineHeapProfileResponse,
+    GetPipelineHeapProfileError
+  >({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/heap_profile'
   })
@@ -401,205 +246,33 @@ export const httpInput = (options: Options<HttpInputData>) => {
 }
 
 /**
- * Retrieve pipeline metrics and performance counters.
+ * Retrieve pipeline statistics (e.g., metrics, performance counters).
  */
-export const pipelineStats = (options: Options<PipelineStatsData>) => {
-  return (options?.client ?? client).get<PipelineStatsResponse, PipelineStatsError>({
+export const getPipelineStats = (options: Options<GetPipelineStatsData>) => {
+  return (options?.client ?? client).get<GetPipelineStatsResponse, GetPipelineStatsError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/stats'
   })
 }
 
 /**
- * Validate a pipeline.
- * Checks whether a pipeline is configured correctly. This includes
- * checking whether the pipeline references a valid compiled program,
- * whether the connectors reference valid tables/views in the program,
- * and more.
+ * Start, pause or shutdown a pipeline.
+ * The endpoint returns immediately after performing initial request validation
+ * (e.g., upon start checking the program is compiled) and initiating the relevant
+ * procedure (e.g., informing the runner or the already running pipeline).
+ * The state changes completely asynchronously. On error, the pipeline
+ * transitions to the `Failed` state. The user can monitor the current status
+ * of the pipeline by polling the `GET /pipelines` and
+ * `GET /pipelines/{pipeline_name}` endpoint.
+ *
+ * The following values of the `action` argument are accepted:
+ * - `start`: Start the pipeline
+ * - `pause`: Pause the pipeline
+ * - `shutdown`: Terminate the pipeline
  */
-export const pipelineValidate = (options: Options<PipelineValidateData>) => {
-  return (options?.client ?? client).get<PipelineValidateResponse, PipelineValidateError>({
-    ...options,
-    url: '/v0/pipelines/{pipeline_name}/validate'
-  })
-}
-
-/**
- * Change the desired state of the pipeline.
- * This endpoint allows the user to control the execution of the pipeline,
- * by changing its desired state attribute (see the discussion of the desired
- * state model in the [`PipelineStatus`] documentation).
- *
- * The endpoint returns immediately after validating the request and forwarding
- * it to the pipeline. The requested status change completes asynchronously.
- * On success, the pipeline enters the requested desired state.  On error, the
- * pipeline transitions to the `Failed` state. The user
- * can monitor the current status of the pipeline by polling the `GET
- * /pipeline` endpoint.
- *
- * The following values of the `action` argument are accepted by this endpoint:
- *
- * - 'start': Start processing data.
- * - 'pause': Pause the pipeline.
- * - 'shutdown': Terminate the execution of the pipeline.
- */
-export const pipelineAction = (options: Options<PipelineActionData>) => {
-  return (options?.client ?? client).post<PipelineActionResponse, PipelineActionError>({
+export const postPipelineAction = (options: Options<PostPipelineActionData>) => {
+  return (options?.client ?? client).post<PostPipelineActionResponse, PostPipelineActionError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/{action}'
-  })
-}
-
-/**
- * Fetch programs, optionally filtered by name or ID.
- */
-export const getPrograms = (options?: Options<GetProgramsData>) => {
-  return (options?.client ?? client).get<GetProgramsResponse, GetProgramsError>({
-    ...options,
-    url: '/v0/programs'
-  })
-}
-
-/**
- * Create a new program.
- */
-export const newProgram = (options: Options<NewProgramData>) => {
-  return (options?.client ?? client).post<NewProgramResponse2, NewProgramError>({
-    ...options,
-    url: '/v0/programs'
-  })
-}
-
-/**
- * Fetch a program by name.
- */
-export const getProgram = (options: Options<GetProgramData>) => {
-  return (options?.client ?? client).get<GetProgramResponse, GetProgramError>({
-    ...options,
-    url: '/v0/programs/{program_name}'
-  })
-}
-
-/**
- * Create or replace a program.
- */
-export const createOrReplaceProgram = (options: Options<CreateOrReplaceProgramData>) => {
-  return (options?.client ?? client).put<
-    CreateOrReplaceProgramResponse2,
-    CreateOrReplaceProgramError
-  >({
-    ...options,
-    url: '/v0/programs/{program_name}'
-  })
-}
-
-/**
- * Delete a program.
- * Deletion fails if there is at least one pipeline associated with the
- * program.
- */
-export const deleteProgram = (options: Options<DeleteProgramData>) => {
-  return (options?.client ?? client).delete<DeleteProgramResponse, DeleteProgramError>({
-    ...options,
-    url: '/v0/programs/{program_name}'
-  })
-}
-
-/**
- * Change one or more of a program's code, description or name.
- * If a program's code changes, any ongoing compilation gets cancelled,
- * the program status is reset to `None`, and the program version
- * is incremented by 1.
- *
- * Changing only the program's name or description does not affect its
- * version or the compilation process.
- */
-export const updateProgram = (options: Options<UpdateProgramData>) => {
-  return (options?.client ?? client).patch<UpdateProgramResponse2, UpdateProgramError>({
-    ...options,
-    url: '/v0/programs/{program_name}'
-  })
-}
-
-/**
- * Deprecated. Mark a program for compilation.
- * The client can track a program's compilation status by polling the
- * `/program/{program_name}` or `/programs` endpoints, and
- * then checking the `status` field of the program object.
- */
-export const compileProgram = (options: Options<CompileProgramData>) => {
-  return (options?.client ?? client).post<CompileProgramResponse, CompileProgramError>({
-    ...options,
-    url: '/v0/programs/{program_name}/compile'
-  })
-}
-
-/**
- * Fetch services, optionally filtered by name, ID or configuration type.
- */
-export const listServices = (options?: Options<ListServicesData>) => {
-  return (options?.client ?? client).get<ListServicesResponse, ListServicesError>({
-    ...options,
-    url: '/v0/services'
-  })
-}
-
-/**
- * Create a new service.
- */
-export const newService = (options: Options<NewServiceData>) => {
-  return (options?.client ?? client).post<NewServiceResponse2, NewServiceError>({
-    ...options,
-    url: '/v0/services'
-  })
-}
-
-/**
- * Fetch a service by name.
- */
-export const getService = (options: Options<GetServiceData>) => {
-  return (options?.client ?? client).get<GetServiceResponse, GetServiceError>({
-    ...options,
-    url: '/v0/services/{service_name}'
-  })
-}
-
-/**
- * Delete an existing service.
- */
-export const deleteService = (options: Options<DeleteServiceData>) => {
-  return (options?.client ?? client).delete<DeleteServiceResponse, DeleteServiceError>({
-    ...options,
-    url: '/v0/services/{service_name}'
-  })
-}
-
-/**
- * Update the name, description and/or configuration of a service.
- */
-export const updateService = (options: Options<UpdateServiceData>) => {
-  return (options?.client ?? client).patch<UpdateServiceResponse2, UpdateServiceError>({
-    ...options,
-    url: '/v0/services/{service_name}'
-  })
-}
-
-/**
- * Fetch a list of probes for a service, optionally filtered by id.
- */
-export const listServiceProbes = (options: Options<ListServiceProbesData>) => {
-  return (options?.client ?? client).get<ListServiceProbesResponse, ListServiceProbesError>({
-    ...options,
-    url: '/v0/services/{service_name}/probes'
-  })
-}
-
-/**
- * Create a service probe.
- */
-export const newServiceProbe = (options: Options<NewServiceProbeData>) => {
-  return (options?.client ?? client).post<NewServiceProbeResponse, NewServiceProbeError>({
-    ...options,
-    url: '/v0/services/{service_name}/probes'
   })
 }

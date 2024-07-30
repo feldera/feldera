@@ -18,20 +18,6 @@
   }
 
   let pipeline = writableNewPipeline()
-  let pipelineCodeStore = asyncWritable(
-    pipeline,
-    (pipeline) => pipeline.code,
-    async (newCode, pipeline, oldCode) => {
-      if (!pipeline || !newCode) {
-        return oldCode
-      }
-      $pipeline = {
-        ...pipeline,
-        code: newCode
-      }
-      return newCode
-    }
-  )
 </script>
 
-<PipelineEditLayout {pipelineCodeStore}></PipelineEditLayout>
+<PipelineEditLayout {pipeline} status={undefined}></PipelineEditLayout>

@@ -36,18 +36,24 @@ setup('Global prepare', async ({ page, request }) => {
 
     await rowsAction(page, /box-pipeline-actions-/, 'button-shutdown')
     await page.waitForTimeout(4000)
-    await rowsAction(page, /box-pipeline-actions-/, 'button-delete', () => page.getByTestId('button-confirm-delete').click())
+    await rowsAction(page, /box-pipeline-actions-/, 'button-delete', () =>
+      page.getByTestId('button-confirm-delete').click()
+    )
   })
 
   await setup.step('Prepare: Delete connectors', async () => {
     await page.getByTestId('button-vertical-nav-connectors').click()
 
-    await rowsAction(page, /box-connector-actions-/, 'button-delete', () => page.getByTestId('button-confirm-delete').click())
+    await rowsAction(page, /box-connector-actions-/, 'button-delete', () =>
+      page.getByTestId('button-confirm-delete').click()
+    )
   })
 
   await setup.step('Prepare: Delete programs', async () => {
     await page.getByTestId('button-vertical-nav-sql-programs').click()
 
-    await rowsAction(page, /box-program-actions-/, 'button-delete', () => page.getByTestId('button-confirm-delete').click())
+    await rowsAction(page, /box-program-actions-/, 'button-delete', () =>
+      page.getByTestId('button-confirm-delete').click()
+    )
   })
 })

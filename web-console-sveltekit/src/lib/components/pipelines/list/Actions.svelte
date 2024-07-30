@@ -1,46 +1,50 @@
 <script lang="ts">
-  import { useDeleteDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import {
+    getPipeline,
     getPipelineStatus,
-    pipelineAction,
+    patchPipeline,
+    postPipelineAction,
     type PipelineStatus
   } from '$lib/services/pipelineManager'
-  import { asyncDerived, asyncReadable, derived, readable, writable } from '@square/svelte-store'
+  import { asyncDerived, asyncReadable, readable, writable } from '@square/svelte-store'
   import { match, P } from 'ts-pattern'
   import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
+  import DangerDialog from '$lib/components/dialogs/DangerDialog.svelte'
+  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
+  import JSONbig from 'true-json-bigint'
+  import { goto } from '$app/navigation'
+  import { base } from '$app/paths'
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
 
   let {
-    pipelineName,
-    reloadPipelines,
+    name: pipelineName,
+    status,
+    reloadStatus,
+    pipelineBusy,
+    unsavedChanges,
     class: _class = ''
   }: {
-    pipelineName: string
-    reloadPipelines?: () => void
+    name: string
+    status: PipelineStatus
+    reloadStatus?: () => void
+    pipelineBusy: boolean
+    unsavedChanges: boolean
     class?: string
   } = $props()
-  // let initial = writable<PipelineStatus>('Initializing')
-  const status = asyncReadable(
-    { status: 'Initializing' as const },
-    () => getPipelineStatus(pipelineName),
-    {
-      reloadable: true
-    }
-  )
   $effect(() => {
-    let interval = setInterval(() => status.reload?.(), 2000)
+    let interval = setInterval(() => reloadStatus?.(), 2000)
     return () => {
       clearInterval(interval)
     }
   })
-  $effect(() => {
-    pipelineName
-    status.reload?.()
-  })
 
-  const { showDeleteDialog } = useDeleteDialog()
-  const deletePipeline = (pipelineName: string) => {
-    _deletePipeline(pipelineName)
-    reloadPipelines?.()
+  const globalDialog = useGlobalDialog()
+  const deletePipeline = async (pipelineName: string) => {
+    await _deletePipeline(pipelineName)
+    reloadStatus?.()
+    goto(`${base}/`)
   }
 
   const actions = {
@@ -53,7 +57,7 @@
     _configure
   }
 
-  const active = derived(status, ({ status }) =>
+  const active = $derived(
     match(status)
       .returnType<(keyof typeof actions)[]>()
       .with('Shutdown', () => ['_start', '_configure', '_delete'])
@@ -75,50 +79,95 @@
       .exhaustive()
   )
 
-  const buttonClass = 'btn-icon preset-tonal-surface text-[24px]'
-  const reload = () => {
-    setTimeout(() => status.reload?.(), 300)
-    setTimeout(() => status.reload?.(), 500)
+  const buttonClass = ' btn-icon h-9 w-9 preset-tonal-surface text-[36px]'
+  const _reload = () => {
+    setTimeout(() => reloadStatus?.(), 100)
+    setTimeout(() => reloadStatus?.(), 300)
   }
 </script>
 
-<div class={'flex flex-nowrap ' + _class}>
-  {#each $active as name}
+{#snippet deleteDialog()}
+  <DeleteDialog
+    {...deleteDialogProps('Delete', (name) => `${name} pipeline`, deletePipeline)(pipelineName)}
+    onClose={() => (globalDialog.dialog = null)}
+  ></DeleteDialog>
+{/snippet}
+
+<div class={'flex flex-nowrap gap-2 ' + _class}>
+  {#each active as name}
     {@render actions[name]()}
   {/each}
 </div>
 
 {#snippet _delete()}
   <button
-    class={'bx bx-trash-alt ' + buttonClass}
-    onclick={() =>
-      showDeleteDialog('Delete', (name) => `${name} pipeline`, deletePipeline)(pipelineName)}
+    class={'bx bx-trash-alt  ' + buttonClass}
+    onclick={() => (globalDialog.dialog = deleteDialog)}
   >
   </button>
 {/snippet}
 {#snippet _start()}
-  <button
-    class={'bx bx-play-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'start').then(reload)}
-  >
-  </button>
+  <div class={buttonClass}>
+    <button
+      class:disabled={unsavedChanges}
+      class={'bx bx-play !bg-success-200 !text-success-900 '}
+      onclick={() => postPipelineAction(pipelineName, 'start').then(_reload)}
+    >
+    </button>
+  </div>
+  {#if unsavedChanges}
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      Save the pipeline before running
+    </Tooltip>
+  {/if}
 {/snippet}
 {#snippet _pause()}
   <button
-    class={'bx bx-pause-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'pause').then(reload)}
+    class={'bx bx-pause ' + buttonClass}
+    onclick={() => postPipelineAction(pipelineName, 'pause').then(_reload)}
   >
   </button>
 {/snippet}
 {#snippet _shutdown()}
   <button
-    class={'bx bx-stop-circle ' + buttonClass}
-    onclick={() => pipelineAction(pipelineName, 'shutdown').then(reload)}
+    class={'bx bx-stop ' + buttonClass}
+    onclick={() => postPipelineAction(pipelineName, 'shutdown').then(_reload)}
   >
   </button>
 {/snippet}
 {#snippet _configure()}
-  <button class={'bx bx-cog ' + buttonClass}> </button>
+  {#snippet pipelineResourcesDialog()}
+    {#await getPipeline(pipelineName) then pipeline}
+      <JSONDialog
+        disabled={pipelineBusy}
+        json={JSONbig.stringify(pipeline.runtime_config, undefined, '  ')}
+        onApply={async (json) => {
+          await patchPipeline(pipeline.name, {
+            runtime_config: JSONbig.parse(json)
+            // name: pipeline.name,
+            // description: pipeline.description
+          })
+        }}
+        onClose={() => (globalDialog.dialog = null)}
+      >
+        {#snippet title()}
+          <div class="h5 text-center font-normal">
+            {`Configure ${pipelineName} runtime resources`}
+          </div>
+        {/snippet}
+      </JSONDialog>
+    {/await}
+  {/snippet}
+  <button
+    onclick={() => (globalDialog.dialog = pipelineResourcesDialog)}
+    class={'bx bx-cog ' + buttonClass}
+  >
+  </button>
+  {#if pipelineBusy}
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      Stop the pipeline to edit configuration
+    </Tooltip>
+  {/if}
 {/snippet}
 {#snippet _spacer()}
   <div class="w-9"></div>
