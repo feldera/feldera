@@ -72,7 +72,7 @@ public class NaiveIncrementalTests extends EndToEndTests {
         Change thirdOutput = new Change(outputForEmptyInput.minus(firstOutput));
         this.invokeTestQueryBase(query,
                 new InputOutputChangeStream()
-                        .addPair(input, new Change(firstOutput))    // Add first input
+                        .addPair(input, new Change(firstOutput))   // Add first input
                         .addPair(new Change(empty), secondOutput)  // Add an empty input
                         .addPair(new Change(input.getSet(0).negate()), thirdOutput));  // Subtract the first input
     }

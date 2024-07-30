@@ -149,11 +149,7 @@ Here is a description of the non-obvious command-line options:
 
      `CREATE VIEW V AS SELECT T.COL1 FROM T`
 
--O:  sets the optimization level.  Note that some programs may not
-     compile at optimization level 0, since that level inhibits all
-     front-end (Calcite) optimizations, and some Calcite optimizations
-     are required to eliminate constructs that are not supported by
-     the back-end.
+-O:  sets the optimization level.  A higher values implies more optimizations.
 
 -d:  Sets the lexical rules used.  SQL dialects differ in rules for
      allowed identifiers, quoting identifiers, conversions to

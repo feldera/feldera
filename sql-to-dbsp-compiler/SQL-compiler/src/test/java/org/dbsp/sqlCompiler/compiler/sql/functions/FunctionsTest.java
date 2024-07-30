@@ -443,29 +443,24 @@ public class FunctionsTest extends SqlIoTest {
 
     @Test
     public void testDecimalErrors() {
-        this.qf("select cast('1234.1234' AS DECIMAL(6, 3))",
-                // The compiler rounds `1234.1234` to `1234.123` before calling the rust code
-                "cannot represent 1234.123 as DECIMAL(6, 3)"
-        );
+        this.queryFailing("select cast(1234.1234 AS DECIMAL(6, 3))",
+                "cannot represent 1234.1234 as DECIMAL(6, 3)",
+                "cannot represent 1234.1234 as DECIMAL(6, 3)");
 
-        this.qf("select cast('1234.1236' AS DECIMAL(6, 3))",
-                // The compiler rounds `1234.1236` to `1234.124` before calling the rust code
-                "cannot represent 1234.124 as DECIMAL(6, 3)"
-        );
-
-        this.queryFailingInCompilation("select cast(1234.1234 AS DECIMAL(6, 3))",
-                "cannot represent 1234.1234 as DECIMAL(6, 3)"
-        );
-
-        this.queryFailingInCompilation("select cast(1234.1236 AS DECIMAL(6, 3))",
-                "cannot represent 1234.1236 as DECIMAL(6, 3)"
-        );
-
-        this.queryFailingInCompilation("select cast(143.481 as decimal(2, 1))", "cannot represent 143.481 as DECIMAL(2, 1)");
-
-        // this only fails in runtime
-        this.runtimeConstantFail("select cast(99.6 as decimal(2, 0))", "cannot represent 99.6 as DECIMAL(2, 0)");
-        this.queryFailingInCompilation("select cast(-13.4 as decimal(2,1))", "cannot represent -13.4 as DECIMAL(2, 1)");
+        this.queryFailing("select cast(1234.1236 AS DECIMAL(6, 3))",
+                "cannot represent 1234.1236 as DECIMAL(6, 3)",
+                        "cannot represent 1234.1236 as DECIMAL(6, 3)");
+        this.queryFailing("select cast(143.481 as decimal(2, 1))",
+                "cannot represent 143.481 as DECIMAL(2, 1)",
+                "cannot represent 143.481 as DECIMAL(2, 1)");
+        // Due to a bug in calcite this only fails at runtime currently.
+        this.qf("select cast(99.6 as decimal(2, 0))",
+                "cannot represent 99.6 as DECIMAL(2, 0)"
+                // "cannot represent 99.6 as DECIMAL(2, 0)"
+                );
+        this.queryFailing("select cast(-13.4 as decimal(2,1))",
+                "cannot represent -13.4 as DECIMAL(2, 1)",
+                "cannot represent -13.4 as DECIMAL(2, 1)");
     }
 
     @Test

@@ -21,11 +21,11 @@ public class CalciteOptimizer implements IWritesLogs {
     public abstract class CalciteOptimizerStep {
         /** Name of the optimizer step */
         abstract String getName();
-        /** The program that performs the optimization */
-        abstract HepProgram getProgram(RelNode node);
+        /** The program that performs the optimization for the specified optimization level */
+        abstract HepProgram getProgram(RelNode node, int level);
 
-        RelNode optimize(RelNode rel) {
-            HepProgram program = this.getProgram(rel);
+        RelNode optimize(RelNode rel, int level) {
+            HepProgram program = this.getProgram(rel, level);
             HepPlanner planner = new HepPlanner(program);
             planner.setRoot(rel);
             RelNode result = planner.findBestExp();
@@ -43,10 +43,12 @@ public class CalciteOptimizer implements IWritesLogs {
     }
 
     public class BaseOptimizerStep extends CalciteOptimizerStep {
+        final int level;
         final String name;
         final HepProgramBuilder builder;
 
-        public BaseOptimizerStep(String name) {
+        public BaseOptimizerStep(String name, int level) {
+            this.level = level;
             this.name = name;
             this.builder = new HepProgramBuilder();
         }
@@ -57,11 +59,16 @@ public class CalciteOptimizer implements IWritesLogs {
         }
 
         @Override
-        HepProgram getProgram(RelNode node) {
+        HepProgram getProgram(RelNode node, int level) {
+            if (level < this.level) {
+                // Return an empty program
+                return new HepProgramBuilder().build();
+            }
             return this.builder.build();
         }
 
-        void addRules(RelOptRule... rules) {
+        void addRules(int level, RelOptRule... rules) {
+            if (this.level > level) return;
             for (RelOptRule rule: rules) {
                 Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 2)
                         .append(this.getName())
@@ -74,34 +81,24 @@ public class CalciteOptimizer implements IWritesLogs {
     }
 
     public class SimpleOptimizerStep extends BaseOptimizerStep {
-        SimpleOptimizerStep(String name, RelOptRule... rules) {
-            super(name);
-            for (RelOptRule rule: rules) {
-                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 2)
-                        .append(this.getName())
-                        .append(" adding rule: ")
-                        .append(rule.toString())
-                        .newline();
-                this.builder.addRuleInstance(rule);
-            }
+        SimpleOptimizerStep(String name, int level, RelOptRule... rules) {
+            super(name, level);
+            this.addRules(level, rules);
         }
     }
 
     final List<CalciteOptimizerStep> steps;
+    final int level;
 
     public CalciteOptimizer(int level) {
         this.steps = new ArrayList<>();
-        if (level < 1)
-            // For optimization levels below 1 we don't even apply Calcite optimizations.
-            // Note that this may cause compilation to fail, since our compiler does not
-            // handle all possible RelNode programs.
-            return;
-        this.createOptimizer();
+        this.level = level;
+        this.createOptimizer(level);
     }
 
     RelNode apply(RelNode rel) {
         for (CalciteOptimizerStep step: this.steps) {
-            rel = step.optimize(rel);
+            rel = step.optimize(rel, this.level);
         }
         return rel;
     }
@@ -126,8 +123,8 @@ public class CalciteOptimizer implements IWritesLogs {
         }
     }
 
-    void createOptimizer() {
-        this.addStep(new SimpleOptimizerStep("Constant fold",
+    void createOptimizer(int level) {
+        this.addStep(new SimpleOptimizerStep("Constant fold", 2,
                 CoreRules.COERCE_INPUTS,
                 CoreRules.FILTER_REDUCE_EXPRESSIONS,
                 CoreRules.PROJECT_REDUCE_EXPRESSIONS,
@@ -141,7 +138,7 @@ public class CalciteOptimizer implements IWritesLogs {
                 // https://github.com/feldera/feldera/issues/217
                 // CoreRules.PROJECT_VALUES_MERGE
                 CoreRules.AGGREGATE_VALUES));
-        this.addStep(new SimpleOptimizerStep("Remove empty relations",
+        this.addStep(new SimpleOptimizerStep("Remove empty relations", 0,
                 PruneEmptyRules.UNION_INSTANCE,
                 PruneEmptyRules.INTERSECT_INSTANCE,
                 PruneEmptyRules.MINUS_INSTANCE,
@@ -153,18 +150,18 @@ public class CalciteOptimizer implements IWritesLogs {
                 PruneEmptyRules.JOIN_RIGHT_INSTANCE,
                 PruneEmptyRules.SORT_FETCH_ZERO_INSTANCE
         ));
-        this.addStep(new SimpleOptimizerStep("Expand windows",
+        this.addStep(new SimpleOptimizerStep("Expand windows", 0,
                 CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
         ));
-        this.addStep(new SimpleOptimizerStep("Isolate DISTINCT aggregates",
+        this.addStep(new SimpleOptimizerStep("Isolate DISTINCT aggregates", 0,
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN,
                 // Rule is unsound https://issues.apache.org/jira/browse/CALCITE-6403
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES));
 
-        this.addStep(new BaseOptimizerStep("Join order") {
+        this.addStep(new BaseOptimizerStep("Join order", level) {
             @Override
-            HepProgram getProgram(RelNode node) {
-                this.addRules(
+            HepProgram getProgram(RelNode node, int level) {
+                this.addRules(level,
                         CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
                         // TODO: Rule is unsound
@@ -177,7 +174,7 @@ public class CalciteOptimizer implements IWritesLogs {
                 // Bushy join optimization fails when the query contains outer joins.
                 boolean hasOuterJoins = (finder.outerJoinCount > 0) || (finder.joinCount < 3);
                 if (!hasOuterJoins) {
-                    this.addRules(
+                    this.addRules(level,
                             CoreRules.JOIN_TO_MULTI_JOIN,
                             CoreRules.PROJECT_MULTI_JOIN_MERGE,
                             CoreRules.MULTI_JOIN_OPTIMIZE_BUSHY
@@ -189,7 +186,7 @@ public class CalciteOptimizer implements IWritesLogs {
         });
 
         SimpleOptimizerStep merge = new SimpleOptimizerStep(
-                "Merge identical operations",
+                "Merge identical operations", 0,
                 CoreRules.PROJECT_MERGE,
                 CoreRules.MINUS_MERGE,
                 CoreRules.UNION_MERGE,
@@ -197,7 +194,7 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.INTERSECT_MERGE);
         // this.addStep(merge); -- messes up the shape of uncollect
         this.addStep(new SimpleOptimizerStep(
-                "Move projections",
+                "Move projections", 2,
                 CoreRules.PROJECT_CORRELATE_TRANSPOSE,
                 CoreRules.PROJECT_WINDOW_TRANSPOSE,
                 CoreRules.PROJECT_SET_OP_TRANSPOSE,
@@ -206,7 +203,7 @@ public class CalciteOptimizer implements IWritesLogs {
                 // CoreRules.PROJECT_JOIN_TRANSPOSE
         ));
         this.addStep(merge);
-        this.addStep(new SimpleOptimizerStep("Remove dead code",
+        this.addStep(new SimpleOptimizerStep("Remove dead code", 0,
                 CoreRules.AGGREGATE_REMOVE,
                 CoreRules.UNION_REMOVE,
                 CoreRules.PROJECT_REMOVE,

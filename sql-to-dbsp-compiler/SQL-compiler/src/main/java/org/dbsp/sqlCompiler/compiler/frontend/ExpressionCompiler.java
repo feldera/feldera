@@ -812,10 +812,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     throw new UnimplementedException("Expected only 2 operands", node);
                 DBSPExpression left = ops.get(0);
                 DBSPExpression right = ops.get(1);
-                String functionName = "make_geopoint" + type.nullableSuffix() +
+                String functionName = "make_geopoint" +
                         "_" + left.getType().baseTypeWithSuffix() +
                         "_" + right.getType().baseTypeWithSuffix();
-                return new DBSPApplyExpression(node, functionName, type, left, right);
+                boolean resultIsNull = left.getType().mayBeNull || right.getType().mayBeNull;
+                return new DBSPApplyExpression(node, functionName, type.setMayBeNull(resultIsNull), left, right)
+                        .cast(type);
             }
             case OTHER_FUNCTION: {
                 String opName = call.op.getName().toLowerCase();

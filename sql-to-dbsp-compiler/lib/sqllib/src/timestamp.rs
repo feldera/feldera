@@ -455,7 +455,8 @@ pub fn extract_millisecond_Timestamp(value: Timestamp) -> i64 {
 
 pub fn extract_microsecond_Timestamp(value: Timestamp) -> i64 {
     let date = value.to_dateTime();
-    (date.second() * 1_000_000 + date.timestamp_subsec_micros()).into()
+    // This is now what you expect due to CALCITE-5919
+    (date.second() * 1_000_000 + date.timestamp_subsec_millis() * 1000).into()
 }
 
 pub fn extract_second_Timestamp(value: Timestamp) -> i64 {
@@ -1019,10 +1020,7 @@ const BILLION: u64 = 1_000_000_000;
 
 impl Time {
     pub const fn new(nanoseconds: u64) -> Self {
-        // Calcite cannot represent precisions higher than milliseconds
-        Self {
-            nanoseconds: (nanoseconds / 1_000_000) * 1_000_000,
-        }
+        Self { nanoseconds }
     }
 
     pub fn nanoseconds(&self) -> u64 {
@@ -1160,7 +1158,8 @@ pub fn extract_millisecond_Time(value: Time) -> i64 {
 
 pub fn extract_microsecond_Time(value: Time) -> i64 {
     let time = value.to_time();
-    (time.second() * 1_000_000 + time.nanosecond() / 1000).into()
+    // not what you expect due to CALCITE-5919
+    (time.second() * 1_000_000 + (time.nanosecond() / 1000000) * 1000).into()
 }
 
 pub fn extract_second_Time(value: Time) -> i64 {

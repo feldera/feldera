@@ -41,32 +41,32 @@ public class NexmarkTest extends StreamingTestBase {
     static final String[] tables = {
             """
 CREATE TABLE person (
-    id BIGINT,
+    id BIGINT NOT NULL PRIMARY KEY,
     name VARCHAR,
     emailAddress VARCHAR,
     creditCard VARCHAR,
     city VARCHAR,
     state VARCHAR,
-    date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
+    date_time TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
     extra  VARCHAR
 )""",
             """
 CREATE TABLE auction (
-    id  BIGINT,
+    id  BIGINT NOT NULL PRIMARY KEY,
     itemName  VARCHAR,
     description  VARCHAR,
     initialBid  BIGINT,
     reserve  BIGINT,
     date_time  TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
     expires  TIMESTAMP(3),
-    seller  BIGINT,
+    seller  BIGINT FOREIGN KEY REFERENCES person(id),
     category  BIGINT,
     extra  VARCHAR
 )""",
             """
 CREATE TABLE bid (
-    auction  BIGINT,
-    bidder  BIGINT,
+    auction  BIGINT FOREIGN KEY REFERENCES auction(id),
+    bidder  BIGINT NOT NULL PRIMARY KEY,
     price  BIGINT,
     channel  VARCHAR,
     url  VARCHAR,
@@ -805,6 +805,15 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
                 """
  auction | bidder | price | date_time | extra | date | time | weight
 ---------------------------------------------------------------------""");
+    }
+
+    @Test
+    public void q15test() {
+        // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
+        this.createTest(15, "",
+                """
+ day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------""");
     }
 
     @Test
