@@ -3,6 +3,7 @@
 
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
+use crate::db::types::program::generate_pipeline_config;
 use crate::db_notifier::{DbNotification, Operation};
 use crate::error::ManagerError;
 use crate::pipeline_automata::{fetch_binary_ref, PipelineAutomaton};
@@ -10,7 +11,7 @@ use crate::pipeline_automata::{PipelineExecutionDesc, PipelineExecutor};
 use crate::{config::LocalRunnerConfig, runner::RunnerError};
 use async_trait::async_trait;
 use log::trace;
-use pipeline_types::config::{generate_pipeline_config, StorageCacheConfig, StorageConfig};
+use pipeline_types::config::{StorageCacheConfig, StorageConfig};
 use std::{collections::BTreeMap, process::Stdio, sync::Arc};
 use tokio::process::{Child, Command};
 use tokio::sync::Notify;
@@ -56,7 +57,7 @@ impl PipelineExecutor for ProcessRunner {
         pipeline: &ExtendedPipelineDescr,
     ) -> Result<PipelineExecutionDesc, ManagerError> {
         let mut deployment_config = generate_pipeline_config(
-            pipeline.id.0,
+            pipeline.id,
             &pipeline.runtime_config,
             &pipeline.program_info.clone().unwrap().input_connectors, // TODO: unwrap
             &pipeline.program_info.clone().unwrap().output_connectors, // TODO: unwrap

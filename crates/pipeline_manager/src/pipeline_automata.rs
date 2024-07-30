@@ -3,6 +3,7 @@ use crate::db::error::DBError;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId, PipelineStatus};
+use crate::db::types::program::generate_pipeline_config;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::runner::RunnerApi;
@@ -11,7 +12,7 @@ use actix_web::http::{Method, StatusCode};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use log::{debug, error, info};
-use pipeline_types::config::{generate_pipeline_config, PipelineConfig};
+use pipeline_types::config::PipelineConfig;
 use pipeline_types::error::ErrorResponse;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -56,7 +57,7 @@ pub trait PipelineExecutor: Sync + Send {
         pipeline: &ExtendedPipelineDescr,
     ) -> Result<PipelineExecutionDesc, ManagerError> {
         let deployment_config = generate_pipeline_config(
-            pipeline.id.0,
+            pipeline.id,
             &pipeline.runtime_config,
             &pipeline.program_info.clone().unwrap().input_connectors, // TODO: unwrap
             &pipeline.program_info.clone().unwrap().output_connectors, // TODO: unwrap
@@ -755,12 +756,12 @@ mod test {
     use crate::db::storage_postgres::StoragePostgres;
     use crate::db::types::common::Version;
     use crate::db::types::pipeline::{PipelineDescr, PipelineId, PipelineStatus};
-    use crate::db::types::program::{CompilationProfile, ProgramConfig};
+    use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramInfo};
     use crate::error::ManagerError;
     use crate::logging;
     use crate::pipeline_automata::PipelineAutomaton;
     use async_trait::async_trait;
-    use pipeline_types::config::{ProgramInfo, RuntimeConfig};
+    use pipeline_types::config::RuntimeConfig;
     use pipeline_types::program_schema::ProgramSchema;
     use std::sync::Arc;
     use tokio::sync::{Mutex, Notify};
