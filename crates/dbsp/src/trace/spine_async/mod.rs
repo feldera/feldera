@@ -1,4 +1,10 @@
-//! Implementation of a trace which merges batches in the background.
+//! Implementation of a [`Trace`] which merges batches in the background.
+//!
+//! This is a "spine", a [`Trace`] that internally consists of a vector of
+//! batches. Inserting a new batch appends to the vector, and iterating or
+//! searching a spine iterates or searches all of the batches in the vector.
+//! The cost of these operations grows with the number of batches in the vector,
+//! so it is beneficial to reduce the number by merging batches.
 
 use crate::{
     circuit::metadata::{MetaItem, OperatorMeta},
@@ -254,6 +260,57 @@ where
 }
 
 /// A fully asynchronous merger.
+///
+/// Merging has two benefits:
+///
+/// 1. To make iteration and searching cheaper because we have fewer batches to
+///    iterate and search in our CursorLists.
+///
+/// 2. In some cases only, to reduce the total amount of data, because weights
+///    summarize multiple items or cancel each other out or because filters drop
+///    data.
+///
+/// We only get these benefits when we complete a merge. An ongoing but
+/// incomplete merge only has a cost (the CPU we invested in it, plus memory or
+/// storage), with no benefits. Therefore, it is to our benefit to both complete
+/// as many merges as possible and to have as few ongoing merges as possible.
+///
+/// Since the smallest merges are cheapest, one might conclude that we should
+/// only do one merge at a time and that that should be the two smallest
+/// batches. In a static scenario, that would indeed be the right choice. But we
+/// tend to be getting a new smallest batch on every step. With that, the
+/// strategy of always doing the smallest merge piles up larger batches that
+/// never get merged. For example, suppose that we add a new batch with size 1
+/// in every step, we start merging the smallest runs whenever we first a merge,
+/// and that a merge takes two steps. Then we end up with something like this,
+/// where each line is a step that adds a new batch of size 1,` ()` designates
+/// that batches are being merged, and `->` shows that a merge was finished or
+/// started within the step:
+///
+/// ```text
+/// 1
+/// 1 1 -> (1 1)
+/// 1 (1 1)
+/// 1 1 (1 1) -> 1 1 2 -> 2 (1 1)
+/// 1 2 (1 1)
+/// 1 1 2 (1 1) -> 1 1 2 2 -> 2 2 (1 1)
+/// 1 2 2 (1 1)
+/// 1 1 2 2 (1 1) -> 1 1 2 2 2 -> 2 2 2 (1 1)
+/// ````
+///
+/// The result is that we pile up runs that are slightly longer than the
+/// shortest and they never get merged.
+///
+/// So, we still want to complete as many merges as possible and to have as few
+/// ongoing merges as possible, but "as few ongoing merges as possible" needs to
+/// be more than one and needs to include merges that are bigger than the
+/// smallest possible merge.
+///
+/// The design of this merger does both. We divide batches into categories based
+/// on their "level", which is roughly the base-10 log of their size (see
+/// [Spine::size_to_level]). When a level contains multiple batches, we merge
+/// them without consideration for size. The result of a merge might be in the
+/// next higher level, ensuring that larger merges eventually happen.
 struct AsyncMerger<B>
 where
     B: Batch,
