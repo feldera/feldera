@@ -4,25 +4,32 @@
   import PipelineTabControl from './PipelineTabControl.svelte'
   import type { Snippet } from 'svelte'
   import { writableNewPipeline } from '$lib/compositions/useNewPipeline'
+  import { base } from '$app/paths'
 
   let {
     new: _new,
-    tab,
-    currentTab,
     text,
-    renamePipelineTab,
+    onRenamePipeline,
     close
   } = $props<{
     new: string
-    tab: PipelineTab
-    currentTab: PipelineTab
     text: Snippet
     close: { href: string; onclick: () => void } | undefined
-    renamePipelineTab: (oldTab: PipelineTab, newTab: PipelineTab) => void
+    onRenamePipeline?: (oldTab: PipelineTab, newTab: PipelineTab) => void
   }>()
 
-  let store = writablePipelineName(writableNewPipeline(), renamePipelineTab)
+  let store = writablePipelineName(writableNewPipeline(), onRenamePipeline)
+  $effect(() => {
+    if (!$store) {
+      return
+    }
+    const currentUrl = window.location.pathname
+    const newUrl = `${base}/pipelines/${$store}/`
+    if (newUrl === currentUrl) {
+      return
+    }
+    window.location.replace(newUrl)
+  })
 </script>
 
-<PipelineTabControl {tab} {currentTab} href={undefined} {text} bind:value={$store} {close}
-></PipelineTabControl>
+<PipelineTabControl {text} bind:value={$store} {close}></PipelineTabControl>

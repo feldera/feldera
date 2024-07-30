@@ -4,9 +4,15 @@
   import MonacoEditor, { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import InteractionsPanel from '$lib/components/pipelines/editor/InteractionsPanel.svelte'
-  import type { Readable, Writable, WritableLoadable } from '@square/svelte-store'
+  import {
+    asyncWritable,
+    get,
+    type Readable,
+    type Writable,
+    type WritableLoadable
+  } from '@square/svelte-store'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import { useDebounce } from 'runed'
+  import { Store, useDebounce } from 'runed'
   import PipelineEditorStatusBar from './PipelineEditorStatusBar.svelte'
   import PipelineStatus from '$lib/components/pipelines/list/Status.svelte'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
@@ -17,23 +23,47 @@
   import { editor } from 'monaco-editor'
   import { extractSQLCompilerErrorMarkers } from '$lib/functions/pipelines/monaco'
   import { page } from '$app/stores'
+  import type {
+    PipelineDescr,
+    PipelineStatus as PipelineStatusType
+  } from '$lib/services/pipelineManager'
+  import { isPipelineIdle } from '$lib/functions/pipelines/status'
+  import { nonNull } from '$lib/functions/common/function'
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
   const {
-    pipelineName,
-    pipelineCodeStore,
+    pipeline,
+    status,
+    reloadStatus,
     errors
   }: {
-    pipelineName?: Readable<string>
-    pipelineCodeStore: WritableLoadable<string>
+    pipeline: WritableLoadable<PipelineDescr>
+    status: PipelineStatusType | undefined
+    reloadStatus?: () => void
     errors?: Readable<SystemError[]>
   } = $props()
 
-  const decoupledCode = asyncDecoupled(
-    pipelineCodeStore,
+  const pipelineCodeStore = asyncWritable(
+    pipeline,
+    (pipeline) => pipeline.program_code,
+    async (newCode, pipeline, oldCode) => {
+      if (!pipeline) {
+        return oldCode
+      }
+      $pipeline = {
+        ...pipeline,
+        program_code: newCode
+      }
+      return newCode
+    },
+    { initial: get(pipeline).program_code }
+  )
+
+  const decoupledCode = asyncDecoupled(pipelineCodeStore, () =>
     autoSavePipeline.value ? 1000 : 'decoupled'
   )
+
   const changedPipelines = useChangedPipelines()
   $effect(() => {
     autoSavePipeline.value ? decoupledCode.debounce(1000) : decoupledCode.decouple()
@@ -45,22 +75,22 @@
     decoupledCode.pull()
   })
   $effect(() => {
-    if (!$pipelineName) {
+    if (!$pipeline.name) {
       return
     }
     decoupledCode.downstreamChanged
-      ? changedPipelines.add($pipelineName)
-      : changedPipelines.remove($pipelineName)
+      ? changedPipelines.add($pipeline.name)
+      : changedPipelines.remove($pipeline.name)
   })
 
   {
-    let oldPipelineName = $state($pipelineName)
+    let oldPipelineName = $state($pipeline.name)
     $effect(() => {
-      if ($pipelineName === oldPipelineName) {
+      if ($pipeline.name === oldPipelineName) {
         return
       }
       changedPipelines.remove(oldPipelineName || '')
-      oldPipelineName = $pipelineName
+      oldPipelineName = $pipeline.name
     })
   }
   const mode = useDarkMode()
@@ -79,66 +109,63 @@
       window.location.hash = ''
     }, 50)
   })
+  let editDisabled = $derived(nonNull(status) && !isPipelineIdle(status))
 </script>
 
-<div class="h-full">
+<div class="h-full w-full">
   <PaneGroup direction="vertical" class="!overflow-visible">
-    <Pane defaultSize={50} minSize={20} class="!overflow-visible">
-      <PaneGroup
-        direction="horizontal"
-        autoSaveId="layout/pipelines/vertical/pos"
-        class="!overflow-visible"
-      >
-        <Pane defaultSize={20} minSize={20}>
-          <div class="mr-1 bg-white dark:bg-black">List of connectors</div>
-        </Pane>
-        <PaneResizer class="w-4" />
-        <Pane defaultSize={80} minSize={50} class="flex flex-col-reverse !overflow-visible">
-          <div class="flex flex-nowrap items-center gap-2 pr-2">
-            <PipelineEditorStatusBar downstreamChanged={decoupledCode.downstreamChanged}
-            ></PipelineEditorStatusBar>
-            {#if $pipelineName}
-              <PipelineStatus class="ml-auto" pipelineName={$pipelineName}></PipelineStatus>
-              <PipelineActions pipelineName={$pipelineName}></PipelineActions>
-            {/if}
-          </div>
-          <div class="relative h-full w-full">
-            <div class="absolute h-full w-full">
-              <MonacoEditor
-                markers={$errors ? { sql: extractSQLCompilerErrorMarkers($errors) } : undefined}
-                on:ready={(x) => {
-                  x.detail.onKeyDown((e) => {
-                    if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
-                      decoupledCode.push()
-                      e.preventDefault()
-                    }
-                  })
-                }}
-                bind:editor={editorRef}
-                bind:value={$decoupledCode}
-                options={{
-                  theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
-                  automaticLayout: true,
-                  lineNumbersMinChars: 3,
-                  ...isMonacoEditorDisabled(false),
-                  overviewRulerLanes: 0,
-                  hideCursorInOverviewRuler: true,
-                  overviewRulerBorder: false,
-                  scrollbar: {
-                    vertical: 'visible'
-                  },
-                  language: 'sql'
-                }}
-              />
-            </div>
-          </div>
-        </Pane>
-      </PaneGroup>
+    <Pane defaultSize={60} minSize={15} class="flex flex-col-reverse !overflow-visible">
+      <div class="flex flex-nowrap items-center gap-8 pr-2">
+        <PipelineEditorStatusBar
+          downstreamChanged={decoupledCode.downstreamChanged}
+          saveCode={decoupledCode.push}
+        ></PipelineEditorStatusBar>
+        {#if status}
+          <PipelineStatus class="ml-auto h-full w-36 text-[1rem] " {status}></PipelineStatus>
+          <PipelineActions
+            name={$pipeline.name}
+            {status}
+            {reloadStatus}
+            pipelineBusy={editDisabled}
+            unsavedChanges={decoupledCode.downstreamChanged}
+          ></PipelineActions>
+        {/if}
+      </div>
+      <div class="relative h-full w-full">
+        <div class="absolute h-full w-full" class:opacity-50={editDisabled}>
+          <MonacoEditor
+            markers={$errors ? { sql: extractSQLCompilerErrorMarkers($errors) } : undefined}
+            on:ready={(x) => {
+              x.detail.onKeyDown((e) => {
+                if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
+                  decoupledCode.push()
+                  e.preventDefault()
+                }
+              })
+            }}
+            bind:editor={editorRef}
+            bind:value={$decoupledCode}
+            options={{
+              theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
+              automaticLayout: true,
+              lineNumbersMinChars: 3,
+              ...isMonacoEditorDisabled(editDisabled),
+              overviewRulerLanes: 0,
+              hideCursorInOverviewRuler: true,
+              overviewRulerBorder: false,
+              scrollbar: {
+                vertical: 'visible'
+              },
+              language: 'sql'
+            }}
+          />
+        </div>
+      </div>
     </Pane>
-    <PaneResizer class="h-4" />
-    <Pane defaultSize={50} minSize={30} class="!overflow-visible">
-      {#if $pipelineName}
-        <InteractionsPanel pipelineName={$pipelineName}></InteractionsPanel>
+    <PaneResizer class="h-2 bg-surface-100-900" />
+    <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
+      {#if $pipeline.name}
+        <InteractionsPanel pipelineName={$pipeline.name}></InteractionsPanel>
       {/if}
     </Pane>
   </PaneGroup>

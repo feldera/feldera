@@ -6,17 +6,11 @@
   import { nonNull } from '$lib/functions/common/function'
 
   let {
-    tab,
-    currentTab,
-    href,
     text,
     value = $bindable(),
     close,
     tabContentChanged
   }: {
-    tab: PipelineTab | 'pipelines'
-    currentTab: PipelineTab
-    href: string | undefined
     text: Snippet
     value: string | undefined
     close: { href: string; onclick: () => void } | undefined
@@ -25,23 +19,15 @@
 </script>
 
 <div class="relative">
-  <a {href}>
-    <Tabs.Control
-      group={JSON.stringify(tab)}
-      name={JSON.stringify(currentTab)}
-      contentClasses="group-hover:preset-tonal-surface"
-    >
-      <div class="mr-4">
-        {#if nonNull(value)}
-          <DoubleClickInput bind:value>
-            {@render text()}
-          </DoubleClickInput>
-        {:else}
-          {@render text()}
-        {/if}
-      </div>
-    </Tabs.Control>
-  </a>
+  <div class="mr-5">
+    {#if nonNull(value)}
+      <DoubleClickInput bind:value class="input -my-2 -ml-3">
+        {@render text()}
+      </DoubleClickInput>
+    {:else}
+      {@render text()}
+    {/if}
+  </div>
   {#if close}
     <a
       {...close}
@@ -57,6 +43,6 @@
       {/if}
     </a>
   {:else if tabContentChanged}
-    <div class="bx bxs-circle absolute right-3 top-3 text-xs text-surface-600-400"></div>
+    <div class="bx bxs-circle absolute right-0 top-1 text-xs text-surface-600-400"></div>
   {/if}
 </div>
