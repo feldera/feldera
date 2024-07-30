@@ -58,8 +58,7 @@
     <div class="flex flex-nowrap items-center gap-2 break-all">
       <a
         class=" transition-none duration-0"
-        href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
-      >
+        href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}>
         {pipeline.name}
       </a>
       <PipelineStatus class="ml-auto" {...pipeline}></PipelineStatus>
@@ -82,17 +81,15 @@
             description: '',
             program_code: ''
           })
-          goto(`${base}/pipelines/${name}`)
+          goto(`${base}/pipelines/${encodeURIComponent(name)}`)
           e.currentTarget.blur()
         }
       }}
       placeholder="+ create pipeline"
-      class="input placeholder-surface-700 outline-none bg-surface-50-950 dark:placeholder-surface-300"
-    />
+      class="input placeholder-surface-700 bg-surface-50-950 dark:placeholder-surface-300 outline-none" />
     {#if assistCreatingPipeline}
       <div
-        class="absolute top-8 text-nowrap rounded bg-white px-3 py-2 text-sm font-medium shadow-md text-surface-950-50 dark:bg-black"
-      >
+        class="text-surface-950-50 absolute top-8 text-nowrap rounded bg-white px-3 py-2 text-sm font-medium shadow-md dark:bg-black">
         Enter pipeline name and press Enter
       </div>
     {/if}

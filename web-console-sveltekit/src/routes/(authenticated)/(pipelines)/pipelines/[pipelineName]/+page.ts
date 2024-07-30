@@ -6,7 +6,7 @@ export const prerender = false
 
 export const load = async ({ params, route, url, fetch, parent }) => {
   await parent()
-  const preloadedPipeline = await getPipeline(params.pipelineName).catch(
+  const preloadedPipeline = await getPipeline(decodeURIComponent(params.pipelineName)).catch(
     (e) => goto(`${base}/`) as never
   )
   return {

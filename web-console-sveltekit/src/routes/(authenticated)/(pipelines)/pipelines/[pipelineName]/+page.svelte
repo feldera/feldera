@@ -15,7 +15,8 @@
 
   let { data } = $props()
 
-  let pipelineName = derived(page, (page) => decodeURI(page.params.pipelineName))
+  let pipelineName = derived(page, (page) => decodeURIComponent(page.params.pipelineName))
+
   {
     let openPipelines = useOpenPipelines()
     const addOpenedTab = (pipelineName: string) => {

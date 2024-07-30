@@ -71,7 +71,7 @@ export type PipelineThumb = ReturnType<typeof toPipelineThumb>
 export const getPipeline = async (pipeline_name: string): Promise<PipelineDescr> => {
   const { description, name, program_code, program_config, runtime_config } = await handled(
     _getPipeline
-  )({ path: { pipeline_name } })
+  )({ path: { pipeline_name: encodeURIComponent(pipeline_name) } })
   return {
     description,
     name,
@@ -84,7 +84,7 @@ export const getPipeline = async (pipeline_name: string): Promise<PipelineDescr>
 export const getExtendedPipeline = async (pipeline_name: string) => {
   const { program_status, deployment_status, deployment_error, ...pipeline } = await handled(
     _getPipeline
-  )({ path: { pipeline_name } })
+  )({ path: { pipeline_name: encodeURIComponent(pipeline_name) } })
   return {
     ...pipeline,
     status: consolidatePipelineStatus(program_status, deployment_status, deployment_error)
@@ -101,12 +101,12 @@ export const postPipeline = async (pipeline: PipelineDescr) => {
 /**
  * Pipeline should already exist
  */
-export const putPipeline = async (pipelineName: string, newPipeline: PipelineDescr) => {
-  await _putPipeline({ body: newPipeline, path: { pipeline_name: pipelineName } })
+export const putPipeline = async (pipeline_name: string, newPipeline: PipelineDescr) => {
+  await _putPipeline({ body: newPipeline, path: { pipeline_name: encodeURIComponent(pipeline_name) } })
 }
 
-export const patchPipeline = async (pipelineName: string, pipeline: PatchPipeline) => {
-  await _patchPipeline({ path: { pipeline_name: pipelineName }, body: pipeline })
+export const patchPipeline = async (pipeline_name: string, pipeline: PatchPipeline) => {
+  await _patchPipeline({ path: { pipeline_name: encodeURIComponent(pipeline_name) }, body: pipeline })
 }
 
 export const getPipelines = async (): Promise<PipelineThumb[]> => {
@@ -115,7 +115,7 @@ export const getPipelines = async (): Promise<PipelineThumb[]> => {
 }
 
 export const getPipelineStatus = async (pipeline_name: string) => {
-  const pipeline = await handled(_getPipeline)({ path: { pipeline_name } })
+  const pipeline = await handled(_getPipeline)({ path: { pipeline_name: encodeURIComponent(pipeline_name) } })
   return {
     status: consolidatePipelineStatus(
       pipeline.program_status,
@@ -128,7 +128,7 @@ export const getPipelineStatus = async (pipeline_name: string) => {
 export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>
 
 export const getPipelineStats = async (pipeline_name: string) => {
-  return handled(_getPipelineStats)({ path: { pipeline_name } }).then(
+  return handled(_getPipelineStats)({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(
     (status) => ({
       pipelineName: pipeline_name,
       status: status as ControllerStatus | null

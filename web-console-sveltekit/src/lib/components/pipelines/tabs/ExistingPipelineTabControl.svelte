@@ -30,10 +30,11 @@
       return
     }
     const currentUrl = window.location.pathname
-    const newUrl = `${base}/pipelines/${$store}/`
+    const newUrl = `${base}/pipelines/${encodeURIComponent($store)}/`
     if (newUrl === currentUrl) {
       return
     }
+    console.log('newUrl', newUrl, currentUrl)
     window.location.replace(newUrl)
   })
 </script>
