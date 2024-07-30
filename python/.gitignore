@@ -10,3 +10,4 @@ docs/feldera.rest.rst
 build
 feldera.egg-info
 UNKNOWN.egg-info
+.vscode
