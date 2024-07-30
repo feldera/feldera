@@ -2,10 +2,10 @@ use crate::db::error::DBError;
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineDescr, PipelineId};
-use crate::db::types::program::{ProgramConfig, SqlCompilerMessage};
+use crate::db::types::program::{ProgramConfig, ProgramInfo, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
 use async_trait::async_trait;
-use pipeline_types::config::{PipelineConfig, ProgramInfo, RuntimeConfig};
+use pipeline_types::config::{PipelineConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
 use uuid::Uuid;
 

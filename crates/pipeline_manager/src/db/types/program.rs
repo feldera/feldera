@@ -1,11 +1,21 @@
 use crate::db::error::DBError;
+use crate::db::types::pipeline::PipelineId;
 use clap::Parser;
 use log::error;
-use pipeline_types::config::ConnectorGenerationError;
+use pipeline_types::config::{
+    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
+    TransportConfig,
+};
+use pipeline_types::program_schema::ProgramSchema;
+use rand::distributions::Uniform;
+use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::str::FromStr;
 use std::string::ParseError;
+use thiserror::Error as ThisError;
 use utoipa::ToSchema;
 
 /// Enumeration of possible compilation profiles that can be passed to the Rust compiler
@@ -241,5 +251,256 @@ impl ProgramConfig {
 
     pub fn to_yaml(&self) -> String {
         serde_yaml::to_string(self).unwrap()
+    }
+}
+
+#[derive(ThisError, Serialize, Deserialize, Debug, ToSchema)]
+pub enum ConnectorGenerationError {
+    #[error("Property '{key}' does not exist")]
+    PropertyDoesNotExist { key: String },
+    #[error("Required property '{key}' is missing")]
+    PropertyMissing { key: String },
+    #[error("Property '{key}' has value '{value}' which is invalid: {reason}")]
+    InvalidPropertyValue {
+        key: String,
+        value: String,
+        reason: String,
+    },
+    #[error("Expected an input connector but got an output connector")]
+    ExpectedInputConnector,
+    #[error("Expected an output connector but got an input connector")]
+    ExpectedOutputConnector,
+    #[error("Encountered collision when using {{relation}}.{{connector_name}} as name: '{relation}.{connector_name}' is not unique")]
+    RelationConnectorNameCollision {
+        relation: String,
+        connector_name: String,
+    },
+    #[error(
+        "Encountered collision for connector name which should be unique in the relation: '{name}'"
+    )]
+    UniqueConnectorNameCollision { name: String },
+    #[error("Failed to generate a unique connector name")]
+    GeneratedUniqueConnectorNameFailed,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+struct NamedConnector {
+    pub name: Option<String>,
+
+    #[serde(flatten)]
+    pub config: ConnectorConfig,
+}
+
+/// Parses the properties to create a vector of connectors with optional name and configuration.
+fn parse_named_connectors(
+    properties: &BTreeMap<String, String>,
+) -> Result<Vec<NamedConnector>, ConnectorGenerationError> {
+    for property in properties.keys() {
+        if property != "connectors" && property != "materialized" {
+            return Err(ConnectorGenerationError::PropertyDoesNotExist {
+                key: property.to_string(),
+            });
+        }
+    }
+    match properties.get("connectors") {
+        Some(s) => serde_yaml::from_str::<Vec<NamedConnector>>(s).map_err(|e| {
+            ConnectorGenerationError::InvalidPropertyValue {
+                key: "connectors".to_string(),
+                value: s.clone(),
+                reason: format!("Deserialization failed: {e}"),
+            }
+        }),
+        None => Ok(vec![]),
+    }
+}
+
+/// Generates a random 10-character-long name.
+fn generate_random_name() -> String {
+    let chars = [
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+    ];
+    thread_rng()
+        .sample_iter(Uniform::from(0..16))
+        .take(10)
+        .map(|i| chars[i])
+        .collect()
+}
+
+/// Takes in a list of all connectors with (stream, optional given name scoped to stream, configuration).
+/// Replaces the optional given name (unique to stream scope) with a unique name (unique across all streams).
+/// Any optional given name will be named as {stream}.{name} -- this could technically lead to collisions.
+///
+/// Panics if:
+/// - Optional given unique naming leads to collisions
+/// - Random name generation fails to generate a unique name within a certain number of tries
+fn convert_connectors_with_unique_names(
+    connectors: Vec<(String, Option<String>, ConnectorConfig)>,
+) -> Result<Vec<(String, String, ConnectorConfig)>, ConnectorGenerationError> {
+    // Give connectors that have a given name already their unique name
+    let mut unique_names = vec![];
+    for (stream, connector_name, _) in &connectors {
+        if let Some(name) = connector_name {
+            let unique_name = format!("{stream}.{name}");
+            if unique_names.contains(&Some(unique_name.clone())) {
+                return Err(ConnectorGenerationError::RelationConnectorNameCollision {
+                    relation: stream.clone(),
+                    connector_name: unique_name.clone(),
+                });
+            }
+            unique_names.push(Some(unique_name));
+        } else {
+            unique_names.push(None);
+        }
+    }
+
+    // For the connectors without a name, generate one
+    let mut result = vec![];
+    for i in 0..unique_names.len() {
+        let stream = connectors[i].0.clone();
+        if unique_names[i].is_none() {
+            // Try several times to generate a unique name which is not extremely long
+            let mut found = None;
+            for _retry in 0..20 {
+                let unique_name = format!("{}.{}", &stream, generate_random_name());
+                if !unique_names.contains(&Some(unique_name.clone())) {
+                    found = Some(unique_name);
+                    break;
+                }
+            }
+
+            // It is possible we failed to find a unique name
+            match found {
+                None => {
+                    return Err(ConnectorGenerationError::GeneratedUniqueConnectorNameFailed);
+                }
+                Some(unique_name) => {
+                    unique_names[i] = Some(unique_name.clone());
+                }
+            }
+        }
+        let connector_config = connectors[i].2.clone();
+        result.push((
+            stream,
+            unique_names[i].as_ref().unwrap().clone(),
+            connector_config,
+        ))
+    }
+    Ok(result)
+}
+
+/// Program information which includes schema, input connectors and output connectors.
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub struct ProgramInfo {
+    /// Schema of the compiled SQL program.
+    pub schema: ProgramSchema,
+
+    /// Input connectors derived from the schema.
+    pub input_connectors: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+
+    /// Output connectors derived from the schema.
+    pub output_connectors: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+}
+
+impl ProgramInfo {
+    pub fn from_yaml(s: &str) -> Self {
+        serde_yaml::from_str(s).unwrap()
+    }
+
+    pub fn to_yaml(&self) -> String {
+        serde_yaml::to_string(self).unwrap()
+    }
+}
+
+/// Generates the program info using the program schema.
+/// The info includes the schema and the input/output connectors derived from it.
+pub fn generate_program_info_from_schema(
+    program_schema: ProgramSchema,
+) -> Result<ProgramInfo, ConnectorGenerationError> {
+    // Input connectors
+    let mut input_connectors = vec![];
+    for input_relation in &program_schema.inputs {
+        for connector in parse_named_connectors(&input_relation.properties)? {
+            match connector.config.transport {
+                TransportConfig::FileInput(_)
+                | TransportConfig::KafkaInput(_)
+                | TransportConfig::UrlInput(_)
+                | TransportConfig::S3Input(_)
+                | TransportConfig::DeltaTableInput(_) => {}
+                _ => {
+                    return Err(ConnectorGenerationError::ExpectedInputConnector);
+                }
+            }
+            input_connectors.push((input_relation.name(), connector.name, connector.config));
+        }
+    }
+
+    // Convert input connectors to ones with unique names which are turned into endpoints
+    let mut inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
+    for (stream, connector_unique_name, connector_config) in
+        convert_connectors_with_unique_names(input_connectors.clone())?
+    {
+        inputs.insert(
+            Cow::from(connector_unique_name),
+            InputEndpointConfig {
+                stream: Cow::from(stream),
+                connector_config,
+            },
+        );
+    }
+    assert_eq!(inputs.len(), input_connectors.len());
+
+    // Output connectors
+    let mut output_connectors = vec![];
+    for output_relation in &program_schema.outputs {
+        for connector in parse_named_connectors(&output_relation.properties)? {
+            match connector.config.transport {
+                TransportConfig::FileOutput(_)
+                | TransportConfig::KafkaOutput(_)
+                | TransportConfig::DeltaTableOutput(_) => {}
+                _ => {
+                    return Err(ConnectorGenerationError::ExpectedOutputConnector);
+                }
+            }
+            output_connectors.push((output_relation.name(), connector.name, connector.config));
+        }
+    }
+
+    // Convert output connectors to ones with unique names which are turned into endpoints
+    let mut outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig> = BTreeMap::new();
+    for (stream, connector_unique_name, connector_config) in
+        convert_connectors_with_unique_names(output_connectors.clone())?
+    {
+        outputs.insert(
+            Cow::from(connector_unique_name),
+            OutputEndpointConfig {
+                stream: Cow::from(stream),
+                query: Default::default(),
+                connector_config,
+            },
+        );
+    }
+    assert_eq!(outputs.len(), output_connectors.len());
+
+    Ok(ProgramInfo {
+        schema: program_schema,
+        input_connectors: inputs,
+        output_connectors: outputs,
+    })
+}
+
+/// Generates the pipeline configuration derived from the runtime configuration and the
+/// input/output connectors derived from the program schema.
+pub fn generate_pipeline_config(
+    pipeline_id: PipelineId,
+    runtime_config: &RuntimeConfig,
+    inputs: &BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+    outputs: &BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+) -> PipelineConfig {
+    PipelineConfig {
+        name: Some(format!("pipeline-{pipeline_id}")),
+        global: runtime_config.clone(),
+        storage_config: None, // Set by the runner based on global field
+        inputs: inputs.clone(),
+        outputs: outputs.clone(),
     }
 }
