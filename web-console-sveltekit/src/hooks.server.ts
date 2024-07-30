@@ -1,6 +1,9 @@
 import type { Handle } from '@sveltejs/kit'
 import { svelteAttr } from 'svelte-attr'
 
+import '$lib/compositions/setupHttpClient'
+
 export const handle: Handle = async ({ event, resolve }) => {
-  return svelteAttr(resolve(event))
+  const response = resolve(event)
+  return svelteAttr(response)
 }

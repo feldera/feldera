@@ -2,9 +2,8 @@
   import type { SystemError } from '$lib/compositions/health/systemErrors'
   import type { Loadable } from '@square/svelte-store'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
-  import JSONbig from 'true-json-bigint'
-  import { clipboard } from '@svelte-bin/clipboard'
-  import { fade, slide } from 'svelte/transition'
+  import ErrorTile from '$lib/components/health/ErrorTile.svelte'
+  import { slide } from 'svelte/transition'
 
   const { systemErrors, close }: { systemErrors: Loadable<SystemError[]>; close?: () => void } =
     $props()
@@ -47,26 +46,8 @@
             </div>
           {/snippet}
           {#snippet content()}
-            {@const text = JSONbig.stringify(systemError.cause.body, undefined, '\t')
-              .replaceAll('\\n', '\n')
-              .replaceAll('\\"', '"')}
-            <div transition:slide={{ duration: 150 }} class="">
-              <div class="text-sm">
-                {systemError.message}
-              </div>
-              <div class="relative">
-                <div
-                  class="m-0 max-h-48 overflow-x-auto whitespace-pre p-2 pt-6 font-mono text-sm bg-surface-50-950"
-                >
-                  {text}
-                </div>
-                <button
-                  class="btn-icon absolute right-4 top-2 text-[20px] preset-tonal-surface"
-                  use:clipboard={text}
-                >
-                  <div class="bx bx-copy"></div>
-                </button>
-              </div>
+            <div transition:slide={{ duration: 150 }}>
+              <ErrorTile {systemError}></ErrorTile>
             </div>
           {/snippet}
         </InlineDropdown>

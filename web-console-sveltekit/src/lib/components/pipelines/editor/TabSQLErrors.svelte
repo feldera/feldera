@@ -3,7 +3,7 @@
   import { groupBy } from '$lib/functions/common/array'
   import { tuple } from '$lib/functions/common/tuple'
   import { asyncDerived, derived, readable, writable } from '@square/svelte-store'
-  import { Tooltip } from 'flowbite-svelte'
+  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
 
   let { pipelineName }: { pipelineName: string } = $props()
 
@@ -26,10 +26,10 @@
     {#each errors as error}
       <a
         href={error.cause.source}
-        class="block overflow-hidden text-ellipsis whitespace-nowrap pl-8"
+        class="relative overflow-hidden text-ellipsis whitespace-nowrap pl-8"
       >
         <span class="bx bx-x-circle text-error-500"></span>
-        {error.cause.body?.message ?? error.cause.body}
+        <span class="absolute">{error.cause.body?.message ?? error.cause.body}</span>
       </a>
       <Tooltip
         activeContent

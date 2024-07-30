@@ -1,12 +1,12 @@
 import { base } from '$app/paths'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 
-import type { VerticalNavItemsType } from '$lib/types/layout'
+import type { NavItem, NavLink } from '$lib/types/layout'
 
 // TODO: remove conditional Settings page link display
 // after more content is added to Settings page
 // so it is never empty
-export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavItemsType => {
+export const navItems = (props: { showSettings: boolean }): NavLink[] => {
   return [
     // {
     //   title: 'Home',
@@ -14,23 +14,23 @@ export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavI
     //   class: 'bx bx-home-circle',
     //   testid: 'button-vertical-nav-home'
     // },
+    // {
+    //   sectionTitle: 'Analytics'
+    // },
+    // {
+    //   title: 'Pipelines',
+    //   path: [`${base}/pipelines/`],
+    //   class: 'bx bx-git-repo-forked',
+    //   testid: 'button-vertical-nav-pipelines'
+    // },
     {
-      sectionTitle: 'Analytics'
-    },
-    {
-      title: 'Pipelines',
-      path: [`${base}/pipelines/`],
-      class: 'bx bx-git-repo-forked',
-      testid: 'button-vertical-nav-pipelines'
-    },
-    {
-      title: 'Demos',
-      path: `${base}/demos/`,
+      title: 'Examples',
+      path: `${base}/`,
       class: 'bx bx-rocket'
     },
-    {
-      sectionTitle: 'Platform'
-    },
+    // {
+    //   sectionTitle: 'Platform'
+    // },
     [
       props.showSettings
         ? [
@@ -49,23 +49,23 @@ export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavI
       openInNewTab: true,
       testid: 'button-vertical-nav-documentation'
     },
-    {
-      title: 'Swagger',
-      path: felderaEndpoint + '/swagger-ui/',
-      class: 'bx bx-code-curly',
-      openInNewTab: true,
-      testid: 'button-vertical-nav-swagger'
-    },
-    {
-      title: 'Email',
-      path: 'mailto:learnmore@feldera.com',
-      class: 'bx bx-envelope',
-      openInNewTab: true,
-      testid: 'button-vertical-nav-email'
-    },
+    // {
+    //   title: 'Swagger',
+    //   path: felderaEndpoint + '/swagger-ui/',
+    //   class: 'bx bx-code-curly',
+    //   openInNewTab: true,
+    //   testid: 'button-vertical-nav-swagger'
+    // },
+    // {
+    //   title: 'Email',
+    //   path: 'mailto:learnmore@feldera.com',
+    //   class: 'bx bx-envelope',
+    //   openInNewTab: true,
+    //   testid: 'button-vertical-nav-email'
+    // },
     {
       title: 'Discord',
-      path: 'https://felderacommunity.slack.com',
+      path: 'https://discord.com/invite/s6t5n9UzHE',
       class: 'font-brands fa-discord w-6  before:-ml-0.5',
       openInNewTab: true,
       testid: 'button-vertical-nav-discord'
@@ -77,5 +77,5 @@ export const verticalNavItems = (props: { showSettings: boolean }): VerticalNavI
       openInNewTab: true,
       testid: 'button-vertical-nav-slack'
     }
-  ].flat(2) as VerticalNavItemsType
+  ].flat(2)
 }
