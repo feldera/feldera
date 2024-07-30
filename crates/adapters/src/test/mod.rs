@@ -131,8 +131,8 @@ where
         name: Cow::from("json"),
         config: serde_yaml::to_value(JsonParserConfig {
             update_format: JsonUpdateFormat::Raw,
-            json_flavor: JsonFlavor::Default,
-            array: false,
+            json_flavor: JsonFlavor::Datagen,
+            array: true,
         })
         .unwrap(),
     };
