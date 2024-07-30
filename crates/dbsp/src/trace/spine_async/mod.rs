@@ -185,8 +185,8 @@ where
         }
     }
 
-    /// Add `batches` as an (initially) loose batch, which will be merged when
-    /// the merger thread has a chance (although it might not be awake).
+    /// Add `batch` as an (initially) loose batch, which will be merged when the
+    /// merger thread has a chance (although it might not be awake).
     ///
     /// Returns a copy of all of the batches (whether loose or being merged).
     fn add_batch_and_get_batches(&mut self, batch: Arc<B>) -> Vec<Arc<B>> {
