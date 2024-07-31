@@ -118,8 +118,8 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
             lower_bound: 0,
         };
 
-        result.keys.reserve(capacity);
-        result.diffs.reserve(capacity);
+        result.keys.reserve_exact(capacity);
+        result.diffs.reserve_exact(capacity);
 
         result
     }

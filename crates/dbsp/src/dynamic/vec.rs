@@ -91,6 +91,11 @@ pub trait Vector<T: DataTrait + ?Sized>: Data {
     /// Does nothing if capacity is already sufficient.
     fn reserve(&mut self, additional: usize);
 
+    /// Reserve capacity for exactly `additional` more elements.
+    ///
+    /// Does nothing if capacity is already sufficient.
+    fn reserve_exact(&mut self, additional: usize);
+
     /// Append values in the range `from..to` in `other` to `self`.
     fn extend_from_range(&mut self, other: &DynVec<T>, from: usize, to: usize);
 
@@ -324,6 +329,10 @@ where
 
     fn reserve(&mut self, reservation: usize) {
         LeanVec::reserve(self, reservation)
+    }
+
+    fn reserve_exact(&mut self, reservation: usize) {
+        LeanVec::reserve_exact(self, reservation)
     }
 
     fn extend_from_range(&mut self, other: &DynVec<Trait>, from: usize, to: usize) {
