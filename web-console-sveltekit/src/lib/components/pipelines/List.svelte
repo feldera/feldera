@@ -6,7 +6,7 @@
   import { page } from '$app/stores'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
 
-  let { pipelines }: { pipelines: PipelineThumb[] } = $props()
+  let { pipelines = $bindable() }: { pipelines: PipelineThumb[] } = $props()
 
   function clickOutsideFocus(element: HTMLElement, callbackFunction: () => void) {
     function onClick(event: MouseEvent) {
@@ -51,19 +51,31 @@
   })
 
   let createPipelineInputRef: HTMLElement
+
+  const createPipeline = async (pipelineName: string) => {
+    const newPipeline = await postPipeline({
+      name: pipelineName,
+      runtime_config: {},
+      program_config: {},
+      description: '',
+      program_code: ''
+    })
+    pipelines.push(newPipeline)
+    goto(`${base}/pipelines/${encodeURIComponent(pipelineName)}/`)
+  }
 </script>
 
-<div class="flex flex-col gap-4 p-4">
+<div class="flex flex-col gap-2 p-4">
   {#each pipelines as pipeline}
-    <div class="flex flex-nowrap items-center gap-2 break-all">
-      <a
-        class=" transition-none duration-0"
-        href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
-      >
+    <a
+      class="flex flex-nowrap items-center gap-2 break-all"
+      href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
+    >
+      <div class="w-full py-1 transition-none duration-0">
         {pipeline.name}
-      </a>
+      </div>
       <PipelineStatus class="ml-auto" {...pipeline}></PipelineStatus>
-    </div>
+    </a>
   {/each}
   <div class="relative">
     <input
@@ -74,27 +86,13 @@
       }}
       onkeydown={async (e) => {
         if (e.key === 'Enter') {
-          const name = e.currentTarget.value
-          await postPipeline({
-            name,
-            runtime_config: {},
-            program_config: {},
-            description: '',
-            program_code: ''
-          })
-          goto(`${base}/pipelines/${encodeURIComponent(name)}`)
+          await createPipeline(e.currentTarget.value)
           e.currentTarget.blur()
         }
       }}
-      placeholder="+ create pipeline"
+      placeholder="new pipeline name"
       class="input placeholder-surface-700 outline-none bg-surface-50-950 dark:placeholder-surface-300"
     />
-    {#if assistCreatingPipeline}
-      <div
-        class="absolute top-8 text-nowrap rounded bg-white px-3 py-2 text-sm font-medium shadow-md text-surface-950-50 dark:bg-black"
-      >
-        Enter pipeline name and press Enter
-      </div>
-    {/if}
+    <div class="py-2 text-surface-400-600">Press Enter to create</div>
   </div>
 </div>

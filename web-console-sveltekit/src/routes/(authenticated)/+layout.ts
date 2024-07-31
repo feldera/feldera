@@ -4,6 +4,7 @@ import { signIn } from '@auth/sveltekit/client'
 import { error } from '@sveltejs/kit'
 import { client } from '@hey-api/client-fetch'
 import { loadAuthConfig } from '$lib/compositions/auth'
+import { getPipelines } from '$lib/services/pipelineManager'
 
 // let accessToken: string | undefined
 // const authMiddleware = (request: Request) => {
@@ -19,7 +20,9 @@ export const load = async ({ parent }) => {
     await data.auth.login()
     error(401)
   }
-  return data
+  const pipelines = await getPipelines()
+  console.log('preloaded', pipelines)
+  return { ...data, preloaded: { pipelines } }
   //   if (auth.authDetails.enabled && !auth.session && !(await signIn(auth.authDetails.providerId))) {
   //     error(401)
   //   }

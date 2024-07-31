@@ -5,7 +5,9 @@
     $props()
   let show = $state(false)
   let onClose = () => {
-    show = false
+    setTimeout(() => {
+      show = false
+    })
   }
   let contentNode = $state<HTMLElement>()
   const onclick = (e: MouseEvent) => {
