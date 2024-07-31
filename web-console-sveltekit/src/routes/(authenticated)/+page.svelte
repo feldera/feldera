@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { goto, replaceState } from '$app/navigation'
+  import { goto } from '$app/navigation'
   import { base } from '$app/paths'
-  import { page } from '$app/stores'
+  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { postPipeline } from '$lib/services/pipelineManager'
 
   type Example = { name: string; title: string; description: string; code: string }
   const examples: Example[] = [
@@ -20,11 +21,34 @@
     .copyWithin(2, 1, 2)
     .copyWithin(3, 2, 3)
 
-  const createPipelineFromExample = (example: Example) => {}
+  const pipelines = usePipelineList()
+  const tryPipelineFromExample = async (example: Example) => {
+    if (!pipelines.pipelines.some((p) => p.name === example.name)) {
+      const newPipeline = await postPipeline({
+        name: example.name,
+        runtime_config: {},
+        program_config: {},
+        description: example.description,
+        program_code: example.code
+      })
+      pipelines.pipelines.push(newPipeline)
+    }
+    goto(`${base}/pipelines/${encodeURIComponent(example.name)}/`)
+  }
 </script>
 
-<div class="grid grid-cols-1 gap-8 p-8 sm:grid-cols-2 md:gap-16 md:p-16 lg:grid-cols-3">
-  <div class="card flex h-48 flex-col bg-white p-4 dark:bg-black">
+<div class="h5 px-8 py-8 font-normal md:px-16">
+  To start,
+  <button
+    class="btn mt-auto self-end text-sm preset-filled-primary-500"
+    onclick={() => goto('#new')}
+  >
+    CREATE NEW PIPELINE
+  </button>
+  and type away the SQL, or try running one of the examples:
+</div>
+<div class="grid grid-cols-1 gap-8 px-8 sm:grid-cols-2 md:gap-16 md:px-16 lg:grid-cols-3">
+  <!-- <div class="card flex h-48 flex-col bg-white p-4 dark:bg-black">
     <button
       class="btn mt-auto self-end text-sm preset-filled-primary-500"
       onclick={() => goto('#new')}
@@ -32,18 +56,18 @@
       CREATE PIPELINE
       <div class="bx bx-right-arrow-alt text-[24px]"></div>
     </button>
-  </div>
+  </div> -->
   {#each examples as example}
-    <button
-      onclick={() => createPipelineFromExample(example)}
-      class="card flex h-48 flex-col bg-white p-4 dark:bg-black"
-    >
+    <div class="card flex flex-col gap-2 bg-white p-4 dark:bg-black">
       <span class="h5 font-normal">{example.title}</span>
       <span class="text-left">{example.description}</span>
-      <div class="btn mt-auto self-end text-sm preset-filled-primary-500">
+      <button
+        onclick={() => tryPipelineFromExample(example)}
+        class="btn mt-auto self-end text-sm preset-filled-primary-500"
+      >
         TRY
         <div class="bx bx-right-arrow-alt text-[24px]"></div>
-      </div>
-    </button>
+      </button>
+    </div>
   {/each}
 </div>

@@ -1,17 +1,17 @@
-import type { PipelineDescr } from '$lib/services/pipelineManager'
-import { postPipeline, type ExtendedPipelineDescr } from '$lib/services/pipelineManager'
+import type { Pipeline } from '$lib/services/pipelineManager'
+import { postPipeline } from '$lib/services/pipelineManager'
 
 import { asyncWritable, get, persisted } from '@square/svelte-store'
 
-const emptyPipeline: PipelineDescr = {
+const emptyPipeline: Pipeline = {
   name: '',
   description: '',
-  runtime_config: {},
-  program_config: {},
-  program_code: ''
+  runtimeConfig: {},
+  programConfig: {},
+  programCode: ''
 }
 
-const persistedNewPipeline = persisted<PipelineDescr>(emptyPipeline, 'pipelines/new', {
+const persistedNewPipeline = persisted<Pipeline>(emptyPipeline, 'pipelines/new', {
   storageType: 'LOCAL_STORAGE'
 }) // localStore<NewPipelineRequest & {code: string}>('pipelines/new', {name: '', description: '', config: {}, code: '' }).value
 

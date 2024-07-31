@@ -24,11 +24,12 @@
   import { extractSQLCompilerErrorMarkers } from '$lib/functions/pipelines/monaco'
   import { page } from '$app/stores'
   import type {
-    PipelineDescr,
+    Pipeline,
     PipelineStatus as PipelineStatusType
   } from '$lib/services/pipelineManager'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
   import { nonNull } from '$lib/functions/common/function'
+  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
@@ -38,25 +39,25 @@
     reloadStatus,
     errors
   }: {
-    pipeline: WritableLoadable<PipelineDescr>
+    pipeline: WritableLoadable<Pipeline>
     status: { status: PipelineStatusType } | undefined
     reloadStatus?: () => void
     errors?: Readable<SystemError[]>
   } = $props()
   const pipelineCodeStore = asyncWritable(
     pipeline,
-    (pipeline) => pipeline.program_code,
+    (pipeline) => pipeline.programCode,
     async (newCode, pipeline, oldCode) => {
       if (!pipeline) {
         return oldCode
       }
       $pipeline = {
         ...pipeline,
-        program_code: newCode
+        programCode: newCode
       }
       return newCode
     },
-    { initial: get(pipeline).program_code }
+    { initial: get(pipeline).programCode }
   )
 
   const decoupledCode = asyncDecoupled(pipelineCodeStore, () =>
@@ -109,6 +110,8 @@
     }, 50)
   })
   let editDisabled = $derived(nonNull(status) && !isPipelineIdle(status.status))
+
+  const pipelines = usePipelineList()
 </script>
 
 <div class="h-full w-full">
@@ -126,6 +129,8 @@
             name={$pipeline.name}
             bind:status
             {reloadStatus}
+            onDeletePipeline={(pipelineName) =>
+              (pipelines.pipelines = pipelines.pipelines.filter((p) => p.name !== pipelineName))}
             pipelineBusy={editDisabled}
             unsavedChanges={decoupledCode.downstreamChanged}
           ></PipelineActions>
