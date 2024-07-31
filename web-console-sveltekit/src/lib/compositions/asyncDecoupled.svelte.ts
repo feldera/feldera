@@ -50,7 +50,6 @@ export const asyncDecoupled = <T>(store: WritableLoadable<T>, wait: () => number
       }
     },
     async set(value: T) {
-      console.log('asyncDecoupled set')
       state.set(value)
       downstreamChanged = true
       const wait = get(shouldWait).wait
@@ -74,7 +73,6 @@ export const asyncDecoupled = <T>(store: WritableLoadable<T>, wait: () => number
       downstreamChanged = false
     },
     push() {
-      console.log('asyncDecoupled push')
       store.set(get(state))
       upstreamChanged = false
       downstreamChanged = false
