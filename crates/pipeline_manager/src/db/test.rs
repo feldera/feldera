@@ -3,7 +3,7 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
-use crate::db::types::common::Version;
+use crate::db::types::common::{validate_name, Version};
 use crate::db::types::pipeline::{
     validate_deployment_desired_status_transition, validate_deployment_status_transition,
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
@@ -213,8 +213,12 @@ type ProgramInfoPropVal = ();
 
 /// Generates a limited pipeline name.
 fn map_val_to_limited_pipeline_name(val: PipelineNamePropVal) -> String {
-    let limited_val = val % 4;
-    format!("pipeline-{limited_val}")
+    let limited_val = val % 5;
+    if limited_val == 0 {
+        "".to_string() // An invalid pipeline name
+    } else {
+        format!("pipeline-{limited_val}")
+    }
 }
 
 /// Generates a limited runtime configuration.
@@ -266,7 +270,7 @@ fn map_val_to_limited_program_info(_val: ProgramInfoPropVal) -> ProgramInfo {
     }
 }
 
-/// Generates pipeline name limited to only 4 variants.
+/// Generates pipeline name limited to only 5 variants.
 /// This is prevent that only the "pipeline not found" is encountered.
 fn limited_pipeline_name() -> impl Strategy<Value = String> {
     any::<PipelineNamePropVal>().prop_map(map_val_to_limited_pipeline_name)
@@ -288,6 +292,11 @@ fn limited_pipeline_descr() -> impl Strategy<Value = PipelineDescr> {
         program_code: val.3,
         program_config: map_val_to_limited_program_config(val.4),
     })
+}
+
+/// Generates different optional pipeline names.
+fn limited_option_pipeline_name() -> impl Strategy<Value = Option<String>> {
+    any::<Option<PipelineNamePropVal>>().prop_map(|val| val.map(map_val_to_limited_pipeline_name))
 }
 
 /// Generates different optional runtime configurations.
@@ -1285,7 +1294,7 @@ enum StorageAction {
     UpdatePipeline(
         TenantId,
         #[proptest(strategy = "limited_pipeline_name()")] String,
-        Option<String>,
+        #[proptest(strategy = "limited_option_pipeline_name()")] Option<String>,
         Option<String>,
         #[proptest(strategy = "limited_option_runtime_config()")] Option<RuntimeConfig>,
         Option<String>,
@@ -1967,6 +1976,7 @@ impl Storage for Mutex<DbModel> {
         permissions: Vec<ApiPermission>,
     ) -> DBResult<()> {
         let mut s = self.lock().await;
+        validate_name(name)?;
         let mut hasher = sha::Sha256::new();
         hasher.update(key.as_bytes());
         let hash = openssl::base64::encode_block(&hasher.finish());
@@ -2056,6 +2066,8 @@ impl Storage for Mutex<DbModel> {
         pipeline: PipelineDescr,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut state = self.lock().await;
+
+        validate_name(&pipeline.name)?;
 
         // Constraint: UUID is unique
         if state.pipelines.keys().any(|(_, pid)| pid.0 == new_id) {
@@ -2150,6 +2162,10 @@ impl Storage for Mutex<DbModel> {
         program_code: &Option<String>,
         program_config: &Option<ProgramConfig>,
     ) -> Result<ExtendedPipelineDescr, DBError> {
+        if let Some(name) = name {
+            validate_name(name)?;
+        }
+
         // Fetch existing pipeline
         let mut pipeline = self.get_pipeline(tenant_id, original_name).await?;
 

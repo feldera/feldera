@@ -70,6 +70,7 @@ pub enum DBError {
         actual: u32,
     },
     DuplicateName, // When a database unique name constraint is violated
+    EmptyName,
     // Tenant-related errors
     UnknownTenant {
         tenant_id: TenantId,
@@ -344,6 +345,9 @@ impl Display for DBError {
             DBError::DuplicateName => {
                 write!(f, "An entity with this name already exists")
             }
+            DBError::EmptyName => {
+                write!(f, "Name cannot be be empty")
+            }
             DBError::UnknownTenant { tenant_id } => {
                 write!(f, "Unknown tenant id '{tenant_id}'")
             }
@@ -431,6 +435,7 @@ impl DetailedError for DBError {
             Self::DuplicateKey { .. } => Cow::from("DuplicateKey"),
             Self::MissingMigrations { .. } => Cow::from("MissingMigrations"),
             Self::DuplicateName => Cow::from("DuplicateName"),
+            Self::EmptyName => Cow::from("EmptyName"),
             Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
             Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
             Self::InvalidApiKey => Cow::from("InvalidApiKey"),
@@ -486,6 +491,7 @@ impl ResponseError for DBError {
             Self::DuplicateKey { .. } => StatusCode::INTERNAL_SERVER_ERROR, // This error should never bubble up till here
             Self::MissingMigrations { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::DuplicateName => StatusCode::CONFLICT,
+            Self::EmptyName => StatusCode::BAD_REQUEST,
             Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED, // TODO: should we report not found instead?
             Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
             Self::InvalidApiKey => StatusCode::UNAUTHORIZED,
