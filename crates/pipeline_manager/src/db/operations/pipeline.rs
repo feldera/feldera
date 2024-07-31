@@ -2,7 +2,7 @@ use crate::db::error::DBError;
 use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
-use crate::db::types::common::Version;
+use crate::db::types::common::{validate_name, Version};
 use crate::db::types::pipeline::{
     validate_deployment_desired_status_transition, validate_deployment_status_transition,
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
@@ -127,6 +127,7 @@ pub(crate) async fn new_pipeline(
     new_id: Uuid,
     pipeline: PipelineDescr,
 ) -> Result<(PipelineId, Version), DBError> {
+    validate_name(&pipeline.name)?;
     let stmt = txn
 
         .prepare_cached(
@@ -176,6 +177,10 @@ pub(crate) async fn update_pipeline(
     program_code: &Option<String>,
     program_config: &Option<ProgramConfig>,
 ) -> Result<Version, DBError> {
+    if let Some(name) = name {
+        validate_name(name)?;
+    }
+
     // Fetch current pipeline to decide how to update.
     // This will also return an error if the pipeline does not exist.
     let current = get_pipeline(txn, tenant_id, original_name).await?;
