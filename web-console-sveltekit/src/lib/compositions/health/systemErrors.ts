@@ -6,7 +6,6 @@ import {
   getPipeline,
   getPipelines,
   getPipelineStats,
-  type ExtendedPipelineDescr,
   type PipelineStatus,
   type PipelineThumb
 } from '$lib/services/pipelineManager'
@@ -53,11 +52,11 @@ const extractPipelineErrors = (pipeline: PipelineThumb) => {
             const fullPipeline = await getPipeline(pipeline.name)
             const programCode =
               'SQL:\n```\n' +
-              limitMessage(fullPipeline.program_code, 6600, '\n...Beginning of the code...') +
+              limitMessage(fullPipeline.programCode, 6600, '\n...Beginning of the code...') +
               '\n```'
             const pipelineConfig =
               'Pipelince config:\n```\n' +
-              JSONbig.stringify(pipeline.config, undefined, '\t') +
+              JSONbig.stringify(pipeline.runtimeConfig, undefined, '\t') +
               '\n```\n'
             return pipelineConfig + programCode
           })()
@@ -76,9 +75,7 @@ const programErrorReport = async (pipeline: { name: string }, message: string) =
       '```\n' + limitMessage(message, 1000, '\n...Beginning of the error...') + '\n```',
     '6-extra': await getPipeline(pipeline.name).then(
       (p) =>
-        'SQL:\n```\n' +
-        limitMessage(p.program_code, 7000, '\n...Beginning of the code...') +
-        '\n```'
+        'SQL:\n```\n' + limitMessage(p.programCode, 7000, '\n...Beginning of the code...') + '\n```'
     )
   }) as ReportDetails
 

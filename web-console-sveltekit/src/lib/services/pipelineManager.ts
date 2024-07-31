@@ -20,8 +20,8 @@ import {
   deleteApiKey as _deleteApiKey
 } from '$lib/services/manager'
 export type {
-  PipelineDescr,
-  ExtendedPipelineDescr,
+  // PipelineDescr,
+  // ExtendedPipelineDescr,
   SqlCompilerMessage,
   InputEndpointConfig,
   OutputEndpointConfig,
@@ -58,44 +58,69 @@ const toPipelineThumb = (pipeline: Omit<ExtendedPipelineDescr, 'program_code'>) 
   description: pipeline.description,
   runtimeConfig: pipeline.runtime_config,
   programConfig: pipeline.program_config,
-  config: pipeline.runtime_config,
   status: consolidatePipelineStatus(
     pipeline.program_status,
     pipeline.deployment_status,
+    pipeline.deployment_desired_status,
     pipeline.deployment_error
   )
 })
 
+const toPipeline = (pipeline: ExtendedPipelineDescr) => ({
+  name: pipeline.name,
+  description: pipeline.description,
+  runtimeConfig: pipeline.runtime_config,
+  programConfig: pipeline.program_config,
+  programCode: pipeline.program_code
+})
+
 export type PipelineThumb = ReturnType<typeof toPipelineThumb>
 
-export const getPipeline = async (pipeline_name: string): Promise<PipelineDescr> => {
-  const { description, name, program_code, program_config, runtime_config } = await handled(
-    _getPipeline
-  )({ path: { pipeline_name: encodeURIComponent(pipeline_name) } })
-  return {
-    description,
-    name,
-    program_code,
-    program_config,
-    runtime_config
-  }
+export type Pipeline = ReturnType<typeof toPipeline>
+
+export const getPipeline = async (pipeline_name: string) => {
+  return handled(_getPipeline)({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(
+    toPipeline
+  )
 }
 
-export const getExtendedPipeline = async (pipeline_name: string) => {
-  const { program_status, deployment_status, deployment_error, ...pipeline } = await handled(
-    _getPipeline
-  )({ path: { pipeline_name: encodeURIComponent(pipeline_name) } })
-  return {
-    ...pipeline,
-    status: consolidatePipelineStatus(program_status, deployment_status, deployment_error)
+const toExtendedPipeline = <
+  Pipeline extends {
+    program_status: ProgramStatus
+    deployment_status: _PipelineStatus
+    deployment_desired_status: _PipelineStatus
+    deployment_error?: ErrorResponse | null | undefined
   }
+>({
+  program_status,
+  deployment_status,
+  deployment_desired_status,
+  deployment_error,
+  ...pipeline
+}: Pipeline) => ({
+  ...pipeline,
+  status: consolidatePipelineStatus(
+    program_status,
+    deployment_status,
+    deployment_desired_status,
+    deployment_error
+  )
+})
+
+export const getExtendedPipeline = async (pipeline_name: string) => {
+  return handled(_getPipeline)({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(
+    toExtendedPipeline
+  )
 }
 
 /**
  * Fails if pipeline exists
  */
 export const postPipeline = async (pipeline: PipelineDescr) => {
-  return handled(_postPipeline)({ body: pipeline })
+  if (!pipeline.name) {
+    throw new Error('Cannot create pipeline with empty name')
+  }
+  return handled(_postPipeline)({ body: pipeline }).then(toPipelineThumb)
 }
 
 /**
@@ -128,6 +153,7 @@ export const getPipelineStatus = async (pipeline_name: string) => {
     status: consolidatePipelineStatus(
       pipeline.program_status,
       pipeline.deployment_status,
+      pipeline.deployment_desired_status,
       pipeline.deployment_error
     )
   }
@@ -164,29 +190,33 @@ export const getPipelineStats = async (pipeline_name: string) => {
 const consolidatePipelineStatus = (
   programStatus: ProgramStatus,
   pipelineStatus: _PipelineStatus,
+  desiredStatus: _PipelineStatus,
   pipelineError: ErrorResponse | null | undefined
 ) => {
-  return match([pipelineStatus, pipelineError, programStatus])
-    .with(['Shutdown', P.nullish, 'CompilingSql'], () => 'Compiling sql' as const)
-    .with(['Shutdown', P.nullish, 'Pending'], () => 'Queued' as const)
-    .with(['Shutdown', P.nullish, 'CompilingRust'], () => 'Compiling bin' as const)
-    .with(['Shutdown', P.nullish, { SqlError: P.select() }], (SqlError) => ({ SqlError }))
-    .with(['Shutdown', P.nullish, { RustError: P.select() }], (RustError) => ({ RustError }))
-    .with(['Shutdown', P.nullish, { SystemError: P.select() }], (SystemError) => ({ SystemError }))
-    .with(['Shutdown', P.nullish, 'Success'], () => 'Shutdown' as const)
-    .with(['Shutdown', P.select(P.nonNullable), P.any], () => 'Shutdown' as const)
-    .with(['Provisioning', P.nullish, P._], () => 'Starting up' as const)
-    .with(['Initializing', P.nullish, P._], () => 'Initializing' as const)
-    .with(['Paused', P.nullish, 'CompilingSql'], () => 'Compiling sql' as const)
-    .with(['Paused', P.nullish, 'Pending'], () => 'Queued' as const)
-    .with(['Paused', P.nullish, 'CompilingRust'], () => 'Compiling bin' as const)
-    .with(['Paused', P.nullish, P._], () => 'Paused' as const)
-    .with(['Running', P.nullish, P._], () => 'Running' as const)
-    .with(['ShuttingDown', P.nullish, P._], () => 'ShuttingDown' as const)
-    .with(['Failed', P.select(P.nonNullable), P._], (PipelineError) => ({ PipelineError }))
+  return match([pipelineStatus, desiredStatus, pipelineError, programStatus])
+    .with(['Shutdown', P.any, P.nullish, 'CompilingSql'], () => 'Compiling sql' as const)
+    .with(['Shutdown', P.any, P.nullish, 'Pending'], () => 'Queued' as const)
+    .with(['Shutdown', P.any, P.nullish, 'CompilingRust'], () => 'Compiling bin' as const)
+    .with(['Shutdown', P.any, P.nullish, { SqlError: P.select() }], (SqlError) => ({ SqlError }))
+    .with(['Shutdown', P.any, P.nullish, { RustError: P.select() }], (RustError) => ({ RustError }))
+    .with(['Shutdown', P.any, P.nullish, { SystemError: P.select() }], (SystemError) => ({
+      SystemError
+    }))
+    .with(['Shutdown', P.any, P.nullish, 'Success'], () => 'Shutdown' as const)
+    .with(['Shutdown', P.any, P.select(P.nonNullable), P.any], () => 'Shutdown' as const)
+    .with(['Shutdown', 'Running', P.nullish, P._], () => 'Running' as const)
+    .with(['Provisioning', P.any, P.nullish, P._], () => 'Starting up' as const)
+    .with(['Initializing', P.any, P.nullish, P._], () => 'Initializing' as const)
+    .with(['Paused', P.any, P.nullish, 'CompilingSql'], () => 'Compiling sql' as const)
+    .with(['Paused', P.any, P.nullish, 'Pending'], () => 'Queued' as const)
+    .with(['Paused', P.any, P.nullish, 'CompilingRust'], () => 'Compiling bin' as const)
+    .with(['Paused', P.any, P.nullish, P._], () => 'Paused' as const)
+    .with(['Running', P.any, P.nullish, P._], () => 'Running' as const)
+    .with(['ShuttingDown', P.any, P.nullish, P._], () => 'ShuttingDown' as const)
+    .with(['Failed', P.any, P.select(P.nonNullable), P._], (PipelineError) => ({ PipelineError }))
     .otherwise(() => {
       throw new Error(
-        `Unable to consolidatePipelineStatus: ${pipelineStatus} ${pipelineError} ${programStatus}`
+        `Unable to consolidatePipelineStatus: ${pipelineStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
       )
     })
 }
