@@ -1009,6 +1009,7 @@ mod test {
     use anyhow::Result as AnyResult;
     use pipeline_types::program_schema::{Field, Relation};
     use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+    use std::collections::BTreeMap;
     use std::thread;
     use std::time::Duration;
 
@@ -1020,7 +1021,7 @@ mod test {
         T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
         U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     {
-        let relation = Relation::new("test_input", false, fields, true);
+        let relation = Relation::new("test_input", false, fields, true, BTreeMap::new());
         let (endpoint, consumer, zset) =
             mock_input_pipeline::<T, U>(serde_yaml::from_str(config_str).unwrap(), relation)?;
         endpoint.start(0)?;

@@ -85,7 +85,7 @@ format:
     // Send the data through the mock pipeline
     let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct2, TestStruct2>(
         serde_yaml::from_str(&config_str).unwrap(),
-        Relation::new("test", false, TestStruct2::schema(), false),
+        Relation::new("test", false, TestStruct2::schema(), false, BTreeMap::new()),
     )
     .unwrap();
     sleep(Duration::from_millis(10));

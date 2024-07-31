@@ -104,7 +104,7 @@ impl UrlInputReader {
                             .checked_add(Duration::from_secs(config.pause_timeout as u64));
                     }
                     loop {
-                        let sleep = deadline.map(|deadline| sleep_until(deadline));
+                        let sleep = deadline.map(sleep_until);
                         tokio::pin!(sleep);
                         select! {
                             _ = sleep.as_pin_mut().unwrap(), if sleep.is_some() && response.is_some() => {
