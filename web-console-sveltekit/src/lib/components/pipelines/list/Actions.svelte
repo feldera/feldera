@@ -146,7 +146,7 @@
         json={JSONbig.stringify(pipeline.runtimeConfig, undefined, '  ')}
         onApply={async (json) => {
           await patchPipeline(pipeline.name, {
-            runtime_config: JSONbig.parse(json)
+            runtimeConfig: JSONbig.parse(json)
           })
         }}
         onClose={() => (globalDialog.dialog = null)}

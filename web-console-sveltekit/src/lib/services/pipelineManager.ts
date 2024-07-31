@@ -74,6 +74,14 @@ const toPipeline = (pipeline: ExtendedPipelineDescr) => ({
   programCode: pipeline.program_code
 })
 
+const fromPipeline = <T extends Partial<Pipeline>>(pipeline: T) => ({
+  name: pipeline?.name,
+  description: pipeline?.description,
+  runtime_config: pipeline?.runtimeConfig,
+  program_config: pipeline?.programConfig,
+  program_code: pipeline?.programCode
+})
+
 export type PipelineThumb = ReturnType<typeof toPipelineThumb>
 
 export type Pipeline = ReturnType<typeof toPipeline>
@@ -133,10 +141,10 @@ export const putPipeline = async (pipeline_name: string, newPipeline: PipelineDe
   })
 }
 
-export const patchPipeline = async (pipeline_name: string, pipeline: PatchPipeline) => {
+export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pipeline>) => {
   await _patchPipeline({
     path: { pipeline_name: encodeURIComponent(pipeline_name) },
-    body: pipeline
+    body: fromPipeline(pipeline)
   })
 }
 
