@@ -102,11 +102,17 @@ export const postPipeline = async (pipeline: PipelineDescr) => {
  * Pipeline should already exist
  */
 export const putPipeline = async (pipeline_name: string, newPipeline: PipelineDescr) => {
-  await _putPipeline({ body: newPipeline, path: { pipeline_name: encodeURIComponent(pipeline_name) } })
+  await _putPipeline({
+    body: newPipeline,
+    path: { pipeline_name: encodeURIComponent(pipeline_name) }
+  })
 }
 
 export const patchPipeline = async (pipeline_name: string, pipeline: PatchPipeline) => {
-  await _patchPipeline({ path: { pipeline_name: encodeURIComponent(pipeline_name) }, body: pipeline })
+  await _patchPipeline({
+    path: { pipeline_name: encodeURIComponent(pipeline_name) },
+    body: pipeline
+  })
 }
 
 export const getPipelines = async (): Promise<PipelineThumb[]> => {
@@ -115,7 +121,9 @@ export const getPipelines = async (): Promise<PipelineThumb[]> => {
 }
 
 export const getPipelineStatus = async (pipeline_name: string) => {
-  const pipeline = await handled(_getPipeline)({ path: { pipeline_name: encodeURIComponent(pipeline_name) } })
+  const pipeline = await handled(_getPipeline)({
+    path: { pipeline_name: encodeURIComponent(pipeline_name) }
+  })
   return {
     status: consolidatePipelineStatus(
       pipeline.program_status,
@@ -128,7 +136,9 @@ export const getPipelineStatus = async (pipeline_name: string) => {
 export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>
 
 export const getPipelineStats = async (pipeline_name: string) => {
-  return handled(_getPipelineStats)({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(
+  return handled(_getPipelineStats)({
+    path: { pipeline_name: encodeURIComponent(pipeline_name) }
+  }).then(
     (status) => ({
       pipelineName: pipeline_name,
       status: status as ControllerStatus | null
@@ -146,7 +156,6 @@ export const getPipelineStats = async (pipeline_name: string) => {
           status: 'not running' as const
         }
       }
-      console.log('stats err', e)
       throw e
     }
   )

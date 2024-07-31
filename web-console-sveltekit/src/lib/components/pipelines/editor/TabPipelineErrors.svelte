@@ -17,7 +17,8 @@
   {#each $errors as systemError}
     <div class="whitespace-nowrap">
       <a href={systemError.cause.source}>
-        <span class=" bx bx-x-circle text-error-500 text-[20px]"></span></a>
+        <span class=" bx bx-x-circle text-[20px] text-error-500"></span></a
+      >
       <span class=" whitespace-pre-wrap break-words align-text-bottom">
         {systemError.message}
       </span>

@@ -32,18 +32,17 @@
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
-  const {
+  let {
     pipeline,
-    status,
+    status = $bindable(),
     reloadStatus,
     errors
   }: {
     pipeline: WritableLoadable<PipelineDescr>
-    status: PipelineStatusType | undefined
+    status: { status: PipelineStatusType } | undefined
     reloadStatus?: () => void
     errors?: Readable<SystemError[]>
   } = $props()
-
   const pipelineCodeStore = asyncWritable(
     pipeline,
     (pipeline) => pipeline.program_code,
@@ -109,7 +108,7 @@
       window.location.hash = ''
     }, 50)
   })
-  let editDisabled = $derived(nonNull(status) && !isPipelineIdle(status))
+  let editDisabled = $derived(nonNull(status) && !isPipelineIdle(status.status))
 </script>
 
 <div class="h-full w-full">
@@ -121,10 +120,11 @@
           saveCode={decoupledCode.push}
         ></PipelineEditorStatusBar>
         {#if status}
-          <PipelineStatus class="ml-auto h-full w-36 text-[1rem] " {status}></PipelineStatus>
+          <PipelineStatus class="ml-auto h-full w-36 text-[1rem] " status={status.status}
+          ></PipelineStatus>
           <PipelineActions
             name={$pipeline.name}
-            {status}
+            bind:status
             {reloadStatus}
             pipelineBusy={editDisabled}
             unsavedChanges={decoupledCode.downstreamChanged}

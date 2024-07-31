@@ -28,7 +28,6 @@ export const handled =
         //     status: 'not running' as const
         //   }
         // }
-        console.log('handled err', e)
         throw e
       }
     )
