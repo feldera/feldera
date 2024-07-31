@@ -387,7 +387,7 @@ where
             if let Some((merger, [a, b])) = m.as_mut() {
                 let mut fuel = 10_000;
                 merger.work(a, b, &key_filter, &value_filter, &mut fuel);
-                if fuel >= 0 {
+                if fuel > 0 {
                     let (merger, _batches) = m.take().unwrap();
                     let new_batch = Arc::new(merger.done());
                     state.lock().unwrap().merge_complete(level, new_batch);
