@@ -998,7 +998,7 @@ where
         offs.push(O::zero());
 
         let mut keys = other1.factories.keys.default_box();
-        keys.reserve(other1.keys() + other2.keys());
+        keys.reserve_exact(other1.keys() + other2.keys());
 
         Self {
             factories: other1.factories.clone(),
@@ -1156,7 +1156,7 @@ where
         offs.push(O::zero());
 
         let mut keys = factories.keys.default_box();
-        keys.reserve(cap);
+        keys.reserve_exact(cap);
 
         Self {
             factories: factories.clone(),
