@@ -17,11 +17,13 @@
   import { goto } from '$app/navigation'
   import { base } from '$app/paths'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import { page } from '$app/stores'
 
   let {
     name: pipelineName,
     status = $bindable(),
     reloadStatus,
+    onDeletePipeline,
     pipelineBusy,
     unsavedChanges,
     class: _class = ''
@@ -29,6 +31,7 @@
     name: string
     status: { status: PipelineStatus }
     reloadStatus?: () => void
+    onDeletePipeline?: (pipelineName: string) => void
     pipelineBusy: boolean
     unsavedChanges: boolean
     class?: string
@@ -44,6 +47,7 @@
   const deletePipeline = async (pipelineName: string) => {
     await _deletePipeline(pipelineName)
     reloadStatus?.()
+    onDeletePipeline?.(pipelineName)
     goto(`${base}/`)
   }
 
@@ -63,7 +67,7 @@
       .with('Shutdown', () => ['_start', '_configure', '_delete'])
       .with('Queued', () => ['_spacer', '_configure', '_delete'])
       .with('Starting up', () => ['_spinner', '_configure', '_spacer'])
-      .with('Initializing', () => ['_spinner', '_configure'])
+      .with('Initializing', () => ['_spinner', '_configure', '_spacer'])
       .with('Running', () => ['_pause', '_configure', '_shutdown'])
       // .with('Pausing', () => ['spinner', 'edit'])
       .with('Paused', () => ['_start', '_configure', '_shutdown'])
@@ -106,7 +110,7 @@
   <div class={buttonClass}>
     <button
       class:disabled={unsavedChanges}
-      class={'bx bx-play !bg-success-200 !text-success-900 '}
+      class={'bx bx-play !bg-success-200-800 '}
       onclick={() =>
         postPipelineAction(pipelineName, 'start').then(() => (status.status = 'Starting up'))}
     >
@@ -139,12 +143,10 @@
     {#await getPipeline(pipelineName) then pipeline}
       <JSONDialog
         disabled={pipelineBusy}
-        json={JSONbig.stringify(pipeline.runtime_config, undefined, '  ')}
+        json={JSONbig.stringify(pipeline.runtimeConfig, undefined, '  ')}
         onApply={async (json) => {
           await patchPipeline(pipeline.name, {
             runtime_config: JSONbig.parse(json)
-            // name: pipeline.name,
-            // description: pipeline.description
           })
         }}
         onClose={() => (globalDialog.dialog = null)}

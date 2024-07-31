@@ -8,11 +8,11 @@
   const chipClass = $derived(
     match(status)
       .with('Shutdown', () => 'preset-tonal-success')
-      .with('Starting up', () => 'preset-tonal-surface')
+      .with('Starting up', () => 'preset-tonal-tertiary')
       .with('Initializing', () => 'preset-tonal-warning')
       .with('Paused', () => 'preset-tonal-success')
       .with('Running', () => 'preset-tonal-success')
-      .with('ShuttingDown', () => 'preset-tonal-surface')
+      .with('ShuttingDown', () => 'preset-tonal-tertiary')
       .with({ PipelineError: P.any }, () => 'preset-tonal-error')
       .with('Compiling sql', () => 'preset-tonal-warning')
       .with('Queued', () => 'preset-tonal-warning')
@@ -28,7 +28,10 @@
 </script>
 
 <div
-  class={'chip pointer-events-none h-6 w-20 text-[0.66rem] uppercase ' + chipClass + ' ' + _class}
+  class={'chip pointer-events-none h-6 w-20 flex-none text-[0.66rem] uppercase ' +
+    chipClass +
+    ' ' +
+    _class}
 >
   {getStatusLabel(status)}
 </div>

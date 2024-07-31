@@ -10,9 +10,9 @@
   let currentTab = useLocalStorage('pipelines/' + pipelineName + '/currentInteractionTab', 'errors')
   const tabs = [
     tuple('errors', TabPipelineErrors),
-    tuple('ad-hoc query', TabQueryData),
-    tuple('performance', TabPerformance),
-    tuple('query plan', TabDBSPGraph)
+    // tuple('ad-hoc query', TabQueryData),
+    tuple('performance', TabPerformance)
+    // tuple('query plan', TabDBSPGraph)
   ]
 </script>
 
