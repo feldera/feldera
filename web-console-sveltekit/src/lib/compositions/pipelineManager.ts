@@ -1,7 +1,7 @@
-import { getPipeline, putPipeline, type PipelineDescr } from '$lib/services/pipelineManager'
+import { getPipeline, patchPipeline, type Pipeline } from '$lib/services/pipelineManager'
 import { asyncWritable, rebounce, type Readable } from '@square/svelte-store'
 
-export const useWritablePipeline = <T extends PipelineDescr>(
+export const useWritablePipeline = <T extends Pipeline>(
   pipelineName: Readable<string>,
   preloaded?: T
 ) =>
@@ -12,7 +12,7 @@ export const useWritablePipeline = <T extends PipelineDescr>(
       if (!oldPipeline) {
         throw new Error('useWritablePipeline called on non-existent pipeline')
       }
-      await putPipeline(oldPipeline.name, newPipeline)
+      await patchPipeline(oldPipeline.name, newPipeline)
       return getPipeline(newPipeline.name)
     },
     { initial: preloaded }
