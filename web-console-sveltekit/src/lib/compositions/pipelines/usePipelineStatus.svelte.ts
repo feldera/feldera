@@ -1,24 +1,27 @@
-import { getPipelineStatus } from '$lib/services/pipelineManager'
-import { asyncDerived, asyncReadable, type Readable } from '@square/svelte-store'
-import { Store } from 'runed'
+import { getPipelineStatus, type PipelineStatus } from '$lib/services/pipelineManager'
 
-export const usePipelineStatus = (pipelineName: Readable<string>) => {
-  const status = asyncDerived(pipelineName, (pipelineName) => getPipelineStatus(pipelineName), {
-    reloadable: true,
-    initial: { status: 'Initializing' as const }
-  })
+export const usePipelineStatus = (pipelineName: { current: string }) => {
+  let status = $state({ status: 'Initializing' as PipelineStatus })
+  const reload = async () => {
+    status.status = (await getPipelineStatus(pipelineName.current)).status
+  }
   $effect(() => {
-    let interval = setInterval(() => status.reload?.(), 2000)
+    let interval = setInterval(() => reload(), 2000)
     return () => {
       clearInterval(interval)
     }
   })
+  reload()
   $effect(() => {
     pipelineName
-    status.reload?.()
+    reload()
   })
-  const store = new Store(status)
-  const reload = status.reload!
-  Object.assign(store, { reload })
-  return store as typeof store & { reload: typeof reload }
+  return {
+    get status() {
+      return status.status
+    },
+    set status(s: PipelineStatus) {
+      status.status = s
+    }
+  }
 }
