@@ -4,6 +4,7 @@
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::describe_metrics;
 use crate::error::Error as DBSPError;
+use crate::trace::spine_async::merger::{BackgroundOperation, BatchMerger};
 use crate::{
     storage::{
         backend::{new_default_backend, tempdir_for_thread, Backend, StorageError},
@@ -14,11 +15,11 @@ use crate::{
     DetailedError,
 };
 use lazy_static::lazy_static;
+use log::warn;
 use once_cell::sync::Lazy;
 use pipeline_types::config::StorageCacheConfig;
 use serde::Serialize;
-use std::sync::Mutex;
-use std::thread::Thread;
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::{
     backtrace::Backtrace,
     borrow::Cow,
@@ -99,6 +100,10 @@ thread_local! {
     // Returns `0` if the current thread in not running in a multithreaded
     // runtime.
     pub(crate) static WORKER_INDEX: Cell<usize> = const { Cell::new(0) };
+
+    // Returns true if this thread is a background worker thread (that doesn't
+    // run a circuit).
+    pub(crate) static IS_BACKGROUND_THREAD: Cell<bool> = const { Cell::new(false) };
 }
 
 pub struct LocalStoreMarker;
@@ -188,7 +193,6 @@ struct RuntimeInner {
     min_storage_bytes: usize,
     store: LocalStore,
     kill_signal: AtomicBool,
-    background_threads: Mutex<Vec<JoinHandle<()>>>,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
 }
@@ -260,7 +264,6 @@ impl RuntimeInner {
             min_storage_bytes: config.min_storage_bytes,
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
-            background_threads: Mutex::new(Vec::new()),
             panic_info,
         })
     }
@@ -308,6 +311,32 @@ static DEFAULT_PANIC_HOOK: Lazy<Box<dyn Fn(&PanicInfo<'_>) + 'static + Sync + Se
 /// Returns the default Rust panic hook.
 fn default_panic_hook() -> &'static (dyn Fn(&PanicInfo<'_>) + 'static + Sync + Send) {
     &*DEFAULT_PANIC_HOOK
+}
+
+fn mk_background_thread(
+    thread_name: String,
+    runtime: Option<Runtime>,
+    worker_index: usize,
+    bg_work_receiver: Receiver<BackgroundOperation>,
+) -> JoinHandle<()> {
+    if thread_name.len() > 15 {
+        warn!("thread name {thread_name:?} will appear truncated in system tools");
+    }
+    Builder::new()
+        .name(thread_name)
+        .spawn(move || {
+            if let Some(runtime) = runtime {
+                RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime.clone()));
+            }
+            IS_BACKGROUND_THREAD.set(true);
+            WORKER_INDEX.set(worker_index);
+
+            let mut merger = BatchMerger::new(bg_work_receiver);
+            merger.run();
+        })
+        .unwrap_or_else(|error| {
+            panic!("failed to spawn background worker thread {worker_index}: {error}");
+        })
 }
 
 impl Runtime {
@@ -395,6 +424,27 @@ impl Runtime {
             panic_hook(panic_info, default_hook)
         }));
 
+        // Instantiate background workers before `workers` to avoid any races
+        // where code in workers tries to access reach background thread
+        // channels before they are fully initialized.
+        let background_workers = workers
+            .clone()
+            .map(|worker_index| {
+                let cloned_runtime = runtime.clone();
+                let (bg_work_sender, bg_work_receiver) = sync_channel(BatchMerger::RX_QUEUE_SIZE);
+                let join_handle = mk_background_thread(
+                    format!("dbsp-bg-{}", worker_index),
+                    Some(cloned_runtime),
+                    worker_index,
+                    bg_work_receiver,
+                );
+                runtime
+                    .local_store()
+                    .insert(BackgroundChannel(worker_index), Arc::new(bg_work_sender));
+                join_handle
+            })
+            .collect::<Vec<_>>();
+
         let workers = workers
             .map(|worker_index| {
                 let runtime = runtime.clone();
@@ -415,7 +465,35 @@ impl Runtime {
             })
             .collect::<Vec<_>>();
 
-        Ok(RuntimeHandle::new(runtime, workers, storage))
+        Ok(RuntimeHandle::new(
+            runtime,
+            workers,
+            background_workers,
+            storage,
+        ))
+    }
+
+    /// Returns a channel for enqueuing a work closure that's handled in a background thread.
+    ///
+    /// This is currently only used for file compaction but could be extended for
+    /// more generic background work in the future.
+    pub(crate) fn background_channel() -> Arc<SyncSender<BackgroundOperation>> {
+        let worker_index = Runtime::worker_index();
+        if let Some(rt) = Runtime::runtime() {
+            rt.local_store()
+                .get(&BackgroundChannel(worker_index))
+                .unwrap()
+                .clone()
+        } else {
+            let (bg_work_sender, bg_work_receiver) = sync_channel(BatchMerger::RX_QUEUE_SIZE);
+            let _join_handle = mk_background_thread(
+                String::from("dbsp-bg-no-rt"),
+                None,
+                worker_index,
+                bg_work_receiver,
+            );
+            Arc::new(bg_work_sender)
+        }
     }
 
     /// Returns a reference to the multithreaded runtime that
@@ -560,36 +638,6 @@ impl Runtime {
             .write()
             .map(|mut guard| *guard = Some(panic_info));
     }
-
-    /// Spawn a new thread using `builder` and `f`. If the current thread is
-    /// associated with a runtime, then the new thread will also be associated
-    /// with the same runtime and worker index.
-    pub(crate) fn spawn_background_thread<F>(builder: Builder, f: F) -> Thread
-    where
-        F: FnOnce() + Send + 'static,
-    {
-        let runtime = Self::runtime();
-        let worker_index = Self::worker_index();
-        let join_handle = builder
-            .spawn(move || {
-                RUNTIME.with(|rt| *rt.borrow_mut() = runtime);
-                WORKER_INDEX.set(worker_index);
-                f()
-            })
-            .unwrap_or_else(|error| {
-                panic!("failed to spawn background worker thread {worker_index}: {error}");
-            });
-        let thread = join_handle.thread().clone();
-        if let Some(runtime) = Self::runtime() {
-            runtime
-                .inner()
-                .background_threads
-                .lock()
-                .unwrap()
-                .push(join_handle);
-        }
-        thread
-    }
 }
 
 /// Handle returned by `Runtime::run`.
@@ -597,14 +645,21 @@ impl Runtime {
 pub struct RuntimeHandle {
     runtime: Runtime,
     workers: Vec<JoinHandle<()>>,
+    background_workers: Vec<JoinHandle<()>>,
     storage: StorageLocation,
 }
 
 impl RuntimeHandle {
-    fn new(runtime: Runtime, workers: Vec<JoinHandle<()>>, storage: StorageLocation) -> Self {
+    fn new(
+        runtime: Runtime,
+        workers: Vec<JoinHandle<()>>,
+        background_workers: Vec<JoinHandle<()>>,
+        storage: StorageLocation,
+    ) -> Self {
         Self {
             runtime,
             workers,
+            background_workers,
             storage,
         }
     }
@@ -645,6 +700,9 @@ impl RuntimeHandle {
         for worker in self.workers.iter() {
             worker.thread().unpark();
         }
+        for background_worker in self.background_workers.iter() {
+            background_worker.thread().unpark();
+        }
     }
 
     /// Wait for all workers in the runtime to terminate.
@@ -657,20 +715,19 @@ impl RuntimeHandle {
         #[allow(clippy::needless_collect)]
         let results: Vec<ThreadResult<()>> = self.workers.into_iter().map(|h| h.join()).collect();
 
+        // Dropping the background channels here is important because it will drop the
+        // last references the communication channel with the background threads and
+        // so ensures they error out during blocking receive
+        self.runtime.local_store().retain(|kv| {
+            kv.downcast_key_ref::<BackgroundChannel>()
+                .map_or_else(|| true, |_| false)
+        });
+        let _background_results: Vec<ThreadResult<()>> = self
+            .background_workers
+            .into_iter()
+            .map(|h| h.join())
+            .collect();
         self.runtime.local_store().clear();
-
-        // Wait for the background threads. They will exit automatically without
-        // explicit signaling from us because the worker threads removed all of
-        // their background work.
-        self.runtime
-            .inner()
-            .background_threads
-            .lock()
-            .unwrap()
-            .drain(..)
-            .for_each(|h| {
-                let _ = h.join();
-            });
 
         let did_runtime_panic = results.iter().any(|r| r.is_err());
         RuntimeHandle::cleanup_storage_dir(&storage, did_runtime_panic);
@@ -714,6 +771,13 @@ struct WorkerId(usize);
 
 impl TypedMapKey<LocalStoreMarker> for WorkerId {
     type Value = usize;
+}
+
+#[derive(Hash, PartialEq, Eq)]
+struct BackgroundChannel(usize);
+
+impl TypedMapKey<LocalStoreMarker> for BackgroundChannel {
+    type Value = Arc<SyncSender<BackgroundOperation>>;
 }
 
 #[derive(Hash, PartialEq, Eq)]
