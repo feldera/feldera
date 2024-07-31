@@ -20,14 +20,14 @@
 
   let {
     name: pipelineName,
-    status,
+    status = $bindable(),
     reloadStatus,
     pipelineBusy,
     unsavedChanges,
     class: _class = ''
   }: {
     name: string
-    status: PipelineStatus
+    status: { status: PipelineStatus }
     reloadStatus?: () => void
     pipelineBusy: boolean
     unsavedChanges: boolean
@@ -58,7 +58,7 @@
   }
 
   const active = $derived(
-    match(status)
+    match(status.status)
       .returnType<(keyof typeof actions)[]>()
       .with('Shutdown', () => ['_start', '_configure', '_delete'])
       .with('Queued', () => ['_spacer', '_configure', '_delete'])
@@ -80,10 +80,6 @@
   )
 
   const buttonClass = ' btn-icon h-9 w-9 preset-tonal-surface text-[36px]'
-  const _reload = () => {
-    setTimeout(() => reloadStatus?.(), 100)
-    setTimeout(() => reloadStatus?.(), 300)
-  }
 </script>
 
 {#snippet deleteDialog()}
@@ -111,7 +107,8 @@
     <button
       class:disabled={unsavedChanges}
       class={'bx bx-play !bg-success-200 !text-success-900 '}
-      onclick={() => postPipelineAction(pipelineName, 'start').then(_reload)}
+      onclick={() =>
+        postPipelineAction(pipelineName, 'start').then(() => (status.status = 'Starting up'))}
     >
     </button>
   </div>
@@ -124,14 +121,16 @@
 {#snippet _pause()}
   <button
     class={'bx bx-pause ' + buttonClass}
-    onclick={() => postPipelineAction(pipelineName, 'pause').then(_reload)}
+    onclick={() =>
+      postPipelineAction(pipelineName, 'pause').then(() => (status.status = 'ShuttingDown'))}
   >
   </button>
 {/snippet}
 {#snippet _shutdown()}
   <button
     class={'bx bx-stop ' + buttonClass}
-    onclick={() => postPipelineAction(pipelineName, 'shutdown').then(_reload)}
+    onclick={() =>
+      postPipelineAction(pipelineName, 'shutdown').then(() => (status.status = 'ShuttingDown'))}
   >
   </button>
 {/snippet}

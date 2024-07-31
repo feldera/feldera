@@ -3,9 +3,9 @@
   import { page } from '$app/stores'
   import { onMount } from 'svelte'
   import { useWritablePipeline } from '$lib/compositions/pipelineManager'
-  import { asyncWritable, derived } from '@square/svelte-store'
+  import { asyncWritable, derived as derivedStore } from '@square/svelte-store'
   // import { useDebounce } from '$lib/compositions/debounce.svelte'
-  import { useDebounce } from 'runed'
+  import { Store, useDebounce } from 'runed'
   import MonacoEditor from 'svelte-monaco'
   import { pipelineTabEq, useOpenPipelines } from '$lib/compositions/useOpenPipelines'
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
@@ -15,7 +15,7 @@
 
   let { data } = $props()
 
-  let pipelineName = derived(page, (page) => decodeURIComponent(page.params.pipelineName))
+  let pipelineName = derivedStore(page, (page) => decodeURIComponent(page.params.pipelineName))
 
   {
     let openPipelines = useOpenPipelines()
@@ -32,8 +32,8 @@
 
   const errors = useSqlErrors(pipelineName)
 
-  const status = usePipelineStatus(derived(pipeline, (pipeline) => pipeline.name))
+  const pipelineNameSignal = new Store(pipelineName)
+  let status = usePipelineStatus(pipelineNameSignal)
 </script>
 
-<PipelineEditLayout {pipeline} status={status.current.status} {errors} reloadStatus={status.reload}
-></PipelineEditLayout>
+<PipelineEditLayout {pipeline} bind:status {errors}></PipelineEditLayout>

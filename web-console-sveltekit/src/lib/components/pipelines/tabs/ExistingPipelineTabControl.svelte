@@ -34,7 +34,6 @@
     if (newUrl === currentUrl) {
       return
     }
-    console.log('newUrl', newUrl, currentUrl)
     window.location.replace(newUrl)
   })
 </script>
