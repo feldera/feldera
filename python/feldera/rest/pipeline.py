@@ -1,5 +1,6 @@
 from typing import Mapping, Any, Optional
-from feldera.rest.attached_connector import AttachedConnector
+from feldera.rest.sql_table import SQLTable
+from feldera.rest.sql_view import SQLView
 
 
 class Pipeline:
@@ -10,50 +11,47 @@ class Pipeline:
     def __init__(
         self,
         name: str,
-        program_name: str,
+        sql: str,
+        program_config: Mapping[str, Any],
+        runtime_config: Mapping[str, Any],
         description: Optional[str] = None,
-        attached_connectors: Optional[list[AttachedConnector]] = None,
-        config: Optional[Mapping[str, Any]] = None,
-        state: Optional[Mapping[str, Any]] = None,
-        version: int = 0,
-        id: Optional[str] = None
     ):
         """
         Initializes a new pipeline
 
         :param name: The name of the pipeline
-        :param program_name: The name of the program that the pipeline is based on
+        :param sql: The SQL code of the pipeline
+        :param program_config: The program config of the pipeline
+        :param runtime_config: The configuration of the pipeline
         :param description: Optional. The description of the pipeline
-        :param attached_connectors: Optional. The connectors attached to the pipeline
-        :param config: Optional. The configuration of the pipeline
-        :param state: Optional. The state of the pipeline. Not to be set by the user
-        :param version: The version of the pipeline. Not to be set by the user
-        :param id: Optional. The id of the pipeline. Not to be set by the user
-
         """
 
         self.name: str = name
-        self.program_name: str = program_name
+        self.program_code: str = sql.strip()
         self.description: Optional[str] = description
-        self.attached_connectors: list[AttachedConnector] = attached_connectors or []
-        self.config: Mapping[str, Any] = config or Pipeline.default_config()
-        self.state: Optional[Mapping[str, Any]] = state
-        self.version: int = version
+        self.program_config: Mapping[str, Any] = program_config
+        self.runtime_config: Mapping[str, Any] = runtime_config
         self.id: Optional[str] = id
+        self.state: Optional[dict] = None
+        self.tables: list[SQLTable] = []
+        self.views: list[SQLView] = []
 
-    @staticmethod
-    def default_config() -> Mapping[str, Any]:
-        """
-        Returns the default configuration for the pipeline
-        """
-        # default, taken from the UI
-        return {
-            "workers": 8
-        }
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any]):
+        pipeline = cls("", "", {}, {})
+        pipeline.__dict__ = d
+        pipeline.tables = []
+        pipeline.views = []
 
-    def current_state(self) -> Optional[str]:
-        """
-        Returns the current state of this pipeline
-        """
+        info = d.get("program_info")
 
-        return self.state.get("current_status")
+        if info is not None:
+            for i in info['schema']['inputs']:
+                tbl = SQLTable.from_dict(i)
+                pipeline.tables.append(tbl)
+
+            for output in info['schema']['outputs']:
+                v = SQLView.from_dict(output)
+                pipeline.views.append(v)
+
+        return pipeline

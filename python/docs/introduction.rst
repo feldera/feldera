@@ -75,43 +75,28 @@ Key Concepts
       .. code-block:: python
 
          from feldera import SQLSchema
+         import pandas as pd
 
          tbl_name = "user_data"
          view_name = "select_view"
 
+         # read input data
+         df = pd.read_csv("data.csv")
+
          # Declare input tables
-         sql.register_table(tbl_name, SQLSchema({"name": "STRING"}))
+         sql.sql(f"CREATE TABLE {tbl_name} (name STRING);")
+         # Create Views based on your queries
+         sql.sql(f"CREATE VIEW {view_name} AS SELECT * FROM {tbl_name};")
 
-         # Register Views based on your queries
-         query = f"SELECT * FROM {tbl_name}"
-         sql.register_view(view_name, query)
-
-         # name for this connector
-         in_con = "delta_input_conn"
-
-         # the configuration for this input source
-         in_cfg = {...}
-
-         sql.connect_source_delta_table(tbl_name, in_con, in_cfg)
-
-         # name for this connector
-         out_con = "delta_output_con"
-
-         # the configuration for this input source
-         out_cfg = {...}
-
-         sql.connect_sink_delta_table(view_name, out_con, out_cfg)
-
+         sql.start()
+         sql.input_pandas(df)
          sql.wait_for_completion(shutdown=True)
 
-      - Here, we register a data table which receives data from input sources.
-      - Then, we register a view that performs operations on this input data.
-        You can also register other views on top of existing views.
-      - Then, we connect a source delta table to the previously defined table.
-      - Then, we connect a sink delta table to the previously defined view.
-      - Finally, we run the pipeline to completion. Feldera will fetch data from
-        the source, perform the query you supplied and passes this data to the
-        sink delta table.
+      - Here, we create a table which can receive data from input sources.
+      - Then, we create a view that performs operations on this input data.
+        You can also create other views on top of existing views.
+      - Then, we pass a pandas DataFrame as input to the table.
+      - Finally, we wait for the the pipeline to complete.
 
    .. warning::
       If the data source is streaming, this will block forever.
