@@ -26,5 +26,8 @@
     "prettier.requireConfig": true,
     "rust-analyzer.showUnlinkedFileNotification": false,
     "svelte.ask-to-enable-ts-plugin": false,
-    "svelte.enable-ts-plugin": true
+    "svelte.enable-ts-plugin": true,
+    "python.analysis.extraPaths": [
+        "./python"
+    ]
 }
