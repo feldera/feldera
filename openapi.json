@@ -805,7 +805,7 @@
                   "$ref": "#/components/schemas/Pipeline"
                 },
                 "example": {
-                  "cpu_profiler": false,
+                  "cpu_profiler": true,
                   "inputs": {
                     "Input-To-Table": {
                       "enable_output_buffer": false,
@@ -4480,7 +4480,7 @@
             "properties": {
               "cpu_profiler": {
                 "type": "boolean",
-                "description": "Enable CPU profiler."
+                "description": "Enable CPU profiler.\n\nThe default value is `true`."
               },
               "max_buffering_delay_usecs": {
                 "type": "integer",
@@ -5091,7 +5091,7 @@
         "properties": {
           "cpu_profiler": {
             "type": "boolean",
-            "description": "Enable CPU profiler."
+            "description": "Enable CPU profiler.\n\nThe default value is `true`."
           },
           "max_buffering_delay_usecs": {
             "type": "integer",
