@@ -26,15 +26,12 @@ Message 2:
 {"insert": {"sid": 125, pid": 8, "sold_at": "2024-01-01 12:01:02", "price": 1.10}}
 ```
 
-### curl
-
-```bash
-curl -i -X PUT http://localhost:8080/v0/connectors/book-fair-sales \
--H "Authorization: Bearer <API-KEY>" \
--H 'Content-Type: application/json' \
--d '{
-  "description": "Kafka input connector for sales from the book fair",
-  "config": {
+```sql
+CREATE TABLE INPUT (
+   ... -- columns omitted
+) WITH (
+  'connectors = '[
+    {
       "transport": {
           "name": "kafka_input",
           "config": {
@@ -50,42 +47,8 @@ curl -i -X PUT http://localhost:8080/v0/connectors/book-fair-sales \
               "array": false
           }
       }
-  }
-}'
-```
-
-### Python (direct API calls)
-
-```python
-import requests
-
-api_url = "http://localhost:8080"
-headers = { "authorization": f"Bearer <API-KEY>" }
-
-requests.put(
-    f"{api_url}/v0/connectors/book-fair-sales", 
-    headers=headers,
-    json={
-      "description": "Kafka input connector for sales from the book fair",
-      "config": {
-          "transport": {
-              "name": "kafka_input",
-              "config": {
-                  "bootstrap.servers": "example.com:9092",
-                  "auto.offset.reset": "earliest",
-                  "topics": ["book-fair-sales"]
-              }
-          },
-          "format": {
-              "name": "json",
-              "config": {
-                  "update_format": "insert_delete",
-                  "array": False
-              }
-          }
-      }
-    }
-).raise_for_status()
+  }]'
+)
 ```
 
 ### How to write connector config
@@ -156,6 +119,12 @@ Confluent Cloud Kafka C client tutorial configuration
 uses `SASL_SSL` with SASL mechanism `PLAIN` (see
 [their tutorial](https://developer.confluent.io/get-started/c/#kafka-setup),
 select Kafka Location: Confluent Cloud, and then go to the Configuration tab).
+
+### Using Kafka as a Debezium transport
+
+The Kafka connector can be used to ingest data from a source via
+Debezium.  For information on how to setup Debezium for MySQL see the
+[Debezium MySQL](debezium-mysql.md) connector.
 
 ## Additional resources
 

@@ -83,6 +83,36 @@ for product_id in range(0, 1000):
       batch.clear()
 ```
 
+### Python (using Python API)
+
+#### Insert 1000 rows in batches of 50
+
+Insert 1000 products named "hammer" with unique product identifiers
+and a random price between 1 and 100. Batching can improve throughput.
+
+```python
+import random
+import requests
+from feldera import FelderaClient
+
+api_key = "<API-KEY>"
+CLIENT = FelderaClient("http://localhost:8080", api_key)
+
+batch = []
+for product_id in range(0, 1000):
+    batch.append({"insert": {
+      "pid": product_id, "name": "hammer", "price": random.uniform(1.0, 100.0)
+    }})
+    if len(batch) >= 50 or product_id == 999:
+      CLIENT.push_to_pipeline(
+        pipeline_name = "supply-chain-pipeline",
+        table_name = "product",
+        format = "json",
+        array = true,
+        data = batch)
+      batch.clear()
+```
+
 ## Additional resources
 
 For more information, see:
@@ -93,3 +123,5 @@ For more information, see:
 
 * Data formats such as [JSON](https://www.feldera.com/docs/api/json) and
   [CSV](https://www.feldera.com/docs/api/csv)
+
+* [Python API documentation](https://www.feldera.com/python/index.html)
