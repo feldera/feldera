@@ -4,8 +4,7 @@ import pandas as pd
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.admin import KafkaAdminClient, NewTopic
 
-from feldera import SQLContext, SQLSchema
-from feldera.formats import JSONFormat, JSONUpdateFormat
+from feldera import SQLContext
 from tests import TEST_CLIENT
 
 
@@ -19,16 +18,22 @@ class TestWireframes(unittest.TestCase):
         df_students = pd.read_csv('students.csv')
         df_grades = pd.read_csv('grades.csv')
 
-        sql.register_table(TBL_NAMES[0], SQLSchema({"name": "STRING", "id": "INT"}))
-        sql.register_table(TBL_NAMES[1], SQLSchema({
-            "student_id": "INT",
-            "science": "INT",
-            "maths": "INT",
-            "art": "INT"
-        }))
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAMES[0]} (
+            name STRING,
+            id INT
+        );
+        
+        CREATE TABLE {TBL_NAMES[1]} (
+            student_id INT,
+            science INT,
+            maths INT,
+            art INT
+        );
+        
+        CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
+        """)
 
-        query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-        sql.register_view(view_name, query)
         out = sql.listen(view_name)
 
         sql.start()
@@ -53,16 +58,23 @@ class TestWireframes(unittest.TestCase):
         df_students = pd.read_csv('students.csv')
         df_grades = pd.read_csv('grades.csv')
 
-        sql.register_table(TBL_NAMES[0], SQLSchema({"name": "STRING", "id": "INT"}))
-        sql.register_table(TBL_NAMES[1], SQLSchema({
-            "student_id": "INT",
-            "science": "INT",
-            "maths": "INT",
-            "art": "INT"
-        }))
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAMES[0]} (
+            name STRING,
+            id INT
+        );
+        
+        CREATE TABLE {TBL_NAMES[1]} (
+            student_id INT,
+            science INT,
+            maths INT,
+            art INT
+        );
+        """)
 
         query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-        sql.register_view(view_name, query)
+
+        sql.sql(f"CREATE VIEW {view_name} AS {query};")
 
         sql.start()
         out = sql.listen(view_name)
@@ -89,16 +101,24 @@ class TestWireframes(unittest.TestCase):
         df_students = pd.read_csv('students.csv')
         df_grades = pd.read_csv('grades.csv')
 
-        sql.register_table(TBL_NAMES[0], SQLSchema({"name": "STRING", "id": "INT"}))
-        sql2.register_table(TBL_NAMES[1], SQLSchema({
-            "student_id": "INT",
-            "science": "INT",
-            "maths": "INT",
-            "art": "INT"
-        }))
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAMES[0]} (
+            name STRING,
+            id INT
+        );
+        """)
 
-        sql.register_view(VIEW_NAMES[0], f"SELECT * FROM {TBL_NAMES[0]}")
-        sql2.register_view(VIEW_NAMES[1], f"SELECT * FROM {TBL_NAMES[1]}")
+        sql2.sql(f"""
+        CREATE TABLE {TBL_NAMES[1]} (
+            student_id INT,
+            science INT,
+            maths INT,
+            art INT
+        );
+        """)
+
+        sql.sql(f"CREATE VIEW {VIEW_NAMES[0]} AS SELECT * FROM {TBL_NAMES[0]};")
+        sql2.sql(f"CREATE VIEW {VIEW_NAMES[1]} AS SELECT * FROM {TBL_NAMES[1]};")
 
         out = sql.listen(VIEW_NAMES[0])
         out2 = sql2.listen(VIEW_NAMES[1])
@@ -132,16 +152,22 @@ class TestWireframes(unittest.TestCase):
         df_students = pd.read_csv('students.csv')
         df_grades = pd.read_csv('grades.csv')
 
-        sql.register_table(TBL_NAMES[0], SQLSchema({"name": "STRING", "id": "INT"}))
-        sql.register_table(TBL_NAMES[1], SQLSchema({
-            "student_id": "INT",
-            "science": "INT",
-            "maths": "INT",
-            "art": "INT"
-        }))
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAMES[0]} (
+            name STRING,
+            id INT
+        );
+        
+        CREATE TABLE {TBL_NAMES[1]} (
+            student_id INT,
+            science INT,
+            maths INT,
+            art INT
+        );
+        """)
 
         query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-        sql.register_view(view_name, query)
+        sql.sql(f"CREATE VIEW {view_name} AS {query};")
 
         sql.start()
         sql.foreach_chunk(view_name, callback)
@@ -158,8 +184,14 @@ class TestWireframes(unittest.TestCase):
 
         df = pd.DataFrame([(1, "a"), (2, "b"), (3, "c")])
 
-        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-        sql.register_view("s", f"SELECT * FROM {TBL_NAME}")
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAME} (
+            id INT,
+            name STRING
+        );
+        """)
+
+        sql.sql(f"CREATE VIEW s AS SELECT * FROM {TBL_NAME} ;")
 
         sql.start()
 
@@ -172,14 +204,21 @@ class TestWireframes(unittest.TestCase):
     def test_sql_error(self):
         sql = SQLContext('sql_error', TEST_CLIENT).get_or_create()
         TBL_NAME = "student"
-        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-        sql.register_view("s", f"SELECT FROM blah")
+
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAME} (
+            id INT,
+            name STRING
+        );
+        """)
+
+        sql.sql(f"CREATE VIEW s AS SELECT * FROM blah;")
         _ = sql.listen("s")
 
         with self.assertRaises(Exception):
             sql.start()
 
-        sql.client.delete_program(sql.program_name)
+        sql.delete()
 
     def test_kafka(self):
         import json
@@ -229,26 +268,58 @@ class TestWireframes(unittest.TestCase):
         VIEW_NAME = "example_count"
 
         sql = SQLContext('kafka_test', TEST_CLIENT).get_or_create()
-        sql.register_table(TABLE_NAME, SQLSchema({"id": "INT NOT NULL PRIMARY KEY"}))
-        sql.register_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
 
-
-        source_config = {
-            "topics": [INPUT_TOPIC],
-            "bootstrap.servers": PIPELINE_TO_KAFKA_SERVER,
-            "auto.offset.reset": "earliest",
-        }
-
-        kafka_format = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
-
-        sink_config = {
-            "topic": OUTPUT_TOPIC,
-            "bootstrap.servers": PIPELINE_TO_KAFKA_SERVER,
-            "auto.offset.reset": "earliest",
-        }
-
-        sql.connect_source_kafka(TABLE_NAME, "kafka_conn_in", source_config, kafka_format)
-        sql.connect_sink_kafka(VIEW_NAME, "kafka_conn_out", sink_config, kafka_format)
+        sql.sql(f"""
+        CREATE TABLE {TABLE_NAME} (id INT NOT NULL PRIMARY KEY) 
+        WITH (
+            'connectors' = '[
+                {{
+                    "name": "kafka-2",
+                    "transport": {{
+                        "name": "kafka_input",
+                        "config": {{
+                            "bootstrap.servers": "{PIPELINE_TO_KAFKA_SERVER}",
+                            "topics": ["{INPUT_TOPIC}"],
+                            "auto.offset.reset": "earliest"
+                        }}
+                    }},
+                    "format": {{
+                        "name": "json",
+                        "config": {{
+                            "update_format": "insert_delete",
+                            "array": False
+                        }}
+                    }}
+                }}
+            ]'
+        );
+        """)
+        sql.sql(f"""
+        CREATE VIEW {VIEW_NAME}
+        WITH (
+            'connectors' = '[
+                {{
+                    "name": "kafka-3",
+                    "transport": {{
+                        "name": "kafka_output",
+                        "config": {{
+                            "bootstrap.servers": "{PIPELINE_TO_KAFKA_SERVER}",
+                            "topic": "{OUTPUT_TOPIC}",
+                            "auto.offset.reset": "earliest"
+                        }}
+                    }},
+                    "format": {{
+                        "name": "json",
+                        "config": {{
+                            "update_format": "insert_delete",
+                            "array": False
+                        }}
+                    }}
+                }}
+            ]'
+        )
+        AS SELECT COUNT(*) as num_rows FROM {TABLE_NAME};
+        """)
 
         out = sql.listen(VIEW_NAME)
         sql.start()
@@ -257,24 +328,40 @@ class TestWireframes(unittest.TestCase):
         df = out.to_pandas()
         assert df.shape[0] != 0
 
-        sql.delete(delete_connectors=True)
+        sql.delete()
 
     def test_http_get(self):
         sql = SQLContext("test_http_get", TEST_CLIENT).get_or_create()
 
-        TBL_NAME = "items"
-        VIEW_NAME = "s"
+        sql.sql("""
+        CREATE TABLE items (
+            id INT,
+            name STRING
+        ) WITH (
+            'connectors' = '[
+                {
+                    "name": "url_conn",
+                    "transport": {
+                        "name": "url_input",
+                        "config": {
+                            "path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
+                        }
+                    },
+                    "format": {
+                        "name": "json",
+                        "config": {
+                            "update_format": "insert_delete",
+                            "array": false
+                        }
+                    }
+                }
+            ]'
+        );
+        
+        CREATE VIEW s AS SELECT * FROM items;
+        """)
 
-        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-
-        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
-
-        path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
-
-        fmt = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
-        sql.connect_source_url(TBL_NAME, "part", path, fmt)
-
-        out = sql.listen(VIEW_NAME)
+        out = sql.listen("s")
 
         sql.start()
         sql.wait_for_completion(True)
@@ -283,10 +370,10 @@ class TestWireframes(unittest.TestCase):
 
         assert df.shape[0] == 3
 
-        sql.delete(delete_connectors=True)
+        sql.delete()
 
     def test_avro_format(self):
-        from feldera.formats import AvroFormat
+        import json
 
         PIPELINE_TO_KAFKA_SERVER = "redpanda:9092"
         KAFKA_SERVER = "localhost:19092"
@@ -313,25 +400,50 @@ class TestWireframes(unittest.TestCase):
         TBL_NAME = "items"
         VIEW_NAME = "s"
 
-        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAME} (
+            id INT,
+            name STRING
+        );
+        """)
 
-        sink_config = {
-            "topic": TOPIC,
-            "bootstrap.servers": PIPELINE_TO_KAFKA_SERVER,
-            "auto.offset.reset": "earliest",
-        }
-
-        avro_format = AvroFormat().with_schema({
+        avro_format = {
             "type": "record",
             "name": "items",
             "fields": [
                 {"name": "id", "type": ["null", "int"]},
                 {"name": "name", "type": ["null", "string"]}
             ]
-        })
+        }
 
-        sql.connect_sink_kafka(VIEW_NAME, "out_avro_kafka", sink_config, avro_format)
+        # serialize to a string
+        avro_schema = json.dumps(avro_format)
+        # re-serialize the string
+        avro_schema = json.dumps(avro_schema)
+
+        sql.sql(f"""
+        CREATE VIEW {VIEW_NAME} WITH (
+           'connectors'  = '[
+                {{
+                    "name": "kafka-1",
+                    "transport": {{
+                        "name": "kafka_output",
+                        "config": {{
+                            "bootstrap.servers": "{PIPELINE_TO_KAFKA_SERVER}",
+                            "topic": "{TOPIC}"
+                        }}
+                    }},
+                    "format": {{
+                        "name": "avro",
+                        "config": {{
+                            "schema": {avro_schema}
+                        }}
+                    }}
+                }}
+           ]'
+        )
+        AS SELECT * FROM {TBL_NAME};
+        """)
 
         sql.start()
         sql.input_pandas(TBL_NAME, df)
@@ -346,10 +458,10 @@ class TestWireframes(unittest.TestCase):
         msg = next(consumer)
         assert msg.value is not None
 
-        sql.delete(delete_connectors=True)
+        sql.delete()
 
     def test_pipeline_resource_config(self):
-        from feldera.resources import Resources
+        from feldera.runtime_config import Resources
 
         config = {
             "cpu_cores_max": 3,
@@ -369,19 +481,35 @@ class TestWireframes(unittest.TestCase):
             resources=resources
         ).get_or_create()
 
-        TBL_NAME = "items"
-        VIEW_NAME = "s"
+        sql.sql("""
+        CREATE TABLE items (
+            id INT,
+            name STRING
+        ) WITH (
+            'connectors' = '[
+                {
+                    "name": "url_conn",
+                    "transport": {
+                        "name": "url_input",
+                        "config": {
+                            "path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
+                        }
+                    },
+                    "format": {
+                        "name": "json",
+                        "config": {
+                            "update_format": "insert_delete",
+                            "array": false
+                        }
+                    }
+                }
+            ]'
+        );
+        
+        CREATE VIEW s AS SELECT * FROM items;
+        """)
 
-        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-
-        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
-
-        path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
-
-        fmt = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
-        sql.connect_source_url(TBL_NAME, "part", path, fmt)
-
-        out = sql.listen(VIEW_NAME)
+        out = sql.listen("s")
 
         sql.start()
         sql.wait_for_completion(True)
@@ -390,7 +518,7 @@ class TestWireframes(unittest.TestCase):
 
         assert df.shape[0] == 3
 
-        assert TEST_CLIENT.get_pipeline(name).config["resources"] == config
+        assert TEST_CLIENT.get_pipeline(name).runtime_config["resources"] == config
 
         sql.delete()
 
@@ -401,9 +529,15 @@ class TestWireframes(unittest.TestCase):
         VIEW_NAME = "s"
 
         # backend doesn't support TIMESTAMP of format: "2024-06-06T18:06:28.443"
-        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING", "birthdate": "TIMESTAMP"}))
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAME} (
+            id INT,
+            name STRING,
+            birthdate TIMESTAMP
+        );
+        """)
 
-        sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+        sql.sql( f"CREATE VIEW {VIEW_NAME} as SELECT * FROM {TBL_NAME}")
 
         df = pd.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"], "birthdate": [
             pd.Timestamp.now(), pd.Timestamp.now(), pd.Timestamp.now()
@@ -427,8 +561,14 @@ class TestWireframes(unittest.TestCase):
         TBL_NAME = "items"
         VIEW_NAME = "s"
 
-        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-        sql.register_materialized_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAME} (
+            id INT,
+            name STRING
+        );
+        
+        CREATE VIEW {VIEW_NAME} AS SELECT * FROM {TBL_NAME};
+        """)
 
         data = {"insert": {'id': 1, 'name': 'a'}}
 
@@ -449,8 +589,14 @@ class TestWireframes(unittest.TestCase):
         TBL_NAME = "items"
         VIEW_NAME = "s"
 
-        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-        sql.register_materialized_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAME} (
+            id INT,
+            name STRING
+        );
+        
+        CREATE VIEW {VIEW_NAME} AS SELECT * FROM {TBL_NAME};
+        """)
 
         data = [{'id': 1, 'name': 'a'}, {'id': 2, 'name': 'b'}]
 

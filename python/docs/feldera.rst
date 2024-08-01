@@ -17,14 +17,6 @@ feldera.enums module
    :undoc-members:
    :show-inheritance:
 
-feldera.formats module
-----------------------
-
-.. automodule:: feldera.formats
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 feldera.output\_handler module
 ------------------------------
 
@@ -33,18 +25,10 @@ feldera.output\_handler module
    :undoc-members:
    :show-inheritance:
 
-feldera.resources module
-------------------------
+feldera.runtime\_config module
+------------------------------
 
-.. automodule:: feldera.resources
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-feldera.sql\_schema module
---------------------------
-
-.. automodule:: feldera.sql_schema
+.. automodule:: feldera.runtime_config
    :members:
    :undoc-members:
    :show-inheritance:

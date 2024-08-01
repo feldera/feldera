@@ -5,31 +5,26 @@ import threading
 from tests import TEST_CLIENT
 
 from feldera.rest.pipeline import Pipeline
-from feldera.rest.program import Program
 
 
 class TestPipeline(unittest.TestCase):
     result = None
+
+    def test_delete_all_pipelines(self):
+        pipelines = TEST_CLIENT.pipelines()
+        for pipeline in pipelines:
+            TEST_CLIENT.delete_pipeline(pipeline.name)
 
     def test_create_pipeline(self, name: str = "blah", delete=False):
         sql = """
         CREATE TABLE tbl(id INT);
         CREATE VIEW V AS SELECT * FROM tbl;
         """
-        program = Program(name, sql)
-        TEST_CLIENT.compile_program(program)
-        pipeline = Pipeline(name=name, program_name=name)
-        TEST_CLIENT.create_pipeline(pipeline)
+        pipeline = Pipeline(name, sql, {}, {})
+        pipeline = TEST_CLIENT.create_pipeline(pipeline)
 
         if delete:
             TEST_CLIENT.delete_pipeline(pipeline.name)
-
-    def test_validate_pipeline(self):
-        name = str(uuid.uuid4())
-        self.test_create_pipeline(name, False)
-        assert TEST_CLIENT.validate_pipeline(name)
-
-        TEST_CLIENT.delete_pipeline(name)
 
     def test_delete_pipeline(self):
         name = str(uuid.uuid4())
@@ -88,7 +83,7 @@ class TestPipeline(unittest.TestCase):
     def test_get_pipeline_config(self):
         name = str(uuid.uuid4())
         self.test_create_pipeline(name, False)
-        config = TEST_CLIENT.get_pipeline_config(name)
+        config = TEST_CLIENT.get_runtime_config(name)
 
         assert config is not None
         assert config.get("workers") is not None
