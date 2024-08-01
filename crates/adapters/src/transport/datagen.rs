@@ -460,6 +460,7 @@ impl RecordGenerator {
                     field.name
                 ));
             }
+            let scale = settings.scale.try_into().unwrap_or(1usize);
 
             let value_settings = settings.value.clone().unwrap_or_default();
             let columntype = *field.columntype.component.as_ref().unwrap().clone();
@@ -475,8 +476,8 @@ impl RecordGenerator {
             }
 
             match (&settings.strategy, &settings.values) {
-                (DatagenStrategy::Increment { scale }, None) => {
-                    let val = self.current * (*scale).try_into().unwrap_or(1usize);
+                (DatagenStrategy::Increment, None) => {
+                    let val = self.current * scale;
                     let range = max - min;
                     let len = min + (val % range);
                     arr.resize_with(len, || Self::typ_to_default(arr_field.columntype.typ));
@@ -484,13 +485,11 @@ impl RecordGenerator {
                         self.generate_field(&arr_field, &value_settings, rng, e)?;
                     }
                 }
-                (DatagenStrategy::Increment { scale }, Some(values)) => {
-                    *obj = values
-                        [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
-                    .clone();
+                (DatagenStrategy::Increment, Some(values)) => {
+                    *obj = values[self.current % values.len()].clone();
                 }
                 (DatagenStrategy::Uniform, None) => {
-                    let len = rng.sample(Uniform::from(min..max));
+                    let len = rng.sample(Uniform::from(min..max)) * scale;
                     arr.resize_with(len, || Self::typ_to_default(arr_field.columntype.typ));
                     for e in arr.iter_mut() {
                         self.generate_field(&arr_field, &value_settings, rng, e)?;
@@ -554,23 +553,22 @@ impl RecordGenerator {
                     field.name
                 ));
             }
+            let scale = settings.scale.try_into().unwrap_or(1u64);
 
             let start_time = NaiveTime::MIN;
 
             match (&settings.strategy, &settings.values) {
-                (DatagenStrategy::Increment { scale }, None) => {
-                    let val = (self.current as u64 * (*scale).try_into().unwrap_or(1u64)) % max;
+                (DatagenStrategy::Increment, None) => {
+                    let val = (self.current as u64 * scale) % max;
                     let t = start_time + Duration::milliseconds(val as i64);
                     write!(str, "{}", t)?;
                 }
-                (DatagenStrategy::Increment { scale }, Some(values)) => {
-                    *obj = values
-                        [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
-                    .clone();
+                (DatagenStrategy::Increment, Some(values)) => {
+                    *obj = values[self.current % values.len()].clone();
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let dist = Uniform::from(min..max);
-                    let val = rng.sample(dist);
+                    let val = rng.sample(dist) * scale;
                     let t = start_time + Duration::milliseconds(val as i64);
                     write!(str, "{}", t)?;
                 }
@@ -628,10 +626,11 @@ impl RecordGenerator {
                 *obj = nl;
                 return Ok(());
             }
+            let scale = settings.scale;
 
             match (&settings.strategy, &settings.values) {
-                (DatagenStrategy::Increment { scale }, None) => {
-                    let val = (self.current as i64 * *scale) % (max - min);
+                (DatagenStrategy::Increment, None) => {
+                    let val = (self.current as i64 * scale) % (max - min);
                     let d = unix_date + Days::new(val as u64);
 
                     write!(
@@ -640,18 +639,16 @@ impl RecordGenerator {
                         d.format_with_items(self.ymd_format.as_slice().iter())
                     )?;
                 }
-                (DatagenStrategy::Increment { scale }, Some(values)) => {
-                    *obj = values
-                        [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
-                    .clone();
+                (DatagenStrategy::Increment, Some(values)) => {
+                    *obj = values[self.current % values.len()].clone();
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let dist = Uniform::from(min..max);
                     let days = rng.sample(dist);
                     let d = if days > 0 {
-                        unix_date + Days::new(days.unsigned_abs())
+                        unix_date + Days::new(days.unsigned_abs() * scale.unsigned_abs())
                     } else {
-                        unix_date - Days::new(days.unsigned_abs())
+                        unix_date - Days::new(days.unsigned_abs() * scale.unsigned_abs())
                     };
                     write!(
                         str,
@@ -722,6 +719,7 @@ impl RecordGenerator {
                 *obj = nl;
                 return Ok(());
             }
+            let scale = settings.scale;
 
             // We're allocating new strings here with `to_rfc_3339` instead of
             // `write!(str, "{}", dt.format_with_items(self.rfc3339_format.as_slice().iter()))`
@@ -736,21 +734,19 @@ impl RecordGenerator {
             //    .expect("%+ is a valid date format");
             // ```
             match (&settings.strategy, &settings.values) {
-                (DatagenStrategy::Increment { scale }, None) => {
-                    let val = (self.current as i64 * *scale) % (max - min);
+                (DatagenStrategy::Increment, None) => {
+                    let val = (self.current as i64 * scale) % (max - min);
                     let dt = DateTime::from_timestamp_millis(min).unwrap_or(DateTime::UNIX_EPOCH)
                         + Duration::milliseconds(val);
                     *obj = Value::String(dt.to_rfc3339());
                 }
-                (DatagenStrategy::Increment { scale }, Some(values)) => {
-                    *obj = values
-                        [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
-                    .clone();
+                (DatagenStrategy::Increment, Some(values)) => {
+                    *obj = values[self.current % values.len()].clone();
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let dist = Uniform::from(min..max);
                     let dt = DateTime::from_timestamp_millis(min).unwrap_or(DateTime::UNIX_EPOCH)
-                        + Duration::milliseconds(rng.sample(dist));
+                        + Duration::milliseconds(rng.sample(dist) * scale);
                     *obj = Value::String(dt.to_rfc3339());
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
@@ -826,13 +822,11 @@ impl RecordGenerator {
             }
 
             match (&settings.strategy, &settings.values) {
-                (DatagenStrategy::Increment { scale }, None) => {
-                    write!(str, "{}", self.current as i64 * *scale)?;
+                (DatagenStrategy::Increment, None) => {
+                    write!(str, "{}", self.current as i64 * settings.scale)?;
                 }
-                (DatagenStrategy::Increment { scale }, Some(values)) => {
-                    *obj = values
-                        [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
-                    .clone()
+                (DatagenStrategy::Increment, Some(values)) => {
+                    *obj = values[self.current % values.len()].clone()
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let len = rng.sample(Uniform::from(min..max));
@@ -1033,6 +1027,7 @@ impl RecordGenerator {
                 ));
             }
         }
+        let scale = settings.scale;
 
         if let Some(nl) = Self::maybe_null(field, settings, rng) {
             *obj = nl;
@@ -1040,29 +1035,27 @@ impl RecordGenerator {
         }
 
         match (&settings.strategy, &settings.values, &settings.range) {
-            (DatagenStrategy::Increment { scale }, None, None) => {
-                let val = (self.current as i64 * *scale) % max;
+            (DatagenStrategy::Increment, None, None) => {
+                let val = (self.current as i64 * scale) % max;
                 *obj = Value::Number(serde_json::Number::from(val));
             }
-            (DatagenStrategy::Increment { scale }, None, Some((a, b))) => {
+            (DatagenStrategy::Increment, None, Some((a, b))) => {
                 let range = b - a;
-                let val_in_range = (self.current as i64 * *scale) % range;
+                let val_in_range = (self.current as i64 * scale) % range;
                 let val = a + val_in_range;
                 debug_assert!(val >= *a && val < *b);
                 *obj = Value::Number(serde_json::Number::from(val));
             }
-            (DatagenStrategy::Increment { scale }, Some(values), _) => {
-                *obj = values
-                    [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
-                .clone();
+            (DatagenStrategy::Increment, Some(values), _) => {
+                *obj = values[self.current % values.len()].clone();
             }
             (DatagenStrategy::Uniform, None, None) => {
                 let dist = Uniform::from(min..max);
-                *obj = Value::Number(serde_json::Number::from(rng.sample(dist)));
+                *obj = Value::Number(serde_json::Number::from(rng.sample(dist) * scale));
             }
             (DatagenStrategy::Uniform, None, Some((a, b))) => {
                 let dist = Uniform::from(*a..*b);
-                *obj = Value::Number(serde_json::Number::from(rng.sample(dist)));
+                *obj = Value::Number(serde_json::Number::from(rng.sample(dist) * scale));
             }
             (DatagenStrategy::Uniform, Some(values), _) => {
                 let dist = Uniform::from(0..values.len());
@@ -1118,39 +1111,38 @@ impl RecordGenerator {
             *obj = nl;
             return Ok(());
         }
+        let scale = settings.scale as f64;
 
         match (&settings.strategy, &settings.values, &range) {
-            (DatagenStrategy::Increment { scale }, None, None) => {
-                let val = (self.current as f64 * *scale as f64) % max;
+            (DatagenStrategy::Increment, None, None) => {
+                let val = (self.current as f64 * scale) % max;
                 *obj = Value::Number(
                     serde_json::Number::from_f64(val).unwrap_or(serde_json::Number::from(0)),
                 );
             }
-            (DatagenStrategy::Increment { scale }, None, Some((a, b))) => {
+            (DatagenStrategy::Increment, None, Some((a, b))) => {
                 let range = b - a;
-                let val_in_range = (self.current as f64 * *scale as f64) % range;
+                let val_in_range = (self.current as f64 * scale) % range;
                 let val = a + val_in_range;
                 debug_assert!(val >= *a && val < *b);
                 *obj = Value::Number(
                     serde_json::Number::from_f64(val).unwrap_or(serde_json::Number::from(0)),
                 );
             }
-            (DatagenStrategy::Increment { scale }, Some(values), _) => {
-                *obj = values
-                    [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
-                .clone();
+            (DatagenStrategy::Increment, Some(values), _) => {
+                *obj = values[self.current % values.len()].clone();
             }
             (DatagenStrategy::Uniform, None, None) => {
                 let dist = Uniform::from(min..max);
                 *obj = Value::Number(
-                    serde_json::Number::from_f64(rng.sample(dist))
+                    serde_json::Number::from_f64(rng.sample(dist) * scale)
                         .unwrap_or(serde_json::Number::from(0)),
                 );
             }
             (DatagenStrategy::Uniform, None, Some((a, b))) => {
                 let dist = Uniform::from(*a..*b);
                 *obj = Value::Number(
-                    serde_json::Number::from_f64(rng.sample(dist))
+                    serde_json::Number::from_f64(rng.sample(dist) * scale)
                         .unwrap_or(serde_json::Number::from(0)),
                 );
             }
@@ -1202,12 +1194,10 @@ impl RecordGenerator {
         }
 
         *obj = match (&settings.strategy, &settings.values) {
-            (DatagenStrategy::Increment { scale }, None) => {
-                Value::Bool((self.current * (*scale).try_into().unwrap_or(1usize)) % 2 == 1)
+            (DatagenStrategy::Increment, None) => Value::Bool(self.current % 2 == 1),
+            (DatagenStrategy::Increment, Some(values)) => {
+                values[self.current % values.len()].clone()
             }
-            (DatagenStrategy::Increment { scale }, Some(values)) => values
-                [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
-            .clone(),
             (DatagenStrategy::Uniform, None) => Value::Bool(rand::random::<bool>()),
             (DatagenStrategy::Uniform, Some(values)) => {
                 values[rand::random::<usize>() % values.len()].clone()
@@ -1315,7 +1305,7 @@ stream: test_input
 transport:
     name: datagen
     config:
-        plan: [ { limit: 10, fields: { "id": { "strategy": { "name": "increment", scale: 3 }, "range": [10, 20] } } } ]
+        plan: [ { limit: 10, fields: { "id": { "strategy": { "name": "increment" }, "range": [10, 20], scale: 3 } } } ]
 "#;
         let (_endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
