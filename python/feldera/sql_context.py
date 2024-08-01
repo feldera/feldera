@@ -29,21 +29,20 @@ class SQLContext:
     The SQLContext is the main entry point for the Feldera SQL API.
     Abstracts the interaction with the Feldera API and provides a high-level interface for SQL pipelines.
 
-    :param pipeline_name: The name of the pipeline.
+    :param name: The name of the pipeline.
     :param client: The :class:`.FelderaClient` instance to use.
     :param pipeline_description: The description of the pipeline.
-    :param program_name: The name of the program. Defaults to the pipeline name.
-    :param program_description: The description of the program. Defaults to an empty string.
     :param storage: Set `True` to use storage with this pipeline. Defaults to False.
     :param workers: The number of workers to use with this pipeline. Defaults to 8.
-    :param resources: The :class:`.PipelineResourceConfig` for the pipeline. Defaults to None.
+    :param resources: The :class:`.Resources` for the pipeline. Defaults to None.
+    :param runtime_config: The :class:`.RuntimeConfig` for the pipeline. Defaults to None.
     :param compilation_profile: The compilation profile to use when compiling the program. Defaults to
         :class:`.CompilationProfile.OPTIMIZED`.
     """
 
     def __init__(
             self,
-            pipeline_name: str,
+            name: str,
             client: FelderaClient,
             pipeline_description: str = None,
             storage: bool = False,
@@ -56,7 +55,7 @@ class SQLContext:
         self.build_mode: Optional[BuildMode] = None
         self.views_tx: list[Dict[str, Queue]] = []
         self.client: FelderaClient = client
-        self.pipeline_name: str = pipeline_name
+        self.pipeline_name: str = name
         self.pipeline_description: str = pipeline_description or ""
         self.storage: bool = storage
         self.workers: int = workers
@@ -66,7 +65,7 @@ class SQLContext:
 
     def __setup_output_listeners(self):
         """
-        Internal function used to setup the output listeners.
+        Internal function used to set up the output listeners.
 
         :meta private:
         """

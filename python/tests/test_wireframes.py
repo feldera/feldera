@@ -561,8 +561,14 @@ class TestWireframes(unittest.TestCase):
         TBL_NAME = "items"
         VIEW_NAME = "s"
 
-        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-        sql.register_materialized_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAME} (
+            id INT,
+            name STRING
+        );
+        
+        CREATE VIEW {VIEW_NAME} AS SELECT * FROM {TBL_NAME};
+        """)
 
         data = {'id': 1, 'name': 'a'}
 
@@ -583,8 +589,14 @@ class TestWireframes(unittest.TestCase):
         TBL_NAME = "items"
         VIEW_NAME = "s"
 
-        sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
-        sql.register_materialized_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
+        sql.sql(f"""
+        CREATE TABLE {TBL_NAME} (
+            id INT,
+            name STRING
+        );
+        
+        CREATE VIEW {VIEW_NAME} AS SELECT * FROM {TBL_NAME};
+        """)
 
         data = [{'id': 1, 'name': 'a'}, {'id': 2, 'name': 'b'}]
 

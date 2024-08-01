@@ -95,6 +95,7 @@ Key Concepts
       - Here, we create a table which can receive data from input sources.
       - Then, we create a view that performs operations on this input data.
         You can also create other views on top of existing views.
+      - We start the Feldera pipeline we have just created.
       - Then, we pass a pandas DataFrame as input to the table.
       - Finally, we wait for the the pipeline to complete.
 

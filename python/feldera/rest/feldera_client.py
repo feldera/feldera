@@ -42,7 +42,7 @@ class FelderaClient:
             logging.error(f"Failed to connect to Feldera API: {e}")
             raise e
 
-    def get_pipeline(self, pipeline_name):
+    def get_pipeline(self, pipeline_name) -> Pipeline:
         """
         Get a pipeline by name
 

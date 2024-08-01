@@ -26,13 +26,6 @@ class TestPipeline(unittest.TestCase):
         if delete:
             TEST_CLIENT.delete_pipeline(pipeline.name)
 
-    # def test_validate_pipeline(self):
-    #     name = str(uuid.uuid4())
-    #     self.test_create_pipeline(name, False)
-    #     assert TEST_CLIENT.validate_pipeline(name)
-    #
-    #     TEST_CLIENT.delete_pipeline(name)
-
     def test_delete_pipeline(self):
         name = str(uuid.uuid4())
         self.test_create_pipeline(name, False)

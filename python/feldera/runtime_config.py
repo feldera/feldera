@@ -45,7 +45,7 @@ class RuntimeConfig:
 
     def __init__(
             self,
-            cpu_profiler: bool = False,
+            cpu_profiler: bool = True,
             max_buffering_delay_usecs: int = 0,
             min_batch_size_records: int = 0,
             min_storage_bytes: Optional[int] = None,
@@ -60,7 +60,7 @@ class RuntimeConfig:
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):
         """
-        Create a RuntimeConfig object from a dictionary.
+        Create a `.RuntimeConfig` object from a dictionary.
         """
 
         conf = cls()
