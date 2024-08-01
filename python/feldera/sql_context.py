@@ -283,18 +283,31 @@ class SQLContext:
                 )
             return
 
-    def input_json(self, table_name: str, data: Dict | list, force: bool = False):
+    def input_json(self, table_name: str, data: Dict | list, update_format: str = "raw", force: bool = False):
         """
         Push this JSON data to the specified table of the pipeline.
 
         :param table_name: The name of the table to push data into.
         :param data: The JSON encoded data to be pushed to the pipeline. The data should be in the form:
             `{'col1': 'val1', 'col2': 'val2'}` or `[{'col1': 'val1', 'col2': 'val2'}, {'col1': 'val1', 'col2': 'val2'}]`
+        :param update_format: The update format of the JSON data to be pushed to the pipeline. Must be one of:
+            "raw", "insert_delete". <https://www.feldera.com/docs/api/json#the-insertdelete-format>
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
         """
 
+        if update_format not in ["raw", "insert_delete"]:
+            ValueError("update_format must be one of raw or insert_delete")
+
         array = True if isinstance(data, list) else False
-        self.client.push_to_pipeline(self.pipeline_name, table_name, "json", data, array=array, force=force)
+        self.client.push_to_pipeline(
+            self.pipeline_name,
+            table_name,
+           "json",
+            data,
+            update_format=update_format,
+            array=array,
+            force=force
+        )
 
     def register_local_view(self, name: str, query: str):
         """
