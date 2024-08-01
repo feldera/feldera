@@ -91,7 +91,7 @@ We will now connect the MySQL database with Kafka Connect.
    **NOTE: the curl command below is only for demo purposes.
    Passwords or other secrets should not be put in plaintext in connector configurations.
    They should be managed/externalized with appropriate secret management.
-   For more information, see the notes in the 
+   For more information, see the notes in the
    [official Debezium tutorial](https://debezium.io/documentation/reference/tutorial.html)
    as well as [KIP-297](https://cwiki.apache.org/confluence/display/KAFKA/KIP-297%3A+Externalizing+Secrets+for+Connect+Configurations)
    to which they refer. There is an [experimental secret management](../../enterprise/kubernetes-guides/secret-management) guide
@@ -125,18 +125,32 @@ We will now connect the MySQL database with Kafka Connect.
 
 ## Step 4: Feldera input connector
 
-Finally, you must create an input connector for each table.
+Finally, you must create an input connector for each table in the SQL
+table declaration.  For Feldera a Debezium connector uses the Kafka
+transport, so the configuration is similar to the one for [Kafka input
+connectors](kafka.md).  The `group.id` property should be left empty.
 
-* Open the Feldera Web Console: **http://localhost/**
-* **Connectors** -> **Add Connector** -> **Debezium** -> **Add input**
-* Data source name: your table name
-* Server:
-    * bootstrap.servers: `[KAFKA HOSTNAME:PORT]`
-    * auto.offset.reset: Earliest
-    * group.id: leave empty
-    * topics: `[UNIQUE DATABASE SERVER NAME].[DATABASE].[TABLE]`
-* Security: plaintext
-* Format:
-    * Source database: MySQL
-    * Data format: JSON
-* **Create**
+
+```sql
+CREATE TABLE INPUT (
+   ... -- columns omitted
+) WITH (
+  'connectors' = '[
+    {
+      "transport": {
+          "name": "debezium_input",
+          "config": {
+              "bootstrap.servers": "KAFKA HOSTNAME:PORT",
+              "auto.offset.reset": "Earliest",
+              "group.id": "",
+              "topics": ["UNIQUE_DATABASE_SERVER_NAME.DATABASE.TABLE"]
+          }
+      },
+      "security": "plaintext",
+      "format": {
+          "name": "json",
+          "source database": "MySQL"
+      }
+  }]'
+)
+```
