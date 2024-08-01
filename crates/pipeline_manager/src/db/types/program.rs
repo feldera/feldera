@@ -425,7 +425,8 @@ pub fn generate_program_info_from_schema(
                 | TransportConfig::KafkaInput(_)
                 | TransportConfig::UrlInput(_)
                 | TransportConfig::S3Input(_)
-                | TransportConfig::DeltaTableInput(_) => {}
+                | TransportConfig::DeltaTableInput(_)
+                | TransportConfig::Datagen(_) => {}
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedInputConnector);
                 }
