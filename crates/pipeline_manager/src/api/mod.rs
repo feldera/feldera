@@ -216,7 +216,6 @@ request is rejected."
         pipeline_types::transport::datagen::GenerationPlan,
         pipeline_types::transport::datagen::RngFieldSettings,
         pipeline_types::transport::datagen::DatagenStrategy,
-        pipeline_types::transport::datagen::StringMethod,
         pipeline_types::format::csv::CsvEncoderConfig,
         pipeline_types::format::csv::CsvParserConfig,
         pipeline_types::format::json::JsonEncoderConfig,

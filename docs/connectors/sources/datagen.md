@@ -33,14 +33,15 @@ fields:
 
 * `limit` - How many rows to generate. If not specified, the plan will run indefinitely.
 * `rate` - How many rows to generate per second. If not specified, the plan will run as fast as possible. See also the `workers` parameter.
-* `fields` - A map of field names to field generation options.
+* `fields` - A map of field names to [field generation options](#random-field-settings).
 
 ### Random Field Settings
 
 Each field can set a strategy that defines how a value is picked:
 
 * `strategy` - The strategy to use for generating values. The following strategies are available:
-    * `increment` - (default) Use an incrementing sequence of values. An optional scale factor can be used to skip values.
+    * `increment` - (default) Generate an incrementing sequence of values for the given type where each value is 
+      greater than the previous one (wrapping around once reaching the limit of numeric types).
     * `uniform` - Generate random values from a uniform distribution.
     * `zipf` - Generate random values from a Zipf distribution. The exponent of the distribution can be set with the 
       `s` parameter.
@@ -67,7 +68,23 @@ meaning of the range depends on the type:
   If not set, a range of `[0, 5)` is used by default.
 - For struct/boolean/null types `range` is ignored.
 
-The `values` parameter can be used to specify a list of values to pick from. If set, the `range` parameter is ignored. 
+The `values` parameter can be used to specify a list of values to pick from. If set, the `range` parameter is ignored.
+The values given in the list must be of the same type as the field.
+
+A field can have an optional `scale` parameter that is applied as a multiplier to the value generated 
+by the strategy. The default scale is `1`. The `scale` factor is only applicable in combination with either the
+`increment` or `uniform` strategy. The following rules apply:
+
+- For integer/floating point types, the value is multiplied by the scale factor.
+- For timestamp types, the generated value (milliseconds) is multiplied by the scale factor.
+- For time types, the generated value (milliseconds) is multiplied by the scale factor.
+- For date types, the generated value (days) is multiplied by the scale factor.
+- For string/binary types, the scale factor is ignored except with the `increment` strategy where
+  it applies the scale to the number that is formatted as a string.
+- For array/map/struct/boolean/null types, the scale factor is ignored.
+- If `values` is specified, the scale factor is ignored.
+- If `range` is specified and the range is required to be positive (time, struct, map, array etc.), negative
+  scale factors are ignored.
 
 `null_percentage` adds a chance for generating `null` values for this field. If not specified, the field will 
 never be `null`.

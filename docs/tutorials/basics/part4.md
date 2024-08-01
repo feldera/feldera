@@ -106,7 +106,7 @@ curl -L -X PUT 'http://localhost:8080/v0/connectors/part-datagen' \
           { "limit": 3,
             "fields": {
               "id": { "strategy": { "name": "increment" }, "range": [1, 4] },
-              "name": { "strategy": { "name": "increment", "scale": 2 }, "values": ["Flux Capacitor", "NOT TAKEN", "Warp Core", "NOT TAKEN", "Kyber Crystal"] } } }
+              "name": { "values": ["Flux Capacitor", "Warp Core", "Kyber Crystal"] } } }
         ]
       }
     }
@@ -121,11 +121,8 @@ What's new is that we added the `range` parameter for the `id` column. That mean
 values generated for this field. Instead of starting from 0 as we did in the previous table, 
 the `id` rows now have values `1, 2, 3`.
 
-For the `name` column, we also use the `increment` strategy. Again, we specify a fixed set of 
-`values`. As previously, the `increment` strategy will select the values from the list one-by-one.
-However, we use this case as an example to show that we can also set a scale factor (`2` in this case) for incrementing. 
-A scale means we only select every other value from the list and skip the 
-`"NOT TAKEN"` values.
+For the `name` column, we also (implicitly) use the `increment` strategy. Again, we specify a fixed set of
+`values`. As seen previously, strategy will select the values from the list one-by-one.
 
 The last table, `price` connects the vendor and part table:
 

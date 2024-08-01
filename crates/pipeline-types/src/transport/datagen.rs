@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+use std::default::Default;
+use std::num::NonZeroU32;
+
 use crate::config::TransportConfigVariant;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
-use std::num::NonZeroU32;
 use utoipa::ToSchema;
 
 fn default_scale() -> i64 {
@@ -28,13 +30,7 @@ fn default_sequence() -> Vec<GenerationPlan> {
 pub enum DatagenStrategy {
     /// Whether the field should be incremented for each new
     /// record rather than generated randomly.
-    ///
-    /// A scale factor can be set as the `param` field to apply a multiplier to the increment.
-    /// The default scale factor is 1.
-    Increment {
-        #[serde(default = "default_scale")]
-        scale: i64,
-    },
+    Increment,
     /// A uniform random distribution is chosen to generate the value.
     Uniform,
     /// A Zipf distribution is chosen with the specified exponent (`s`) and
@@ -124,14 +120,13 @@ pub enum DatagenStrategy {
 }
 
 impl Default for DatagenStrategy {
-    /// If `mode` is not specified, default to `Watch`.
     fn default() -> Self {
-        Self::Increment { scale: 1 }
+        Self::Increment
     }
 }
 
 /// Configuration for generating random data for a field of a table.
-#[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct RngFieldSettings {
     /// Percentage of records where this field should be set to NULL.
     ///
@@ -163,6 +158,22 @@ pub struct RngFieldSettings {
     /// - For struct/boolean/null types `range` is ignored.
     pub range: Option<(i64, i64)>,
 
+    /// A scale factor to apply a multiplier to the generated value.
+    ///
+    /// - For integer/floating point types, the value is multiplied by the scale factor.
+    /// - For timestamp types, the generated value (milliseconds) is multiplied by the scale factor.
+    /// - For time types, the generated value (milliseconds) is multiplied by the scale factor.
+    /// - For date types, the generated value (days) is multiplied by the scale factor.
+    /// - For string/binary/array/map/struct/boolean/null types, the scale factor is ignored.
+    ///
+    /// - If `values` is specified, the scale factor is ignored.
+    /// - If `range` is specified and the range is required to be positive (struct, map, array etc.)
+    ///   the scale factor is required to be positive too.
+    ///
+    /// The default scale factor is 1.
+    #[serde(default = "default_scale")]
+    pub scale: i64,
+
     /// An optional set of values the generator will pick from.
     ///
     /// If set, the generator will pick values from the specified set.
@@ -183,6 +194,25 @@ pub struct RngFieldSettings {
     /// Specifies the values that the generator should produce for the value in case the field is a map
     /// or array.
     pub value: Option<Box<RngFieldSettings>>,
+}
+
+/// Derive the default for `RngFieldSettings`.
+///
+/// We to implement this ourselves because this needs
+/// to match the serde default semantics which sets scale to 1.
+impl Default for RngFieldSettings {
+    fn default() -> Self {
+        Self {
+            null_percentage: None,
+            strategy: DatagenStrategy::default(),
+            range: None,
+            scale: 1,
+            values: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
 }
 
 /// A random generation plan for a table that generates either a limited amount of rows or runs continuously.

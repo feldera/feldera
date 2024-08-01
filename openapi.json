@@ -3512,7 +3512,6 @@
         "oneOf": [
           {
             "type": "object",
-            "description": "Whether the field should be incremented for each new\nrecord rather than generated randomly.\n\nA scale factor can be set as the `param` field to apply a multiplier to the increment.\nThe default scale factor is 1.",
             "required": [
               "name"
             ],
@@ -3522,10 +3521,6 @@
                 "enum": [
                   "increment"
                 ]
-              },
-              "scale": {
-                "type": "integer",
-                "format": "int64"
               }
             }
           },
@@ -3564,18 +3559,966 @@
           },
           {
             "type": "object",
-            "description": "A strategy to produce a random string for various data.\n\n- This strategy is only available for string types.",
             "required": [
               "name"
             ],
             "properties": {
-              "method": {
-                "$ref": "#/components/schemas/StringMethod"
-              },
               "name": {
                 "type": "string",
                 "enum": [
-                  "string"
+                  "word"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "words"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "sentence"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "sentences"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "paragraph"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "paragraphs"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "first_name"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "last_name"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "title"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "suffix"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "name"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "name_with_title"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "domain_suffix"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "email"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "username"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "password"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "field"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "position"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "seniority"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "job_title"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "i_pv4"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "i_pv6"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "i_p"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "m_a_c_address"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "user_agent"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "rfc_status_code"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "valid_status_code"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "company_suffix"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "company_name"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "buzzword"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "buzzword_middle"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "buzzword_tail"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "catch_phrase"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "bs_verb"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "bs_adj"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "bs_noun"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "bs"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "profession"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "industry"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "currency_code"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "currency_name"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "currency_symbol"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "credit_card_number"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "city_prefix"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "city_suffix"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "city_name"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "country_name"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "country_code"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "street_suffix"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "street_name"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "time_zone"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "state_name"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "state_abbr"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "secondary_address_type"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "secondary_address"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "zip_code"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "post_code"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "building_number"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "latitude"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "longitude"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "isbn"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "isbn13"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "isbn10"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "phone_number"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "cell_number"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "file_path"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "file_name"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "file_extension"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "dir_path"
                 ]
               }
             }
@@ -5064,6 +6007,11 @@
             "description": "An optional, exclusive range [a, b) to limit the range of values the generator should produce.\n\n- For integer/floating point types specifies min/max values.\nIf not set, the generator will produce values for the entire range of the type for number types.\n- For string/binary types specifies min/max length, values are required to be >=0.\nIf not set, a range of [0, 25) is used by default.\n- For timestamp types specifies the min/max in milliseconds from the number of non-leap\nmilliseconds since January 1, 1970 0:00:00.000 UTC (aka “UNIX timestamp”).\nIf not set, a range of [0, 4102444800) is used by default (1970-01-01 -- 2100-01-01).\n- For time types specifies the min/max in milliseconds.\nIf not set, the range is 24h. Range values are required to be >=0.\n- For date types specifies the min/max in days from the number of days since January 1, 1970.\nIf not set, a range of [0, 54787) is used by default (1970-01-01 -- 2100-01-01).\n- For array types specifies the min/max number of elements.\nIf not set, a range of [0, 5) is used by default. Range values are required to be >=0.\n- For map types specifies the min/max number of key-value pairs.\nIf not set, a range of [0, 5) is used by default.\n- For struct/boolean/null types `range` is ignored.",
             "nullable": true
           },
+          "scale": {
+            "type": "integer",
+            "format": "int64",
+            "description": "A scale factor to apply a multiplier to the generated value.\n\n- For integer/floating point types, the value is multiplied by the scale factor.\n- For timestamp types, the generated value (milliseconds) is multiplied by the scale factor.\n- For time types, the generated value (milliseconds) is multiplied by the scale factor.\n- For date types, the generated value (days) is multiplied by the scale factor.\n- For string/binary/array/map/struct/boolean/null types, the scale factor is ignored.\n\n- If `values` is specified, the scale factor is ignored.\n- If `range` is specified and the range is required to be positive (struct, map, array etc.)\nthe scale factor is required to be positive too.\n\nThe default scale factor is 1."
+          },
           "strategy": {
             "$ref": "#/components/schemas/DatagenStrategy"
           },
@@ -5425,81 +6373,6 @@
             "description": "The location where the pipeline state is stored or will be stored.\n\nIt should point to a path on the file-system of the machine/container\nwhere the pipeline will run. If that path doesn't exist yet, or if it\ndoes not contain any checkpoints, then the pipeline creates it and\nstarts from an initial state in which no data has yet been received. If\nit does exist, then the pipeline starts from the most recent checkpoint\nthat already exists there. In either case, (further) checkpoints will be\nwritten there."
           }
         }
-      },
-      "StringMethod": {
-        "type": "string",
-        "description": "Various methods to generate different random strings.",
-        "enum": [
-          "word",
-          "words",
-          "sentence",
-          "sentences",
-          "paragraph",
-          "paragraphs",
-          "first_name",
-          "last_name",
-          "title",
-          "suffix",
-          "name",
-          "name_with_title",
-          "domain_suffix",
-          "email",
-          "username",
-          "password",
-          "field",
-          "position",
-          "seniority",
-          "job_title",
-          "i_pv4",
-          "i_pv6",
-          "i_p",
-          "m_a_c_address",
-          "user_agent",
-          "rfc_status_code",
-          "valid_status_code",
-          "company_suffix",
-          "company_name",
-          "buzzword",
-          "buzzword_middle",
-          "buzzword_tail",
-          "catch_phrase",
-          "bs_verb",
-          "bs_adj",
-          "bs_noun",
-          "bs",
-          "profession",
-          "industry",
-          "currency_code",
-          "currency_name",
-          "currency_symbol",
-          "credit_card_number",
-          "city_prefix",
-          "city_suffix",
-          "city_name",
-          "country_name",
-          "country_code",
-          "street_suffix",
-          "street_name",
-          "time_zone",
-          "state_name",
-          "state_abbr",
-          "secondary_address_type",
-          "secondary_address",
-          "zip_code",
-          "post_code",
-          "building_number",
-          "latitude",
-          "longitude",
-          "isbn",
-          "isbn13",
-          "isbn10",
-          "phone_number",
-          "cell_number",
-          "file_path",
-          "file_name",
-          "file_extension",
-          "dir_path"
-        ]
       },
       "TenantId": {
         "type": "string",
