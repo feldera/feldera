@@ -20,15 +20,15 @@
     tabContentChanged?: boolean
   } = $props()
 
-  let value = $state(existing)
-
-  $effect(() => {
-    if (value === existing) {
-      return
+  let { value } = $state({
+    get value() {
+      return existing
+    },
+    set value(name: string) {
+      const newUrl = `${base}/pipelines/${encodeURIComponent(name)}/`
+      patchPipeline(existing, { name }).then(() => goto(newUrl, { replaceState: true }))
+      onRenamePipeline?.({ existing }, { existing: name })
     }
-    const newUrl = `${base}/pipelines/${encodeURIComponent(value)}/`
-    patchPipeline(existing, { name: value }).then(() => goto(newUrl, { replaceState: true }))
-    onRenamePipeline?.({ existing }, { existing: value })
   })
 </script>
 
