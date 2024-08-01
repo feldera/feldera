@@ -3,6 +3,9 @@
 Datagen is a source connector that generates synthetic data for testing,
 prototyping and benchmarking purposes.
 
+For a tutorial on how to use the Datagen connector, see the
+[Random Data Generation](../../tutorials/basics/part4) tutorial.
+
 ## Datagen input connector configuration
 
 ### Config Parameters
@@ -34,14 +37,15 @@ fields:
 
 ### Random Field Settings
 
-Each field has a strategy that defines how a value is picked:
+Each field can set a strategy that defines how a value is picked:
 
 * `strategy` - The strategy to use for generating values. The following strategies are available:
     * `increment` - (default) Use an incrementing sequence of values. An optional scale factor can be used to skip values.
     * `uniform` - Generate random values from a uniform distribution.
     * `zipf` - Generate random values from a Zipf distribution. The exponent of the distribution can be set with the 
       `s` parameter.
-    * `string` - Check the [String Generation](#string-generation-methods) section for details.
+    * For string types, the [String Generation](#string-generation-strategies) section lists more strategies
+      on how to generate more specific strings.
 
 A field can have an optional `range` parameter that defines the range of values a strategy will pick from. The 
 meaning of the range depends on the type:
@@ -71,10 +75,9 @@ never be `null`.
 If the type of the field is a complex type (array, map, struct), the `value`, `key`/`value`, and `fields` parameter 
 respectively define the field settings for the complex type.
 
-#### String Generation Methods
+#### String Generation Strategies
 
-In case the field type is a string, the `string` strategy can be used to generate strings.
-The type of string is chosen by the `method` parameter. The following methods are available:
+In case the field type is a string, various strategies can be used to generate different kinds of strings.
 
 - Lorem: `word`, `words`, `sentence`, `sentences`, `paragraph`, `paragraphs`
 - Name: `first_name`, `last_name`, `title`, `suffix`, `name`, `name_with_title`, `phone_number`, `cell_number`
@@ -86,9 +89,5 @@ The type of string is chosen by the `method` parameter. The following methods ar
 - Barcode: `isbn10`, `isbn13`, `isbn`
 - Files: `file_path`, `file_name`, `file_extension`, `dir_path`
 
-For some of these parameters (`words`, `sentences`, `paragraphs`) the length is controlled by the `range` parameter.
-
-## Example usage
-
-For a tutorial on how to use the Datagen connector, see the
-[Random Data Generation](../../tutorials/basics/part4) tutorial.
+For some of these parameters (`words`, `sentences`, `paragraphs`) the length of the resulting string is controlled with 
+the `range` parameter.

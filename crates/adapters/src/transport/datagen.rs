@@ -14,7 +14,6 @@ use anyhow::{anyhow, Result as AnyResult};
 use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime};
 use dbsp::circuit::tokio::TOKIO;
-use fake::Dummy;
 use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
 use governor::state::{InMemoryState, NotKeyed};
@@ -22,7 +21,7 @@ use governor::{Jitter, Quota, RateLimiter};
 use num_traits::{clamp, Bounded, FromPrimitive, ToPrimitive};
 use pipeline_types::program_schema::{Field, Relation, SqlType};
 use pipeline_types::transport::datagen::{
-    DatagenInputConfig, DatagenStrategy, GenerationPlan, RngFieldSettings, StringMethod,
+    DatagenInputConfig, DatagenStrategy, GenerationPlan, RngFieldSettings,
 };
 use rand::distributions::{Alphanumeric, Uniform};
 use rand::rngs::SmallRng;
@@ -514,10 +513,11 @@ impl RecordGenerator {
                     let idx = rng.sample(zipf) as usize - 1;
                     *obj = values[idx].clone()
                 }
-                (DatagenStrategy::String { .. }, _) => {
+                (m, _) => {
                     return Err(anyhow!(
-                        "Invalid method `string` for non-string field: `{:?}`",
-                        field.name
+                        "Invalid strategy `{m:?}` for field: `{:?}` with type {:?}",
+                        field.name,
+                        field.columntype.typ
                     ));
                 }
             };
@@ -589,11 +589,12 @@ impl RecordGenerator {
                     let idx = rng.sample(zipf) as usize - 1;
                     *obj = values[idx].clone();
                 }
-                (DatagenStrategy::String { .. }, _) => {
+                (m, _) => {
                     return Err(anyhow!(
-                        "Invalid method `string` for non-string field: `{:?}`",
-                        field.name
-                    ))
+                        "Invalid strategy `{m:?}` for field: `{:?}` with type {:?}",
+                        field.name,
+                        field.columntype.typ
+                    ));
                 }
             };
 
@@ -682,10 +683,11 @@ impl RecordGenerator {
                     let idx = rng.sample(zipf) as usize - 1;
                     *obj = values[idx].clone();
                 }
-                (DatagenStrategy::String { .. }, _) => {
+                (m, _) => {
                     return Err(anyhow!(
-                        "Invalid method `string` for non-string field: `{:?}`",
-                        field.name
+                        "Invalid strategy `{m:?}` for field: `{:?}` with type {:?}",
+                        field.name,
+                        field.columntype.typ
                     ));
                 }
             };
@@ -767,10 +769,11 @@ impl RecordGenerator {
                     let idx = rng.sample(zipf) as usize - 1;
                     *obj = values[idx].clone();
                 }
-                (DatagenStrategy::String { .. }, _) => {
+                (m, _) => {
                     return Err(anyhow!(
-                        "Invalid method `string` for non-string field: `{:?}`",
-                        field.name
+                        "Invalid strategy `{m:?}` for field: `{:?}` with type {:?}",
+                        field.name,
+                        field.columntype.typ
                     ));
                 }
             };
@@ -788,6 +791,21 @@ impl RecordGenerator {
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
+        use fake::faker::address::raw::*;
+        use fake::faker::barcode::raw::*;
+        use fake::faker::company::raw::*;
+        use fake::faker::creditcard::raw::*;
+        use fake::faker::currency::raw::*;
+        use fake::faker::filesystem::raw::*;
+        use fake::faker::http::raw::*;
+        use fake::faker::internet::raw::*;
+        use fake::faker::job::raw as job;
+        use fake::faker::lorem::raw::*;
+        use fake::faker::name::raw::*;
+        use fake::faker::phone_number::raw::*;
+        use fake::locales::*;
+        use fake::Dummy;
+
         if let Value::String(str) = obj {
             str.clear();
 
@@ -831,12 +849,165 @@ impl RecordGenerator {
                 (DatagenStrategy::Zipf { s }, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, *s as f64).unwrap();
                     let idx = rng.sample(zipf) as usize - 1;
-                    *obj = values[idx].clone()
+                    *obj = values[idx].clone();
                 }
-                (DatagenStrategy::String { method }, _) => {
-                    // TODO: This should ideally write into `str` rather than allocating a new one.
-                    *obj = generate_fake_string(settings, method, rng);
+                (DatagenStrategy::Word, _) => *str = Dummy::dummy_with_rng(&Word(EN), rng),
+                (DatagenStrategy::Words, _) => {
+                    let v: Vec<String> = Dummy::dummy_with_rng(&Words(EN, min..max), rng);
+                    *str = v.join(" ");
                 }
+                (DatagenStrategy::Sentence, _) => {
+                    *str = Dummy::dummy_with_rng(&Sentence(EN, min..max), rng)
+                }
+                (DatagenStrategy::Sentences, _) => {
+                    let v: Vec<String> = Dummy::dummy_with_rng(&Sentences(EN, min..max), rng);
+                    *str = v.join(" ");
+                }
+                (DatagenStrategy::Paragraph, _) => {
+                    *str = Dummy::dummy_with_rng(&Paragraph(EN, min..max), rng)
+                }
+                (DatagenStrategy::Paragraphs, _) => {
+                    let v: Vec<String> = Dummy::dummy_with_rng(&Paragraphs(EN, min..max), rng);
+                    *str = v.join(" ")
+                }
+                (DatagenStrategy::FirstName, _) => {
+                    *str = Dummy::dummy_with_rng(&FirstName(EN), rng)
+                }
+                (DatagenStrategy::LastName, _) => *str = Dummy::dummy_with_rng(&LastName(EN), rng),
+                (DatagenStrategy::Title, _) => *str = Dummy::dummy_with_rng(&Title(EN), rng),
+                (DatagenStrategy::Suffix, _) => *str = Dummy::dummy_with_rng(&Suffix(EN), rng),
+                (DatagenStrategy::Name, _) => *str = Dummy::dummy_with_rng(&Name(EN), rng),
+                (DatagenStrategy::NameWithTitle, _) => {
+                    *str = Dummy::dummy_with_rng(&NameWithTitle(EN), rng)
+                }
+                (DatagenStrategy::DomainSuffix, _) => {
+                    *str = Dummy::dummy_with_rng(&DomainSuffix(EN), rng)
+                }
+                (DatagenStrategy::Email, _) => *str = Dummy::dummy_with_rng(&SafeEmail(EN), rng),
+                (DatagenStrategy::Username, _) => *str = Dummy::dummy_with_rng(&Username(EN), rng),
+                (DatagenStrategy::Password, _) => {
+                    *str = Dummy::dummy_with_rng(&Password(EN, min..max), rng)
+                }
+                (DatagenStrategy::Field, _) => *str = Dummy::dummy_with_rng(&job::Field(EN), rng),
+                (DatagenStrategy::Position, _) => {
+                    *str = Dummy::dummy_with_rng(&job::Position(EN), rng)
+                }
+                (DatagenStrategy::Seniority, _) => {
+                    *str = Dummy::dummy_with_rng(&job::Seniority(EN), rng)
+                }
+                (DatagenStrategy::JobTitle, _) => {
+                    *str = Dummy::dummy_with_rng(&job::Title(EN), rng)
+                }
+                (DatagenStrategy::IPv4, _) => *str = Dummy::dummy_with_rng(&IPv4(EN), rng),
+                (DatagenStrategy::IPv6, _) => *str = Dummy::dummy_with_rng(&IPv6(EN), rng),
+                (DatagenStrategy::IP, _) => *str = Dummy::dummy_with_rng(&IP(EN), rng),
+                (DatagenStrategy::MACAddress, _) => {
+                    *str = Dummy::dummy_with_rng(&MACAddress(EN), rng)
+                }
+                (DatagenStrategy::UserAgent, _) => {
+                    *str = Dummy::dummy_with_rng(&UserAgent(EN), rng)
+                }
+                (DatagenStrategy::RfcStatusCode, _) => {
+                    *str = Dummy::dummy_with_rng(&RfcStatusCode(EN), rng)
+                }
+                (DatagenStrategy::ValidStatusCode, _) => {
+                    *str = Dummy::dummy_with_rng(&ValidStatusCode(EN), rng)
+                }
+                (DatagenStrategy::CompanySuffix, _) => {
+                    *str = Dummy::dummy_with_rng(&CompanySuffix(EN), rng)
+                }
+                (DatagenStrategy::CompanyName, _) => {
+                    *str = Dummy::dummy_with_rng(&CompanyName(EN), rng)
+                }
+                (DatagenStrategy::Buzzword, _) => *str = Dummy::dummy_with_rng(&Buzzword(EN), rng),
+                (DatagenStrategy::BuzzwordMiddle, _) => {
+                    *str = Dummy::dummy_with_rng(&BuzzwordMiddle(EN), rng)
+                }
+                (DatagenStrategy::BuzzwordTail, _) => {
+                    *str = Dummy::dummy_with_rng(&BuzzwordTail(EN), rng)
+                }
+                (DatagenStrategy::CatchPhrase, _) => {
+                    *str = Dummy::dummy_with_rng(&CatchPhase(EN), rng)
+                }
+                (DatagenStrategy::BsVerb, _) => *str = Dummy::dummy_with_rng(&BsVerb(EN), rng),
+                (DatagenStrategy::BsAdj, _) => *str = Dummy::dummy_with_rng(&BsAdj(EN), rng),
+                (DatagenStrategy::BsNoun, _) => *str = Dummy::dummy_with_rng(&BsNoun(EN), rng),
+                (DatagenStrategy::Bs, _) => *str = Dummy::dummy_with_rng(&Bs(EN), rng),
+                (DatagenStrategy::Profession, _) => {
+                    *str = Dummy::dummy_with_rng(&Profession(EN), rng)
+                }
+                (DatagenStrategy::Industry, _) => *str = Dummy::dummy_with_rng(&Industry(EN), rng),
+                (DatagenStrategy::CurrencyCode, _) => {
+                    *str = Dummy::dummy_with_rng(&CurrencyCode(EN), rng)
+                }
+                (DatagenStrategy::CurrencyName, _) => {
+                    *str = Dummy::dummy_with_rng(&CurrencyName(EN), rng)
+                }
+                (DatagenStrategy::CurrencySymbol, _) => {
+                    *str = Dummy::dummy_with_rng(&CurrencySymbol(EN), rng)
+                }
+                (DatagenStrategy::CreditCardNumber, _) => {
+                    *str = Dummy::dummy_with_rng(&CreditCardNumber(EN), rng)
+                }
+                (DatagenStrategy::CityPrefix, _) => {
+                    *str = Dummy::dummy_with_rng(&CityPrefix(EN), rng)
+                }
+                (DatagenStrategy::CitySuffix, _) => {
+                    *str = Dummy::dummy_with_rng(&CitySuffix(EN), rng)
+                }
+                (DatagenStrategy::CityName, _) => *str = Dummy::dummy_with_rng(&CityName(EN), rng),
+                (DatagenStrategy::CountryName, _) => {
+                    *str = Dummy::dummy_with_rng(&CountryName(EN), rng)
+                }
+                (DatagenStrategy::CountryCode, _) => {
+                    *str = Dummy::dummy_with_rng(&CountryCode(EN), rng)
+                }
+                (DatagenStrategy::StreetSuffix, _) => {
+                    *str = Dummy::dummy_with_rng(&StreetSuffix(EN), rng)
+                }
+                (DatagenStrategy::StreetName, _) => {
+                    *str = Dummy::dummy_with_rng(&StreetName(EN), rng)
+                }
+                (DatagenStrategy::TimeZone, _) => *str = Dummy::dummy_with_rng(&TimeZone(EN), rng),
+                (DatagenStrategy::StateName, _) => {
+                    *str = Dummy::dummy_with_rng(&StateName(EN), rng)
+                }
+                (DatagenStrategy::StateAbbr, _) => {
+                    *str = Dummy::dummy_with_rng(&StateAbbr(EN), rng)
+                }
+                (DatagenStrategy::SecondaryAddressType, _) => {
+                    *str = Dummy::dummy_with_rng(&SecondaryAddressType(EN), rng)
+                }
+                (DatagenStrategy::SecondaryAddress, _) => {
+                    *str = Dummy::dummy_with_rng(&SecondaryAddress(EN), rng)
+                }
+                (DatagenStrategy::ZipCode, _) => *str = Dummy::dummy_with_rng(&ZipCode(EN), rng),
+                (DatagenStrategy::PostCode, _) => *str = Dummy::dummy_with_rng(&PostCode(EN), rng),
+                (DatagenStrategy::BuildingNumber, _) => {
+                    *str = Dummy::dummy_with_rng(&BuildingNumber(EN), rng)
+                }
+                (DatagenStrategy::Latitude, _) => *str = Dummy::dummy_with_rng(&Latitude(EN), rng),
+                (DatagenStrategy::Longitude, _) => {
+                    *str = Dummy::dummy_with_rng(&Longitude(EN), rng)
+                }
+                (DatagenStrategy::Isbn, _) => *str = Dummy::dummy_with_rng(&Isbn(EN), rng),
+                (DatagenStrategy::Isbn13, _) => *str = Dummy::dummy_with_rng(&Isbn13(EN), rng),
+                (DatagenStrategy::Isbn10, _) => *str = Dummy::dummy_with_rng(&Isbn10(EN), rng),
+                (DatagenStrategy::PhoneNumber, _) => {
+                    *str = Dummy::dummy_with_rng(&PhoneNumber(EN), rng)
+                }
+                (DatagenStrategy::CellNumber, _) => {
+                    *str = Dummy::dummy_with_rng(&CellNumber(EN), rng)
+                }
+                (DatagenStrategy::FilePath, _) => *str = Dummy::dummy_with_rng(&FilePath(EN), rng),
+                (DatagenStrategy::FileName, _) => *str = Dummy::dummy_with_rng(&FilePath(EN), rng),
+                (DatagenStrategy::FileExtension, _) => {
+                    *str = Dummy::dummy_with_rng(&FileExtension(EN), rng)
+                }
+                (DatagenStrategy::DirPath, _) => {
+                    *str = Dummy::dummy_with_rng(&FileExtension(EN), rng)
+                }
+                (_, _) => {}
             };
 
             Ok(())
@@ -913,10 +1084,11 @@ impl RecordGenerator {
                 let idx = rng.sample(zipf) as usize - 1;
                 *obj = values[idx].clone()
             }
-            (DatagenStrategy::String { .. }, _, _) => {
+            (m, _, _) => {
                 return Err(anyhow!(
-                    "Invalid method `string` for non-string field: `{:?}`",
-                    field.name
+                    "Invalid strategy `{m:?}` for field: `{:?}` with type {:?}",
+                    field.name,
+                    field.columntype.typ
                 ));
             }
         };
@@ -1005,10 +1177,11 @@ impl RecordGenerator {
                 let idx = rng.sample(zipf) as usize - 1;
                 *obj = values[idx].clone();
             }
-            (DatagenStrategy::String { .. }, _, _) => {
+            (m, _, _) => {
                 return Err(anyhow!(
-                    "Invalid method `string` for non-string field: `{:?}`",
-                    field.name
+                    "Invalid strategy `{m:?}` for field: `{:?}` with type {:?}",
+                    field.name,
+                    field.columntype.typ
                 ));
             }
         };
@@ -1049,10 +1222,11 @@ impl RecordGenerator {
                 let idx = rng.sample(zipf) as usize - 1;
                 values[idx].clone()
             }
-            (DatagenStrategy::String { .. }, _) => {
+            (m, _) => {
                 return Err(anyhow!(
-                    "Invalid method `string` for non-string field: `{:?}`",
-                    field.name
+                    "Invalid strategy `{m:?}` for field: `{:?}` with type {:?}",
+                    field.name,
+                    field.columntype.typ
                 ));
             }
         };
@@ -1075,112 +1249,6 @@ impl RecordGenerator {
         self.json_obj = Some(obj);
         Ok(self.json_obj.as_ref().unwrap())
     }
-}
-
-fn generate_fake_string(
-    settings: &RngFieldSettings,
-    method: &StringMethod,
-    rng: &mut SmallRng,
-) -> Value {
-    use fake::faker::address::raw::*;
-    use fake::faker::barcode::raw::*;
-    use fake::faker::company::raw::*;
-    use fake::faker::creditcard::raw::*;
-    use fake::faker::currency::raw::*;
-    use fake::faker::filesystem::raw::*;
-    use fake::faker::http::raw::*;
-    use fake::faker::internet::raw::*;
-    use fake::faker::job::raw as job;
-    use fake::faker::lorem::raw::*;
-    use fake::faker::name::raw::*;
-    use fake::faker::phone_number::raw::*;
-    use fake::locales::*;
-
-    let (min, max) = settings
-        .range
-        .map(|(a, b)| (a.try_into().unwrap_or(0), b.try_into().unwrap_or(25)))
-        .unwrap_or((0, 25));
-
-    Value::String(match method {
-        StringMethod::Word => Dummy::dummy_with_rng(&Word(EN), rng),
-        StringMethod::Words => {
-            let v: Vec<String> = Dummy::dummy_with_rng(&Words(EN, min..max), rng);
-            v.join(" ")
-        }
-        StringMethod::Sentence => Dummy::dummy_with_rng(&Sentence(EN, min..max), rng),
-        StringMethod::Sentences => {
-            let v: Vec<String> = Dummy::dummy_with_rng(&Sentences(EN, min..max), rng);
-            v.join(" ")
-        }
-        StringMethod::Paragraph => Dummy::dummy_with_rng(&Paragraph(EN, min..max), rng),
-        StringMethod::Paragraphs => {
-            let v: Vec<String> = Dummy::dummy_with_rng(&Paragraphs(EN, min..max), rng);
-            v.join(" ")
-        }
-        StringMethod::FirstName => Dummy::dummy_with_rng(&FirstName(EN), rng),
-        StringMethod::LastName => Dummy::dummy_with_rng(&LastName(EN), rng),
-        StringMethod::Title => Dummy::dummy_with_rng(&Title(EN), rng),
-        StringMethod::Suffix => Dummy::dummy_with_rng(&Suffix(EN), rng),
-        StringMethod::Name => Dummy::dummy_with_rng(&Name(EN), rng),
-        StringMethod::NameWithTitle => Dummy::dummy_with_rng(&NameWithTitle(EN), rng),
-        StringMethod::DomainSuffix => Dummy::dummy_with_rng(&DomainSuffix(EN), rng),
-        StringMethod::Email => Dummy::dummy_with_rng(&SafeEmail(EN), rng),
-        StringMethod::Username => Dummy::dummy_with_rng(&Username(EN), rng),
-        StringMethod::Password => Dummy::dummy_with_rng(&Password(EN, min..max), rng),
-        StringMethod::Field => Dummy::dummy_with_rng(&job::Field(EN), rng),
-        StringMethod::Position => Dummy::dummy_with_rng(&job::Position(EN), rng),
-        StringMethod::Seniority => Dummy::dummy_with_rng(&job::Seniority(EN), rng),
-        StringMethod::JobTitle => Dummy::dummy_with_rng(&job::Title(EN), rng),
-        StringMethod::IPv4 => Dummy::dummy_with_rng(&IPv4(EN), rng),
-        StringMethod::IPv6 => Dummy::dummy_with_rng(&IPv6(EN), rng),
-        StringMethod::IP => Dummy::dummy_with_rng(&IP(EN), rng),
-        StringMethod::MACAddress => Dummy::dummy_with_rng(&MACAddress(EN), rng),
-        StringMethod::UserAgent => Dummy::dummy_with_rng(&UserAgent(EN), rng),
-        StringMethod::RfcStatusCode => Dummy::dummy_with_rng(&RfcStatusCode(EN), rng),
-        StringMethod::ValidStatusCode => Dummy::dummy_with_rng(&ValidStatusCode(EN), rng),
-        StringMethod::CompanySuffix => Dummy::dummy_with_rng(&CompanySuffix(EN), rng),
-        StringMethod::CompanyName => Dummy::dummy_with_rng(&CompanyName(EN), rng),
-        StringMethod::Buzzword => Dummy::dummy_with_rng(&Buzzword(EN), rng),
-        StringMethod::BuzzwordMiddle => Dummy::dummy_with_rng(&BuzzwordMiddle(EN), rng),
-        StringMethod::BuzzwordTail => Dummy::dummy_with_rng(&BuzzwordTail(EN), rng),
-        StringMethod::CatchPhrase => Dummy::dummy_with_rng(&CatchPhase(EN), rng),
-        StringMethod::BsVerb => Dummy::dummy_with_rng(&BsVerb(EN), rng),
-        StringMethod::BsAdj => Dummy::dummy_with_rng(&BsAdj(EN), rng),
-        StringMethod::BsNoun => Dummy::dummy_with_rng(&BsNoun(EN), rng),
-        StringMethod::Bs => Dummy::dummy_with_rng(&Bs(EN), rng),
-        StringMethod::Profession => Dummy::dummy_with_rng(&Profession(EN), rng),
-        StringMethod::Industry => Dummy::dummy_with_rng(&Industry(EN), rng),
-        StringMethod::CurrencyCode => Dummy::dummy_with_rng(&CurrencyCode(EN), rng),
-        StringMethod::CurrencyName => Dummy::dummy_with_rng(&CurrencyName(EN), rng),
-        StringMethod::CurrencySymbol => Dummy::dummy_with_rng(&CurrencySymbol(EN), rng),
-        StringMethod::CreditCardNumber => Dummy::dummy_with_rng(&CreditCardNumber(EN), rng),
-        StringMethod::CityPrefix => Dummy::dummy_with_rng(&CityPrefix(EN), rng),
-        StringMethod::CitySuffix => Dummy::dummy_with_rng(&CitySuffix(EN), rng),
-        StringMethod::CityName => Dummy::dummy_with_rng(&CityName(EN), rng),
-        StringMethod::CountryName => Dummy::dummy_with_rng(&CountryName(EN), rng),
-        StringMethod::CountryCode => Dummy::dummy_with_rng(&CountryCode(EN), rng),
-        StringMethod::StreetSuffix => Dummy::dummy_with_rng(&StreetSuffix(EN), rng),
-        StringMethod::StreetName => Dummy::dummy_with_rng(&StreetName(EN), rng),
-        StringMethod::TimeZone => Dummy::dummy_with_rng(&TimeZone(EN), rng),
-        StringMethod::StateName => Dummy::dummy_with_rng(&StateName(EN), rng),
-        StringMethod::StateAbbr => Dummy::dummy_with_rng(&StateAbbr(EN), rng),
-        StringMethod::SecondaryAddressType => Dummy::dummy_with_rng(&SecondaryAddressType(EN), rng),
-        StringMethod::SecondaryAddress => Dummy::dummy_with_rng(&SecondaryAddress(EN), rng),
-        StringMethod::ZipCode => Dummy::dummy_with_rng(&ZipCode(EN), rng),
-        StringMethod::PostCode => Dummy::dummy_with_rng(&PostCode(EN), rng),
-        StringMethod::BuildingNumber => Dummy::dummy_with_rng(&BuildingNumber(EN), rng),
-        StringMethod::Latitude => Dummy::dummy_with_rng(&Latitude(EN), rng),
-        StringMethod::Longitude => Dummy::dummy_with_rng(&Longitude(EN), rng),
-        StringMethod::Isbn => Dummy::dummy_with_rng(&Isbn(EN), rng),
-        StringMethod::Isbn13 => Dummy::dummy_with_rng(&Isbn13(EN), rng),
-        StringMethod::Isbn10 => Dummy::dummy_with_rng(&Isbn10(EN), rng),
-        StringMethod::PhoneNumber => Dummy::dummy_with_rng(&PhoneNumber(EN), rng),
-        StringMethod::CellNumber => Dummy::dummy_with_rng(&CellNumber(EN), rng),
-        StringMethod::FilePath => Dummy::dummy_with_rng(&FilePath(EN), rng),
-        StringMethod::FileName => Dummy::dummy_with_rng(&FilePath(EN), rng),
-        StringMethod::FileExtension => Dummy::dummy_with_rng(&FileExtension(EN), rng),
-        StringMethod::DirPath => Dummy::dummy_with_rng(&FileExtension(EN), rng),
-    })
 }
 
 #[cfg(test)]
@@ -1385,6 +1453,30 @@ transport:
             // as we always need a proper Value::String type in the &mut Value field and
             // with null percentage it sometimes can get set to Value::Null
             assert!(record.field_0.is_none() || record.field_0.is_some());
+        }
+    }
+
+    #[test]
+    fn test_string_generators() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 2, fields: { "name": { "strategy": { "name": "word" } } } } ]
+"#;
+        let (_endpoint, consumer, zset) =
+            mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        let zst = zset.state();
+        let iter = zst.flushed.iter();
+        for upd in iter {
+            let record = upd.unwrap_insert();
+            assert!(record.field_0.is_some());
         }
     }
 

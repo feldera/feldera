@@ -21,11 +21,37 @@ fn default_sequence() -> Vec<GenerationPlan> {
     vec![GenerationPlan::default()]
 }
 
-/// Various methods to generate different random strings.
-#[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum StringMethod {
-    #[default]
+/// Strategy used to generate values.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[serde(tag = "name", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum DatagenStrategy {
+    /// Whether the field should be incremented for each new
+    /// record rather than generated randomly.
+    ///
+    /// A scale factor can be set as the `param` field to apply a multiplier to the increment.
+    /// The default scale factor is 1.
+    Increment {
+        #[serde(default = "default_scale")]
+        scale: i64,
+    },
+    /// A uniform random distribution is chosen to generate the value.
+    Uniform,
+    /// A Zipf distribution is chosen with the specified exponent (`s`) and
+    /// `n` (set automatically) for the range `[1..n]` to generate the value in.
+    ///
+    /// Note that the Zipf distribution is only available for numbers or types that
+    /// specify `values` or `range`.
+    ///
+    /// - In case `values` is set, the `n` is set to `values.len()`.
+    /// - In case `values` is not set, `n` is set to the length of the `range`.
+    /// - In case `range` is not set, the `n` is set to cover the default range of the type.
+    Zipf {
+        #[serde(default = "default_exponent")]
+        s: usize,
+    },
+    // Next are various methods to generate random strings, they are only applicable for string
+    // types.
     Word,
     Words,
     Sentence,
@@ -95,47 +121,6 @@ pub enum StringMethod {
     FileName,
     FileExtension,
     DirPath,
-}
-
-/// Strategy used to generate values.
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-#[serde(tag = "name")]
-pub enum DatagenStrategy {
-    /// Whether the field should be incremented for each new
-    /// record rather than generated randomly.
-    ///
-    /// A scale factor can be set as the `param` field to apply a multiplier to the increment.
-    /// The default scale factor is 1.
-    #[serde(rename = "increment")]
-    Increment {
-        #[serde(default = "default_scale")]
-        scale: i64,
-    },
-    /// A uniform random distribution is chosen to generate the value.
-    #[serde(rename = "uniform")]
-    Uniform,
-    /// A Zipf distribution is chosen with the specified exponent (`s`) and
-    /// `n` (set automatically) for the range `[1..n]` to generate the value in.
-    ///
-    /// Note that the Zipf distribution is only available for numbers or types that
-    /// specify `values` or `range`.
-    ///
-    /// - In case `values` is set, the `n` is set to `values.len()`.
-    /// - In case `values` is not set, `n` is set to the length of the `range`.
-    /// - In case `range` is not set, the `n` is set to cover the default range of the type.
-    #[serde(rename = "zipf")]
-    Zipf {
-        #[serde(default = "default_exponent")]
-        s: usize,
-    },
-    /// A strategy to produce a random string for various data.
-    ///
-    /// - This strategy is only available for string types.
-    #[serde(rename = "string")]
-    String {
-        #[serde(default)]
-        method: StringMethod,
-    },
 }
 
 impl Default for DatagenStrategy {
