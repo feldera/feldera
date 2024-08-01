@@ -786,7 +786,7 @@
             }
           },
           "400": {
-            "description": "Pipeline is not shutdown",
+            "description": "Pipeline needs to be shutdown to be modified",
             "content": {
               "application/json": {
                 "schema": {
@@ -844,7 +844,7 @@
             "description": "Pipeline successfully deleted"
           },
           "400": {
-            "description": "Pipeline is not shutdown",
+            "description": "Pipeline needs to be shutdown to be deleted",
             "content": {
               "application/json": {
                 "schema": {
@@ -968,7 +968,7 @@
             }
           },
           "400": {
-            "description": "Pipeline is not shutdown",
+            "description": "Pipeline needs to be shutdown to be modified",
             "content": {
               "application/json": {
                 "schema": {
@@ -2913,7 +2913,7 @@
             }
           }
         ],
-        "description": "Pipeline configuration specified by the user when creating\na new pipeline instance.\nTODO: change this description\n\nThis is the shape of the overall pipeline configuration. It encapsulates a\n[`RuntimeConfig`], which is the publicly exposed way for users to configure\npipelines."
+        "description": "Overall pipeline configuration.\n\nIt is generated upon the deployment of a pipeline and contains\nthe shape of the overall pipeline configuration.\n\nIts input and output endpoints are generated based on the schema\nof the compiled program. The runtime configuration is directly\nprovided by the user. Storage configuration, if applicable,\nis set by the runner."
       },
       "PipelineDescr": {
         "type": "object",
