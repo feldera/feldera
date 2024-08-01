@@ -31,21 +31,21 @@ To ensure all data is received start listening before calling
     df_students = pd.read_csv("students.csv")
     df_grades = pd.read_csv("grades.csv")
 
-    # register an input table
+    # create a table
     # tables receive data from the source, therefore they need a schema
-    sql.register_table(TBL_NAMES[0], SQLSchema({"name": "STRING", "id": "INT"}))
+    sql.sql(f"CREATE TABLE {TBL_NAMES[0]} (name STRING, id INT);")
+    sql.sql(f"""
+    CREATE TABLE {TBL_NAMES[1]} (
+        student_id INT,
+        science INT,
+        maths INT,
+        art INT
+    );
+    """)
 
-    sql.register_table(TBL_NAMES[1], SQLSchema({
-        "student_id": "INT",
-        "science": "INT",
-        "maths": "INT",
-        "art": "INT"
-    }))
-
-    # here, we provide a query, that gets registered as a view in feldera
-    # this query will be executed on the data in the table
-    query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-    sql.register_view(view_name, query)
+    # here we create a view on the input data
+    query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;"
+    sql.sql(f"CREATE VIEW {view_name} AS {query}")
 
     # listen for the output of the view here in the notebook
     # you do not need to call this if you are forwarding the data to a sink
@@ -71,13 +71,6 @@ To ensure all data is received start listening before calling
 
 Using Kafka as Data Source / Sink
 ***********************************
-
-To setup Kafka as the source use :meth:`.SQLContext.connect_source_kafka` and as the sink use
-:meth:`.SQLContext.connect_sink_kafka`.
-
-Both of these methods require a ``config`` which is a dictionary, and ``fmt`` which is a
-`data format configuration <https://www.feldera.com/docs/api/json>`_ that is either a
-:class:`.JSONFormat` or :class:`.CSVFormat`.
 
 The input config looks like the following:
 
@@ -120,44 +113,73 @@ More on Kafka as the output connector at: https://www.feldera.com/docs/connector
 .. warning::
     Kafka is a streaming data source, therefore running: :meth:`.SQLContext.wait_for_completion` will block forever.
 
+Creating a Kafka data source / sink:
+
 .. highlight:: python
 .. code-block:: python
 
-    from feldera import SQLContext, SQLSchema
-    from feldera.formats import JSONFormat, JSONUpdateFormat
-
     TABLE_NAME = "example"
     VIEW_NAME = "example_count"
-    KAFKA_SERVER = "localhost:9092"
 
-    sql = SQLContext('kafka', 'http://localhost:8080').get_or_create()
-    sql.register_table(TABLE_NAME, SQLSchema({"id": "INT NOT NULL PRIMARY KEY"}))
-    sql.register_view(VIEW_NAME, f"SELECT COUNT(*) as num_rows FROM {TABLE_NAME}")
+    sql = SQLContext('kafka_test', TEST_CLIENT).get_or_create()
 
-    source_config = {
-        "topics": ["example_topic"],
-        "bootstrap.servers": KAFKA_SERVER,
-        "auto.offset.reset": "earliest",
-    }
-
-    sink_config = {
-        "topic": "example_topic_out",
-        "bootstrap.servers": KAFKA_SERVER,
-        "auto.offset.reset": "earliest",
-    }
-
-    # Data format configuration
-    format = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
-
-    sql.connect_source_kafka(TABLE_NAME, "kafka_conn_in", source_config, format)
-    sql.connect_sink_kafka(VIEW_NAME, "kafka_conn_out", sink_config, format)
+    sql.sql(f"""
+    CREATE TABLE {TABLE_NAME} (id INT NOT NULL PRIMARY KEY)
+    WITH (
+        'connectors' = '[
+            {{
+                "name": "kafka-2",
+                "transport": {{
+                    "name": "kafka_input",
+                    "config": {{
+                        "bootstrap.servers": "kafkaserver:9092",
+                        "topics": ["{INPUT_TOPIC}"],
+                        "auto.offset.reset": "earliest"
+                    }}
+                }},
+                "format": {{
+                    "name": "json",
+                    "config": {{
+                        "update_format": "insert_delete",
+                        "array": False
+                    }}
+                }}
+            }}
+        ]'
+    );
+    """)
+    sql.sql(f"""
+    CREATE VIEW {VIEW_NAME}
+    WITH (
+        'connectors' = '[
+            {{
+                "name": "kafka-3",
+                "transport": {{
+                    "name": "kafka_output",
+                    "config": {{
+                        "bootstrap.servers": "kafkaserver:9092",
+                        "topic": "{OUTPUT_TOPIC}",
+                        "auto.offset.reset": "earliest"
+                    }}
+                }},
+                "format": {{
+                    "name": "json",
+                    "config": {{
+                        "update_format": "insert_delete",
+                        "array": False
+                    }}
+                }}
+            }}
+        ]'
+    )
+    AS SELECT COUNT(*) as num_rows FROM {TABLE_NAME};
+    """)
 
     out = sql.listen(VIEW_NAME)
     sql.start()
-    time.sleep(10)
+    sql.wait_for_idle()
     sql.shutdown()
     df = out.to_pandas()
-
 
 Ingesting data from a URL
 **************************
@@ -176,27 +198,40 @@ More on the HTTP GET connector at: https://www.feldera.com/docs/connectors/sourc
 .. highlight:: python
 .. code-block:: python
 
-    from feldera import SQLContext, SQLSchema
-    from feldera.formats import JSONFormat, JSONUpdateFormat
-
     sql = SQLContext("test_http_get", TEST_CLIENT).get_or_create()
 
-    TBL_NAME = "items"
-    VIEW_NAME = "s"
+    sql.sql("""
+    CREATE TABLE items (
+        id INT,
+        name STRING
+    ) WITH (
+        'connectors' = '[
+            {
+                "name": "url_conn",
+                "transport": {
+                    "name": "url_input",
+                    "config": {
+                        "path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "insert_delete",
+                        "array": false
+                    }
+                }
+            }
+        ]'
+    );
 
-    sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
+    CREATE VIEW s AS SELECT * FROM items;
+    """)
 
-    sql.register_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
-
-    path = "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
-
-    fmt = JSONFormat().with_update_format(JSONUpdateFormat.InsertDelete).with_array(False)
-    sql.connect_source_url(TBL_NAME, "part", path, fmt)
-
-    out = sql.listen(VIEW_NAME)
+    out = sql.listen("s")
 
     sql.start()
-    sql.wait_for_completion(shutdown=True)
+    sql.wait_for_completion(True)
 
     df = out.to_pandas()
 
