@@ -15,9 +15,7 @@ in the production release of the connector.
 
 We use the [Snowflake Connector for
 Kafka](https://docs.snowflake.com/user-guide/kafka-connector) to stream changes
-from Feldera to Snowflake with low latency. 
-
-![Enter connector name and description](snowflake.png)
+from Feldera to Snowflake with low latency.
 
 1. Feldera outputs a stream of changes to a table or view to a Kafka topic.
 
@@ -76,7 +74,7 @@ ALTER USER feldera SET DEFAULT_ROLE = feldera;
 ```
 
 Follow [Snowflake documentation](https://docs.snowflake.com/en/user-guide/key-pair-auth)
-to setup private key authentication for the `feldera` user. 
+to setup private key authentication for the `feldera` user.
 
 ## Create landing tables
 
@@ -130,7 +128,7 @@ ENABLE_SCHEMA_EVOLUTION=TRUE;
 CREATE STREAM T1_STREAM ON TABLE T1 APPEND_ONLY = TRUE;
 ```
 
-The last statement in this snippet attaches a 
+The last statement in this snippet attaches a
 [Snowflake stream](https://docs.snowflake.com/en/user-guide/streams-intro)
 to the landing table.  This stream will be used by
 the data ingestion task to track changes to the table.
@@ -180,7 +178,7 @@ CREATE TASK INGEST_DATA
   -- task in a user-managed warehouse instead.
   --WAREHOUSE = <your_warehouse_name>
   WHEN
-    ((SYSTEM$STREAM_HAS_DATA('T1_STREAM')) 
+    ((SYSTEM$STREAM_HAS_DATA('T1_STREAM'))
     -- When synchronizing multiple tables, add a clause for each additional table below
     -- or (SYSTEM$STREAM_HAS_DATA('<table>_STREAM')))
   AS
@@ -272,12 +270,12 @@ See also [Kafka Connector for Snowflake documentation](https://docs.snowflake.co
 * `snowflake.url.name` - URL for accessing your Snowflake account, which has the following
   format: `<account_name>.snowflakecomputing.com:443`, where `<account_name>` is an account
   identifier for an account in your organization using the
-  [`<orgname>-<account_name>` format](https://docs.snowflake.com/en/user-guide/admin-account-identifier#using-an-account-name-as-an-identifier) 
+  [`<orgname>-<account_name>` format](https://docs.snowflake.com/en/user-guide/admin-account-identifier#using-an-account-name-as-an-identifier)
 
 * `snowflake.user.name` - Snowflake user account created for the Feldera Snowflake connector
   during the [Snowflake Configuration step](#configure-snowflake).
 
-* `snowflake.role.name` - Snowflake role created for the Feldera Snowflake connector 
+* `snowflake.role.name` - Snowflake role created for the Feldera Snowflake connector
   during the [Snowflake Configuration step](#configure-snowflake).
 
 * `snowflake.private.key` - private key created for the Feldera user by following
@@ -296,7 +294,7 @@ See also [Kafka Connector for Snowflake documentation](https://docs.snowflake.co
 * `snowflake.schema.name` - landing schema name
   (see [Create Landing Tables](#create-landing-tables)).
 
-* `buffer.flush.time` - maximum number of seconds the connector will buffer Kafka messages 
+* `buffer.flush.time` - maximum number of seconds the connector will buffer Kafka messages
    before sending them to Snowflake.  The default value is 120 seconds.
 
 * `buffer.count.records` - maximum number of Kafka messages buffered by the connector.
@@ -307,28 +305,32 @@ See also [Kafka Connector for Snowflake documentation](https://docs.snowflake.co
 
 ## Create Feldera Snowflake connector
 
-In the Feldera WebConsole, create a separate Snowflake Connector for each output view
-that you would like to sync into Snowflake:
+The Snowflake connector uses a Kafka output transport, so the specification
+of the connector is the same as for [Kafka outputs](kafka.md).
+For example, in the view declaration we can specify the connector properties:
 
-* Navigate to `Connectors -> ADD CONNECTOR`; choose a Snowflake output connector.
-
-* In the connector creation dialog enter your preferred name for the new data sink
-  connector
-
-![Enter connector name and description](snowflake-sink-details.png)
-
-* Specify Kafka broker address and topic name (the topic name must match the
-  topic name in the [Kafka connector config](#create-a-kafka-connector-for-snowflake)).
-
-![Enter Kafka broker address and topic name](snowflake-sink-server.png)
-
-* Configure Kafka security protocol details
-
-![Configure Kafka security protocol](snowflake-sink-security.png)
-
-* You can now attach the newly created connector to a Feldera pipeline.
-
-![Attach Snowflake connector to a pipeline](snowflake-sink-pipeline.png)
+```sql
+CREATE VIEW V AS ...
+WITH (
+   'connectors' = '[{
+      "transport": {
+          "name": "kafka_output",
+          "config": {
+              "bootstrap.servers": "redpanda:9092",
+              "topic": "snowflake.price",
+              "security.protocol": "plaintext"
+          }
+      },
+      "format": {
+          "name": "json",
+          "config": {
+              "update_format": "insert_delete",
+              "array": false
+          }
+      }
+   }]'
+)
+```
 
 As you start the pipeline, updates to the output view attached to the Snowflake
 connector should get ingested into Snowflake and appear in your target tables.
