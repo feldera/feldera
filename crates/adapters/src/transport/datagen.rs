@@ -1,5 +1,6 @@
 //! A datagen input adapter that generates random data based on a schema and config.
 
+use std::cmp::min;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::num::NonZeroU32;
@@ -12,14 +13,12 @@ use crate::{InputConsumer, InputEndpoint, InputReader, PipelineState, TransportI
 use anyhow::{anyhow, Result as AnyResult};
 use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime};
-use crossbeam::sync::{Parker, Unparker};
 use dbsp::circuit::tokio::TOKIO;
 use fake::Dummy;
 use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Jitter, Quota, RateLimiter};
-use log::warn;
 use num_traits::{clamp, Bounded, FromPrimitive, ToPrimitive};
 use pipeline_types::program_schema::{Field, Relation, SqlType};
 use pipeline_types::transport::datagen::{
@@ -30,6 +29,7 @@ use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Zipf};
 use serde_json::{to_writer, Map, Value};
+use tokio::sync::Notify;
 
 pub(crate) struct GeneratorEndpoint {
     config: DatagenInputConfig,
@@ -67,7 +67,7 @@ struct InputGenerator {
     config: DatagenInputConfig,
     /// Amount of records generated so far.
     generated: Arc<AtomicUsize>,
-    unparker: Option<Unparker>,
+    notifier: Arc<Notify>,
 }
 
 impl InputGenerator {
@@ -76,44 +76,71 @@ impl InputGenerator {
         config: DatagenInputConfig,
         schema: Relation,
     ) -> AnyResult<Self> {
-        let parker = Parker::new();
-        let unparker = Some(parker.unparker().clone());
+        let notifier = Arc::new(Notify::new());
+
         let generated = Arc::new(AtomicUsize::new(0));
-        if config.workers > 1 {
-            warn!("More than one `workers` is not yet supported.  Ignoring.");
-        }
-
-        let worker = 0;
-        let config_clone = config.clone();
         let status = Arc::new(AtomicU32::new(PipelineState::Paused as u32));
-        let status_clone = status.clone();
-        let generated_clone = generated.clone();
-        let schema = schema.clone();
 
-        let rate_limiters = Arc::new(
-            config
-                .plan
-                .iter()
-                .map(|p| RateLimiter::direct(Quota::per_second(p.rate.unwrap_or(NonZeroU32::MAX))))
-                .collect::<Vec<RateLimiter<_, _, _>>>(),
-        );
+        let rate_limiters = config
+            .plan
+            .iter()
+            .map(|p| RateLimiter::direct(Quota::per_second(p.rate.unwrap_or(NonZeroU32::MAX))))
+            .collect::<Vec<RateLimiter<_, _, _>>>();
+        let progress: Vec<AtomicUsize> = (0..config.plan.len())
+            .map(|_| AtomicUsize::new(0))
+            .collect();
+        let shared_state: Arc<Vec<(AtomicUsize, RateLimiter<_, _, _>)>> =
+            Arc::new(progress.into_iter().zip(rate_limiters).collect());
 
-        TOKIO.spawn(Self::worker_thread(
-            worker,
-            config_clone,
-            rate_limiters,
-            schema,
-            consumer,
-            parker,
-            status_clone,
-            generated_clone,
-        ));
+        // Long-running tasks with high CPU usage don't work well on cooperative runtimes,
+        // so we use a separate blocking task if we think this will happen for our workload.
+        let needs_blocking_tasks = config.plan.iter().any(|p| {
+            u32::from(p.rate.unwrap_or(NonZeroU32::MAX)) > (250_000 * config.workers as u32)
+                && p.limit.unwrap_or(usize::MAX) > 10_000_000
+        });
+
+        //eprintln!("Starting {} workers", config.workers);
+        for worker in 0..config.workers {
+            let config = config.clone();
+            let status = status.clone();
+            let generated = generated.clone();
+            let schema = schema.clone();
+            let notifier = notifier.clone();
+            let consumer = consumer.fork();
+            let shared_state = shared_state.clone();
+
+            if needs_blocking_tasks {
+                std::thread::spawn(move || {
+                    TOKIO.block_on(Self::worker_thread(
+                        worker,
+                        config,
+                        shared_state,
+                        schema,
+                        consumer,
+                        notifier,
+                        status,
+                        generated,
+                    ));
+                });
+            } else {
+                TOKIO.spawn(Self::worker_thread(
+                    worker,
+                    config,
+                    shared_state,
+                    schema,
+                    consumer,
+                    notifier,
+                    status,
+                    generated,
+                ));
+            }
+        }
 
         Ok(Self {
             status,
             config,
             generated,
-            unparker,
+            notifier,
         })
     }
 
@@ -129,19 +156,22 @@ impl InputGenerator {
     }
 
     fn unpark(&self) {
-        if let Some(unparker) = &self.unparker {
-            unparker.unpark();
-        }
+        self.notifier.notify_waiters()
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     async fn worker_thread(
         worker_idx: usize,
         config: DatagenInputConfig,
-        rate_limiters: Arc<Vec<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>,
+        shared_state: Arc<
+            Vec<(
+                AtomicUsize,
+                RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>,
+            )>,
+        >,
         schema: Relation,
         mut consumer: Box<dyn InputConsumer>,
-        parker: Parker,
+        notifier: Arc<Notify>,
         status: Arc<AtomicU32>,
         generated: Arc<AtomicUsize>,
     ) {
@@ -149,63 +179,77 @@ impl InputGenerator {
         // Inserting in batches improves performance by around ~80k records/s for
         // me, so we always do it rather than giving the user the option.
         static BATCH_SIZE: usize = 10_000;
+        static PER_THREAD_CHUNK: usize = 10 * BATCH_SIZE;
         static START_ARR: &[u8; 1] = b"[";
         static END_ARR: &[u8; 1] = b"]";
         static REC_DELIM: &[u8; 1] = b",";
 
-        for (plan, rate_limiter) in config.plan.into_iter().zip(rate_limiters.iter()) {
+        for (plan, (progress, rate_limiter)) in config.plan.into_iter().zip(shared_state.iter()) {
+            let limit = plan.limit.unwrap_or(usize::MAX);
             let schema = schema.clone();
-            let generated = generated.clone();
+            let mut generator = RecordGenerator::new(worker_idx, config.seed, plan, schema);
 
-            let mut batch_idx = 0;
-            let mut generator =
-                RecordGenerator::new(worker_idx, config.seed, plan, schema, generated);
-
-            while generator.current.load(Ordering::Relaxed)
-                < generator.config.limit.unwrap_or(usize::MAX)
-            {
-                let record = generator.make_json_record();
-                match PipelineState::from_u32(status.load(Ordering::Acquire)) {
-                    Some(PipelineState::Paused) => parker.park(),
-                    Some(PipelineState::Running) => { /* continue */ }
-                    Some(PipelineState::Terminated) => return,
-                    _ => unreachable!(),
+            // Make sure we generate records from 0..limit:
+            loop {
+                // Where to start generating records for this iteration, this needs to be synchronized among thread
+                // so each thread generates a unique set of records.
+                let start = progress.fetch_add(PER_THREAD_CHUNK, Ordering::Relaxed);
+                if start >= limit {
+                    break;
                 }
-                match record {
-                    Ok(record) => {
-                        if batch_idx == 0 {
-                            buffer.clear();
-                            buffer.extend(START_ARR);
-                        } else {
-                            buffer.extend(REC_DELIM);
+                debug_assert!(start < limit);
+
+                // The current record range this thread is working on within 0..limit
+                let generate_range = start..min(start + PER_THREAD_CHUNK, limit);
+                // The current record within 0..BATCH_SIZE
+                let mut batch_idx = 0;
+
+                for idx in generate_range.clone() {
+                    let record = generator.make_json_record(idx);
+                    match PipelineState::from_u32(status.load(Ordering::Acquire)) {
+                        Some(PipelineState::Paused) => notifier.notified().await,
+                        Some(PipelineState::Running) => { /* continue */ }
+                        Some(PipelineState::Terminated) => return,
+                        _ => unreachable!(),
+                    }
+                    match record {
+                        Ok(record) => {
+                            if batch_idx == 0 {
+                                buffer.clear();
+                                buffer.extend(START_ARR);
+                            } else {
+                                buffer.extend(REC_DELIM);
+                            }
+                            //eprintln!("Record: {}", record);
+                            to_writer(&mut buffer, &record).unwrap();
+                            batch_idx += 1;
+
+                            if batch_idx % BATCH_SIZE == 0 {
+                                buffer.extend(END_ARR);
+                                consumer.input_chunk(&buffer);
+                                buffer.clear();
+                                buffer.extend(START_ARR);
+                                batch_idx = 0;
+                            }
                         }
-
-                        to_writer(&mut buffer, &record).unwrap();
-                        batch_idx += 1;
-
-                        if batch_idx % BATCH_SIZE == 0 {
-                            buffer.extend(END_ARR);
-                            consumer.input_chunk(&buffer);
-                            buffer.clear();
-                            buffer.extend(START_ARR);
-                            batch_idx = 0;
+                        Err(e) => {
+                            // We skip this plan and continue with the next one.
+                            consumer.error(false, e);
+                            break;
                         }
                     }
-                    Err(e) => {
-                        // We skip this plan and continue with the next one.
-                        consumer.error(false, e);
-                        break;
-                    }
+
+                    rate_limiter
+                        .until_ready_with_jitter(Jitter::up_to(StdDuration::from_millis(20)))
+                        .await;
                 }
-
-                rate_limiter
-                    .until_ready_with_jitter(Jitter::up_to(StdDuration::from_millis(20)))
-                    .await;
-            }
-
-            if !buffer.is_empty() {
-                buffer.extend(END_ARR);
-                consumer.input_chunk(&buffer);
+                if !buffer.is_empty() {
+                    buffer.extend(END_ARR);
+                    consumer.input_chunk(&buffer);
+                }
+                // Update global progress after we created all records for a batch
+                //eprintln!("adding {} to generated", generate_range.len());
+                generated.fetch_add(generate_range.len(), Ordering::Relaxed);
             }
         }
         consumer.eoi();
@@ -248,20 +292,14 @@ impl Drop for InputGenerator {
 struct RecordGenerator {
     config: GenerationPlan,
     schema: Relation,
-    current: Arc<AtomicUsize>,
+    current: usize,
     rng: Option<SmallRng>,
     ymd_format: Vec<Item<'static>>,
     json_obj: Option<Value>,
 }
 
 impl RecordGenerator {
-    fn new(
-        worker_idx: usize,
-        seed: Option<u64>,
-        config: GenerationPlan,
-        schema: Relation,
-        current: Arc<AtomicUsize>,
-    ) -> Self {
+    fn new(worker_idx: usize, seed: Option<u64>, config: GenerationPlan, schema: Relation) -> Self {
         let rng = if let Some(seed) = seed {
             SmallRng::seed_from_u64(seed + worker_idx as u64)
         } else {
@@ -275,7 +313,7 @@ impl RecordGenerator {
         Self {
             config,
             schema,
-            current,
+            current: 0,
             ymd_format,
             rng: Some(rng),
             json_obj: Some(Value::Object(Map::with_capacity(8))),
@@ -439,8 +477,7 @@ impl RecordGenerator {
 
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment { scale }, None) => {
-                    let val = self.current.load(Ordering::Relaxed)
-                        * (*scale).try_into().unwrap_or(1usize);
+                    let val = self.current * (*scale).try_into().unwrap_or(1usize);
                     let range = max - min;
                     let len = min + (val % range);
                     arr.resize_with(len, || Self::typ_to_default(arr_field.columntype.typ));
@@ -449,9 +486,8 @@ impl RecordGenerator {
                     }
                 }
                 (DatagenStrategy::Increment { scale }, Some(values)) => {
-                    *obj = values[(self.current.load(Ordering::Relaxed)
-                        * (*scale).try_into().unwrap_or(1usize))
-                        % values.len()]
+                    *obj = values
+                        [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
                     .clone();
                 }
                 (DatagenStrategy::Uniform, None) => {
@@ -523,16 +559,13 @@ impl RecordGenerator {
 
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment { scale }, None) => {
-                    let val = (self.current.load(Ordering::Relaxed) as u64
-                        * (*scale).try_into().unwrap_or(1u64))
-                        % max;
+                    let val = (self.current as u64 * (*scale).try_into().unwrap_or(1u64)) % max;
                     let t = start_time + Duration::milliseconds(val as i64);
                     write!(str, "{}", t)?;
                 }
                 (DatagenStrategy::Increment { scale }, Some(values)) => {
-                    *obj = values[(self.current.load(Ordering::Relaxed)
-                        * (*scale).try_into().unwrap_or(1usize))
-                        % values.len()]
+                    *obj = values
+                        [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
                     .clone();
                 }
                 (DatagenStrategy::Uniform, None) => {
@@ -597,7 +630,7 @@ impl RecordGenerator {
 
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment { scale }, None) => {
-                    let val = (self.current.load(Ordering::Relaxed) as i64 * *scale) % (max - min);
+                    let val = (self.current as i64 * *scale) % (max - min);
                     let d = unix_date + Days::new(val as u64);
 
                     write!(
@@ -607,9 +640,8 @@ impl RecordGenerator {
                     )?;
                 }
                 (DatagenStrategy::Increment { scale }, Some(values)) => {
-                    *obj = values[(self.current.load(Ordering::Relaxed)
-                        * (*scale).try_into().unwrap_or(1usize))
-                        % values.len()]
+                    *obj = values
+                        [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
                     .clone();
                 }
                 (DatagenStrategy::Uniform, None) => {
@@ -703,15 +735,14 @@ impl RecordGenerator {
             // ```
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment { scale }, None) => {
-                    let val = (self.current.load(Ordering::Relaxed) as i64 * *scale) % (max - min);
+                    let val = (self.current as i64 * *scale) % (max - min);
                     let dt = DateTime::from_timestamp_millis(min).unwrap_or(DateTime::UNIX_EPOCH)
                         + Duration::milliseconds(val);
                     *obj = Value::String(dt.to_rfc3339());
                 }
                 (DatagenStrategy::Increment { scale }, Some(values)) => {
-                    *obj = values[(self.current.load(Ordering::Relaxed)
-                        * (*scale).try_into().unwrap_or(1usize))
-                        % values.len()]
+                    *obj = values
+                        [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
                     .clone();
                 }
                 (DatagenStrategy::Uniform, None) => {
@@ -778,16 +809,11 @@ impl RecordGenerator {
 
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment { scale }, None) => {
-                    write!(
-                        str,
-                        "{}",
-                        self.current.load(Ordering::Relaxed) as i64 * *scale
-                    )?;
+                    write!(str, "{}", self.current as i64 * *scale)?;
                 }
                 (DatagenStrategy::Increment { scale }, Some(values)) => {
-                    *obj = values[(self.current.load(Ordering::Relaxed)
-                        * (*scale).try_into().unwrap_or(1usize))
-                        % values.len()]
+                    *obj = values
+                        [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
                     .clone()
                 }
                 (DatagenStrategy::Uniform, None) => {
@@ -844,20 +870,19 @@ impl RecordGenerator {
 
         match (&settings.strategy, &settings.values, &settings.range) {
             (DatagenStrategy::Increment { scale }, None, None) => {
-                let val = (self.current.load(Ordering::Relaxed) as i64 * *scale) % max;
+                let val = (self.current as i64 * *scale) % max;
                 *obj = Value::Number(serde_json::Number::from(val));
             }
             (DatagenStrategy::Increment { scale }, None, Some((a, b))) => {
                 let range = b - a;
-                let val_in_range = (self.current.load(Ordering::Relaxed) as i64 * *scale) % range;
+                let val_in_range = (self.current as i64 * *scale) % range;
                 let val = a + val_in_range;
                 debug_assert!(val >= *a && val < *b);
                 *obj = Value::Number(serde_json::Number::from(val));
             }
             (DatagenStrategy::Increment { scale }, Some(values), _) => {
-                *obj = values[(self.current.load(Ordering::Relaxed)
-                    * (*scale).try_into().unwrap_or(1usize))
-                    % values.len()]
+                *obj = values
+                    [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
                 .clone();
             }
             (DatagenStrategy::Uniform, None, None) => {
@@ -924,15 +949,14 @@ impl RecordGenerator {
 
         match (&settings.strategy, &settings.values, &range) {
             (DatagenStrategy::Increment { scale }, None, None) => {
-                let val = (self.current.load(Ordering::Relaxed) as f64 * *scale as f64) % max;
+                let val = (self.current as f64 * *scale as f64) % max;
                 *obj = Value::Number(
                     serde_json::Number::from_f64(val).unwrap_or(serde_json::Number::from(0)),
                 );
             }
             (DatagenStrategy::Increment { scale }, None, Some((a, b))) => {
                 let range = b - a;
-                let val_in_range =
-                    (self.current.load(Ordering::Relaxed) as f64 * *scale as f64) % range;
+                let val_in_range = (self.current as f64 * *scale as f64) % range;
                 let val = a + val_in_range;
                 debug_assert!(val >= *a && val < *b);
                 *obj = Value::Number(
@@ -940,9 +964,8 @@ impl RecordGenerator {
                 );
             }
             (DatagenStrategy::Increment { scale }, Some(values), _) => {
-                *obj = values[(self.current.load(Ordering::Relaxed)
-                    * (*scale).try_into().unwrap_or(1usize))
-                    % values.len()]
+                *obj = values
+                    [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
                 .clone();
             }
             (DatagenStrategy::Uniform, None, None) => {
@@ -1006,16 +1029,12 @@ impl RecordGenerator {
         }
 
         *obj = match (&settings.strategy, &settings.values) {
-            (DatagenStrategy::Increment { scale }, None) => Value::Bool(
-                (self.current.load(Ordering::Relaxed) * (*scale).try_into().unwrap_or(1usize)) % 2
-                    == 1,
-            ),
-            (DatagenStrategy::Increment { scale }, Some(values)) => {
-                values[(self.current.load(Ordering::Relaxed)
-                    * (*scale).try_into().unwrap_or(1usize))
-                    % values.len()]
-                .clone()
+            (DatagenStrategy::Increment { scale }, None) => {
+                Value::Bool((self.current * (*scale).try_into().unwrap_or(1usize)) % 2 == 1)
             }
+            (DatagenStrategy::Increment { scale }, Some(values)) => values
+                [(self.current * (*scale).try_into().unwrap_or(1usize)) % values.len()]
+            .clone(),
             (DatagenStrategy::Uniform, None) => Value::Bool(rand::random::<bool>()),
             (DatagenStrategy::Uniform, Some(values)) => {
                 values[rand::random::<usize>() % values.len()].clone()
@@ -1041,13 +1060,18 @@ impl RecordGenerator {
         Ok(())
     }
 
-    fn make_json_record(&mut self) -> AnyResult<&Value> {
+    /// Generates a JSON record based on the schema and configuration.
+    ///
+    /// - `idx` is the index of the record to generate, it should be global
+    ///  across all threads.
+    fn make_json_record(&mut self, idx: usize) -> AnyResult<&Value> {
         let mut rng = self.rng.take().unwrap();
         let mut obj = self.json_obj.take().unwrap();
-        self.generate_fields(&self.schema.fields, &self.config.fields, &mut rng, &mut obj)?;
-        self.current.fetch_add(1, Ordering::Relaxed);
-        self.rng = Some(rng);
+        self.current = idx;
 
+        self.generate_fields(&self.schema.fields, &self.config.fields, &mut rng, &mut obj)?;
+
+        self.rng = Some(rng);
         self.json_obj = Some(obj);
         Ok(self.json_obj.as_ref().unwrap())
     }
@@ -1168,8 +1192,8 @@ mod test {
     use pipeline_types::program_schema::{Field, Relation};
     use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
     use pipeline_types::transport::datagen::GenerationPlan;
-    use std::thread;
     use std::time::Duration;
+    use std::{env, thread};
 
     fn mk_pipeline<T, U>(
         config_str: &str,
@@ -1365,16 +1389,26 @@ transport:
     }
 
     #[test]
+    #[ignore]
     fn test_tput() {
-        static SIZE: usize = 5_000_000;
+        static DEFAULT_SIZE: usize = 5_000_000;
+        let size = env::var("RECORDS")
+            .map(|r| r.parse().unwrap_or(DEFAULT_SIZE))
+            .unwrap_or(DEFAULT_SIZE);
+
+        static DEFAULT_WORKERS: usize = 1;
+        let workers = env::var("WORKERS")
+            .map(|r| r.parse().unwrap_or(DEFAULT_WORKERS))
+            .unwrap_or(DEFAULT_WORKERS);
+
         let config_str = format!(
             "
 stream: test_input
 transport:
     name: datagen
     config:
-        plan: [ {{ limit: {SIZE}, fields: {{}} }} ]
-        workers: 2
+        plan: [ {{ limit: {size}, fields: {{}} }} ]
+        workers: {workers}
 "
         );
         let (_endpoint, consumer, _zset) =
@@ -1386,7 +1420,7 @@ transport:
             thread::sleep(Duration::from_millis(25));
         }
         let elapsed = start.elapsed();
-        let tput = SIZE as f64 / elapsed.as_secs_f64();
-        println!("Tput: {:.2} records/sec", tput);
+        let tput = size as f64 / elapsed.as_secs_f64();
+        println!("Tput({workers}, {size}): {tput:.2} records/sec");
     }
 }
