@@ -152,7 +152,7 @@ pub enum JsonFlavor {
     /// (For internal use only)
     #[serde(skip)]
     ParquetConverter,
-    /// Parquet to-json format.
+    /// Datagen format.
     /// (For internal use only)
     #[serde(rename = "datagen")]
     Datagen,

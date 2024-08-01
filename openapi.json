@@ -3497,7 +3497,7 @@
           "seed": {
             "type": "integer",
             "format": "int64",
-            "description": "Optional seed for the random generator.\n\nSetting this to a fixed value will make the generator produce the same sequence of records\nevery time the pipeline is run.",
+            "description": "Optional seed for the random generator.\n\nSetting this to a fixed value will make the generator produce the same sequence of records\nevery time the pipeline is run.\n\n# Notes\n- To ensure the set of generated input records is deterministic across multiple runs,\napart from setting a seed, `workers` also needs to remain unchanged.\n- The input will arrive in non-deterministic order if `workers > 1`.",
             "nullable": true,
             "minimum": 0
           },
@@ -3899,7 +3899,8 @@
           "debezium_postgres",
           "snowflake",
           "kafka_connect_json_converter",
-          "pandas"
+          "pandas",
+          "datagen"
         ]
       },
       "JsonParserConfig": {
