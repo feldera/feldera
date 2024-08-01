@@ -86,7 +86,7 @@ const extractProgramError = (pipeline: { name: string; status: PipelineStatus })
     .with({ RustError: P.any }, (e) => [
       (async () => ({
         name: `Error compiling ${pipeline.name}`,
-        message: 'Compilation error occurred when compiling the program - see the details below',
+        message: 'Compilation error occurred when compiling the program - see the details below:\n' + e.RustError,
         cause: {
           entityName: pipeline.name,
           tag: 'programError',
