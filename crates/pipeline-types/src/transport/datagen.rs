@@ -240,6 +240,7 @@ pub struct GenerationPlan {
     pub limit: Option<usize>,
 
     /// Specifies the values that the generator should produce.
+    #[serde(default)]
     pub fields: HashMap<String, Box<RngFieldSettings>>,
 }
 
