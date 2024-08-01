@@ -78,61 +78,47 @@ We define several features over our input tables:
   - `is_night` - transaction took place before 6am
   - `d` - day of week
 
-The following Python function uses the Feldera Python SDK to creates an SQL program,
+The following Python function creates a SQL program,
 consisting of two tables with raw input data (`TRANSACTION` and `DEMOGRAPHICS`) and
 the `FEATURE` view, which computes the above features over these tables.
 
-<details>
-<summary> Click to see full Python code </summary>
-
 ```python
-from feldera import SQLContext, FelderaClient, SQLSchema
+def build_program(transactions_connectors: str, demographics_connectors: str, features_connectors: str) -> str:
+    return f"""-- Credit card transactions
+    CREATE TABLE TRANSACTION(
+        trans_date_trans_time TIMESTAMP,
+        cc_num BIGINT,
+        merchant STRING,
+        category STRING,
+        amt DOUBLE,
+        trans_num STRING,
+        unix_time BIGINT,
+        merch_lat DOUBLE,
+        merch_long DOUBLE,
+        is_fraud BIGINT
+    ) WITH ('connectors' = '{transactions_connectors}');
 
-def build_program(client, pipeline_name):
-    sql = SQLContext(pipeline_name, client).get_or_create()
-    # Declare input table with raw credit card transaction data.
-    sql.register_table(
-        "TRANSACTION",
-        SQLSchema(
-            {
-                "trans_date_trans_time": "TIMESTAMP",
-                "cc_num": "BIGINT",
-                "merchant": "STRING",
-                "category": "STRING",
-                "amt": "DOUBLE",
-                "trans_num": "STRING",
-                "unix_time": "BIGINT",
-                "merch_lat": "DOUBLE",
-                "merch_long": "DOUBLE",
-                "is_fraud": "BIGINT",
-            }
-        ),
-    )
+    -- Demographics data.
+    CREATE TABLE DEMOGRAPHICS(
+        cc_num BIGINT,
+        first STRING,
+        last STRING,
+        gender STRING,
+        street STRING,
+        city STRING,
+        state STRING,
+        zip BIGINT,
+        lat DOUBLE,
+        long DOUBLE,
+        city_pop BIGINT,
+        job STRING,
+        dob DATE
+    ) WITH ('connectors' = '{demographics_connectors}');
 
-    # Declare input table with demographics data.
-    sql.register_table(
-        "DEMOGRAPHICS",
-        SQLSchema(
-            {
-                "cc_num": "BIGINT",
-                "first": "STRING",
-                "last": "STRING",
-                "gender": "STRING",
-                "street": "STRING",
-                "city": "STRING",
-                "state": "STRING",
-                "zip": "BIGINT",
-                "lat": "DOUBLE",
-                "long": "DOUBLE",
-                "city_pop": "BIGINT",
-                "job": "STRING",
-                "dob": "DATE",
-            }
-        ),
-    )
-
-    # Feature query written in the Feldera SQL dialect.
-    query = """
+    -- Feature query written in the Feldera SQL dialect.
+    CREATE VIEW FEATURE
+    WITH ('connectors' = '{features_connectors}')
+    AS
         SELECT
            t.cc_num,
            dayofweek(trans_date_trans_time) as d,
@@ -167,12 +153,7 @@ def build_program(client, pipeline_name):
           window_7_day AS (PARTITION BY t.cc_num ORDER BY unix_time RANGE BETWEEN 604800 PRECEDING AND CURRENT ROW),
           window_30_day AS (PARTITION BY t.cc_num ORDER BY unix_time RANGE BETWEEN 2592000 PRECEDING AND CURRENT ROW);
       """
-
-    sql.register_view("FEATURE", query)
-    return sql
 ```
-
-</details>
 
 ### Training and testing
 
@@ -246,9 +227,6 @@ dataframe.  We split this dataframe into train and test sets.  We
 use the former to train an XGBoost model and the latter to measure model
 accuracy.
 
-<details>
-<summary> Click to see full Python code </summary>
-
 ```python
 import pandas as pd
 
@@ -256,37 +234,42 @@ import pandas as pd
 # Use the 'Settings' menu at try.feldera.com to generate an API key
 client = FelderaClient("https://try.feldera.com", api_key = <FELDERA_API_KEY>)
 
-sql = build_program(client, "fraud_detection_training")
-
-# Load DEMOGRAPHICS data from a Delta table stored in a public S3 bucket.
-sql.connect_source_delta_table(
-    "DEMOGRAPHICS",
-    "demographics_train",
-    {
-        "uri": "s3://feldera-fraud-detection-data/demographics_train",
-        "mode": "snapshot",
-        "aws_skip_signature": "true"
+# Load DEMOGRAPHICS data from a Delta table stored in an S3 bucket.
+demographics_connectors = [{
+    "transport": {
+        "name": "delta_table_input",
+        "config": {
+            "uri": "s3://feldera-fraud-detection-data/demographics_train",
+            "mode": "snapshot",
+            "aws_skip_signature": "true"
+        }
     }
-)
+}]
 
 # Load credit card TRANSACTION data.
-sql.connect_source_delta_table(
-    "TRANSACTION",
-    "transaction_train",
-    {
-        "uri": "s3://feldera-fraud-detection-data/transaction_train",
-        "mode": "snapshot",
-        "aws_skip_signature": "true",
-        "timestamp_column": "unix_time"
+transactions_connectors = [{
+    "transport": {
+        "name": "delta_table_input",
+        "config": {
+            "uri": "s3://feldera-fraud-detection-data/transaction_train",
+            "mode": "snapshot",
+            "aws_skip_signature": "true",
+            "timestamp_column": "unix_time"
+        }
     }
-)
+}]
 
-hfeature = sql.listen("feature")
+sql = build_program(json.dumps(transactions_connectors), json.dumps(demographics_connectors), '[]')
+
+pipeline = SQLContext("fraud_detection_training", client)
+pipeline.sql(sql)
+
+hfeature = pipeline.listen("feature")
 
 # Process full snapshot of the input tables and compute a dataset
 # with feature vectors for use in model training and testing.
-sql.start()
-sql.wait_for_completion(shutdown=True)
+pipeline.start()
+pipeline.wait_for_completion(shutdown=True)
 
 features_pd = hfeature.to_pandas()
 print(f"Computed {len(features_pd)} feature vectors")
@@ -309,7 +292,6 @@ print("Testing the trained model")
 y_pred = trained_model.predict(X_test)
 eval_metrics(y_test, y_pred)
 ```
-</details>
 
 :::note
 
@@ -347,7 +329,6 @@ manage a Kafka queue.
 We define a Python function to feed a Pandas dataframe to
 our trained ML model for inference.
 
-<details>
 <summary> Click to see full Python code </summary>
 
 ```python
@@ -363,7 +344,6 @@ def inference(trained_model, df):
 
     eval_metrics(y_inf, predictions_inf)
 ```
-</details>
 
 The next Python snippet builds another Feldera pipeline to evaluate the feature
 query over streaming data and send computed feature vectors to the ML model for
@@ -376,55 +356,55 @@ the stream of changes in its transaction log.  This **backfill** pattern is nece
 to correctly evaluate features that depend on historical data such as rolling
 sums and averages.
 
-<details>
-<summary> Click to see full Python code </summary>
-
 ```python
 # How long to run the inference pipeline for.
 INFERENCE_TIME_SECONDS = 30
 
-print(f"\nRunning the inference pipeline for")
-
-sql = build_program(client, "fraud_detection_inference")
+print(f"\nRunning the inference pipeline for {INFERENCE_TIME_SECONDS} seconds")
 
 # Load DEMOGRAPHICS data from a Delta table.
-sql.connect_source_delta_table(
-    "DEMOGRAPHICS",
-    "demographics_infer",
-    {
-        "uri": "s3://feldera-fraud-detection-data/demographics_infer",
-        "mode": "snapshot",
-        "aws_skip_signature": "true"
+demographics_connectors = [{
+    "transport": {
+        "name": "delta_table_input",
+        "config": {
+            "uri": "s3://feldera-fraud-detection-data/demographics_infer",
+            "mode": "snapshot",
+            "aws_skip_signature": "true"
+        }
     }
-)
+}]
 
 # Read TRANSACTION data from a Delta table.
 # Configure the Delta Lake connector to read the initial snapshot of
 # the table before following the stream of changes in its transaction log.
-sql.connect_source_delta_table(
-    "TRANSACTION",
-    "transaction_infer",
-    {
-        "uri": "s3://feldera-fraud-detection-data/transaction_infer",
-        "mode": "snapshot_and_follow",
-        "version": 10,
-        "timestamp_column": "unix_time",
-        "aws_skip_signature": "true"
+transactions_connectors = [{
+    "transport": {
+        "name": "delta_table_input",
+        "config": {
+            "uri": "s3://feldera-fraud-detection-data/transaction_infer",
+            "mode": "snapshot_and_follow",
+            "version": 10,
+            "timestamp_column": "unix_time",
+            "aws_skip_signature": "true"
+        }
     }
-)
+}]
 
-sql.foreach_chunk("feature", lambda df, chunk : inference(trained_model, df))
+sql = build_program(json.dumps(transactions_connectors), json.dumps(demographics_connectors), '[]')
+pipeline = SQLContext("fraud_detection_inference", client)
+pipeline.sql(sql)
+
+pipeline.foreach_chunk("feature", lambda df, chunk : inference(trained_model, df))
 
 # Start the pipeline to continuously process the input stream of credit card
 # transactions and output newly computed feature vectors to a Delta table.
-sql.start()
+pipeline.start()
 
 time.sleep(INFERENCE_TIME_SECONDS)
 
 print(f"Shutting down the inference pipeline after {INFERENCE_TIME_SECONDS} seconds")
-sql.shutdown()
+pipeline.shutdown()
 ```
-</details>
 
 Running this code produces output similar to the following:
 
@@ -466,9 +446,8 @@ F1 Score: 82.13%
 ...
 ```
 
-While the pipeline is running, we can monitor its progress in the Feldera Web Console:
-
-![Feldera Web Console](web_console.gif)
+While the pipeline is running, we can monitor its progress in the Feldera Web Console.
+Open [try.feldera.com] in your browser and select the `fraud_detection_inference` pipeline.
 
 ## Takeaways
 
