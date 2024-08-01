@@ -4,25 +4,18 @@ import re
 
 from typing import Optional, Dict, Callable
 
-import pandas as pd
+from feldera.rest.pipeline import Pipeline
 from typing_extensions import Self
 from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
 from feldera import FelderaClient
-from feldera.rest.program import Program
-from feldera.rest.pipeline import Pipeline
-from feldera.rest.connector import Connector
-from feldera._sql_table import SQLTable
-from feldera._sql_view import SQLView, ViewKind
-from feldera.sql_schema import SQLSchema
 from feldera.output_handler import OutputHandler
 from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
 from feldera._helpers import ensure_dataframe_has_columns
-from feldera.formats import JSONFormat, CSVFormat, AvroFormat
-from feldera.resources import Resources
+from feldera.runtime_config import Resources, RuntimeConfig
 from feldera.enums import BuildMode, CompilationProfile, PipelineStatus
-from feldera._helpers import validate_connector_input_format, chunk_dataframe
+from feldera._helpers import chunk_dataframe
 
 
 def _table_name_from_sql(ddl: str) -> str:
@@ -36,121 +29,43 @@ class SQLContext:
     The SQLContext is the main entry point for the Feldera SQL API.
     Abstracts the interaction with the Feldera API and provides a high-level interface for SQL pipelines.
 
-    :param pipeline_name: The name of the pipeline.
+    :param name: The name of the pipeline.
     :param client: The :class:`.FelderaClient` instance to use.
     :param pipeline_description: The description of the pipeline.
-    :param program_name: The name of the program. Defaults to the pipeline name.
-    :param program_description: The description of the program. Defaults to an empty string.
     :param storage: Set `True` to use storage with this pipeline. Defaults to False.
     :param workers: The number of workers to use with this pipeline. Defaults to 8.
-    :param resources: The :class:`.PipelineResourceConfig` for the pipeline. Defaults to None.
+    :param resources: The :class:`.Resources` for the pipeline. Defaults to None.
+    :param runtime_config: The :class:`.RuntimeConfig` for the pipeline. Defaults to None.
     :param compilation_profile: The compilation profile to use when compiling the program. Defaults to
         :class:`.CompilationProfile.OPTIMIZED`.
     """
 
     def __init__(
             self,
-            pipeline_name: str,
+            name: str,
             client: FelderaClient,
             pipeline_description: str = None,
-            program_name: str = None,
-            program_description: str = None,
             storage: bool = False,
             workers: int = 8,
-            resources: Resources = None,
+            resources: Resources = Resources(),
+            runtime_config: RuntimeConfig = None,
             compilation_profile: CompilationProfile = CompilationProfile.OPTIMIZED
     ):
+        self.ddl = ""
         self.build_mode: Optional[BuildMode] = None
-
-        self.ddl: str = ""
-
-        # In the SQL DDL declaration, the order of the tables and views is important.
-        # From python 3.7 onwards, the order of insertion is preserved in dictionaries.
-        # https://softwaremaniacs.org/blog/2020/02/05/dicts-ordered/en/
-        self.views: Dict[str, SQLView] = {}
-        self.tables: Dict[str, SQLTable] = {}
-        self.types: Dict[str, str] = {}
-
-        # buffer that stores all input connectors to be created
-        # this is a Mapping[table_name -> list[Connector]]
-        self.input_connectors_buffer: Dict[str, list[Connector]] = {}
-
-        # buffer that stores all output connectors to be created
-        # this is a Mapping[view_name -> list[Connector]]
-        self.output_connectors_buffer: Dict[str, list[Connector]] = {}
-
         self.views_tx: list[Dict[str, Queue]] = []
-
         self.client: FelderaClient = client
-
-        self.pipeline_name: str = pipeline_name
+        self.pipeline_name: str = name
         self.pipeline_description: str = pipeline_description or ""
-
-        self.program_name: str = program_name or pipeline_name
-        self.program_description: str = program_description or ""
         self.storage: bool = storage
         self.workers: int = workers
         self.resources: Resources = resources
+        self.runtime_config: RuntimeConfig = runtime_config or RuntimeConfig(resources=self.resources)
         self.compilation_profile: CompilationProfile = compilation_profile
-
-    def __build_ddl(self):
-        """
-        Internal function used to create the DDL from the registered tables and views.
-        """
-        types = "\n\n".join([type for type in self.types.values()])
-        tables = "\n\n".join([tbl.build_ddl() for tbl in self.tables.values()])
-        views = "\n\n".join([view.build_ddl() for view in self.views.values()])
-
-        self.ddl = types + "\n\n" + tables + "\n\n" + views
-
-    def __setup_pipeline(self):
-        """
-        Internal function used to setup the pipeline and program on the Feldera API.
-
-        :meta private:
-        """
-
-        self.__build_ddl()
-
-        # TODO: handle different build modes
-
-        program = Program(self.program_name, self.ddl, self.program_description)
-
-        self.client.compile_program(program, {
-            "profile": self.compilation_profile.value
-        })
-
-        attached_cons = []
-
-        for tbl_name, conns in self.input_connectors_buffer.items():
-            for conn in conns:
-                self.client.create_connector(conn)
-                attached_con = conn.attach_relation(tbl_name, True)
-                attached_cons.append(attached_con)
-
-        for view_name, conns in self.output_connectors_buffer.items():
-            for con in conns:
-                self.client.create_connector(con)
-                attached_con = con.attach_relation(view_name, False)
-                attached_cons.append(attached_con)
-
-        config = { 'storage': self.storage, 'workers': self.workers }
-        if self.resources:
-            config["resources"] = self.resources.__dict__
-
-        pipeline = Pipeline(
-            self.pipeline_name,
-            self.program_name,
-            self.pipeline_description,
-            config=config,
-            attached_connectors=attached_cons
-        )
-
-        self.client.create_pipeline(pipeline)
 
     def __setup_output_listeners(self):
         """
-        Internal function used to setup the output listeners.
+        Internal function used to set up the output listeners.
 
         :meta private:
         """
@@ -194,7 +109,7 @@ class SQLContext:
 
         try:
             pipeline = self.client.get_pipeline(self.pipeline_name)
-            return PipelineStatus.from_str(pipeline.current_state())
+            return PipelineStatus.from_str(pipeline.deployment_status)
 
         except FelderaAPIError as err:
             if err.status_code == 404:
@@ -202,46 +117,16 @@ class SQLContext:
             else:
                 raise err
 
-    def register_table(self, table_name: str, schema: Optional[SQLSchema] = None, ddl: str = None):
+    def sql(self, sql: str):
         """
-        Register a table with the SQLContext. The table can be registered with a schema or with the SQL DDL.
-        One of the two must be provided, but not both.
-        Auto inserts the trailing semicolon if not present.
-        In the future, schema will be inferred from the data provided from applicable sources.
+        Appends this SQL code to the pipeline DDL.
 
-        :param table_name: The name of the table.
-        :param schema: The schema of the table.
-        :param ddl: The SQL DDL of the table.
+
+        :param sql: One or more SQL statements. Each statement must end with a semicolon.
         """
 
-        if not schema and not ddl:
-            raise ValueError("Schema inference isn't supported yet, either provide a schema or the SQL DDL")
-
-        if schema and ddl:
-            raise ValueError("Provide either a schema or the SQL DDL, not both")
-
-        if ddl:
-            self.register_table_from_sql(ddl)
-            return
-
-        if schema:
-            self.tables[table_name] = SQLTable(table_name, schema=schema)
-
-    def register_table_from_sql(self, ddl: str):
-        """
-        Register a table with the provided SQL DDL.
-        Auto inserts the trailing semicolon if not present.
-
-        :param ddl: The SQL DDL of the table.
-        """
-
-        ddl = ddl.strip()
-        if ddl[-1] != ';':
-            ddl += ';'
-
-        name = _table_name_from_sql(ddl)
-
-        self.tables[name] = SQLTable(name, ddl)
+        self.ddl += sql.strip()
+        self.ddl += "\n"
 
     def input_pandas(self, table_name: str, df: pandas.DataFrame, force: bool = False):
         """
@@ -264,12 +149,11 @@ class SQLContext:
 
         ensure_dataframe_has_columns(df)
 
-        tbl = self.tables.get(table_name)
-
-        if tbl is None and table_name.lower() != "now":
+        pipeline = self.client.get_pipeline(self.pipeline_name)
+        if table_name.lower() != "now" and table_name.lower() not in [tbl.name.lower() for tbl in pipeline.tables]:
             raise ValueError(f"Cannot push to table '{table_name}' as it is not registered yet")
         else:
-            # tbl.validate_schema(df)   TODO: something like this would be nice
+            # consider validating the schema here
             for datum in chunk_dataframe(df):
                 self.client.push_to_pipeline(
                     self.pipeline_name,
@@ -309,84 +193,6 @@ class SQLContext:
             force=force
         )
 
-    def register_local_view(self, name: str, query: str):
-        """
-        Register a local view with the SQLContext.
-        Local views are not exposed to the outside world as an output of the computation.
-        This is useful for modularizing the SQL code, by declaring intermediate views
-        that are used in the implementation of other views.
-
-        Marking a view as local results in it not being materialized, potentially yielding performance benefit
-        over regular views at the cost of not being able to observe it (e.g., attach connectors to it).
-        This is particularly handy for intermediate views that are used in the implementation of other views,
-        a practice that benefits modularization of the SQL code.
-
-        Auto inserts the trailing semicolon if not present.
-
-        :param name: The name of the view.
-        :param query: The query to be used to create the view.
-        """
-
-        self.views[name] = SQLView(name, ViewKind.LOCAL, query)
-
-    def register_view(self, name: str, query: str):
-        """
-        Register a Feldera View based on the provided query.
-        Auto inserts the trailing semicolon if not present.
-
-        :param name: The name of the view.
-        :param query: The query to be used to create the view.
-        """
-
-        self.views[name] = SQLView(name, ViewKind.DEFAULT, query)
-
-    def register_materialized_view(self, name: str, query: str):
-        """
-        Register a Feldera materialized View based on the provided query.
-        Auto inserts the trailing semicolon if not present.
-
-        :param name: The name of the view.
-        :param query: The query to be used to create the view.
-        """
-
-        self.views[name] = SQLView(name, ViewKind.MATERIALIZED, query)
-
-    def register_type(self, name: str, spec: str):
-        """
-        Register a SQL type.
-        Auto inserts the trailing semicolon if not present.
-
-        :param name: The name of the type.
-        :param spec: Type definition.
-        """
-
-        spec = spec.strip()
-        if spec[-1] != ';':
-            spec += ';'
-
-        self.types[name] = f"CREATE TYPE {name} AS {spec}"
-
-    def add_lateness(self, view: str, timestamp_column: str, lateness_expr: str):
-        """
-        Add a lateness annotation to a view.
-        Lateness annotations are SQL statements of the form
-
-        .. code-block:: sql
-
-            LATENESS <view>.<timestamp_column> <lateness_expr>;
-            -- example:
-            LATENESS V.COL1 INTERVAL '1' HOUR;
-
-
-        :param view: View name.
-        :param timestamp_column: Timestamp column to associate lateness with.
-        :param lateness_expr: SQL expression that defines lateness.
-        """
-
-        view = self.views.get(view)
-
-        view.add_lateness(timestamp_column, lateness_expr)
-
     def listen(self, view_name: str) -> OutputHandler:
         """
         Listen to the output of the provided view so that it is available in the notebook / python code.
@@ -404,64 +210,6 @@ class SQLContext:
         handler.start()
 
         return handler
-
-    def connect_source_delta_table(self, table_name: str, connector_name: str, config: dict):
-        """
-        Tell Feldera to read the data from the specified delta table.
-
-        :param table_name: The name of the table.
-        :param connector_name: The unique name for this connector.
-        :param config: The configuration for the delta table.
-        """
-
-        if config.get("uri") is None:
-            raise ValueError("uri is required in the config")
-
-        if config.get("mode") is None:
-            raise ValueError("mode is required in the config, valid modes: snapshot, follow, snapshot_and_follow")
-
-        if config.get("mode") not in ["snapshot", "follow", "snapshot_and_follow"]:
-            raise ValueError("mode must be one of snapshot, follow, snapshot_and_follow")
-
-        connector = Connector(name=connector_name,
-                              config={
-                                  "transport": {
-                                      "name": "delta_table_input",
-                                      "config": config,
-                                  }
-                              })
-
-        if table_name in self.input_connectors_buffer:
-            self.input_connectors_buffer[table_name].append(connector)
-        else:
-            self.input_connectors_buffer[table_name] = [connector]
-
-    def connect_sink_delta_table(self, view_name: str, connector_name: str, config: dict):
-        """
-        Tell Feldera to write the data to the specified delta table.
-
-        :param view_name: The name of the view whose output is sent to delta table.
-        :param connector_name: The unique name for this connector.
-        :param config: The configuration for the delta table connector.
-        """
-
-        if config.get("uri") is None:
-            raise ValueError("uri is required in the config")
-
-        connector = Connector(name=connector_name,
-                              config={
-                                  "transport": {
-                                      "name": "delta_table_output",
-                                      "config": config,
-                                  },
-                                  "enable_output_buffer": True,
-                                  "max_output_buffer_time_millis": 10000,
-                              })
-
-        if view_name in self.output_connectors_buffer:
-            self.output_connectors_buffer[view_name].append(connector)
-        else:
-            self.output_connectors_buffer[view_name] = [connector]
 
     def foreach_chunk(self, view_name: str, callback: Callable[[pandas.DataFrame, int], None]):
         """
@@ -491,132 +239,6 @@ class SQLContext:
 
         handler = CallbackRunner(self.client, self.pipeline_name, view_name, callback, queue)
         handler.start()
-
-    def connect_source_kafka(
-        self,
-        table_name: str,
-        connector_name: str,
-        config: dict,
-        fmt: JSONFormat | CSVFormat,
-        max_queued_records: Optional[int] = None
-    ):
-        """
-        Associate the specified kafka topics on the specified Kafka server as input source for the specified table in
-        Feldera. The table is populated with changes from the specified kafka topics.
-
-        :param table_name: The name of the table.
-        :param connector_name: The unique name for this connector.
-        :param config: The configuration for the kafka connector.
-        :param fmt: The format of the data in the kafka topic.
-        :param max_queue_records:  Maximal number of records queued by the endpoint before the endpoint is paused by the backpressure mechanism.
-        """
-
-        if config.get("bootstrap.servers") is None:
-            raise ValueError("'bootstrap.servers' is required in the config")
-
-        if config.get("topics") is None:
-            raise ValueError("topics is required in the config")
-
-        validate_connector_input_format(fmt)
-
-        config={
-            "transport": {
-                "name": "kafka_input",
-                "config": config,
-            },
-            "format": fmt.to_dict()
-        }
-
-        if max_queued_records is not None:
-            config["max_queued_records"] = max_queued_records
-
-        connector = Connector(
-            name=connector_name,
-            config=config
-        )
-
-        if table_name in self.input_connectors_buffer:
-            self.input_connectors_buffer[table_name].append(connector)
-        else:
-            self.input_connectors_buffer[table_name] = [connector]
-
-    def connect_sink_kafka(
-        self,
-        view_name: str,
-        connector_name: str,
-        config: dict,
-        fmt: JSONFormat | CSVFormat | AvroFormat
-    ):
-        """
-        Associate the specified Kafka topic on the specified Kafka server as output sink for the specified view in
-        Feldera. The topic is populated with changes in the specified view.
-
-        :param view_name: The name of the view whose changes are sent to kafka topic.
-        :param connector_name: The unique name for this connector.
-        :param config: The configuration for the kafka connector.
-        :param fmt: The format of the data in the kafka topic.
-        """
-
-        if config.get("bootstrap.servers") is None:
-            raise ValueError("'bootstrap.servers' is required in the config")
-
-        if config.get("topic") is None:
-            raise ValueError("topic is required in the config")
-
-        validate_connector_input_format(fmt)
-
-        connector = Connector(
-            name=connector_name,
-            config={
-                "transport": {
-                    "name": "kafka_output",
-                    "config": config,
-                },
-                "format": fmt.to_dict(),
-            }
-        )
-
-        if view_name in self.output_connectors_buffer:
-            self.output_connectors_buffer[view_name].append(connector)
-        else:
-            self.output_connectors_buffer[view_name] = [connector]
-
-    def connect_source_url(
-        self,
-        table_name: str,
-        connector_name: str,
-        path: str,
-        fmt: JSONFormat | CSVFormat
-    ):
-        """
-        Associate the specified URL as input source for the specified table in Feldera.
-        Feldera will make a GET request to the specified URL to read the data and populate the table.
-
-        :param table_name: The name of the table.
-        :param connector_name: The unique name for this connector.
-        :param path: The URL to read the data from.
-        :param fmt: The format of the data in the URL.
-        """
-
-        validate_connector_input_format(fmt)
-
-        connector = Connector(
-            name=connector_name,
-            config={
-                "transport": {
-                    "name": "url_input",
-                    "config": {
-                        "path": path
-                    }
-                },
-                "format": fmt.to_dict(),
-            }
-        )
-
-        if table_name in self.input_connectors_buffer:
-            self.input_connectors_buffer[table_name].append(connector)
-        else:
-            self.input_connectors_buffer[table_name] = [connector]
 
     def wait_for_completion(self, shutdown: bool = False):
         """
@@ -668,11 +290,21 @@ class SQLContext:
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
 
+        pipeline = Pipeline(
+            self.pipeline_name,
+            sql=self.ddl,
+            description=self.pipeline_description,
+            program_config={
+                'profile': self.compilation_profile.value,
+            },
+            runtime_config=self.runtime_config.__dict__,
+        )
+
+        self.client.create_pipeline(pipeline)
+
         current_state = self.pipeline_status()
         if current_state not in [PipelineStatus.NOT_FOUND, PipelineStatus.SHUTDOWN]:
             raise RuntimeError(f"pipeline in state: {str(current_state.name)} cannot be started")
-
-        self.__setup_pipeline()
 
         self.pause()
 
@@ -771,31 +403,11 @@ class SQLContext:
 
         self.client.start_pipeline(self.pipeline_name)
 
-    def delete(self, delete_program: bool = True, delete_connectors: bool = False):
+    def delete(self):
         """
-        Delete the pipeline.
-
-        :param delete_program: If True, also deletes the program associated with the pipeline. True by default.
-        :param delete_connectors: If True, also deletes the connectors associated with the pipeline. False by default.
+        Deletes the pipeline.
         """
-
-        current_status = self.pipeline_status()
-
-        if current_status == PipelineStatus.NOT_FOUND:
-            raise RuntimeError("Attempting to delete a pipeline that hasn't been created yet")
-
-        if current_status not in [PipelineStatus.SHUTDOWN, PipelineStatus.FAILED]:
-            raise RuntimeError("Pipeline must be shutdown before deletion")
 
         self.client.delete_pipeline(self.pipeline_name)
 
-        if delete_program:
-            self.client.delete_program(self.program_name)
 
-        if delete_connectors:
-            for connector in self.input_connectors_buffer.values():
-                for conn in connector:
-                    self.client.delete_connector(conn.name)
-            for connector in self.output_connectors_buffer.values():
-                for conn in connector:
-                    self.client.delete_connector(conn.name)
