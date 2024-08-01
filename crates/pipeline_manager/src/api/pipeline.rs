@@ -252,7 +252,7 @@ pub(crate) async fn post_pipeline(
             , body = ErrorResponse
             , example = json!(examples::error_duplicate_name())),
         (status = BAD_REQUEST
-            , description = "Pipeline is not shutdown"
+            , description = "Pipeline needs to be shutdown to be modified"
             , body = ErrorResponse
             , example = json!(examples::error_cannot_update_non_shutdown_pipeline()))
     ),
@@ -321,7 +321,7 @@ async fn put_pipeline(
             , body = ErrorResponse
             , example = json!(examples::error_duplicate_name())),
         (status = BAD_REQUEST
-            , description = "Pipeline is not shutdown"
+            , description = "Pipeline needs to be shutdown to be modified"
             , body = ErrorResponse
             , example = json!(examples::error_cannot_update_non_shutdown_pipeline()))
     ),
@@ -378,7 +378,7 @@ pub(crate) async fn patch_pipeline(
             , body = ErrorResponse
             , example = json!(examples::error_unknown_pipeline())),
         (status = BAD_REQUEST
-            , description = "Pipeline is not shutdown"
+            , description = "Pipeline needs to be shutdown to be deleted"
             , body = ErrorResponse
             , example = json!(examples::error_cannot_delete_non_shutdown_pipeline()))
     ),

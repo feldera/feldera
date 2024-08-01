@@ -39,13 +39,15 @@ fn default_tracing() -> bool {
     true
 }
 
-/// Pipeline configuration specified by the user when creating
-/// a new pipeline instance.
-/// TODO: change this description
+/// Overall pipeline configuration.
 ///
-/// This is the shape of the overall pipeline configuration. It encapsulates a
-/// [`RuntimeConfig`], which is the publicly exposed way for users to configure
-/// pipelines.
+/// It is generated upon the deployment of a pipeline and contains
+/// the shape of the overall pipeline configuration.
+///
+/// Its input and output endpoints are generated based on the schema
+/// of the compiled program. The runtime configuration is directly
+/// provided by the user. Storage configuration, if applicable,
+/// is set by the runner.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PipelineConfig {
     /// Global controller configuration.
