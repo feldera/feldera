@@ -122,9 +122,8 @@ class SQLContext:
         """
         Appends this SQL code to the pipeline DDL.
 
-        One entry point for creating tables, views, connectors, everything.
 
-        :param sql: The SQL snippet.
+        :param sql: One or more SQL statements. Each statement must end with a semicolon.
         """
 
         self.ddl += sql.strip()

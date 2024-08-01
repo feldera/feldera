@@ -77,7 +77,8 @@ class FelderaClient:
 
     def create_pipeline(self, pipeline: Pipeline) -> Pipeline:
         """
-        Create a pipeline and waits for it to compile
+        Create a pipeline and wait for it to compile
+
 
         :name: The name of the pipeline
         """
