@@ -124,6 +124,11 @@ impl StorageCacheConfig {
     }
 }
 
+/// Enable the CPU profile by default.
+fn default_cpu_profiler() -> bool {
+    true
+}
+
 /// Global pipeline configuration settings. This is the publicly
 /// exposed type for users to configure pipelines.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -146,7 +151,9 @@ pub struct RuntimeConfig {
     pub storage: bool,
 
     /// Enable CPU profiler.
-    #[serde(default)]
+    ///
+    /// The default value is `true`.
+    #[serde(default = "default_cpu_profiler")]
     pub cpu_profiler: bool,
 
     /// Enable pipeline tracing.
