@@ -362,6 +362,7 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
                     .wrap(Logger::default().exclude("/healthz"))
                     .wrap(api_config.cors())
                     .service(api_scope().wrap(auth_middleware))
+                    .service(new_scope())
                     .service(public_scope())
             });
             server.listen(listener)?.run()
