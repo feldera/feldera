@@ -4,9 +4,6 @@ import time
 import json
 
 from feldera.rest.config import Config
-from feldera.rest.connector import Connector
-from feldera.rest.attached_connector import AttachedConnector
-from feldera.rest.program import Program
 from feldera.rest.pipeline import Pipeline
 from feldera.rest._httprequests import HttpRequests
 
@@ -40,179 +37,32 @@ class FelderaClient:
         self.http = HttpRequests(self.config)
 
         try:
-            self.programs()
+            self.pipelines()
         except Exception as e:
             logging.error(f"Failed to connect to Feldera API: {e}")
             raise e
 
-    def programs(self) -> list[Program]:
+    def get_pipeline(self, pipeline_name) -> Pipeline:
         """
-        Get all programs
-        """
-        resp = self.http.get(
-            path="/programs",
-        )
+        Get a pipeline by name
 
-        return [
-            Program(
-                name=program.get("name"),
-                code=program.get("code"),
-                description=program.get("description"),
-            ) for program in resp
-        ]
-
-    def get_program(self, name: str, with_code: bool = False) -> Program:
-        """
-        Get a program by name
-
-        :param name: The name of the program
-        :param with_code: If True, the program code will be included in the response
-        """
-        resp = self.http.get(
-            path=f"/programs/{name}",
-            params={
-                "with_code": with_code,
-            }
-        )
-
-        return Program(
-            name=resp.get("name"),
-            code=resp.get("code"),
-            description=resp.get("description"),
-            status=resp.get("status"),
-            version=resp.get("version"),
-        )
-
-    def compile_program(self, program: Program, config: Optional[dict] = None):
-        """
-        Compiles a SQL program
-
-        :param program: The program to compile
-        :param config: Optional. The configuration for the compilation
-        """
-        body = {
-            "code": program.code,
-            "description": program.description or "",
-            "config": config or {"profile": "optimized"}
-        }
-
-        resp = self.http.put(
-            path=f"/programs/{program.name}",
-            body=body,
-        )
-        program.id = resp.get("program_id")
-        program.version = resp.get("version")
-
-        while True:
-            status = self.get_program(program.name).status
-
-            if status == "Success":
-                break
-            elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
-                # TODO: return a more detailed error message, make this a custom error
-                raise RuntimeError(f"Failed program compilation with status {status}")
-
-            logging.debug("still compiling %s, waiting for 5 more seconds", program.name)
-            time.sleep(5)
-
-    def delete_program(self, name: str):
-        """
-        Deletes a program by name
-
-        :param name: The name of the program
+        :param pipeline_name: The name of the pipeline
         """
 
-        self.http.delete(
-            path=f"/programs/{name}",
-        )
+        resp = self.http.get(f"/pipelines/{pipeline_name}")
 
-    def connectors(self) -> list[Connector]:
+        return Pipeline.from_dict(resp)
+
+    def get_runtime_config(self, pipeline_name) -> dict:
         """
-        Get all connectors
-        """
+        Get the runtime config of a pipeline by name
 
-        resp = self.http.get(
-            path="/connectors",
-        )
-
-        return [
-            Connector(
-                name=connector.get("name"),
-                description=connector.get("description"),
-                config=connector.get("config"),
-                id=connector.get("connector_id"),
-            ) for connector in resp
-        ]
-
-    def get_connector(self, name: str) -> Connector:
-        """
-        Get a connector by name
-
-        :param name: The name of the connector
+        :param pipeline_name: The name of the pipeline
         """
 
-        resp = self.http.get(
-            path=f"/connectors/{name}",
-        )
+        resp: dict = self.http.get(f"/pipelines/{pipeline_name}")
 
-        return Connector(
-            name=resp.get("name"),
-            description=resp.get("description"),
-            config=resp.get("config"),
-            id=resp.get("connector_id"),
-        )
-
-    def create_connector(self, connector: Connector):
-        """
-        Create a connector.
-        Doesn't return anything, but sets the id of the connector.
-
-        :param connector: The connector to create
-        """
-        body = {
-            "description": connector.description or "",
-            "config": connector.config
-        }
-
-        resp = self.http.put(
-            path=f"/connectors/{connector.name}",
-            body=body,
-        )
-
-        connector.id = resp.get("connector_id")
-
-    def delete_connector(self, name: str):
-        """
-        Delete a connector by name
-
-        :param name: The name of the connector
-        """
-        self.http.delete(
-            path=f"/connectors/{name}",
-        )
-
-    @staticmethod
-    def __pipeline_from_dict(pipeline: dict) -> Pipeline:
-        attached_connectors = pipeline.get("attached_connectors")
-        descriptor = pipeline.get("descriptor")
-        return Pipeline(
-            name=descriptor.get("name"),
-            program_name=descriptor.get("program_name"),
-            version=descriptor.get("version"),
-            description=descriptor.get("description"),
-            id=descriptor.get("id"),
-            config=descriptor.get("config"),
-            state=pipeline.get("state"),
-            attached_connectors=[
-                AttachedConnector(
-                    connector_name=con.get("connector_name"),
-                    is_input=con.get("is_input"),
-                    relation_name=con.get("relation_name"),
-                    name=con.get("name"),
-                )
-                for con in attached_connectors
-            ] if attached_connectors else []
-        )
+        return resp.get("runtime_config")
 
     def pipelines(self) -> list[Pipeline]:
         """
@@ -223,33 +73,22 @@ class FelderaClient:
             path="/pipelines",
         )
 
-        return [self.__pipeline_from_dict(pipeline) for pipeline in resp]
+        return [Pipeline.from_dict(pipeline) for pipeline in resp]
 
-    def get_pipeline(self, name: str) -> Pipeline:
+    def create_pipeline(self, pipeline: Pipeline) -> Pipeline:
         """
-        Get a pipeline by name
+        Create a pipeline and wait for it to compile
 
-        :param name: The name of the pipeline
-        """
 
-        resp = self.http.get(
-            path=f"/pipelines/{name}",
-        )
-
-        return self.__pipeline_from_dict(resp)
-
-    def create_pipeline(self, pipeline: Pipeline):
-        """
-        Create a pipeline
-
-        :param pipeline: The pipeline to create
+        :name: The name of the pipeline
         """
 
         body = {
-            "config": pipeline.config,
+            "name": pipeline.name,
+            "program_code": pipeline.program_code,
+            "program_config": pipeline.program_config,
+            "runtime_config": pipeline.runtime_config,
             "description": pipeline.description or "",
-            "connectors": [c.to_json() for c in pipeline.attached_connectors],
-            "program_name": pipeline.program_name,
         }
 
         resp = self.http.put(
@@ -257,36 +96,33 @@ class FelderaClient:
             body=body,
         )
 
-        pipeline.id = resp.get("pipeline_id")
+        wait = ["Pending", "CompilingSql", "CompilingRust"]
 
-    def get_pipeline_config(self, name: str) -> dict:
+        while True:
+            p = self.get_pipeline(pipeline.name)
+            status = p.program_status
+
+            if status == "Success":
+                return p
+            elif status not in wait:
+                # TODO: return a more detailed error message
+                raise RuntimeError(f"The program failed to compile: {status}")
+
+            logging.debug("still compiling %s, waiting for 100 more milliseconds", pipeline.name)
+            time.sleep(0.1)
+
+    def patch_pipeline(self, name: str, sql: str):
         """
-        Get the configuration of a pipeline by name
-        """
-
-        resp = self.http.get(
-            path=f"/pipelines/{name}/config",
-        )
-
-        return resp
-
-    def validate_pipeline(self, name: str) -> bool:
-        """
-        Validate a pipeline.
-        Checks whether the pipeline is configured correctly.
-        This includes checking whether the pipeline references a valid compiled program,
-        whether the connectors reference valid tables/views in the program, and more.
+        Incrementally update the pipeline SQL
 
         :param name: The name of the pipeline
+        :param sql: The SQL snippet. Replaces the existing SQL code with this one.
         """
 
-        resp = self.http.get(
-            path=f"/pipelines/{name}/validate",
+        self.http.patch(
+            path=f"/pipelines/{name}",
+            body={"program_code": sql},
         )
-
-        # TODO: return an error description if invalid
-
-        return "success" in resp
 
     def delete_pipeline(self, name: str):
         """
@@ -317,17 +153,17 @@ class FelderaClient:
 
         :param pipeline_name: The name of the pipeline to start
         """
+
         self.http.post(
             path=f"/pipelines/{pipeline_name}/start",
         )
 
         while True:
-            status = self.get_pipeline(pipeline_name).state.get("current_status")
+            status = self.get_pipeline(pipeline_name).deployment_status
 
             if status == "Running":
                 break
             elif status == "Failed":
-                # TODO: return a more detailed error message
                 raise RuntimeError(f"Failed to start pipeline")
 
             logging.debug("still starting %s, waiting for 100 more milliseconds", pipeline_name)
@@ -344,7 +180,7 @@ class FelderaClient:
         )
 
         while True:
-            status = self.get_pipeline(pipeline_name).state.get("current_status")
+            status = self.get_pipeline(pipeline_name).deployment_status
 
             if status == "Paused":
                 break
@@ -367,7 +203,7 @@ class FelderaClient:
         )
 
         while True:
-            status = self.get_pipeline(pipeline_name).state.get("current_status")
+            status = self.get_pipeline(pipeline_name).deployment_status
 
             if status == "Shutdown":
                 break
