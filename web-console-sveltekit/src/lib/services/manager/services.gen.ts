@@ -48,6 +48,9 @@ import type {
   HttpInputData,
   HttpInputError,
   HttpInputResponse,
+  InputEndpointActionData,
+  InputEndpointActionError,
+  InputEndpointActionResponse,
   GetPipelineStatsData,
   GetPipelineStatsError,
   GetPipelineStatsResponse,
@@ -242,6 +245,20 @@ export const httpInput = (options: Options<HttpInputData>) => {
   return (options?.client ?? client).post<HttpInputResponse, HttpInputError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/ingress/{table_name}'
+  })
+}
+
+/**
+ * Change the desired state of an input endpoint.
+ * The following values of the `action` argument are accepted by this endpoint:
+ *
+ * - 'start': Start processing data.
+ * - 'pause': Pause the pipeline.
+ */
+export const inputEndpointAction = (options: Options<InputEndpointActionData>) => {
+  return (options?.client ?? client).post<InputEndpointActionResponse, InputEndpointActionError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/input_endpoints/{endpoint_name}/{action}'
   })
 }
 

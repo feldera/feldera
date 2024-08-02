@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use std::num::NonZeroU32;
 use utoipa::ToSchema;
 
 fn default_scale() -> i64 {
@@ -202,10 +201,10 @@ pub struct RngFieldSettings {
 /// A random generation plan for a table that generates either a limited amount of rows or runs continuously.
 #[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct GenerationPlan {
-    /// Number of rows to generate per second.
+    /// Non-zero number of rows to generate per second.
     ///
     /// If not set, the generator will produce rows as fast as possible.
-    pub rate: Option<NonZeroU32>,
+    pub rate: Option<u32>,
 
     /// Total number of new rows to generate.
     ///
