@@ -141,7 +141,7 @@ fn default_cpu_profiler() -> bool {
 
 /// Global pipeline configuration settings. This is the publicly
 /// exposed type for users to configure pipelines.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
     #[serde(default = "default_workers")]
