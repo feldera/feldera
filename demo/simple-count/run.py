@@ -16,7 +16,7 @@ def main():
     # Command-line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
-    parser.add_argument("--kafka", default="redpanda:9092", required=True, help="Kafka bootstrap servers")
+    parser.add_argument("--kafka", default="redpanda:9092", required=False, help="Kafka bootstrap servers")
     args = parser.parse_args()
     api_url = args.api_url
 
