@@ -550,7 +550,7 @@ inherits = "release"
             }
         }
 
-        // TODO: get rid of the shared DB, it should just handle pipelines no longer existing it tries again next time
+        // TODO: remove the re-usage of this database variable and handle pipeline no longer found
         let db = db.lock().await;
         let pipelines = db.list_pipelines_across_all_tenants().await?;
         for (tenant_id, pipeline) in pipelines {
