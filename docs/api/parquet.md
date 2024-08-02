@@ -1,17 +1,11 @@
 # Parquet Format
 
-:::caution Under Construction
-
-Note that the Parquet support is currently under development and is missing
-some functionality such as support for arrays and does not propagate information
-about deletes.
-
 Feldera can ingest and output data in the [Parquet format](https://parquet.apache.org/).
 
 - via [`ingress` and `egress` REST endpoints](/docs/tutorials/basics/part2) by specifying `?format=parquet` in the URL
 - as a payload received from or sent to a connector
 
-Here we document the Parquet format and how it interacts with different SQL types.
+We document the Parquet format and how it interacts with different SQL types in this page.
 
 ## Types
 
@@ -33,3 +27,41 @@ and [Arrow types](https://docs.rs/arrow/latest/arrow/datatypes/enum.DataType.htm
 | `DATE`                                     | `DataType::Int32` (days since unix epoch)                                          |
 | `ARRAY`                                    | `DataType::LargeList`                                                              |
 | `STRUCT`                                   | `DataType::Struct`                                                                 |
+| `MAP`                                      | `DataType::Dictionary`                                                             |
+
+
+## Example
+
+In this example, we configure a table to load data from a Parquet file.
+
+```sql
+create table PARTS (
+  part bigint not null,
+  vendor bigint not null,
+  price bigint not null
+) with ('connectors' = '[{
+  "transport": {
+    "name": "url_input",
+    "config": { "path": "https://feldera-basics-tutorial.s3.amazonaws.com/parts.parquet" }
+  },
+  "format": {
+    "name": "parquet",
+    "config": {}
+  }
+}]');
+```
+
+For reference, the following python script was used to generate the `parts.parquet` file:
+
+```python
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+data = {
+    'PART': [1, 2, 3],
+    'VENDOR': [2, 1, 3],
+    'PRICE': [10000, 15000, 9000]
+}
+table = pa.Table.from_pydict(data)
+pq.write_table(table, 'parts.parquet')
+```
