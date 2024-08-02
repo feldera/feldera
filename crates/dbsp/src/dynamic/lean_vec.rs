@@ -6,8 +6,7 @@ use rkyv::{
 };
 use size_of::{Context, SizeOf};
 use std::{
-    alloc,
-    alloc::{handle_alloc_error, Layout},
+    alloc::{self, handle_alloc_error, Layout},
     cmp::{max, min, Ordering},
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
@@ -16,8 +15,7 @@ use std::{
     mem::{align_of, forget, size_of, take, ManuallyDrop},
     ops::{Bound, Index, IndexMut, RangeBounds},
     pin::Pin,
-    ptr,
-    ptr::{drop_in_place, NonNull},
+    ptr::{self, drop_in_place, NonNull},
     slice,
 };
 
@@ -134,7 +132,7 @@ impl RawVec {
             new_capacity = self.next_capacity(new_capacity);
         }
 
-        self.grow(new_capacity);
+        self.realloc(new_capacity);
     }
 
     pub fn reserve_exact(&mut self, additional: usize) {
@@ -143,7 +141,7 @@ impl RawVec {
             return;
         }
 
-        self.grow(required);
+        self.realloc(required);
     }
 
     pub fn clear(&mut self, drop_slice_in_place: &dyn Fn(*mut u8, usize)) {
@@ -628,27 +626,36 @@ impl RawVec {
         self.capacity = capacity;
     }
 
-    fn grow(&mut self, new_capacity: usize) {
+    fn realloc(&mut self, new_capacity: usize) {
         debug_assert!(self.val_size > 0);
-        debug_assert!(new_capacity >= self.capacity());
+        debug_assert!(new_capacity >= self.len());
         if new_capacity == self.capacity() {
             return;
         }
 
-        let new_layout = self.layout_for(new_capacity);
-        let new_ptr = unsafe {
-            if self.capacity() == 0 {
-                alloc::alloc(new_layout)
-            } else {
-                let current_layout = self.layout_for(self.capacity());
-                alloc::realloc(self.as_mut_ptr(), current_layout, new_layout.size())
-            }
-        };
+        let current_layout = self.layout_for(self.capacity());
+        let new_ptr = if new_capacity > 0 {
+            let new_layout = self.layout_for(new_capacity);
+            let new_ptr = unsafe {
+                if self.capacity() == 0 {
+                    alloc::alloc(new_layout)
+                } else {
+                    alloc::realloc(self.as_mut_ptr(), current_layout, new_layout.size())
+                }
+            };
 
-        // If (re)allocation fails, raise an allocation error
-        if new_ptr.is_null() {
-            handle_alloc_error(new_layout);
-        }
+            // If (re)allocation fails, raise an allocation error
+            if new_ptr.is_null() {
+                handle_alloc_error(new_layout);
+            }
+            new_ptr
+        } else {
+            unsafe { alloc::dealloc(self.as_mut_ptr(), current_layout) };
+
+            // This is equivalent to `NonNull::<T>::dangling().as_ptr() as *mut
+            // u8` but it doesn't require `T` to be available.
+            self.align as *mut u8
+        };
 
         unsafe {
             self.set_capacity(new_capacity);
@@ -659,6 +666,12 @@ impl RawVec {
     fn layout_for(&self, capacity: usize) -> Layout {
         let bytes = self.next_aligned_capacity(capacity * self.val_size);
         Layout::from_size_align(bytes, self.align).unwrap()
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        if self.has_spare_capacity() && self.capacity != usize::MAX {
+            self.realloc(self.len())
+        }
     }
 
     /// Selects the given capacity's next growth target

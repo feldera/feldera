@@ -595,6 +595,11 @@ where
             self.offs[self.keys.len()] = O::from_usize(self.vals.boundary());
         }
 
+        if self.keys.spare_capacity() >= self.keys.len() / 10 {
+            self.keys.shrink_to_fit();
+            self.offs.shrink_to_fit();
+        }
+
         Layer {
             factories: self.factories,
             keys: self.keys,
