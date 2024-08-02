@@ -72,7 +72,9 @@ public class BaseSQLTests {
         compiler.compileStatements(statements);
         getCircuit(compiler);
         Assert.assertTrue(compiler.messages.exitCode != 0);
+        // compiler.options.ioOptions.emitJsonErrors = true;
         String message = compiler.messages.toString();
+        // System.out.println(message);
         boolean contains = message.contains(messageFragment);
         if (!contains)
             Assert.fail("Error message\n" + Utilities.singleQuote(message) +

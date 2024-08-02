@@ -40,10 +40,14 @@ pub fn cardinalityN<T>(value: Option<Vec<T>>) -> Option<i32> {
 // nullability of vector element
 // nullability of index
 
-pub fn index___<T>(value: Vec<T>, index: usize) -> Option<T>
+pub fn index___<T>(value: Vec<T>, index: isize) -> Option<T>
 where
     T: Clone,
 {
+    if index < 0 {
+        return None;
+    };
+    let index: usize = index as usize;
     if index >= value.len() {
         None
     } else {
@@ -51,7 +55,7 @@ where
     }
 }
 
-pub fn index___N<T>(value: Vec<T>, index: Option<usize>) -> Option<T>
+pub fn index___N<T>(value: Vec<T>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -59,10 +63,14 @@ where
     index___(value, index)
 }
 
-pub fn index__N_<T>(value: Vec<Option<T>>, index: usize) -> Option<T>
+pub fn index__N_<T>(value: Vec<Option<T>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
+    if index < 0 {
+        return None;
+    };
+    let index: usize = index as usize;
     if index >= value.len() {
         None
     } else {
@@ -70,11 +78,15 @@ where
     }
 }
 
-pub fn index__N_N<T>(value: Vec<Option<T>>, index: Option<usize>) -> Option<T>
+pub fn index__N_N<T>(value: Vec<Option<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
     let index = index?;
+    if index < 0 {
+        return None;
+    };
+    let index: usize = index as usize;
     if index >= value.len() {
         None
     } else {
@@ -82,7 +94,7 @@ where
     }
 }
 
-pub fn index_N__<T>(value: Option<Vec<T>>, index: usize) -> Option<T>
+pub fn index_N__<T>(value: Option<Vec<T>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -92,7 +104,7 @@ where
     }
 }
 
-pub fn index_N__N<T>(value: Option<Vec<T>>, index: Option<usize>) -> Option<T>
+pub fn index_N__N<T>(value: Option<Vec<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -103,7 +115,7 @@ where
     }
 }
 
-pub fn index_N_N_<T>(value: Option<Vec<Option<T>>>, index: usize) -> Option<T>
+pub fn index_N_N_<T>(value: Option<Vec<Option<T>>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -113,7 +125,7 @@ where
     }
 }
 
-pub fn index_N_N_N<T>(value: Option<Vec<Option<T>>>, index: Option<usize>) -> Option<T>
+pub fn index_N_N_N<T>(value: Option<Vec<Option<T>>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
