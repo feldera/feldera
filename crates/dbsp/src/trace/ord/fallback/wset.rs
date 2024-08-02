@@ -127,6 +127,21 @@ where
             Inner::File(file) => file.is_empty(),
         }
     }
+
+    pub fn map<F, KO>(self, factories: &FallbackWSetFactories<KO, R>, f: F) -> FallbackWSet<KO, R>
+    where
+        F: Fn(K) -> KO,
+        K: Sized,
+        KO: DataTrait + ?Sized,
+    {
+        FallbackWSet {
+            factories: factories.clone(),
+            inner: match self.inner {
+                Inner::Vec(vec) => Inner::Vec(vec.map(&factories.vec, f)),
+                Inner::File(_file) => unimplemented!(),
+            },
+        }
+    }
 }
 
 #[derive(SizeOf)]

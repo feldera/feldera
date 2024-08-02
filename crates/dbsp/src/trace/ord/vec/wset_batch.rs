@@ -164,6 +164,18 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> VecWSet<K, R> {
         self.layer.is_empty()
     }
 
+    pub fn map<F, KO>(self, factories: &VecWSetFactories<KO, R>, f: F) -> VecWSet<KO, R>
+    where
+        F: Fn(K) -> KO,
+        K: Sized,
+        KO: DataTrait + ?Sized,
+    {
+        VecWSet {
+            factories: factories.clone(),
+            layer: self.layer.map(&factories.layer_factories, f),
+        }
+    }
+
     /*#[inline]
     pub fn retain(&mut self, retain: &dyn Fn(&K, &R) -> bool) {
         self.layer.retain(retain);

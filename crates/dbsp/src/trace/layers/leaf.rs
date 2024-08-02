@@ -286,6 +286,14 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
         self.diffs.truncate(length);
         self.lower_bound = min(self.lower_bound, length);
     }
+
+    pub(crate) fn map<F, KO>(self, _factories: &LeafFactories<KO, R>, _f: F) -> Leaf<KO, R>
+    where
+        F: Fn(K) -> KO,
+        K: Sized,
+        KO: DataTrait + ?Sized, {
+        todo!()
+    }
 }
 
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> PartialEq for Leaf<K, R> {

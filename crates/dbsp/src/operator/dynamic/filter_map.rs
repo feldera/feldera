@@ -29,6 +29,19 @@ pub trait DynFilterMap: BatchReader {
         filter_func: Box<dyn Fn(Self::DynItemRef<'_>) -> bool>,
     ) -> Stream<C, Self>;
 
+    fn dyn_map_owned<C, KT>(
+        _stream: &Stream<C, Self>,
+        _output_factories: &OrdWSetFactories<KT, Self::R>,
+        _map_func: Box<dyn Fn(Self::Key) -> KT>,
+    ) -> Stream<C, OrdWSet<KT, Self::R>>
+    where
+        C: Circuit,
+        Self::Key: Sized,
+        KT: DataTrait,
+    {
+        unimplemented!()
+    }
+
     fn dyn_map_generic<C: Circuit, O>(
         stream: &Stream<C, Self>,
         output_factories: &O::Factories,
@@ -70,6 +83,19 @@ impl<C: Circuit, B: DynFilterMap> Stream<C, B> {
         map_func: Box<dyn Fn(B::DynItemRef<'_>, &mut DynPair<K, V>)>,
     ) -> Stream<C, OrdIndexedWSet<K, V, B::R>> {
         DynFilterMap::dyn_map_generic(self, output_factories, map_func)
+    }
+
+    pub fn dyn_map_owned<KT>(
+        &self,
+        output_factories: &OrdWSetFactories<KT, B::R>,
+        map_func: Box<dyn Fn(B::Key) -> KT>,
+    ) -> Stream<C, OrdWSet<KT, B::R>>
+    where
+        C: Circuit,
+        B::Key: Sized,
+        KT: DataTrait,
+    {
+        DynFilterMap::dyn_map_owned(self, output_factories, map_func)
     }
 
     /// Like [`Self::dyn_map_index`], but can return any batch type.
@@ -115,7 +141,7 @@ impl<C: Circuit, B: DynFilterMap> Stream<C, B> {
     }
 }
 
-// This impl for VecZSet is identical to the one for FallbackWSet below.  There
+// This impl for VecZSet is identical to the one for VecWSet below.  There
 // doesn't seem to be a good way to avoid the code duplication short of a macro.
 impl<K, R> DynFilterMap for OrdWSet<K, R>
 where
@@ -145,6 +171,20 @@ where
             filtered.mark_distinct();
         }
         filtered
+    }
+
+    fn dyn_map_owned<C: Circuit, KT>(
+        stream: &Stream<C, Self>,
+        output_factories: &OrdWSetFactories<KT, Self::R>,
+        map_func: Box<dyn Fn(Self::Key) -> KT>,
+    ) -> Stream<C, OrdWSet<KT, Self::R>>
+    where
+        K: Sized,
+        KT: DataTrait,
+    {
+        stream
+            .circuit()
+            .add_unary_operator(MapOwnedZSet::new(output_factories, map_func), stream)
     }
 
     fn dyn_map_generic<C: Circuit, O>(
@@ -559,6 +599,65 @@ where
 
     fn input_preference(&self) -> OwnershipPreference {
         OwnershipPreference::INDIFFERENT
+    }
+}
+
+pub struct MapOwnedZSet<KI, KO, R>
+where
+    KI: DataTrait,
+    KO: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    output_factories: OrdWSetFactories<KO, R>,
+    map: Box<dyn Fn(KI) -> KO>,
+}
+
+impl<KI, KO, R> MapOwnedZSet<KI, KO, R>
+where
+    KI: DataTrait,
+    KO: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    pub fn new(output_factories: &OrdWSetFactories<KO, R>, map: Box<dyn Fn(KI) -> KO>) -> Self {
+        Self {
+            output_factories: output_factories.clone(),
+            map,
+        }
+    }
+}
+
+impl<KI, KO, R> Operator for MapOwnedZSet<KI, KO, R>
+where
+    KI: DataTrait,
+    KO: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("MapOwnedZSet")
+    }
+
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        true
+    }
+}
+
+impl<KI, KO, R> UnaryOperator<OrdWSet<KI, R>, OrdWSet<KO, R>> for MapOwnedZSet<KI, KO, R>
+where
+    KI: DataTrait,
+    KO: DataTrait,
+    R: WeightTrait + ?Sized,
+{
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::PREFER_OWNED
+    }
+
+    fn eval_owned(&mut self, input: OrdWSet<KI, R>) -> OrdWSet<KO, R> {
+        input.map(&self.output_factories, &self.map)
+    }
+
+    #[trace]
+    fn eval(&mut self, _i: &OrdWSet<KI, R>) -> OrdWSet<KO, R> {
+        panic!("MapOwnedZSet::eval(): cannot accept batch by reference")
     }
 }
 

@@ -49,6 +49,20 @@ pub trait FilterMap: BatchReader + Sized {
     where
         F: Fn(Self::ItemRef<'_>) -> bool + 'static;
 
+    fn map_owned<C, F, KT, DynKT>(
+        _stream: &Stream<C, Self>,
+        _map_func: F,
+    ) -> Stream<C, OrdWSet<DynKT, Self::R, Self::DynR>>
+    where
+        C: Circuit,
+        Self::DynK: Sized,
+        KT: DBData + Erase<DynKT>,
+        DynKT: DataTrait,
+        F: Fn(Self::Key) -> KT + 'static,
+    {
+        unimplemented!()
+    }
+
     fn map_generic<C: Circuit, F, K, V, O>(stream: &Stream<C, Self>, map_func: F) -> Stream<C, O>
     where
         K: DBData + Erase<O::DynK>,
@@ -171,6 +185,28 @@ where
             Box::new(move |k| filter_func(unsafe { k.downcast() }));
 
         stream.inner().dyn_filter(filter_func).typed()
+    }
+
+    fn map_owned<C, F, KT, DynKT>(
+        stream: &Stream<C, Self>,
+        map_func: F,
+    ) -> Stream<C, OrdWSet<DynKT, Self::R, Self::DynR>>
+    where
+        C: Circuit,
+        DynK: Sized,
+        KT: DBData + Erase<DynKT>,
+        DynKT: DataTrait,
+        F: Fn(K) -> KT + 'static,
+    {
+        let factories = BatchReaderFactories::new::<KT, (), R>();
+
+        stream
+            .inner()
+            .dyn_map_owned(
+                &factories,
+                Box::new(move |key| map_func(unsafe { key.downcast() })),
+            )
+            .typed()
     }
 
     fn map_generic<C: Circuit, F, KT, V, O>(stream: &Stream<C, Self>, map_func: F) -> Stream<C, O>
