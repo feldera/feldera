@@ -17,7 +17,7 @@ Our approach to incremental computation is simple. A Feldera `pipeline` is a set
 Users start, stop or pause pipelines to manage and advance a computation.
 Pipelines continuously process
 **changes**, which are any number of inserts, updates or deletes to a set of tables. When the pipeline receives changes,
-Feldera **incrementally** updates all the views by only looking at the changes and it completely avoids recomputating over older data.
+Feldera **incrementally** updates all the views by only looking at the changes and it completely avoids recomputing over older data.
 While a pipeline is running, users can inspect the results of the views at any time.
 
 Our approach to incremental computation makes Feldera incredibly fast (millions of events per second on a laptop). 
