@@ -143,9 +143,6 @@ The program version is used internally by the compiler to know when to recompile
         crate::api::api_key::NewApiKeyRequest,
         crate::api::api_key::NewApiKeyResponse,
 
-        // Demo
-        crate::demo::Demo,
-
         // From the pipeline-types crate
         pipeline_types::config::PipelineConfig,
         pipeline_types::config::StorageConfig,
@@ -172,6 +169,11 @@ The program version is used internally by the compiler to know when to recompile
         pipeline_types::transport::s3::ReadStrategy,
         pipeline_types::transport::s3::AwsCredentials,
         pipeline_types::transport::s3::S3InputConfig,
+        pipeline_types::transport::datagen::StringMethod,
+        pipeline_types::transport::datagen::DatagenStrategy,
+        pipeline_types::transport::datagen::RngFieldSettings,
+        pipeline_types::transport::datagen::GenerationPlan,
+        pipeline_types::transport::datagen::DatagenInputConfig,
         pipeline_types::transport::delta_table::DeltaTableIngestMode,
         pipeline_types::transport::delta_table::DeltaTableWriteMode,
         pipeline_types::transport::delta_table::DeltaTableReaderConfig,

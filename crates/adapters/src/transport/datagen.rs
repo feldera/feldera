@@ -93,7 +93,11 @@ impl InputGenerator {
             config
                 .plan
                 .iter()
-                .map(|p| RateLimiter::direct(Quota::per_second(p.rate.unwrap_or(NonZeroU32::MAX))))
+                .map(|p| {
+                    RateLimiter::direct(Quota::per_second(
+                        p.rate.and_then(NonZeroU32::new).unwrap_or(NonZeroU32::MAX),
+                    ))
+                })
                 .collect::<Vec<RateLimiter<_, _, _>>>(),
         );
 

@@ -274,7 +274,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Demo"
+                    "$ref": "#/components/schemas/PipelineDescr"
                   }
                 }
               }
@@ -1991,6 +1991,109 @@
         ],
         "description": "Strategy to feed a fetched object into an InputConsumer."
       },
+      "DatagenInputConfig": {
+        "type": "object",
+        "description": "Configuration for generating random data for a table.",
+        "properties": {
+          "plan": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GenerationPlan"
+            },
+            "description": "The sequence of generations to perform.\n\nIf not set, the generator will produce a single sequence with default settings.\nIf set, the generator will produce the specified sequences in sequential order.\n\nNote that if one of the sequences before the last one generates an unlimited number of rows\nthe following sequences will not be executed."
+          },
+          "seed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Optional seed for the random generator.\n\nSetting this to a fixed value will make the generator produce the same sequence of records\nevery time the pipeline is run.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "workers": {
+            "type": "integer",
+            "description": "Number of workers to use for generating data.",
+            "minimum": 0
+          }
+        }
+      },
+      "DatagenStrategy": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Whether the field should be incremented for each new\nrecord rather than generated randomly.\n\nA scale factor can be set as the `param` field to apply a multiplier to the increment.\nThe default scale factor is 1.",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "increment"
+                ]
+              },
+              "scale": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "uniform"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A Zipf distribution is chosen with the specified exponent (`s`) and\n`n` (set automatically) for the range `[1..n]` to generate the value in.\n\nNote that the Zipf distribution is only available for numbers or types that\nspecify `values` or `range`.\n\n- In case `values` is set, the `n` is set to `values.len()`.\n- In case `values` is not set, `n` is set to the length of the `range`.\n- In case `range` is not set, the `n` is set to cover the default range of the type.",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "zipf"
+                ]
+              },
+              "s": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A strategy to produce a random string for various data.\n\n- This strategy is only available for string types.",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "method": {
+                "$ref": "#/components/schemas/StringMethod"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "string"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Strategy used to generate values.",
+        "discriminator": {
+          "propertyName": "name"
+        }
+      },
       "DeltaTableIngestMode": {
         "type": "string",
         "description": "Delta table read mode.\n\nThree options are available:\n\n* `snapshot` - read a snapshot of the table and stop.\n\n* `follow` - continuously ingest changes to the table, starting from a specified version\nor timestamp.\n\n* `snapshot_and_follow` - read a snapshot of the table before switching to continuous ingestion\nmode.",
@@ -2069,34 +2172,6 @@
         "additionalProperties": {
           "type": "string",
           "description": "Storage options for configuring backend object store.\n\nFor specific options available for different storage backends, see:\n* [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)\n* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)\n* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)"
-        }
-      },
-      "Demo": {
-        "type": "object",
-        "required": [
-          "title",
-          "description",
-          "prefix",
-          "steps"
-        ],
-        "properties": {
-          "description": {
-            "type": "string",
-            "description": "Description of the demo."
-          },
-          "prefix": {
-            "type": "string",
-            "description": "Demo prefix prepended to each of the entities."
-          },
-          "steps": {
-            "type": "array",
-            "items": {},
-            "description": "The steps which define the entities to create."
-          },
-          "title": {
-            "type": "string",
-            "description": "Title of the demo."
-          }
         }
       },
       "EgressMode": {
@@ -2406,6 +2481,32 @@
           "name": {
             "type": "string",
             "description": "Format name, e.g., \"csv\", \"json\", \"bincode\", etc."
+          }
+        }
+      },
+      "GenerationPlan": {
+        "type": "object",
+        "description": "A random generation plan for a table that generates either a limited amount of rows or runs continuously.",
+        "properties": {
+          "fields": {
+            "type": "object",
+            "description": "Specifies the values that the generator should produce.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RngFieldSettings"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Total number of new rows to generate.\n\nIf not set, the generator will produce new/unique records as long as the pipeline is running.\nIf set to 0, the table will always remain empty.\nIf set, the generator will produce new records until the specified limit is reached.\n\nNote that if the table has one or more primary keys that don't use the `increment` strategy to\ngenerate the key there is a potential that an update is generated instead of an insert. In\nthis case it's possible the total number of records is less than the specified limit.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "rate": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Non-zero number of rows to generate per second.\n\nIf not set, the generator will produce rows as fast as possible.",
+            "nullable": true,
+            "minimum": 0
           }
         }
       },
@@ -3256,6 +3357,70 @@
           }
         }
       },
+      "RngFieldSettings": {
+        "type": "object",
+        "description": "Configuration for generating random data for a field of a table.",
+        "properties": {
+          "fields": {
+            "type": "object",
+            "description": "Specifies the values that the generator should produce in case the field is a struct type.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RngFieldSettings"
+            },
+            "nullable": true
+          },
+          "key": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RngFieldSettings"
+              }
+            ],
+            "nullable": true
+          },
+          "null_percentage": {
+            "type": "integer",
+            "description": "Percentage of records where this field should be set to NULL.\n\nIf not set, the generator will produce only records with non-NULL values.\nIf set to `1..=100`, the generator will produce records with NULL values with the specified percentage.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "range": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              ]
+            },
+            "description": "An optional, exclusive range [a, b) to limit the range of values the generator should produce.\n\n- For integer/floating point types specifies min/max values.\nIf not set, the generator will produce values for the entire range of the type for number types.\n- For string/binary types specifies min/max length, values are required to be >=0.\nIf not set, a range of [0, 25) is used by default.\n- For timestamp types specifies the min/max in milliseconds from the number of non-leap\nmilliseconds since January 1, 1970 0:00:00.000 UTC (aka “UNIX timestamp”).\nIf not set, a range of [0, 4102444800) is used by default (1970-01-01 -- 2100-01-01).\n- For time types specifies the min/max in milliseconds.\nIf not set, the range is 24h. Range values are required to be >=0.\n- For date types specifies the min/max in days from the number of days since January 1, 1970.\nIf not set, a range of [0, 54787) is used by default (1970-01-01 -- 2100-01-01).\n- For array types specifies the min/max number of elements.\nIf not set, a range of [0, 5) is used by default. Range values are required to be >=0.\n- For map types specifies the min/max number of key-value pairs.\nIf not set, a range of [0, 5) is used by default.\n- For struct/boolean/null types `range` is ignored.",
+            "nullable": true
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/DatagenStrategy"
+          },
+          "value": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RngFieldSettings"
+              }
+            ],
+            "nullable": true
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "An optional set of values the generator will pick from.\n\nIf set, the generator will pick values from the specified set.\nIf not set, the generator will produce values according to the specified range.\nIf set to an empty set, the generator will produce NULL values.\nIf set to a single value, the generator will produce only that value.\n\nNote that `range` is ignored if `values` is set.",
+            "nullable": true
+          }
+        }
+      },
       "RuntimeConfig": {
         "type": "object",
         "description": "Global pipeline configuration settings. This is the publicly\nexposed type for users to configure pipelines.",
@@ -3336,7 +3501,7 @@
       },
       "SqlCompilerMessage": {
         "type": "object",
-        "description": "A SQL compiler error.\n\nThe SQL compiler returns a list of errors in the following JSON format if\nit's invoked with the `-je` option.\n\n```ignore\n[ {\n\"startLineNumber\" : 14,\n\"startColumn\" : 13,\n\"endLineNumber\" : 14,\n\"endColumn\" : 13,\n\"warning\" : false,\n\"errorType\" : \"Error parsing SQL\",\n\"message\" : \"Encountered \\\"<EOF>\\\" at line 14, column 13.\"\n} ]\n```",
+        "description": "A SQL compiler error.\n\nThe SQL compiler returns a list of errors in the following JSON format if\nit's invoked with the `-je` option.\n\n```ignore\n[ {\n\"startLineNumber\" : 2,\n\"startColumn\" : 4,\n\"endLineNumber\" : 2,\n\"endColumn\" : 8,\n\"warning\" : false,\n\"errorType\" : \"PRIMARY KEY cannot be nullable\",\n\"message\" : \"PRIMARY KEY column 'C' has type INTEGER, which is nullable\",\n\"snippet\" : \"    2|   c INT PRIMARY KEY\\n         ^^^^^\\n    3|);\\n\"\n} ]\n```",
         "required": [
           "startLineNumber",
           "startColumn",
@@ -3360,6 +3525,10 @@
           },
           "message": {
             "type": "string"
+          },
+          "snippet": {
+            "type": "string",
+            "nullable": true
           },
           "startColumn": {
             "type": "integer",
@@ -3547,6 +3716,81 @@
             "description": "The location where the pipeline state is stored or will be stored.\n\nIt should point to a path on the file-system of the machine/container\nwhere the pipeline will run. If that path doesn't exist yet, or if it\ndoes not contain any checkpoints, then the pipeline creates it and\nstarts from an initial state in which no data has yet been received. If\nit does exist, then the pipeline starts from the most recent checkpoint\nthat already exists there. In either case, (further) checkpoints will be\nwritten there."
           }
         }
+      },
+      "StringMethod": {
+        "type": "string",
+        "description": "Various methods to generate different random strings.",
+        "enum": [
+          "word",
+          "words",
+          "sentence",
+          "sentences",
+          "paragraph",
+          "paragraphs",
+          "first_name",
+          "last_name",
+          "title",
+          "suffix",
+          "name",
+          "name_with_title",
+          "domain_suffix",
+          "email",
+          "username",
+          "password",
+          "field",
+          "position",
+          "seniority",
+          "job_title",
+          "i_pv4",
+          "i_pv6",
+          "i_p",
+          "m_a_c_address",
+          "user_agent",
+          "rfc_status_code",
+          "valid_status_code",
+          "company_suffix",
+          "company_name",
+          "buzzword",
+          "buzzword_middle",
+          "buzzword_tail",
+          "catch_phrase",
+          "bs_verb",
+          "bs_adj",
+          "bs_noun",
+          "bs",
+          "profession",
+          "industry",
+          "currency_code",
+          "currency_name",
+          "currency_symbol",
+          "credit_card_number",
+          "city_prefix",
+          "city_suffix",
+          "city_name",
+          "country_name",
+          "country_code",
+          "street_suffix",
+          "street_name",
+          "time_zone",
+          "state_name",
+          "state_abbr",
+          "secondary_address_type",
+          "secondary_address",
+          "zip_code",
+          "post_code",
+          "building_number",
+          "latitude",
+          "longitude",
+          "isbn",
+          "isbn13",
+          "isbn10",
+          "phone_number",
+          "cell_number",
+          "file_path",
+          "file_name",
+          "file_extension",
+          "dir_path"
+        ]
       },
       "TransportConfig": {
         "oneOf": [

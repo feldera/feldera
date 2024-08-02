@@ -266,6 +266,12 @@ which more data may be queued.
 The default is 1 million.`,
           minimum: 0
         },
+        paused: {
+          type: 'boolean',
+          description: `Create connector in paused state.
+
+The default is \`false\`.`
+        },
         transport: {
           $ref: '#/components/schemas/TransportConfig'
         }
@@ -299,6 +305,118 @@ export const $ConsumeStrategy = {
     }
   ],
   description: 'Strategy to feed a fetched object into an InputConsumer.'
+} as const
+
+export const $DatagenInputConfig = {
+  type: 'object',
+  description: 'Configuration for generating random data for a table.',
+  properties: {
+    plan: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/GenerationPlan'
+      },
+      description: `The sequence of generations to perform.
+
+If not set, the generator will produce a single sequence with default settings.
+If set, the generator will produce the specified sequences in sequential order.
+
+Note that if one of the sequences before the last one generates an unlimited number of rows
+the following sequences will not be executed.`
+    },
+    seed: {
+      type: 'integer',
+      format: 'int64',
+      description: `Optional seed for the random generator.
+
+Setting this to a fixed value will make the generator produce the same sequence of records
+every time the pipeline is run.`,
+      nullable: true,
+      minimum: 0
+    },
+    workers: {
+      type: 'integer',
+      description: 'Number of workers to use for generating data.',
+      minimum: 0
+    }
+  }
+} as const
+
+export const $DatagenStrategy = {
+  oneOf: [
+    {
+      type: 'object',
+      description: `Whether the field should be incremented for each new
+record rather than generated randomly.
+
+A scale factor can be set as the \`param\` field to apply a multiplier to the increment.
+The default scale factor is 1.`,
+      required: ['name'],
+      properties: {
+        name: {
+          type: 'string',
+          enum: ['increment']
+        },
+        scale: {
+          type: 'integer',
+          format: 'int64'
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        name: {
+          type: 'string',
+          enum: ['uniform']
+        }
+      }
+    },
+    {
+      type: 'object',
+      description: `A Zipf distribution is chosen with the specified exponent (\`s\`) and
+\`n\` (set automatically) for the range \`[1..n]\` to generate the value in.
+
+Note that the Zipf distribution is only available for numbers or types that
+specify \`values\` or \`range\`.
+
+- In case \`values\` is set, the \`n\` is set to \`values.len()\`.
+- In case \`values\` is not set, \`n\` is set to the length of the \`range\`.
+- In case \`range\` is not set, the \`n\` is set to cover the default range of the type.`,
+      required: ['name'],
+      properties: {
+        name: {
+          type: 'string',
+          enum: ['zipf']
+        },
+        s: {
+          type: 'integer',
+          minimum: 0
+        }
+      }
+    },
+    {
+      type: 'object',
+      description: `A strategy to produce a random string for various data.
+
+- This strategy is only available for string types.`,
+      required: ['name'],
+      properties: {
+        method: {
+          $ref: '#/components/schemas/StringMethod'
+        },
+        name: {
+          type: 'string',
+          enum: ['string']
+        }
+      }
+    }
+  ],
+  description: 'Strategy used to generate values.',
+  discriminator: {
+    propertyName: 'name'
+  }
 } as const
 
 export const $DeltaTableIngestMode = {
@@ -570,10 +688,10 @@ TODO: should this be in here or not?`,
     program_config: {
       $ref: '#/components/schemas/ProgramConfig'
     },
-    program_schema: {
+    program_info: {
       allOf: [
         {
-          $ref: '#/components/schemas/ProgramSchema'
+          $ref: '#/components/schemas/ProgramInfo'
         }
       ],
       nullable: true
@@ -671,10 +789,10 @@ export const $ExtendedPipelineDescrOptionalCode = {
     program_config: {
       $ref: '#/components/schemas/ProgramConfig'
     },
-    program_schema: {
+    program_info: {
       allOf: [
         {
-          $ref: '#/components/schemas/ProgramSchema'
+          $ref: '#/components/schemas/ProgramInfo'
         }
       ],
       nullable: true
@@ -772,6 +890,44 @@ endpoint or to encode data sent to the endpoint.`,
     name: {
       type: 'string',
       description: 'Format name, e.g., "csv", "json", "bincode", etc.'
+    }
+  }
+} as const
+
+export const $GenerationPlan = {
+  type: 'object',
+  description:
+    'A random generation plan for a table that generates either a limited amount of rows or runs continuously.',
+  properties: {
+    fields: {
+      type: 'object',
+      description: 'Specifies the values that the generator should produce.',
+      additionalProperties: {
+        $ref: '#/components/schemas/RngFieldSettings'
+      }
+    },
+    limit: {
+      type: 'integer',
+      description: `Total number of new rows to generate.
+
+If not set, the generator will produce new/unique records as long as the pipeline is running.
+If set to 0, the table will always remain empty.
+If set, the generator will produce new records until the specified limit is reached.
+
+Note that if the table has one or more primary keys that don't use the \`increment\` strategy to
+generate the key there is a potential that an update is generated instead of an insert. In
+this case it's possible the total number of records is less than the specified limit.`,
+      nullable: true,
+      minimum: 0
+    },
+    rate: {
+      type: 'integer',
+      format: 'int32',
+      description: `Non-zero number of rows to generate per second.
+
+If not set, the generator will produce rows as fast as possible.`,
+      nullable: true,
+      minimum: 0
     }
   }
 } as const
@@ -1400,13 +1556,15 @@ This feature is currently experimental.`
       }
     }
   ],
-  description: `Pipeline configuration specified by the user when creating
-a new pipeline instance.
-TODO: change this description
+  description: `Overall pipeline configuration.
 
-This is the shape of the overall pipeline configuration. It encapsulates a
-[\`RuntimeConfig\`], which is the publicly exposed way for users to configure
-pipelines.`
+It is generated upon the deployment of a pipeline and contains
+the shape of the overall pipeline configuration.
+
+Its input and output endpoints are generated based on the schema
+of the compiled program. The runtime configuration is directly
+provided by the user. Storage configuration, if applicable,
+is set by the runner.`
 } as const
 
 export const $PipelineDescr = {
@@ -1528,6 +1686,31 @@ export const $ProgramConfig = {
         }
       ],
       nullable: true
+    }
+  }
+} as const
+
+export const $ProgramInfo = {
+  type: 'object',
+  description: 'Program information which includes schema, input connectors and output connectors.',
+  required: ['schema', 'input_connectors', 'output_connectors'],
+  properties: {
+    input_connectors: {
+      type: 'object',
+      description: 'Input connectors derived from the schema.',
+      additionalProperties: {
+        $ref: '#/components/schemas/InputEndpointConfig'
+      }
+    },
+    output_connectors: {
+      type: 'object',
+      description: 'Output connectors derived from the schema.',
+      additionalProperties: {
+        $ref: '#/components/schemas/OutputEndpointConfig'
+      }
+    },
+    schema: {
+      $ref: '#/components/schemas/ProgramSchema'
     }
   }
 } as const
@@ -1763,6 +1946,99 @@ for an instance of this pipeline`,
   }
 } as const
 
+export const $RngFieldSettings = {
+  type: 'object',
+  description: 'Configuration for generating random data for a field of a table.',
+  properties: {
+    fields: {
+      type: 'object',
+      description:
+        'Specifies the values that the generator should produce in case the field is a struct type.',
+      additionalProperties: {
+        $ref: '#/components/schemas/RngFieldSettings'
+      },
+      nullable: true
+    },
+    key: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RngFieldSettings'
+        }
+      ],
+      nullable: true
+    },
+    null_percentage: {
+      type: 'integer',
+      description: `Percentage of records where this field should be set to NULL.
+
+If not set, the generator will produce only records with non-NULL values.
+If set to \`1..=100\`, the generator will produce records with NULL values with the specified percentage.`,
+      nullable: true,
+      minimum: 0
+    },
+    range: {
+      type: 'array',
+      items: {
+        allOf: [
+          {
+            type: 'integer',
+            format: 'int64'
+          },
+          {
+            type: 'integer',
+            format: 'int64'
+          }
+        ]
+      },
+      description: `An optional, exclusive range [a, b) to limit the range of values the generator should produce.
+
+- For integer/floating point types specifies min/max values.
+If not set, the generator will produce values for the entire range of the type for number types.
+- For string/binary types specifies min/max length, values are required to be >=0.
+If not set, a range of [0, 25) is used by default.
+- For timestamp types specifies the min/max in milliseconds from the number of non-leap
+milliseconds since January 1, 1970 0:00:00.000 UTC (aka “UNIX timestamp”).
+If not set, a range of [0, 4102444800) is used by default (1970-01-01 -- 2100-01-01).
+- For time types specifies the min/max in milliseconds.
+If not set, the range is 24h. Range values are required to be >=0.
+- For date types specifies the min/max in days from the number of days since January 1, 1970.
+If not set, a range of [0, 54787) is used by default (1970-01-01 -- 2100-01-01).
+- For array types specifies the min/max number of elements.
+If not set, a range of [0, 5) is used by default. Range values are required to be >=0.
+- For map types specifies the min/max number of key-value pairs.
+If not set, a range of [0, 5) is used by default.
+- For struct/boolean/null types \`range\` is ignored.`,
+      nullable: true
+    },
+    strategy: {
+      $ref: '#/components/schemas/DatagenStrategy'
+    },
+    value: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RngFieldSettings'
+        }
+      ],
+      nullable: true
+    },
+    values: {
+      type: 'array',
+      items: {
+        type: 'object'
+      },
+      description: `An optional set of values the generator will pick from.
+
+If set, the generator will pick values from the specified set.
+If not set, the generator will produce values according to the specified range.
+If set to an empty set, the generator will produce NULL values.
+If set to a single value, the generator will produce only that value.
+
+Note that \`range\` is ignored if \`values\` is set.`,
+      nullable: true
+    }
+  }
+} as const
+
 export const $RuntimeConfig = {
   type: 'object',
   description: `Global pipeline configuration settings. This is the publicly
@@ -1871,13 +2147,14 @@ it's invoked with the \`-je\` option.
 
 \`\`\`ignore
 [ {
-"startLineNumber" : 14,
-"startColumn" : 13,
-"endLineNumber" : 14,
-"endColumn" : 13,
+"startLineNumber" : 2,
+"startColumn" : 4,
+"endLineNumber" : 2,
+"endColumn" : 8,
 "warning" : false,
-"errorType" : "Error parsing SQL",
-"message" : "Encountered \"<EOF>\" at line 14, column 13."
+"errorType" : "PRIMARY KEY cannot be nullable",
+"message" : "PRIMARY KEY column 'C' has type INTEGER, which is nullable",
+"snippet" : "    2|   c INT PRIMARY KEY\n         ^^^^^\n    3|);\n"
 } ]
 \`\`\``,
   required: [
@@ -1903,6 +2180,10 @@ it's invoked with the \`-je\` option.
     },
     message: {
       type: 'string'
+    },
+    snippet: {
+      type: 'string',
+      nullable: true
     },
     startColumn: {
       type: 'integer',
@@ -2057,6 +2338,82 @@ written there.`
   }
 } as const
 
+export const $StringMethod = {
+  type: 'string',
+  description: 'Various methods to generate different random strings.',
+  enum: [
+    'word',
+    'words',
+    'sentence',
+    'sentences',
+    'paragraph',
+    'paragraphs',
+    'first_name',
+    'last_name',
+    'title',
+    'suffix',
+    'name',
+    'name_with_title',
+    'domain_suffix',
+    'email',
+    'username',
+    'password',
+    'field',
+    'position',
+    'seniority',
+    'job_title',
+    'i_pv4',
+    'i_pv6',
+    'i_p',
+    'm_a_c_address',
+    'user_agent',
+    'rfc_status_code',
+    'valid_status_code',
+    'company_suffix',
+    'company_name',
+    'buzzword',
+    'buzzword_middle',
+    'buzzword_tail',
+    'catch_phrase',
+    'bs_verb',
+    'bs_adj',
+    'bs_noun',
+    'bs',
+    'profession',
+    'industry',
+    'currency_code',
+    'currency_name',
+    'currency_symbol',
+    'credit_card_number',
+    'city_prefix',
+    'city_suffix',
+    'city_name',
+    'country_name',
+    'country_code',
+    'street_suffix',
+    'street_name',
+    'time_zone',
+    'state_name',
+    'state_abbr',
+    'secondary_address_type',
+    'secondary_address',
+    'zip_code',
+    'post_code',
+    'building_number',
+    'latitude',
+    'longitude',
+    'isbn',
+    'isbn13',
+    'isbn10',
+    'phone_number',
+    'cell_number',
+    'file_path',
+    'file_name',
+    'file_extension',
+    'dir_path'
+  ]
+} as const
+
 export const $TransportConfig = {
   oneOf: [
     {
@@ -2160,6 +2517,19 @@ export const $TransportConfig = {
         name: {
           type: 'string',
           enum: ['delta_table_output']
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name', 'config'],
+      properties: {
+        config: {
+          $ref: '#/components/schemas/DatagenInputConfig'
+        },
+        name: {
+          type: 'string',
+          enum: ['datagen']
         }
       }
     },

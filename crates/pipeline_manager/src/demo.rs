@@ -1,22 +1,9 @@
+use crate::db::types::pipeline::PipelineDescr;
 use crate::error::ManagerError;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use thiserror::Error as ThisError;
-use utoipa::ToSchema;
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, ToSchema)]
-pub struct Demo {
-    /// Title of the demo.
-    title: String,
-    /// Description of the demo.
-    description: String,
-    /// Demo prefix prepended to each of the entities.
-    prefix: String,
-    /// The steps which define the entities to create.
-    // TODO: once the demo JSON format is further standardized, make this strongly typed.
-    steps: Vec<serde_json::Value>,
-}
 
 #[derive(ThisError, Serialize, Debug, PartialEq)]
 pub enum DemoError {
@@ -38,8 +25,8 @@ pub enum DemoError {
 ///
 /// Every file in the directory must be a JSON file, and there cannot be
 /// any other files or directories in there.
-pub fn read_demos_from_directory(demos_dir: &Path) -> Result<Vec<Demo>, ManagerError> {
-    let mut result: Vec<Demo> = vec![];
+pub fn read_demos_from_directory(demos_dir: &Path) -> Result<Vec<PipelineDescr>, ManagerError> {
+    let mut result: Vec<PipelineDescr> = vec![];
     let entries = fs::read_dir(demos_dir).map_err(|error| ManagerError::DemoError {
         demo_error: DemoError::UnableToReadDirectory {
             path: demos_dir.to_string_lossy().to_string(),
@@ -75,7 +62,8 @@ pub fn read_demos_from_directory(demos_dir: &Path) -> Result<Vec<Demo>, ManagerE
 
 #[cfg(test)]
 mod test {
-    use crate::demo::{read_demos_from_directory, Demo, DemoError};
+    use crate::db::types::pipeline::PipelineDescr;
+    use crate::demo::{read_demos_from_directory, DemoError};
     use crate::error::ManagerError;
     use std::fs;
     use std::fs::File;
@@ -142,11 +130,12 @@ mod test {
     fn demos_dir_one() {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
-        let demo = Demo {
-            title: "abc".to_string(),
-            description: "def".to_string(),
-            prefix: "ghi-".to_string(),
-            steps: Default::default(),
+        let demo = PipelineDescr {
+            name: "example1".to_string(),
+            description: "Description of example1".to_string(),
+            runtime_config: Default::default(),
+            program_code: "CREATE TABLE example1(col1 INT);".to_string(),
+            program_config: Default::default(),
         };
         let mut file = File::create(dir_path.join("file.txt").as_path()).unwrap();
         file.write(serde_json::to_string(&demo).unwrap().as_bytes())
@@ -161,22 +150,24 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
         let demos = vec![
-            Demo {
-                title: "abc".to_string(),
-                description: "def".to_string(),
-                prefix: "ghi-".to_string(),
-                steps: Default::default(),
+            PipelineDescr {
+                name: "example1".to_string(),
+                description: "Description of example1".to_string(),
+                runtime_config: Default::default(),
+                program_code: "CREATE TABLE example1(col1 INT);".to_string(),
+                program_config: Default::default(),
             },
-            Demo {
-                title: "jkl".to_string(),
-                description: "mno".to_string(),
-                prefix: "pqr-".to_string(),
-                steps: Default::default(),
+            PipelineDescr {
+                name: "example2".to_string(),
+                description: "Description of example2".to_string(),
+                runtime_config: Default::default(),
+                program_code: "CREATE TABLE example2(col2 INT);".to_string(),
+                program_config: Default::default(),
             },
         ];
         for demo in &demos {
             let mut file =
-                File::create(dir_path.join(format!("{}.json", demo.title)).as_path()).unwrap();
+                File::create(dir_path.join(format!("{}.json", demo.name)).as_path()).unwrap();
             file.write(serde_json::to_string(&demo).unwrap().as_bytes())
                 .unwrap();
         }
