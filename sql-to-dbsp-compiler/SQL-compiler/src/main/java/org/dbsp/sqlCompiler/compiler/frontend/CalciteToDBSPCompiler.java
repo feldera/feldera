@@ -2093,7 +2093,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         if (metadata.isPrimaryKey) {
             if (type.mayBeNull) {
-                this.compiler.reportError(metadata.getNode().getPositionRange(),
+                // This is either an error or a warning, depending on the value of the 'lenient' flag
+                this.compiler.reportProblem(metadata.getNode().getPositionRange(),
+                        this.compiler.options.languageOptions.lenient,
                         "PRIMARY KEY cannot be nullable",
                         "PRIMARY KEY column " + Utilities.singleQuote(metadata.getName()) +
                                 " has type " + metadata.getType().getFullTypeString() + ", which is nullable");

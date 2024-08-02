@@ -1401,12 +1401,30 @@ pub fn cast_to_u_i32(value: i32) -> usize {
         .unwrap_or_else(|_| panic!("Value '{}' out of range for type 'usize'", value))
 }
 
+cast_function!(u, usize, i32, i32);
+
 #[inline]
 pub fn cast_to_u_i64(value: i64) -> usize {
     value
         .try_into()
         .unwrap_or_else(|_| panic!("Value '{}' out of range for type 'usize'", value))
 }
+
+cast_function!(u, usize, i64, i64);
+
+#[inline]
+pub fn cast_to_i_i32(value: i32) -> isize {
+    value as isize
+}
+
+cast_function!(i, isize, i32, i32);
+
+#[inline]
+pub fn cast_to_i_i64(value: i64) -> isize {
+    value as isize
+}
+
+cast_function!(i, isize, i64, i64);
 
 pub fn cast_to_bytesN_nullN(_value: Option<()>) -> Option<ByteArray> {
     None
