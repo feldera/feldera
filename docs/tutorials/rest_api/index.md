@@ -1,18 +1,10 @@
 # Using REST API
 
-:::caution
-
-The REST API is still evolving and might see backwards incompatible changes.
-
-:::
-
 Feldera features a comprehensive REST API for managing
-[programs](https://www.feldera.com/docs/#programs),
-[connectors](https://www.feldera.com/docs/#connectors),
-and [pipelines](https://www.feldera.com/docs/#pipelines).
-Feldera's Web Console UI interacts with the backend service exclusively
-via this public API; hence all functionality available in the Web Console
-is [available via the API](https://www.feldera.com/api/).
+[pipelines](https://www.feldera.com/docs/#pipelines).
+In fact, Feldera's Web Console interacts with the backend service exclusively
+via this public API.
+
 In this tutorial we will focus on invoking the
 API endpoints directly via `curl`. Once you become familiar with the API,
 these calls can be automated in your favorite scripting or programming
@@ -29,14 +21,9 @@ language (e.g., in Python using the `requests` module).
    > - `-H <HEADER>` specifies a request header
    > - `-s` enables silent mode
 
-2. **(Optional) jq:** It is recommended to have **jq** installed as it improves
-   the readability of the JSON output of the API.
+2. **jq:** We'll use this for some JSON manipulation from your terminal.
 
-   > The usage of `jq` is optional; to not use, remove the `| jq` at the end of some
-   > of the `curl` calls .
-
-3. **Feldera instance:** This tutorial requires you to have a running Feldera instance
-   to interact with. If you do not have one already, you can start one locally using
+3. **Feldera instance:**  If you haven't done so already, you can start Feldera locally using
    [**docker**](https://docs.docker.com/engine/install/):
    ```
    curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | \
@@ -48,19 +35,19 @@ language (e.g., in Python using the `requests` module).
    > this is the default local hostname:port for the docker Feldera instance.
    > You will need to change it to match the Feldera instance you are using.
 
-4. **(Optional) API key:** Skip this step if you are using a local test setup
-   using Docker as described above. If the Feldera instance requires authentication,
-   you must generate an API key in the Web Console at the _Settings_ tab.
-   You can add it to a `curl` call in the following way (replace `<API-KEY>`
-   with the generated string starting with `apikey:...`):
+4. **(Optional) API key:** If you're using Feldera via our public sandbox or enterprise offering,
+   your instance will requires authentication. If so, login to your Feldera instance and
+   and generate an API key in the Web Console via the _User Profile_ icon on the top right of the UI.
+   You can add it to a `curl` call by replacing `<API-KEY>`
+   with the generated string starting with `apikey:...`:
    ```
-   curl -s -H "Authorization: Bearer <API-KEY>" -X GET http://localhost:8080/v0/programs | jq
+   curl -s -H "Authorization: Bearer <API-KEY>" -X GET http://localhost:8080/v0/pipelines | jq
    ```
 
    > For the remainder of this tutorial, you will need to add
    > `-H "Authorization: Bearer <API-KEY>"` to each of the calls.
 
-5. **Check it's working:** You can verify it's working by running:
+5. **Check whether your setup works:** You can verify your setup by running:
    ```
    curl -s -X GET http://localhost:8080/v0/programs | jq
    ```
@@ -72,7 +59,7 @@ language (e.g., in Python using the `requests` module).
    []
    ```
 
-**Congratulations, you've already done your first direct API interaction!**
+**Congratulations, you've already interacted with the REST API!**
 
 ## Getting started
 
@@ -85,351 +72,141 @@ and performs several interesting queries on them.
 
 We'll be going through the following steps:
 
-1. Create and compile an SQL program
-2. Create data connectors
-3. Create a pipeline with the prepared program and connectors
-4. Start the pipeline
-5. Check pipeline progress
-6. Read data directly from a view
-7. Feed data directly into a table
-8. Cleanup
+1. Create and compile a pipeline with data connectors
+2. Start the pipeline
+3. Check pipeline progress
+4. Read data directly from a view
+5. Feed data directly into a table
+6. Cleanup
 
 ... all using just `curl`!
 
 > Note: at any point in the tutorial, don't forget you can check out the
 > Web Console by visiting **http://localhost:8080** in your browser!
 
-### Step 1: SQL program
+### Step 1: SQL pipeline
 
-The SQL program defines the tables using `CREATE TABLE` statements
+The SQL pipeline defines tables using `CREATE TABLE` statements
 and views using `CREATE VIEW` statements. We will create three tables,
-namely `vendor`, `part`, and `price`. As views, we'll create `low_price` which lists
+namely `vendor`, `part`, and `price`. We will connect each table to different data sources using
+our URL connector. For views, we'll create `low_price` which lists
 the lowest available price for each part across all vendors, and `preferred_vendor` which
 supplements the lowest price by adding vendor information.
 
-Because the SQL code is multiple lines and we wish to preserve its readability,
-for this `curl` request only we will input the JSON data by file rather than
-specifying in-line.
-
-Create a file called **program.json** with the following content:
+Create a file called **program.sql** with the following content:
 
 ```
-{
-    "description": "Supply Chain program",
-    "code": "
-CREATE TABLE vendor (                                    \n
-    id BIGINT NOT NULL PRIMARY KEY,                      \n
-    name VARCHAR,                                        \n
-    address VARCHAR                                      \n
-);                                                       \n
-                                                         \n
-CREATE TABLE part (                                      \n
-    id bigint NOT NULL PRIMARY KEY,                      \n
-    name VARCHAR                                         \n
-);                                                       \n
-                                                         \n
-CREATE TABLE price (                                     \n
-    part BIGINT NOT NULL,                                \n
-    vendor BIGINT NOT NULL,                              \n
-    price DECIMAL                                        \n
-);                                                       \n
-                                                         \n
-CREATE VIEW low_price                                    \n
-    (part, price)                                        \n
-    AS                                                   \n
-    SELECT                                               \n
-        price.part AS part,                              \n
-        MIN(price.price) AS price                        \n
-    FROM price                                           \n
-    GROUP BY price.part;                                 \n
-                                                         \n
-CREATE MATERIALIZED VIEW preferred_vendor                \n
-    (part_id, part_name, vendor_id, vendor_name, price)  \n
-    AS                                                   \n
-    SELECT                                               \n
-        part.id AS part_id,                              \n
-        part.name AS part_name,                          \n
-        vendor.id AS vendor_id,                          \n
-        vendor.name AS vendor_name,                      \n
-        price.price AS price                             \n
-    FROM                                                 \n
-        price, part, vendor, low_price                   \n
-    WHERE                                                \n
-        price.price = low_price.price AND                \n
-        price.part = low_price.part AND                  \n
-        part.id = price.part AND                         \n
-        vendor.id = price.vendor;                        \n
-"
-}
+CREATE TABLE vendor (
+    id BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR,
+    address VARCHAR
+)  WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json"}
+    },
+    "format": { "name": "json" }
+}]');
+
+CREATE TABLE part (
+    id bigint NOT NULL PRIMARY KEY,
+    name VARCHAR
+) WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"  }
+    },
+    "format": { "name": "json" }
+}]');
+
+
+CREATE TABLE price (
+    part BIGINT NOT NULL,
+    vendor BIGINT NOT NULL,
+    price DECIMAL
+)
+WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"  }
+    },
+    "format": { "name": "json" }
+}]');
+
+CREATE VIEW low_price
+    (part, price)
+    AS
+    SELECT
+        price.part AS part,
+        MIN(price.price) AS price
+    FROM price
+    GROUP BY price.part;
+
+CREATE MATERIALIZED VIEW preferred_vendor
+    (part_id, part_name, vendor_id, vendor_name, price)
+    AS
+    SELECT
+        part.id AS part_id,
+        part.name AS part_name,
+        vendor.id AS vendor_id,
+        vendor.name AS vendor_name,
+        price.price AS price
+    FROM
+        price, part, vendor, low_price
+    WHERE
+        price.price = low_price.price AND
+        price.part = low_price.part AND
+        part.id = price.part AND
+        vendor.id = price.vendor;
 ```
 
-... and subsequently create the program named `sc-program` by running
-in the same directory:
+Next, let's create a pipeline out of the above program. We'll use `jq` to create a JSON object that
+specifies the pipeline's name, description, the different configuration paramters, and fill in the
+contents of `program.sql` into the `program_code` field.
 
 ```
-curl -i -X PUT http://localhost:8080/v0/programs/sc-program \
+curl -i -X PUT http://localhost:8080/v0/pipelines/supply-chain \
 -H 'Content-Type: application/json' \
--d @program.json
+-d "$(jq -Rsn \
+  --rawfile code program.sql \
+  '{
+    name: "supply-chain",
+    description: "Supply Chain Tutorial",
+    runtime_config: {
+      workers: 4
+    },
+    program_config: {},
+    program_code: $code
+  }')"
 ```
 
 As response, we should get back `HTTP/1.1 201 Created` along with the identifier of
 the program and its version (1). When an SQL program is created or when its code is
 updated, its version is incremented and compilation is automatically triggered.
 
-Check the program's compilation status:
+Now let's check the program's compilation status a few times:
 
 ```
-curl -s -X GET http://localhost:8080/v0/programs/sc-program | jq
+curl -s http://localhost:8080/v0/pipelines/supply-chain | jq '.program_status'
 ```
-
-... which should contain in its output if the program's Rust code is being compiled:
-
-```
-{
-  ...
-  "name": "sc-program",
-  "description": "Supply Chain program",
-  "version": 1,
-  "status": "CompilingRust",
-  "schema": {
-    ...
-  },
-  "code": null
-}
-```
-
-... and when the program is compiled:
-
-```
-{
-  ...
-  "status": "Success",
-  ...
-}
-```
-
-> The program status will change from `Pending`, to `CompilingSql`, to `CompilingRust`,
-> and finally to `Success`. There are in addition statuses which indicate errors if
-> compilation fails: `SqlError`, `RustError`, and `SystemError`.
-
-### Step 2: Data connectors
-
-Data connectors are used to both input data sources into tables,
-and output data from views to data sinks. In this tutorial,
-we will define an HTTP source for each of the tables:
-
-* **Part (named `sc-connector-part`):**
-  ```
-  curl -i -X PUT http://localhost:8080/v0/connectors/sc-connector-part \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "description": "Connector for part",
-    "config": {
-        "transport": {
-            "name": "url_input",
-            "config": {
-                "path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
-            }
-        },
-        "format": {
-            "name": "json",
-            "config": {}
-        }
-    }
-  }'
-  ```
-
-* **Vendor (named `sc-connector-vendor`):**
-  ```
-  curl -i -X PUT http://localhost:8080/v0/connectors/sc-connector-vendor \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "description": "Connector for vendor",
-    "config": {
-        "transport": {
-            "name": "url_input",
-            "config": {
-                "path": "https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json"
-            }
-        },
-        "format": {
-            "name": "json",
-            "config": {}
-        }
-    }
-  }'
-  ```
-
-* **Price (named `sc-connector-price`):**
-  ```
-  curl -i -X PUT http://localhost:8080/v0/connectors/sc-connector-price \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "description": "Connector for price",
-    "config": {
-        "transport": {
-            "name": "url_input",
-            "config": {
-                "path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"
-            }
-        },
-        "format": {
-            "name": "json",
-            "config": {}
-        }
-    }
-  }'
-  ```
-
-Each of the above should execute almost instantly and return `HTTP/1.1
-201 Created`.
-
-We can view the existing connectors using:
-
-```
-curl -s -X GET http://localhost:8080/v0/connectors | jq
-```
-
-... which will return:
-
-```
-[
-  {
-    ...
-    "name": "sc-connector-vendor",
-    "description": "Connector for vendor",
-    "config": {
-      ...
-    }
-  },
-  {
-    ...
-    "name": "sc-connector-part",
-    "description": "Connector for part",
-    "config": {
-      ...
-    }
-  },
-  {
-    ...
-    "name": "sc-connector-price",
-    "description": "Connector for price",
-    "config": {
-      ...
-  }
-]
-```
-
-> In this tutorial we do not create output connectors. We will read the
-> views via the API (see step 6). The procedure to create output connectors
-> is the same as for input connectors, albeit of course with its own
-> specific configuration (e.g., providing output topic in a Kafka output
-> connector config).
-
-### Step 3: Pipeline creation
-
-We create the pipeline referring by name to the program and all
-the connectors we have created previously. Each connector is
-attached as input to their respective table.
-
-```
-curl -i -X PUT http://localhost:8080/v0/pipelines/sc-pipeline \
--H 'Content-Type: application/json' \
--d '{
-    "description": "Supply Chain pipeline",
-    "program_name": "sc-program",
-    "config": {"workers": 4},
-    "connectors": [
-         {
-             "connector_name": "sc-connector-part",
-             "is_input": true,
-             "name": "sc-connector-part",
-             "relation_name": "PART"
-         },
-         {
-             "connector_name": "sc-connector-vendor",
-             "is_input": true,
-             "name": "sc-connector-vendor",
-             "relation_name": "VENDOR"
-         },
-         {
-             "connector_name": "sc-connector-price",
-             "is_input": true,
-             "name": "sc-connector-price",
-             "relation_name": "PRICE"
-         }
-    ]
-}'
-```
-
-> Observe in the above format that it is possible to connect multiple
-> connectors to the same table or view.
-
-It will return `HTTP/1.1 201 Created` quickly, indicating success.
-We can retrieve the pipeline using:
-
-```
-curl -X GET http://localhost:8080/v0/pipelines/sc-pipeline | jq
-```
-
-... which will output:
-
-```
-{
-  "descriptor": {
-    ...
-    "program_name": "sc-program",
-    "version": 1,
-    "name": "sc-pipeline",
-    "description": "Supply Chain pipeline",
-    "config": {
-      ...
-    },
-    "attached_connectors": [
-      ...
-    ]
-  },
-  "state": {
-    ...
-    "current_status": "Shutdown",
-    ...
-  }
-}
-```
+...which will show "CompilingRust" at first, but in about 30 seconds or so say "Success".
 
 The pipeline is now ready to be started.
 
-### Step 4: Starting pipeline
+### Step 2: Starting pipeline
 
 We start the pipeline using:
 
 ```
-curl -i -X POST http://localhost:8080/v0/pipelines/sc-pipeline/start
+curl -i -X POST http://localhost:8080/v0/pipelines/supply-chain/start
 ```
 
 ... which will return `HTTP/1.1 202 Accepted` when successful.
 
-Check it is successfully started using:
+Check that it has successfully started using:
 
 ```
-curl -X GET http://localhost:8080/v0/pipelines/sc-pipeline | jq
+curl -s GET http://localhost:8080/v0/pipelines/supply-chain | jq '.deployment_status'
 ```
 
-... which will have `current_status` set to `Running` when it has started:
-
-```
-{
-  ...
-  },
-  "state": {
-    ...
-    "current_status": "Running",
-    ...
-  }
-  ...
-}
-```
-
+... which will say 'Running` when the pipeline has started:
 
 > Note: Connectors are only initialized when a pipeline starts to use them.
 > A pipeline will not start if a connector is unable to connect to its
@@ -439,19 +216,19 @@ curl -X GET http://localhost:8080/v0/pipelines/sc-pipeline | jq
 > take effect):
 > ```
 > # Shut it down:
-> curl -i -X POST http://localhost:8080/v0/pipelines/sc-pipeline/shutdown
+> curl -i -X POST http://localhost:8080/v0/pipelines/supply-chain/shutdown
 > # ... wait for the current_status to become Shutdown by checking:
-> curl -X GET http://localhost:8080/v0/pipelines/sc-pipeline
+> curl -X GET http://localhost:8080/v0/pipelines/supply-chain
 > # ... and then start:
-> curl -i -X POST http://localhost:8080/v0/pipelines/sc-pipeline/start
+> curl -i -X POST http://localhost:8080/v0/pipelines/supply-chain/start
 > ```
 
-### Step 5: Pipeline progress
+### Step 3: Pipeline progress
 
-A running pipeline provides a multitude of interesting stats:
+A running pipeline provides several useful stats:
 
 ```
-curl -X GET http://localhost:8080/v0/pipelines/sc-pipeline/stats | jq
+curl -sX GET http://localhost:8080/v0/pipelines/supply-chain/stats | jq
 ```
 
 ... such as the number of input and processed records.
@@ -472,15 +249,15 @@ An example output:
 ```
 
 
-### Step 6: Read data directly from a view
+### Step 4: Read data directly from a view
 
 Both input and output connectors are optional, in the sense that input and
-output of data can directly be done using HTTP requests as well.
+output of data can directly be performed using HTTP requests as well.
 
-We can retrieve the view quantiles snapshot using `curl`:
+We can retrieve a snapshot of the `preferred\_vendor` view using `curl`:
 
 ```
-curl -X POST 'http://localhost:8080/v0/pipelines/sc-pipeline/egress/PREFERRED_VENDOR?format=json&mode=snapshot&query=quantiles' | jq
+curl -X POST 'http://localhost:8080/v0/pipelines/supply-chain/egress/PREFERRED_VENDOR?format=json&mode=snapshot&query=quantiles' | jq
 ```
 
 ... which for each of the parts will show the preferred vendor:
@@ -527,19 +304,19 @@ It is also possible to actively monitor a view for changes rather than
 retrieving a snapshot:
 
 ```
-curl -s -N -X POST 'http://localhost:8080/v0/pipelines/sc-pipeline/egress/PREFERRED_VENDOR?format=json&mode=watch' | jq
+curl -s -N -X POST 'http://localhost:8080/v0/pipelines/supply-chain/egress/PREFERRED_VENDOR?format=json&mode=watch' | jq
 ```
 
 Keep this open in a separate terminal for the next step.
 Even if there is no changes it will regularly send an empty message.
 
-### Step 7: Feed data directly into a table
+### Step 5: Feed data directly into a table
 
 It is possible to INSERT, UPSERT or even DELETE a single row within a table. In this case,
 we have HyperDrive Innovations supply the Warp Core at a lower price of 12000:
 
 ```
-curl -X 'POST' http://localhost:8080/v0/pipelines/sc-pipeline/ingress/PRICE?format=json \
+curl -X 'POST' http://localhost:8080/v0/pipelines/supply-chain/ingress/PRICE?format=json \
 -d '{"insert": {"part": 2, "vendor": 2, "price": 12000}}'
 ```
 
@@ -575,49 +352,36 @@ with a row deletion (with the previous cheapest vendor) and insertion
 ...
 ```
 
-### Step 8: Cleanup
+### Step 6: Cleanup
 
 After you are done with the tutorial, we can clean up. First, shut
 down the pipeline (which will automatically terminate monitoring the
 view if it is still running):
 
 ```
-curl -i -X POST http://localhost:8080/v0/pipelines/sc-pipeline/shutdown
+curl -i -X POST http://localhost:8080/v0/pipelines/supply-chain/shutdown
 ```
 
-Check it is shut down using:
+Check that it has been shut down using:
 
 ```
-curl -i -X GET http://localhost:8080/v0/pipelines/sc-pipeline
+curl -s http://localhost:8080/v0/pipelines/supply-chain | jq '.deployment_status'
 ```
-... which should have `current_status` set to `Shutdown`.
+... and you  should see `deployment_status` set to `Shutdown`.
 
-Next, all resources can be deleted in reverse order of creation:
+Next, let's DELETE the pipeline:
 ```
-curl -i -X DELETE http://localhost:8080/v0/pipelines/sc-pipeline
-curl -i -X DELETE http://localhost:8080/v0/connectors/sc-connector-part
-curl -i -X DELETE http://localhost:8080/v0/connectors/sc-connector-vendor
-curl -i -X DELETE http://localhost:8080/v0/connectors/sc-connector-price
-curl -i -X DELETE http://localhost:8080/v0/programs/sc-program
+curl -i -X DELETE http://localhost:8080/v0/pipelines/supply-chain
 ```
 
-You can also delete the `program.json` file we used to create the program.
+You can also delete the `program.sql` file we used to create the program.
 
 If you are using the docker test setup, you can stop the Feldera docker instance
-using Ctrl-C. This should shut down the containers. This generally works,
-although sometimes docker fails to shut down the containers and leaves
-them running in the background. In this case, you can also explicitly
-shut them down using `docker compose down`:
-
-```
-curl -L https://github.com/feldera/feldera/releases/latest/download/docker-compose.yml | \
-docker compose -f - down
-```
+using Ctrl-C.
 
 ## Next steps
 
-We hope you found this interesting.
-Please consider reading additional information at:
+Interested in building applications using the API? Consider reading our API and SQL reference.
 
 - [Browse the API documentation](https://www.feldera.com/api/)
 - [Read the SQL reference](https://www.feldera.com/docs/sql/intro/)
