@@ -506,7 +506,7 @@ impl ResponseError for DBError {
             Self::ProgramFailedToCompile => StatusCode::BAD_REQUEST, // User trying to start a pipeline whose program failed to compile
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
             Self::InvalidDeploymentStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
-            Self::IllegalPipelineStateTransition { .. } => StatusCode::BAD_REQUEST, // Runner error
+            Self::IllegalPipelineStateTransition { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which is not valid
         }
     }
 

@@ -1,4 +1,4 @@
-// Example errors for use in OpenApi docs.
+// Example errors for use in OpenAPI docs.
 use crate::api::pipeline::{ExtendedPipelineDescrOptionalCode, PatchPipeline};
 use crate::db::error::DBError;
 use crate::db::types::common::Version;
@@ -89,7 +89,7 @@ pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr {
 
 pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr {
     ExtendedPipelineDescr {
-        id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
+        id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c9")),
         name: "example2".to_string(),
         description: "Description of the pipeline example2".to_string(),
         version: Version(1),

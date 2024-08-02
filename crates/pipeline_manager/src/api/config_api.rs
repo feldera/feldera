@@ -1,4 +1,4 @@
-// Configuration API to retrieve the current authentication configuration
+// Configuration API to retrieve the current authentication configuration and list of demos
 use crate::db::types::pipeline::PipelineDescr;
 use crate::demo::read_demos_from_directory;
 use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};

@@ -188,7 +188,6 @@ impl ProgramStatus {
         }
     }
     pub fn to_columns(&self) -> (Option<String>, Option<String>) {
-        // TODO: first one should just be String
         match self {
             ProgramStatus::Success => (Some("success".to_string()), None),
             ProgramStatus::Pending => (Some("pending".to_string()), None),
