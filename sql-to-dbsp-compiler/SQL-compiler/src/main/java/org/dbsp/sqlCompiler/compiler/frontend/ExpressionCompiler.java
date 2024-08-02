@@ -1161,17 +1161,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     throw new UnimplementedException(node);
                 DBSPType collectionType = ops.get(0).getType();
                 DBSPExpression index = ops.get(1);
-                if (collectionType.is(DBSPTypeVec.class)) {
-                    // index into a vector: cast to unsigned
-                    index = index.cast(new DBSPTypeUSize(CalciteObject.EMPTY, false));
-                } else if (collectionType.is(DBSPTypeMap.class)) {
+                DBSPOpcode opcode = DBSPOpcode.SQL_INDEX;
+                if (collectionType.is(DBSPTypeMap.class)) {
                     // index into a map
                     DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                     index = index.cast(map.getKeyType());
-                } else {
-                    throw new UnsupportedException(node);
+                    opcode = DBSPOpcode.MAP_INDEX;
                 }
-                return new DBSPBinaryExpression(node, type, DBSPOpcode.SQL_INDEX, ops.get(0), index);
+                return new DBSPBinaryExpression(node, type, opcode, ops.get(0), index);
             }
             case TIMESTAMP_DIFF:
             case TRIM: {
