@@ -77,13 +77,14 @@ impl Display for CompilationProfile {
 ///
 /// ```ignore
 ///  [ {
-/// "startLineNumber" : 14,
-/// "startColumn" : 13,
-/// "endLineNumber" : 14,
-/// "endColumn" : 13,
+/// "startLineNumber" : 2,
+/// "startColumn" : 4,
+/// "endLineNumber" : 2,
+/// "endColumn" : 8,
 /// "warning" : false,
-/// "errorType" : "Error parsing SQL",
-/// "message" : "Encountered \"<EOF>\" at line 14, column 13."
+/// "errorType" : "PRIMARY KEY cannot be nullable",
+/// "message" : "PRIMARY KEY column 'C' has type INTEGER, which is nullable",
+/// "snippet" : "    2|   c INT PRIMARY KEY\n         ^^^^^\n    3|);\n"
 /// } ]
 /// ```
 #[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
@@ -97,6 +98,7 @@ pub struct SqlCompilerMessage {
     warning: bool,
     error_type: String,
     message: String,
+    snippet: Option<String>,
 }
 
 impl SqlCompilerMessage {
@@ -109,6 +111,7 @@ impl SqlCompilerMessage {
             warning: false,
             error_type: "connector".to_string(),
             message: error.to_string(),
+            snippet: None,
         }
     }
 }

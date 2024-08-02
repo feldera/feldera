@@ -7,7 +7,8 @@ import {
   getPipelines,
   getPipelineStats,
   type PipelineStatus,
-  type PipelineThumb
+  type PipelineThumb,
+  type SqlCompilerMessage
 } from '$lib/services/pipelineManager'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
 import { asyncDerived, asyncReadable, derived, get, type Readable } from '@square/svelte-store'
@@ -79,6 +80,9 @@ const programErrorReport = async (pipeline: { name: string }, message: string) =
     )
   }) as ReportDetails
 
+export const showSqlCompilerMessage = (e: SqlCompilerMessage) =>
+  `${e.errorType ? e.errorType + ':\n' : ''}${e.message}${e.snippet ? '\n' + e.snippet : ''}`
+
 const extractProgramError = (pipeline: { name: string; status: PipelineStatus }) => {
   const source = `${base}/pipelines/${encodeURI(pipeline.name)}/`
   const result = match(pipeline.status)
@@ -86,7 +90,9 @@ const extractProgramError = (pipeline: { name: string; status: PipelineStatus })
     .with({ RustError: P.any }, (e) => [
       (async () => ({
         name: `Error compiling ${pipeline.name}`,
-        message: 'Compilation error occurred when compiling the program - see the details below:\n' + e.RustError,
+        message:
+          'Compilation error occurred when compiling the program - see the details below:\n' +
+          e.RustError,
         cause: {
           entityName: pipeline.name,
           tag: 'programError',
@@ -121,7 +127,7 @@ const extractProgramError = (pipeline: { name: string; status: PipelineStatus })
       (es) =>
         es.SqlError.map(async (e) => ({
           name: `Error in SQL code of ${pipeline.name}`,
-          message: e.message, // 'Go to the source or expand to see the error',
+          message: showSqlCompilerMessage(e),
           cause: {
             entityName: pipeline.name,
             tag: 'programError',

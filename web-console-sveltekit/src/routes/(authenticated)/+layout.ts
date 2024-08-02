@@ -1,4 +1,3 @@
-
 import { error } from '@sveltejs/kit'
 import { getPipelines } from '$lib/services/pipelineManager'
 
