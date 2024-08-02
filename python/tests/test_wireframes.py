@@ -430,18 +430,18 @@ class TestWireframes(unittest.TestCase):
         sql.register_table(TBL_NAME, SQLSchema({"id": "INT", "name": "STRING"}))
         sql.register_materialized_view(VIEW_NAME, f"SELECT * FROM {TBL_NAME}")
 
-        data = {'id': 1, 'name': 'a'}
+        data = {"insert": {'id': 1, 'name': 'a'}}
 
         out = sql.listen(VIEW_NAME)
 
         sql.start()
-        sql.input_json(TBL_NAME, data)
+        sql.input_json(TBL_NAME, data, update_format="insert_delete")
         sql.wait_for_completion(True)
 
         out_data = out.to_dict()
 
-        data.update({"insert_delete": 1})
-        assert out_data == [data]
+        data["insert"].update({"insert_delete": 1})
+        assert out_data == [data["insert"]]
 
     def test_input_json1(self):
         sql = SQLContext("test_input_json", TEST_CLIENT).get_or_create()
