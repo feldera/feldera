@@ -51,14 +51,14 @@ create table PRICE (
 }},
 {{
     "name": "tutorial-price-redpanda",
-    "paused": True,
+    "paused": true,
     "format": {{"name": "json"}},
     "transport": {{
         "name": "kafka_input",
         "config": {{
             "topics": ["price"],
-            "bootstrap.servers": {pipeline_to_redpanda_server},
-            "auto.offset.reset": "earliest",
+            "bootstrap.servers": "{pipeline_to_redpanda_server}",
+            "auto.offset.reset": "earliest"
         }}
     }}
 }}]');
@@ -85,7 +85,7 @@ WITH (
             "name": "kafka_output",
             "config": {{
                 "topic": "preferred_vendor",
-                "bootstrap.servers": {pipeline_to_redpanda_server},
+                "bootstrap.servers": "{pipeline_to_redpanda_server}"
             }}
         }}
     }}]'
