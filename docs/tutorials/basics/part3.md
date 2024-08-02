@@ -2,20 +2,14 @@
 
 In this part of the tutorial where we will
 
-- Learn to connect Feldera pipelines to external data sources and sinks using
-  connectors.
+- Learn to connect Feldera pipelines to external data sources and sinks.
 
 - Introduce the third key concept behind Feldera: *computation over data in
   motion*.
 
 ## Computing on data in motion
 
-Feldera is not a traditional database.  In fact, it is not a database at all.
-Databases follow the store-and-process model, where data must be written to the
-database before it can be queried, and queries run on the complete snapshot of
-all the data in the database.
-
-In contrast, a Feldera pipeline starts evaluating queries as soon as it receives
+A Feldera pipeline starts evaluating queries as soon as it receives
 the first input record and continues updating the results incrementally as more
 inputs arrive.  This enables Feldera to operate over data en-route from a source
 to a destination.  The destination, be it a database, a data lake, an ML model,
@@ -26,7 +20,7 @@ pipeline:
 
 ![Real-time supply chain analytics](supply-chain-analytics.png)
 
-## Step 1. Create HTTPS GET connectors
+## Step 1. Configure HTTPS GET connectors
 
 An HTTPS GET connector retrieves data from a user-provided URL and pushes it to a
 SQL table.  Let us start with adding some GET connectors to the pipeline we
@@ -37,63 +31,46 @@ tables in this example to a public S3 bucket:
 - [https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json](https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json)
 - [https://feldera-basics-tutorial.s3.amazonaws.com/price.json](https://feldera-basics-tutorial.s3.amazonaws.com/price.json)
 
-Click on `Connectors` in the navigation bar on the left to open the
-connector editing section of the web console.  Click `ADD CONNECTOR`
-and choose `ADD INPUT` for the `GET` connector.
+Modify your SQL table declarations adding the `WITH` clause with input connector configuration:
 
-![Connector creation menu](get-connector.png)
+```sql
+create table VENDOR (
+    id bigint not null primary key,
+    name varchar,
+    address varchar
+) WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json"}
+    },
+    "format": { "name": "json" }
+}]');
 
-Configure the connector by choosing the following settings in the `SOURCE` and `FORMAT`
-tabs:
+create table PART (
+    id bigint not null primary key,
+    name varchar
+) WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"  }
+    },
+    "format": { "name": "json" }
+}]');
 
-:::tip
+create table PRICE (
+    part bigint not null,
+    vendor bigint not null,
+    price decimal
+) WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"  }
+    },
+    "format": { "name": "json" }
+}]');
+```
 
-To avoid typing the long URL below by hand, right-click on the S3
-bucket URL for `part.json` in the list above and select Copy Link,
-then paste into the URL field.
+Start the pipeline.  The input connectors ingest data from S3 and push it to the pipeline.
+You should see the outputs appear in the Output tab.
 
-:::
-
-![GET connector configuration](url-connector-1.png)
-![GET connector configuration](url-connector-2.png)
-
-Repeat these steps to create connectors for the `VENDOR` and `PRICE` tables.
-
-## Step 2. Attach GET connectors to the pipeline
-
-Navigate to the `Pipelines` section of the Web Console and click the <icon icon="bx:pencil" />
-next to our test pipeline to open the pipeline editor.
-
-:::tip
-
-You can zoom in and out in the pipeline editor with the scroll wheel on your mouse, and
-pan around by clicking and dragging.
-
-:::
-
-![Open pipeline editor](open-pipeline-editor.png)
-
-Click `Add a new input`, find the `HTTPS GET` pane, click on `SELECT`, and select the
-`parts-s3` connector, which we have just created, from the list of available `GET`
-connectors.  Add the other two connectors in the same way.
-The pipeline editor should now look like this:
-
-![Pipeline editor](detached-connectors.png)
-
-Attach each of the three connectors to the corresponding table by using the mouse to
-connect the blue dot on the connector with the blue dot next to the name of the table:
-
-![Pipeline editor](attached-connectors.png)
-
-We are ready to run the pipeline.  Go back to the `Pipelines` view and click the
-play icon <icon icon="bx:play-circle" /> next to the pipeline.  This time there
-is no need to use the table editor or `curl` to populate the tables.  The input
-connectors have already ingested data from S3 and pushed it to the pipeline.
-Open the detailed view of the pipeline (click the chevron icon <icon
-icon="bx:chevron-down" /> next to it) and examine the contents of the input
-tables and the output views.
-
-## Step 2. Create Kafka/Redpanda connectors
+## Step 2. Configure Kafka/Redpanda connectors
 
 Next, we will add a pair of connectors to our pipeline to ingest changes to the `PRICE`
 table from a Kafka topic and output changes to the `PREFERRED_VENDOR` table to
@@ -122,8 +99,6 @@ rpk -X brokers=127.0.0.1:19092 cluster metadata
 
 ### Create input/output topics
 
-
-
 Create a pair of Redpanda topics that will be used to send input updates
 to the `PRICE` table and receive output changes from the `PREFERRED_VENDOR` view.
 
@@ -131,42 +106,176 @@ to the `PRICE` table and receive output changes from the `PREFERRED_VENDOR` view
 rpk -X brokers=127.0.0.1:19092 topic create price preferred_vendor
 ```
 
-### Create connectors
+### Configure connectors
 
-Navigate to the `Pipelines` section of the Web Console and click the <icon icon="bx:pencil" />
-icon next to our test pipeline to open the pipeline editor.
+Modify the `PRICE` table adding a Kafka input connector to read from the `price` topic:
 
-Click `Add a new input`, choose `NEW` Kafka connector, and specify the following configuration
-for the connector:
+```sql
+create table PRICE (
+    part bigint not null,
+    vendor bigint not null,
+    price decimal
+) WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"  }
+    },
+    "format": { "name": "json" }
+},
+{
+    "format": {"name": "json"},
+    "transport": {
+        "name": "kafka_input",
+        "config": {
+            "topics": ["price"],
+            "bootstrap.servers": "redpanda:9092",
+            "auto.offset.reset": "earliest"
+        }
+    }
+}]');
+```
 
-![Input Kafka connector config: METADATA section](price-kafka-metadata.png)
-![Input Kafka connector config: SERVER section](price-kafka-server.png)
-![Input Kafka connector config: SECURITY security](price-kafka-security.png)
-![Input Kafka connector confif: FORMAT section](price-kafka-format.png)
+This table now ingests data from two heterogeneous sources: an S3 bucket and a Kafka topic.
 
-Use the mouse to attach the connector to the `PRICE` table, leaving
-the existing connection in place (Feldera supports multiple input and
-output connections).
+Add a Kafka connector to the `PREFERRED_VENDOR` view:
 
-Click `Add a new output`, choose `NEW` Kafka connector, and specify the following configuration
-for the connector:
+```sql
+create view PREFERRED_VENDOR (
+    part_id,
+    part_name,
+    vendor_id,
+    vendor_name,
+    price
+)
+WITH (
+    'connectors' = '[{
+        "format": {"name": "json"},
+        "transport": {
+            "name": "kafka_output",
+            "config": {
+                "topic": "preferred_vendor",
+                "bootstrap.servers": "redpanda:9092"
+            }
+        }
+    }]'
+)
+as
+    select
+        PART.id as part_id,
+        PART.name as part_name,
+        VENDOR.id as vendor_id,
+        VENDOR.name as vendor_name,
+        PRICE.price
+    from
+        PRICE,
+        PART,
+        VENDOR,
+        LOW_PRICE
+    where
+        PRICE.price = LOW_PRICE.price AND
+        PRICE.part = LOW_PRICE.part AND
+        PART.id = PRICE.part AND
+        VENDOR.id = PRICE.vendor;
+```
 
-![Output Kafka connector config: DETAILS section](preferred_vendor-kafka-details.png)
-![Output Kafka connector config: SERVER section](preferred_vendor-kafka-server.png)
-![Output Kafka connector config: SECURITY section](preferred_vendor-kafka-security.png)
-![Output Kafka connector config: FORMAT section](preferred_vendor-kafka-format.png)
+Here is the final version of the program with all connector:
 
-Attach this connector to the `PREFERRED_VENDOR` view.  The pipeline
-configuration should now look like this:
+<details>
+<summary>Click to expand SQL code</summary>
 
-![Pipeline with all connectors attached](pipeline-builder-all-connectors.png)
+```sql
+create table VENDOR (
+    id bigint not null primary key,
+    name varchar,
+    address varchar
+) WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json"}
+    },
+    "format": { "name": "json" }
+}]');
+
+create table PART (
+    id bigint not null primary key,
+    name varchar
+) WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"  }
+    },
+    "format": { "name": "json" }
+}]');
+
+create table PRICE (
+    part bigint not null,
+    vendor bigint not null,
+    price decimal
+) WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/price.json"  }
+    },
+    "format": { "name": "json" }
+},
+{
+    "format": {"name": "json"},
+    "transport": {
+        "name": "kafka_input",
+        "config": {
+            "topics": ["price"],
+            "bootstrap.servers": "redpanda:9092",
+            "auto.offset.reset": "earliest"
+        }
+    }
+}]');
+
+-- Lowest available price for each part across all vendors.
+create view LOW_PRICE (
+    part,
+    price
+) as
+    select part, MIN(price) as price from PRICE group by part;
+
+-- Lowest available price for each part along with part and vendor details.
+create view PREFERRED_VENDOR (
+    part_id,
+    part_name,
+    vendor_id,
+    vendor_name,
+    price
+)
+WITH (
+    'connectors' = '[{
+        "format": {"name": "json"},
+        "transport": {
+            "name": "kafka_output",
+            "config": {
+                "topic": "preferred_vendor",
+                "bootstrap.servers": "redpanda:9092"
+            }
+        }
+    }]'
+)
+as
+    select
+        PART.id as part_id,
+        PART.name as part_name,
+        VENDOR.id as vendor_id,
+        VENDOR.name as vendor_name,
+        PRICE.price
+    from
+        PRICE,
+        PART,
+        VENDOR,
+        LOW_PRICE
+    where
+        PRICE.price = LOW_PRICE.price AND
+        PRICE.part = LOW_PRICE.part AND
+        PART.id = PRICE.part AND
+        VENDOR.id = PRICE.vendor;
+```
+</details>
 
 ### Run the pipeline
 
-Go back to the `Pipelines` view.  If the previous configuration of the pipeline
-is still running, shut it down using the <icon icon="bx:stop" /> icon.  Start the
-new configuration of the pipeline by clicking on <icon icon="bx:play-circle" />.
-
+Start the pipeline.
 The `GET` connectors instantly ingest input files from S3 and the output
 Redpanda connector writes computed view updates to the output topic.  Use the
 Redpanda CLI to inspect the outputs:
