@@ -20,16 +20,16 @@ Pipelines continuously process
 Feldera **incrementally** updates all the views by only looking at the changes and it completely avoids recomputating over older data.
 While a pipeline is running, users can inspect the results of the views at any time.
 
-Our approach to incremental computation makes Feldera incredibly fast. 
-Feldera users have built feature engineering pipelines for unified offline and online compute
-over live and historical data, to various forms of incremental and periodic processing of batch data, and more.
+Our approach to incremental computation makes Feldera incredibly fast (millions of events per second on a laptop). 
+It also enables unified offline and online compute over both live and historical data. Feldera users have built batch and real-time 
+feature engineering pipelines, ETL pipelines, various forms of incremental and periodic analytical jobs over batch data, and more.
 
 Our defining features:
 
 1. **Full SQL support and more.**  Our engine is the only one in existence that can evaluate full SQL
    syntax and semantics completely incrementally. This includes joins and aggregates, group by, correlated subqueries,
    window functions, complex data types, time series operators, UDFs, and
-   recursive queries. Pipelines can process deeply nested of views.
+   recursive queries. Pipelines can process deeply nested hierarchies of views.
 
 3. **Fast out-of-the-box performance.**  Feldera users have reported getting complex use cases
    implemented in 30 minutes or less, and hitting millions
