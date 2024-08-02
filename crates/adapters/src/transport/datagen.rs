@@ -450,6 +450,12 @@ impl RecordGenerator {
         obj: &mut Value,
     ) -> AnyResult<()> {
         if let Value::Array(arr) = obj {
+            if settings.range.iter().any(|(a, b)| *a < 0 || *b < 0) {
+                return Err(anyhow!(
+                    "Range for field `{:?}` must be positive.",
+                    field.name
+                ));
+            }
             let (min, max) = settings
                 .range
                 .map(|(a, b)| (a.try_into().unwrap_or(0), b.try_into().unwrap_or(5)))
@@ -537,7 +543,12 @@ impl RecordGenerator {
         const MAX_TIME_VALUE: u64 = 86400000; // 24h in milliseconds
         if let Value::String(str) = obj {
             str.clear();
-
+            if settings.range.iter().any(|(a, b)| *a < 0 || *b < 0) {
+                return Err(anyhow!(
+                    "Range for field `{:?}` must be positive.",
+                    field.name
+                ));
+            }
             let (min, max) = settings
                 .range
                 .map(|(a, b)| {
