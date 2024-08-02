@@ -66,9 +66,9 @@ if [ "$SMOKE" = "" ]; then
     git commit -a -m "Added benchmark results for $PR_COMMIT_SHA."
     git push origin main
     cd ..
-    python3 gh-pages/_scripts/compare_nexmark.py > nexmark_comment.txt
+    python3 gh-pages/_scripts/compare_nexmark.py --machines ${CI_MACHINE_TYPE} > nexmark_comment.txt
     rm -rf gh-pages
     git clean -f
 else
-    python3 gh-pages/_scripts/compare_nexmark.py > nexmark_comment.txt
+    python3 gh-pages/_scripts/compare_nexmark.py --machines ${CI_MACHINE_TYPE} > nexmark_comment.txt
 fi
