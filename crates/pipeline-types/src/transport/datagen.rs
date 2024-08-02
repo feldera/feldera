@@ -11,7 +11,7 @@ fn default_scale() -> i64 {
     1
 }
 
-fn default_exponent() -> usize {
+fn default_exponent() -> i64 {
     1
 }
 
@@ -25,7 +25,7 @@ fn default_sequence() -> Vec<GenerationPlan> {
 
 /// Strategy used to generate values.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-#[serde(tag = "name", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum DatagenStrategy {
     /// Whether the field should be incremented for each new
@@ -33,8 +33,8 @@ pub enum DatagenStrategy {
     Increment,
     /// A uniform random distribution is chosen to generate the value.
     Uniform,
-    /// A Zipf distribution is chosen with the specified exponent (`s`) and
-    /// `n` (set automatically) for the range `[1..n]` to generate the value in.
+    /// A Zipf distribution is chosen with the specified exponent (defined in field `e`) and
+    /// `n` (which is set automatically) for the range `[1..n]` to generate the value in.
     ///
     /// Note that the Zipf distribution is only available for numbers or types that
     /// specify `values` or `range`.
@@ -42,10 +42,7 @@ pub enum DatagenStrategy {
     /// - In case `values` is set, the `n` is set to `values.len()`.
     /// - In case `values` is not set, `n` is set to the length of the `range`.
     /// - In case `range` is not set, the `n` is set to cover the default range of the type.
-    Zipf {
-        #[serde(default = "default_exponent")]
-        s: usize,
-    },
+    Zipf,
     // Next are various methods to generate random strings, they are only applicable for string
     // types.
     Word,
@@ -174,6 +171,14 @@ pub struct RngFieldSettings {
     #[serde(default = "default_scale")]
     pub scale: i64,
 
+    /// The frequency rank exponent for the Zipf distribution.
+    ///
+    /// - This value is only used if the strategy is set to `Zipf`.
+    /// - The default value is 1.0.
+    // TODO: make this f64 after API merge
+    #[serde(default = "default_exponent")]
+    pub e: i64,
+
     /// An optional set of values the generator will pick from.
     ///
     /// If set, the generator will pick values from the specified set.
@@ -207,6 +212,7 @@ impl Default for RngFieldSettings {
             strategy: DatagenStrategy::default(),
             range: None,
             scale: 1,
+            e: 1,
             values: None,
             fields: None,
             key: None,
