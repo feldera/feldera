@@ -155,21 +155,22 @@ services:
       - -c
       - "sleep 1 && env && cd demo/project_demo07-SnowflakeSink/ && python3 run.py --api-url http://pipeline-manager:8080"
 
-  s3-demo:
-    profiles: [ "s3" ]
-    depends_on:
-      pipeline-manager:
-        condition: service_healthy
-    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.10.0}
-    environment:
-      - RUST_BACKTRACE=1
-      - RUST_LOG=info
-      - CI_S3_AWS_ACCESS_KEY
-      - CI_S3_AWS_SECRET
-    command:
-      - bash
-      - -c
-      - "sleep 1 && env && cd demo/project_demo09-S3/ && python3 run.py --api-url http://pipeline-manager:8080"
+  # TODO: Need to be adapted based on how we want to do e2e connector tests
+  # s3-demo:
+  #   profiles: [ "s3" ]
+  #   depends_on:
+  #     pipeline-manager:
+  #       condition: service_healthy
+  #   image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.10.0}
+  #   environment:
+  #     - RUST_BACKTRACE=1
+  #     - RUST_LOG=info
+  #     - CI_S3_AWS_ACCESS_KEY
+  #     - CI_S3_AWS_SECRET
+  #   command:
+  #     - bash
+  #     - -c
+  #     - "sleep 1 && env && cd demo/project_demo09-S3/ && python3 run.py --api-url http://pipeline-manager:8080"
 
   demo-service-related:
     profiles: [ "demo-service-related" ]
