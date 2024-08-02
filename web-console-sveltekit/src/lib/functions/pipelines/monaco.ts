@@ -1,7 +1,7 @@
 import type Monaco from 'svelte-monaco'
 import { MarkerSeverity, type editor, type Range } from 'monaco-editor'
 import invariant from 'tiny-invariant'
-import type { SystemError } from '$lib/compositions/health/systemErrors'
+import { showSqlCompilerMessage, type SystemError } from '$lib/compositions/health/systemErrors'
 import type { SqlCompilerMessage } from '$lib/services/pipelineManager'
 
 const getDefaultErrorMarker = (monaco: Monaco, error: { message: string }) => ({
@@ -106,7 +106,7 @@ export const extractSQLCompilerErrorMarkers = (
       endLineNumber: error.endLineNumber,
       startColumn: error.startColumn,
       endColumn: error.endColumn + 1,
-      message: error.message,
+      message: showSqlCompilerMessage(error),
       severity: error.warning ? MarkerSeverity.Warning : MarkerSeverity.Error
     }
   })

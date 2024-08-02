@@ -83,7 +83,11 @@ impl InputGenerator {
         let rate_limiters = config
             .plan
             .iter()
-            .map(|p| RateLimiter::direct(Quota::per_second(p.rate.unwrap_or(NonZeroU32::MAX))))
+            .map(|p| {
+                RateLimiter::direct(Quota::per_second(
+                    p.rate.and_then(NonZeroU32::new).unwrap_or(NonZeroU32::MAX),
+                ))
+            })
             .collect::<Vec<RateLimiter<_, _, _>>>();
         let progress: Vec<AtomicUsize> = (0..config.plan.len())
             .map(|_| AtomicUsize::new(0))
@@ -94,7 +98,8 @@ impl InputGenerator {
         // Long-running tasks with high CPU usage don't work well on cooperative runtimes,
         // so we use a separate blocking task if we think this will happen for our workload.
         let needs_blocking_tasks = config.plan.iter().any(|p| {
-            u32::from(p.rate.unwrap_or(NonZeroU32::MAX)) > (250_000 * config.workers as u32)
+            u32::from(p.rate.and_then(NonZeroU32::new).unwrap_or(NonZeroU32::MAX))
+                > (250_000 * config.workers as u32)
                 && p.limit.unwrap_or(usize::MAX) > 10_000_000
         });
 

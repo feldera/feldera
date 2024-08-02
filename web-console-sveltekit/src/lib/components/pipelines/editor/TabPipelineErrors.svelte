@@ -19,7 +19,7 @@
       <a href={systemError.cause.source}>
         <span class=" bx bx-x-circle text-[20px] text-error-500"></span></a
       >
-      <span class=" whitespace-pre-wrap break-words align-text-bottom">
+      <span class=" whitespace-pre-wrap break-words align-text-bottom font-mono">
         {systemError.message}
       </span>
     </div>
