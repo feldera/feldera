@@ -103,10 +103,8 @@ clippy:
 install-python-deps:
     FROM +install-deps
     RUN pip install wheel
-    COPY demo/demo_notebooks/requirements.txt requirements.txt
     COPY --dir python ./
     RUN pip install --upgrade pip
-    RUN pip wheel -r requirements.txt --wheel-dir=wheels
     RUN pip wheel -r python/tests/requirements.txt --wheel-dir=wheels
     RUN pip wheel python/ --wheel-dir=wheels
     SAVE ARTIFACT wheels /wheels
@@ -114,10 +112,8 @@ install-python-deps:
 install-python:
     FROM +install-deps
     COPY +install-python-deps/wheels wheels
-    COPY demo/demo_notebooks/requirements.txt requirements.txt
     COPY --dir python ./
     RUN pip install --upgrade pip # remove after upgrading to ubuntu 24
-    RUN pip install --user -v --no-index --find-links=wheels -r requirements.txt
     RUN pip install --user -v --no-index --find-links=wheels -r python/tests/requirements.txt
     RUN pip install --user -v --no-index --find-links=wheels feldera
     SAVE ARTIFACT /root/.local/lib/python3.10
@@ -179,7 +175,6 @@ build-sql:
     COPY demo/hello-world/combiner.sql demo/hello-world/combiner.sql
     COPY demo/project_demo00-SecOps/project.sql demo/project_demo00-SecOps/project.sql
     COPY demo/project_demo01-TimeSeriesEnrich/project.sql demo/project_demo01-TimeSeriesEnrich/project.sql
-    COPY demo/project_demo02-FraudDetection/project.sql demo/project_demo02-FraudDetection/project.sql
     COPY demo/project_demo03-GreenTrip/project.sql demo/project_demo03-GreenTrip/project.sql
     COPY demo/project_demo04-SimpleSelect/project.sql demo/project_demo04-SimpleSelect/project.sql
     CACHE /root/.m2
@@ -290,7 +285,6 @@ test-python:
     COPY +build-manager/pipeline-manager .
     COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
 
-    COPY demo/demo_notebooks demo/demo_notebooks
     COPY demo/simple-join demo/simple-join
     COPY python/tests tests
 
@@ -312,8 +306,7 @@ test-python:
             (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=unoptimized &) && \
             sleep 5 && \
             cd tests && python3 -m pytest . && cd .. && \
-            python3 demo/simple-join/run.py --api-url http://localhost:8080 && \
-            cd demo/demo_notebooks && jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
+            python3 demo/simple-join/run.py --api-url http://localhost:8080
     END
 
 test-rust:
