@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import requests
 import argparse
 
@@ -111,85 +112,75 @@ def create_debezium_mysql_connector():
 
 
 def prepare_feldera_pipeline(api_url, start_pipeline):
-    pipeline_to_redpanda_server = "redpanda:9092"
+    pipeline_to_kafka_server = "redpanda:9092"
 
-    # Create program
-    program_name = "demo-debezium-mysql-program"
-    program_sql = open(PROJECT_SQL).read()
-    response = requests.put(f"{api_url}/v0/programs/{program_name}", json={
-        "description": "Simple Select Program",
-        "code": program_sql
-    })
-    response.raise_for_status()
-    program_version = response.json()["version"]
+    # Test connectivity by fetching the existing pipelines
+    print("Checking connectivity by listing pipelines...")
+    response = requests.get(f"{api_url}/v0/pipelines?code=false")
+    if response.ok:
+        print("SUCCESS: can reach the API")
+    else:
+        print("FAILURE: could not reach API")
+        exit(1)
 
-    # Compile program
-    print(f"Compiling program {program_name} (version: {program_version})...")
-    requests.post(f"{api_url}/v0/programs/{program_name}/compile", json={"version": program_version}).raise_for_status()
-    while True:
-        status = requests.get(f"{api_url}/v0/programs/{program_name}").json()["status"]
-        print(f"Program status: {status}")
-        if status == "Success":
-            break
-        elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
-            raise RuntimeError(f"Failed program compilation with status {status}")
-        time.sleep(5)
+    # Pipeline name
+    pipeline_name = "debezium-mysql"
 
-    # Connectors
-    connectors = []
-    for (connector_name, stream, topics) in [
-        ("addresses", 'ADDRESSES',  ["inventory.inventory.addresses"]),
-        ("customers", 'CUSTOMERS', ["inventory.inventory.customers"]),
-        ("orders", 'ORDERS', ["inventory.inventory.orders"]),
-        ("products", 'PRODUCTS', ["inventory.inventory.products"]),
-        ("products_on_hand", 'PRODUCTS_ON_HAND', ["inventory.inventory.products_on_hand"]),
-    ]:
-        requests.put(f"{api_url}/v0/connectors/{connector_name}", json={
-            "description": "",
-            "config": {
-                "format": {
-                    "name": "json",
-                    "config": {
-                        "update_format": "debezium",
-                        "json_flavor": "debezium_mysql"
-                    }
-                },
-                "transport": {
-                    "name": "kafka_input",
-                    "config": {
-                        "bootstrap.servers": pipeline_to_redpanda_server,
-                        "auto.offset.reset": "earliest",
-                        "topics": topics
-                    }
-                }
-            }
-        })
-        connectors.append({
-            "connector_name": connector_name,
-            "is_input": True,
-            "name": connector_name,
-            "relation_name": stream
-        })
+    # Shut down the pipeline if it already exists such that it can be edited
+    print("Shutting down the pipeline...")
+    if requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").ok:
+        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
+        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["deployment_status"] != "Shutdown":
+            time.sleep(1)
 
     # Create pipeline
-    pipeline_name = "demo-debezium-mysql-pipeline"
-    requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
-        "description": "",
-        "config": {"workers": 8},
-        "program_name": program_name,
-        "connectors": connectors,
-    }).raise_for_status()
+    print("Creating pipeline...")
+    program_sql = open(PROJECT_SQL).read().replace("[REPLACE-BOOTSTRAP-SERVERS]", pipeline_to_kafka_server)
+    response = requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
+        "name": pipeline_name,
+        "description": "Description of the debezium-mysql pipeline",
+        "runtime_config": {},
+        "program_code": program_sql,
+        "program_config": {}
+    })
+    if response.ok:
+        print("SUCCESS: created pipeline")
+        print(json.dumps(json.loads(response.content.decode("utf-8")), indent=4))
+    else:
+        print("FAILURE: could not create pipeline")
+        print(json.dumps(json.loads(response.content.decode("utf-8")), indent=4))
+        exit(1)
 
-    # Start pipeline
+    # Wait for pipeline program compilation
+    while True:
+        response = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}")
+        if response.ok:
+            pipeline = json.loads(response.content.decode("utf-8"))
+            print("Program status: %s" % pipeline["program_status"])
+            if pipeline["program_status"] == "Success":
+                break
+            time.sleep(5)
+        else:
+            print("FAILURE: could not check pipeline")
+            print(json.dumps(json.loads(response.content.decode("utf-8")), indent=4))
+            exit(1)
+
+    # (Re)start the pipeline
     if start_pipeline:
-        print("(Re)starting pipeline...")
-        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
-        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Shutdown":
-            time.sleep(1)
+        print("Starting pipeline...")
         requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start").raise_for_status()
-        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Running":
+        response = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}")
+        deployment_status = response.json()["deployment_status"]
+        while deployment_status != "Running":
+            print("Deployment status: %s" % deployment_status)
+            if deployment_status == "Failed":
+                print("FAILED: deployment status is Failed")
+                print(json.dumps(json.loads(response.content.decode("utf-8")), indent=4))
+                exit(1)
+            response = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}")
+            deployment_status = response.json()["deployment_status"]
             time.sleep(1)
-        print("Pipeline (re)started")
+        print("Pipeline started")
 
 
 if __name__ == "__main__":
