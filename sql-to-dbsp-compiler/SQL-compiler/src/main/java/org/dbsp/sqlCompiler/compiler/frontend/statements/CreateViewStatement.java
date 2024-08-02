@@ -29,6 +29,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
 
 import javax.annotation.Nullable;
@@ -47,7 +48,7 @@ public class CreateViewStatement extends CreateRelationStatement {
                                boolean nameIsQuoted,
                                List<RelColumnMetadata> columns, SqlNode query,
                                RelRoot compiled,
-                               @Nullable Map<String, String> properties) {
+                               @Nullable PropertyList properties) {
         super(node, statement, tableName, nameIsQuoted, columns, properties);
         this.kind = node.kind;
         this.query = query;

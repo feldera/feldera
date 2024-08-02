@@ -13,6 +13,8 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
@@ -32,7 +34,7 @@ public interface IHasSchema extends IHasCalciteObject {
     List<RelColumnMetadata> getColumns();
     /** Properties describing the connector attached to this object */
     @Nullable
-    Map<String, String> getProperties();
+    PropertyList getProperties();
 
     /** Return the index of the specified column. */
     default int getColumnIndex(SqlIdentifier id) {
@@ -73,13 +75,10 @@ public interface IHasSchema extends IHasCalciteObject {
         }
         if (hasKey)
             result.set("primary_key", keyFields);
-        Map<String, String> props = this.getProperties();
+        PropertyList props = this.getProperties();
         if (props != null) {
-            ObjectNode properties = mapper.createObjectNode();
-            for (Map.Entry<String, String> entry: props.entrySet()) {
-                properties.put(entry.getKey(), entry.getValue());
-            }
-            result.set("properties", properties);
+            result.set("properties", props.asJson());
+            result.set("propertyPositions", props.asJsonPositions());
         }
         return result;
     }

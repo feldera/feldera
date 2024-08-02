@@ -74,6 +74,32 @@ public class MetadataTests extends BaseSQLTests {
                  "connector" : "file",
                  "path" : "/tmp/x"
                }""", str);
+
+        c = outputs.get(0).get("propertyPositions");
+        Assert.assertNotNull(c);
+        str = c.toPrettyString();
+        Assert.assertEquals("""
+                [ {
+                  "startLineNumber" : 8,
+                  "startColumn" : 4,
+                  "endLineNumber" : 8,
+                  "endColumn" : 14
+                }, {
+                  "startLineNumber" : 8,
+                  "startColumn" : 18,
+                  "endLineNumber" : 8,
+                  "endColumn" : 23
+                }, {
+                  "startLineNumber" : 9,
+                  "startColumn" : 4,
+                  "endLineNumber" : 9,
+                  "endColumn" : 9
+                }, {
+                  "startLineNumber" : 9,
+                  "startColumn" : 13,
+                  "endLineNumber" : 9,
+                  "endColumn" : 20
+                } ]""", str);
     }
 
     @Test
