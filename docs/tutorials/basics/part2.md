@@ -1,7 +1,6 @@
 # Part 2: HTTP-based Input and Output
 
-In Part 1 of this tutorial we created a SQL program and ran it as part of a
-pipeline.  We manually pushed data to the pipeline using Feldera Web Console.
+In Part 1 of this tutorial we created our first Feldera pipeline.
 The next step is to ingest data into SQL tables from external sources and to
 send query outputs to external sinks.  Feldera supports two methods to
 accomplish this: (1) HTTP-based and (2) connector-based input/output.  We cover
@@ -18,8 +17,8 @@ In Part 2 of the tutorial we will
 
 Start the pipeline you created in Part 1 of the tutorial from a clean state:
 
-- If the pipeline is still running, click <icon icon="bx:stop-circle" /> to shut it down.
-- Click <icon icon="bx:play-circle" /> to restart the pipeline.
+- If the pipeline is still running, click <icon icon="bx:stop" /> to shut it down.
+- Click <icon icon="bx:play" /> to restart the pipeline.
 
 ## Step 2. Subscribe to output changes
 
@@ -122,12 +121,14 @@ might appear in a different order):
 }
 ```
 
-We will learn to decipher this in a moment.  Meanwhile, you can use the Feldera
+We will learn to decipher this in a moment.
+
+<!-- Meanwhile, you can use the Feldera
 Web Console to inspect tables and views (click on the <icon icon="bx:show" />
 icon next to a table or view to inspect it). For instance, here is the contents
 of the `PREFERRED_VENDOR` view:
 
-![PREFERRED_VENDOR](preferred-vendor1.png)
+![PREFERRED_VENDOR](preferred-vendor1.png) -->
 
 ## Step 4. Modify inputs
 
