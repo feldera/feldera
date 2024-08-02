@@ -585,7 +585,11 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Builder for LeafBuilder<K, 
         self.layer.len()
     }
 
-    fn done(self) -> Self::Trie {
+    fn done(mut self) -> Self::Trie {
+        if self.layer.keys.spare_capacity() >= self.layer.keys.len() / 10 {
+            self.layer.keys.shrink_to_fit();
+            self.layer.diffs.shrink_to_fit();
+        }
         self.layer
     }
 }
