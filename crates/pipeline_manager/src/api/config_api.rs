@@ -1,5 +1,6 @@
-/// Configuration API to retrieve the current authentication configuration
-use crate::demo::{read_demos_from_directory, Demo};
+// Configuration API to retrieve the current authentication configuration
+use crate::db::types::pipeline::PipelineDescr;
+use crate::demo::read_demos_from_directory;
 use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
 use log::debug;
 use serde::Serialize;
@@ -43,7 +44,7 @@ async fn get_config_authentication(
         (status = OK
             , description = "List of demos."
             , content_type = "application/json"
-            , body = Vec<Demo>),
+            , body = Vec<PipelineDescr>),
         (status = INTERNAL_SERVER_ERROR
             , description = "Failed to read demos from the demos directory."
             , body = ErrorResponse),
@@ -55,7 +56,7 @@ async fn get_config_authentication(
 #[get("/config/demos")]
 async fn get_config_demos(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
     match &state._config.demos_dir {
-        None => Ok(HttpResponse::Ok().json(Vec::<Demo>::new())),
+        None => Ok(HttpResponse::Ok().json(Vec::<PipelineDescr>::new())),
         Some(demos_dir) => {
             Ok(HttpResponse::Ok().json(read_demos_from_directory(Path::new(&demos_dir))?))
         }

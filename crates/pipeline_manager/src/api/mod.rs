@@ -143,9 +143,6 @@ The program version is used internally by the compiler to know when to recompile
         crate::api::api_key::NewApiKeyRequest,
         crate::api::api_key::NewApiKeyResponse,
 
-        // Demo
-        crate::demo::Demo,
-
         // From the pipeline-types crate
         pipeline_types::config::PipelineConfig,
         pipeline_types::config::StorageConfig,
