@@ -247,53 +247,33 @@ by encoding all events in the message as an array.
 
 ## Configuring JSON event streams
 
-### Configure connectors via the Feldera Web Console
+### Configure connectors
 
-When creating a new input or output connector using the Feldera Web Console,
-the data format is configured in the `FORMAT` section of the connector
-creation wizard:
+When adding a new input or output connector on a table or view,
+the data format is specified in the `format` field of the connector configuration:
 
-1. choose `JSON` from the list of supported formats
-1. choose appropriate data change event encoding ([`Raw`](#the-raw-format) or
-   [`Insert & Delete`](#the-insertdelete-format))
-1. enable array encapsulation if the stream contains events grouped in
-   [arrays](#encoding-multiple-changes)
-
-![Data change event format selector](format_selector.png)
-
-See also the [input/output connector tutorial](tutorials/basics/part3.md).
-
-### Configure connectors via the REST API
-
-When creating or modifying connectors via the REST API
-[`/connectors` endpoint](/api/create-a-new-connector),
-the data format is specified in the `format` field of
-the connector configuration:
-
-```json
-{
+```sql
+create table PART (
+  id bigint not null primary key,
+  name varchar
+) with (
+  'connectors' = '[{
     "transport": {
         "name": "url_input",
-        "config": {
-            "path":"https://feldera-basics-tutorial.s3.amazonaws.com/part.json"
-        }
+        "config": { "path":"https://feldera-basics-tutorial.s3.amazonaws.com/part.json" }
     },
     "format": {
-        // Choose JSON format for the connector.
         "name": "json",
-
-        "config": {
-            // Choose data change event format for this connector.
-            // Supported values are `insert_delete` and `raw`.
-            "update_format": "insert_delete",
-
-            // Disable array encoding.
-            "array": false
-        }
-    },
-    "max_queued_records":1000000
-}
+        "config": { "update_format": "insert_delete", "array": false }
+    }
+}]'
+);
 ```
+
+- `update_format`: Choose data change event format for this connector. Supported values are `insert_delete` and `raw`.
+- `array`: Enable or disable array encoding.
+
+See also the [input/output connector tutorial](tutorials/basics/part3.md).
 
 ### Streaming JSON over HTTP
 
@@ -304,7 +284,8 @@ API endpoint, the data format is specified as part of the URL, e.g.:
 # `?format=json` - Chooses JSON format for the stream.
 # `&update_format=insert_delete` - Specifies data change event format. Supported values are `insert_delete` and `raw`.
 # `&array=false` - Don't use array encoding.
-curl -X 'POST' 'http://localhost:8080/v0/pipelines/018a67a5-32e8-7e23-825d-a8a64872ab7c/ingress/PART?format=json&update_format=insert_delete&array=false' -d '
+# replace PIPELINE_NAME with the name of the pipeline and TABLE_NAME with the name of the table
+curl -X 'POST' 'http://localhost:8080/v0/pipelines/PIPELINE_NAME/ingress/TABLE_NAME?format=json&update_format=insert_delete&array=false' -d '
 {"insert": {"id": 1, "name": "Flux Capacitor"}}
 {"insert": {"id": 2, "name": "Warp Core"}}
 {"insert": {"id": 3, "name": "Kyber Crystal"}}'
@@ -317,7 +298,8 @@ format with array encapsulation.  Specify `?format=json` in the URL
 to choose this encoding for output data.
 
 ```bash
-curl -s -N -X 'POST' http://localhost:8080/v0/pipelines/018a67a5-32e8-7e23-825d-a8a64872ab7c/egress/PREFERRED_VENDOR?format=json
+# replace PIPELINE_NAME with the name of the pipeline and VIEW_NAME with the name of the table
+curl -s -N -X 'POST' 'http://localhost:8080/v0/pipelines/PIPELINE_NAME/egress/VIEW_NAME?format=json'
 ```
 
 See also the [HTTP input and output tutorial](tutorials/basics/part3.md).
