@@ -378,7 +378,7 @@
                     "deployment_status": "Shutdown",
                     "deployment_status_since": "1970-01-01T00:00:00Z",
                     "description": "Description of the pipeline example2",
-                    "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                    "id": "67e55044-10b1-426f-9247-bb680e5fe0c9",
                     "name": "example2",
                     "program_binary_url": null,
                     "program_code": null,
@@ -2252,7 +2252,7 @@
           },
           "deployment_location": {
             "type": "string",
-            "description": "Location where the pipeline can be reached at runtime.\ne.g., a TCP port number or a URI.",
+            "description": "Location where the pipeline can be reached at runtime\n(e.g., a TCP port number or a URI).",
             "nullable": true
           },
           "deployment_status": {
@@ -2276,7 +2276,7 @@
           },
           "program_binary_url": {
             "type": "string",
-            "description": "URL where to download the program binary from.\nTODO: should this be in here or not?",
+            "description": "URL where to download the program binary from.",
             "nullable": true
           },
           "program_code": {
@@ -3014,7 +3014,7 @@
             }
           }
         ],
-        "description": "Overall pipeline configuration.\n\nIt is generated upon the deployment of a pipeline and contains\nthe shape of the overall pipeline configuration.\n\nIts input and output endpoints are generated based on the schema\nof the compiled program. The runtime configuration is directly\nprovided by the user. Storage configuration, if applicable,\nis set by the runner."
+        "description": "Pipeline deployment configuration.\nIt represents configuration entries directly provided by the user\n(e.g., runtime configuration) and entries derived from the schema\nof the compiled program (e.g., connectors). Storage configuration,\nif applicable, is set by the runner."
       },
       "PipelineDescr": {
         "type": "object",
