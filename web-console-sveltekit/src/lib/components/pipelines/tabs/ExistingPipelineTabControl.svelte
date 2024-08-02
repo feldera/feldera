@@ -20,7 +20,7 @@
     tabContentChanged?: boolean
   } = $props()
 
-  let { value } = $state({
+  let value = {
     get value() {
       return existing
     },
@@ -29,7 +29,8 @@
       patchPipeline(existing, { name }).then(() => goto(newUrl, { replaceState: true }))
       onRenamePipeline?.({ existing }, { existing: name })
     }
-  })
+  }
 </script>
 
-<PipelineTabControl {text} bind:value {close} {tabContentChanged}></PipelineTabControl>
+<PipelineTabControl {text} bind:value={value.value} {close} {tabContentChanged}
+></PipelineTabControl>
