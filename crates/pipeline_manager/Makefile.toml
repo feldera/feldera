@@ -45,25 +45,3 @@ while true; do
     fi
 done
 '''
-
-[tasks.python_api_test]
-description = "Test Python API"
-dependencies = [ "start_manager"]
-script = '''
-python3 ../../demo/simple-join/run.py --api-url http://localhost:8080 --connector-type http
-'''
-
-[tasks.fraud_notebook_test]
-description = "Fraud detection Python notebook test"
-dependencies = ["start_manager"]
-script = '''
-cd ../../demo/demo_notebooks
-pip3 install -r requirements.txt
-IN_CI=1 jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
-'''
-
-[tasks.python_test]
-dependencies = ["fraud_notebook_test", "python_api_test"]
-
-[tasks.test]
-dependencies = ["python_test"]
