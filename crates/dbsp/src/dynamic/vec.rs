@@ -284,7 +284,7 @@ where
     }
 
     fn shrink_to_fit(&mut self) {
-        todo!()
+        self.vec.shrink_to_fit()
     }
 
     fn push_val(&mut self, val: &mut Trait) {
