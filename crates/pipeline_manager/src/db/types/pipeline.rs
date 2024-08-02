@@ -327,7 +327,6 @@ pub struct PipelineDescr {
 
 /// Pipeline descriptor which besides the basic fields in direct regular control of the user
 /// also has all additional fields generated and maintained by the back-end.
-// TODO: add or derive proptest values
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
 pub struct ExtendedPipelineDescr {
     /// Assigned globally unique pipeline identifier.
@@ -339,7 +338,7 @@ pub struct ExtendedPipelineDescr {
     /// Pipeline description.
     pub description: String,
 
-    /// Pipeline version, incremented every time name, description, config, program_code or
+    /// Pipeline version, incremented every time name, description, runtime_config, program_code or
     /// program_config is/are modified.
     pub version: Version,
 
@@ -355,7 +354,7 @@ pub struct ExtendedPipelineDescr {
     /// Program compilation configuration.
     pub program_config: ProgramConfig,
 
-    /// Program version, incremented every time program_code is modified.
+    /// Program version, incremented every time program_code or program_config is modified.
     pub program_version: Version,
 
     /// Program compilation status.
@@ -370,7 +369,6 @@ pub struct ExtendedPipelineDescr {
     pub program_info: Option<ProgramInfo>,
 
     /// URL where to download the program binary from.
-    /// TODO: should this be in here or not?
     pub program_binary_url: Option<String>,
 
     /// Current status of the pipeline.
@@ -396,11 +394,11 @@ pub struct ExtendedPipelineDescr {
     /// the pipeline to terminate abnormally.
     pub deployment_error: Option<ErrorResponse>,
 
-    // Pipeline configuration.
+    // Pipeline deployment configuration.
     pub deployment_config: Option<PipelineConfig>,
 
-    /// Location where the pipeline can be reached at runtime.
-    /// e.g., a TCP port number or a URI.
+    /// Location where the pipeline can be reached at runtime
+    /// (e.g., a TCP port number or a URI).
     pub deployment_location: Option<String>,
 }
 

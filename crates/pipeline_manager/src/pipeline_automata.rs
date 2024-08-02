@@ -457,7 +457,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 new_status,
                 pipeline.deployment_desired_status
             );
-            // TODO: tenant id is from self?
             match new_status {
                 PipelineStatus::Shutdown => {
                     self.db
@@ -530,7 +529,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             self.pipeline_id,
             Method::GET,
             "stats",
-            &pipeline.deployment_location.clone().unwrap(), // TODO: unwrap?
+            &pipeline.deployment_location.clone().unwrap(), // TODO: unwrap
         )
         .await
         {
