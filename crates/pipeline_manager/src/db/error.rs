@@ -370,7 +370,7 @@ impl Display for DBError {
                 write!(f, "Cannot delete a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.")
             }
             DBError::CannotRenameNonExistingPipeline => {
-                write!(f, "Cannot rename a pipeline which does not exist")
+                write!(f, "The pipeline name in the request body does not match the one provided in the URL path. This is not allowed when no pipeline with the name provided in the URL path exists.")
             }
             DBError::OutdatedProgramVersion { latest_version } => {
                 write!(
