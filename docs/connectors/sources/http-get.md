@@ -6,7 +6,7 @@ Feldera can ingest data from a user-provided URL into a SQL table.
 
 ## Example usage
 
-We will create an HTTP GET connector named `product-tools`.
+We will create a pipeline with an HTTP GET connector.
 
 The file is hosted at `https://example.com/tools-data.json`,
 and is in [newline-delimited JSON (NDJSON) format](/docs/api/json#encoding-multiple-changes)
@@ -18,30 +18,46 @@ with one row per line. For example:
 {"delete": {"pid": 0}}
 ```
 
+### SQL example file
+
+Create a file named **program.sql** with the following content:
+```
+CREATE TABLE price (
+    pid BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    price DECIMAL
+)
+WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input",
+        "config": {"path": "https://example.com/tools-data.json"}
+    },
+    "format": {
+        "name": "json",
+        "config": {
+            "update_format": "insert_delete",
+            "array": false
+        }
+    }
+}]');
+```
+
 ### curl
 
 ```bash
-curl -i -X PUT http://localhost:8080/v0/connectors/product-tools \
--H "Authorization: Bearer <API-KEY>" \
+curl -i -X PUT http://localhost:8080/v0/pipelines/workshop \
 -H 'Content-Type: application/json' \
--d '{
-  "description": "URL input connector for tools products",
-  "config": {
-      "transport": {
-          "name": "url_input",
-          "config": {
-              "path": "https://example.com/tools-data.json"
-          }
-      },
-      "format": {
-          "name": "json",
-          "config": {
-              "update_format": "insert_delete",
-              "array": false
-          }
-      }
-  }
-}'
+-d "$(jq -Rsn \
+  --rawfile code program.sql \
+  '{
+    name: "workshop",
+    description: "Workshop inventory",
+    runtime_config: {
+      workers: 4
+    },
+    program_config: {},
+    program_code: $code
+  }')"
 ```
 
 ### Python (direct API calls)
@@ -51,27 +67,17 @@ import requests
 
 api_url = "http://localhost:8080"
 headers = { "authorization": f"Bearer <API-KEY>" }
-
 requests.put(
-    f"{api_url}/v0/connectors/product-tools", 
+    f"{api_url}/v0/pipelines/workshop", 
     headers=headers,
     json={
-        "description": "URL input connector for tools products",
-        "config": {
-            "transport": {
-                "name": "url_input",
-                "config": {
-                    "path": "https://example.com/tools-data.json"
-                }
-            },
-            "format": {
-                "name": "json",
-                "config": {
-                    "update_format": "insert_delete",
-                    "array": False
-                }
-            }
-        }
+      "name": "workshop",
+      "description": "Workshop inventory",
+      "runtime_config": {
+        "workers": 4
+      },
+      "program_config": {},
+      "program_code": open("program.sql").read()
     }
 ).raise_for_status()
 ```
