@@ -556,7 +556,7 @@ all-tests:
     # BUILD +test-docker-compose-stable
     BUILD +test-debezium-mysql
     # TODO: Temporarily disabled while we port the demo script
-    # BUILD +test-debezium-postgres
+    BUILD +test-debezium-postgres
     BUILD +test-debezium-jdbc-sink
     # BUILD +test-snowflake
     # BUILD +test-s3
