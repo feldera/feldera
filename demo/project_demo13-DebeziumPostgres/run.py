@@ -1,3 +1,11 @@
+# Postgres Debezium source connector demo
+#
+# Start auxiliary connectors before running this demo
+#
+# ```bash
+# docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-debezium-postgres.yml --profile debezium  up postgres redpanda connect  --force-recreate  -V
+# ```
+
 import os
 import time
 import requests
