@@ -1,7 +1,7 @@
 # Stream output of a view to Postgres via Debesium JDBC sink connector.VIEW_NAME
 #
 # To run the demo, start Feldera along with RedPanda, Kafka Connect, and Postgres containers:
-# > docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml -f deploy/docker-compose-jdbc.yml \
+# > docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml -f deploy/docker-compose-jdbc.yml --profile debezium \
 #       up db pipeline-manager redpanda connect postgres --build --renew-anon-volumes --force-recreate
 #
 # Run this script:
@@ -16,6 +16,7 @@ from plumbum.cmd import rpk
 import psycopg
 import json
 import random
+from feldera import SQLContext, FelderaClient
 
 # File locations
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
@@ -35,6 +36,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
     parser.add_argument('--start', action='store_true', default=False, help="Start the Feldera pipeline")
+    parser.add_argument('--kafka-url', required=False, default="redpanda:9092", help="Kafka URL reachable from the pipeline")
+
     args = parser.parse_args()
     # Delete old connector instance first so it doesn't block topic deletion.
     delete_connector()
@@ -43,9 +46,9 @@ def main():
     # Create fresh Kafka topics and a new connector instance listening on those topics.
     create_debezium_jdbc_connector()
     # Create a pipeline that will write to the topics.
-    prepare_feldera_pipeline(args.api_url, args.start)
+    pipeline = create_feldera_pipeline(args.api_url, args.kafka_url, args.start)
     if args.start:
-        generate_inputs(args.api_url)
+        generate_inputs(pipeline)
 
 def delete_connector():
     print("Deleting old connector")
@@ -112,18 +115,18 @@ def create_debezium_jdbc_connector():
     config = {
         "name": KAFKA_CONNECT_CONNECTOR_NAME,
         "config": {
-            "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",  
-            "tasks.max": "1",  
+            "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
+            "tasks.max": "1",
             "connection.url": f"jdbc:postgresql://postgres:5432/{DATABASE_NAME}",
-            "connection.username": "postgres",  
+            "connection.username": "postgres",
             "connection.password": "postgres",
-            "insert.mode": "upsert",  
+            "insert.mode": "upsert",
             "primary.key.mode": "record_key",
             "primary.key.fields": PRIMARY_KEY_COLUMN,
             "delete.enabled": True,
-            "schema.evolution": "basic",  
-            "database.time_zone": "UTC",  
-            "dialect.name": "PostgreSqlDatabaseDialect", 
+            "schema.evolution": "basic",
+            "database.time_zone": "UTC",
+            "dialect.name": "PostgreSqlDatabaseDialect",
             "topics": VIEW_NAME,
             "errors.deadletterqueue.topic.name": "dlq",
             "errors.deadletterqueue.context.headers.enable": True,
@@ -163,95 +166,64 @@ def create_debezium_jdbc_connector():
             print("Waiting for connector creation")
             time.sleep(1)
 
-def prepare_feldera_pipeline(api_url, start_pipeline):
-    pipeline_to_redpanda_server = "redpanda:9092"
+def build_sql(pipeline_to_redpanda_server: str) -> str:
+    return f"""
+create table test_table(
+    id bigint not null primary key,
+    f1 boolean,
+    f2 string,
+    f3 tinyint,
+    f4 decimal(5,2),
+    f5 float64,
+    f6 time,
+    f7 timestamp,
+    f8 date,
+    f9 binary
+);
 
-    # Create program
-    program_name = "demo-debezium-jdbc-program"
-    program_sql = open(PROJECT_SQL).read()
-    response = requests.put(f"{api_url}/v0/programs/{program_name}", json={
-        "description": "Debezium JDBC sink connector demo program",
-        "code": program_sql
-    })
-    response.raise_for_status()
-    program_version = response.json()["version"]
+create view test_view
+WITH (
+    'connectors' = '[{{
+        "format": {{
+            "name": "json",
+            "config": {{
+                "update_format": "debezium"
+            }}
+        }},
+        "transport": {{
+            "name": "kafka_output",
+            "config": {{
+                "bootstrap.servers": "{pipeline_to_redpanda_server}",
+                "topic": "{VIEW_NAME}"
+            }}
+        }}
+    }}]'
+)
+as select * from test_table;
+    """
 
-    # Compile program
-    print(f"Compiling program {program_name} (version: {program_version})...")
-    requests.post(f"{api_url}/v0/programs/{program_name}/compile", json={"version": program_version}).raise_for_status()
-    while True:
-        status = requests.get(f"{api_url}/v0/programs/{program_name}").json()["status"]
-        print(f"Program status: {status}")
-        if status == "Success":
-            break
-        elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
-            raise RuntimeError(f"Failed program compilation with status {status}")
-        time.sleep(5)
+def create_feldera_pipeline(api_url: str, pipeline_to_redpanda_server: str, start_pipeline: bool):
+    client = FelderaClient(api_url)
 
-    # Connectors
-    connectors = []
-    for (connector_name, stream, topic) in [
-        (FELDERA_CONNECTOR_NAME, VIEW_NAME,  VIEW_NAME),
-    ]:
-        requests.put(f"{api_url}/v0/connectors/{connector_name}", json={
-            "description": "",
-            "config": {
-                "format": {
-                    "name": "json",
-                    "config": {
-                        "update_format": "debezium",
-                    }
-                },
-                "transport": {
-                    "name": "kafka_output",
-                    "config": {
-                        "bootstrap.servers": pipeline_to_redpanda_server,
-                        "topic": topic
-                    }
-                }
-            }
-        })
-        connectors.append({
-            "connector_name": connector_name,
-            "is_input": False,
-            "name": connector_name,
-            "relation_name": stream
-        })
+    pipeline = SQLContext(PIPELINE_NAME, client, "Debezium JDBC sink connector demo")
+    pipeline.sql(build_sql(pipeline_to_redpanda_server))
 
-    # Create pipeline
-    requests.put(f"{api_url}/v0/pipelines/{PIPELINE_NAME}", json={
-        "description": "",
-        "config": {
-            "workers": 8,
-            # Don't start computing until we have at least 1M input records or after 10 seconds.
-            #"min_batch_size_records": 1000000,
-            #"max_buffering_delay_usecs": 10000000,
-        },
-        "program_name": program_name,
-        "connectors": connectors,
-    }).raise_for_status()
-
-    # Start pipeline
     if start_pipeline:
-        print("(Re)starting pipeline...")
-        requests.post(f"{api_url}/v0/pipelines/{PIPELINE_NAME}/shutdown").raise_for_status()
-        while requests.get(f"{api_url}/v0/pipelines/{PIPELINE_NAME}").json()["state"]["current_status"] != "Shutdown":
-            time.sleep(1)
-        requests.post(f"{api_url}/v0/pipelines/{PIPELINE_NAME}/start").raise_for_status()
-        while requests.get(f"{api_url}/v0/pipelines/{PIPELINE_NAME}").json()["state"]["current_status"] != "Running":
-            time.sleep(1)
-        print("Pipeline (re)started")
+        print("Starting the pipeline...")
+        pipeline.start()
+        print("Pipeline started")
 
-def generate_inputs(api_url):
+    return pipeline
+
+def generate_inputs(pipeline: SQLContext):
     print("Generating records...")
     date_time = datetime.datetime(2024, 1, 30, 8, 58)
-    
+
     for batch in range(0, 100):
         print(f"Batch {batch}")
-        data = ""
+        data = []
         for i in range(0, 100):
-            data += json.dumps({
-                "insert": {
+            data.append({
                     # The number of rows should hit 199 on successful test completion.
                     "id": i + batch,
                     "f1": True,
@@ -263,9 +235,8 @@ def generate_inputs(api_url):
                     "f7": date_time.strftime("%F %T"),
                     "f8": date_time.strftime("%F"),
                     #"f9": list("bar".encode('utf-8')),
-                }
-            }) + "\n"
-        requests.post(f'{api_url}/v0/pipelines/{PIPELINE_NAME}/ingress/{TABLE_NAME}?format=json', data=data).raise_for_status()
+                })
+        pipeline.input_json("test_table", data)
 
     wait_for_n_outputs(199)
 
