@@ -207,10 +207,6 @@ pub struct ApiDoc;
 // `static_files` magic.
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
-mod web_v2 {
-    include!(concat!(env!("OUT_DIR"), "/v2/generated.rs"));
-}
-
 // The scope for all unauthenticated API endpoints
 fn public_scope() -> Scope {
     let openapi = ApiDoc::openapi();
@@ -222,12 +218,7 @@ fn public_scope() -> Scope {
         .service(config_api::get_config_authentication)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(healthz)
-        .service(ResourceFiles::new("/", generate()))
-}
-
-fn new_scope() -> Scope {
-    web::scope("/new")
-        .service(ResourceFiles::new("/", web_v2::generate()).resolve_not_found_to_root())
+        .service(ResourceFiles::new("/", generate()).resolve_not_found_to_root())
 }
 
 // The scope for all authenticated API endpoints
@@ -363,7 +354,6 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
                     .wrap(Logger::default().exclude("/healthz"))
                     .wrap(api_config.cors())
                     .service(api_scope().wrap(auth_middleware))
-                    .service(new_scope())
                     .service(public_scope())
             });
             server.listen(listener)?.run()
@@ -380,7 +370,6 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
                         let req = crate::auth::tag_with_default_tenant_id(req);
                         srv.call(req)
                     }))
-                    .service(new_scope())
                     .service(public_scope())
             });
             server.listen(listener)?.run()

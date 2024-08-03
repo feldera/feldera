@@ -18,9 +18,6 @@ const config = {
       $assets: 'src/assets'
     },
     paths: {
-      // server subdirectory where the root index.html will be served from
-      // comment out when webapp gets served from root path
-      base: '/new'
     }
   }
 }
