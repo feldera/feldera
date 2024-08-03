@@ -9,7 +9,10 @@ const sslSchema = va.object({
 })
 
 const saslPassSchema = va.object({
-  sasl_mechanism: va.optional(va.picklist(['GSSAPI', 'PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512']), 'PLAIN'),
+  sasl_mechanism: va.optional(
+    va.picklist(['GSSAPI', 'PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512']),
+    'PLAIN'
+  ),
   sasl_username: va.optional(va.string()),
   sasl_password: va.optional(va.string())
 })
@@ -69,7 +72,7 @@ export const authParamsSchema = va.union([
   })
 ])
 
-export const authFields = librdkafkaAuthOptions.map(option => option.replaceAll('.', '_'))
+export const authFields = librdkafkaAuthOptions.map((option) => option.replaceAll('.', '_'))
 
 export type KafkaAuthSchema = va.Input<typeof authParamsSchema>
 

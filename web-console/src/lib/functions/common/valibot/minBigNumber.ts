@@ -5,7 +5,8 @@ import { actionIssue, actionOutput } from 'valibot'
 /**
  * Min value validation type.
  */
-interface MinBigNumberValidation<TInput extends BigNumber, TRequirement extends TInput> extends BaseValidation<TInput> {
+interface MinBigNumberValidation<TInput extends BigNumber, TRequirement extends TInput>
+  extends BaseValidation<TInput> {
   /**
    * The validation type.
    */

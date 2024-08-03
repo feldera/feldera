@@ -5,7 +5,8 @@ import { actionIssue, actionOutput } from 'valibot'
 /**
  * Max BigNumber validation type.
  */
-interface MaxBigNumberValidation<TInput extends BigNumber, TRequirement extends TInput> extends BaseValidation<TInput> {
+interface MaxBigNumberValidation<TInput extends BigNumber, TRequirement extends TInput>
+  extends BaseValidation<TInput> {
   /**
    * The validation type.
    */

@@ -36,6 +36,8 @@ export const makeClientStore =
 
     return (
       data ??
-      ((initializer ? create<T>()(initializer)(selector) : undefined) as Init extends undefined ? R | undefined : R)
+      ((initializer ? create<T>()(initializer)(selector) : undefined) as Init extends undefined
+        ? R | undefined
+        : R)
     )
   }
