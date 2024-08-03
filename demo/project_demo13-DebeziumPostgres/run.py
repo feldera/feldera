@@ -2,6 +2,8 @@ import os
 import time
 import requests
 import argparse
+import json
+from feldera import FelderaClient, SQLContext
 from kafka.admin import KafkaAdminClient
 from kafka.errors import UnknownTopicOrPartitionError
 
@@ -21,11 +23,9 @@ def main():
     parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
     parser.add_argument("--kafka-url-from-pipeline", default="redpanda:9092", help="Kafka broker address reachable from the pipeline")
     parser.add_argument("--kafka-url-from-script", default="localhost:19092", help="Kafka broker address reachable from this script")
-    parser.add_argument('--start', action='store_true', default=False, help="Start the Feldera pipeline")
     args = parser.parse_args()
     create_debezium_postgres_connector(args.kafka_url_from_script)
-    prepare_feldera_pipeline(args.api_url, args.kafka_url_from_pipeline, args.start)
-
+    prepare_feldera_pipeline(args.api_url, args.kafka_url_from_pipeline)
 
 def create_debezium_postgres_connector(kafka_url_from_script):
     connect_server = os.getenv("KAFKA_CONNECT_SERVER", "http://localhost:8083")
@@ -102,85 +102,16 @@ def create_debezium_postgres_connector(kafka_url_from_script):
         print("Waiting for topics")
         time.sleep(1)
 
-def prepare_feldera_pipeline(api_url, kafka_url, start_pipeline):
+def prepare_feldera_pipeline(api_url, kafka_url):
 
-    # Create program
-    program_name = "demo-debezium-postgres-program"
-    program_sql = open(PROJECT_SQL).read()
-    response = requests.put(f"{api_url}/v0/programs/{program_name}", json={
-        "description": "Simple Select Program",
-        "code": program_sql
-    })
-    response.raise_for_status()
-    program_version = response.json()["version"]
-
-    # Compile program
-    print(f"Compiling program {program_name} (version: {program_version})...")
-    requests.post(f"{api_url}/v0/programs/{program_name}/compile", json={"version": program_version}).raise_for_status()
-    while True:
-        status = requests.get(f"{api_url}/v0/programs/{program_name}").json()["status"]
-        print(f"Program status: {status}")
-        if status == "Success":
-            break
-        elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
-            raise RuntimeError(f"Failed program compilation with status {status}")
-        time.sleep(5)
-
-    # Connectors
-    connectors = []
-    for (connector_name, stream, topics) in [
-        ("customers", 'CUSTOMERS', ["inventory.inventory.customers"]),
-        ("orders", 'ORDERS', ["inventory.inventory.orders"]),
-        ("products", 'PRODUCTS', ["inventory.inventory.products"]),
-        ("products_on_hand", 'PRODUCTS_ON_HAND', ["inventory.inventory.products_on_hand"]),
-    ]:
-        requests.put(f"{api_url}/v0/connectors/{connector_name}", json={
-            "description": "",
-            "config": {
-                "format": {
-                    "name": "json",
-                    "config": {
-                        "update_format": "debezium",
-                        "json_flavor": "debezium_postgres"
-                    }
-                },
-                "transport": {
-                    "name": "kafka_input",
-                    "config": {
-                        "bootstrap.servers": kafka_url,
-                        "auto.offset.reset": "earliest",
-                        "topics": topics
-                    }
-                }
-            }
-        })
-        connectors.append({
-            "connector_name": connector_name,
-            "is_input": True,
-            "name": connector_name,
-            "relation_name": stream
-        })
-
-    # Create pipeline
     pipeline_name = "demo-debezium-postgres-pipeline"
-    requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
-        "description": "",
-        "config": {"workers": 8},
-        "program_name": program_name,
-        "connectors": connectors,
-    }).raise_for_status()
+    client = FelderaClient(api_url)
+    pipeline = SQLContext(pipeline_name, client)
+    sql = open(PROJECT_SQL).read().replace("[REPLACE-BOOTSTRAP-SERVERS]", kafka_url)
 
-    # Start pipeline
-    if start_pipeline:
-        print("(Re)starting pipeline...")
-        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
-        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Shutdown":
-            time.sleep(1)
-        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start").raise_for_status()
-        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Running":
-            time.sleep(1)
-        print("Pipeline (re)started")
-
+    print("Starting pipeline...")
+    pipeline.sql(sql)
+    print("Pipeline started")
 
 if __name__ == "__main__":
     main()
