@@ -1,31 +1,76 @@
 -- Warehouse
 CREATE TABLE warehouse (
-    id INT NOT NULL PRIMARY KEY,
+    id INT PRIMARY KEY,
     name VARCHAR NOT NULL,
     address VARCHAR NOT NULL
-) WITH (
-    'materialized' = 'true'
+) with (
+    'materialized' = 'true',
+    'connectors' = '[{
+        "transport": {
+            "name": "datagen",
+            "config": {
+                "plan": [{
+                    "limit": 10,
+                    "fields": {
+                        "name": { "values": ["Warhouse no. 1", "Warehouse no. 2", "Warehouse no. 3", "Warehouse no. 4", "Warehouse no. 5", "Warehouse no. 6", "Warehouse no. 7", "Warehouse no. 8", "Warehouse no. 9", "Warehouse no. 10"] },
+                        "address": { "strategy": "street_name" }
+                    }
+                }]
+            }
+        }
+    }]'
 );
 
 -- Product
 CREATE TABLE product (
-    id INT NOT NULL PRIMARY KEY,
+    id INT PRIMARY KEY,
     name VARCHAR NOT NULL,
     mass DOUBLE NOT NULL,
     volume DOUBLE NOT NULL
-) WITH (
-    'materialized' = 'true'
+) with (
+    'materialized' = 'true',
+    'connectors' = '[{
+        "transport": {
+            "name": "datagen",
+            "config": {
+                "plan": [{
+                    "limit": 20,
+                    "fields": {
+                        "name": { "strategy": "buzzword" },
+                        "mass": { "strategy": "uniform", "range": [0, 1000]},
+                        "volume": { "strategy": "uniform", "range": [0, 1000]}
+                    }
+                }]
+            }
+        }
+    }]'
 );
 
 -- Each warehouse stores products
 CREATE TABLE storage (
-    warehouse_id INT NOT NULL FOREIGN KEY REFERENCES warehouse(id),
-    product_id INT NOT NULL FOREIGN KEY REFERENCES product(id),
+    warehouse_id INT FOREIGN KEY REFERENCES warehouse(id),
+    product_id INT FOREIGN KEY REFERENCES product(id),
     num_available INT NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     PRIMARY KEY (warehouse_id, product_id)
-) WITH (
-    'materialized' = 'true'
+) with (
+    'materialized' = 'true',
+    'connectors' = '[{
+        "transport": {
+            "name": "datagen",
+            "config": {
+                "plan": [{
+                    "rate": 200,
+                    "fields": {
+                        "warehouse_id": { "strategy": "uniform", "range": [0, 10]},
+                        "product_id": { "strategy": "uniform", "range": [0, 20]},
+                        "num_available": { "strategy": "zipf", "range": [0, 100]},
+                        "updated_at": { "strategy": "uniform", "range": [1722648000000, 4102444800000]}
+                    }
+                }]
+            }
+        }
+    }]'
 );
 
 -- How much of each product is stored
