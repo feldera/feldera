@@ -30,4 +30,4 @@ services:
     command:
       - bash
       - -c
-      - "sleep 20 && cd demo/project_demo13-DebeziumPostgres/ && python3 run.py --api-url http://pipeline-manager:8080 --kafka-url-from-script redpanda:9092  --start"
+      - "sleep 20 && cd demo/project_demo13-DebeziumPostgres/ && python3 run.py --api-url http://pipeline-manager:8080 --kafka-url-from-script redpanda:9092"
