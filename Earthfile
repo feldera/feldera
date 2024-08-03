@@ -141,8 +141,8 @@ build-webui:
     COPY web-console/vite.config.ts ./web-console/
 
     # RUN cd web-console && bun run check
-    RUN cd web-console-sveltekit && bun run build
-    SAVE ARTIFACT ./web-console-sveltekit/build
+    RUN cd web-console && bun run build
+    SAVE ARTIFACT ./web-console/build
 
 build-dbsp:
     FROM +rust-sources
@@ -173,8 +173,8 @@ build-manager:
     # For some reason if this ENV before the FROM line it gets invalidated
     ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
     COPY ( +build-webui/out ) ./web-console/out
-    ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console-sveltekit/build
-    COPY ( +build-webui/build ) ./web-console-sveltekit/build
+    ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console/build
+    COPY ( +build-webui/build ) ./web-console/build
     DO rust+CARGO --args="build --package pipeline-manager --features pg-embed" --output="debug/pipeline-manager"
 
     IF [ -f ./target/debug/pipeline-manager ]
