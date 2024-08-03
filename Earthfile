@@ -1,5 +1,5 @@
 VERSION --try 0.8
-IMPORT github.com/earthly/lib/rust:1a4a008e271c7a5583e7bd405da8fd3624c05610 AS rust
+IMPORT github.com/earthly/lib/rust:18cd0072824d86e77ed3ab3ad350f7ba34d33e84 AS rust
 FROM ubuntu:22.04
 
 RUN apt-get update && apt-get install --yes sudo
@@ -65,12 +65,12 @@ install-rust:
     RUN cargo --version
     RUN rustc --version
     # Switch back to this once https://github.com/earthly/earthly/issues/3718 is resolved:
-    # DO rust+INIT --keep_fingerprints=true
+    DO rust+INIT --keep_fingerprints=true
     # Do this until then:
-    ARG EARTHLY_TARGET_PROJECT_NO_TAG
-    ARG EARTHLY_GIT_BRANCH
-    ARG OS_RELEASE=$(md5sum /etc/os-release | cut -d ' ' -f 1)
-    DO rust+INIT --cache_prefix="${EARTHLY_TARGET_PROJECT_NO_TAG}#${EARTHLY_GIT_BRANCH}#${OS_RELEASE}#earthly-cargo-cache" --keep_fingerprints=true
+    # ARG EARTHLY_TARGET_PROJECT_NO_TAG
+    # ARG EARTHLY_GIT_BRANCH
+    # ARG OS_RELEASE=$(md5sum /etc/os-release | cut -d ' ' -f 1)
+    # DO rust+INIT --cache_prefix="${EARTHLY_TARGET_PROJECT_NO_TAG}#${EARTHLY_GIT_BRANCH}#${OS_RELEASE}#earthly-cargo-cache" --keep_fingerprints=true
 
 rust-sources:
     FROM +install-rust
