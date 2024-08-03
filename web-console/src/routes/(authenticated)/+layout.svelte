@@ -25,7 +25,7 @@
 
 <div class="flex h-full">
   <Drawer width="w-72" bind:open={showDrawer.value} side="left">
-    <div class="flex w-full flex-col gap-1">
+    <div class="flex h-full w-full flex-col gap-1">
       <a href="{base}/">
         {#if darkMode.value === 'dark'}
           <FelderaLogoWhite class="w-40 p-3"></FelderaLogoWhite>
@@ -59,7 +59,7 @@
             <div class="flex w-9 justify-center">
               <div class={item.class + ' text-[24px]'}></div>
             </div>
-            <span class="hidden md:inline">{item.title}</span>
+            <span class="hidden xl:block">{item.title}</span>
           </a>
         {/each}
         <!-- <HealthPopup></HealthPopup> -->
@@ -67,7 +67,7 @@
           onclick={toggleDarkMode}
           class={'btn-icon preset-tonal-surface text-[24px] ' +
             (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}></button> -->
-        <AuthButton></AuthButton>
+        <AuthButton compactBreakpoint="xl:"></AuthButton>
       </div>
     </div>
     {@render children()}
