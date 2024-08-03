@@ -12,7 +12,7 @@ CREATE TABLE warehouse (
                 "plan": [{
                     "limit": 10,
                     "fields": {
-                        "name": { "values": ["Warhouse no. 1", "Warehouse no. 2", "Warehouse no. 3", "Warehouse no. 4", "Warehouse no. 5", "Warehouse no. 6", "Warehouse no. 7", "Warehouse no. 8", "Warehouse no. 9", "Warehouse no. 10"] },
+                        "name": { "values": ["Warehouse no. 1", "Warehouse no. 2", "Warehouse no. 3", "Warehouse no. 4", "Warehouse no. 5", "Warehouse no. 6", "Warehouse no. 7", "Warehouse no. 8", "Warehouse no. 9", "Warehouse no. 10"] },
                         "address": { "strategy": "street_name" }
                     }
                 }]
