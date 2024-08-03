@@ -156,8 +156,8 @@ we added a `PRIMARY KEY` constraint to the table, making sure
 that new updates overwrite existing entries in `PRICE` for the same part and vendor ids.
 :::
 
-Let's start the pipeline and inspect its output in the WebConsole. You should see changes in `PREFERRED_VENDOR` view
-approximately every second.
+Let's start the pipeline and inspect its output in the `Change Stream` tab in the WebConsole. You should see
+changes in `PREFERRED_VENDOR` view approximately every second.
 
 To summarize Part 4 of the tutorial, we can attach a random generator to Feldera tables to simulate different scenarios
 such as backfill, continuous evaluation or a combination of the two.

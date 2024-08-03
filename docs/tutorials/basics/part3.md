@@ -67,8 +67,19 @@ create table PRICE (
 }]');
 ```
 
-Start the pipeline.  The input connectors ingest data from S3 and push it to the pipeline.
-You should see the outputs appear in the Output tab.
+Select the `PREFERRED_VENDOR` view in the `Change Stream` tab and start the pipeline.
+The input connectors ingest data from S3 and push it to the pipeline.
+You should see the outputs appear in the `Change Stream` tab.
+
+:::note
+You must select the table or view you want to monitor in the `Change Stream` tab _before_ starting the pipeline
+in order to observe all updates to the view from the start of the execution.
+:::
+
+:::note
+Feldera will soon support browsing and querying the entire contents of a table or view.
+:::
+
 
 ## Step 2. Configure Kafka/Redpanda connectors
 
