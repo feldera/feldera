@@ -32,7 +32,7 @@ You should now be able to access the Web Console at http://localhost:8080/, conn
 You can also open Web Console in dev mode to be able to see your changes to it live:
 
 ```bash
-cd web-console-sveltekit && bun install && bun run dev
+cd web-console && bun install && bun run dev
 ```
 
 The Web Console in dev mode is available at http://localhost:3000/

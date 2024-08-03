@@ -26,7 +26,7 @@ sudo bun install --global @hey-api/openapi-ts
 
 # Clone the repo for the UI
 git clone https://github.com/feldera/feldera.git
-cd dbsp/web-console-sveltekit
+cd dbsp/web-console
 ```
 
 ## Development
