@@ -62,6 +62,9 @@ Usage: sql-to-dbsp [options] Input file to compile
     --outputsAreSets
       Ensure that outputs never contain duplicates
       Default: false
+    --streaming
+      Compiling a streaming program, where only inserts are allowed
+      Default: false
     --udf
       Specify a Rust file containing implementations of user-defined functions
       Default: <empty string>

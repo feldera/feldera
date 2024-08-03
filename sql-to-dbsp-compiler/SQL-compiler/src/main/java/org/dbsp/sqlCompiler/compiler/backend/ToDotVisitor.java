@@ -276,6 +276,8 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     public static void toDot(String fileName, int details,
                       @Nullable String outputFormat, DBSPCircuit circuit, VisitorConstructor constructor) {
+        if (circuit.isEmpty())
+            return;
         System.out.println("Writing circuit to " + fileName);
         Logger.INSTANCE.belowLevel("ToDotVisitor", 1)
                 .append("Writing circuit to ")

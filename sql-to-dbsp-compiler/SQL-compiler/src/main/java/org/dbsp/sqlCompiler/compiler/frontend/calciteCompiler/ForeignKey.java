@@ -23,13 +23,12 @@ public class ForeignKey {
     /** Represents a table and a list of columns. */
     public static class TableAndColumns {
         // Position of the whole list of columns in source code
-        public final SourcePositionRange listpos;
-        // Kept as SqlIdentifier to preserve source position for validation
+        public final SourcePositionRange listPos;
         public final SqlFragment tableName;
         public final List<SqlFragment> columns;
 
         TableAndColumns(SourcePositionRange listPos, SqlFragment tableName, List<SqlFragment> columns) {
-            this.listpos = listPos;
+            this.listPos = listPos;
             this.tableName = tableName;
             this.columns = columns;
         }

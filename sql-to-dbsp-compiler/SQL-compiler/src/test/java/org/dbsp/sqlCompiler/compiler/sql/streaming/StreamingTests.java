@@ -6,10 +6,15 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.KeyPropagation;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -30,17 +35,19 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void issue2004() {
         // Based on Q9
+        Logger.INSTANCE.setLoggingLevel(KeyPropagation.class, 1);
+        Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
         String sql = """
                 CREATE TABLE auction (
                    date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
                    expires   TIMESTAMP NOT NULL,
-                   id        INT
+                   id        INT NOT NULL PRIMARY KEY
                 );
                 
                 CREATE TABLE bid (
                    date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
                    price INT,
-                   auction INT
+                   auction INT FOREIGN KEY REFERENCES auction(id)
                 );
                 
                 CREATE VIEW Q9 AS

@@ -760,7 +760,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 HasSchema withSchema = new HasSchema(CalciteObject.EMPTY, tableName, false, tableRowType);
                 this.metadata.addTable(withSchema);
                 TableMetadata tableMeta = new TableMetadata(
-                        Linq.map(withSchema.getColumns(), this::convertMetadata), Linq.list(), false);
+                        tableName,
+                        Linq.map(withSchema.getColumns(), this::convertMetadata), Linq.list(),
+                        false, false);
                 source = new DBSPSourceMultisetOperator(
                         node, CalciteObject.EMPTY,
                         this.makeZSet(rowType), originalRowType,
@@ -2297,7 +2299,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
         boolean materialized = create.isMaterialized();
-        TableMetadata tableMeta = new TableMetadata(metadata, create.foreignKeys, materialized);
+        boolean appendOnly = create.isAppendOnly() ||
+                options.languageOptions.streaming;
+
+        TableMetadata tableMeta = new TableMetadata(tableName, metadata, create.foreignKeys, materialized, appendOnly);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
                 tableMeta, tableName, def.statement);

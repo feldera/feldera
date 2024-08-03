@@ -270,7 +270,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             String thisTableName = self.tableName.getString();
 
             if (self.columns.size() != other.columns.size()) {
-                this.reportError(self.listpos, "Size mismatch",
+                this.reportError(self.listPos, "Size mismatch",
                         "FOREIGN KEY section of table " +
                                 Utilities.singleQuote(thisTableName) +
                                 " contains " + self.columns.size() + " columns," +
@@ -296,7 +296,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
             List<InputColumnMetadata> otherKeys = otherTable.metadata.getPrimaryKeys();
             if (otherKeys.size() != self.columns.size()) {
-                this.reportError(self.listpos,
+                this.reportError(self.listPos,
                         "PRIMARY KEY does not match",
                         "The PRIMARY KEY of table " + Utilities.singleQuote(otherTableName) +
                                 " does not match the FOREIGN KEY of " + Utilities.singleQuote(thisTableName));

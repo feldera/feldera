@@ -48,8 +48,17 @@ public class CreateTableStatement extends CreateRelationStatement {
         this.foreignKeys = foreignKeys;
     }
 
+
+
     public boolean isMaterialized() {
         String mat = this.getPropertyValue("materialized");
+        if (mat == null)
+            return false;
+        return mat.equalsIgnoreCase("true");
+    }
+
+    public boolean isAppendOnly() {
+        String mat = this.getPropertyValue("appendOnly");
         if (mat == null)
             return false;
         return mat.equalsIgnoreCase("true");

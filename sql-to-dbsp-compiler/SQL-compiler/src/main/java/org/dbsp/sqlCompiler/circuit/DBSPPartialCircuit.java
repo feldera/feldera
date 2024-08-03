@@ -168,4 +168,8 @@ public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode
     public IIndentStream toString(IIndentStream builder) {
         return builder.intercalateI(System.lineSeparator(), this.allOperators);
     }
+
+    public boolean isEmpty() {
+        return this.allOperators.isEmpty();
+    }
 }

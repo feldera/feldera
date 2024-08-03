@@ -59,6 +59,9 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         @Parameter(names = "--outputsAreSets",
                 description = "Ensure that outputs never contain duplicates")
         public boolean outputsAreSets = false;
+        @Parameter(names = "--streaming",
+                description = "Compiling a streaming program, where only inserts are allowed")
+        public boolean streaming = false;
         @Parameter(names = "-d", description = "SQL syntax dialect used",
                 converter = SqlLexicalRulesConverter.class)
         public Lex lexicalRules = Lex.ORACLE;

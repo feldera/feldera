@@ -57,6 +57,12 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
                     stream -> new MonotoneDot(reporter, stream, details, monotonicity.info));
         }
 
+        AppendOnly appendOnly = new AppendOnly(this.reporter);
+        expanded = appendOnly.apply(expanded);
+
+        KeyPropagation keyPropagation = new KeyPropagation(this.reporter);
+        expanded = keyPropagation.apply(expanded);
+
         InsertLimiters limiters = new InsertLimiters(
                 this.reporter, expanded, monotonicity.info, expander.expansion);
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
