@@ -180,15 +180,18 @@ impl InputGenerator {
         generated: Arc<AtomicUsize>,
     ) {
         let mut buffer = Vec::new();
-        // Inserting in batches improves performance by around ~80k records/s for
-        // me, so we always do it rather than giving the user the option.
-        static BATCH_SIZE: usize = 10_000;
-        static PER_THREAD_CHUNK: usize = 10 * BATCH_SIZE;
         static START_ARR: &[u8; 1] = b"[";
         static END_ARR: &[u8; 1] = b"]";
         static REC_DELIM: &[u8; 1] = b",";
 
         for (plan, (progress, rate_limiter)) in config.plan.into_iter().zip(shared_state.iter()) {
+            // Inserting in batches improves performance by around ~80k records/s for
+            // me, so we always do it rather than giving the user the option.
+            // If we have a low rate, it's necessary to adjust the batch-size down otherwise no inserts might be visible
+            // for a long time (until a batch is full).
+            let batch_size: usize = min(plan.rate.unwrap_or(u32::MAX) as usize, 10_000);
+            let per_thread_chunk: usize = 10 * batch_size;
+
             let limit = plan.limit.unwrap_or(usize::MAX);
             let schema = schema.clone();
             let mut generator = RecordGenerator::new(worker_idx, config.seed, plan, schema);
@@ -197,15 +200,15 @@ impl InputGenerator {
             loop {
                 // Where to start generating records for this iteration, this needs to be synchronized among thread
                 // so each thread generates a unique set of records.
-                let start = progress.fetch_add(PER_THREAD_CHUNK, Ordering::Relaxed);
+                let start = progress.fetch_add(per_thread_chunk, Ordering::Relaxed);
                 if start >= limit {
                     break;
                 }
                 debug_assert!(start < limit);
 
                 // The current record range this thread is working on within 0..limit
-                let generate_range = start..min(start + PER_THREAD_CHUNK, limit);
-                // The current record within 0..BATCH_SIZE
+                let generate_range = start..min(start + per_thread_chunk, limit);
+                // The current record within 0..batch_size
                 let mut batch_idx = 0;
 
                 for idx in generate_range.clone() {
@@ -228,7 +231,7 @@ impl InputGenerator {
                             to_writer(&mut buffer, &record).unwrap();
                             batch_idx += 1;
 
-                            if batch_idx % BATCH_SIZE == 0 {
+                            if batch_idx % batch_size == 0 {
                                 buffer.extend(END_ARR);
                                 consumer.input_chunk(&buffer);
                                 buffer.clear();
