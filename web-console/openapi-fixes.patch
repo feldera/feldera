@@ -2,7 +2,8 @@ diff --git a/web-console/src/lib/services/manager/models/ColumnType.ts b/web-con
 index 8484d2bea..953d53760 100644
 --- a/web-console/src/lib/services/manager/models/ColumnType.ts
 +++ b/web-console/src/lib/services/manager/models/ColumnType.ts
-@@ -59,4 +59,4 @@    * - `DECIMAL(1,2)` sets scale to `2`.
+@@ -57,5 +57,5 @@ export type ColumnType = {
+    * - `DECIMAL(1,2)` sets scale to `2`.
     */
    scale?: number | null
 -  type?: SqlType

@@ -9,39 +9,47 @@ import {
 } from '$lib/services/manager'
 import { match } from 'ts-pattern'
 
-const relatedEntities = async ({ prefix, steps }: Pick<DemoSetup, 'prefix' | 'steps'>) => {
+const relatedEntities = async ({ prefix, steps }: DemoSetup) => {
   const partOfTheDemo = (target: Pipeline | ProgramDescr | ConnectorDescr) =>
-    (name => !!steps.find(step => step.entities.find(entity => prefix + entity.name === name)))(
+    ((name) =>
+      !!steps.find((step) => step.entities.find((entity) => prefix + entity.name === name)))(
       'name' in target ? target.name : target.descriptor.name
     )
   const [pipelines, programs, connectors] = await Promise.all([
-    PipelinesService.listPipelines().then(es =>
-      es.filter(e => e.descriptor.name.startsWith(prefix)).filter(partOfTheDemo)
+    PipelinesService.listPipelines().then((es) =>
+      es.filter((e) => e.descriptor.name.startsWith(prefix)).filter(partOfTheDemo)
     ),
-    ProgramsService.getPrograms().then(es => es.filter(e => e.name.startsWith(prefix)).filter(partOfTheDemo)),
-    ConnectorsService.listConnectors().then(es => es.filter(e => e.name.startsWith(prefix)).filter(partOfTheDemo))
+    ProgramsService.getPrograms().then((es) =>
+      es.filter((e) => e.name.startsWith(prefix)).filter(partOfTheDemo)
+    ),
+    ConnectorsService.listConnectors().then((es) =>
+      es.filter((e) => e.name.startsWith(prefix)).filter(partOfTheDemo)
+    )
   ])
   return {
     related: { pipelines, programs, connectors }
   }
 }
 
-const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-export const runDemoSetup = async ({ prefix, steps }: Pick<DemoSetup, 'prefix' | 'steps'>) => {
+export const runDemoSetup = async ({ prefix, steps }: DemoSetup) => {
   const { related } = await relatedEntities({ prefix, steps })
   return {
-    entities: steps.flatMap(step =>
-      step.entities.map(e =>
+    entities: steps.flatMap((step) =>
+      step.entities.map((e) =>
         match(e)
-          .with({ type: 'program' }, e => ({ ...e, exists: !!related.programs.find(r => r.name === prefix + e.name) }))
-          .with({ type: 'connector' }, e => ({
+          .with({ type: 'program' }, (e) => ({
             ...e,
-            exists: !!related.connectors.find(r => r.name === prefix + e.name)
+            exists: !!related.programs.find((r) => r.name === prefix + e.name)
           }))
-          .with({ type: 'pipeline' }, e => ({
+          .with({ type: 'connector' }, (e) => ({
             ...e,
-            exists: !!related.pipelines.find(r => r.descriptor.name === prefix + e.name)
+            exists: !!related.connectors.find((r) => r.name === prefix + e.name)
+          }))
+          .with({ type: 'pipeline' }, (e) => ({
+            ...e,
+            exists: !!related.pipelines.find((r) => r.descriptor.name === prefix + e.name)
           }))
           .exhaustive()
       )
@@ -61,21 +69,25 @@ export const runDemoSetup = async ({ prefix, steps }: Pick<DemoSetup, 'prefix' |
             stage: entity.type
           }
           await match(entity)
-            .with({ type: 'program' }, async e => {
+            .with({ type: 'program' }, async (e) => {
               await sleep(500)
               ProgramsService.createOrReplaceProgram(prefix + e.name, e.body).then(() => sleep(0))
             })
-            .with({ type: 'connector' }, async e => {
+            .with({ type: 'connector' }, async (e) => {
               await sleep(150)
-              return ConnectorsService.createOrReplaceConnector(prefix + e.name, e.body).then(() => sleep(0))
+              return ConnectorsService.createOrReplaceConnector(prefix + e.name, e.body).then(() =>
+                sleep(0)
+              )
             })
-            .with({ type: 'pipeline' }, async e => {
+            .with({ type: 'pipeline' }, async (e) => {
               await sleep(500)
               return PipelinesService.createOrReplacePipeline(prefix + e.name, {
                 ...e.body,
-                program_name: e.body.program_name ? prefix + e.body.program_name : e.body.program_name,
+                program_name: e.body.program_name
+                  ? prefix + e.body.program_name
+                  : e.body.program_name,
                 connectors: e.body.connectors
-                  ? e.body.connectors.map(connector => ({
+                  ? e.body.connectors.map((connector) => ({
                       ...connector,
                       connector_name: prefix + connector.connector_name
                     }))
@@ -91,7 +103,9 @@ export const runDemoSetup = async ({ prefix, steps }: Pick<DemoSetup, 'prefix' |
 
 type YieldType<T> = T extends AsyncGenerator<infer Yield, void, unknown> ? Yield : never
 
-export type DemoSetupProgress = YieldType<ReturnType<Awaited<ReturnType<typeof runDemoSetup>>['setup']>> | 'done'
+export type DemoSetupProgress =
+  | YieldType<ReturnType<Awaited<ReturnType<typeof runDemoSetup>>['setup']>>
+  | 'done'
 
 const cleanupDescription = {
   program: 'Cleaning up programs',
@@ -99,7 +113,7 @@ const cleanupDescription = {
   connectors: 'Cleaning up connectors'
 }
 
-export const runDemoCleanup = async ({ prefix, steps }: Pick<DemoSetup, 'prefix' | 'steps'>) => {
+export const runDemoCleanup = async ({ prefix, steps }: DemoSetup) => {
   const { related } = await relatedEntities({ prefix, steps })
   return {
     related,

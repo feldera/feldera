@@ -1,4 +1,9 @@
-export type DeltaLakeStorageType = 'aws_s3' | 'google_cloud_storage' | 'azure_blob' | 'generic_http' | 'file_system'
+export type DeltaLakeStorageType =
+  | 'aws_s3'
+  | 'google_cloud_storage'
+  | 'azure_blob'
+  | 'generic_http'
+  | 'file_system'
 
 /**
  *
@@ -7,7 +12,11 @@ export type DeltaLakeStorageType = 'aws_s3' | 'google_cloud_storage' | 'azure_bl
 export const inferDeltaLakeStorageConfig = (uri: string) => {
   const patterns: [
     RegExp,
-    (uri: string[]) => { type: DeltaLakeStorageType; config: Record<string, string | number | boolean> } | undefined
+    (
+      uri: string[]
+    ) =>
+      | { type: DeltaLakeStorageType; config: Record<string, string | number | boolean> }
+      | undefined
   ][] = [
     [
       /s3:\/\/([\w_-]+)\/([\w/_-]+)?/,
@@ -27,7 +36,10 @@ export const inferDeltaLakeStorageConfig = (uri: string) => {
     ],
     [
       /https:\/\/([\w_-]+).r2.cloudflarestorage.com\/([\w_-]+)/,
-      ([_, aws_access_key_id, aws_bucket]) => ({ type: 'aws_s3', config: { aws_access_key_id, aws_bucket } })
+      ([_, aws_access_key_id, aws_bucket]) => ({
+        type: 'aws_s3',
+        config: { aws_access_key_id, aws_bucket }
+      })
     ],
     [
       /gs:\/\/([\w_-]+)\/([\w/_-]+)?/,

@@ -30,58 +30,102 @@ test('Test DeltaLake config inference', async ({}) => {
     ],
     [
       'gs://bucket-0_1/pathA/pathB',
-      { type: 'google_cloud_storage', config: { google_bucket: 'bucket-0_1', google_endpoint: 'pathA/pathB' } }
+      {
+        type: 'google_cloud_storage',
+        config: { google_bucket: 'bucket-0_1', google_endpoint: 'pathA/pathB' }
+      }
     ],
     ['gs://bucket-0_1/', { type: 'google_cloud_storage', config: { google_bucket: 'bucket-0_1' } }],
     [
       'abfss://container_0-x/pathA/pathB',
-      { type: 'azure_blob', config: { azure_container_name: 'container_0-x', azure_endpoint: 'pathA/pathB' } }
+      {
+        type: 'azure_blob',
+        config: { azure_container_name: 'container_0-x', azure_endpoint: 'pathA/pathB' }
+      }
     ],
-    ['abfss://container_0-x/', { type: 'azure_blob', config: { azure_container_name: 'container_0-x' } }],
+    [
+      'abfss://container_0-x/',
+      { type: 'azure_blob', config: { azure_container_name: 'container_0-x' } }
+    ],
     [
       'abfs://nt-fs_64@user_12-3.dfs.core.windows.net/pathA/pathB',
       {
         type: 'azure_blob',
-        config: { azure_container_name: 'nt-fs_64', azure_account_name: 'user_12-3', azure_endpoint: 'pathA/pathB' }
+        config: {
+          azure_container_name: 'nt-fs_64',
+          azure_account_name: 'user_12-3',
+          azure_endpoint: 'pathA/pathB'
+        }
       }
     ],
     [
       'abfs://nt-fs_64@user_12-3.dfs.core.windows.net/',
-      { type: 'azure_blob', config: { azure_container_name: 'nt-fs_64', azure_account_name: 'user_12-3' } }
+      {
+        type: 'azure_blob',
+        config: { azure_container_name: 'nt-fs_64', azure_account_name: 'user_12-3' }
+      }
     ],
     [
       'abfss://nt-fs_64@user_12-3.dfs.fabric.microsoft.com/pathA/pathB',
       {
         type: 'azure_blob',
-        config: { azure_container_name: 'nt-fs_64', azure_account_name: 'user_12-3', azure_endpoint: 'pathA/pathB' }
+        config: {
+          azure_container_name: 'nt-fs_64',
+          azure_account_name: 'user_12-3',
+          azure_endpoint: 'pathA/pathB'
+        }
       }
     ],
     [
       'abfss://nt-fs_64@user_12-3.dfs.fabric.microsoft.com/',
-      { type: 'azure_blob', config: { azure_container_name: 'nt-fs_64', azure_account_name: 'user_12-3' } }
+      {
+        type: 'azure_blob',
+        config: { azure_container_name: 'nt-fs_64', azure_account_name: 'user_12-3' }
+      }
     ],
     [
       'az://container_0-x/pathA/pathB',
-      { type: 'azure_blob', config: { azure_container_name: 'container_0-x', azure_endpoint: 'pathA/pathB' } }
+      {
+        type: 'azure_blob',
+        config: { azure_container_name: 'container_0-x', azure_endpoint: 'pathA/pathB' }
+      }
     ],
-    ['az://container_0-x/', { type: 'azure_blob', config: { azure_container_name: 'container_0-x' } }],
+    [
+      'az://container_0-x/',
+      { type: 'azure_blob', config: { azure_container_name: 'container_0-x' } }
+    ],
     [
       'adl://container_0-x/pathA/pathB',
-      { type: 'azure_blob', config: { azure_container_name: 'container_0-x', azure_endpoint: 'pathA/pathB' } }
+      {
+        type: 'azure_blob',
+        config: { azure_container_name: 'container_0-x', azure_endpoint: 'pathA/pathB' }
+      }
     ],
-    ['adl://container_0-x/', { type: 'azure_blob', config: { azure_container_name: 'container_0-x' } }],
+    [
+      'adl://container_0-x/',
+      { type: 'azure_blob', config: { azure_container_name: 'container_0-x' } }
+    ],
     [
       'azure://container_0-x/pathA/pathB',
-      { type: 'azure_blob', config: { azure_container_name: 'container_0-x', azure_endpoint: 'pathA/pathB' } }
+      {
+        type: 'azure_blob',
+        config: { azure_container_name: 'container_0-x', azure_endpoint: 'pathA/pathB' }
+      }
     ],
-    ['azure://container_0-x/', { type: 'azure_blob', config: { azure_container_name: 'container_0-x' } }],
+    [
+      'azure://container_0-x/',
+      { type: 'azure_blob', config: { azure_container_name: 'container_0-x' } }
+    ],
     [
       'https://zb-account_net.dfs.core.windows.net',
       { type: 'azure_blob', config: { azure_account_name: 'zb-account_net' } }
     ],
     [
       'https://zb-account_net.blob.core.windows.net/container_0-x',
-      { type: 'azure_blob', config: { azure_account_name: 'zb-account_net', azure_container_name: 'container_0-x' } }
+      {
+        type: 'azure_blob',
+        config: { azure_account_name: 'zb-account_net', azure_container_name: 'container_0-x' }
+      }
     ],
     [
       'https://zb-account_net.blob.core.windows.net',
@@ -89,7 +133,10 @@ test('Test DeltaLake config inference', async ({}) => {
     ],
     [
       'https://zb-account_net.dfs.fabric.microsoft.com/container_0-x',
-      { type: 'azure_blob', config: { azure_account_name: 'zb-account_net', azure_container_name: 'container_0-x' } }
+      {
+        type: 'azure_blob',
+        config: { azure_account_name: 'zb-account_net', azure_container_name: 'container_0-x' }
+      }
     ],
     [
       'https://zb-account_net.dfs.fabric.microsoft.com',
@@ -97,7 +144,10 @@ test('Test DeltaLake config inference', async ({}) => {
     ],
     [
       'https://zb-account_net.blob.fabric.microsoft.com/container_0-x',
-      { type: 'azure_blob', config: { azure_account_name: 'zb-account_net', azure_container_name: 'container_0-x' } }
+      {
+        type: 'azure_blob',
+        config: { azure_account_name: 'zb-account_net', azure_container_name: 'container_0-x' }
+      }
     ],
     [
       'https://zb-account_net.blob.fabric.microsoft.com',

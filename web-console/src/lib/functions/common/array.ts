@@ -13,11 +13,17 @@ export const partition = <T>(arr: T[], predicate: (v: T, i: number, ar: T[]) => 
     [[], []] as [T[], T[]]
   )
 
-export function inUnion<T extends readonly string[]>(union: T, val: string | unknown): val is T[number] {
+export function inUnion<T extends readonly string[]>(
+  union: T,
+  val: string | unknown
+): val is T[number] {
   return typeof val === 'string' && union.includes(val)
 }
 
-export function invariantUnion<T extends readonly string[]>(union: T, val: string): asserts val is T[number] {
+export function invariantUnion<T extends readonly string[]>(
+  union: T,
+  val: string
+): asserts val is T[number] {
   if (!union.includes(val)) {
     throw new Error(val + ' is not part of the union ' + union.toString())
   }
@@ -38,7 +44,13 @@ export function assertUnion<T extends readonly string[]>(union: T, val: string):
  * @returns
  */
 export function reorderElement<T>(array: T[], fromIndex: number, toIndex: number) {
-  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= array.length || toIndex >= array.length) {
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= array.length ||
+    toIndex >= array.length
+  ) {
     // No need to move if the indices are the same or out of bounds.
     return array
   }
@@ -96,7 +108,9 @@ export function replaceElement<T>(array: T[], replacement: (t: T) => T | null) {
  */
 export const intersperse = <T>(arr: T[], separator: T | ((i: number) => T)) => {
   const getSeparator = separator instanceof Function ? separator : () => separator
-  return Array.from({ length: Math.max(0, arr.length * 2 - 1) }, (_, i) => (i % 2 ? getSeparator(i) : arr[i >> 1]))
+  return Array.from({ length: Math.max(0, arr.length * 2 - 1) }, (_, i) =>
+    i % 2 ? getSeparator(i) : arr[i >> 1]
+  )
 }
 
 const compare = <T extends string | number>(a: T, b: T) =>
@@ -115,13 +129,16 @@ export const groupBy = <T, K extends string | number>(list: T[], getKey: (item: 
   if (!list.length) {
     return []
   }
-  const items = list.map(item => [getKey(item), item] as [K, T])
+  const items = list.map((item) => [getKey(item), item] as [K, T])
   items.sort((a, b) => compare(a[0], b[0]))
   let lastKeyIndex = 0
   const groups = [] as [K, T[]][]
   while (lastKeyIndex < list.length) {
-    const lastIndex = items.findLastIndex(item => item[0] === items[lastKeyIndex][0]) + 1
-    groups.push([items[lastKeyIndex][0], items.slice(lastKeyIndex, lastIndex).map(item => item[1])])
+    const lastIndex = items.findLastIndex((item) => item[0] === items[lastKeyIndex][0]) + 1
+    groups.push([
+      items[lastKeyIndex][0],
+      items.slice(lastKeyIndex, lastIndex).map((item) => item[1])
+    ])
     lastKeyIndex = lastIndex
   }
   return groups
@@ -131,7 +148,8 @@ export const groupBy = <T, K extends string | number>(list: T[], getKey: (item: 
  * Return array containing only unique element from the original array in the same order
  * Keep the first occurrence of the element in the array
  */
-export const nubLast = <T>(array: T[]) => array.filter((value, index, arr) => arr.indexOf(value) === index)
+export const nubLast = <T>(array: T[]) =>
+  array.filter((value, index, arr) => arr.indexOf(value) === index)
 
 /**
  * Return array containing only unique element from the original array in the same order
@@ -142,3 +160,20 @@ export const nubFirst = <T>(array: T[]) =>
     .reverse()
     .filter((value, index, arr) => arr.indexOf(value) === index)
     .reverse()
+
+/**
+ * Performs no checks on uniqueness of inputs
+ */
+export const intersect2 = <A, B, C, Key extends number | string>(
+  as: A[],
+  bs: B[],
+  getKeyA: (a: A) => Key,
+  getKeyB: (b: B) => Key,
+  zip: (a: A, b: B) => C
+) => {
+  return as.flatMap((a) => {
+    const keyA = getKeyA(a)
+    const match = bs.findIndex((b) => keyA === getKeyB(b))
+    return match === -1 ? [] : [zip(a, bs[match])]
+  })
+}

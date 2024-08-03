@@ -6,7 +6,11 @@ import { SnowflakeOutputSchema } from '$lib/components/connectors/dialogs/Snowfl
 import { assertUnion } from '$lib/functions/common/array'
 import { nonNull } from '$lib/functions/common/function'
 import { parseAuthParams } from '$lib/functions/kafka/authParamsSchema'
-import { fromKafkaConfig, LibrdkafkaOptionType, toKafkaConfig } from '$lib/functions/kafka/librdkafkaOptions'
+import {
+  fromKafkaConfig,
+  LibrdkafkaOptionType,
+  toKafkaConfig
+} from '$lib/functions/kafka/librdkafkaOptions'
 import { ConnectorDescr, OutputBufferConfig, TransportConfig } from '$lib/services/manager'
 import { ConnectorType, Direction } from '$lib/types/connectors'
 import { SVGImport } from '$lib/types/imports'
@@ -31,18 +35,30 @@ import { match } from 'ts-pattern'
 export const connectorDescrToType = (config: ConnectorDescr['config']): ConnectorType => {
   return match(config)
     .with(
-      { transport: { name: TransportConfig.name.KAFKA_INPUT }, format: { config: { update_format: 'debezium' } } },
+      {
+        transport: { name: TransportConfig.name.KAFKA_INPUT },
+        format: { config: { update_format: 'debezium' } }
+      },
       () => ConnectorType.DEBEZIUM_IN
     )
     .with(
-      { transport: { name: TransportConfig.name.KAFKA_OUTPUT }, format: { config: { update_format: 'snowflake' } } },
+      {
+        transport: { name: TransportConfig.name.KAFKA_OUTPUT },
+        format: { config: { update_format: 'snowflake' } }
+      },
       () => ConnectorType.SNOWFLAKE_OUT
     )
     .with({ transport: { name: TransportConfig.name.KAFKA_INPUT } }, () => ConnectorType.KAFKA_IN)
     .with({ transport: { name: TransportConfig.name.KAFKA_OUTPUT } }, () => ConnectorType.KAFKA_OUT)
     .with({ transport: { name: TransportConfig.name.URL_INPUT } }, () => ConnectorType.URL_IN)
-    .with({ transport: { name: TransportConfig.name.DELTA_TABLE_INPUT } }, () => ConnectorType.DELTALAKE_IN)
-    .with({ transport: { name: TransportConfig.name.DELTA_TABLE_OUTPUT } }, () => ConnectorType.DELTALAKE_OUT)
+    .with(
+      { transport: { name: TransportConfig.name.DELTA_TABLE_INPUT } },
+      () => ConnectorType.DELTALAKE_IN
+    )
+    .with(
+      { transport: { name: TransportConfig.name.DELTA_TABLE_OUTPUT } },
+      () => ConnectorType.DELTALAKE_OUT
+    )
     .with({ transport: { name: TransportConfig.name.S3_INPUT } }, () => ConnectorType.S3_IN)
     .with({ transport: { name: TransportConfig.name.FILE_INPUT } }, () => ConnectorType.UNKNOWN)
     .with({ transport: { name: TransportConfig.name.FILE_OUTPUT } }, () => ConnectorType.UNKNOWN)
@@ -56,10 +72,10 @@ export const parseConnectorDescrWith =
       name: connector.name,
       description: connector.description,
       enable_output_buffer: connector.config.enable_output_buffer,
-      max_output_buffer_time_millis: (n => (nonNull(n) ? BigNumber(n) : n))(
+      max_output_buffer_time_millis: ((n) => (nonNull(n) ? BigNumber(n) : n))(
         connector.config.max_output_buffer_time_millis
       ),
-      max_output_buffer_size_records: (n => (nonNull(n) ? BigNumber(n) : n))(
+      max_output_buffer_size_records: ((n) => (nonNull(n) ? BigNumber(n) : n))(
         connector.config.max_output_buffer_size_records
       ),
       ...parseConfig(connector.config)
@@ -262,7 +278,7 @@ export const parseDeltaLakeInputSchemaConfig = (config: ConnectorDescr['config']
   invariant(config.transport.name === TransportConfig.name.DELTA_TABLE_INPUT)
   return {
     transport: {
-      ...(config => ({
+      ...((config) => ({
         ...config,
         datetime: config.datetime ?? undefined,
         snapshot_filter: config.snapshot_filter ?? undefined,
