@@ -1270,7 +1270,6 @@ mod test {
     use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
     use pipeline_types::transport::datagen::GenerationPlan;
     use std::collections::BTreeMap;
-    use std::thread;
     use std::time::Duration;
     use std::{env, thread};
 
