@@ -17,7 +17,8 @@ import {
   type ExtendedPipelineDescr,
   listApiKeys,
   createApiKey,
-  deleteApiKey as _deleteApiKey
+  deleteApiKey as _deleteApiKey,
+  httpOutput
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -29,8 +30,12 @@ export type {
 } from '$lib/services/manager'
 import { P, match } from 'ts-pattern'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
+export type { ProgramSchema } from '$lib/services/manager'
 
-import { createClient } from '@hey-api/client-fetch'
+import * as AxaOidc from '@axa-fr/oidc-client'
+const { OidcClient } = AxaOidc
+
+import { client, createClient } from '@hey-api/client-fetch'
 import JSONbig from 'true-json-bigint'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 
@@ -245,3 +250,33 @@ export const postApiKey = (name: string) => handled(createApiKey)({ body: { name
 
 export const deleteApiKey = (name: string) =>
   handled(_deleteApiKey)({ path: { api_key_name: name } })
+
+export const relationEggressStream = async (
+  pipelineName: string,
+  relationName: string,
+  abortSignal?: AbortSignal,
+  accessToken?: string
+) => {
+  console.log('relationEggressStream in')
+  // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'mode': 'watch', 'array': false, 'query': 'table'}})
+  const cfg = client.getConfig()
+  const oidcClient = OidcClient.get()
+  const oidcFetch = oidcClient.fetchWithTokens(fetch)
+  const result = await oidcFetch(
+    `http://localhost:8080/v0/pipelines/${pipelineName}/egress/${relationName}?format=json&mode=watch&array=false&query=table`,
+    {
+      method: 'POST',
+      headers: accessToken
+        ? {
+            Authorization: `Bearer ${accessToken}`
+          }
+        : undefined,
+      signal: abortSignal
+    }
+  )
+  console.log('relationEggressStream')
+  // if (result.error) {
+  //   throw result.error
+  // }
+  return result.body
+}

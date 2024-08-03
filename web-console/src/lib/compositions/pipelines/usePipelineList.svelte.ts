@@ -18,7 +18,8 @@ export const usePipelineList = (preloaded?: { pipelines: typeof pipelines }) => 
   })
   return {
     get pipelines() {
-      return pipelines
+      const x = [...pipelines]
+      return x
     },
     set pipelines(ps: typeof pipelines) {
       pipelines = ps
