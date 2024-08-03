@@ -32,8 +32,6 @@ install-deps:
     RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
     RUN sudo apt-get update
     RUN sudo apt-get install nodejs -y
-    RUN npm install --global yarn
-    RUN npm install --global openapi-typescript-codegen
     RUN apt install unzip -y
     ## Install Bun.js
     RUN curl -fsSL https://bun.sh/install | bash
@@ -92,10 +90,8 @@ machete:
 
 clippy:
     FROM +rust-sources
-    ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
-    COPY ( +build-webui/out ) ./web-console/out
-    ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console-sveltekit/build
-    COPY ( +build-webui/build ) ./web-console-sveltekit/build
+    ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console/build
+    COPY ( +build-webui/build ) ./web-console/build
     DO rust+CARGO --args="clippy -- -D warnings"
     ENV RUSTDOCFLAGS="-D warnings"
     DO rust+CARGO --args="doc --no-deps"
@@ -125,45 +121,26 @@ install-python:
 
 build-webui-deps:
     FROM +install-deps
-    COPY web-console/package.json ./web-console/package.json
-    COPY web-console/yarn.lock ./web-console/yarn.lock
-    RUN cd web-console && yarn install
 
-    COPY web-console-sveltekit/package.json ./web-console-sveltekit/
-    COPY web-console-sveltekit/bun.lockb ./web-console-sveltekit/
-    RUN cd web-console-sveltekit && bun install
+    COPY web-console/package.json ./web-console/
+    COPY web-console/bun.lockb ./web-console/
+    RUN cd web-console && bun install
 
 build-webui:
     FROM +build-webui-deps
-    COPY --dir web-console/public web-console/public
+
+    COPY --dir web-console/static web-console/static
     COPY --dir web-console/src web-console/src
-    COPY --dir demo/demos demo/demos
-    COPY demo/demos.json demo/
-    COPY web-console/.editorconfig web-console/
-    COPY web-console/.eslintrc.json web-console/
-    COPY web-console/.prettierrc.js web-console/
-    COPY web-console/next-env.d.ts ./web-console/next-env.d.ts
-    COPY web-console/next.config.js ./web-console/next.config.js
-    COPY web-console/next.d.ts ./web-console/next.d.ts
-    COPY web-console/tsconfig.json ./web-console/tsconfig.json
-    COPY web-console/.env ./web-console/.env
+    COPY web-console/.prettierignore web-console/
+    COPY web-console/.prettierrc web-console/
+    COPY web-console/eslint.config.js web-console/
+    COPY web-console/postcss.config.js web-console/
+    COPY web-console/svelte.config.js ./web-console/
+    COPY web-console/tailwind.config.ts ./web-console/
+    COPY web-console/tsconfig.json ./web-console/
+    COPY web-console/vite.config.ts ./web-console/
 
-    RUN cd web-console && yarn format-check
-    RUN cd web-console && yarn build
-    SAVE ARTIFACT ./web-console/out
-
-    COPY --dir web-console-sveltekit/static web-console-sveltekit/static
-    COPY --dir web-console-sveltekit/src web-console-sveltekit/src
-    COPY web-console-sveltekit/.prettierignore web-console-sveltekit/
-    COPY web-console-sveltekit/.prettierrc web-console-sveltekit/
-    COPY web-console-sveltekit/eslint.config.js web-console-sveltekit/
-    COPY web-console-sveltekit/postcss.config.js web-console-sveltekit/
-    COPY web-console-sveltekit/svelte.config.js ./web-console-sveltekit/
-    COPY web-console-sveltekit/tailwind.config.ts ./web-console-sveltekit/
-    COPY web-console-sveltekit/tsconfig.json ./web-console-sveltekit/
-    COPY web-console-sveltekit/vite.config.ts ./web-console-sveltekit/
-
-    # RUN cd web-console-sveltekit && bun run check
+    # RUN cd web-console && bun run check
     RUN cd web-console-sveltekit && bun run build
     SAVE ARTIFACT ./web-console-sveltekit/build
 
@@ -521,72 +498,6 @@ integration-tests:
             exit $status
     END
 
-ui-playwright-container:
-    FROM +install-deps
-    COPY web-console .
-    COPY deploy/docker-compose.yml .
-    COPY deploy/.env .
-
-    # Pull playwright-snapshots for visual regression testing
-    # It was decided it's better to clone the snapshots repo during the build rather than have it as a submodule
-    ARG PLAYWRIGHT_SNAPSHOTS_COMMIT
-    RUN echo PLAYWRIGHT_SNAPSHOTS_COMMIT=$PLAYWRIGHT_SNAPSHOTS_COMMIT
-    GIT CLONE --branch=$PLAYWRIGHT_SNAPSHOTS_COMMIT https://github.com/feldera/playwright-snapshots.git playwright-snapshots
-
-    WORKDIR web-console
-    RUN yarn install
-    RUN yarn playwright install
-    RUN yarn playwright install-deps
-    ENV CI=true
-    ENV PLAYWRIGHT_API_ORIGIN=http://localhost:8080/
-    ENV PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/
-    ENV DISPLAY=
-
-    # Install docker compose - earthly can do this automatically, but it installs an older version
-    ENV DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
-    RUN mkdir -p $DOCKER_CONFIG/cli-plugins
-    RUN curl -SL https://github.com/docker/compose/releases/download/v2.24.0-birthday.10/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
-    RUN chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
-
-    # Install zip to prepare test artifacts for export
-    RUN apt-get install -y zip
-
-ui-playwright-tests-e2e:
-    FROM +ui-playwright-container
-    ENV FELDERA_VERSION=latest
-
-    TRY
-        WITH DOCKER --load ghcr.io/feldera/pipeline-manager:latest=+pipeline-manager-container-cors-all \
-                    --compose ../docker-compose.yml \
-                    --service pipeline-manager
-            # We zip artifacts regardless of test success or error, and then we complete the command preserving test's exit_code
-            RUN sleep 10 && if yarn playwright test -c playwright-e2e.config.ts; then exit_code=0; else exit_code=$?; fi \
-                && cd /dbsp \
-                && zip -r playwright-report-e2e.zip playwright-report-e2e \
-                && zip -r test-results-e2e.zip test-results-e2e \
-                && exit $exit_code
-        END
-    FINALLY
-        SAVE ARTIFACT --if-exists /dbsp/playwright-report-e2e.zip AS LOCAL ./playwright-artifacts/
-        SAVE ARTIFACT --if-exists /dbsp/test-results-e2e.zip      AS LOCAL ./playwright-artifacts/
-    END
-
-ui-playwright-tests-ct:
-    FROM +ui-playwright-container
-    ENV FELDERA_VERSION=latest
-
-    TRY
-        # We zip artifacts regardless of test success or error, and then we complete the command preserving test's exit_code
-        RUN if yarn playwright test -c playwright-ct.config.ts; then exit_code=0; else exit_code=$?; fi \
-        && cd /dbsp \
-        && zip -r playwright-report-ct.zip playwright-report-ct \
-        && zip -r test-results-ct.zip test-results-ct \
-        && exit $exit_code
-    FINALLY
-        SAVE ARTIFACT --if-exists /dbsp/playwright-report-ct.zip AS LOCAL ./playwright-artifacts/
-        SAVE ARTIFACT --if-exists /dbsp/test-results-ct.zip      AS LOCAL ./playwright-artifacts/
-    END
-
 benchmark:
     FROM +build-manager
     COPY demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen
@@ -645,8 +556,6 @@ all-tests:
     BUILD +openapi-checker
     BUILD +test-sql
     BUILD +integration-tests
-    BUILD +ui-playwright-tests-ct
-    # BUILD +ui-playwright-tests-e2e
     BUILD +test-docker-compose
     # BUILD +test-docker-compose-stable
     BUILD +test-debezium-mysql
