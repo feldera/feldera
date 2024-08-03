@@ -1,5 +1,6 @@
 <script lang="ts">
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+  import TabChangeStream from '$lib/components/pipelines/editor/TabChangeStream.svelte'
   import TabQueryData from '$lib/components/pipelines/editor/TabQueryData.svelte'
   import TabPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
   import TabDBSPGraph from '$lib/components/pipelines/editor/TabDBSPGraph.svelte'
@@ -11,8 +12,9 @@
   const tabs = [
     tuple('errors', TabPipelineErrors),
     // tuple('ad-hoc query', TabQueryData),
-    tuple('performance', TabPerformance)
-    // tuple('query plan', TabDBSPGraph)
+    tuple('performance', TabPerformance),
+    // tuple('query plan', TabDBSPGraph),
+    tuple('change stream', TabChangeStream)
   ]
 </script>
 

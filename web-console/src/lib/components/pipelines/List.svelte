@@ -1,3 +1,7 @@
+<script lang="ts" context="module">
+  let scrollY = $state(0) // Preserve list scroll position between opening/closing of drawer and switching between between inline and modal drawer
+</script>
+
 <script lang="ts">
   import PipelineStatus from '$lib/components/pipelines/list/Status.svelte'
   import { base } from '$app/paths'
@@ -63,21 +67,23 @@
     pipelines.push(newPipeline)
     goto(`${base}/pipelines/${encodeURIComponent(pipelineName)}/`)
   }
+
+  const bindScrollY = (node: HTMLElement, val: { scrollY: number }) => {
+    $effect(() => {
+      node.scrollTop = scrollY
+    })
+    const handle = (e: any) => {
+      scrollY = e.target.scrollTop
+    }
+    node.addEventListener('scroll', handle)
+    return {
+      destroy: () => removeEventListener('scroll', handle)
+    }
+  }
 </script>
 
-<div class="flex flex-col gap-2 p-4">
-  {#each pipelines as pipeline}
-    <a
-      class="flex flex-nowrap items-center gap-2 break-all"
-      href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
-    >
-      <div class="w-full py-1 transition-none duration-0">
-        {pipeline.name}
-      </div>
-      <PipelineStatus class="ml-auto" {...pipeline}></PipelineStatus>
-    </a>
-  {/each}
-  <div class="relative">
+<div class="relative flex flex-col gap-2 overflow-y-auto px-4" use:bindScrollY={{ scrollY }}>
+  <div class="sticky top-0 m-0 pt-1 bg-surface-50-950">
     <input
       bind:this={createPipelineInputRef}
       onblur={(e) => {
@@ -95,4 +101,16 @@
     />
     <div class="py-2 text-surface-400-600">Press Enter to create</div>
   </div>
+  {#each pipelines as pipeline}
+    <a
+      class="flex flex-nowrap items-center gap-2"
+      href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
+    >
+      <div class="w-full overflow-ellipsis whitespace-break-spaces py-1 transition-none duration-0">
+        <!-- Insert a thin whitespace to help break names containing underscore -->
+        {pipeline.name.replaceAll('_', `_ `)}
+      </div>
+      <PipelineStatus class="ml-auto" {...pipeline}></PipelineStatus>
+    </a>
+  {/each}
 </div>

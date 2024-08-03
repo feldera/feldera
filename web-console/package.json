@@ -80,6 +80,7 @@
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.0.0-alpha.51",
     "valibot": "^0.36.0",
+    "virtua": "^0.33.4",
     "vite": "^5.3.4"
   },
   "type": "module",

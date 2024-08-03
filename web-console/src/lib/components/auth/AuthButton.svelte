@@ -4,6 +4,8 @@
   import { fade } from 'svelte/transition'
   import Popup from '../common/Popup.svelte'
   import AuthPopupMenu from './AuthPopupMenu.svelte'
+
+  const { compactBreakpoint = '' }: { compactBreakpoint?: string } = $props()
 </script>
 
 {#if typeof $page.data.auth === 'object' && 'logout' in $page.data.auth}
@@ -11,11 +13,15 @@
     {#snippet trigger(toggle)}
       <button
         onclick={toggle}
-        class=" ml-2 flex items-center gap-2 rounded font-semibold preset-filled-primary-500 md:px-2"
+        class=" ml-2 flex items-center gap-2 rounded font-semibold preset-filled-primary-500"
       >
-        <span class="hidden pl-1 md:block">Logged in</span>
+        <div class="hidden {compactBreakpoint}block w-2"></div>
+        <span class="hidden {compactBreakpoint}block">Logged in</span>
+        <div class="hidden {compactBreakpoint}block w-1"></div>
 
-        <div class="bx bx-user-circle btn-icon text-[32px]"></div>
+        <div class="bx bx-user-circle btn-icon text-[32px]">
+          <div class="hidden {compactBreakpoint}block w-2"></div>
+        </div>
       </button>
     {/snippet}
     {#snippet content(close)}
