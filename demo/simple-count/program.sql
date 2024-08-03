@@ -74,7 +74,7 @@ CREATE VIEW example_count WITH (
                 "name": "json",
                 "config": {
                     "update_format": "insert_delete",
-                    "array": True
+                    "array": true
                 }
             }
         },
@@ -90,7 +90,7 @@ CREATE VIEW example_count WITH (
                 "name": "json",
                 "config": {
                     "update_format": "insert_delete",
-                    "array": True
+                    "array": true
                 }
             }
         },
@@ -106,7 +106,7 @@ CREATE VIEW example_count WITH (
                 "name": "json",
                 "config": {
                     "update_format": "insert_delete",
-                    "array": True
+                    "array": true
                 }
             }
         }
