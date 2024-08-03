@@ -1,21 +1,24 @@
+<script lang="ts" context="module">
+  type XgressRecord = Record<string, string | number | boolean | BigNumber | Date>
+
+  let rows = $state<Record<string, Record<'insert' | 'delete', XgressRecord>[]>>({}) // Initialize row array
+</script>
+
 <script lang="ts">
   import { page } from '$app/stores'
   import { relationEggressStream } from '$lib/services/pipelineManager'
   import type BigNumber from 'bignumber.js'
   import JSONbig from 'true-json-bigint'
 
+  import { VList } from 'virtua/svelte'
+
   let { pipelineName, relationName }: { pipelineName: string; relationName: string } = $props()
 
-  let rows = $state<Record<string, Record<'insert' | 'delete', XgressRecord>[]>>({
-    [pipelineName]: []
-  }) // Initialize row array
   $effect(() => {
     console.log('entered small effect', pipelineName)
     // Initialize row array when pipelineName changes
     rows[pipelineName] ??= []
   })
-
-  // const stream = $derived(relationEggressStream(pipelineName, relationName, $page.data.auth === 'none' ? undefined : $page.data.auth.accessToken))
 
   $effect(() => {
     console.log('entered effect', pipelineName, relationName)
@@ -42,12 +45,11 @@
 
   const decoder = new TextDecoder()
 
-  type XgressRecord = Record<string, string | number | boolean | BigNumber | Date>
-
   const accumulateRows = async (
     pipelineName: string,
     reader: ReadableStreamDefaultReader<Uint8Array>
   ) => {
+    const bufferSize = 100
     while (true) {
       const { done, value } = await reader.read().catch((e) => {
         console.log('stream err', e)
@@ -79,17 +81,15 @@
           console.log('NO MORE NO MORE NO MORE')
           continue
         }
-        rows[pipelineName].splice(100 - obj.json_data.length)
-        rows[pipelineName].unshift(...obj.json_data.reverse())
-        // rows[pipelineName].splice(100 - obj.json_data.length, 100, ...obj.json_data)
+        rows[pipelineName].splice(Math.max(bufferSize - obj.json_data.length, 0))
+        rows[pipelineName].unshift(...obj.json_data.slice(0, bufferSize).reverse())
       }
     }
   }
-
-  import { VList } from 'virtua/svelte'
 </script>
 
 <div class="flex-1">
+  <!--
   <VList data={rows[pipelineName] ?? []} let:item getKey={(d, i) => i}>
     <div
       class={'border-l-4 pl-2 even:bg-surface-100-900 ' +
@@ -102,4 +102,18 @@
       {JSONbig.stringify(item.insert ?? item.delete)}
     </div>
   </VList>
+  -->
+  <div class="h-full overflow-auto">
+    {#each rows[pipelineName] as item}
+      <div
+        class={'even:bg-surface-100-900 border-l-4 pl-2 even:!bg-opacity-30 ' +
+          ('insert' in item
+            ? '  border-green-500 '
+            : 'delete' in item
+              ? 'border-l-4 border-red-500'
+              : '')}>
+        {JSONbig.stringify(item.insert ?? item.delete)}
+      </div>
+    {/each}
+  </div>
 </div>

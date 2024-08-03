@@ -26,8 +26,10 @@
     },
     set value(name: string) {
       const newUrl = `${base}/pipelines/${encodeURIComponent(name)}/`
-      patchPipeline(existing, { name }).then(() => goto(newUrl, { replaceState: true }))
-      onRenamePipeline?.({ existing }, { existing: name })
+      patchPipeline(existing, { name }).then(() => {
+        onRenamePipeline?.({ existing }, { existing: name })
+        goto(newUrl, { replaceState: true })
+      })
     }
   }
 </script>

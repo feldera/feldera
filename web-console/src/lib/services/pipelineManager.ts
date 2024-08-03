@@ -147,7 +147,7 @@ export const putPipeline = async (pipeline_name: string, newPipeline: PipelineDe
 }
 
 export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pipeline>) => {
-  await _patchPipeline({
+  await handled(_patchPipeline)({
     path: { pipeline_name: encodeURIComponent(pipeline_name) },
     body: fromPipeline(pipeline)
   })

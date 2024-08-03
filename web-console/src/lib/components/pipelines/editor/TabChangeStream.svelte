@@ -1,8 +1,11 @@
+<script lang="ts" context="module">
+  let relationName = $state<Record<string, string>>({}) // Selected relation for each pipelineName
+</script>
+
 <script lang="ts">
   import { getCaseIndependentName } from '$lib/functions/felderaRelation'
   import type { ProgramSchema } from '$lib/services/pipelineManager'
   import { getExtendedPipeline } from '$lib/services/pipelineManager'
-  import { onMount } from 'svelte'
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
 
@@ -12,8 +15,6 @@
   $effect(() => {
     pipelineName = _pipelineName
   })
-
-  let relationName = $state<Record<string, string>>({}) // Selected relation for each pipelineName
   let programSchema = $state<Record<string, ProgramSchema>>({})
 
   const reloadSchema = async () => {
@@ -50,8 +51,7 @@
               type="radio"
               class="  focus:ring-transparent"
               bind:group={relationName[pipelineName]}
-              value={relation}
-            />
+              value={relation} />
             {relation}
           </label>
         {/snippet}
@@ -72,13 +72,13 @@
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="w-2 bg-surface-100-900"></PaneResizer>
+    <PaneResizer class="bg-surface-100-900 w-2"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
       {#if relationName[pipelineName]}
         <ChangeStream {pipelineName} relationName={relationName[pipelineName]}></ChangeStream>
       {:else}
-        <span class="px-4 text-surface-500">
+        <span class="text-surface-500 px-4">
           Select table or view to see the record updates in the data flow
         </span>
       {/if}
