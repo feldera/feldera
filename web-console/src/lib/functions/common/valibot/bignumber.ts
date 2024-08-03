@@ -39,7 +39,10 @@ export function bignumber(pipe?: Pipe<BigNumber>): BigNumberSchema
  */
 export function bignumber(message?: ErrorMessage, pipe?: Pipe<BigNumber>): BigNumberSchema
 
-export function bignumber(arg1?: ErrorMessage | Pipe<BigNumber>, arg2?: Pipe<BigNumber>): BigNumberSchema {
+export function bignumber(
+  arg1?: ErrorMessage | Pipe<BigNumber>,
+  arg2?: Pipe<BigNumber>
+): BigNumberSchema {
   // Get error and pipe argument
   const [message, pipe] = defaultArgs(arg1, arg2)
 

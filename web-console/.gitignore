@@ -1,39 +1,24 @@
-# dependencies
 /node_modules
 
-# next.js
-/.next/
-/out/
+# Output
+.output
+.vercel
+/.svelte-kit
 /build
-/pipeline-manager-*
 
-# misc
+# OS
 .DS_Store
-*.pem
+Thumbs.db
 
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# local env files
+# Env
 .env
-.env.local
-.env.development
-.env.test
-.env.production
+.env.*
+!.env.example
+!.env.test
 
-# typescript
-*.tsbuildinfo
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Pipeline Manager tmp build folder
+/pipeline-manager-*/

@@ -5,8 +5,7 @@ This is the GUI for managing the Feldera deployment.
 ## Setup
 
 ```bash
-# Install nodejs on Ubuntu
-
+# Install Node on Ubuntu (optional)
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl gnupg
 sudo mkdir -p /etc/apt/keyrings
@@ -17,13 +16,17 @@ sudo apt-get update
 sudo apt-get install nodejs -y
 # If you don't run Ubuntu: [other binary distributions for node.js](https://github.com/nodesource/distributions)
 
-# Install yarn/openapi generator
-sudo npm install --global yarn
-sudo npm install --global openapi-typescript-codegen
+# Install Bun
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg unzip
+sudo curl -fsSL https://bun.sh/install | bash
+
+# Install OpenAPI typings generator
+sudo bun install --global @hey-api/openapi-ts
 
 # Clone the repo for the UI
 git clone https://github.com/feldera/feldera.git
-cd dbsp/web-console
+cd dbsp/web-console-sveltekit
 ```
 
 ## Development
@@ -31,60 +34,51 @@ cd dbsp/web-console
 Install dependencies (needs to be done whenever package.json depencies change):
 
 ```bash
-yarn install
+bun install
 ```
 
 Start the development server:
 
 ```bash
-yarn dev
+bun run dev
 ```
 
 Build & export static website:
 
 ```bash
-yarn build
+bun build
 ```
 
 Format the code & linting:
 
 ```bash
-yarn format
-yarn lint
+bun run format
+bun run lint
+bun run check
 ```
-
-If `yarn audit` fails for a transitive dependency you can try to update it:
-
-```bash
-yarn up --recursive loader-utils
-```
-
-For direct dependencies, you can adjust the version in `package.json`
-and run `yarn install`.
 
 ## OpenAPI bindings
 
 The bindings for OpenAPI (under $lib/services/manager) are generated using
-[openapi typescript codegen](https://www.npmjs.com/package/openapi-typescript-codegen).
+[openapi typescript codegen](https://www.npmjs.com/package/@hey-api/openapi-ts).
 
 If you change the API, execute the following steps to update the bindings:
 
 ```bash
-yarn build-openapi
-yarn generate-openapi
+bun run build-openapi # If you need to generate a new openapi.json
+bun run generate-openapi
 ```
-
-Note sometimes strange caching errors may warrant deleting `node_modules` after
-regenerating the API bindings.
 
 ## File Organization
 
-- `@core/`: Settings, style and MUI overrides.
-- `lib/`: Imported modules
-- `lib/components/`: Reusable React components.
-- `lib/compositions/`: Modules that encapsulate app state management
-- `lib/functions/`: Pure functions, or functions that perform side effects through dependency injection
-- `lib/functions/common`: Utility functions that are not specific to this project
-- `lib/services/`: Functions that describe side effects (persistent storage, networking etc.)
-- `lib/types/`: Types used throughout the app, OpenAPI generated types.
-- `pages/`: Webapp pages used in file-based routing
+- `src/assets/`: Static assets referenced in UI components, but not served as-is
+- `src/hooks.server.ts`: Point of injection of HTTP request and page load middleware
+- `src/lib/`: Imported modules
+- `src/lib/components/`: Reusable Svelte components
+- `src/lib/compositions/`: Stateful functions that app state management
+- `src/lib/functions/`: Pure functions, or functions that perform side effects through dependency injection
+- `src/lib/functions/common`: Utility functions that are not specific to this project
+- `src/lib/services/`: Functions that describe side effects (persistent storage, networking etc.)
+- `src/lib/types/`: Types used throughout the app
+- `src/routes/`: Web app pages used in file-based routing
+- `static/`: Static assets served as-is
