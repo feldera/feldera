@@ -170,9 +170,6 @@ build-adapters:
 
 build-manager:
     FROM +build-adapters
-    # For some reason if this ENV before the FROM line it gets invalidated
-    ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
-    COPY ( +build-webui/out ) ./web-console/out
     ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console/build
     COPY ( +build-webui/build ) ./web-console/build
     DO rust+CARGO --args="build --package pipeline-manager --features pg-embed" --output="debug/pipeline-manager"
