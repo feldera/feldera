@@ -54,7 +54,7 @@ CREATE TABLE example (
                     "array": false
                 }
             }
-        },
+        }
     ]'
 );
 
