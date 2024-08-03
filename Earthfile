@@ -264,7 +264,6 @@ test-python:
     COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
 
     COPY demo/demo_notebooks demo/demo_notebooks
-    COPY demo/simple-join demo/simple-join
     COPY python/tests tests
 
     # Reuse `Cargo.lock` to ensure consistent crate versions.
