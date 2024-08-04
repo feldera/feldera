@@ -10,7 +10,7 @@ from feldera.rest.errors import FelderaAPIError
 
 class PipelineBuilder:
     """
-    A builder for creating a Pipeline in Feldera.
+    A builder for creating a Feldera Pipeline.
 
     :param client: The `.FelderaClient` instance
     :param name: The name of the pipeline

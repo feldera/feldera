@@ -5,11 +5,10 @@ Using Pandas DataFrames as Input / Output
 *******************************************
 
 
-You can use :meth:`.Pipeline.input_pandas` to input a
-DataFrame to a Feldera table as the data source.
+You can use :meth:`.Pipeline.input_pandas` to insert records from a
+DataFrame to a Feldera table.
 
-To listen for response from Feldera, in the form of DataFrames
-call :meth:`.Pipeline.listen`.
+Use :meth:`.Pipeline.listen` to subscribe to updates to a view in the form of a stream of DataFrames.
 To ensure all data is received start listening before calling
 :meth:`.Pipeline.start`.
 
@@ -66,5 +65,5 @@ To ensure all data is received start listening before calling
 Using Other Data Sources / Sinks
 **********************************
 
-To connect Feldera to other data sources or sinks, you can use specify them in the SQL code itself.
+To connect Feldera to other data sources or sinks, you can specify them in the SQL code.
 Refer to the connector documentation at: https://github.com/feldera/feldera/tree/main/docs/connectors

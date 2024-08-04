@@ -48,9 +48,7 @@ Key Concepts
 
 
 * :class:`.PipelineBuilder`
-    - This is the main class that you will use to build your Feldera pipeline.
-    - It is a builder for creating a Feldera pipeline.
-    - It provides 3 methods for building a pipeline:
+    Builder class for constructing new Feldera pipelines. Configure the builder with pipeline name, SQL code, and other optional attributes and call one of two methods to create the pipeline, possibly overwriting an existing pipeline with the same name:
 
         - :meth:`.PipelineBuilder.create`
         - :meth:`.PipelineBuilder.create_or_replace`
