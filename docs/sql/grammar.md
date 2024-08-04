@@ -118,12 +118,21 @@ CREATE TABLE empsalary (
 );
 ```
 
+### Table properties that impact the program semantics
+
+#### Materialized tables
+
 Unlike a database, Feldera does not normally maintain the contents of
 tables; it will only store as much data as necessary to compute future
 outputs.  By specifying the property `'materialized' = 'true'` a user
 instructs Feldera to also maintain the complete contents of the table.
 Such materialized tables can be browsed and queried at runtime.
 See [Materialized Tables and Views](materialized.md) for more details.
+
+#### Append-only tables
+
+See [Streaming SQL Extensions, append-only
+tables](streaming.md#append-only-tables)
 
 ### LATENESS
 
@@ -132,11 +141,11 @@ latenessStatement
   :   LATENESS view '.' column expression
 ```
 
-See [Streaming SQL Extensions](streaming.md#lateness-expressions)
+See [Streaming SQL Extensions, LATENESS](streaming.md#lateness-expressions)
 
 ### WATERMARKS
 
-See [Streaming SQL Extensions](streaming.md#watermark-expressions)
+See [Streaming SQL Extensions, WATERMARNS](streaming.md#watermark-expressions)
 
 ## Creating user-defined functions.
 

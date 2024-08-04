@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
+import jdk.dynalink.linker.support.TypeUtilities;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.config.CalciteConnectionConfigImpl;
@@ -248,7 +249,7 @@ public class CalciteCompiler implements IWritesLogs {
             SqlTypeNameSpec typeNameSpec = type.getTypeNameSpec();
             if (typeNameSpec instanceof SqlBasicTypeNameSpec basic) {
                 // I don't know how to get the SqlTypeName otherwise
-                RelDataType relDataType = CalciteCompiler.this.specToRel(type);
+                RelDataType relDataType = CalciteCompiler.this.specToRel(type, false);
                 if (relDataType.getSqlTypeName() == SqlTypeName.DECIMAL) {
                     if (basic.getPrecision() < basic.getScale()) {
                         SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
@@ -496,7 +497,10 @@ public class CalciteCompiler implements IWritesLogs {
         return rel;
     }
 
-    public RelDataType specToRel(SqlDataTypeSpec spec) {
+    /** Convert a type from Sql to Rel.
+     * @param spec            Type specification in Sql representation.
+     * @param ignoreNullable  If true never return a nullable type. */
+    public RelDataType specToRel(SqlDataTypeSpec spec, boolean ignoreNullable) {
         SqlTypeNameSpec typeName = spec.getTypeNameSpec();
         String name = "";
         if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
@@ -507,7 +511,7 @@ public class CalciteCompiler implements IWritesLogs {
         }
         RelDataType result = typeName.deriveType(this.getValidator());
         Boolean nullable = spec.getNullable();
-        if (nullable != null && nullable)
+        if (nullable != null && nullable && !ignoreNullable)
             result = this.typeFactory.createTypeWithNullability(result, true);
         if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
             if (result.isStruct()) {
@@ -686,7 +690,26 @@ public class CalciteCompiler implements IWritesLogs {
             } else {
                 columnDefinition.put(colName, col);
             }
-            RelDataType type = this.specToRel(typeSpec);
+            RelDataType type = this.specToRel(typeSpec, false);
+            if (isPrimaryKey) {
+                if (type.isNullable()) {
+                    // This is either an error or a warning, depending on the value of the 'lenient' flag
+                    this.errorReporter.reportProblem(new SourcePositionRange(typeSpec.getParserPosition()),
+                            this.options.languageOptions.lenient,
+                            "PRIMARY KEY cannot be nullable",
+                            "PRIMARY KEY column " + Utilities.singleQuote(name.getSimple()) +
+                                    " has type " + type + ", which is nullable");
+                    // Correct the type to be not-null
+                    type = this.specToRel(typeSpec, true);
+                }
+                SqlTypeName tn = type.getSqlTypeName();
+                if (tn == SqlTypeName.ARRAY || tn == SqlTypeName.MULTISET || tn == SqlTypeName.MAP) {
+                    this.errorReporter.reportError(new SourcePositionRange(typeSpec.getParserPosition()),
+                            "Illegal PRIMARY KEY type",
+                            "PRIMARY KEY column " + Utilities.singleQuote(name.getSimple()) +
+                                    " cannot have type " + type);
+                }
+            }
             RelDataTypeField field = new RelDataTypeFieldImpl(
                     name.getSimple(), index++, type);
             RelColumnMetadata meta = new RelColumnMetadata(
@@ -933,12 +956,12 @@ public class CalciteCompiler implements IWritesLogs {
                         decl.getParameters(), param -> {
                             SqlAttributeDefinition attr = (SqlAttributeDefinition) param;
                             String name = attr.name.getSimple();
-                            RelDataType type = this.specToRel(attr.dataType);
+                            RelDataType type = this.specToRel(attr.dataType, false);
                             return new MapEntry<>(name, type);
                         });
                 RelDataType structType = this.typeFactory.createStructType(parameters);
                 SqlDataTypeSpec retType = decl.getReturnType();
-                RelDataType returnType = this.specToRel(retType);
+                RelDataType returnType = this.specToRel(retType, false);
                 Boolean nullableResult = retType.getNullable();
                 if (nullableResult != null)
                     returnType = this.typeFactory.createTypeWithNullability(returnType,  nullableResult);
@@ -979,7 +1002,7 @@ public class CalciteCompiler implements IWritesLogs {
                 SqlCreateType ct = (SqlCreateType) node;
                 RelProtoDataType proto = typeFactory -> {
                     if (ct.dataType != null) {
-                        return this.specToRel(ct.dataType);
+                        return this.specToRel(ct.dataType, false);
                     } else {
                         String name = ct.name.getSimple();
                         if (CalciteCompiler.this.udt.containsKey(name))
@@ -989,7 +1012,7 @@ public class CalciteCompiler implements IWritesLogs {
                             final SqlAttributeDefinition attributeDef =
                                     (SqlAttributeDefinition) def;
                             final SqlDataTypeSpec typeSpec = attributeDef.dataType;
-                            final RelDataType type = this.specToRel(typeSpec);
+                            final RelDataType type = this.specToRel(typeSpec, false);
                             builder.add(attributeDef.name.getSimple(), type);
                         }
                         RelDataType result = builder.build();

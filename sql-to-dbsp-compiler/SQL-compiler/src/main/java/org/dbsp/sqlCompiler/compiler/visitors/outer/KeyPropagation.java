@@ -198,7 +198,10 @@ public class KeyPropagation extends CircuitVisitor {
         for (ForeignKey fk: operator.metadata.getForeignKeys()) {
             assert fk.thisTable.tableName.getString().equals(operator.tableName);
             DBSPSourceTableOperator other = this.getCircuit().getInput(fk.otherTable.tableName.getString());
-            assert other != null;
+            if (other == null)
+                // This can happen for foreign keys that refer to tables that are not in the program.
+                // This is a warning, but still a legal SQL program.
+                continue;
             for (int i = 0; i < fk.thisTable.columns.size(); i++) {
                 String thisColumn = fk.thisTable.columns.get(i).getString();
                 String otherColumn = fk.otherTable.columns.get(i).getString();

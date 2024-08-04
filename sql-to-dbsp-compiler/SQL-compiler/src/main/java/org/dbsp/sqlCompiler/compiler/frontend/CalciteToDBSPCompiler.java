@@ -2093,22 +2093,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 watermark = null;
             }
         }
-        if (metadata.isPrimaryKey) {
-            if (type.mayBeNull) {
-                // This is either an error or a warning, depending on the value of the 'lenient' flag
-                this.compiler.reportProblem(metadata.getNode().getPositionRange(),
-                        this.compiler.options.languageOptions.lenient,
-                        "PRIMARY KEY cannot be nullable",
-                        "PRIMARY KEY column " + Utilities.singleQuote(metadata.getName()) +
-                                " has type " + metadata.getType().getFullTypeString() + ", which is nullable");
-            }
-            if (type.is(DBSPTypeVec.class) || type.is(DBSPTypeMap.class)) {
-                this.compiler.reportError(metadata.getNode().getPositionRange(),
-                        "Illegal PRIMARY KEY type",
-                        "PRIMARY KEY column " + Utilities.singleQuote(metadata.getName()) +
-                                " cannot have type " + metadata.getType().getFullTypeString());
-            }
-        }
         DBSPExpression defaultValue = null;
         if (metadata.defaultValue != null)
             defaultValue = expressionCompiler.compile(metadata.defaultValue).cast(type);

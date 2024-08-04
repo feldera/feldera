@@ -158,6 +158,9 @@ Here is a description of the non-obvious command-line options:
      allowed identifiers, quoting identifiers, conversions to
      uppercase, case sensitivity of identifiers.
 
+--streaming: Equivalent to adding the following property to all program tables:
+     `'appendOnly' = 'true'`.
+
 ### Example: Compiling a SQL program to Rust
 
 The following command-line compiles a script called `x.sql` and writes

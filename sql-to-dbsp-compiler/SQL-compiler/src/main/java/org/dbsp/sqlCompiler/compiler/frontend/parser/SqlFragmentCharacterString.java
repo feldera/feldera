@@ -13,6 +13,7 @@ public class SqlFragmentCharacterString implements SqlFragment {
         this.node = node;
     }
 
+    /** Returns just the content of the string, without the quotes */
     @Override
     public String getString() {
         return Objects.requireNonNull(this.node.toValue());
