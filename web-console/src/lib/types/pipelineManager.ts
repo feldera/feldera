@@ -127,3 +127,5 @@ export interface ConnectorStatus {
   metrics: InputEndpointMetrics | OutputEndpointMetrics
   fatal_error: string | null
 }
+
+export type XgressRecord = Record<string, string | number | boolean | BigNumber | Date>

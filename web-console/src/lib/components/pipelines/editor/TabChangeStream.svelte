@@ -1,13 +1,83 @@
 <script lang="ts" context="module">
-  let relationName = $state<Record<string, string>>({}) // Selected relation for each pipelineName
+  type RelationInfo = {
+    pipelineName: string
+    relationName: string
+  }
+  type ExtraType = {
+    selected: boolean
+    cancelStream?: () => void
+  }
+  let pipelinesRelations = $state<
+    Record<
+      string,
+      Record<string, ExtraType & { type: 'tables' | 'views' }> // Record<'tables' | 'views', Record<string, ExtraType & { type: 'tables' | 'views' }>>
+    >
+  >({})
+  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  let rows = $state<
+    Record<string, { relationName: string; type: 'insert' | 'delete'; record: XgressRecord }[]>
+  >({}) // Initialize row array
+
+  const bufferSize = 1000
+  const pushChanges =
+    (pipelineName: string, relationName: string) =>
+    (changes: Record<'insert' | 'delete', XgressRecord>[]) => {
+      rows[pipelineName].splice(Math.max(bufferSize - changes.length, 0))
+      rows[pipelineName].unshift(
+        ...changes
+          .slice(-bufferSize)
+          .reverse()
+          .map((change) => ({
+            type: 'insert' in change ? ('insert' as const) : ('delete' as const),
+            relationName,
+            record: change.insert ?? change.delete
+          }))
+      )
+    }
+  const startReadingStream = (pipelineName: string, relationName: string) => {
+    const handle = relationEggressStream(pipelineName, relationName).then((stream) => {
+      if (!stream) {
+        return undefined
+      }
+      const reader = stream.getReader()
+      accumulateChanges(reader, pushChanges(pipelineName, relationName))
+      return () => reader.cancel('not_needed')
+    })
+    return () => {
+      handle.then((cancel) => cancel?.())
+      rows[pipelineName] = rows[pipelineName].filter((row) => row.relationName !== relationName)
+    }
+  }
+  const registerPipelineName = (pipelineName: string) => {
+    if (pipelinesRelations[pipelineName]) {
+      return
+    }
+    pipelinesRelations[pipelineName] = {}
+    rows[pipelineName] = []
+    pipelineActionCallbacks.add(pipelineName, 'start_paused', async () => {
+      const relations = Object.entries(pipelinesRelations[pipelineName])
+        .filter((relation) => relation[1].selected)
+        .map((relation) => relation[0])
+      for (const relationName of relations) {
+        pipelinesRelations[pipelineName][relationName].cancelStream = startReadingStream(
+          pipelineName,
+          relationName
+        )
+      }
+    })
+  }
 </script>
 
 <script lang="ts">
+  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+
   import { getCaseIndependentName } from '$lib/functions/felderaRelation'
-  import type { ProgramSchema } from '$lib/services/pipelineManager'
-  import { getExtendedPipeline } from '$lib/services/pipelineManager'
+  import { getExtendedPipeline, relationEggressStream } from '$lib/services/pipelineManager'
+  import type { XgressRecord } from '$lib/types/pipelineManager'
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
+  import type { Relation } from '$lib/services/manager'
+  import { accumulateChanges } from '$lib/functions/pipelines/changeStream'
 
   let { pipelineName: _pipelineName }: { pipelineName: string } = $props()
 
@@ -15,14 +85,27 @@
   $effect(() => {
     pipelineName = _pipelineName
   })
-  let programSchema = $state<Record<string, ProgramSchema>>({})
 
   const reloadSchema = async () => {
+    registerPipelineName(pipelineName)
     const schema = (await getExtendedPipeline(pipelineName)).program_info?.schema
     if (!schema) {
       return
     }
-    programSchema[pipelineName] = schema
+    const process = (type: 'tables' | 'views', newRelations: Relation[]) => {
+      for (const newRelation of newRelations) {
+        const newRelationName = getCaseIndependentName(newRelation)
+        const oldRelation = pipelinesRelations[pipelineName][newRelationName]
+        if (!oldRelation) {
+          pipelinesRelations[pipelineName][newRelationName] = {
+            selected: false,
+            type: 'tables'
+          }
+        }
+      }
+    }
+    process('tables', schema.inputs)
+    process('views', schema.outputs)
   }
 
   $effect(() => {
@@ -34,10 +117,20 @@
   })
 
   let inputs = $derived(
-    programSchema[pipelineName]?.inputs.map((i) => getCaseIndependentName(i)) ?? []
+    Object.entries(pipelinesRelations[pipelineName] /* ?.tables */ ?? {})
+      .filter((e) => e[1].type === 'tables')
+      .map(([relationName, value]) => ({
+        relationName,
+        ...value
+      }))
   )
   let outputs = $derived(
-    programSchema[pipelineName]?.outputs.map((i) => getCaseIndependentName(i)) ?? []
+    Object.entries(pipelinesRelations[pipelineName] /*?.views */ ?? {})
+      .filter((e) => e[1].type === 'views')
+      .map(([relationName, value]) => ({
+        relationName,
+        ...value
+      }))
   )
 </script>
 
@@ -45,40 +138,55 @@
   <PaneGroup direction="horizontal">
     <Pane defaultSize={20} minSize={5} class="flex h-full">
       <div class="flex w-full flex-col overflow-y-auto text-nowrap">
-        {#snippet relationItem(relation: string)}
+        {#snippet relationItem(relation: RelationInfo & ExtraType)}
           <label class="flex-none overflow-hidden overflow-ellipsis">
             <input
-              type="radio"
-              class="  focus:ring-transparent"
-              bind:group={relationName[pipelineName]}
-              value={relation} />
-            {relation}
+              type="checkbox"
+              class="focus:ring-transparent"
+              checked={relation.selected}
+              onchange={(e) => {
+                const follow = e.currentTarget.checked
+                pipelinesRelations[pipelineName] /*[relation.type]*/[
+                  relation.relationName
+                ].selected = follow
+                if (!follow) {
+                  pipelinesRelations[pipelineName][relation.relationName].cancelStream?.()
+                }
+                if (follow) {
+                  // If stream is stopped - the action will silently fail
+                  pipelinesRelations[pipelineName][relation.relationName].cancelStream =
+                    startReadingStream(pipelineName, relation.relationName)
+                }
+              }}
+              value={relation}
+            />
+            {relation.relationName}
           </label>
         {/snippet}
         {#if inputs.length}
           <div class="text-surface-500">Tables:</div>
         {/if}
         {#each inputs as relation}
-          {@render relationItem(relation)}
+          {@render relationItem({ ...relation, pipelineName })}
         {/each}
         {#if outputs.length}
           <div class="text-surface-500">Views:</div>
         {/if}
         {#each outputs as relation}
-          {@render relationItem(relation)}
+          {@render relationItem({ ...relation, pipelineName })}
         {/each}
         {#if inputs.length + outputs.length === 0}
           <div class="text-surface-500">No relations</div>
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="bg-surface-100-900 w-2"></PaneResizer>
+    <PaneResizer class="w-2 bg-surface-100-900"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
-      {#if relationName[pipelineName]}
-        <ChangeStream {pipelineName} relationName={relationName[pipelineName]}></ChangeStream>
+      {#if rows[pipelineName]}
+        <ChangeStream changes={rows[pipelineName]}></ChangeStream>
       {:else}
-        <span class="text-surface-500 px-4">
+        <span class="px-4 text-surface-500">
           Select table or view to see the record updates in the data flow
         </span>
       {/if}

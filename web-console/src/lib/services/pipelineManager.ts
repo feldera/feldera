@@ -238,8 +238,55 @@ export const deletePipeline = async (pipeline_name: string) => {
   await handled(_deletePipeline)({ path: { pipeline_name } })
 }
 
-export const postPipelineAction = (pipeline_name: string, action: 'start' | 'pause' | 'shutdown') =>
-  handled(_postPipelineAction)({ path: { pipeline_name, action } })
+export type PipelineAction = 'start' | 'pause' | 'shutdown' | 'start_paused'
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+export const postPipelineAction = async (
+  pipeline_name: string,
+  action: PipelineAction,
+  wait?: 'await'
+) => {
+  if (!wait) {
+    await handled(_postPipelineAction)({
+      path: { pipeline_name, action: action === 'start_paused' ? 'pause' : action }
+    })
+    return
+  }
+  await _postPipelineAction({
+    path: { pipeline_name, action: action === 'start_paused' ? 'pause' : action }
+  })
+
+  const desiredStatus = (
+    {
+      start: 'Running',
+      pause: 'Paused',
+      shutdown: 'Shutdown',
+      start_paused: 'Paused'
+    } satisfies Record<PipelineAction, PipelineStatus>
+  )[action]
+  const ignoreStatuses = [
+    'Initializing',
+    'Compiling bin',
+    'Compiling sql',
+    'Queued',
+    'Starting up'
+  ] as PipelineStatus[]
+  while (true) {
+    await sleep(500)
+    const status = (await getPipelineStatus(pipeline_name)).status
+    if (status === desiredStatus) {
+      break
+    }
+    if (ignoreStatuses.includes(status)) {
+      continue
+    }
+    throw new Error(
+      `Unexpected status ${status} while waiting for pipeline ${pipeline_name} to complete action ${action}`
+    )
+  }
+  return
+}
 
 export const getAuthConfig = () =>
   handled(getConfigAuthentication)({ client: unauthenticatedClient })
@@ -251,10 +298,7 @@ export const postApiKey = (name: string) => handled(createApiKey)({ body: { name
 export const deleteApiKey = (name: string) =>
   handled(_deleteApiKey)({ path: { api_key_name: name } })
 
-export const relationEggressStream = async (
-  pipelineName: string,
-  relationName: string
-) => {
+export const relationEggressStream = async (pipelineName: string, relationName: string) => {
   // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'mode': 'watch', 'array': false, 'query': 'table'}})
   const fetch = (() => {
     try {
