@@ -73,8 +73,8 @@ Key Concepts
       - This tells Feldera to go ahead and start processing the data.
 
 * :meth:`.Pipeline.wait_for_completion`
-   - Blocks this Feldera pipeline until completion. Normally this means until the end-of-file (EOF)
-     has been reached for this input source.
+   - Blocks this pipeline until completion, i.e., until the end-of-file (EOI)
+     has been reached for all input sources.
 
    - Takes a parameter ``shutdown``, when set shuts the pipeline down after completion.
 
