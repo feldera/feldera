@@ -47,24 +47,34 @@ Key Concepts
 
 
 
-* :class:`.SQLContext`
-   - This represents the current context of your SQL program, data sources
-     and sinks. In Feldera terminology, this represents both a Program and a
-     Pipeline.
+* :class:`.PipelineBuilder`
+    - This is the main class that you will use to build your Feldera pipeline.
+    - It is a builder for creating a Feldera pipeline.
+    - It provides 3 methods for building a pipeline:
 
+        - :meth:`.PipelineBuilder.create`
+        - :meth:`.PipelineBuilder.create_or_replace`
+        - :meth:`.PipelineBuilder.get`
+
+    - Example:
+
+      .. code-block:: python
+
+         from feldera import PipelineBuilder
+
+         pipeline = PipelineBuilder(client).with_name("example").with_sql(sql).create()
+
+* :meth:`.Pipeline.start`
+   - Starts the Feldera Pipeline and keeps it running indefinitely.
    - Example:
 
       .. code-block:: python
 
-         from feldera import SQLContext
+         pipeline.start()
 
-         sql = SQLContext("getting_started", client).get_or_create()
+      - This tells Feldera to go ahead and start processing the data.
 
-      - The first parameter is the name of this SQL context. By default, this is
-        the name used in both Feldera Program and Pipeline.
-      - The second parameter here is :class:`.FelderaClient` that we created above.
-
-* :meth:`.SQLContext.wait_for_completion`
+* :meth:`.Pipeline.wait_for_completion`
    - Blocks this Feldera pipeline until completion. Normally this means until the end-of-file (EOF)
      has been reached for this input source.
 
@@ -74,43 +84,41 @@ Key Concepts
 
       .. code-block:: python
 
-         from feldera import SQLSchema
+         from feldera import FelderaClient, PipelineBuilder
          import pandas as pd
 
          tbl_name = "user_data"
          view_name = "select_view"
 
+         sql = f"""
+            -- Declare input tables
+            CREATE TABLE {tbl_name} (name STRING);
+            -- Create Views based on your queries
+            CREATE VIEW {view_name} AS SELECT * FROM {tbl_name};
+         """
+
+         client = FelderaClient("https://try.feldera.com", api_key="YOUR_API_KEY")
+         pipeline = PipelineBuilder(client).with_name("example").with_sql(sql).create()
+
+         # start the pipeline
+         pipeline.start()
+
          # read input data
          df = pd.read_csv("data.csv")
+         pipeline.input_pandas(tbl_name, df)
 
-         # Declare input tables
-         sql.sql(f"CREATE TABLE {tbl_name} (name STRING);")
-         # Create Views based on your queries
-         sql.sql(f"CREATE VIEW {view_name} AS SELECT * FROM {tbl_name};")
+         # wait for the pipeline to complete
+         pipeline.wait_for_completion(shutdown=True)
 
-         sql.start()
-         sql.input_pandas(df)
-         sql.wait_for_completion(shutdown=True)
-
-      - Here, we create a table which can receive data from input sources.
-      - Then, we create a view that performs operations on this input data.
+      - Write the SQL query that creates a table and a view.
         You can also create other views on top of existing views.
-      - We start the Feldera pipeline we have just created.
-      - Then, we pass a pandas DataFrame as input to the table.
-      - Finally, we wait for the the pipeline to complete.
+      - Create a :class:`.PipelineBuilder` and build the pipeline.
+      - Call :meth:`.Pipeline.start` to start the pipeline.
+      - Pass a pandas DataFrame as input to the table.
+      - Finally, wait for the the pipeline to complete.
 
    .. warning::
       If the data source is streaming, this will block forever.
-      In such cases, use :meth:`.SQLContext.start` instead.
-
-* :meth:`.SQLContext.start`
-   - Starts the Feldera Pipeline and keeps it running indefinitely.
-   - Example:
-
-      .. code-block:: python
-
-         sql.start()
-
-      - This tells Feldera to go ahead and start processing the data.
+      In such cases, use :meth:`.Pipeline.start` instead.
 
 Checkout the :doc:`/examples`.

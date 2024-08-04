@@ -1,67 +1,30 @@
 import time
 import pandas
-import re
 
-from typing import Optional, Dict, Callable
-
-from feldera.rest.pipeline import Pipeline
-from typing_extensions import Self
+from typing import List, Dict, Callable, Optional
 from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
-from feldera import FelderaClient
+from feldera.enums import PipelineStatus
+from feldera.rest.pipeline import Pipeline as InnerPipeline
+from feldera.rest.feldera_client import FelderaClient
+from feldera._callback_runner import _CallbackRunnerInstruction, CallbackRunner
 from feldera.output_handler import OutputHandler
-from feldera._callback_runner import CallbackRunner, _CallbackRunnerInstruction
-from feldera._helpers import ensure_dataframe_has_columns
-from feldera.runtime_config import Resources, RuntimeConfig
-from feldera.enums import BuildMode, CompilationProfile, PipelineStatus
-from feldera._helpers import chunk_dataframe
+from feldera._helpers import ensure_dataframe_has_columns, chunk_dataframe
 
 
-def _table_name_from_sql(ddl: str) -> str:
-    return re.findall(r"[\w']+", ddl)[2]
-
-
-class SQLContext:
-    """
-    .. _SQLContext:
-
-    The SQLContext is the main entry point for the Feldera SQL API.
-    Abstracts the interaction with the Feldera API and provides a high-level interface for SQL pipelines.
-
-    :param name: The name of the pipeline.
-    :param client: The :class:`.FelderaClient` instance to use.
-    :param pipeline_description: The description of the pipeline.
-    :param storage: Set `True` to use storage with this pipeline. Defaults to False.
-    :param workers: The number of workers to use with this pipeline. Defaults to 8.
-    :param resources: The :class:`.Resources` for the pipeline. Defaults to None.
-    :param runtime_config: The :class:`.RuntimeConfig` for the pipeline. Defaults to None.
-    :param compilation_profile: The compilation profile to use when compiling the program. Defaults to
-        :class:`.CompilationProfile.OPTIMIZED`.
-    """
-
-    def __init__(
-            self,
-            name: str,
-            client: FelderaClient,
-            pipeline_description: str = None,
-            storage: bool = False,
-            workers: int = 8,
-            resources: Resources = Resources(),
-            runtime_config: RuntimeConfig = None,
-            compilation_profile: CompilationProfile = CompilationProfile.OPTIMIZED
-    ):
-        self.ddl = ""
-        self.build_mode: Optional[BuildMode] = None
-        self.views_tx: list[Dict[str, Queue]] = []
+class Pipeline:
+    def __init__(self, name: str, client: FelderaClient):
+        self.name = name
         self.client: FelderaClient = client
-        self.pipeline_name: str = name
-        self.pipeline_description: str = pipeline_description or ""
-        self.storage: bool = storage
-        self.workers: int = workers
-        self.resources: Resources = resources
-        self.runtime_config: RuntimeConfig = runtime_config or RuntimeConfig(resources=self.resources)
-        self.compilation_profile: CompilationProfile = compilation_profile
+        self._inner: InnerPipeline | None = None
+        self.views_tx: List[Dict[str, Queue]] = []
+        
+    @classmethod
+    def __from_inner(cls, inner: InnerPipeline, client: FelderaClient):
+        p = cls(inner.name, client)
+        p._inner = inner
+        return p
 
     def __setup_output_listeners(self):
         """
@@ -77,56 +40,21 @@ class SQLContext:
                 # block until the callback runner is ready
                 queue.join()
 
-    def create(self) -> Self:
+    def status(self) -> PipelineStatus:
         """
-        Set the build mode to CREATE, meaning that the pipeline will be created from scratch.
-        """
-
-        self.build_mode = BuildMode.CREATE
-        return self
-
-    def get(self) -> Self:
-        """
-        Set the build mode to GET, meaning that an existing pipeline will be used.
-        """
-
-        self.build_mode = BuildMode.GET
-        return self
-
-    def get_or_create(self) -> Self:
-        """
-        Set the build mode to GET_OR_CREATE, meaning that an existing pipeline will be used if it exists,
-        else a new one will be created.
-        """
-
-        self.build_mode = BuildMode.GET_OR_CREATE
-        return self
-
-    def pipeline_status(self) -> PipelineStatus:
-        """
-        Return the current state of the pipeline.
+        Return the current status of the pipeline.
         """
 
         try:
-            pipeline = self.client.get_pipeline(self.pipeline_name)
-            return PipelineStatus.from_str(pipeline.deployment_status)
+            inner = self.client.get_pipeline(self.name)
+            self._inner = inner
+            return PipelineStatus.from_str(inner.deployment_status)
 
         except FelderaAPIError as err:
             if err.status_code == 404:
                 return PipelineStatus.NOT_FOUND
             else:
                 raise err
-
-    def sql(self, sql: str):
-        """
-        Appends this SQL code to the pipeline DDL.
-
-
-        :param sql: One or more SQL statements. Each statement must end with a semicolon.
-        """
-
-        self.ddl += sql.strip()
-        self.ddl += "\n"
 
     def input_pandas(self, table_name: str, df: pandas.DataFrame, force: bool = False):
         """
@@ -137,7 +65,7 @@ class SQLContext:
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
         """
 
-        status = self.pipeline_status()
+        status = self.status()
         if status not in [
             PipelineStatus.RUNNING,
             PipelineStatus.PAUSED,
@@ -149,14 +77,14 @@ class SQLContext:
 
         ensure_dataframe_has_columns(df)
 
-        pipeline = self.client.get_pipeline(self.pipeline_name)
+        pipeline = self.client.get_pipeline(self.name)
         if table_name.lower() != "now" and table_name.lower() not in [tbl.name.lower() for tbl in pipeline.tables]:
             raise ValueError(f"Cannot push to table '{table_name}' as it is not registered yet")
         else:
             # consider validating the schema here
             for datum in chunk_dataframe(df):
                 self.client.push_to_pipeline(
-                    self.pipeline_name,
+                    self.name,
                     table_name,
                     "json",
                     datum.to_json(orient='records', date_format='epoch'),
@@ -184,9 +112,9 @@ class SQLContext:
 
         array = True if isinstance(data, list) else False
         self.client.push_to_pipeline(
-            self.pipeline_name,
+            self.name,
             table_name,
-           "json",
+            "json",
             data,
             update_format=update_format,
             array=array,
@@ -202,11 +130,11 @@ class SQLContext:
 
         queue: Optional[Queue] = None
 
-        if self.pipeline_status() != PipelineStatus.RUNNING:
+        if self.status() != PipelineStatus.RUNNING:
             queue = Queue(maxsize=1)
             self.views_tx.append({view_name: queue})
 
-        handler = OutputHandler(self.client, self.pipeline_name, view_name, queue)
+        handler = OutputHandler(self.client, self.name, view_name, queue)
         handler.start()
 
         return handler
@@ -233,11 +161,11 @@ class SQLContext:
 
         queue: Optional[Queue] = None
 
-        if self.pipeline_status() != PipelineStatus.RUNNING:
+        if self.status() != PipelineStatus.RUNNING:
             queue = Queue(maxsize=1)
             self.views_tx.append({view_name: queue})
 
-        handler = CallbackRunner(self.client, self.pipeline_name, view_name, callback, queue)
+        handler = CallbackRunner(self.client, self.name, view_name, callback, queue)
         handler.start()
 
     def wait_for_completion(self, shutdown: bool = False):
@@ -259,7 +187,7 @@ class SQLContext:
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
 
-        if self.pipeline_status() not in [
+        if self.status() not in [
             PipelineStatus.RUNNING,
             PipelineStatus.INITIALIZING,
             PipelineStatus.PROVISIONING,
@@ -267,7 +195,7 @@ class SQLContext:
             raise RuntimeError("Pipeline must be running to wait for completion")
 
         while True:
-            metrics: dict = self.client.get_pipeline_stats(self.pipeline_name).get("global_metrics")
+            metrics: dict = self.client.get_pipeline_stats(self.name).get("global_metrics")
             pipeline_complete: bool = metrics.get("pipeline_complete")
 
             if pipeline_complete is None:
@@ -285,31 +213,17 @@ class SQLContext:
         """
         .. _start:
 
-        Start the pipeline.
+        Starts this pipeline.
 
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
 
-        pipeline = Pipeline(
-            self.pipeline_name,
-            sql=self.ddl,
-            description=self.pipeline_description,
-            program_config={
-                'profile': self.compilation_profile.value,
-            },
-            runtime_config=self.runtime_config.__dict__,
-        )
-
-        self.client.create_pipeline(pipeline)
-
-        current_state = self.pipeline_status()
-        if current_state not in [PipelineStatus.NOT_FOUND, PipelineStatus.SHUTDOWN]:
-            raise RuntimeError(f"pipeline in state: {str(current_state.name)} cannot be started")
+        status = self.status()
+        if status not in [PipelineStatus.NOT_FOUND, PipelineStatus.SHUTDOWN]:
+            raise RuntimeError(f"pipeline in state: {str(status.name)} cannot be started")
 
         self.pause()
-
         self.__setup_output_listeners()
-
         self.resume()
 
     def wait_for_idle(
@@ -350,7 +264,7 @@ class SQLContext:
             now_s = time.monotonic()
 
             # Metrics retrieval
-            metrics: dict = self.client.get_pipeline_stats(self.pipeline_name).get("global_metrics")
+            metrics: dict = self.client.get_pipeline_stats(self.name).get("global_metrics")
             total_input_records: int | None = metrics.get("total_input_records")
             total_processed_records: int | None = metrics.get("total_processed_records")
             if total_input_records is None:
@@ -380,7 +294,7 @@ class SQLContext:
         Pause the pipeline.
         """
 
-        self.client.pause_pipeline(self.pipeline_name)
+        self.client.pause_pipeline(self.name)
 
     def shutdown(self):
         """
@@ -394,20 +308,18 @@ class SQLContext:
                 # block until the callback runner has been stopped
                 queue.join()
 
-        self.client.shutdown_pipeline(self.pipeline_name)
+        self.client.shutdown_pipeline(self.name)
 
     def resume(self):
         """
         Resumes the pipeline.
         """
 
-        self.client.start_pipeline(self.pipeline_name)
+        self.client.start_pipeline(self.name)
 
     def delete(self):
         """
         Deletes the pipeline.
         """
 
-        self.client.delete_pipeline(self.pipeline_name)
-
-
+        self.client.delete_pipeline(self.name)

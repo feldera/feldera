@@ -75,9 +75,25 @@ class FelderaClient:
 
         return [Pipeline.from_dict(pipeline) for pipeline in resp]
 
+    def __wait_for_compilation(self, name: str):
+        wait = ["Pending", "CompilingSql", "CompilingRust"]
+
+        while True:
+            p = self.get_pipeline(name)
+            status = p.program_status
+
+            if status == "Success":
+                return p
+            elif status not in wait:
+                # TODO: return a more detailed error message
+                raise RuntimeError(f"The program failed to compile: {status}")
+
+            logging.debug("still compiling %s, waiting for 100 more milliseconds", name)
+            time.sleep(0.1)
+
     def create_pipeline(self, pipeline: Pipeline) -> Pipeline:
         """
-        Create a pipeline and wait for it to compile
+        Create a pipeline if it doesn't exist and wait for it to compile
 
 
         :name: The name of the pipeline
@@ -91,25 +107,32 @@ class FelderaClient:
             "description": pipeline.description or "",
         }
 
-        resp = self.http.put(
+        self.http.post(
             path=f"/pipelines/{pipeline.name}",
             body=body,
         )
 
-        wait = ["Pending", "CompilingSql", "CompilingRust"]
+        return self.__wait_for_compilation(pipeline.name)
 
-        while True:
-            p = self.get_pipeline(pipeline.name)
-            status = p.program_status
+    def create_or_update_pipeline(self, pipeline: Pipeline) -> Pipeline:
+        """
+        Create a pipeline if it doesn't exist or update a pipeline and wait for it to compile
+        """
 
-            if status == "Success":
-                return p
-            elif status not in wait:
-                # TODO: return a more detailed error message
-                raise RuntimeError(f"The program failed to compile: {status}")
+        body = {
+            "name": pipeline.name,
+            "program_code": pipeline.program_code,
+            "program_config": pipeline.program_config,
+            "runtime_config": pipeline.runtime_config,
+            "description": pipeline.description or "",
+        }
 
-            logging.debug("still compiling %s, waiting for 100 more milliseconds", pipeline.name)
-            time.sleep(0.1)
+        self.http.put(
+            path=f"/pipelines/{pipeline.name}",
+            body=body,
+        )
+
+        return self.__wait_for_compilation(pipeline.name)
 
     def patch_pipeline(self, name: str, sql: str):
         """

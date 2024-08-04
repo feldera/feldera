@@ -1,10 +1,18 @@
 feldera package
 ===============
 
-feldera.sql\_context module
----------------------------
+feldera.pipeline\_builder module
+--------------------------------
 
-.. automodule:: feldera.sql_context
+.. automodule:: feldera.pipeline_builder
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+feldera.pipeline module
+-----------------------
+
+.. automodule:: feldera.pipeline
    :members:
    :undoc-members:
    :show-inheritance:
