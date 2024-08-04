@@ -253,30 +253,22 @@ export const deleteApiKey = (name: string) =>
 
 export const relationEggressStream = async (
   pipelineName: string,
-  relationName: string,
-  abortSignal?: AbortSignal,
-  accessToken?: string
+  relationName: string
 ) => {
-  console.log('relationEggressStream in')
   // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'mode': 'watch', 'array': false, 'query': 'table'}})
-  const cfg = client.getConfig()
-  const oidcClient = OidcClient.get()
-  const oidcFetch = oidcClient.fetchWithTokens(fetch)
-  const result = await oidcFetch(
+  const fetch = (() => {
+    try {
+      const oidcClient = OidcClient.get()
+      return oidcClient.fetchWithTokens(globalThis.fetch)
+    } catch {
+      return globalThis.fetch
+    }
+  })()
+  const result = await fetch(
     `http://localhost:8080/v0/pipelines/${pipelineName}/egress/${relationName}?format=json&mode=watch&array=false&query=table`,
     {
-      method: 'POST',
-      headers: accessToken
-        ? {
-            Authorization: `Bearer ${accessToken}`
-          }
-        : undefined,
-      signal: abortSignal
+      method: 'POST'
     }
   )
-  console.log('relationEggressStream')
-  // if (result.error) {
-  //   throw result.error
-  // }
   return result.body
 }

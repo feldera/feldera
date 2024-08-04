@@ -5,7 +5,6 @@
 </script>
 
 <script lang="ts">
-  import { page } from '$app/stores'
   import { relationEggressStream } from '$lib/services/pipelineManager'
   import type BigNumber from 'bignumber.js'
   import JSONbig from 'true-json-bigint'
@@ -15,20 +14,12 @@
   let { pipelineName, relationName }: { pipelineName: string; relationName: string } = $props()
 
   $effect(() => {
-    console.log('entered small effect', pipelineName)
     // Initialize row array when pipelineName changes
     rows[pipelineName] ??= []
   })
 
   $effect(() => {
-    console.log('entered effect', pipelineName, relationName)
-    // const abortController = new AbortController()
-    const x = relationEggressStream(
-      pipelineName,
-      relationName,
-      undefined, //abortController.signal,
-      $page.data.auth === 'none' ? undefined : $page.data.auth.accessToken
-    ).then((stream) => {
+    const handle = relationEggressStream(pipelineName, relationName).then((stream) => {
       if (!stream) {
         return undefined
       }
@@ -38,8 +29,7 @@
       return () => rd.cancel('not_needed')
     })
     return () => {
-      x.then((cancel) => cancel?.())
-      // abortController.abort('not_needed')
+      handle.then((cancel) => cancel?.())
     }
   })
 
@@ -82,7 +72,7 @@
           continue
         }
         rows[pipelineName].splice(Math.max(bufferSize - obj.json_data.length, 0))
-        rows[pipelineName].unshift(...obj.json_data.slice(0, bufferSize).reverse())
+        rows[pipelineName].unshift(...obj.json_data.slice(-bufferSize).reverse())
       }
     }
   }
