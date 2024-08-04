@@ -4,6 +4,7 @@
     getPipelineStatus,
     patchPipeline,
     postPipelineAction,
+    type PipelineAction,
     type PipelineStatus
   } from '$lib/services/pipelineManager'
   import { asyncDerived, asyncReadable, readable, writable } from '@square/svelte-store'
@@ -17,7 +18,6 @@
   import { goto } from '$app/navigation'
   import { base } from '$app/paths'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
-  import { page } from '$app/stores'
 
   let {
     name: pipelineName,
@@ -26,6 +26,7 @@
     onDeletePipeline,
     pipelineBusy,
     unsavedChanges,
+    onActionSuccess,
     class: _class = ''
   }: {
     name: string
@@ -34,6 +35,7 @@
     onDeletePipeline?: (pipelineName: string) => void
     pipelineBusy: boolean
     unsavedChanges: boolean
+    onActionSuccess?: (action: PipelineAction) => void
     class?: string
   } = $props()
   $effect(() => {
@@ -53,6 +55,7 @@
 
   const actions = {
     _start,
+    _start_paused,
     _pause,
     _shutdown,
     _delete,
@@ -64,7 +67,7 @@
   const active = $derived(
     match(status.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Shutdown', () => ['_start', '_configure', '_delete'])
+      .with('Shutdown', () => ['_start_paused', '_configure', '_delete'])
       .with('Queued', () => ['_spacer', '_configure', '_delete'])
       .with('Starting up', () => ['_spinner', '_configure', '_spacer'])
       .with('Initializing', () => ['_spinner', '_configure', '_spacer'])
@@ -112,7 +115,29 @@
       class:disabled={unsavedChanges}
       class={'bx bx-play !bg-success-200-800 '}
       onclick={() =>
-        postPipelineAction(pipelineName, 'start').then(() => (status.status = 'Starting up'))}
+        postPipelineAction(pipelineName, 'start').then(() => {
+          status.status = 'Starting up'
+          onActionSuccess?.('start')
+        })}
+    >
+    </button>
+  </div>
+  {#if unsavedChanges}
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      Save the pipeline before running
+    </Tooltip>
+  {/if}
+{/snippet}
+{#snippet _start_paused()}
+  <div class={buttonClass}>
+    <button
+      class:disabled={unsavedChanges}
+      class={'bx bx-play !bg-success-200-800 '}
+      onclick={() =>
+        postPipelineAction(pipelineName, 'start_paused', 'await').then(() => {
+          status.status = 'Starting up'
+          onActionSuccess?.('start_paused')
+        })}
     >
     </button>
   </div>
@@ -126,7 +151,10 @@
   <button
     class={'bx bx-pause ' + buttonClass}
     onclick={() =>
-      postPipelineAction(pipelineName, 'pause').then(() => (status.status = 'ShuttingDown'))}
+      postPipelineAction(pipelineName, 'pause').then(() => {
+        onActionSuccess?.('pause')
+        status.status = 'ShuttingDown'
+      })}
   >
   </button>
 {/snippet}
@@ -134,7 +162,10 @@
   <button
     class={'bx bx-stop ' + buttonClass}
     onclick={() =>
-      postPipelineAction(pipelineName, 'shutdown').then(() => (status.status = 'ShuttingDown'))}
+      postPipelineAction(pipelineName, 'shutdown').then(() => {
+        onActionSuccess?.('shutdown')
+        status.status = 'ShuttingDown'
+      })}
   >
   </button>
 {/snippet}

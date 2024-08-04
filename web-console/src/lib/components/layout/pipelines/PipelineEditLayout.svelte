@@ -23,13 +23,16 @@
   import { editor } from 'monaco-editor'
   import { extractSQLCompilerErrorMarkers } from '$lib/functions/pipelines/monaco'
   import { page } from '$app/stores'
-  import type {
-    Pipeline,
-    PipelineStatus as PipelineStatusType
+  import {
+    postPipelineAction,
+    type Pipeline,
+    type PipelineAction,
+    type PipelineStatus as PipelineStatusType
   } from '$lib/services/pipelineManager'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
   import { nonNull } from '$lib/functions/common/function'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
@@ -112,6 +115,17 @@
   let editDisabled = $derived(nonNull(status) && !isPipelineIdle(status.status))
 
   const pipelines = usePipelineList()
+
+  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  const handleActionSuccess = async (pipelineName: string, action: PipelineAction) => {
+    const cbs = pipelineActionCallbacks.getAll(pipelineName, action)
+    await Promise.allSettled(cbs.map((x) => x()))
+    if (action !== 'start_paused') {
+      return
+    }
+    postPipelineAction(pipelineName, 'start')
+  }
+  // let onStartCallbacks = $state<(() => Promise<void>)[]>([])
 </script>
 
 <div class="h-full w-full">
@@ -133,6 +147,7 @@
               (pipelines.pipelines = pipelines.pipelines.filter((p) => p.name !== pipelineName))}
             pipelineBusy={editDisabled}
             unsavedChanges={decoupledCode.downstreamChanged}
+            onActionSuccess={(action) => handleActionSuccess($pipeline.name, action)}
           ></PipelineActions>
         {/if}
       </div>
