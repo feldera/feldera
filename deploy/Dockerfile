@@ -134,7 +134,14 @@ COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp lib/sql-to-dbsp-compiler/SQL-
 
 # Install cargo and rust for this non-root user
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-ENV PATH="$PATH:/home/feldera/.cargo/bin"
+# The download URL for mold uses aarch64 whereas dpkg --print-architecture says arm64
+RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g"`; \
+  curl -LO https://github.com/rui314/mold/releases/download/v2.32.1/mold-2.32.1-$arch-linux.tar.gz \
+  && tar -xzvf mold-2.32.1-$arch-linux.tar.gz \
+  && mv mold-2.32.1-$arch-linux /home/feldera/mold \
+  && rm mold-2.32.1-$arch-linux.tar.gz
+ENV PATH="$PATH:/home/feldera/.cargo/bin:/home/feldera/mold/bin"
+ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 # Run the precompile phase to speed up Rust compilations during deployment
 RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler --dbsp-override-path=/home/feldera/lib --precompile
 ENV BANNER_ADDR=localhost
