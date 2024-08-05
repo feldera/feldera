@@ -7,7 +7,7 @@ use pipeline_types::config::{
     ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
     TransportConfig,
 };
-use pipeline_types::program_schema::ProgramSchema;
+use pipeline_types::program_schema::{ProgramSchema, PropertyValue};
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
@@ -78,10 +78,10 @@ impl Display for CompilationProfile {
 ///
 /// ```ignore
 ///  [ {
-/// "startLineNumber" : 2,
-/// "startColumn" : 4,
-/// "endLineNumber" : 2,
-/// "endColumn" : 8,
+/// "start_line_number" : 2,
+/// "start_column" : 4,
+/// "end_line_number" : 2,
+/// "end_column" : 8,
 /// "warning" : false,
 /// "errorType" : "PRIMARY KEY cannot be nullable",
 /// "message" : "PRIMARY KEY column 'C' has type INTEGER, which is nullable",
@@ -302,7 +302,7 @@ struct NamedConnector {
 /// Parses the properties to create a vector of connectors with optional name and configuration.
 fn parse_named_connectors(
     relation: String,
-    properties: &BTreeMap<String, String>,
+    properties: &BTreeMap<String, PropertyValue>,
 ) -> Result<Vec<NamedConnector>, ConnectorGenerationError> {
     for property in properties.keys() {
         if property != "connectors" && property != "materialized" {
@@ -314,11 +314,11 @@ fn parse_named_connectors(
     }
     match properties.get("connectors") {
         Some(s) => {
-            let connectors = serde_json::from_str::<Vec<NamedConnector>>(s).map_err(|e| {
+            let connectors = serde_json::from_str::<Vec<NamedConnector>>(&s.get_value()).map_err(|e| {
                 ConnectorGenerationError::InvalidPropertyValue {
                     relation: relation.clone(),
                     key: "connectors".to_string(),
-                    value: s.clone(),
+                    value: s.get_value(),
                     reason: format!(
                         "deserialization failed: {e} (position is within the string itself)"
                     ),
@@ -330,7 +330,7 @@ fn parse_named_connectors(
                         ConnectorGenerationError::InvalidPropertyValue {
                             relation: relation.clone(),
                             key: "connectors".to_string(),
-                            value: s.clone(),
+                            value: s.get_value(),
                             reason: format!("connector name '{name}' is not valid: {e}"),
                         }
                     })?;

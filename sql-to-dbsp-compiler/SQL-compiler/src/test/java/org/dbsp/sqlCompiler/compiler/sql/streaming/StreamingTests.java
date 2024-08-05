@@ -30,17 +30,19 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void issue2004() {
         // Based on Q9
+        // Logger.INSTANCE.setLoggingLevel(KeyPropagation.class, 1);
+        // Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
         String sql = """
                 CREATE TABLE auction (
                    date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
                    expires   TIMESTAMP NOT NULL,
-                   id        INT
+                   id        INT NOT NULL PRIMARY KEY
                 );
                 
                 CREATE TABLE bid (
                    date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
                    price INT,
-                   auction INT
+                   auction INT FOREIGN KEY REFERENCES auction(id)
                 );
                 
                 CREATE VIEW Q9 AS

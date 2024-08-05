@@ -4,11 +4,11 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /** An object that has a schema */
 public class HasSchema implements IHasSchema {
@@ -51,9 +51,8 @@ public class HasSchema implements IHasSchema {
         return this.columns;
     }
 
-    @Nullable
-    @Override
-    public Map<String, String> getProperties() {
+    @Nullable @Override
+    public PropertyList getProperties() {
         return null;
     }
 }

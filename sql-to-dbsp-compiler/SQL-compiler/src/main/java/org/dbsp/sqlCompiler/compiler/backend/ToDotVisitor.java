@@ -79,7 +79,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     static String annotations(DBSPOperator operator) {
         if (operator.annotations.isEmpty())
             return "";
-        return " " + operator.annotations.toString();
+        return " " + operator.annotations;
     }
 
     @Override
@@ -274,8 +274,10 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         CircuitVisitor create(IndentStream stream);
     }
 
-    public static void toDot(String fileName, int details,
+    public static void toDot(String fileName,
                       @Nullable String outputFormat, DBSPCircuit circuit, VisitorConstructor constructor) {
+        if (circuit.isEmpty())
+            return;
         System.out.println("Writing circuit to " + fileName);
         Logger.INSTANCE.belowLevel("ToDotVisitor", 1)
                 .append("Writing circuit to ")
@@ -307,6 +309,6 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
 
     public static void toDot(IErrorReporter reporter, String fileName, int details,
                              @Nullable String outputFormat, DBSPCircuit circuit) {
-        toDot(fileName, details, outputFormat, circuit, stream -> new ToDotVisitor(reporter, stream, details));
+        toDot(fileName, outputFormat, circuit, stream -> new ToDotVisitor(reporter, stream, details));
     }
 }

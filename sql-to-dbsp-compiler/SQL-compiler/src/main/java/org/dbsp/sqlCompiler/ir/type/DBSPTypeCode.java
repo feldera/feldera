@@ -49,7 +49,9 @@ public enum DBSPTypeCode {
     USER(null, "", ""),
     VEC("ARRAY", "", ""),
     MAP("MAP", "", "BTreeMap"),
-    ZSET("MULTISET", "", "");
+    ZSET("MULTISET", "", ""),
+    // Abstract type, used in some dataflow analysis.
+    ABSTRACT(null, "", "");
 
     @Nullable
     public final String sqlName;

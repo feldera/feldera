@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.apache.calcite.sql.SqlIdentifier;
-import org.apache.calcite.sql.parser.SqlParserPos;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.util.Utilities;
 
 import java.util.List;
@@ -23,13 +23,12 @@ public class ForeignKey {
     /** Represents a table and a list of columns. */
     public static class TableAndColumns {
         // Position of the whole list of columns in source code
-        public final SqlParserPos listpos;
-        // Kept as SqlIdentifier to preserve source position for validation
-        public final SqlIdentifier tableName;
-        public final List<SqlIdentifier> columns;
+        public final SourcePositionRange listPos;
+        public final SqlFragment tableName;
+        public final List<SqlFragment> columns;
 
-        TableAndColumns(SqlParserPos listPos, SqlIdentifier tableName, List<SqlIdentifier> columns) {
-            this.listpos = listPos;
+        TableAndColumns(SourcePositionRange listPos, SqlFragment tableName, List<SqlFragment> columns) {
+            this.listPos = listPos;
             this.tableName = tableName;
             this.columns = columns;
         }
@@ -42,12 +41,12 @@ public class ForeignKey {
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         ObjectNode result = mapper.createObjectNode();
         ArrayNode columns = result.putArray("columns");
-        for (SqlIdentifier column: this.thisTable.columns)
-            columns.add(column.getSimple());
+        for (SqlFragment column: this.thisTable.columns)
+            columns.add(column.getString());
         result.put("refers", this.otherTable.tableName.toString());
         ArrayNode tocolumns = result.putArray("tocolumns");
-        for (SqlIdentifier column: this.thisTable.columns)
-            tocolumns.add(column.getSimple());
+        for (SqlFragment column: this.thisTable.columns)
+            tocolumns.add(column.getString());
         return result;
     }
 }

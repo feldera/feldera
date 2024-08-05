@@ -29,10 +29,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import java.util.Map;
 
 /** Describes a table as produced by a CREATE TABLE DDL statement. */
 public class CreateTableStatement extends CreateRelationStatement {
@@ -42,13 +42,20 @@ public class CreateTableStatement extends CreateRelationStatement {
                                 String tableName, boolean nameIsQuoted,
                                 List<RelColumnMetadata> columns,
                                 List<ForeignKey> foreignKeys,
-                                @Nullable Map<String, String> properties) {
+                                @Nullable PropertyList properties) {
         super(node, statement, tableName, nameIsQuoted, columns, properties);
         this.foreignKeys = foreignKeys;
     }
 
     public boolean isMaterialized() {
         String mat = this.getPropertyValue("materialized");
+        if (mat == null)
+            return false;
+        return mat.equalsIgnoreCase("true");
+    }
+
+    public boolean isAppendOnly() {
+        String mat = this.getPropertyValue("appendOnly");
         if (mat == null)
             return false;
         return mat.equalsIgnoreCase("true");

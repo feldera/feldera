@@ -27,10 +27,11 @@ import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import java.util.Map;
 
 /** Base class for CreateTableStatement and CreateViewStatement. */
 public abstract class CreateRelationStatement
@@ -39,12 +40,12 @@ public abstract class CreateRelationStatement
     public final String relationName;
     public final boolean nameIsQuoted;
     public final List<RelColumnMetadata> columns;
-    @Nullable final Map<String, String> properties;
+    @Nullable final PropertyList properties;
 
     protected CreateRelationStatement(SqlNode node, String statement, String relationName,
                                       boolean nameIsQuoted,
                                       List<RelColumnMetadata> columns,
-                                      @Nullable Map<String, String> properties) {
+                                      @Nullable PropertyList properties) {
         super(node, statement);
         this.nameIsQuoted = nameIsQuoted;
         this.relationName = relationName;
@@ -64,13 +65,16 @@ public abstract class CreateRelationStatement
         return this.columns;
     }
 
-    @Nullable public Map<String, String> getProperties() { return this.properties; }
+    @Nullable public PropertyList getProperties() { return this.properties; }
 
     @Nullable
     public String getPropertyValue(String property) {
         if (this.properties == null)
             return null;
-        return this.properties.get(property);
+        SqlFragment fragment = this.properties.getPropertyValue(property);
+        if (fragment == null)
+            return null;
+        return fragment.getString();
     }
 
     @Override
