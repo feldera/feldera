@@ -154,7 +154,7 @@ class PipelineBuilder:
             program_config={
                 'profile': self.compilation_profile.value,
             },
-            runtime_config=self.runtime_config.__dict__,
+            runtime_config=dict((k, v) for k, v in self.runtime_config.__dict__.items() if v is not None),
         )
 
         inner = self.client.create_or_update_pipeline(inner)

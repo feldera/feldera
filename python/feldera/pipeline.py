@@ -213,12 +213,20 @@ class Pipeline:
         """
 
         status = self.status()
-        if status not in [PipelineStatus.NOT_FOUND, PipelineStatus.SHUTDOWN]:
-            raise RuntimeError(f"pipeline in state: {str(status.name)} cannot be started")
+        if status != PipelineStatus.SHUTDOWN:
+            raise RuntimeError(f"pipeline {self.name} in state: {str(status.name)} cannot be started")
 
         self.pause()
         self.__setup_output_listeners()
         self.resume()
+
+    def restart(self):
+        """
+        Restarts the pipeline.
+        """
+
+        self.shutdown()
+        self.start()
 
     def wait_for_idle(
             self,
