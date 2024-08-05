@@ -10,11 +10,11 @@
   let { pipelineName }: { pipelineName: string } = $props()
   let currentTab = useLocalStorage('pipelines/' + pipelineName + '/currentInteractionTab', 'errors')
   const tabs = [
-    tuple('errors', TabPipelineErrors),
+    tuple('Errors', TabPipelineErrors),
     // tuple('ad-hoc query', TabQueryData),
-    tuple('performance', TabPerformance),
+    tuple('Performance', TabPerformance),
     // tuple('query plan', TabDBSPGraph),
-    tuple('change stream', TabChangeStream)
+    tuple('Change Stream', TabChangeStream)
   ]
 </script>
 
