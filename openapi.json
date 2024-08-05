@@ -274,7 +274,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/PipelineDescr"
+                    "$ref": "#/components/schemas/Demo"
                   }
                 }
               }
@@ -2172,6 +2172,22 @@
         "additionalProperties": {
           "type": "string",
           "description": "Storage options for configuring backend object store.\n\nFor specific options available for different storage backends, see:\n* [Azure options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)\n* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)\n* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)"
+        }
+      },
+      "Demo": {
+        "type": "object",
+        "required": [
+          "title",
+          "pipeline"
+        ],
+        "properties": {
+          "pipeline": {
+            "$ref": "#/components/schemas/PipelineDescr"
+          },
+          "title": {
+            "type": "string",
+            "description": "Demo title."
+          }
         }
       },
       "EgressMode": {
