@@ -410,6 +410,14 @@ export type DeltaTableWriterConfig = {
   '[key: string]': (string | DeltaTableWriteMode) | undefined
 }
 
+export type Demo = {
+  pipeline: PipelineDescr
+  /**
+   * Demo title.
+   */
+  title: string
+}
+
 export type EgressMode = 'watch' | 'snapshot'
 
 /**
@@ -1679,7 +1687,7 @@ export type DeleteApiKeyResponse = unknown
 
 export type DeleteApiKeyError = ErrorResponse
 
-export type GetConfigDemosResponse = Array<PipelineDescr>
+export type GetConfigDemosResponse = Array<Demo>
 
 export type GetConfigDemosError = ErrorResponse
 
@@ -2006,7 +2014,7 @@ export type $OpenApiTs = {
         /**
          * List of demos.
          */
-        '200': Array<PipelineDescr>
+        '200': Array<Demo>
         /**
          * Failed to read demos from the demos directory.
          */

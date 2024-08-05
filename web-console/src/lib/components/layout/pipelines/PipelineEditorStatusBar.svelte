@@ -13,17 +13,19 @@
     {downstreamChanged ? 'changed' : 'saved'}
   </div> -->
   <button
-    class={'hover:preset-filled-primary-200-800 px-4 ' +
+    class={'px-4 hover:preset-filled-primary-200-800 ' +
       (downstreamChanged ? 'preset-tonal-primary' : 'bg-surface-50-950')}
     class:disabled={!downstreamChanged}
-    onclick={saveCode}>
+    onclick={saveCode}
+  >
     Save
   </button>
-  <Tooltip class="text-surface-950-50 z-20 bg-white dark:bg-black">Ctrl + S</Tooltip>
+  <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black">Ctrl + S</Tooltip>
   <button
-    class="hover:preset-filled-primary-200-800 w-32 px-2"
+    class="w-32 px-2 hover:preset-filled-primary-200-800"
     tabindex={10}
-    onclick={() => (autoSavePipeline.value = !autoSavePipeline.value)}>
+    onclick={() => (autoSavePipeline.value = !autoSavePipeline.value)}
+  >
     Autosave: {autoSavePipeline.value ? 'on' : 'off'}
   </button>
 </div>

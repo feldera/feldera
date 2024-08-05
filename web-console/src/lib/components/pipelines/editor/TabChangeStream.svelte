@@ -15,23 +15,30 @@
   >({})
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   let rows = $state<
-    Record<string, { relationName: string; type: 'insert' | 'delete'; record: XgressRecord }[]>
+    // Record<string, { relationName: string; type: 'insert' | 'delete'; record: XgressRecord }[]>
+    Record<
+      string,
+      ({ relationName: string } & ({ insert: XgressRecord } | { delete: XgressRecord }))[]
+    >
   >({}) // Initialize row array
 
   const bufferSize = 1000
   const pushChanges =
     (pipelineName: string, relationName: string) =>
     (changes: Record<'insert' | 'delete', XgressRecord>[]) => {
-      rows[pipelineName].splice(Math.max(bufferSize - changes.length, 0))
-      rows[pipelineName].unshift(
-        ...changes
-          .slice(-bufferSize)
-          .reverse()
-          .map((change) => ({
-            type: 'insert' in change ? ('insert' as const) : ('delete' as const),
-            relationName,
-            record: change.insert ?? change.delete
-          }))
+      rows[pipelineName].splice(
+        0,
+        // Math.max(Math.min(
+        rows[pipelineName].length + changes.length - bufferSize
+        //   , bufferSize), 0)
+      )
+      rows[pipelineName].push(
+        ...changes.slice(-bufferSize).map((change) => ({
+          // type: 'insert' in change ? ('insert' as const) : ('delete' as const),
+          ...change,
+          relationName
+          // record: change.insert ?? change.delete
+        }))
       )
     }
   const startReadingStream = (pipelineName: string, relationName: string) => {
@@ -99,7 +106,7 @@
         if (!oldRelation) {
           pipelinesRelations[pipelineName][newRelationName] = {
             selected: false,
-            type: 'tables'
+            type
           }
         }
       }
@@ -117,7 +124,7 @@
   })
 
   let inputs = $derived(
-    Object.entries(pipelinesRelations[pipelineName] /* ?.tables */ ?? {})
+    Object.entries(pipelinesRelations[pipelineName] ?? {})
       .filter((e) => e[1].type === 'tables')
       .map(([relationName, value]) => ({
         relationName,
@@ -125,7 +132,7 @@
       }))
   )
   let outputs = $derived(
-    Object.entries(pipelinesRelations[pipelineName] /*?.views */ ?? {})
+    Object.entries(pipelinesRelations[pipelineName] ?? {})
       .filter((e) => e[1].type === 'views')
       .map(([relationName, value]) => ({
         relationName,
