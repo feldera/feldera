@@ -18,23 +18,20 @@ To ensure all data is received start listening before calling
     from feldera import FelderaClient, PipelineBuilder
     import pandas as pd
 
-    TBL_NAMES = ['students', 'grades']
-    view_name = "average_scores"
-
     sql = f"""
-    CREATE TABLE {TBL_NAMES[0]} (
+    CREATE TABLE students (
         name STRING,
         id INT
     );
 
-    CREATE TABLE {TBL_NAMES[1]} (
+    CREATE TABLE grades (
         student_id INT,
         science INT,
         maths INT,
         art INT
     );
 
-    CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
+    CREATE VIEW average_scores AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
     """
 
     # Create a client
@@ -49,8 +46,8 @@ To ensure all data is received start listening before calling
     out = pipeline.listen("average_scores")
 
     pipeline.start()
-    pipeline.input_pandas(TBL_NAMES[0], df_students)
-    pipeline.input_pandas(TBL_NAMES[1], df_grades)
+    pipeline.input_pandas("students", df_students)
+    pipeline.input_pandas("grades", df_grades)
 
     # wait for the pipeline to complete
     # note that if the source is a stream, this will run indefinitely

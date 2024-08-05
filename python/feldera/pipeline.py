@@ -19,12 +19,6 @@ class Pipeline:
         self.client: FelderaClient = client
         self._inner: InnerPipeline | None = None
         self.views_tx: List[Dict[str, Queue]] = []
-        
-    @classmethod
-    def __from_inner(cls, inner: InnerPipeline, client: FelderaClient):
-        p = cls(inner.name, client)
-        p._inner = inner
-        return p
 
     def __setup_output_listeners(self):
         """
@@ -130,7 +124,7 @@ class Pipeline:
 
         queue: Optional[Queue] = None
 
-        if self.status() != PipelineStatus.RUNNING:
+        if self.status() not in [PipelineStatus.PAUSED, PipelineStatus.RUNNING]:
             queue = Queue(maxsize=1)
             self.views_tx.append({view_name: queue})
 
@@ -161,7 +155,7 @@ class Pipeline:
 
         queue: Optional[Queue] = None
 
-        if self.status() != PipelineStatus.RUNNING:
+        if self.status() not in [PipelineStatus.RUNNING, PipelineStatus.PAUSED]:
             queue = Queue(maxsize=1)
             self.views_tx.append({view_name: queue})
 

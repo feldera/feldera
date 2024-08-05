@@ -94,6 +94,12 @@ class PipelineBuilder:
         :return: The created pipeline
         """
 
+        if self.name is None or self.sql is None:
+            raise ValueError("Name and SQL are required to create a pipeline")
+
+        if self.client.get_pipeline(self.name) is not None:
+            raise RuntimeError(f"Pipeline with name {self.name} already exists")
+
         inner = InnerPipeline(
             self.name,
             description=self.description,
@@ -130,6 +136,9 @@ class PipelineBuilder:
 
         If the pipeline exists and is running, it will be stopped and replaced.
         """
+
+        if self.name is None or self.sql is None:
+            raise ValueError("Name and SQL are required to create a pipeline")
 
         try:
             # shutdown the pipeline if it exists and is running

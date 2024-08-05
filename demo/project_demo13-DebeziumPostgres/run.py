@@ -11,7 +11,7 @@ import time
 import requests
 import argparse
 import json
-from feldera import FelderaClient, SQLContext
+from feldera import FelderaClient, PipelineBuilder
 from kafka.admin import KafkaAdminClient
 from kafka.errors import UnknownTopicOrPartitionError
 
@@ -114,11 +114,11 @@ def prepare_feldera_pipeline(api_url, kafka_url):
 
     pipeline_name = "demo-debezium-postgres-pipeline"
     client = FelderaClient(api_url)
-    pipeline = SQLContext(pipeline_name, client)
     sql = open(PROJECT_SQL).read().replace("[REPLACE-BOOTSTRAP-SERVERS]", kafka_url)
 
     print("Starting pipeline...")
-    pipeline.sql(sql)
+    pipeline = PipelineBuilder(client).with_name(pipeline_name).with_sql(sql).create_or_replace()
+    pipeline.start()
     print("Pipeline started")
 
 if __name__ == "__main__":

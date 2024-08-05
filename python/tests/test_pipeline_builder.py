@@ -8,7 +8,7 @@ from feldera import PipelineBuilder
 from tests import TEST_CLIENT
 
 
-class TestWireframes(unittest.TestCase):
+class TestPipelineBuilder(unittest.TestCase):
     def test_local(self):
         TBL_NAMES = ['students', 'grades']
         view_name = "average_scores"
@@ -485,7 +485,7 @@ class TestWireframes(unittest.TestCase):
         CREATE VIEW s AS SELECT * FROM items;
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name(name).with_sql(sql).with_runtime_config(RuntimeConfig(resources=resources)).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT).with_name(name).with_sql(sql).with_runtime_config(RuntimeConfig(resources=resources, storage=False, workers=10)).create_or_replace()
 
         out = pipeline.listen("s")
 

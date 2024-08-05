@@ -127,8 +127,3 @@ library we use does not currently auto-detect the AWS region.
   "aws_region": "us-east-1"
 }
 ```
-
-### Python SDK
-
-See [Delta Lake input connector documentation](https://www.feldera.com/python/feldera.html#feldera.sql_context.SQLContext.connect_source_delta_table)
-in the Python SDK.

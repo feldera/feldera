@@ -221,7 +221,7 @@ The following Python snippet connects to a Feldera service
 and creates a Feldera pipeline to read transaction and demographics
 data from Delta tables stored in S3 and evaluate the feature query
 defined above on this data. We use the
-[`listen`](https://www.feldera.com/python/feldera.html#feldera.sql_context.SQLContext.listen)
+[`listen`](https://www.feldera.com/python/feldera.html#feldera.pipeline.Pipeline.listen)
 API to read the computed features into a [Pandas](https://pandas.pydata.org/)
 dataframe.  We split this dataframe into train and test sets.  We
 use the former to train an XGBoost model and the latter to measure model
@@ -261,8 +261,7 @@ transactions_connectors = [{
 
 sql = build_program(json.dumps(transactions_connectors), json.dumps(demographics_connectors), '[]')
 
-pipeline = SQLContext("fraud_detection_training", client)
-pipeline.sql(sql)
+pipeline = PipelineBuilder(client).with_name("fraud_detection_training").with_sql(sql).create_or_replace()
 
 hfeature = pipeline.listen("feature")
 
@@ -391,8 +390,7 @@ transactions_connectors = [{
 }]
 
 sql = build_program(json.dumps(transactions_connectors), json.dumps(demographics_connectors), '[]')
-pipeline = SQLContext("fraud_detection_inference", client)
-pipeline.sql(sql)
+pipeline = PipelineBuilder(client).with_name("fraud_detection_inference").with_sql(sql).create_or_replace()
 
 pipeline.foreach_chunk("feature", lambda df, chunk : inference(trained_model, df))
 
