@@ -310,7 +310,7 @@ export const relationEggressStream = async (pipelineName: string, relationName: 
     }
   })()
   const result = await fetch(
-    `http://localhost:8080/v0/pipelines/${pipelineName}/egress/${relationName}?format=json&mode=watch&array=false&query=table`,
+    `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${relationName}?format=json&mode=watch&array=false&query=table`,
     {
       method: 'POST'
     }
