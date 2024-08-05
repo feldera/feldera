@@ -23,40 +23,43 @@
   }
 </script>
 
-{#if data.demos.length}
-  <div class="h5 px-8 py-8 font-normal md:px-16">
-    Try running one of our examples below, or write a new pipeline from scratch:
-    <button
-      class="btn preset-filled-primary-500 mt-auto self-end text-sm"
-      onclick={() => goto('#new')}>
-      CREATE NEW PIPELINE
-    </button>
-  </div>
-  <div class="grid grid-cols-1 gap-8 px-8 sm:grid-cols-2 md:gap-16 md:px-16 lg:grid-cols-3">
-    {#each data.demos as example}
-      <div class="card flex flex-col gap-2 bg-white p-4 dark:bg-black">
-        <span class="h5 font-normal">{example.name}</span>
-        <span class="text-left">{example.description}</span>
-        <button
-          onclick={() => tryPipelineFromExample(example)}
-          class="btn preset-filled-primary-500 mt-auto self-end text-sm">
-          TRY
-          <div class="bx bx-right-arrow-alt text-[24px]"></div>
-        </button>
-      </div>
-    {/each}
-  </div>
-{:else}
-  <div class="h5 px-8 py-8 font-normal md:px-16">
-    Write a new streaming SQL query from scratch:
-    <button
-      class="btn preset-filled-primary-500 mt-auto self-end text-sm"
-      onclick={() => goto('#new')}>
-      CREATE NEW PIPELINE
-    </button>
-  </div>
-  <div class="text-surface-600-400 px-8 text-lg md:px-16">
-    There are no demo pipelines available at this time. Please refer to documentation for examples
-    of SQL queries.
-  </div>
-{/if}
+<div class="self-center">
+  {#if data.demos.length}
+    <div class="h5 px-8 py-8 font-normal md:px-16">
+      Try running one of our examples below, or write a new pipeline from scratch:
+      <button
+        class="btn preset-filled-primary-500 mt-auto self-end text-sm"
+        onclick={() => goto('#new')}>
+        CREATE NEW PIPELINE
+      </button>
+    </div>
+    <div
+      class="grid max-w-[1400px] grid-cols-1 gap-8 px-8 sm:grid-cols-2 md:gap-16 md:px-16 lg:grid-cols-3 xl:grid-cols-4">
+      {#each data.demos as example}
+        <div class="card flex flex-col gap-2 bg-white p-4 dark:bg-black">
+          <span class="h5 font-normal">{example.name}</span>
+          <span class="text-left">{example.description}</span>
+          <button
+            onclick={() => tryPipelineFromExample(example)}
+            class="btn preset-filled-primary-500 mt-auto self-end text-sm">
+            TRY
+            <div class="bx bx-right-arrow-alt text-[24px]"></div>
+          </button>
+        </div>
+      {/each}
+    </div>
+  {:else}
+    <div class="h5 px-8 py-8 font-normal md:px-16">
+      Write a new streaming SQL query from scratch:
+      <button
+        class="btn preset-filled-primary-500 mt-auto self-end text-sm"
+        onclick={() => goto('#new')}>
+        CREATE NEW PIPELINE
+      </button>
+    </div>
+    <div class="text-surface-600-400 px-8 text-lg md:px-16">
+      There are no demo pipelines available at this time. Please refer to documentation for examples
+      of SQL queries.
+    </div>
+  {/if}
+</div>

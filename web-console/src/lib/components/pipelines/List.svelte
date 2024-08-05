@@ -82,8 +82,8 @@
   }
 </script>
 
-<div class="relative flex flex-col gap-2 overflow-y-auto px-4" use:bindScrollY={{ scrollY }}>
-  <div class="sticky top-0 m-0 pt-1 bg-surface-50-950">
+<div class="relative flex flex-col gap-2 overflow-y-auto px-4 pb-0.5" use:bindScrollY={{ scrollY }}>
+  <div class="bg-surface-50-950 sticky top-0 m-0 pt-1">
     <input
       bind:this={createPipelineInputRef}
       onblur={(e) => {
@@ -97,15 +97,16 @@
         }
       }}
       placeholder="New Pipeline Name"
-      class="input placeholder-surface-700 outline-none bg-surface-50-950 dark:placeholder-surface-300"
-    />
-    <div class="py-2 text-surface-400-600">Press Enter to create</div>
+      class="input placeholder-surface-700 bg-surface-50-950 dark:placeholder-surface-300 outline-none" />
+    <div class="text-surface-400-600 py-2">Press Enter to create</div>
   </div>
   {#each pipelines as pipeline}
     <a
-      class="flex flex-nowrap items-center gap-2"
-      href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
-    >
+      class="-mx-4 -my-0.5 flex flex-nowrap items-center gap-2 border-2 border-transparent px-3.5 {$page
+        .params.pipelineName === pipeline.name
+        ? 'bg-secondary-50-950'
+        : 'hover:bg-surface-100-900 border-transparent hover:!bg-opacity-30'}"
+      href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}>
       <div class="w-full overflow-ellipsis whitespace-break-spaces py-1 transition-none duration-0">
         <!-- Insert a thin whitespace to help break names containing underscore -->
         {pipeline.name.replaceAll('_', `_ `)}
