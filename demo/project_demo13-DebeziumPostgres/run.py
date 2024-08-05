@@ -117,7 +117,7 @@ def prepare_feldera_pipeline(api_url, kafka_url):
     sql = open(PROJECT_SQL).read().replace("[REPLACE-BOOTSTRAP-SERVERS]", kafka_url)
 
     print("Starting pipeline...")
-    pipeline = PipelineBuilder(client).with_name(pipeline_name).with_sql(sql).create_or_replace()
+    pipeline = PipelineBuilder(client, name=pipeline_name, sql=sql).create_or_replace()
     pipeline.start()
     print("Pipeline started")
 

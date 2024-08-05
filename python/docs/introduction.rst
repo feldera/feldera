@@ -60,7 +60,7 @@ Key Concepts
 
          from feldera import PipelineBuilder
 
-         pipeline = PipelineBuilder(client).with_name("example").with_sql(sql).create()
+         pipeline = PipelineBuilder(client, name="example", sql=sql).create()
 
 * :meth:`.Pipeline.start`
    - Starts the Feldera Pipeline and keeps it running indefinitely.
@@ -96,7 +96,7 @@ Key Concepts
          """
 
          client = FelderaClient("https://try.feldera.com", api_key="YOUR_API_KEY")
-         pipeline = PipelineBuilder(client).with_name("example").with_sql(sql).create()
+         pipeline = PipelineBuilder(client, name="example", sql=sql).create()
 
          # start the pipeline
          pipeline.start()

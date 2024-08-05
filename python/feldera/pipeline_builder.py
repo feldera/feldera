@@ -23,8 +23,8 @@ class PipelineBuilder:
     def __init__(
         self,
         client: FelderaClient,
-        name: str = None,
-        sql: str = "",
+        name: str,
+        sql: str,
         description: str = "",
         compilation_profile: CompilationProfile = CompilationProfile.OPTIMIZED,
         runtime_config: RuntimeConfig = RuntimeConfig(resources=Resources()),
@@ -36,56 +36,6 @@ class PipelineBuilder:
         self.sql: str = sql
         self.compilation_profile: CompilationProfile = compilation_profile
         self.runtime_config: RuntimeConfig = runtime_config
-
-    def with_sql(self, sql: str) -> Self:
-        """
-        Sets the SQL code of the pipeline.
-
-        :param sql: The SQL code of the pipeline
-        """
-
-        self.sql = sql
-        return self
-
-    def with_name(self, name: str) -> Self:
-        """
-        Sets the name of the pipeline.
-
-        :param name: The name of the pipeline
-        """
-
-        self.name = name
-        return self
-
-    def with_description(self, description: str) -> Self:
-        """
-        Sets the description of the pipeline.
-
-        :param description: The description of the pipeline
-        """
-
-        self.description = description
-        return self
-
-    def with_compilation_profile(self, compilation_profile: CompilationProfile) -> Self:
-        """
-        Sets the compilation profile of the pipeline.
-
-        :param compilation_profile: The compilation profile to use
-        """
-
-        self.compilation_profile = compilation_profile
-        return self
-
-    def with_runtime_config(self, config: RuntimeConfig) -> Self:
-        """
-        Sets the runtime config of the pipeline.
-
-        :param config: The runtime config to use
-        """
-
-        self.runtime_config = config
-        return self
 
     def create(self) -> Pipeline:
         """
@@ -115,20 +65,6 @@ class PipelineBuilder:
         pipeline._inner = inner
 
         return pipeline
-
-    def get(self) -> Pipeline:
-        """
-        Get the pipeline if it exists.
-        """
-
-        try:
-            inner = self.client.get_pipeline(self.name)
-            pipeline = Pipeline(inner.name, self.client)
-            pipeline.__inner = inner
-            return pipeline
-        except FelderaAPIError as err:
-            if err.status_code == 404:
-                raise RuntimeError(f"Pipeline with name {self.name} not found")
 
     def create_or_replace(self) -> Pipeline:
         """

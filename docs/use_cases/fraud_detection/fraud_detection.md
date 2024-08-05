@@ -261,7 +261,7 @@ transactions_connectors = [{
 
 sql = build_program(json.dumps(transactions_connectors), json.dumps(demographics_connectors), '[]')
 
-pipeline = PipelineBuilder(client).with_name("fraud_detection_training").with_sql(sql).create_or_replace()
+pipeline = PipelineBuilder(client, name="fraud_detection_training", sql=sql).create_or_replace()
 
 hfeature = pipeline.listen("feature")
 
@@ -390,7 +390,7 @@ transactions_connectors = [{
 }]
 
 sql = build_program(json.dumps(transactions_connectors), json.dumps(demographics_connectors), '[]')
-pipeline = PipelineBuilder(client).with_name("fraud_detection_inference").with_sql(sql).create_or_replace()
+pipeline = PipelineBuilder(client, name="fraud_detection_inference", sql=sql).create_or_replace()
 
 pipeline.foreach_chunk("feature", lambda df, chunk : inference(trained_model, df))
 

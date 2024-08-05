@@ -4,7 +4,7 @@ import pandas as pd
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.admin import KafkaAdminClient, NewTopic
 
-from feldera import PipelineBuilder
+from feldera import PipelineBuilder, Pipeline
 from tests import TEST_CLIENT
 
 
@@ -29,7 +29,7 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name("notebook").with_sql(sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="notebook", sql=sql).create_or_replace()
 
         df_students = pd.read_csv('students.csv')
         df_grades = pd.read_csv('grades.csv')
@@ -44,6 +44,59 @@ class TestPipelineBuilder(unittest.TestCase):
 
         assert df.shape[0] == 100
 
+        pipeline.delete()
+
+    def test_pipeline_get(self):
+        TBL_NAMES = ['students', 'grades']
+        view_name = "average_scores"
+
+        sql = f"""
+        CREATE TABLE {TBL_NAMES[0]} (
+            name STRING,
+            id INT
+        );
+        
+        CREATE TABLE {TBL_NAMES[1]} (
+            student_id INT,
+            science INT,
+            maths INT,
+            art INT
+        );
+        
+        CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
+        """
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="notebook", sql=sql).create_or_replace()
+
+        df_students = pd.read_csv('students.csv')
+        df_grades = pd.read_csv('grades.csv')
+
+        out = pipeline.listen("average_scores")
+
+        pipeline.start()
+        pipeline.input_pandas(TBL_NAMES[0], df_students)
+        pipeline.input_pandas(TBL_NAMES[1], df_grades)
+        pipeline.wait_for_completion(True)
+        df = out.to_pandas()
+
+        assert df.shape[0] == 100
+
+        del pipeline
+        del out
+
+        pipeline = Pipeline.get("notebook", TEST_CLIENT)
+        assert pipeline is not None
+        pipeline.start()
+
+        out = pipeline.listen("average_scores")
+        pipeline.input_pandas(TBL_NAMES[0], df_students)
+pipeline.input_pandas(TBL_NAMES[1], df_grades)
+        pipeline.wait_for_completion(True)
+        df = out.to_pandas()
+
+        assert df.shape[0] == 100
+        pipeline.pause()
+        pipeline.shutdown()
         pipeline.delete()
 
     def test_local_listen_after_start(self):
@@ -66,7 +119,7 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name("notebook").with_sql(sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="notebook", sql=sql).create_or_replace()
 
         df_students = pd.read_csv('students.csv')
         df_grades = pd.read_csv('grades.csv')
@@ -109,8 +162,8 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW {VIEW_NAMES[1]} AS SELECT * FROM {TBL_NAMES[1]};
         """
 
-        pipeline1 = PipelineBuilder(TEST_CLIENT).with_name("p1").with_sql(sql1).create_or_replace()
-        pipeline2 = PipelineBuilder(TEST_CLIENT).with_name("p2").with_sql(sql2).create_or_replace()
+        pipeline1 = PipelineBuilder(TEST_CLIENT, name="p1", sql=sql1).create_or_replace()
+        pipeline2 = PipelineBuilder(TEST_CLIENT, name="p2", sql=sql2).create_or_replace()
 
         df_students = pd.read_csv('students.csv')
         df_grades = pd.read_csv('grades.csv')
@@ -158,7 +211,7 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name("foreach_chunk").with_sql(sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="foreach_chunk", sql=sql).create_or_replace()
 
         df_students = pd.read_csv('students.csv')
         df_grades = pd.read_csv('grades.csv')
@@ -184,7 +237,7 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW s AS SELECT * FROM {TBL_NAME};
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name("df_without_columns").with_sql(sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="df_without_columns", sql=sql).create_or_replace()
 
         df = pd.DataFrame([(1, "a"), (2, "b"), (3, "c")])
 
@@ -209,9 +262,9 @@ class TestPipelineBuilder(unittest.TestCase):
         """
 
         with self.assertRaises(Exception):
-            PipelineBuilder(TEST_CLIENT).with_name("sql_error").with_sql(sql).create_or_replace()
+            PipelineBuilder(TEST_CLIENT, name="sql_error", sql=sql).create_or_replace()
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name("sql_error").get()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="sql_error", sql=sql).get()
         pipeline.delete()
 
     def test_kafka(self):
@@ -312,7 +365,7 @@ class TestPipelineBuilder(unittest.TestCase):
         AS SELECT COUNT(*) as num_rows FROM {TABLE_NAME};
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name("kafka_test").with_sql(sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="kafka_test", sql=sql).create_or_replace()
 
         out = pipeline.listen(VIEW_NAME)
         pipeline.start()
@@ -352,7 +405,7 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW s AS SELECT * FROM items;
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name("test_http_get").with_sql(sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_http_get", sql=sql).create_or_replace()
 
         out = pipeline.listen("s")
 
@@ -425,7 +478,7 @@ class TestPipelineBuilder(unittest.TestCase):
         AS SELECT * FROM items;
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name("test_avro_format").with_sql(sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_avro_format", sql=sql).create_or_replace()
 
         pipeline.start()
         pipeline.input_pandas("items", df)
@@ -485,7 +538,7 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW s AS SELECT * FROM items;
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name(name).with_sql(sql).with_runtime_config(RuntimeConfig(resources=resources, storage=False, workers=10)).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name=name, sql=sql, runtime_config=RuntimeConfig(resources=resources, storage=False, workers=10)).create_or_replace()
 
         out = pipeline.listen("s")
 
@@ -514,7 +567,7 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW {VIEW_NAME} AS SELECT * FROM {TBL_NAME};
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name("test_timestamp_pandas").with_sql(sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_timestamp_pandas", sql=sql).create_or_replace()
 
         df = pd.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"], "birthdate": [
             pd.Timestamp.now(), pd.Timestamp.now(), pd.Timestamp.now()
@@ -545,7 +598,7 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW {VIEW_NAME} AS SELECT * FROM {TBL_NAME};
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name("test_input_json").with_sql(sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_input_json", sql=sql).create_or_replace()
 
         data = {"insert": {'id': 1, 'name': 'a'}}
 
@@ -575,7 +628,7 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW {VIEW_NAME} AS SELECT * FROM {TBL_NAME};
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT).with_name("test_input_json").with_sql(sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_input_json", sql=sql).create_or_replace()
 
         data = [{'id': 1, 'name': 'a'}, {'id': 2, 'name': 'b'}]
 

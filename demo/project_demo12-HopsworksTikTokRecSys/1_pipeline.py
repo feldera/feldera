@@ -27,7 +27,7 @@ code = generate_program(
 )
 
 runtime_config = RuntimeConfig(storage=False, workers=10)
-pipeline = PipelineBuilder(client).with_name("mil").with_sql(code).with_runtime_config(runtime_config).create_or_replace()
+pipeline = PipelineBuilder(client, name="mil", sql=code, runtime_config=runtime_config).create_or_replace()
 
 print("Starting Feldera Pipeline")
 pipeline.start()

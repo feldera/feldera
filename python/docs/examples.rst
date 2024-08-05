@@ -36,7 +36,7 @@ To ensure all data is received start listening before calling
 
     # Create a client
     client = FelderaClient("https://try.feldera.com", api_key="YOUR_API_KEY")
-    pipeline = PipelineBuilder(client).with_name("notebook").with_sql(sql).create_or_replace()
+    pipeline = PipelineBuilder(client, name="notebook", sql=sql).create_or_replace()
 
     df_students = pd.read_csv('students.csv')
     df_grades = pd.read_csv('grades.csv')

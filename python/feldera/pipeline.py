@@ -2,6 +2,7 @@ import time
 import pandas
 
 from typing import List, Dict, Callable, Optional
+from typing_extensions import Self
 from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
@@ -325,3 +326,21 @@ class Pipeline:
         """
 
         self.client.delete_pipeline(self.name)
+
+    @staticmethod
+    def get(name: str, client: FelderaClient) -> 'Pipeline':
+        """
+        Get the pipeline if it exists.
+
+        :param name: The name of the pipeline.
+        :param client: The FelderaClient instance.
+        """
+
+        try:
+            inner = client.get_pipeline(name)
+            pipeline = Pipeline(inner.name, client)
+            pipeline.__inner = inner
+            return pipeline
+        except FelderaAPIError as err:
+            if err.status_code == 404:
+                raise RuntimeError(f"Pipeline with name {name} not found")
