@@ -28,7 +28,7 @@
 </script>
 
 <div
-  class={'chip pointer-events-none h-6 w-20 flex-none text-[0.66rem] uppercase ' +
+  class={'chip pointer-events-none h-6 w-30 flex-none text-[0.66rem] uppercase ' +
     chipClass +
     ' ' +
     _class}
