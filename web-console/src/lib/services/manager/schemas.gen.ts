@@ -559,6 +559,20 @@ For specific options available for different storage backends, see:
   }
 } as const
 
+export const $Demo = {
+  type: 'object',
+  required: ['title', 'pipeline'],
+  properties: {
+    pipeline: {
+      $ref: '#/components/schemas/PipelineDescr'
+    },
+    title: {
+      type: 'string',
+      description: 'Demo title.'
+    }
+  }
+} as const
+
 export const $EgressMode = {
   type: 'string',
   enum: ['watch', 'snapshot']

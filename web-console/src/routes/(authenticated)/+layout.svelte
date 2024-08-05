@@ -43,7 +43,8 @@
           class="btn-icon"
           onclick={() => {
             showDrawer.value = !showDrawer.value
-          }}>
+          }}
+        >
           <i class="bx bx-menu text-[24px]"></i>
         </button>
       </div>
@@ -53,7 +54,8 @@
           <a
             href={Array.isArray(item.path) ? item.path[0] : item.path}
             class="preset-grayout-surface flex flex-nowrap items-center justify-center"
-            {...item.openInNewTab ? { target: '_blank', rel: 'noreferrer' } : undefined}>
+            {...item.openInNewTab ? { target: '_blank', rel: 'noreferrer' } : undefined}
+          >
             <div class="flex w-9 justify-center">
               <div class={item.class + ' text-[24px]'}></div>
             </div>
