@@ -202,6 +202,11 @@ export type DatagenInputConfig = {
    *
    * Setting this to a fixed value will make the generator produce the same sequence of records
    * every time the pipeline is run.
+   *
+   * # Notes
+   * - To ensure the set of generated input records is deterministic across multiple runs,
+   * apart from setting a seed, `workers` also needs to remain unchanged.
+   * - The input will arrive in non-deterministic order if `workers > 1`.
    */
   seed?: number | null
   /**
@@ -214,23 +219,78 @@ export type DatagenInputConfig = {
  * Strategy used to generate values.
  */
 export type DatagenStrategy =
-  | {
-      name: 'increment'
-      scale?: number
-    }
-  | {
-      name: 'uniform'
-    }
-  | {
-      name: 'zipf'
-      s?: number
-    }
-  | {
-      method?: StringMethod
-      name: 'string'
-    }
-
-export type name = 'increment'
+  | 'increment'
+  | 'uniform'
+  | 'zipf'
+  | 'word'
+  | 'words'
+  | 'sentence'
+  | 'sentences'
+  | 'paragraph'
+  | 'paragraphs'
+  | 'first_name'
+  | 'last_name'
+  | 'title'
+  | 'suffix'
+  | 'name'
+  | 'name_with_title'
+  | 'domain_suffix'
+  | 'email'
+  | 'username'
+  | 'password'
+  | 'field'
+  | 'position'
+  | 'seniority'
+  | 'job_title'
+  | 'i_pv4'
+  | 'i_pv6'
+  | 'i_p'
+  | 'm_a_c_address'
+  | 'user_agent'
+  | 'rfc_status_code'
+  | 'valid_status_code'
+  | 'company_suffix'
+  | 'company_name'
+  | 'buzzword'
+  | 'buzzword_middle'
+  | 'buzzword_tail'
+  | 'catch_phrase'
+  | 'bs_verb'
+  | 'bs_adj'
+  | 'bs_noun'
+  | 'bs'
+  | 'profession'
+  | 'industry'
+  | 'currency_code'
+  | 'currency_name'
+  | 'currency_symbol'
+  | 'credit_card_number'
+  | 'city_prefix'
+  | 'city_suffix'
+  | 'city_name'
+  | 'country_name'
+  | 'country_code'
+  | 'street_suffix'
+  | 'street_name'
+  | 'time_zone'
+  | 'state_name'
+  | 'state_abbr'
+  | 'secondary_address_type'
+  | 'secondary_address'
+  | 'zip_code'
+  | 'post_code'
+  | 'building_number'
+  | 'latitude'
+  | 'longitude'
+  | 'isbn'
+  | 'isbn13'
+  | 'isbn10'
+  | 'phone_number'
+  | 'cell_number'
+  | 'file_path'
+  | 'file_name'
+  | 'file_extension'
+  | 'dir_path'
 
 /**
  * Delta table read mode.
@@ -350,25 +410,6 @@ export type DeltaTableWriterConfig = {
   '[key: string]': (string | DeltaTableWriteMode) | undefined
 }
 
-export type Demo = {
-  /**
-   * Description of the demo.
-   */
-  description: string
-  /**
-   * Demo prefix prepended to each of the entities.
-   */
-  prefix: string
-  /**
-   * The steps which define the entities to create.
-   */
-  steps: Array<unknown>
-  /**
-   * Title of the demo.
-   */
-  title: string
-}
-
 export type EgressMode = 'watch' | 'snapshot'
 
 /**
@@ -405,8 +446,8 @@ export type ExtendedPipelineDescr = {
   deployment_desired_status: PipelineStatus
   deployment_error?: ErrorResponse | null
   /**
-   * Location where the pipeline can be reached at runtime.
-   * e.g., a TCP port number or a URI.
+   * Location where the pipeline can be reached at runtime
+   * (e.g., a TCP port number or a URI).
    */
   deployment_location?: string | null
   deployment_status: PipelineStatus
@@ -426,7 +467,6 @@ export type ExtendedPipelineDescr = {
   name: string
   /**
    * URL where to download the program binary from.
-   * TODO: should this be in here or not?
    */
   program_binary_url?: string | null
   /**
@@ -940,19 +980,17 @@ export type PatchPipeline = {
 }
 
 /**
- * Overall pipeline configuration.
- *
- * It is generated upon the deployment of a pipeline and contains
- * the shape of the overall pipeline configuration.
- *
- * Its input and output endpoints are generated based on the schema
- * of the compiled program. The runtime configuration is directly
- * provided by the user. Storage configuration, if applicable,
- * is set by the runner.
+ * Pipeline deployment configuration.
+ * It represents configuration entries directly provided by the user
+ * (e.g., runtime configuration) and entries derived from the schema
+ * of the compiled program (e.g., connectors). Storage configuration,
+ * if applicable, is set by the runner.
  */
 export type PipelineConfig = {
   /**
    * Enable CPU profiler.
+   *
+   * The default value is `true`.
    */
   cpu_profiler?: boolean
   /**
@@ -1276,6 +1314,13 @@ export type ResourceConfig = {
  */
 export type RngFieldSettings = {
   /**
+   * The frequency rank exponent for the Zipf distribution.
+   *
+   * - This value is only used if the strategy is set to `Zipf`.
+   * - The default value is 1.0.
+   */
+  e?: number
+  /**
    * Specifies the values that the generator should produce in case the field is a struct type.
    */
   fields?: {
@@ -1310,6 +1355,22 @@ export type RngFieldSettings = {
    * - For struct/boolean/null types `range` is ignored.
    */
   range?: Array<number> | null
+  /**
+   * A scale factor to apply a multiplier to the generated value.
+   *
+   * - For integer/floating point types, the value is multiplied by the scale factor.
+   * - For timestamp types, the generated value (milliseconds) is multiplied by the scale factor.
+   * - For time types, the generated value (milliseconds) is multiplied by the scale factor.
+   * - For date types, the generated value (days) is multiplied by the scale factor.
+   * - For string/binary/array/map/struct/boolean/null types, the scale factor is ignored.
+   *
+   * - If `values` is specified, the scale factor is ignored.
+   * - If `range` is specified and the range is required to be positive (struct, map, array etc.)
+   * the scale factor is required to be positive too.
+   *
+   * The default scale factor is 1.
+   */
+  scale?: number
   strategy?: DatagenStrategy
   value?: RngFieldSettings | null
   /**
@@ -1334,6 +1395,8 @@ export type RngFieldSettings = {
 export type RuntimeConfig = {
   /**
    * Enable CPU profiler.
+   *
+   * The default value is `true`.
    */
   cpu_profiler?: boolean
   /**
@@ -1489,80 +1552,6 @@ export type StorageConfig = {
 }
 
 /**
- * Various methods to generate different random strings.
- */
-export type StringMethod =
-  | 'word'
-  | 'words'
-  | 'sentence'
-  | 'sentences'
-  | 'paragraph'
-  | 'paragraphs'
-  | 'first_name'
-  | 'last_name'
-  | 'title'
-  | 'suffix'
-  | 'name'
-  | 'name_with_title'
-  | 'domain_suffix'
-  | 'email'
-  | 'username'
-  | 'password'
-  | 'field'
-  | 'position'
-  | 'seniority'
-  | 'job_title'
-  | 'i_pv4'
-  | 'i_pv6'
-  | 'i_p'
-  | 'm_a_c_address'
-  | 'user_agent'
-  | 'rfc_status_code'
-  | 'valid_status_code'
-  | 'company_suffix'
-  | 'company_name'
-  | 'buzzword'
-  | 'buzzword_middle'
-  | 'buzzword_tail'
-  | 'catch_phrase'
-  | 'bs_verb'
-  | 'bs_adj'
-  | 'bs_noun'
-  | 'bs'
-  | 'profession'
-  | 'industry'
-  | 'currency_code'
-  | 'currency_name'
-  | 'currency_symbol'
-  | 'credit_card_number'
-  | 'city_prefix'
-  | 'city_suffix'
-  | 'city_name'
-  | 'country_name'
-  | 'country_code'
-  | 'street_suffix'
-  | 'street_name'
-  | 'time_zone'
-  | 'state_name'
-  | 'state_abbr'
-  | 'secondary_address_type'
-  | 'secondary_address'
-  | 'zip_code'
-  | 'post_code'
-  | 'building_number'
-  | 'latitude'
-  | 'longitude'
-  | 'isbn'
-  | 'isbn13'
-  | 'isbn10'
-  | 'phone_number'
-  | 'cell_number'
-  | 'file_path'
-  | 'file_name'
-  | 'file_extension'
-  | 'dir_path'
-
-/**
  * Transport-specific endpoint configuration passed to
  * `crate::OutputTransport::new_endpoint`
  * and `crate::InputTransport::new_endpoint`.
@@ -1611,7 +1600,7 @@ export type TransportConfig =
       name: 'http_output'
     }
 
-export type name2 = 'file_input'
+export type name = 'file_input'
 
 /**
  * Configuration for reading data from an HTTP or HTTPS URL with
@@ -1690,7 +1679,7 @@ export type DeleteApiKeyResponse = unknown
 
 export type DeleteApiKeyError = ErrorResponse
 
-export type GetConfigDemosResponse = Array<Demo>
+export type GetConfigDemosResponse = Array<PipelineDescr>
 
 export type GetConfigDemosError = ErrorResponse
 
@@ -2017,7 +2006,7 @@ export type $OpenApiTs = {
         /**
          * List of demos.
          */
-        '200': Array<Demo>
+        '200': Array<PipelineDescr>
         /**
          * Failed to read demos from the demos directory.
          */

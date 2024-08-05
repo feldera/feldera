@@ -330,7 +330,12 @@ the following sequences will not be executed.`
       description: `Optional seed for the random generator.
 
 Setting this to a fixed value will make the generator produce the same sequence of records
-every time the pipeline is run.`,
+every time the pipeline is run.
+
+# Notes
+- To ensure the set of generated input records is deterministic across multiple runs,
+apart from setting a seed, \`workers\` also needs to remain unchanged.
+- The input will arrive in non-deterministic order if \`workers > 1\`.`,
       nullable: true,
       minimum: 0
     },
@@ -343,80 +348,82 @@ every time the pipeline is run.`,
 } as const
 
 export const $DatagenStrategy = {
-  oneOf: [
-    {
-      type: 'object',
-      description: `Whether the field should be incremented for each new
-record rather than generated randomly.
-
-A scale factor can be set as the \`param\` field to apply a multiplier to the increment.
-The default scale factor is 1.`,
-      required: ['name'],
-      properties: {
-        name: {
-          type: 'string',
-          enum: ['increment']
-        },
-        scale: {
-          type: 'integer',
-          format: 'int64'
-        }
-      }
-    },
-    {
-      type: 'object',
-      required: ['name'],
-      properties: {
-        name: {
-          type: 'string',
-          enum: ['uniform']
-        }
-      }
-    },
-    {
-      type: 'object',
-      description: `A Zipf distribution is chosen with the specified exponent (\`s\`) and
-\`n\` (set automatically) for the range \`[1..n]\` to generate the value in.
-
-Note that the Zipf distribution is only available for numbers or types that
-specify \`values\` or \`range\`.
-
-- In case \`values\` is set, the \`n\` is set to \`values.len()\`.
-- In case \`values\` is not set, \`n\` is set to the length of the \`range\`.
-- In case \`range\` is not set, the \`n\` is set to cover the default range of the type.`,
-      required: ['name'],
-      properties: {
-        name: {
-          type: 'string',
-          enum: ['zipf']
-        },
-        s: {
-          type: 'integer',
-          minimum: 0
-        }
-      }
-    },
-    {
-      type: 'object',
-      description: `A strategy to produce a random string for various data.
-
-- This strategy is only available for string types.`,
-      required: ['name'],
-      properties: {
-        method: {
-          $ref: '#/components/schemas/StringMethod'
-        },
-        name: {
-          type: 'string',
-          enum: ['string']
-        }
-      }
-    }
-  ],
+  type: 'string',
   description: 'Strategy used to generate values.',
-  discriminator: {
-    propertyName: 'name'
-  }
+  enum: [
+    'increment',
+    'uniform',
+    'zipf',
+    'word',
+    'words',
+    'sentence',
+    'sentences',
+    'paragraph',
+    'paragraphs',
+    'first_name',
+    'last_name',
+    'title',
+    'suffix',
+    'name',
+    'name_with_title',
+    'domain_suffix',
+    'email',
+    'username',
+    'password',
+    'field',
+    'position',
+    'seniority',
+    'job_title',
+    'i_pv4',
+    'i_pv6',
+    'i_p',
+    'm_a_c_address',
+    'user_agent',
+    'rfc_status_code',
+    'valid_status_code',
+    'company_suffix',
+    'company_name',
+    'buzzword',
+    'buzzword_middle',
+    'buzzword_tail',
+    'catch_phrase',
+    'bs_verb',
+    'bs_adj',
+    'bs_noun',
+    'bs',
+    'profession',
+    'industry',
+    'currency_code',
+    'currency_name',
+    'currency_symbol',
+    'credit_card_number',
+    'city_prefix',
+    'city_suffix',
+    'city_name',
+    'country_name',
+    'country_code',
+    'street_suffix',
+    'street_name',
+    'time_zone',
+    'state_name',
+    'state_abbr',
+    'secondary_address_type',
+    'secondary_address',
+    'zip_code',
+    'post_code',
+    'building_number',
+    'latitude',
+    'longitude',
+    'isbn',
+    'isbn13',
+    'isbn10',
+    'phone_number',
+    'cell_number',
+    'file_path',
+    'file_name',
+    'file_extension',
+    'dir_path'
+  ]
 } as const
 
 export const $DeltaTableIngestMode = {
@@ -552,30 +559,6 @@ For specific options available for different storage backends, see:
   }
 } as const
 
-export const $Demo = {
-  type: 'object',
-  required: ['title', 'description', 'prefix', 'steps'],
-  properties: {
-    description: {
-      type: 'string',
-      description: 'Description of the demo.'
-    },
-    prefix: {
-      type: 'string',
-      description: 'Demo prefix prepended to each of the entities.'
-    },
-    steps: {
-      type: 'array',
-      items: {},
-      description: 'The steps which define the entities to create.'
-    },
-    title: {
-      type: 'string',
-      description: 'Title of the demo.'
-    }
-  }
-} as const
-
 export const $EgressMode = {
   type: 'string',
   enum: ['watch', 'snapshot']
@@ -651,8 +634,8 @@ also has all additional fields generated and maintained by the back-end.`,
     },
     deployment_location: {
       type: 'string',
-      description: `Location where the pipeline can be reached at runtime.
-e.g., a TCP port number or a URI.`,
+      description: `Location where the pipeline can be reached at runtime
+(e.g., a TCP port number or a URI).`,
       nullable: true
     },
     deployment_status: {
@@ -677,8 +660,7 @@ of the pipeline.`
     },
     program_binary_url: {
       type: 'string',
-      description: `URL where to download the program binary from.
-TODO: should this be in here or not?`,
+      description: 'URL where to download the program binary from.',
       nullable: true
     },
     program_code: {
@@ -1456,7 +1438,9 @@ exposed type for users to configure pipelines.`,
       properties: {
         cpu_profiler: {
           type: 'boolean',
-          description: 'Enable CPU profiler.'
+          description: `Enable CPU profiler.
+
+The default value is \`true\`.`
         },
         max_buffering_delay_usecs: {
           type: 'integer',
@@ -1556,15 +1540,11 @@ This feature is currently experimental.`
       }
     }
   ],
-  description: `Overall pipeline configuration.
-
-It is generated upon the deployment of a pipeline and contains
-the shape of the overall pipeline configuration.
-
-Its input and output endpoints are generated based on the schema
-of the compiled program. The runtime configuration is directly
-provided by the user. Storage configuration, if applicable,
-is set by the runner.`
+  description: `Pipeline deployment configuration.
+It represents configuration entries directly provided by the user
+(e.g., runtime configuration) and entries derived from the schema
+of the compiled program (e.g., connectors). Storage configuration,
+if applicable, is set by the runner.`
 } as const
 
 export const $PipelineDescr = {
@@ -1950,6 +1930,14 @@ export const $RngFieldSettings = {
   type: 'object',
   description: 'Configuration for generating random data for a field of a table.',
   properties: {
+    e: {
+      type: 'integer',
+      format: 'int64',
+      description: `The frequency rank exponent for the Zipf distribution.
+
+- This value is only used if the strategy is set to \`Zipf\`.
+- The default value is 1.0.`
+    },
     fields: {
       type: 'object',
       description:
@@ -2010,6 +1998,23 @@ If not set, a range of [0, 5) is used by default.
 - For struct/boolean/null types \`range\` is ignored.`,
       nullable: true
     },
+    scale: {
+      type: 'integer',
+      format: 'int64',
+      description: `A scale factor to apply a multiplier to the generated value.
+
+- For integer/floating point types, the value is multiplied by the scale factor.
+- For timestamp types, the generated value (milliseconds) is multiplied by the scale factor.
+- For time types, the generated value (milliseconds) is multiplied by the scale factor.
+- For date types, the generated value (days) is multiplied by the scale factor.
+- For string/binary/array/map/struct/boolean/null types, the scale factor is ignored.
+
+- If \`values\` is specified, the scale factor is ignored.
+- If \`range\` is specified and the range is required to be positive (struct, map, array etc.)
+the scale factor is required to be positive too.
+
+The default scale factor is 1.`
+    },
     strategy: {
       $ref: '#/components/schemas/DatagenStrategy'
     },
@@ -2046,7 +2051,9 @@ exposed type for users to configure pipelines.`,
   properties: {
     cpu_profiler: {
       type: 'boolean',
-      description: 'Enable CPU profiler.'
+      description: `Enable CPU profiler.
+
+The default value is \`true\`.`
     },
     max_buffering_delay_usecs: {
       type: 'integer',
@@ -2336,82 +2343,6 @@ that already exists there. In either case, (further) checkpoints will be
 written there.`
     }
   }
-} as const
-
-export const $StringMethod = {
-  type: 'string',
-  description: 'Various methods to generate different random strings.',
-  enum: [
-    'word',
-    'words',
-    'sentence',
-    'sentences',
-    'paragraph',
-    'paragraphs',
-    'first_name',
-    'last_name',
-    'title',
-    'suffix',
-    'name',
-    'name_with_title',
-    'domain_suffix',
-    'email',
-    'username',
-    'password',
-    'field',
-    'position',
-    'seniority',
-    'job_title',
-    'i_pv4',
-    'i_pv6',
-    'i_p',
-    'm_a_c_address',
-    'user_agent',
-    'rfc_status_code',
-    'valid_status_code',
-    'company_suffix',
-    'company_name',
-    'buzzword',
-    'buzzword_middle',
-    'buzzword_tail',
-    'catch_phrase',
-    'bs_verb',
-    'bs_adj',
-    'bs_noun',
-    'bs',
-    'profession',
-    'industry',
-    'currency_code',
-    'currency_name',
-    'currency_symbol',
-    'credit_card_number',
-    'city_prefix',
-    'city_suffix',
-    'city_name',
-    'country_name',
-    'country_code',
-    'street_suffix',
-    'street_name',
-    'time_zone',
-    'state_name',
-    'state_abbr',
-    'secondary_address_type',
-    'secondary_address',
-    'zip_code',
-    'post_code',
-    'building_number',
-    'latitude',
-    'longitude',
-    'isbn',
-    'isbn13',
-    'isbn10',
-    'phone_number',
-    'cell_number',
-    'file_path',
-    'file_name',
-    'file_extension',
-    'dir_path'
-  ]
 } as const
 
 export const $TransportConfig = {
