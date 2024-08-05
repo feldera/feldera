@@ -57,6 +57,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Mutex,
     },
+    time::Duration,
 };
 
 #[derive(Default, Serialize)]
@@ -65,10 +66,15 @@ pub struct GlobalControllerMetrics {
     #[serde(serialize_with = "serialize_pipeline_state")]
     state: AtomicU32,
 
-    /// Resident state size of the pipeline process.
+    /// Resident set size of the pipeline process, in bytes.
     // This field is computed on-demand by calling `ControllerStatus::update`.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub rss_bytes: Option<AtomicU64>,
+
+    /// CPU time used by the pipeline process, in milliseconds.
+    // This field is computed on-demand by calling `ControllerStatus::update`.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    pub cpu_msecs: Option<AtomicU64>,
 
     /// Total number of records currently buffered by all endpoints.
     pub buffered_input_records: AtomicU64,
@@ -115,6 +121,7 @@ impl GlobalControllerMetrics {
             state: AtomicU32::from(PipelineState::Paused as u32),
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             rss_bytes: Some(AtomicU64::new(0)),
+            cpu_msecs: Some(AtomicU64::new(0)),
             buffered_input_records: AtomicU64::new(0),
             total_input_records: AtomicU64::new(0),
             total_processed_records: AtomicU64::new(0),
@@ -786,9 +793,12 @@ impl ControllerStatus {
         true
     }
 
+    /// Returns this process's memory size in bytes and its total CPU
+    /// consumption.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    fn rss() -> Result<u64, ProcessError> {
-        Ok(Process::current()?.memory_info()?.rss())
+    fn process_stats() -> Result<(u64, Duration), ProcessError> {
+        let process = Process::current()?;
+        Ok((process.memory_info()?.rss(), process.cpu_times()?.busy()))
     }
 
     pub fn update(&self, metrics: Snapshot) {
@@ -805,16 +815,21 @@ impl ControllerStatus {
 
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
-            match Self::rss() {
-                Ok(rss) => {
+            match Self::process_stats() {
+                Ok((rss, cpu)) => {
                     self.global_metrics
                         .rss_bytes
                         .as_ref()
                         .unwrap()
                         .store(rss, Ordering::Release);
+                    self.global_metrics
+                        .cpu_msecs
+                        .as_ref()
+                        .unwrap()
+                        .store(cpu.as_millis() as u64, Ordering::Release);
                 }
                 Err(e) => {
-                    error!("Failed to fetch RSS of the process: {e}");
+                    error!("Failed to fetch RSS or CPU time of the process: {e}");
                 }
             }
         }
