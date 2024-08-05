@@ -102,7 +102,7 @@ def wait_for_status(pipeline_name, status):
 
 def write_results(results, outfile):
     writer = csv.writer(outfile)
-    writer.writerow(['when', 'runner', 'mode', 'language', 'name', 'num_cores', 'num_events', 'elapsed', 'peak_memory_bytes'])
+    writer.writerow(['when', 'runner', 'mode', 'language', 'name', 'num_cores', 'num_events', 'elapsed', 'peak_memory_bytes', 'cpu_msecs'])
     writer.writerows(results)
     
 def write_metrics(keys, results, outfile):
@@ -239,9 +239,12 @@ def main():
                 global_metrics = stats["global_metrics"]
                 processed = global_metrics["total_processed_records"]
                 peak_memory = max(peak_memory, global_metrics["rss_bytes"])
+                cpu_msecs = global_metrics.get("cpu_msecs", 0)
                 if processed > last_processed:
                     before, after = ('\r', '') if os.isatty(1) else ('', '\n')
-                    sys.stdout.write(f"{before}Pipeline {full_name} processed {processed} records in {elapsed:.1f} seconds{after}")
+                    peak_gib = peak_memory / 1024 / 1024 / 1024
+                    cpu_secs = cpu_msecs / 1000
+                    sys.stdout.write(f"{before}Pipeline {full_name} processed {processed} records in {elapsed:.1f} seconds ({peak_gib:.1f} GiB peak memory, {cpu_secs:.1f} s CPU time){after}")
                 last_metrics = elapsed
                 metrics_dict = {"name":pipeline_name, "elapsed_seconds":elapsed}
                 for key, value in global_metrics.items():
@@ -272,7 +275,7 @@ def main():
         elapsed = "{:.1f}".format(time.time() - start)
         print(f"Pipeline {full_name} completed in {elapsed} s")
 
-        results += [[when, "feldera", "stream", "sql", pipeline_name, cores, last_processed, elapsed, peak_memory]]
+        results += [[when, "feldera", "stream", "sql", pipeline_name, cores, last_processed, elapsed, peak_memory, cpu_msecs]]
 
         # Start pipeline
         elapsed = stop_pipeline(full_name, True)
