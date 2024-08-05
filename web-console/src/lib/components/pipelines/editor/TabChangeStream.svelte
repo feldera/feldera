@@ -14,15 +14,14 @@
     >
   >({})
   const pipelineActionCallbacks = usePipelineActionCallbacks()
-  let rows = $state<
-    // Record<string, { relationName: string; type: 'insert' | 'delete'; record: XgressRecord }[]>
-    Record<
-      string,
-      ({ relationName: string } & ({ insert: XgressRecord } | { delete: XgressRecord }))[]
-    >
-  >({}) // Initialize row array
+  let rows: Record<
+    string,
+    ({ relationName: string } & ({ insert: XgressRecord } | { delete: XgressRecord }))[]
+  > = {} // Initialize row array
+  // Separate getRows as a $state avoids burdening rows array itself with reactivity overhead
+  let getRows = $state<() => typeof rows>(() => rows)
 
-  const bufferSize = 1000
+  const bufferSize = 10000
   const pushChanges =
     (pipelineName: string, relationName: string) =>
     (changes: Record<'insert' | 'delete', XgressRecord>[]) => {
@@ -40,6 +39,7 @@
           // record: change.insert ?? change.delete
         }))
       )
+      getRows = () => rows
     }
   const startReadingStream = (pipelineName: string, relationName: string) => {
     const handle = relationEggressStream(pipelineName, relationName).then((stream) => {
@@ -53,6 +53,7 @@
     return () => {
       handle.then((cancel) => cancel?.())
       rows[pipelineName] = rows[pipelineName].filter((row) => row.relationName !== relationName)
+      getRows = () => rows
     }
   }
   const registerPipelineName = (pipelineName: string) => {
@@ -165,8 +166,7 @@
                     startReadingStream(pipelineName, relation.relationName)
                 }
               }}
-              value={relation}
-            />
+              value={relation} />
             {relation.relationName}
           </label>
         {/snippet}
@@ -187,13 +187,13 @@
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="w-2 bg-surface-100-900"></PaneResizer>
+    <PaneResizer class="bg-surface-100-900 w-2"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
-      {#if rows[pipelineName]}
-        <ChangeStream changes={rows[pipelineName]}></ChangeStream>
+      {#if getRows()[pipelineName]}
+        <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="px-4 text-surface-500">
+        <span class="text-surface-500 px-4">
           Select table or view to see the record updates in the data flow
         </span>
       {/if}
