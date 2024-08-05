@@ -18,7 +18,8 @@ import {
   listApiKeys,
   createApiKey,
   deleteApiKey as _deleteApiKey,
-  httpOutput
+  httpOutput,
+  getConfigDemos
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -316,3 +317,5 @@ export const relationEggressStream = async (pipelineName: string, relationName: 
   )
   return result.body
 }
+
+export const getDemos = handled(getConfigDemos)
