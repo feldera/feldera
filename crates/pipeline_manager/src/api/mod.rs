@@ -129,6 +129,9 @@ The program version is used internally by the compiler to know when to recompile
         crate::api::pipeline::PatchPipeline,
         crate::api::pipeline::ExtendedPipelineDescrOptionalCode,
 
+        // Demo
+        crate::demo::Demo,
+
         // Program
         crate::db::types::program::CompilationProfile,
         crate::db::types::program::SqlCompilerMessage,
