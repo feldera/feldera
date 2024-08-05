@@ -26,6 +26,6 @@
     tabindex={10}
     onclick={() => (autoSavePipeline.value = !autoSavePipeline.value)}
   >
-    autosave: {autoSavePipeline.value ? 'on' : 'off'}
+    Autosave: {autoSavePipeline.value ? 'on' : 'off'}
   </button>
 </div>

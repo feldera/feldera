@@ -96,7 +96,7 @@
           e.currentTarget.blur()
         }
       }}
-      placeholder="new pipeline name"
+      placeholder="New Pipeline Name"
       class="input placeholder-surface-700 outline-none bg-surface-50-950 dark:placeholder-surface-300"
     />
     <div class="py-2 text-surface-400-600">Press Enter to create</div>
