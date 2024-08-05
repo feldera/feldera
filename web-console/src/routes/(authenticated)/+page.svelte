@@ -35,12 +35,12 @@
     </div>
     <div
       class="grid max-w-[1400px] grid-cols-1 gap-8 px-8 sm:grid-cols-2 md:gap-16 md:px-16 lg:grid-cols-3 xl:grid-cols-4">
-      {#each data.demos as example}
+      {#each data.demos as demo}
         <div class="card flex flex-col gap-2 bg-white p-4 dark:bg-black">
-          <span class="h5 font-normal">{example.name}</span>
-          <span class="text-left">{example.description}</span>
+          <span class="h5 font-normal">{demo.title}</span>
+          <span class="text-left">{demo.pipeline.description}</span>
           <button
-            onclick={() => tryPipelineFromExample(example)}
+            onclick={() => tryPipelineFromExample(demo.pipeline)}
             class="btn preset-filled-primary-500 mt-auto self-end text-sm">
             TRY
             <div class="bx bx-right-arrow-alt text-[24px]"></div>
