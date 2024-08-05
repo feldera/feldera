@@ -38,14 +38,13 @@
 </script>
 
 <div class="h5 px-8 py-8 font-normal md:px-16">
-  To start,
+  Try running one of our examples below, or writing a new pipeline from scratch:
   <button
     class="btn mt-auto self-end text-sm preset-filled-primary-500"
     onclick={() => goto('#new')}
   >
     CREATE NEW PIPELINE
   </button>
-  and type away the SQL, or try running one of the examples:
 </div>
 <div class="grid grid-cols-1 gap-8 px-8 sm:grid-cols-2 md:gap-16 md:px-16 lg:grid-cols-3">
   <!-- <div class="card flex h-48 flex-col bg-white p-4 dark:bg-black">
