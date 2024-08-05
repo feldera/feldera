@@ -1,4 +1,4 @@
-FROM flink:latest
+FROM flink:1.15
 WORKDIR /opt/nexmark
 COPY nexmark-flink .
 COPY config.sh entrypoint.sh bin
