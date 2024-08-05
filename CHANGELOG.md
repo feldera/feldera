@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- [SQL] Added compiler options and table properties for streaming programs
+  ([#2179](https://github.com/feldera/feldera/pull/2088))
+
 ## [0.22.0] - 2024-07-31
 
 - [Python] Add `SQLContext.input_json()` to send json

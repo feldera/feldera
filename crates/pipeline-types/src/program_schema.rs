@@ -38,6 +38,25 @@ pub struct ProgramSchema {
     pub outputs: Vec<Relation>,
 }
 
+#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
+pub struct SourcePosition {
+    start_line_number: usize,
+    start_column: usize,
+    end_line_number: usize,
+    end_column: usize,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
+pub struct PropertyValue {
+    value: String,
+    key_position: SourcePosition,
+    value_position: SourcePosition,
+}
+
+impl PropertyValue {
+    pub fn get_value(&self) -> String { self.value.clone() }
+}
+
 /// A SQL table or view. It has a name and a list of fields.
 ///
 /// Matches the Calcite JSON format.
@@ -54,7 +73,7 @@ pub struct Relation {
     #[serde(default)]
     pub materialized: bool,
     #[serde(default)]
-    pub properties: BTreeMap<String, String>,
+    pub properties: BTreeMap<String, PropertyValue>,
 }
 
 impl Relation {
@@ -73,7 +92,7 @@ impl Relation {
         case_sensitive: bool,
         fields: Vec<Field>,
         materialized: bool,
-        properties: BTreeMap<String, String>,
+        properties: BTreeMap<String, PropertyValue>,
     ) -> Self {
         Self {
             name: name.to_string(),
