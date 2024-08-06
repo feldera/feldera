@@ -19,7 +19,7 @@ parse=false
 kafka_broker=localhost:9092
 kafka_from_feldera=
 api_url=http://localhost:8080
-partitions=16
+partitions=1
 
 # Dataflow options.
 project=
@@ -168,7 +168,7 @@ The feldera backend with --language=sql takes the following additional options:
   --kafka-from-feldera=BROKER  Kafka broker as accessed from Feldera (defaults
                                to the same as --kafka-broker)
   --api-url=URL         URL to the Feldera API (default: $api_url)
-  --partitions=N        number of Kafka partitions (default: 16)
+  --partitions=N        number of Kafka partitions (default: 1)
 
 The beam.dataflow backend takes more configuration.  These settings are
 required:
