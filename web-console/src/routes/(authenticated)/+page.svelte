@@ -25,25 +25,23 @@
 
 <div class="self-center">
   {#if data.demos.length}
-    <div class="h5 px-8 py-8 font-normal md:px-16">
-      Try running one of our examples below.
-    </div>
+    <div class="h5 px-8 py-8 font-normal">Try running one of our examples below.</div>
     <div
-      class="grid max-w-[1400px] grid-cols-1 gap-8 px-8 sm:grid-cols-2 md:gap-16 md:px-16 lg:grid-cols-3 xl:grid-cols-4">
+      class="grid max-w-[1390px] grid-cols-1 gap-8 px-8 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       {#each data.demos as demo}
         <div class="card flex flex-col gap-2 bg-white p-4 dark:bg-black">
           <button
-            onclick={() => tryPipelineFromExample(demo.pipeline)}
-            >
-            <span class="text-[20px] text-blue-700">{demo.title}</span>
-            <div class="bx bx-right-arrow-alt text-[15px]"></div>
+            class="text-primary-500 text-left"
+            onclick={() => tryPipelineFromExample(demo.pipeline)}>
+            <span class="text-lg">{demo.title}</span>
+            <span class="bx bx-right-arrow-alt w-0 translate-y-0.5 scale-150"></span>
           </button>
-          <span class="text-left text-[15px]">{demo.pipeline.description}</span>
+          <span class="text-left">{demo.pipeline.description}</span>
         </div>
       {/each}
     </div>
   {:else}
-    <div class="h5 px-8 py-8 font-normal md:px-16">
+    <div class="h5 px-8 py-8 font-normal">
       Write a new streaming SQL query from scratch:
       <button
         class="btn preset-filled-primary-500 mt-auto self-end text-sm"
@@ -51,7 +49,7 @@
         CREATE NEW PIPELINE
       </button>
     </div>
-    <div class="text-surface-600-400 px-8 text-lg md:px-16">
+    <div class="text-surface-600-400 px-8 text-lg">
       There are no demo pipelines available at this time. Please refer to documentation for examples
       of SQL queries.
     </div>
