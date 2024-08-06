@@ -1,6 +1,7 @@
 #! /usr/bin/python3
 
 import csv
+import json
 import os
 import sys
 import time
@@ -19,7 +20,7 @@ def load_queries(folder):
             queries[f.split('.')[0]] = file.read()
     return queries
 
-def load_table(folder, with_lateness):
+def load_table(folder, with_lateness, suffix):
     p = os.path.join(FILE_DIR, folder + '/table.sql')
     file = open(p, 'r')
     text = file.read()
@@ -29,11 +30,9 @@ def load_table(folder, with_lateness):
         i = line.find(table_start_string)
         if i >= 0:
             inputs += [line[i + len(table_start_string):].split(' ')[0]]
-    lateness = ''
-    if with_lateness:
-        lateness = "LATENESS INTERVAL 4 SECONDS"
-    text = text.replace('{lateness}', lateness)
-    return [text, inputs]
+    subst = {input: make_connector(input, suffix) for input in inputs}
+    subst["lateness"] = "LATENESS INTERVAL 4 SECONDS"
+    return text.format(**subst)
 
 def sort_queries(queries):
     return sorted(queries, key=lambda q: int(q[1:]))
@@ -60,46 +59,28 @@ def parse_queries(all_queries, arg):
 
     return queries
 
-def add_connector(connector_name, relation_name, is_input):
-    transport_type = "kafka_" + ("input" if is_input else "output")
-    json = {
-        "description": "",
-        "config": {
-            "transport": {
-                "name": transport_type,
-                "config": {
-                    "auto.offset.reset": "earliest"
-                } | kafka_options
-            },
-            "format": {
-                "name": "csv",
-                "config": {}
-            }
+def make_connector(topic, suffix):
+    name = "kafka_input"
+    config = {
+        "topics": [topic + suffix],
+        "enable.partition.eof": "true",
+        "auto.offset.reset": "earliest"
+    }
+
+    return json.dumps([{
+        "format": {
+            "name": "csv",
+            "config": {},
+        },
+        "transport": {
+            "name": name,
+            "config": config | kafka_options
         }
-    }
-    config = json["config"]["transport"]["config"]
-    if is_input:
-        config["enable.partition.eof"] = "true"
-        config["topics"] = [connector_name]
-    else:
-        config["topic"] = connector_name
-    requests.put(f"{api_url}/v0/connectors/{connector_name}", headers=headers, json=json).raise_for_status()
-    return {
-        "connector_name": connector_name,
-        "is_input": is_input,
-        "name": connector_name,
-        "relation_name": relation_name,
-    }
+    }], indent=4)
 
 def get_full_name(folder, name):
     return folder.split('/')[-1] + '-' + name 
     
-def add_input_connector(connector_name, relation_name):
-    return add_connector(connector_name, relation_name, True)
-
-def add_output_connector(connector_name, relation_name):
-    return add_connector(connector_name, relation_name, False)
-
 def stop_pipeline(pipeline_name, wait):
     requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown", headers=headers).raise_for_status()
     if wait:
@@ -112,7 +93,7 @@ def start_pipeline(pipeline_name, wait):
 
 def wait_for_status(pipeline_name, status):
     start = time.time()
-    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}", headers=headers).json()["state"]["current_status"] != status:
+    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}", headers=headers).json()["deployment_status"] != status:
         time.sleep(.1)
     return time.time() - start
 
@@ -145,8 +126,6 @@ def main():
                         help="Kafka options passed as -O option=value, e.g., -O bootstrap.servers=localhost:9092")
     parser.add_argument("--cores", type=int, help="Number of cores to use for workers (default: 16)")
     parser.add_argument('--lateness', action=argparse.BooleanOptionalAction, help='whether to use lateness for GC to save memory (default: --lateness)')
-    parser.add_argument('--output', action=argparse.BooleanOptionalAction, help='whether to write query output back to Kafka (default: --no-output)')
-    parser.add_argument('--merge', action=argparse.BooleanOptionalAction, help='whether to merge all the queries into one program (default: --no-merge)')
     parser.add_argument('--storage', action=argparse.BooleanOptionalAction, help='whether to enable storage (default: --no-storage)')
     parser.add_argument("--poller-threads", required=False, type=int, help="Override number of poller threads to use")
     parser.add_argument('--min-storage-bytes', type=int, help='If storage is enabled, the minimum number of bytes to write a batch to storage.')
@@ -156,7 +135,7 @@ def main():
     parser.add_argument('--csv', help='File to write results in .csv format')
     parser.add_argument('--csv-metrics', help='File to write pipeline metrics (memory, disk) in .csv format')
     parser.add_argument('--metrics-interval', help='How often metrics should be sampled, in seconds (default: 1)')
-    parser.set_defaults(lateness=True, output=False, merge=False, storage=False, cores=16, metrics_interval=1, folder='benchmarks/nexmark')
+    parser.set_defaults(lateness=True, storage=False, cores=16, metrics_interval=1, folder='benchmarks/nexmark')
     
     global api_url, kafka_options, headers
     api_url = parser.parse_args().api_url
@@ -166,12 +145,12 @@ def main():
     for option_value in parser.parse_args().option:
         option, value = option_value.split("=")
         kafka_options[option] = value
-    with_lateness = parser.parse_args().lateness
-    save_output = parser.parse_args().output
-    merge = parser.parse_args().merge
+    suffix = parser.parse_args().input_topic_suffix or ''
+
     folder = parser.parse_args().folder
+    table = load_table(folder, parser.parse_args().lateness, suffix)
     all_queries = load_queries(folder)
-    table, inputs = load_table(folder, with_lateness)
+
     queries = sort_queries(parse_queries(all_queries, parser.parse_args().query))
     cores = int(parser.parse_args().cores)
     storage = parser.parse_args().storage
@@ -181,65 +160,21 @@ def main():
     min_storage_bytes = parser.parse_args().min_storage_bytes
     if min_storage_bytes is not None:
         min_storage_bytes = int(min_storage_bytes)
-    suffix = parser.parse_args().input_topic_suffix or ''
     csvfile = parser.parse_args().csv
     csvmetricsfile = parser.parse_args().csv_metrics
     metricsinterval = float(parser.parse_args().metrics_interval)
 
-    output_connector_names = queries
-    if merge and len(queries) > 1:
-        merged_name = ','.join(queries)
-        QUERY_SQL[merged_name] = '\n'.join([QUERY_SQL[q] for q in queries])
-        queries = [merged_name]
-
     when = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(time.time()))
 
+    print("Creating programs...")
     for program_name in queries:
         # Create program
         full_name = get_full_name(folder, program_name)
         program_sql = table + all_queries[program_name]
-        response = requests.put(f"{api_url}/v0/programs/{full_name}", headers=headers, json={
+        requests.put(f"{api_url}/v0/pipelines/{full_name}", headers=headers, json={
+            "name": full_name,
             "description": f"Benchmark: {full_name}",
-            "code": program_sql,
-            "config": {
-                "profile": "optimized"
-            }
-        })
-        response.raise_for_status()
-        program_version = response.json()["version"]
-
-        # Compile program
-        
-        requests.post(f"{api_url}/v0/programs/{full_name}/compile", headers=headers, json={"version": program_version}).raise_for_status()
-    print(f"Compiling program(s)...")
-    for program_name in queries:
-        full_name = get_full_name(folder, program_name)
-        while True:
-            status = requests.get(f"{api_url}/v0/programs/{full_name}", headers=headers).json()["status"]
-            print(f"Program {full_name} status: {status}")
-            if status == "Success":
-                break
-            elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
-                raise RuntimeError(f"Failed program compilation with status {status}")
-            time.sleep(5)
-
-    input_connectors = [add_input_connector(s + suffix, s) for s in inputs]
-    if save_output:
-        output_connectors = {}
-        for name in output_connector_names:
-            output_connectors[name] = add_output_connector(name, name)
-
-    # Create pipelines
-    print("Creating pipeline(s)...")
-    for program_name in queries:
-        pipeline_name = get_full_name(folder, program_name)
-        if save_output:
-            connectors = input_connectors + [output_connectors[s] for s in program_name.split(',')]
-        else:
-            connectors = input_connectors
-        requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", headers=headers, json={
-            "description": "",
-            "config": {
+            "runtime_config": {
                 "workers": cores,
                 "storage": storage,
                 "min_storage_bytes": min_storage_bytes,
@@ -253,9 +188,21 @@ def main():
                     # "storage_class": "..."
                 }
             },
-            "program_name": pipeline_name,
-            "connectors": connectors
+            "program_config": {},
+            "program_code": program_sql,
         }).raise_for_status()
+
+    print("Compiling program(s)...")
+    for program_name in queries:
+        full_name = get_full_name(folder, program_name)
+        while True:
+            status = requests.get(f"{api_url}/v0/pipelines/{full_name}", headers=headers).json()["program_status"]
+            print(f"Program {full_name} status: {status}")
+            if status == "Success":
+                break
+            elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
+                raise RuntimeError(f"Failed program compilation with status {status}")
+            time.sleep(5)
 
     # Stop pipelines
     print("Stopping pipeline(s)...")
