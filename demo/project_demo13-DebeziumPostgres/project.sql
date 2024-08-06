@@ -6,7 +6,7 @@ CREATE TABLE customers (
   first_name varchar(255) NOT NULL,
   last_name varchar(255) NOT NULL,
   email varchar(255) NOT NULL
-) with
+) with (
   'materialized' = 'true',
   'connectors' = '[{
     "transport": {
@@ -24,7 +24,7 @@ CREATE TABLE customers (
         "json_flavor": "debezium_mysql"
       }
     }
-}]';
+}]');
 
 CREATE TABLE orders (
   id int NOT NULL,

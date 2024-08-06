@@ -77,8 +77,3 @@ WITH (
     }
  }]'
 )
-
-### Python SDK
-
-See [Delta Lake output connector documentation](https://www.feldera.com/python/feldera.html#feldera.sql_context.SQLContext.connect_sink_delta_table)
-in the Python SDK.

@@ -64,10 +64,6 @@ def generate_program(transport_cfg, format_cfg):
 
 
 if __name__ == "__main__":
-    from feldera.formats import JSONUpdateFormat, JSONFormat
-
-    in_fmt = JSONFormat().with_array(False).with_update_format(JSONUpdateFormat.Raw)
-
     print(
         generate_program(
             {
@@ -79,6 +75,12 @@ if __name__ == "__main__":
                     "poller_threads": 12,
                 },
             },
-            in_fmt.to_dict(),
+            {
+                "name": "json",
+                "config": {
+                    "update_format": "raw",
+                    "array": False,
+                }
+            }
         )
     )

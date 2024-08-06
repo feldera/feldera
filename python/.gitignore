@@ -3,6 +3,7 @@ __pycache__
 test.log
 .idea
 .venv
+venv
 docs/_build
 docs/make.bat
 docs/modules.rst
