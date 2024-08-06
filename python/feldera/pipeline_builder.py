@@ -1,5 +1,3 @@
-from typing import Self
-
 from feldera.rest.feldera_client import FelderaClient
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.pipeline import Pipeline

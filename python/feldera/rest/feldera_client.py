@@ -108,7 +108,7 @@ class FelderaClient:
         }
 
         self.http.post(
-            path=f"/pipelines/{pipeline.name}",
+            path=f"/pipelines",
             body=body,
         )
 

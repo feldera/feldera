@@ -90,7 +90,7 @@ class TestPipelineBuilder(unittest.TestCase):
 
         out = pipeline.listen("average_scores")
         pipeline.input_pandas(TBL_NAMES[0], df_students)
-pipeline.input_pandas(TBL_NAMES[1], df_grades)
+        pipeline.input_pandas(TBL_NAMES[1], df_grades)
         pipeline.wait_for_completion(True)
         df = out.to_pandas()
 
@@ -264,7 +264,7 @@ pipeline.input_pandas(TBL_NAMES[1], df_grades)
         with self.assertRaises(Exception):
             PipelineBuilder(TEST_CLIENT, name="sql_error", sql=sql).create_or_replace()
 
-        pipeline = PipelineBuilder(TEST_CLIENT, name="sql_error", sql=sql).get()
+        pipeline = Pipeline.get("sql_error", TEST_CLIENT)
         pipeline.delete()
 
     def test_kafka(self):

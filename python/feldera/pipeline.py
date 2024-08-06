@@ -2,7 +2,6 @@ import time
 import pandas
 
 from typing import List, Dict, Callable, Optional
-from typing_extensions import Self
 from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
