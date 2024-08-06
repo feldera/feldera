@@ -60,7 +60,6 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
-import org.dbsp.util.NullableFunction;
 import org.dbsp.util.ToIndentableString;
 import org.dbsp.util.Utilities;
 

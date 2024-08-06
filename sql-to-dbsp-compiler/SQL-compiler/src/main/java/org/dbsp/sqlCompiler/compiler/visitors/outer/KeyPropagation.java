@@ -181,7 +181,7 @@ public class KeyPropagation extends CircuitVisitor {
         }
     }
 
-    /** Maps each operator to a Tuple type that contains the key descriptions */
+    /** Maps each operator to a StreamDescription for its output */
     final Map<DBSPOperator, StreamDescription> keys;
     /** Maps each join that operates on a primary/foreign key to its description */
     final Map<DBSPOperator, JoinDescription> joins;
@@ -287,7 +287,7 @@ public class KeyPropagation extends CircuitVisitor {
      * @param table           Table whose primary key is being joined
      * @param foreignKeyIndex Description of the index part of the foreign key input
      * @param foreignKey      Description of the data part of the foreign key input
-     * @param keyOnLeft  True if the key is the left input of the join
+     * @param keyOnLeft       True if the key is the left input of the join
      */
     void mapJoin(DBSPOperator operator, DBSPSourceTableOperator table,
                  StreamDescription foreignKeyIndex, StreamDescription foreignKey,
@@ -341,10 +341,12 @@ public class KeyPropagation extends CircuitVisitor {
             return;
         }
 
+        // See if the key is on the left and the fk on the right
         DBSPSourceTableOperator table = this.checkForeign(leftIndex, rightIndex);
         if (table != null) {
             this.mapJoin(binary, table, rightIndex, right.tail(indexFields), true);
         } else {
+            // See if the key is on the right and the fk on the left
             table = this.checkForeign(rightIndex, leftIndex);
             if (table != null) {
                 this.mapJoin(binary, table, leftIndex, left.tail(indexFields), false);
@@ -366,6 +368,8 @@ public class KeyPropagation extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPJoinFilterMapOperator node) {
+        // The analysis assumes that there is no map function in the join
+        assert node.map == null;
         this.processJoin(node);
     }
 
