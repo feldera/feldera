@@ -191,6 +191,8 @@ The program version is used internally by the compiler to know when to recompile
         pipeline_types::program_schema::Field,
         pipeline_types::program_schema::ColumnType,
         pipeline_types::program_schema::IntervalUnit,
+        pipeline_types::program_schema::SourcePosition,
+        pipeline_types::program_schema::PropertyValue,
         pipeline_types::error::ErrorResponse,
 
         // Configuration

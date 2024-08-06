@@ -77,12 +77,9 @@ public class CompilerMessages {
 
         public JsonNode toJson(SourceFileContents contents, ObjectMapper mapper) {
             ObjectNode result = mapper.createObjectNode();
-            result.put("startLineNumber", this.range.start.line);
-            result.put("startColumn", this.range.start.column);
-            result.put("endLineNumber", this.range.end.line);
-            result.put("endColumn", this.range.end.column);
+            this.range.appendAsJson(result);
             result.put("warning", this.warning);
-            result.put("errorType", this.errorType);
+            result.put("error_type", this.errorType);
             result.put("message", this.message);
             String snippet = contents.getFragment(this.range, true);
             result.put("snippet", snippet);

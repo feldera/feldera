@@ -1791,6 +1791,22 @@ in the queue.`,
   description: 'Program compilation status.'
 } as const
 
+export const $PropertyValue = {
+  type: 'object',
+  required: ['value', 'key_position', 'value_position'],
+  properties: {
+    key_position: {
+      $ref: '#/components/schemas/SourcePosition'
+    },
+    value: {
+      type: 'string'
+    },
+    value_position: {
+      $ref: '#/components/schemas/SourcePosition'
+    }
+  }
+} as const
+
 export const $ProviderAwsCognito = {
   type: 'object',
   required: ['jwk_uri', 'login_url', 'logout_url'],
@@ -1882,7 +1898,7 @@ Matches the Calcite JSON format.`,
     properties: {
       type: 'object',
       additionalProperties: {
-        type: 'string'
+        $ref: '#/components/schemas/PropertyValue'
       }
     }
   }
@@ -2159,6 +2175,29 @@ export const $S3InputConfig = {
   }
 } as const
 
+export const $SourcePosition = {
+  type: 'object',
+  required: ['start_line_number', 'start_column', 'end_line_number', 'end_column'],
+  properties: {
+    end_column: {
+      type: 'integer',
+      minimum: 0
+    },
+    end_line_number: {
+      type: 'integer',
+      minimum: 0
+    },
+    start_column: {
+      type: 'integer',
+      minimum: 0
+    },
+    start_line_number: {
+      type: 'integer',
+      minimum: 0
+    }
+  }
+} as const
+
 export const $SqlCompilerMessage = {
   type: 'object',
   description: `A SQL compiler error.
@@ -2168,35 +2207,35 @@ it's invoked with the \`-je\` option.
 
 \`\`\`ignore
 [ {
-"startLineNumber" : 2,
-"startColumn" : 4,
-"endLineNumber" : 2,
-"endColumn" : 8,
+"start_line_number" : 2,
+"start_column" : 4,
+"end_line_number" : 2,
+"end_column" : 8,
 "warning" : false,
-"errorType" : "PRIMARY KEY cannot be nullable",
+"error_type" : "PRIMARY KEY cannot be nullable",
 "message" : "PRIMARY KEY column 'C' has type INTEGER, which is nullable",
 "snippet" : "    2|   c INT PRIMARY KEY\n         ^^^^^\n    3|);\n"
 } ]
 \`\`\``,
   required: [
-    'startLineNumber',
-    'startColumn',
-    'endLineNumber',
-    'endColumn',
+    'start_line_number',
+    'start_column',
+    'end_line_number',
+    'end_column',
     'warning',
-    'errorType',
+    'error_type',
     'message'
   ],
   properties: {
-    endColumn: {
+    end_column: {
       type: 'integer',
       minimum: 0
     },
-    endLineNumber: {
+    end_line_number: {
       type: 'integer',
       minimum: 0
     },
-    errorType: {
+    error_type: {
       type: 'string'
     },
     message: {
@@ -2206,11 +2245,11 @@ it's invoked with the \`-je\` option.
       type: 'string',
       nullable: true
     },
-    startColumn: {
+    start_column: {
       type: 'integer',
       minimum: 0
     },
-    startLineNumber: {
+    start_line_number: {
       type: 'integer',
       minimum: 0
     },

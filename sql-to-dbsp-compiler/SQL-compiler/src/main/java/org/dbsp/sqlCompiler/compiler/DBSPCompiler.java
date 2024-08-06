@@ -29,7 +29,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.sql.SqlFunction;
-import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
@@ -54,6 +53,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
@@ -267,10 +267,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         for (ForeignKey fk: foreignKeys) {
             ForeignKey.TableAndColumns self = fk.thisTable;
             ForeignKey.TableAndColumns other = fk.otherTable;
-            String thisTableName = self.tableName.getSimple();
+            String thisTableName = self.tableName.getString();
 
             if (self.columns.size() != other.columns.size()) {
-                this.reportError(new SourcePositionRange(self.listpos), "Size mismatch",
+                this.reportError(self.listPos, "Size mismatch",
                         "FOREIGN KEY section of table " +
                                 Utilities.singleQuote(thisTableName) +
                                 " contains " + self.columns.size() + " columns," +
@@ -280,10 +280,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             }
 
             // Check that the referred columns exist and have proper types
-            String otherTableName = other.tableName.getSimple();
+            String otherTableName = other.tableName.getString();
             DBSPSourceTableOperator otherTable = circuit.getInput(otherTableName);
             if (otherTable == null) {
-                this.reportWarning(new SourcePositionRange(other.tableName.getParserPosition()),
+                this.reportWarning(other.tableName.getSourcePosition(),
                         "Table not found",
                         "Table " + Utilities.singleQuote(otherTableName)
                                 + ", referred in FOREIGN KEY constraint of table " +
@@ -296,7 +296,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
             List<InputColumnMetadata> otherKeys = otherTable.metadata.getPrimaryKeys();
             if (otherKeys.size() != self.columns.size()) {
-                this.reportError(new SourcePositionRange(self.listpos),
+                this.reportError(self.listPos,
                         "PRIMARY KEY does not match",
                         "The PRIMARY KEY of table " + Utilities.singleQuote(otherTableName) +
                                 " does not match the FOREIGN KEY of " + Utilities.singleQuote(thisTableName));
@@ -304,13 +304,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             }
 
             for (int i = 0; i < self.columns.size(); i++) {
-                SqlIdentifier selfColumn = self.columns.get(i);
-                SqlIdentifier otherColumn = other.columns.get(i);
-                String selfColumnName = selfColumn.getSimple();
-                String otherColumnName = otherColumn.getSimple();
+                SqlFragment selfColumn = self.columns.get(i);
+                SqlFragment otherColumn = other.columns.get(i);
+                String selfColumnName = selfColumn.getString();
+                String otherColumnName = otherColumn.getString();
                 InputColumnMetadata selfMeta = thisTable.metadata.getColumnMetadata(selfColumnName);
                 if (selfMeta == null) {
-                    this.reportError(new SourcePositionRange(selfColumn.getParserPosition()),
+                    this.reportError(selfColumn.getSourcePosition(),
                             "Column not found",
                             "Table " + Utilities.singleQuote(thisTableName) +
                                     " does not have a column named " + Utilities.singleQuote(selfColumnName));
@@ -318,14 +318,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 }
                 InputColumnMetadata otherMeta = otherTable.metadata.getColumnMetadata(otherColumnName);
                 if (otherMeta == null) {
-                    this.reportError(new SourcePositionRange(selfColumn.getParserPosition()),
+                    this.reportError(selfColumn.getSourcePosition(),
                             "Column not found",
                             "Table " + Utilities.singleQuote(otherTableName) +
                                     " does not have a column named " + Utilities.singleQuote(otherColumnName));
                     continue;
                 }
                 if (!otherMeta.isPrimaryKey) {
-                    this.reportError(new SourcePositionRange(selfColumn.getParserPosition()),
+                    this.reportError(selfColumn.getSourcePosition(),
                             "FOREIGN KEY points to non-key column",
                             "FOREIGN KEY column " +
                                     Utilities.singleQuote(thisTableName + "." + selfColumnName) +
@@ -335,7 +335,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     continue;
                 }
                 if (!selfMeta.type.setMayBeNull(false).sameType(otherMeta.type.setMayBeNull(false))) {
-                    this.reportError(new SourcePositionRange(selfColumn.getParserPosition()),
+                    this.reportError(selfColumn.getSourcePosition(),
                             "Mismatched FOREIGN KEY column types",
                             "FOREIGN KEY column " +
                                     Utilities.singleQuote(thisTableName + "." + selfColumnName) +

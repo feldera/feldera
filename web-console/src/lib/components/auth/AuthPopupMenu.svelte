@@ -22,14 +22,15 @@
         <div class="h4 font-normal" class:italic={!user.name}>{user.name || 'anonymous'}</div>
         <div class="">{user.email}</div>
       </div>
-      <div class="text-surface-600-400 ml-auto">logged in</div>
+      <div class="ml-auto text-surface-600-400">logged in</div>
     </div>
   </div>
   <div class="hr"></div>
   <div class="flex flex-col items-start gap-4">
     <button
       class="btn text-surface-800-200 preset-outlined-surface-50-950 hover:preset-filled-surface-50-950"
-      onclick={() => (globalDialog.dialog = apiKeyDialog)}>
+      onclick={() => (globalDialog.dialog = apiKeyDialog)}
+    >
       Manage API keys
     </button>
     <button
@@ -44,7 +45,8 @@
         //   )
         // })
         // await signOut({ callbackUrl: 'https://dev-jzraqtxsr8a3hhhv.us.auth0.com/oidc/logout' })
-      }}><span class="bx bx-right-arrow-alt text-[24px]"></span> Logout</button>
+      }}><span class="bx bx-right-arrow-alt text-[24px]"></span> Logout</button
+    >
   </div>
 </div>
 
