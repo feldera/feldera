@@ -82,7 +82,10 @@ def get_full_name(folder, name):
     return folder.split('/')[-1] + '-' + name 
     
 def stop_pipeline(pipeline_name, wait):
-    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown", headers=headers).raise_for_status()
+    r = requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown", headers=headers)
+    if r.status_code == 404:
+        return
+    r.raise_for_status()
     if wait:
         return wait_for_status(pipeline_name, "Shutdown")
 
@@ -166,6 +169,13 @@ def main():
 
     when = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(time.time()))
 
+    # Stop pipelines
+    print("Stopping pipeline(s)...")
+    for pipeline_name in queries:
+        stop_pipeline(get_full_name(folder, pipeline_name), False)
+    for pipeline_name in queries:
+        stop_pipeline(get_full_name(folder, pipeline_name), True)
+
     print("Creating programs...")
     for program_name in queries:
         # Create program
@@ -203,13 +213,6 @@ def main():
             elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
                 raise RuntimeError(f"Failed program compilation with status {status}")
             time.sleep(5)
-
-    # Stop pipelines
-    print("Stopping pipeline(s)...")
-    for pipeline_name in queries:
-        stop_pipeline(get_full_name(folder, pipeline_name), False)
-    for pipeline_name in queries:
-        stop_pipeline(get_full_name(folder, pipeline_name), True)
 
     # Run the pipelines
     results = []
