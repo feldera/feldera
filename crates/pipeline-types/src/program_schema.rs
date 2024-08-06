@@ -38,23 +38,21 @@ pub struct ProgramSchema {
     pub outputs: Vec<Relation>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
+#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct SourcePosition {
-    start_line_number: usize,
-    start_column: usize,
-    end_line_number: usize,
-    end_column: usize,
+    pub start_line_number: usize,
+    pub start_column: usize,
+    pub end_line_number: usize,
+    pub end_column: usize,
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
+#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct PropertyValue {
-    value: String,
-    key_position: SourcePosition,
-    value_position: SourcePosition,
-}
-
-impl PropertyValue {
-    pub fn get_value(&self) -> String { self.value.clone() }
+    pub value: String,
+    pub key_position: SourcePosition,
+    pub value_position: SourcePosition,
 }
 
 /// A SQL table or view. It has a name and a list of fields.

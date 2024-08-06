@@ -7,7 +7,7 @@ use pipeline_types::config::{
     ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
     TransportConfig,
 };
-use pipeline_types::program_schema::{ProgramSchema, PropertyValue};
+use pipeline_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition};
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
@@ -83,14 +83,13 @@ impl Display for CompilationProfile {
 /// "end_line_number" : 2,
 /// "end_column" : 8,
 /// "warning" : false,
-/// "errorType" : "PRIMARY KEY cannot be nullable",
+/// "error_type" : "PRIMARY KEY cannot be nullable",
 /// "message" : "PRIMARY KEY column 'C' has type INTEGER, which is nullable",
 /// "snippet" : "    2|   c INT PRIMARY KEY\n         ^^^^^\n    3|);\n"
 /// } ]
 /// ```
 #[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-#[serde(rename_all = "camelCase")]
 pub struct SqlCompilerMessage {
     start_line_number: usize,
     start_column: usize,
@@ -104,11 +103,22 @@ pub struct SqlCompilerMessage {
 
 impl SqlCompilerMessage {
     pub(crate) fn new_from_connector_generation_error(error: ConnectorGenerationError) -> Self {
+        let position = match error {
+            ConnectorGenerationError::PropertyDoesNotExist { position, .. } => position,
+            // ConnectorGenerationError::PropertyMissing { position, .. } => position,
+            ConnectorGenerationError::InvalidPropertyValue { position, .. } => position,
+            ConnectorGenerationError::ExpectedInputConnector { position, .. } => position,
+            ConnectorGenerationError::ExpectedOutputConnector { position, .. } => position,
+            ConnectorGenerationError::RelationConnectorNameCollision { position, .. } => position,
+            ConnectorGenerationError::GeneratedUniqueConnectorNameFailed { position, .. } => {
+                position
+            }
+        };
         SqlCompilerMessage {
-            start_line_number: 0,
-            start_column: 0,
-            end_line_number: 0,
-            end_column: 0,
+            start_line_number: position.start_line_number,
+            start_column: position.start_column,
+            end_line_number: position.end_line_number,
+            end_column: position.end_column,
             warning: false,
             error_type: "ConnectorGenerationError".to_string(),
             message: error.to_string(),
@@ -260,35 +270,46 @@ impl ProgramConfig {
 #[derive(ThisError, Serialize, Deserialize, Debug, ToSchema)]
 pub enum ConnectorGenerationError {
     #[error("relation '{relation}': property '{key}' does not exist")]
-    PropertyDoesNotExist { relation: String, key: String },
-    #[error("relation '{relation}': required property '{key}' is missing")]
-    PropertyMissing { relation: String, key: String },
+    PropertyDoesNotExist {
+        position: SourcePosition,
+        relation: String,
+        key: String,
+    },
+    // #[error("relation '{relation}': required property '{key}' is missing")]
+    // PropertyMissing { position: SourcePosition, relation: String, key: String },
     #[error(
         "relation '{relation}': property '{key}' has value '{value}' which is invalid: {reason}"
     )]
     InvalidPropertyValue {
+        position: SourcePosition,
         relation: String,
         key: String,
         value: String,
-        reason: String,
+        reason: Box<String>, // Put into a Box because else the error type becomes too large according to clippy
     },
     #[error("relation '{relation}': expected an input variant but got an output variant for connector '{connector_name}'")]
     ExpectedInputConnector {
+        position: SourcePosition,
         relation: String,
         connector_name: String,
     },
     #[error("relation '{relation}': expected an output variant but got an input variant for connector '{connector_name}'")]
     ExpectedOutputConnector {
+        position: SourcePosition,
         relation: String,
         connector_name: String,
     },
     #[error("relation '{relation}': encountered collision when using {{relation}}.{{connector_name}} as unique name: '{relation}.{connector_name}' is not unique")]
     RelationConnectorNameCollision {
+        position: SourcePosition,
         relation: String,
         connector_name: String,
     },
     #[error("relation '{relation}': failed to generate a unique connector name")]
-    GeneratedUniqueConnectorNameFailed { relation: String },
+    GeneratedUniqueConnectorNameFailed {
+        position: SourcePosition,
+        relation: String,
+    },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -300,45 +321,51 @@ struct NamedConnector {
 }
 
 /// Parses the properties to create a vector of connectors with optional name and configuration.
+/// It also returns the originating property value it parsed, which is used for error reporting
+/// later on.
 fn parse_named_connectors(
     relation: String,
     properties: &BTreeMap<String, PropertyValue>,
-) -> Result<Vec<NamedConnector>, ConnectorGenerationError> {
-    for property in properties.keys() {
-        if property != "connectors" && property != "materialized" {
+) -> Result<(Vec<NamedConnector>, Option<PropertyValue>), ConnectorGenerationError> {
+    for (key, value) in properties.iter() {
+        if key != "connectors" && key != "materialized" {
             return Err(ConnectorGenerationError::PropertyDoesNotExist {
+                position: value.key_position,
                 relation,
-                key: property.to_string(),
+                key: key.to_string(),
             });
         }
     }
     match properties.get("connectors") {
-        Some(s) => {
-            let connectors = serde_json::from_str::<Vec<NamedConnector>>(&s.get_value()).map_err(|e| {
-                ConnectorGenerationError::InvalidPropertyValue {
-                    relation: relation.clone(),
-                    key: "connectors".to_string(),
-                    value: s.get_value(),
-                    reason: format!(
-                        "deserialization failed: {e} (position is within the string itself)"
-                    ),
-                }
-            })?;
+        Some(value) => {
+            let connectors =
+                serde_json::from_str::<Vec<NamedConnector>>(&value.value).map_err(|e| {
+                    ConnectorGenerationError::InvalidPropertyValue {
+                        position: value.value_position,
+                        relation: relation.clone(),
+                        key: "connectors".to_string(),
+                        value: value.value.clone(),
+                        reason: Box::new(format!(
+                            "deserialization failed: {e} (position is within the string itself)"
+                        )),
+                    }
+                })?;
             for connector in &connectors {
                 if let Some(name) = &connector.name {
                     validate_name(name).map_err(|e| {
                         ConnectorGenerationError::InvalidPropertyValue {
+                            position: value.value_position,
                             relation: relation.clone(),
                             key: "connectors".to_string(),
-                            value: s.get_value(),
-                            reason: format!("connector name '{name}' is not valid: {e}"),
+                            value: value.value.clone(),
+                            reason: Box::new(format!("connector name '{name}' is not valid: {e}")),
                         }
                     })?;
                 }
             }
-            Ok(connectors)
+            Ok((connectors, Some(value.clone())))
         }
-        None => Ok(vec![]),
+        None => Ok((vec![], None)),
     }
 }
 
@@ -362,15 +389,16 @@ fn generate_random_name() -> String {
 /// - Optional given unique naming leads to collisions
 /// - Random name generation fails to generate a unique name within a certain number of tries
 fn convert_connectors_with_unique_names(
-    connectors: Vec<(String, Option<String>, ConnectorConfig)>,
+    connectors: Vec<(String, Option<String>, ConnectorConfig, PropertyValue)>,
 ) -> Result<Vec<(String, String, ConnectorConfig)>, ConnectorGenerationError> {
     // Give connectors that have a given name already their unique name
     let mut unique_names = vec![];
-    for (stream, connector_name, _) in &connectors {
+    for (stream, connector_name, _, origin_value) in &connectors {
         if let Some(name) = connector_name {
             let unique_name = format!("{stream}.{name}");
             if unique_names.contains(&Some(unique_name.clone())) {
                 return Err(ConnectorGenerationError::RelationConnectorNameCollision {
+                    position: origin_value.value_position,
                     relation: stream.clone(),
                     connector_name: name.clone(),
                 });
@@ -401,6 +429,7 @@ fn convert_connectors_with_unique_names(
                 None => {
                     return Err(
                         ConnectorGenerationError::GeneratedUniqueConnectorNameFailed {
+                            position: connectors[i].3.value_position,
                             relation: stream.clone(),
                         },
                     );
@@ -451,8 +480,12 @@ pub fn generate_program_info_from_schema(
     // Input connectors
     let mut input_connectors = vec![];
     for input_relation in &program_schema.inputs {
-        for connector in parse_named_connectors(input_relation.name(), &input_relation.properties)?
-        {
+        let (connectors, origin_value) =
+            parse_named_connectors(input_relation.name(), &input_relation.properties)?;
+        for connector in connectors {
+            let origin_value = origin_value
+                .clone()
+                .expect("Origin value cannot be None if connectors is non-empty");
             match connector.config.transport {
                 TransportConfig::FileInput(_)
                 | TransportConfig::KafkaInput(_)
@@ -462,12 +495,18 @@ pub fn generate_program_info_from_schema(
                 | TransportConfig::Datagen(_) => {}
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedInputConnector {
+                        position: origin_value.value_position,
                         relation: input_relation.name(),
                         connector_name: connector.name.unwrap_or("<unnamed>".to_string()),
                     });
                 }
             }
-            input_connectors.push((input_relation.name(), connector.name, connector.config));
+            input_connectors.push((
+                input_relation.name(),
+                connector.name,
+                connector.config,
+                origin_value,
+            ));
         }
     }
 
@@ -489,21 +528,30 @@ pub fn generate_program_info_from_schema(
     // Output connectors
     let mut output_connectors = vec![];
     for output_relation in &program_schema.outputs {
-        for connector in
-            parse_named_connectors(output_relation.name(), &output_relation.properties)?
-        {
+        let (connectors, origin_value) =
+            parse_named_connectors(output_relation.name(), &output_relation.properties)?;
+        for connector in connectors {
+            let origin_value = origin_value
+                .clone()
+                .expect("Origin value cannot be None if connectors is non-empty");
             match connector.config.transport {
                 TransportConfig::FileOutput(_)
                 | TransportConfig::KafkaOutput(_)
                 | TransportConfig::DeltaTableOutput(_) => {}
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedOutputConnector {
+                        position: origin_value.value_position,
                         relation: output_relation.name(),
                         connector_name: connector.name.unwrap_or("<unnamed>".to_string()),
                     });
                 }
             }
-            output_connectors.push((output_relation.name(), connector.name, connector.config));
+            output_connectors.push((
+                output_relation.name(),
+                connector.name,
+                connector.config,
+                origin_value,
+            ));
         }
     }
 

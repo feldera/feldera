@@ -79,7 +79,7 @@ public class CompilerMessages {
             ObjectNode result = mapper.createObjectNode();
             this.range.appendAsJson(result);
             result.put("warning", this.warning);
-            result.put("errorType", this.errorType);
+            result.put("error_type", this.errorType);
             result.put("message", this.message);
             String snippet = contents.getFragment(this.range, true);
             result.put("snippet", snippet);
