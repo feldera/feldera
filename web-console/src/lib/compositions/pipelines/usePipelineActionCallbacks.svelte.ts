@@ -46,7 +46,7 @@ export function usePipelineActionCallbacks() {
       return callbacks[pipelineName][action]?.splice(0)
     },
     getAll(pipelineName: string, action: PipelineAction) {
-      return callbacks[pipelineName][action] ?? []
+      return callbacks[pipelineName]?.[action] ?? []
     }
   }
 }
