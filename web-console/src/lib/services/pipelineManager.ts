@@ -216,14 +216,17 @@ const consolidatePipelineStatus = (
     .with(['Shutdown', P.any, P.nullish, { SystemError: P.select() }], (SystemError) => ({
       SystemError
     }))
-    .with(['Shutdown', P.any, P.nullish, 'Success'], () => 'Shutdown' as const)
-    .with(['Shutdown', P.any, P.select(P.nonNullable), P.any], () => 'Shutdown' as const)
-    .with(['Shutdown', 'Running', P.nullish, P._], () => 'Running' as const)
+    .with(['Shutdown', 'Running', P.any, P._], () => 'Starting up' as const) // Workaround when fetching status right after POST start action
+    .with(['Provisioning', 'Running', P.any, P._], () => 'Starting up' as const) // Workaround when fetching status right after POST start action
+    .with(['Shutdown', 'Paused', P.any, P._], () => 'Starting up' as const) // Workaround when fetching status right after POST start_paused action
+    .with(['Shutdown', 'Shutdown', P.nullish, 'Success'], () => 'Shutdown' as const)
+    .with(['Shutdown', 'Shutdown', P.select(P.nonNullable), P.any], () => 'Shutdown' as const)
     .with(['Provisioning', P.any, P.nullish, P._], () => 'Starting up' as const)
     .with(['Initializing', P.any, P.nullish, P._], () => 'Initializing' as const)
     .with(['Paused', P.any, P.nullish, 'CompilingSql'], () => 'Compiling sql' as const)
     .with(['Paused', P.any, P.nullish, 'Pending'], () => 'Queued' as const)
     .with(['Paused', P.any, P.nullish, 'CompilingRust'], () => 'Compiling bin' as const)
+    .with(['Paused', 'Running', P.nullish, P._], () => 'Running' as const)
     .with(['Paused', P.any, P.nullish, P._], () => 'Paused' as const)
     .with(['Running', P.any, P.nullish, P._], () => 'Running' as const)
     .with(['ShuttingDown', P.any, P.nullish, P._], () => 'ShuttingDown' as const)
@@ -245,48 +248,42 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export const postPipelineAction = async (
   pipeline_name: string,
-  action: PipelineAction,
-  wait?: 'await'
-) => {
-  if (!wait) {
-    await handled(_postPipelineAction)({
-      path: { pipeline_name, action: action === 'start_paused' ? 'pause' : action }
-    })
-    return
-  }
-  await _postPipelineAction({
+  action: PipelineAction
+): Promise<() => Promise<void>> => {
+  await handled(_postPipelineAction)({
     path: { pipeline_name, action: action === 'start_paused' ? 'pause' : action }
   })
-
-  const desiredStatus = (
-    {
-      start: 'Running',
-      pause: 'Paused',
-      shutdown: 'Shutdown',
-      start_paused: 'Paused'
-    } satisfies Record<PipelineAction, PipelineStatus>
-  )[action]
-  const ignoreStatuses = [
-    'Initializing',
-    'Compiling bin',
-    'Compiling sql',
-    'Queued',
-    'Starting up'
-  ] as PipelineStatus[]
-  while (true) {
-    await sleep(500)
-    const status = (await getPipelineStatus(pipeline_name)).status
-    if (status === desiredStatus) {
-      break
+  return async () => {
+    const desiredStatus = (
+      {
+        start: 'Running',
+        pause: 'Paused',
+        shutdown: 'Shutdown',
+        start_paused: 'Paused'
+      } satisfies Record<PipelineAction, PipelineStatus>
+    )[action]
+    const ignoreStatuses = [
+      'Initializing',
+      'Compiling bin',
+      'Compiling sql',
+      'Queued',
+      'Starting up'
+    ] as PipelineStatus[]
+    while (true) {
+      await sleep(300)
+      const status = (await getPipelineStatus(pipeline_name)).status
+      if (status === desiredStatus) {
+        break
+      }
+      if (ignoreStatuses.includes(status)) {
+        continue
+      }
+      throw new Error(
+        `Unexpected status ${status} while waiting for pipeline ${pipeline_name} to complete action ${action}`
+      )
     }
-    if (ignoreStatuses.includes(status)) {
-      continue
-    }
-    throw new Error(
-      `Unexpected status ${status} while waiting for pipeline ${pipeline_name} to complete action ${action}`
-    )
+    return
   }
-  return
 }
 
 export const getAuthConfig = () =>
