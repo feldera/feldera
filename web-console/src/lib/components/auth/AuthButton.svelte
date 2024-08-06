@@ -4,11 +4,13 @@
   import { fade } from 'svelte/transition'
   import Popup from '../common/Popup.svelte'
   import AuthPopupMenu from './AuthPopupMenu.svelte'
+  import type { AuthDetails } from '$lib/types/auth'
 
   const { compactBreakpoint = '' }: { compactBreakpoint?: string } = $props()
+  const auth = $page.data.auth as AuthDetails | undefined
 </script>
 
-{#if typeof $page.data.auth === 'object' && 'logout' in $page.data.auth}
+{#if typeof auth === 'object' && 'logout' in auth}
   <Popup>
     {#snippet trigger(toggle)}
       <button
@@ -29,8 +31,7 @@
         transition:fade={{ duration: 100 }}
         class="absolute right-0 z-10 max-h-[400px] w-[calc(100vw-100px)] max-w-[400px] justify-end overflow-y-auto rounded bg-white shadow-md dark:bg-black"
       >
-        <AuthPopupMenu user={$page.data.auth.userInfo} signOut={$page.data.auth.logout}
-        ></AuthPopupMenu>
+        <AuthPopupMenu user={auth.profile} signOut={auth.logout}></AuthPopupMenu>
       </div>
     {/snippet}
   </Popup>

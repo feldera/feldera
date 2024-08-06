@@ -1,27 +1,16 @@
 import '$lib/compositions/setupHttpClient'
-import { loadAuthConfig, type UserProfile } from '$lib/compositions/auth'
+import { loadAuthConfig } from '$lib/compositions/auth'
 import * as AxaOidc from '@axa-fr/oidc-client'
 import type { OidcUserInfo } from '@axa-fr/oidc-client'
 import { fromAxaUserInfo, toAxaOidcConfig } from '$lib/compositions/@axa-fr/auth'
 import { client } from '@hey-api/client-fetch'
 import { base } from '$app/paths'
 import { authRequestMiddleware, authResponseMiddleware } from '$lib/services/auth'
+import type { AuthDetails } from '$lib/types/auth'
 const { OidcClient, OidcLocation } = AxaOidc
 
 export const ssr = false
 export const trailingSlash = 'always'
-
-type AuthDetails =
-  | 'none'
-  | {
-      login: () => Promise<void>
-    }
-  | {
-      logout: (params: { callbackUrl: string }) => Promise<void>
-      userInfo: OidcUserInfo
-      profile: UserProfile
-      accessToken: string
-    }
 
 export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
   if (!('window' in globalThis)) {
@@ -64,10 +53,9 @@ export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
       | {
           nonce: string
         }
-      | {} =
-      ((nonce) => (nonce ? { nonce } : {}))(
-        (axaOidcConfig.storage ?? sessionStorage).getItem('oidc.nonce.default')
-      )
+      | {} = ((nonce) => (nonce ? { nonce } : {}))(
+      (axaOidcConfig.storage ?? sessionStorage).getItem('oidc.nonce.default')
+    )
     return {
       logout: ({ callbackUrl }) =>
         oidcClient.logoutAsync(callbackUrl, {

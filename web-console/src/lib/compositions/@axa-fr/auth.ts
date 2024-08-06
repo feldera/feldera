@@ -1,4 +1,5 @@
-import { type OidcConfig, type UserProfile } from '$lib/compositions/auth'
+import { type OidcConfig } from '$lib/compositions/auth'
+import type { UserProfile } from '$lib/types/auth'
 import { type OidcConfiguration, type OidcUserInfo } from '@axa-fr/oidc-client'
 import * as OidcClient from '@axa-fr/oidc-client'
 const { TokenAutomaticRenewMode } = OidcClient
@@ -47,5 +48,5 @@ export const fromAxaUserInfo = (userInfo: OidcUserInfo): UserProfile => ({
   id: userInfo.sub,
   name: userInfo.preferred_username || userInfo.name,
   email: userInfo.email,
-  image: userInfo.picture
+  picture: userInfo.picture
 })

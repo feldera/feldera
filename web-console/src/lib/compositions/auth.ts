@@ -249,7 +249,7 @@ export const loadAuthConfig = async () => {
           },
           logoutExtras: {
             client_id: clientId,
-            id_token_hint: undefined,
+            id_token_hint: undefined!,
             redirect_uri: `${window.location.origin}${base}/auth/callback/`,
             response_type: 'code'
           }
@@ -269,11 +269,4 @@ export const loadAuthConfig = async () => {
       .exhaustive()
   )
   // invariant(import.meta.env.VITE_AUTH_SECRET, 'You need to provide VITE_AUTH_SECRET during build')
-}
-
-export type UserProfile = {
-  id?: string
-  name?: string | null
-  email?: string | null
-  image?: string | null
 }
