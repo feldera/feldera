@@ -60,8 +60,20 @@ export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
 
     client.interceptors.request.use(authRequestMiddleware)
     client.interceptors.response.use(authResponseMiddleware)
+    const nonce:
+      | {
+          nonce: string
+        }
+      | {} =
+      ((nonce) => (nonce ? { nonce } : {}))(
+        (axaOidcConfig.storage ?? sessionStorage).getItem('oidc.nonce.default')
+      )
     return {
-      logout: ({ callbackUrl }) => oidcClient.logoutAsync(callbackUrl, authConfig.logoutExtras),
+      logout: ({ callbackUrl }) =>
+        oidcClient.logoutAsync(callbackUrl, {
+          ...authConfig.logoutExtras,
+          ...nonce // With AWS Cognito, when logging out and logging in via thrird party IDP (e.g. Google) - nonce is required
+        }),
       userInfo,
       profile: fromAxaUserInfo(userInfo),
       accessToken: tokens.accessToken // Only used in HTTP requests that cannot be handled with the global HTTP client instance from @hey-api/client-fetch
