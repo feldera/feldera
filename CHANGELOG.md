@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.23.0] - 2024-08-06
 
+- Simplify REST API to only have Pipelines as entities, and simplify UI
+  around that concept
+  ([#2071](https://github.com/feldera/feldera/pull/2071))
+
 ## [0.22.0] - 2024-07-31
 
 - [Python] Add `SQLContext.input_json()` to send json
