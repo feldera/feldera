@@ -3323,7 +3323,7 @@
           "properties": {
             "type": "object",
             "additionalProperties": {
-              "type": "string"
+              "$ref": "#/components/schemas/PropertyValue"
             }
           }
         }
@@ -3527,26 +3527,26 @@
       },
       "SqlCompilerMessage": {
         "type": "object",
-        "description": "A SQL compiler error.\n\nThe SQL compiler returns a list of errors in the following JSON format if\nit's invoked with the `-je` option.\n\n```ignore\n[ {\n\"startLineNumber\" : 2,\n\"startColumn\" : 4,\n\"endLineNumber\" : 2,\n\"endColumn\" : 8,\n\"warning\" : false,\n\"errorType\" : \"PRIMARY KEY cannot be nullable\",\n\"message\" : \"PRIMARY KEY column 'C' has type INTEGER, which is nullable\",\n\"snippet\" : \"    2|   c INT PRIMARY KEY\\n         ^^^^^\\n    3|);\\n\"\n} ]\n```",
+        "description": "A SQL compiler error.\n\nThe SQL compiler returns a list of errors in the following JSON format if\nit's invoked with the `-je` option.\n\n```ignore\n[ {\n\"start_line_number\" : 2,\n\"start_column\" : 4,\n\"end_line_number\" : 2,\n\"end_column\" : 8,\n\"warning\" : false,\n\"error_type\" : \"PRIMARY KEY cannot be nullable\",\n\"message\" : \"PRIMARY KEY column 'C' has type INTEGER, which is nullable\",\n\"snippet\" : \"    2|   c INT PRIMARY KEY\\n         ^^^^^\\n    3|);\\n\"\n} ]\n```",
         "required": [
-          "startLineNumber",
-          "startColumn",
-          "endLineNumber",
-          "endColumn",
+          "start_line_number",
+          "start_column",
+          "end_line_number",
+          "end_column",
           "warning",
-          "errorType",
+          "error_type",
           "message"
         ],
         "properties": {
-          "endColumn": {
+          "end_column": {
             "type": "integer",
             "minimum": 0
           },
-          "endLineNumber": {
+          "end_line_number": {
             "type": "integer",
             "minimum": 0
           },
-          "errorType": {
+          "error_type": {
             "type": "string"
           },
           "message": {
@@ -3556,11 +3556,11 @@
             "type": "string",
             "nullable": true
           },
-          "startColumn": {
+          "start_column": {
             "type": "integer",
             "minimum": 0
           },
-          "startLineNumber": {
+          "start_line_number": {
             "type": "integer",
             "minimum": 0
           },
