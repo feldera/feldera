@@ -1,9 +1,7 @@
 <script lang="ts">
-  import { base } from '$app/paths'
-  import type { UserProfile } from '$lib/compositions/auth'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
-  import invariant from 'tiny-invariant'
   import ApiKeyMenu from '../other/ApiKeyMenu.svelte'
+  import type { UserProfile } from '$lib/types/auth'
 
   const globalDialog = useGlobalDialog()
   let {
@@ -15,8 +13,8 @@
 <div class="flex flex-col gap-4 p-4">
   <div>
     <div class="flex gap-2">
-      {#if user.image}
-        <img class="h-10 w-10 rounded-full" src={user.image} alt="User avatar" />
+      {#if user.picture}
+        <img class="h-10 w-10 rounded-full" src={user.picture} alt="User avatar" />
       {:else}
         <div class="bx bx-user h-10 w-10 rounded-full text-[40px]"></div>
       {/if}
@@ -24,15 +22,14 @@
         <div class="h4 font-normal" class:italic={!user.name}>{user.name || 'anonymous'}</div>
         <div class="">{user.email}</div>
       </div>
-      <div class="ml-auto text-surface-600-400">logged in</div>
+      <div class="text-surface-600-400 ml-auto">logged in</div>
     </div>
   </div>
   <div class="hr"></div>
   <div class="flex flex-col items-start gap-4">
     <button
       class="btn text-surface-800-200 preset-outlined-surface-50-950 hover:preset-filled-surface-50-950"
-      onclick={() => (globalDialog.dialog = apiKeyDialog)}
-    >
+      onclick={() => (globalDialog.dialog = apiKeyDialog)}>
       Manage API keys
     </button>
     <button
@@ -47,8 +44,7 @@
         //   )
         // })
         // await signOut({ callbackUrl: 'https://dev-jzraqtxsr8a3hhhv.us.auth0.com/oidc/logout' })
-      }}><span class="bx bx-right-arrow-alt text-[24px]"></span> Logout</button
-    >
+      }}><span class="bx bx-right-arrow-alt text-[24px]"></span> Logout</button>
   </div>
 </div>
 
