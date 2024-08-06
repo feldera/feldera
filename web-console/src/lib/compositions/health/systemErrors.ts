@@ -81,7 +81,7 @@ const programErrorReport = async (pipeline: { name: string }, message: string) =
   }) as ReportDetails
 
 export const showSqlCompilerMessage = (e: SqlCompilerMessage) =>
-  `${e.errorType ? e.errorType + ':\n' : ''}${e.message}${e.snippet ? '\n' + e.snippet : ''}`
+  `${e.error_type ? e.error_type + ':\n' : ''}${e.message}${e.snippet ? '\n' + e.snippet : ''}`
 
 const extractProgramError = (pipeline: { name: string; status: PipelineStatus }) => {
   const source = `${base}/pipelines/${encodeURI(pipeline.name)}/`
@@ -134,8 +134,8 @@ const extractProgramError = (pipeline: { name: string; status: PipelineStatus })
             source:
               source +
               '#:' +
-              e.startLineNumber +
-              (e.startColumn > 1 ? ':' + e.startColumn.toString() : ''),
+              e.start_line_number +
+              (e.start_column > 1 ? ':' + e.start_column.toString() : ''),
             report: await programErrorReport(pipeline, e.message),
             body: e
           }

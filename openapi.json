@@ -3217,6 +3217,25 @@
         ],
         "description": "Program compilation status."
       },
+      "PropertyValue": {
+        "type": "object",
+        "required": [
+          "value",
+          "key_position",
+          "value_position"
+        ],
+        "properties": {
+          "key_position": {
+            "$ref": "#/components/schemas/SourcePosition"
+          },
+          "value": {
+            "type": "string"
+          },
+          "value_position": {
+            "$ref": "#/components/schemas/SourcePosition"
+          }
+        }
+      },
       "ProviderAwsCognito": {
         "type": "object",
         "required": [
@@ -3522,6 +3541,33 @@
           "region": {
             "type": "string",
             "description": "AWS region"
+          }
+        }
+      },
+      "SourcePosition": {
+        "type": "object",
+        "required": [
+          "start_line_number",
+          "start_column",
+          "end_line_number",
+          "end_column"
+        ],
+        "properties": {
+          "end_column": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_line_number": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "start_column": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "start_line_number": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
