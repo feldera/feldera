@@ -37,7 +37,6 @@ export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
   }
   const axaOidcConfig = toAxaOidcConfig(authConfig.oidc)
   const oidcClient = OidcClient.getOrCreate(() => fetch, new OidcLocation())(axaOidcConfig)
-  const oidcFetch = oidcClient.fetchWithTokens(fetch)
   const href = url.href
   const result: AuthDetails = await oidcClient.tryKeepExistingSessionAsync().then(async () => {
     if (href.includes(axaOidcConfig.redirect_uri)) {
