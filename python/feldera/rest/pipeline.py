@@ -9,12 +9,12 @@ class Pipeline:
     """
 
     def __init__(
-        self,
-        name: str,
-        sql: str,
-        program_config: Mapping[str, Any],
-        runtime_config: Mapping[str, Any],
-        description: Optional[str] = None,
+            self,
+            name: str,
+            sql: str,
+            program_config: Mapping[str, Any],
+            runtime_config: Mapping[str, Any],
+            description: Optional[str] = None,
     ):
         """
         Initializes a new pipeline
@@ -32,9 +32,21 @@ class Pipeline:
         self.program_config: Mapping[str, Any] = program_config
         self.runtime_config: Mapping[str, Any] = runtime_config
         self.id: Optional[str] = id
-        self.state: Optional[dict] = None
         self.tables: list[SQLTable] = []
         self.views: list[SQLView] = []
+        self.deployment_status: Optional[str] = None
+        self.deployment_status_since: Optional[str] = None
+        self.created_at: Optional[str] = None
+        self.version: Optional[int] = None
+        self.program_version: Optional[int] = None
+        self.deployment_config: Optional[dict] = None
+        self.deployment_desired_status: Optional[str] = None
+        self.deployment_error: Optional[dict] = None
+        self.deployment_location: Optional[str] = None
+        self.program_binary_url: Optional[str] = None
+        self.program_info: Optional[dict] = None  # info about input & output connectors and the schema
+        self.program_status: Optional[str] = None
+        self.program_status_since: Optional[str] = None
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):

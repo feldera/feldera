@@ -4,21 +4,16 @@ import pandas as pd
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.admin import KafkaAdminClient, NewTopic
 
-from feldera import SQLContext
+from feldera import PipelineBuilder, Pipeline
 from tests import TEST_CLIENT
 
 
-class TestWireframes(unittest.TestCase):
+class TestPipelineBuilder(unittest.TestCase):
     def test_local(self):
-        sql = SQLContext('notebook', TEST_CLIENT).get_or_create()
-
         TBL_NAMES = ['students', 'grades']
         view_name = "average_scores"
 
-        df_students = pd.read_csv('students.csv')
-        df_grades = pd.read_csv('grades.csv')
-
-        sql.sql(f"""
+        sql = f"""
         CREATE TABLE {TBL_NAMES[0]} (
             name STRING,
             id INT
@@ -32,33 +27,30 @@ class TestWireframes(unittest.TestCase):
         );
         
         CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
-        """)
+        """
 
-        out = sql.listen(view_name)
-
-        sql.start()
-
-        sql.input_pandas(TBL_NAMES[0], df_students)
-        sql.input_pandas(TBL_NAMES[1], df_grades)
-
-        sql.wait_for_completion(True)
-
-        df = out.to_pandas()
-
-        assert df.shape[0] == 100
-
-        sql.delete()
-
-    def test_local_listen_after_start(self):
-        sql = SQLContext('notebook', TEST_CLIENT).get_or_create()
-
-        TBL_NAMES = ['students', 'grades']
-        view_name = "average_scores"
+        pipeline = PipelineBuilder(TEST_CLIENT, name="notebook", sql=sql).create_or_replace()
 
         df_students = pd.read_csv('students.csv')
         df_grades = pd.read_csv('grades.csv')
 
-        sql.sql(f"""
+        out = pipeline.listen("average_scores")
+
+        pipeline.start()
+        pipeline.input_pandas(TBL_NAMES[0], df_students)
+        pipeline.input_pandas(TBL_NAMES[1], df_grades)
+        pipeline.wait_for_completion(True)
+        df = out.to_pandas()
+
+        assert df.shape[0] == 100
+
+        pipeline.delete()
+
+    def test_pipeline_get(self):
+        TBL_NAMES = ['students', 'grades']
+        view_name = "average_scores"
+
+        sql = f"""
         CREATE TABLE {TBL_NAMES[0]} (
             name STRING,
             id INT
@@ -70,155 +62,210 @@ class TestWireframes(unittest.TestCase):
             maths INT,
             art INT
         );
-        """)
+        
+        CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
+        """
 
-        query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-
-        sql.sql(f"CREATE VIEW {view_name} AS {query};")
-
-        sql.start()
-        out = sql.listen(view_name)
-
-        sql.input_pandas(TBL_NAMES[0], df_students)
-        sql.input_pandas(TBL_NAMES[1], df_grades)
-
-        sql.wait_for_completion(True)
-
-        df = out.to_pandas()
-
-        sql.delete()
-        assert df.shape[0] == 100
-
-    def test_two_SQLContexts(self):
-        # https://github.com/feldera/feldera/issues/1770
-
-        sql = SQLContext('sql_context1', TEST_CLIENT).get_or_create()
-        sql2 = SQLContext('sql_context2', TEST_CLIENT).get_or_create()
-
-        TBL_NAMES = ['students', 'grades']
-        VIEW_NAMES = [n + "_view" for n in TBL_NAMES]
+        pipeline = PipelineBuilder(TEST_CLIENT, name="notebook", sql=sql).create_or_replace()
 
         df_students = pd.read_csv('students.csv')
         df_grades = pd.read_csv('grades.csv')
 
-        sql.sql(f"""
+        out = pipeline.listen("average_scores")
+
+        pipeline.start()
+        pipeline.input_pandas(TBL_NAMES[0], df_students)
+        pipeline.input_pandas(TBL_NAMES[1], df_grades)
+        pipeline.wait_for_completion(True)
+        df = out.to_pandas()
+
+        assert df.shape[0] == 100
+
+        del pipeline
+        del out
+
+        pipeline = Pipeline.get("notebook", TEST_CLIENT)
+        assert pipeline is not None
+        pipeline.start()
+
+        out = pipeline.listen("average_scores")
+        pipeline.input_pandas(TBL_NAMES[0], df_students)
+        pipeline.input_pandas(TBL_NAMES[1], df_grades)
+        pipeline.wait_for_completion(True)
+        df = out.to_pandas()
+
+        assert df.shape[0] == 100
+        pipeline.pause()
+        pipeline.shutdown()
+        pipeline.delete()
+
+    def test_local_listen_after_start(self):
+        TBL_NAMES = ['students', 'grades']
+        view_name = "average_scores"
+
+        sql = f"""
         CREATE TABLE {TBL_NAMES[0]} (
             name STRING,
             id INT
         );
-        """)
 
-        sql2.sql(f"""
         CREATE TABLE {TBL_NAMES[1]} (
             student_id INT,
             science INT,
             maths INT,
             art INT
         );
-        """)
 
-        sql.sql(f"CREATE VIEW {VIEW_NAMES[0]} AS SELECT * FROM {TBL_NAMES[0]};")
-        sql2.sql(f"CREATE VIEW {VIEW_NAMES[1]} AS SELECT * FROM {TBL_NAMES[1]};")
+        CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
+        """
 
-        out = sql.listen(VIEW_NAMES[0])
-        out2 = sql2.listen(VIEW_NAMES[1])
+        pipeline = PipelineBuilder(TEST_CLIENT, name="notebook", sql=sql).create_or_replace()
 
-        sql.start()
-        sql2.start()
+        df_students = pd.read_csv('students.csv')
+        df_grades = pd.read_csv('grades.csv')
 
-        sql.input_pandas(TBL_NAMES[0], df_students)
-        sql2.input_pandas(TBL_NAMES[1], df_grades)
+        pipeline.start()
+        out = pipeline.listen(view_name)
 
-        sql.wait_for_completion(True)
-        sql2.wait_for_completion(True)
+        pipeline.input_pandas(TBL_NAMES[0], df_students)
+        pipeline.input_pandas(TBL_NAMES[1], df_grades)
 
+        pipeline.wait_for_completion(True)
         df = out.to_pandas()
+
+        pipeline.delete()
+        assert df.shape[0] == 100
+
+    def test_two_pipelines(self):
+        # https://github.com/feldera/feldera/issues/1770
+
+        TBL_NAMES = ['students', 'grades']
+        VIEW_NAMES = [n + "_view" for n in TBL_NAMES]
+
+        sql1 = f"""
+        CREATE TABLE {TBL_NAMES[0]} (
+            name STRING,
+            id INT
+        );
+
+        CREATE VIEW {VIEW_NAMES[0]} AS SELECT * FROM {TBL_NAMES[0]};
+        """
+
+        sql2 = f"""
+        CREATE TABLE {TBL_NAMES[1]} (
+            student_id INT,
+            science INT,
+            maths INT,
+            art INT
+        );
+
+        CREATE VIEW {VIEW_NAMES[1]} AS SELECT * FROM {TBL_NAMES[1]};
+        """
+
+        pipeline1 = PipelineBuilder(TEST_CLIENT, name="p1", sql=sql1).create_or_replace()
+        pipeline2 = PipelineBuilder(TEST_CLIENT, name="p2", sql=sql2).create_or_replace()
+
+        df_students = pd.read_csv('students.csv')
+        df_grades = pd.read_csv('grades.csv')
+
+        out1 = pipeline1.listen(VIEW_NAMES[0])
+        out2 = pipeline2.listen(VIEW_NAMES[1])
+
+        pipeline1.start()
+        pipeline2.start()
+
+        pipeline1.input_pandas(TBL_NAMES[0], df_students)
+        pipeline2.input_pandas(TBL_NAMES[1], df_grades)
+
+        pipeline1.wait_for_completion(True)
+        pipeline2.wait_for_completion(True)
+
+        df1 = out1.to_pandas()
         df2 = out2.to_pandas()
 
-        assert df.columns.tolist() not in df2.columns.tolist()
+        assert df1.columns.tolist() not in df2.columns.tolist()
 
-        sql.delete()
-        sql2.delete()
+        pipeline1.delete()
+        pipeline2.delete()
 
     def test_foreach_chunk(self):
         def callback(df: pd.DataFrame, seq_no: int):
             print(f"\nSeq No: {seq_no}, DF size: {df.shape[0]}\n")
 
-        sql = SQLContext('foreach_chunk', TEST_CLIENT).get_or_create()
-
         TBL_NAMES = ['students', 'grades']
         view_name = "average_scores"
 
-        df_students = pd.read_csv('students.csv')
-        df_grades = pd.read_csv('grades.csv')
-
-        sql.sql(f"""
+        sql = f"""
         CREATE TABLE {TBL_NAMES[0]} (
             name STRING,
             id INT
         );
-        
+
         CREATE TABLE {TBL_NAMES[1]} (
             student_id INT,
             science INT,
             maths INT,
             art INT
         );
-        """)
 
-        query = f"SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC"
-        sql.sql(f"CREATE VIEW {view_name} AS {query};")
+        CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
+        """
 
-        sql.start()
-        sql.foreach_chunk(view_name, callback)
+        pipeline = PipelineBuilder(TEST_CLIENT, name="foreach_chunk", sql=sql).create_or_replace()
 
-        sql.input_pandas(TBL_NAMES[0], df_students)
-        sql.input_pandas(TBL_NAMES[1], df_grades)
+        df_students = pd.read_csv('students.csv')
+        df_grades = pd.read_csv('grades.csv')
 
-        sql.wait_for_completion(True)
-        sql.delete()
+        pipeline.start()
+        pipeline.foreach_chunk(view_name, callback)
+
+        pipeline.input_pandas(TBL_NAMES[0], df_students)
+        pipeline.input_pandas(TBL_NAMES[1], df_grades)
+
+        pipeline.wait_for_completion(True)
+        pipeline.delete()
 
     def test_df_without_columns(self):
-        sql = SQLContext('df_without_columns', TEST_CLIENT).get_or_create()
         TBL_NAME = "student"
+
+        sql = f"""
+        CREATE TABLE {TBL_NAME} (
+            id INT,
+            name STRING
+        );
+
+        CREATE VIEW s AS SELECT * FROM {TBL_NAME};
+        """
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="df_without_columns", sql=sql).create_or_replace()
 
         df = pd.DataFrame([(1, "a"), (2, "b"), (3, "c")])
 
-        sql.sql(f"""
-        CREATE TABLE {TBL_NAME} (
-            id INT,
-            name STRING
-        );
-        """)
-
-        sql.sql(f"CREATE VIEW s AS SELECT * FROM {TBL_NAME} ;")
-
-        sql.start()
+        pipeline.start()
 
         with self.assertRaises(ValueError):
-            sql.input_pandas(TBL_NAME, df)
+            pipeline.input_pandas(TBL_NAME, df)
 
-        sql.shutdown()
-        sql.delete()
+        pipeline.shutdown()
+        pipeline.delete()
 
     def test_sql_error(self):
-        sql = SQLContext('sql_error', TEST_CLIENT).get_or_create()
         TBL_NAME = "student"
 
-        sql.sql(f"""
+        sql = f"""
         CREATE TABLE {TBL_NAME} (
             id INT,
             name STRING
         );
-        """)
 
-        sql.sql(f"CREATE VIEW s AS SELECT * FROM blah;")
-        _ = sql.listen("s")
+        CREATE VIEW s AS SELECT * FROM blah;
+        """
 
         with self.assertRaises(Exception):
-            sql.start()
+            PipelineBuilder(TEST_CLIENT, name="sql_error", sql=sql).create_or_replace()
 
-        sql.delete()
+        pipeline = Pipeline.get("sql_error", TEST_CLIENT)
+        pipeline.delete()
 
     def test_kafka(self):
         import json
@@ -267,10 +314,8 @@ class TestWireframes(unittest.TestCase):
         TABLE_NAME = "example"
         VIEW_NAME = "example_count"
 
-        sql = SQLContext('kafka_test', TEST_CLIENT).get_or_create()
-
-        sql.sql(f"""
-        CREATE TABLE {TABLE_NAME} (id INT NOT NULL PRIMARY KEY) 
+        sql = f"""
+        CREATE TABLE {TABLE_NAME} (id INT NOT NULL PRIMARY KEY)
         WITH (
             'connectors' = '[
                 {{
@@ -287,14 +332,13 @@ class TestWireframes(unittest.TestCase):
                         "name": "json",
                         "config": {{
                             "update_format": "insert_delete",
-                            "array": False
+                            "array": false
                         }}
                     }}
                 }}
             ]'
         );
-        """)
-        sql.sql(f"""
+
         CREATE VIEW {VIEW_NAME}
         WITH (
             'connectors' = '[
@@ -312,28 +356,28 @@ class TestWireframes(unittest.TestCase):
                         "name": "json",
                         "config": {{
                             "update_format": "insert_delete",
-                            "array": False
+                            "array": false
                         }}
                     }}
                 }}
             ]'
         )
         AS SELECT COUNT(*) as num_rows FROM {TABLE_NAME};
-        """)
+        """
 
-        out = sql.listen(VIEW_NAME)
-        sql.start()
-        sql.wait_for_idle()
-        sql.shutdown()
+        pipeline = PipelineBuilder(TEST_CLIENT, name="kafka_test", sql=sql).create_or_replace()
+
+        out = pipeline.listen(VIEW_NAME)
+        pipeline.start()
+        pipeline.wait_for_idle()
+        pipeline.shutdown()
         df = out.to_pandas()
         assert df.shape[0] != 0
 
-        sql.delete()
+        pipeline.delete()
 
     def test_http_get(self):
-        sql = SQLContext("test_http_get", TEST_CLIENT).get_or_create()
-
-        sql.sql("""
+        sql = """
         CREATE TABLE items (
             id INT,
             name STRING
@@ -357,26 +401,29 @@ class TestWireframes(unittest.TestCase):
                 }
             ]'
         );
-        
+
         CREATE VIEW s AS SELECT * FROM items;
-        """)
+        """
 
-        out = sql.listen("s")
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_http_get", sql=sql).create_or_replace()
 
-        sql.start()
-        sql.wait_for_completion(True)
+        out = pipeline.listen("s")
+
+        pipeline.start()
+        pipeline.wait_for_completion(True)
 
         df = out.to_pandas()
 
         assert df.shape[0] == 3
 
-        sql.delete()
+        pipeline.delete()
 
     def test_avro_format(self):
         import json
 
         PIPELINE_TO_KAFKA_SERVER = "redpanda:9092"
         KAFKA_SERVER = "localhost:19092"
+
         TOPIC = "test_avro_format"
 
         in_ci = os.environ.get("IN_CI")
@@ -395,34 +442,13 @@ class TestWireframes(unittest.TestCase):
 
         df = pd.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"]})
 
-        sql = SQLContext("test_avro_format", TEST_CLIENT).get_or_create()
-
-        TBL_NAME = "items"
-        VIEW_NAME = "s"
-
-        sql.sql(f"""
-        CREATE TABLE {TBL_NAME} (
+        sql = f"""
+        CREATE TABLE items (
             id INT,
             name STRING
         );
-        """)
 
-        avro_format = {
-            "type": "record",
-            "name": "items",
-            "fields": [
-                {"name": "id", "type": ["null", "int"]},
-                {"name": "name", "type": ["null", "string"]}
-            ]
-        }
-
-        # serialize to a string
-        avro_schema = json.dumps(avro_format)
-        # re-serialize the string
-        avro_schema = json.dumps(avro_schema)
-
-        sql.sql(f"""
-        CREATE VIEW {VIEW_NAME} WITH (
+        CREATE VIEW s WITH (
            'connectors'  = '[
                 {{
                     "name": "kafka-1",
@@ -436,18 +462,27 @@ class TestWireframes(unittest.TestCase):
                     "format": {{
                         "name": "avro",
                         "config": {{
-                            "schema": {avro_schema}
+                            "schema": {json.dumps(json.dumps({
+                                "type": "record",
+                                "name": "items",
+                                "fields": [
+                                    {"name": "id", "type": ["null", "int"]},
+                                    {"name": "name", "type": ["null", "string"]}
+                                ]
+                            }))}
                         }}
                     }}
                 }}
            ]'
         )
-        AS SELECT * FROM {TBL_NAME};
-        """)
+        AS SELECT * FROM items;
+        """
 
-        sql.start()
-        sql.input_pandas(TBL_NAME, df)
-        sql.wait_for_completion(True)
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_avro_format", sql=sql).create_or_replace()
+
+        pipeline.start()
+        pipeline.input_pandas("items", df)
+        pipeline.wait_for_completion(True)
 
         consumer = KafkaConsumer(
             TOPIC,
@@ -458,10 +493,10 @@ class TestWireframes(unittest.TestCase):
         msg = next(consumer)
         assert msg.value is not None
 
-        sql.delete()
+        pipeline.delete()
 
     def test_pipeline_resource_config(self):
-        from feldera.runtime_config import Resources
+        from feldera.runtime_config import Resources, RuntimeConfig
 
         config = {
             "cpu_cores_max": 3,
@@ -475,13 +510,7 @@ class TestWireframes(unittest.TestCase):
         resources = Resources(config)
         name = "test_pipeline_resource_config"
 
-        sql = SQLContext(
-            name,
-            TEST_CLIENT,
-            resources=resources
-        ).get_or_create()
-
-        sql.sql("""
+        sql = """
         CREATE TABLE items (
             id INT,
             name STRING
@@ -505,14 +534,16 @@ class TestWireframes(unittest.TestCase):
                 }
             ]'
         );
-        
+
         CREATE VIEW s AS SELECT * FROM items;
-        """)
+        """
 
-        out = sql.listen("s")
+        pipeline = PipelineBuilder(TEST_CLIENT, name=name, sql=sql, runtime_config=RuntimeConfig(resources=resources, storage=False, workers=10)).create_or_replace()
 
-        sql.start()
-        sql.wait_for_completion(True)
+        out = pipeline.listen("s")
+
+        pipeline.start()
+        pipeline.wait_for_completion(True)
 
         df = out.to_pandas()
 
@@ -520,91 +551,92 @@ class TestWireframes(unittest.TestCase):
 
         assert TEST_CLIENT.get_pipeline(name).runtime_config["resources"] == config
 
-        sql.delete()
+        pipeline.delete()
 
     def test_timestamp_pandas(self):
-        sql = SQLContext("test_timestamp_pandas", TEST_CLIENT).get_or_create()
-
         TBL_NAME = "items"
         VIEW_NAME = "s"
 
-        # backend doesn't support TIMESTAMP of format: "2024-06-06T18:06:28.443"
-        sql.sql(f"""
+        sql = f"""
         CREATE TABLE {TBL_NAME} (
             id INT,
             name STRING,
             birthdate TIMESTAMP
         );
-        """)
 
-        sql.sql( f"CREATE VIEW {VIEW_NAME} as SELECT * FROM {TBL_NAME}")
+        CREATE VIEW {VIEW_NAME} AS SELECT * FROM {TBL_NAME};
+        """
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_timestamp_pandas", sql=sql).create_or_replace()
 
         df = pd.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"], "birthdate": [
             pd.Timestamp.now(), pd.Timestamp.now(), pd.Timestamp.now()
         ]})
 
-        out = sql.listen(VIEW_NAME)
+        out = pipeline.listen(VIEW_NAME)
 
-        sql.start()
-        sql.input_pandas(TBL_NAME, df)
-        sql.wait_for_completion(True)
+        pipeline.start()
+        pipeline.input_pandas(TBL_NAME, df)
+        pipeline.wait_for_completion(True)
 
         df = out.to_pandas()
 
         assert df.shape[0] == 3
 
-        sql.delete()
+        pipeline.delete()
 
     def test_input_json0(self):
-        sql = SQLContext("test_input_json", TEST_CLIENT).get_or_create()
-
         TBL_NAME = "items"
         VIEW_NAME = "s"
 
-        sql.sql(f"""
+        sql = f"""
         CREATE TABLE {TBL_NAME} (
             id INT,
             name STRING
         );
-        
+
         CREATE VIEW {VIEW_NAME} AS SELECT * FROM {TBL_NAME};
-        """)
+        """
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_input_json", sql=sql).create_or_replace()
 
         data = {"insert": {'id': 1, 'name': 'a'}}
 
-        out = sql.listen(VIEW_NAME)
+        out = pipeline.listen(VIEW_NAME)
 
-        sql.start()
-        sql.input_json(TBL_NAME, data, update_format="insert_delete")
-        sql.wait_for_completion(True)
+        pipeline.start()
+        pipeline.input_json(TBL_NAME, data, update_format="insert_delete")
+        pipeline.wait_for_completion(True)
 
         out_data = out.to_dict()
 
         data["insert"].update({"insert_delete": 1})
         assert out_data == [data["insert"]]
 
-    def test_input_json1(self):
-        sql = SQLContext("test_input_json", TEST_CLIENT).get_or_create()
+        pipeline.delete()
 
+    def test_input_json1(self):
         TBL_NAME = "items"
         VIEW_NAME = "s"
 
-        sql.sql(f"""
+        sql = f"""
         CREATE TABLE {TBL_NAME} (
             id INT,
             name STRING
         );
-        
+
         CREATE VIEW {VIEW_NAME} AS SELECT * FROM {TBL_NAME};
-        """)
+        """
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_input_json", sql=sql).create_or_replace()
 
         data = [{'id': 1, 'name': 'a'}, {'id': 2, 'name': 'b'}]
 
-        out = sql.listen(VIEW_NAME)
+        out = pipeline.listen(VIEW_NAME)
 
-        sql.start()
-        sql.input_json(TBL_NAME, data)
-        sql.wait_for_completion(True)
+        pipeline.start()
+        pipeline.input_json(TBL_NAME, data)
+        pipeline.wait_for_completion(True)
 
         out_data = out.to_dict()
 
@@ -612,6 +644,8 @@ class TestWireframes(unittest.TestCase):
             datum.update({"insert_delete": 1})
 
         assert out_data == data
+
+        pipeline.delete()
 
 
 if __name__ == '__main__':

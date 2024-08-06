@@ -16,7 +16,7 @@ from plumbum.cmd import rpk
 import psycopg
 import json
 import random
-from feldera import SQLContext, FelderaClient
+from feldera import PipelineBuilder, FelderaClient, Pipeline
 
 # File locations
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
@@ -204,9 +204,8 @@ as select * from test_table;
 
 def create_feldera_pipeline(api_url: str, pipeline_to_redpanda_server: str, start_pipeline: bool):
     client = FelderaClient(api_url)
-
-    pipeline = SQLContext(PIPELINE_NAME, client, "Debezium JDBC sink connector demo")
-    pipeline.sql(build_sql(pipeline_to_redpanda_server))
+    sql = build_sql(pipeline_to_redpanda_server)
+    pipeline = PipelineBuilder(client, name="Debezium JDBC sink connector demo", sql=sql).create_or_replace()
 
     if start_pipeline:
         print("Starting the pipeline...")
@@ -215,7 +214,7 @@ def create_feldera_pipeline(api_url: str, pipeline_to_redpanda_server: str, star
 
     return pipeline
 
-def generate_inputs(pipeline: SQLContext):
+def generate_inputs(pipeline: Pipeline):
     print("Generating records...")
     date_time = datetime.datetime(2024, 1, 30, 8, 58)
 

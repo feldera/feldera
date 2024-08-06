@@ -1,33 +1,34 @@
 from datetime import datetime
-from feldera.formats import JSONFormat, JSONUpdateFormat
 from sql_program import generate_program
-from feldera import SQLContext, FelderaClient
+from feldera import PipelineBuilder, Pipeline, FelderaClient
+from feldera.runtime_config import RuntimeConfig
 import pandas as pd
 from typing import Dict, Any, List
 
 
-def process_input(sql: SQLContext, data: List[Dict[str, Any]]):
-    sql.input_pandas("interactions", pd.DataFrame(data))
-    sql.wait_for_completion(shutdown=False)
+def process_input(p: Pipeline, data: List[Dict[str, Any]]):
+    p.input_pandas("interactions", pd.DataFrame(data))
+    p.wait_for_completion(shutdown=False)
 
 
-client = FelderaClient("http://localhost:8080")
-sql = SQLContext("tiktok_test", client, workers=10, storage=False)
 
 code = generate_program(None, None)
-sql.sql(code)
 
-# sql.foreach_chunk("user_agg", lambda df, chunk : print(df))
+client = FelderaClient("http://localhost:8080")
+config = RuntimeConfig(workers=10, storage=False)
+pipeline = PipelineBuilder(client, name="tiktok_test", sql=code, runtime_config=config).create_or_replace() 
+
+# pipeline.foreach_chunk("user_agg", lambda df, chunk : print(df))
 
 print("Starting Feldera Pipeline")
-sql.start()
+pipeline.start()
 print("Pipeline started")
 
-hvideo_agg = sql.listen("video_agg")
-huser_agg = sql.listen("user_agg")
+hvideo_agg = pipeline.listen("video_agg")
+huser_agg = pipeline.listen("user_agg")
 
 process_input(
-    sql,
+    pipeline,
     [
         {
             "interaction_id": 1,
@@ -63,7 +64,7 @@ process_input(
 )
 
 process_input(
-    sql,
+    pipeline,
     [
         {
             "interaction_id": 3,
@@ -99,7 +100,7 @@ process_input(
 )
 
 process_input(
-    sql,
+    pipeline,
     [
         {
             "interaction_id": 5,
@@ -141,4 +142,4 @@ print("user_agg")
 print(huser_agg.to_pandas())
 
 print("Success")
-sql.shutdown()
+pipeline.shutdown()

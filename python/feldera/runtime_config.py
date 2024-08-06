@@ -45,17 +45,26 @@ class RuntimeConfig:
 
     def __init__(
             self,
+            workers: Optional[int] = None,
+            storage: Optional[bool] = False,
+            tracing: Optional[bool] = False,
+            tracing_endpoint_jaeger: Optional[str] = "",
             cpu_profiler: bool = True,
             max_buffering_delay_usecs: int = 0,
             min_batch_size_records: int = 0,
             min_storage_bytes: Optional[int] = None,
             resources: Optional[Resources] = None,
     ):
+        self.workers = workers
+        self.storage = storage
+        self.tracing = tracing
+        self.tracing_endpoint_jaeger = tracing_endpoint_jaeger
         self.cpu_profiler = cpu_profiler
         self.max_buffering_delay_usecs = max_buffering_delay_usecs
         self.min_batch_size_records = min_batch_size_records
         self.min_storage_bytes = min_storage_bytes
-        self.resources = resources.__dict__
+        if resources is not None:
+            self.resources = resources.__dict__
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):
