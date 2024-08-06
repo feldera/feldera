@@ -27,6 +27,9 @@ import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.KeyPropagation;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
 import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
@@ -38,8 +41,7 @@ import java.util.Set;
 /* Test SQL queries from the Nexmark suite.
  * https://github.com/nexmark/nexmark/tree/master/nexmark-flink/src/main/resources/queries */
 public class NexmarkTest extends StreamingTestBase {
-    static final String[] tables = {
-            """
+    static final String tables = """
 CREATE TABLE person (
     id BIGINT NOT NULL PRIMARY KEY,
     name VARCHAR,
@@ -47,33 +49,30 @@ CREATE TABLE person (
     creditCard VARCHAR,
     city VARCHAR,
     state VARCHAR,
-    date_time TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
+    date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
     extra  VARCHAR
-)""",
-            """
+);
 CREATE TABLE auction (
     id  BIGINT NOT NULL PRIMARY KEY,
     itemName  VARCHAR,
     description  VARCHAR,
     initialBid  BIGINT,
     reserve  BIGINT,
-    date_time  TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
+    date_time  TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
     expires  TIMESTAMP(3),
     seller  BIGINT FOREIGN KEY REFERENCES person(id),
     category  BIGINT,
     extra  VARCHAR
-)""",
-            """
+);
 CREATE TABLE bid (
     auction  BIGINT FOREIGN KEY REFERENCES auction(id),
     bidder  BIGINT NOT NULL PRIMARY KEY,
     price  BIGINT,
     channel  VARCHAR,
     url  VARCHAR,
-    date_time TIMESTAMP(3), -- NOT NULL LATENESS INTERVAL 4 SECONDS,
+    date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
     extra  VARCHAR
-)"""
-    };
+);""";
 
     static final String[] queries = {
             """
@@ -173,12 +172,13 @@ SELECT AuctionBids.auction, AuctionBids.num
    SELECT
      B1.auction,
      count(*) AS num,
-     HOP_START(B1.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS starttime,
-     HOP_END(B1.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS endtime
-   FROM bid B1
+     window_start AS starttime,
+     window_end AS endtime
+   FROM TABLE(HOP(TABLE bid, DESCRIPTOR(date_time), INTERVAL 2 SECOND, INTERVAL 10 SECOND)) AS B1
    GROUP BY
      B1.auction,
-     HOP(B1.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND)
+     window_start,
+     window_end
  ) AS AuctionBids
  JOIN (
    SELECT
@@ -188,12 +188,13 @@ SELECT AuctionBids.auction, AuctionBids.num
    FROM (
      SELECT
        count(*) AS num,
-       HOP_START(B2.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS starttime,
-       HOP_END(B2.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS endtime
-     FROM bid B2
+       window_start AS starttime,
+       window_end AS endtime
+     FROM TABLE(HOP(TABLE bid, DESCRIPTOR(date_time), INTERVAL 2 SECOND, INTERVAL 10 SECOND)) AS B2
      GROUP BY
        B2.auction,
-       HOP(B2.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND)
+       window_start,
+       window_end
      ) AS CountBids
    GROUP BY CountBids.starttime, CountBids.endtime
  ) AS MaxBids
@@ -552,14 +553,14 @@ SELECT
 
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
-        for (String input: tables)
-            compiler.compileStatement(input);
+        compiler.compileStatements(tables);
     }
 
     @Override
     public DBSPCompiler testCompiler(boolean optimize) {
         CompilerOptions options = new CompilerOptions();
         options.languageOptions.lexicalRules = Lex.ORACLE;
+        options.languageOptions.streaming = true;
         options.languageOptions.throwOnError = true;
         options.languageOptions.incrementalize = true;
         options.languageOptions.generateInputForEveryTable = false;
@@ -686,9 +687,9 @@ INSERT INTO Auction VALUES(1, 'item-name', 'description', 5, 10, '2020-01-01 00:
 INSERT INTO Auction VALUES(2, 'item-name', 'description', 5, 10, '2020-01-01 00:00:00', '2020-01-02 00:00:00', 1, 1, '');
 INSERT INTO Auction VALUES(3, 'item-name', 'description', 5, 10, '2020-01-01 00:00:00', '2020-01-02 00:00:00', 1, 2, '');
 -- Winning bid for auction 1 (category 1).
-INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 01:10:00', '');
+INSERT INTO Bid VALUES(1, 1, 80, 'my-channel', 'https://example.com', '2020-01-01 00:00:01.1', '');
 -- This bid would have one but isn't included as it came in too late.
-INSERT INTO Bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 01:50:00', '');
+INSERT INTO Bid VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-01 00:00:01.5', '');
 -- Max bid for auction 2 (category 1).
 INSERT INTO Bid VALUES(2, 1, 300, 'my-channel', 'https://example.com', '2020-01-01 00:00:00', '');
 INSERT INTO Bid VALUES(2, 1, 200, 'my-channel', 'https://example.com', '2020-01-01 00:00:00', '');
@@ -711,7 +712,7 @@ INSERT INTO Bid VALUES(3, 1, 30, 'my-channel', 'https://example.com', '2020-01-0
                  2        | 30    | 1""",
                 """
 -- Another auction with a single winning bid in category 2.
-INSERT INTO Auction VALUES(4, 'item-name', 'description', 5, 10, '2020-01-01 00:00:00', '2020-01-01 02:00:00', 1, 2, '');
+INSERT INTO Auction VALUES(4, 'item-name', 'description', 5, 10, '2020-01-01 00:00:00', '2020-01-01 00:00:02', 1, 2, '');
 INSERT INTO Bid VALUES(4, 1, 60, 'my-channel', 'https://example.com', '2020-01-01 00:00:00', '');
                         """,
                 """
@@ -720,6 +721,16 @@ INSERT INTO Bid VALUES(4, 1, 60, 'my-channel', 'https://example.com', '2020-01-0
                  2        | 30    | -1
                  2        | 45    | 1"""
         );
+    }
+
+    @Test
+    public void q5Test() {
+        this.createTest(5,
+                """
+                """,
+                """
+                 auction | num
+                ---------------""");
     }
 
     @Test @Ignore("OVER with ROWS")
@@ -809,6 +820,10 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
 
     @Test
     public void q9test() {
+        Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
+        Logger.INSTANCE.setLoggingLevel(KeyPropagation.class, 1);
+        Logger.INSTANCE.setLoggingLevel(AppendOnly.class, 1);
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         this.createTest(9, "", """
  id | item | description | initialBid | reserve | date_time | expires | seller | category | extra | auction | bidder | price | bid_datetime | bid_extra | weight
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------""");
@@ -877,7 +892,6 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
         this.prepareInputs(compiler);
 
         Set<Integer> unsupported = new HashSet<>() {{
-            add(5);  // hop
             add(6);  // over with rows
             add(11); // session
             add(13); // asof join

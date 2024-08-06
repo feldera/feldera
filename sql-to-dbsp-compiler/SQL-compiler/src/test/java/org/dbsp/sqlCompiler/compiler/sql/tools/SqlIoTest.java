@@ -236,23 +236,6 @@ public abstract class SqlIoTest extends BaseSQLTests {
         this.addFailingRustTestCase(query, error, ccs);
     }
 
-    /** Run one or more statements that are expected to fail in compilation.
-     * @param statements        Statements to compile.
-     * @param messageFragment   This fragment should appear in the error message. */
-    public void statementsFailingInCompilation(String statements, String messageFragment) {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        this.prepareInputs(compiler);
-        compiler.compileStatements(statements);
-        getCircuit(compiler);
-        Assert.assertTrue(compiler.messages.exitCode != 0);
-        String message = compiler.messages.toString();
-        boolean contains = message.contains(messageFragment);
-        if (!contains)
-            Assert.fail("Error message\n" + Utilities.singleQuote(message) +
-                    "\ndoes not contain the expected fragment\n" + Utilities.singleQuote(messageFragment));
-    }
-
     /** Run a query that is expected to fail in compilation.
      * @param query             Query to run.
      * @param messageFragment   This fragment should appear in the error message.

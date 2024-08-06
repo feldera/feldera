@@ -5,26 +5,28 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 
+import javax.annotation.Nullable;
+
 public final class JoinFilterMapExpansion
         extends OperatorExpansion
         implements CommonJoinExpansion {
-    public final DBSPDelayedIntegralOperator leftIntegrator;
-    public final DBSPDelayedIntegralOperator rightIntegrator;
-    public final DBSPStreamJoinOperator leftDelta;
-    public final DBSPStreamJoinOperator rightDelta;
+    @Nullable public final DBSPDelayedIntegralOperator leftIntegrator;
+    @Nullable public final DBSPDelayedIntegralOperator rightIntegrator;
+    @Nullable public final DBSPStreamJoinOperator leftDelta;
+    @Nullable public final DBSPStreamJoinOperator rightDelta;
     public final DBSPStreamJoinOperator both;
-    public final DBSPFilterOperator leftFilter;
-    public final DBSPFilterOperator rightFilter;
+    @Nullable public final DBSPFilterOperator leftFilter;
+    @Nullable public final DBSPFilterOperator rightFilter;
     public final DBSPFilterOperator filter;
     public final DBSPSumOperator sum;
 
-    public JoinFilterMapExpansion(DBSPDelayedIntegralOperator leftIntegrator,
-                                  DBSPDelayedIntegralOperator rightIntegrator,
-                                  DBSPStreamJoinOperator leftDelta,
-                                  DBSPStreamJoinOperator rightDelta,
+    public JoinFilterMapExpansion(@Nullable DBSPDelayedIntegralOperator leftIntegrator,
+                                  @Nullable DBSPDelayedIntegralOperator rightIntegrator,
+                                  @Nullable DBSPStreamJoinOperator leftDelta,
+                                  @Nullable DBSPStreamJoinOperator rightDelta,
                                   DBSPStreamJoinOperator both,
-                                  DBSPFilterOperator leftFilter,
-                                  DBSPFilterOperator rightFilter,
+                                  @Nullable DBSPFilterOperator leftFilter,
+                                  @Nullable DBSPFilterOperator rightFilter,
                                   DBSPFilterOperator filter,
                                   DBSPSumOperator sum) {
         this.leftIntegrator = leftIntegrator;
@@ -39,12 +41,12 @@ public final class JoinFilterMapExpansion
     }
 
     @Override
-    public DBSPDelayedIntegralOperator getLeftIntegrator() {
+    @Nullable public DBSPDelayedIntegralOperator getLeftIntegrator() {
         return this.leftIntegrator;
     }
 
     @Override
-    public DBSPDelayedIntegralOperator getRightIntegrator() {
+    @Nullable public DBSPDelayedIntegralOperator getRightIntegrator() {
         return this.rightIntegrator;
     }
 }

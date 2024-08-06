@@ -26,6 +26,18 @@ public class RegressionTests extends SqlIoTest {
         this.statementsFailingInCompilation(sql, "Expected a simple string");
     }
 
+    @Test @Ignore("https://github.com/feldera/feldera/issues/2201")
+    public void issue2201() {
+        String sql = """
+                create table customer_address(
+                    ca_zip char(10)
+                );
+                
+                CREATE VIEW V AS SELECT substr(ca_zip,1,5)
+                FROM customer_address;""";
+        this.compileRustTestCase(sql);
+    }
+
     @Test
     public void issue1189() {
         String sql = """
