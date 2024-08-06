@@ -16,7 +16,7 @@ from plumbum.cmd import rpk
 import psycopg
 import json
 import random
-from feldera import PipelineBuilder, FelderaClient
+from feldera import PipelineBuilder, FelderaClient, Pipeline
 
 # File locations
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
