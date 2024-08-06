@@ -20,17 +20,10 @@ it is not yet fixed.**
 2. Download and unpack the Nexmark benchmark:
 
 ```
-git clone https://github.com/nexmark/nexmark.git
+git clone https://github.com/blp/nexmark.git
 ```
 
-3. Apply a couple of patches:
-
-```
-(cd nexmark && patch -p1 < ../avoid-jps-dependency.patch)
-(cd nexmark && patch -p1 < ../omit-q10.patch)
-```
-
-4. Build Nexmark:
+3. Build Nexmark:
 
 ```
 (cd nexmark/nexmark-flink && ./build.sh)
@@ -44,26 +37,26 @@ git clone https://github.com/nexmark/nexmark.git
    warned that `build.sh` doesn't bail out on errors, so you might
    still get something there even if the build partially fails.
 
-5. Extract Nexmark archive:
+4. Extract Nexmark archive:
 
 ```
 tar xzf nexmark/nexmark-flink/nexmark-flink.tgz
 ```
 
-6. Download and unpack Kafka:
+5. Download and unpack Kafka:
 
 ```
-wget https://dlcdn.apache.org/kafka/3.4.0/kafka_2.13-3.4.0.tgz
-tar xfz kafka_2.13-3.4.0.tgz
+wget https://downloads.apache.org/kafka/3.8.0/kafka_2.13-3.8.0.tgz
+tar xfz kafka_2.13-3.8.0.tgz
 ```
 
-7. Download the Flink connector for Kafka:
+6. Download the Flink connector for Kafka:
 
 ```
-wget https://repo.maven.apache.org/maven2/org/apache/flink/flink-sql-connector-kafka/1.17.0/flink-sql-connector-kafka-1.17.0.jar
+wget https://repo.maven.apache.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.2.0-1.19/flink-sql-connector-kafka-3.2.0-1.19.jar
 ```
 
-8. Build a Docker container based on the upstream Flink container that
+7. Build a Docker container based on the upstream Flink container that
    also contains Nexmark and Kafka, and give it the tag
    `nexmark-kafka`:
 
@@ -71,7 +64,7 @@ wget https://repo.maven.apache.org/maven2/org/apache/flink/flink-sql-connector-k
 docker build -t nexmark-kafka .
 ```
 
-7. Start the containers:
+8. Start the containers:
 
 ```
 docker compose -p nexmark up
@@ -84,7 +77,7 @@ docker compose -p nexmark up
 docker compose up -d -p nexmark
 ```
 
-8. Run the `insert_kafka` query to start inserting data into Kafka.
+9. Run the `insert_kafka` query to start inserting data into Kafka.
    This query will continue running in the background even after it
    "finishes".  It will consume your disk space at an incredible rate
    (over 1 TB in 30 minutes).
@@ -97,7 +90,7 @@ docker compose up -d -p nexmark
 docker exec nexmark-jobmanager-1 run-nexmark.sh insert_kafka
 ```
 
-9. Run tests.
+10. Run tests.
 
    You can run a single test, a comma-separated list, or all of them:
 
@@ -118,7 +111,7 @@ docker exec -it nexmark-taskmanager-1 bash
    If there are failures, then `/opt/flink/log` and `/opt/nexmark/log`
    can be informative.
 
-10. When you're done, stop the containers:
+11. When you're done, stop the containers:
 
 ```
 docker compose -p nexmark down
