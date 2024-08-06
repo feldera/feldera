@@ -102,10 +102,10 @@ export const extractSQLCompilerErrorMarkers = (
       }
     }
     return {
-      startLineNumber: error.startLineNumber,
-      endLineNumber: error.endLineNumber,
-      startColumn: error.startColumn,
-      endColumn: error.endColumn + 1,
+      startLineNumber: error.start_line_number,
+      endLineNumber: error.end_line_number,
+      startColumn: error.start_column,
+      endColumn: error.end_column + 1,
       message: showSqlCompilerMessage(error),
       severity: error.warning ? MarkerSeverity.Warning : MarkerSeverity.Error
     }

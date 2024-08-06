@@ -114,4 +114,8 @@ public final class DBSPCircuit extends DBSPNode implements IDBSPOuterNode {
     public ProgramMetadata getMetadata() {
         return this.circuit.metadata;
     }
+
+    public boolean isEmpty() {
+        return this.circuit.isEmpty();
+    }
 }

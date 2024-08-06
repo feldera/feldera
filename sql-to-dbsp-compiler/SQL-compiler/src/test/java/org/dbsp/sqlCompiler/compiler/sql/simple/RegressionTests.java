@@ -27,6 +27,27 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue1189() {
+        String sql = """
+                create table EVENT_DURATION_V(duration bigint, event_type_id bigint);
+                create table EVENTTYPE_T(id bigint, name string);
+                
+                CREATE VIEW SHORTEST_ALARMS_TYPE_V AS
+                SELECT duration
+                ,      event_type_id
+                ,      ett.name
+                FROM   (SELECT duration
+                        ,      event_type_id
+                        ,      ROW_NUMBER() OVER (PARTITION BY event_type_id
+                                                  ORDER BY duration ASC) AS rnum
+                        FROM   EVENT_DURATION_V) a
+                        JOIN EVENTTYPE_T ett ON a.event_type_id = ett.id
+                WHERE   rnum <= 1
+                ;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void issue2017() {
         String sql = """
                 CREATE TABLE customer (
