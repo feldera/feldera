@@ -114,11 +114,12 @@
     <button
       class:disabled={unsavedChanges}
       class={'bx bx-play !bg-success-200-800 '}
-      onclick={() =>
-        postPipelineAction(pipelineName, 'start').then(() => {
-          status.status = 'Starting up'
-          onActionSuccess?.('start')
-        })}
+      onclick={async () => {
+        const success = await postPipelineAction(pipelineName, 'start')
+        status.status = 'Starting up'
+        await success()
+        onActionSuccess?.('start')
+      }}
     >
     </button>
   </div>
@@ -133,11 +134,12 @@
     <button
       class:disabled={unsavedChanges}
       class={'bx bx-play !bg-success-200-800 '}
-      onclick={() =>
-        postPipelineAction(pipelineName, 'start_paused', 'await').then(() => {
-          status.status = 'Starting up'
-          onActionSuccess?.('start_paused')
-        })}
+      onclick={async () => {
+        const success = await postPipelineAction(pipelineName, 'start_paused')
+        status.status = 'Starting up'
+        await success()
+        onActionSuccess?.('start_paused')
+      }}
     >
     </button>
   </div>

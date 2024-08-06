@@ -67,6 +67,8 @@
         .filter((relation) => relation[1].selected)
         .map((relation) => relation[0])
       for (const relationName of relations) {
+        rows[pipelineName].length = 0 // Clear row buffer when starting pipeline again
+        getRows = () => rows
         pipelinesRelations[pipelineName][relationName].cancelStream = startReadingStream(
           pipelineName,
           relationName
@@ -190,11 +192,15 @@
     <PaneResizer class="bg-surface-100-900 w-2"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
-      {#if getRows()[pipelineName]}
+      {#if getRows()[pipelineName]?.length}
         <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
       {:else}
         <span class="text-surface-500 px-4">
-          Select table or view to see the record updates in the data flow
+          {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
+            The selected tables and views have not emitted any new changes
+          {:else}
+            Select tables and views to see the record updates as they are emitted
+          {/if}
         </span>
       {/if}
     </Pane>
