@@ -76,14 +76,15 @@
 <div class="flex-1">
   <VList data={changes} let:item getKey={(d, i) => i} bind:this={ref}>
     <div
-      class={`even:bg-surface-100-900 whitespace-nowrap pl-2 before:inline-block before:w-2 even:!bg-opacity-30 ` +
+      class={`whitespace-nowrap pl-2 before:inline-block before:w-2 even:!bg-opacity-30 even:bg-surface-100-900 ` +
         ('insert' in item
           ? "shadow-[inset_26px_0px_0px_0px_rgba(0,255,0,0.3)] before:content-['+']"
           : 'delete' in item
             ? "shadow-[inset_26px_0px_0px_0px_rgba(255,0,0,0.3)] before:pl-[1px] before:content-['-']"
-            : '')}>
-      <span class="inline-block w-64 overflow-clip overflow-ellipsis pl-4"
-        >{item.relationName}</span>
+            : '')}
+    >
+      <span class="inline-block w-64 overflow-clip overflow-ellipsis pl-4">{item.relationName}</span
+      >
       <span class="">{JSONbig.stringify((item as any).insert ?? (item as any).delete)}</span>
     </div>
   </VList>
