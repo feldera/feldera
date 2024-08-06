@@ -42,10 +42,39 @@
   //   rows[pipelineName].splice(Math.max(bufferSize - changes.length, 0))
   //   rows[pipelineName].unshift(...changes.slice(-bufferSize).reverse())
   // }
+  let ref: VList<any>
+  let len = $derived(changes.length)
+  {
+    // Keep scroll position at the bottom of the list when its length increases if it's there already
+    let lastScrollSize = $state(0)
+    $effect(() => {
+      len
+      if (!ref) {
+        return
+      }
+      if (lastScrollSize === ref.getScrollSize()) {
+        return
+      }
+      const curScroll = Math.round(ref.getScrollOffset() + ref.getViewportSize())
+      if (curScroll === lastScrollSize) {
+        ref.scrollTo(ref.getScrollSize())
+      }
+      lastScrollSize = Math.round(ref.getScrollSize())
+    })
+  }
+  $effect(() => {
+    if (!ref) {
+      return
+    }
+    // Make sure to scroll to beginning when jumping from list with some items to none
+    if (len === 0) {
+      ref.scrollTo(0)
+    }
+  })
 </script>
 
 <div class="flex-1">
-  <VList data={changes} let:item getKey={(d, i) => i}>
+  <VList data={changes} let:item getKey={(d, i) => i} bind:this={ref}>
     <div
       class={`even:bg-surface-100-900 whitespace-nowrap pl-2 before:inline-block before:w-2 even:!bg-opacity-30 ` +
         ('insert' in item
