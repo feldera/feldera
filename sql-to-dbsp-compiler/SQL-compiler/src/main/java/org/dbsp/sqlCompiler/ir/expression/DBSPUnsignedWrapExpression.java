@@ -43,8 +43,7 @@ public final class DBSPUnsignedWrapExpression extends DBSPExpression {
             return switch (sourceType.code) {
                 case INT8, INT16, INT32, INT64 -> sourceType.setMayBeNull(false).to(DBSPTypeInteger.class);
                 case DATE -> new DBSPTypeInteger(sourceType.getNode(), 32, true, false);
-                case TIMESTAMP -> new DBSPTypeInteger(sourceType.getNode(), 64, true, false);
-                case TIME -> new DBSPTypeInteger(sourceType.getNode(), 64, true, false);
+                case TIMESTAMP, TIME -> new DBSPTypeInteger(sourceType.getNode(), 64, true, false);
                 default -> throw new UnimplementedException(sourceType.getNode());
             };
         }

@@ -180,7 +180,7 @@ public final class DBSPVecLiteral extends DBSPLiteral implements IDBSPContainer 
             if (d.is(DBSPLiteral.class)) {
                 builder.append(d.to(DBSPLiteral.class).toSqlString());
             } else {
-                builder.append(d.toString());
+                builder.append(d);
             }
         }
         builder.append("]");

@@ -1548,7 +1548,7 @@ pub fn late() {
 pub fn zset_filter_comparator<D, T, F>(data: &WSet<D>, value: &T, comparator: F) -> WSet<D>
 where
     D: DBData + 'static,
-    T: 'static,
+    T: 'static + Debug,
     F: Fn(&D, &T) -> bool,
 {
     let factories = OrdZSetFactories::new::<D, (), ZWeight>();
