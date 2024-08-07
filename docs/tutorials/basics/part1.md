@@ -1,19 +1,12 @@
-# Part 1: Writing and testing your first SQL program
+# Part 1: Writing and testing your first SQL pipeline
 
-In this section of the tutorial we will:
-- Write and test our first SQL program using Feldera
-- Introduce *continuous analytics* -- one of the key concepts behind Feldera
+In this section of the tutorial we will write and test our first SQL pipeline using Feldera.
 
 ## The use case
 
-We will use Feldera to implement a real-time analytics pipeline for a
-supply chain management system.  The pipeline ingests data about suppliers,
-customers, and orders, and maintains an up-to-date summary of
-this data in an OLAP database.  The data can arrive from a variety of sources,
-such as databases and event streams.  In this tutorial we will ingest data from
-Amazon S3 and Redpanda, a Kafka-compatible message queue.
-
-![Real-time supply chain analytics](supply-chain-analytics.png)
+We will build a pipeline that ingests data about
+vendors, parts, and prices, and continuously tracks the lowest available
+price for each part across all vendors.
 
 ## Step 0. Launch Feldera
 
