@@ -47,7 +47,6 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -110,7 +109,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -1333,6 +1331,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 // Calcite thinks this is nullable, but it probably shouldn't be
                 DBSPType nonNull = type.setMayBeNull(false);
                 return new DBSPApplyExpression(node, method, nonNull, ops.get(0), ops.get(1)).cast(type);
+            }
+            case HOP: {
+                throw new UnimplementedException("Please use the TABLE function HOP", node);
             }
             case DOT:
             default:

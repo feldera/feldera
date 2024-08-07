@@ -3,7 +3,25 @@
 In order to implement features that are supported by streaming
 engines, we offer a few extensions to standard SQL.
 
-### `LATENESS` expressions
+## Append-only tables
+
+By specifying the property `'appendOnly' = 'true'` a user instructs
+Feldera that a table will only receive `INSERT` updates (no deletions
+or updates).  This type of table is frequently used in streaming
+programs.  This usage pattern enables the compiler to apply additional
+optimizations.
+
+Example
+
+```sql
+CREATE TABLE T (
+   ...
+) WITH (
+   'appendOnly' = 'true'
+);
+```
+
+## `LATENESS` expressions
 
 `LATENESS` is a property of the data in a column of a table or a view
 that is relevant for the case of stream processing.  `LATENESS` is
@@ -76,7 +94,7 @@ A table or view can have any number of columns annotated with
 lateness.  An inserted row is considered "too late" if any of its
 annotated columns is too late.
 
-### `WATERMARK` expressions
+## `WATERMARK` expressions
 
 `WATERMARK` is an annotation on the data in a column of a table that
 is relevant for the case of stream processing.  `WATERMARK` is

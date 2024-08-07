@@ -1,9 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
@@ -14,11 +12,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
@@ -68,7 +63,8 @@ public class OptimizeMaps extends CircuitCloneVisitor {
             }
             DBSPOperator result = new DBSPJoinFilterMapOperator(
                     jfm.getNode(), operator.getOutputZSetType(), jfm.getFunction(),
-                    jfm.filter, newMap, operator.isMultiset, jfm.left(), jfm.right());
+                    jfm.filter, newMap, operator.isMultiset, jfm.left(), jfm.right())
+                    .copyAnnotations(operator).copyAnnotations(source);
             this.map(operator, result);
         } else if ((source.is(DBSPStreamJoinOperator.class) || source.is(DBSPJoinOperator.class)) &&
                 // We have to look up the original operator input, not source

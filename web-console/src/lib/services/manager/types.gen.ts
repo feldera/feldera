@@ -1243,6 +1243,12 @@ export type ProgramStatus =
       SystemError: string
     }
 
+export type PropertyValue = {
+  key_position: SourcePosition
+  value: string
+  value_position: SourcePosition
+}
+
 export type ProviderAwsCognito = {
   jwk_uri: string
   login_url: string
@@ -1280,7 +1286,7 @@ export type Relation = {
   materialized?: boolean
   name: string
   properties?: {
-    [key: string]: string
+    [key: string]: PropertyValue
   }
 }
 
@@ -1478,6 +1484,13 @@ export type S3InputConfig = {
   region: string
 }
 
+export type SourcePosition = {
+  end_column: number
+  end_line_number: number
+  start_column: number
+  start_line_number: number
+}
+
 /**
  * A SQL compiler error.
  *
@@ -1486,25 +1499,25 @@ export type S3InputConfig = {
  *
  * ```ignore
  * [ {
- * "startLineNumber" : 2,
- * "startColumn" : 4,
- * "endLineNumber" : 2,
- * "endColumn" : 8,
+ * "start_line_number" : 2,
+ * "start_column" : 4,
+ * "end_line_number" : 2,
+ * "end_column" : 8,
  * "warning" : false,
- * "errorType" : "PRIMARY KEY cannot be nullable",
+ * "error_type" : "PRIMARY KEY cannot be nullable",
  * "message" : "PRIMARY KEY column 'C' has type INTEGER, which is nullable",
  * "snippet" : "    2|   c INT PRIMARY KEY\n         ^^^^^\n    3|);\n"
  * } ]
  * ```
  */
 export type SqlCompilerMessage = {
-  endColumn: number
-  endLineNumber: number
-  errorType: string
+  end_column: number
+  end_line_number: number
+  error_type: string
   message: string
   snippet?: string | null
-  startColumn: number
-  startLineNumber: number
+  start_column: number
+  start_line_number: number
   warning: boolean
 }
 
