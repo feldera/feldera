@@ -51,6 +51,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementExpansion;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.annotation.AlwaysMonotone;
+import org.dbsp.sqlCompiler.ir.annotation.NoIntegrator;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -68,6 +69,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.NullableFunction;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -101,15 +103,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * The keys in this map can be both operators from this circuit and from
      * the expanded circuit. */
     public final Map<DBSPOperator, DBSPOperator> bound;
+    /** Information about joins */
+    final  NullableFunction<DBSPBinaryOperator, KeyPropagation.JoinDescription> joinInformation;
 
     public InsertLimiters(IErrorReporter reporter,
                           DBSPCircuit expandedCircuit,
                           Monotonicity.MonotonicityInformation expansionMonotoneValues,
-                          Map<DBSPOperator, OperatorExpansion> expandedInto) {
+                          Map<DBSPOperator, OperatorExpansion> expandedInto,
+                          NullableFunction<DBSPBinaryOperator, KeyPropagation.JoinDescription> joinInformation) {
         super(reporter, false);
         this.expandedCircuit = expandedCircuit;
         this.expansionMonotoneValues = expansionMonotoneValues;
         this.expandedInto = expandedInto;
+        this.joinInformation = joinInformation;
         this.bound = new HashMap<>();
     }
 
@@ -212,7 +218,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     @Nullable
-    DBSPOperator processFilter(DBSPFilterOperator expansion) {
+    DBSPOperator processFilter(@Nullable DBSPFilterOperator expansion) {
+        if (expansion == null)
+            return null;
         return this.addBounds(expansion, 0);
     }
 
@@ -362,12 +370,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.map(operator, replacement);
     }
 
+    void addJoinAnnotations(DBSPBinaryOperator operator) {
+        KeyPropagation.JoinDescription info = this.joinInformation.apply(operator);
+        if (info != null)
+            operator.addAnnotation(new NoIntegrator(info.leftIsKey(), !info.leftIsKey()));
+    }
+
     public void postorder(DBSPStreamJoinOperator operator) {
         ReplacementExpansion expanded = this.getReplacement(operator);
         if (expanded != null)
             this.processStreamJoin(expanded.replacement.to(DBSPStreamJoinOperator.class));
         else
             this.nonMonotone(operator);
+        this.addJoinAnnotations(operator);
         super.postorder(operator);
     }
 
@@ -410,8 +425,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         DBSPOperator left = this.mapped(join.left());
         DBSPOperator right = this.mapped(join.right());
-        DBSPOperator result = join.withInputs(Linq.list(left, right), false);
-        if (leftLimiter != null) {
+        DBSPBinaryOperator result = join.withInputs(Linq.list(left, right), false)
+                .to(DBSPBinaryOperator.class);
+        if (leftLimiter != null && expansion.getLeftIntegrator() != null) {
             MonotoneExpression leftMonotone = this.expansionMonotoneValues.get(
                     expansion.getLeftIntegrator().input());
             // Yes, the limit of the left input is applied to the right one.
@@ -424,7 +440,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             }
         }
 
-        if (rightLimiter != null) {
+        if (rightLimiter != null && expansion.getRightIntegrator() != null) {
             MonotoneExpression rightMonotone = this.expansionMonotoneValues.get(
                     expansion.getRightIntegrator().input());
             // Yes, the limit of the right input is applied to the left one.
@@ -447,6 +463,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.nonMonotone(join);
             return;
         }
+
+        this.addJoinAnnotations(join);
         JoinExpansion expansion = expanded.to(JoinExpansion.class);
         DBSPOperator result = this.gcJoin(join, expansion);
         if (result == null) {
@@ -465,7 +483,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.map(join, result, true);
     }
 
-    private void processIntegral(DBSPDelayedIntegralOperator replacement) {
+    private void processIntegral(@Nullable DBSPDelayedIntegralOperator replacement) {
+        if (replacement == null)
+            return;
         if (replacement.hasAnnotation(a -> a.is(AlwaysMonotone.class))) {
             DBSPOperator limiter = this.bound.get(replacement.input());
             if (limiter != null) {
@@ -485,6 +505,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
         JoinFilterMapExpansion expansion = expanded.to(JoinFilterMapExpansion.class);
+
+        this.addJoinAnnotations(join);
         DBSPOperator result = this.gcJoin(join, expansion);
         if (result == null) {
             super.postorder(join);
@@ -523,7 +545,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         // Check the left side and insert a GC operator if possible
         DBSPOperator leftLimiter = this.bound.get(expansion.leftFilter);
-        if (leftLimiter != null) {
+        if (leftLimiter != null && expansion.leftFilter != null) {
             MonotoneExpression monotone = this.expansionMonotoneValues.get(expansion.leftFilter);
             IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(monotone));
             if (projection.mayBeMonotone()) {
@@ -563,7 +585,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         // Exact same procedure on the right hand side
         DBSPOperator rightLimiter = this.bound.get(expansion.rightFilter);
-        if (rightLimiter != null) {
+        if (rightLimiter != null && expansion.rightFilter != null) {
             MonotoneExpression monotone = this.expansionMonotoneValues.get(expansion.rightFilter);
             IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(monotone));
             if (projection.mayBeMonotone()) {
@@ -660,7 +682,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
         throw new UnimplementedException(left.getNode());
     }
 
-    void processStreamJoin(DBSPStreamJoinOperator expanded) {
+    void processStreamJoin(@Nullable DBSPStreamJoinOperator expanded) {
+        if (expanded == null)
+            return;
         String comment = "(" + expanded.getDerivedFrom() + ")";
         MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(expanded);
         if (monotoneValue == null || !monotoneValue.mayBeMonotone()) {

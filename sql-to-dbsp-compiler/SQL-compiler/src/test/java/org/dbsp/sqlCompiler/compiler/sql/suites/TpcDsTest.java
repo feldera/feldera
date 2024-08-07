@@ -10,7 +10,7 @@ import org.junit.Test;
 import java.io.IOException;
 
 public class TpcDsTest extends BaseSQLTests {
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1281")
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6518")
     public void compileTpcds() throws IOException {
         String tpch = TestUtil.readStringFromResourceFile("tpcds.sql");
         CompilerOptions options = this.testOptions(true, true);
