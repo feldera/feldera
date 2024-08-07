@@ -1,4 +1,4 @@
-# The Feldera Continuous Analytics Platform
+# Feldera: Incremental Computation Made Easy
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![CI workflow](https://github.com/feldera/feldera/actions/workflows/ci.yml/badge.svg)](https://github.com/feldera/feldera/actions)
@@ -7,68 +7,49 @@
 [![discord](https://img.shields.io/badge/discord-blue.svg?logo=discord&logoColor=white)](https://discord.gg/5YBX9Uw5u7)
 [![sandbox](https://img.shields.io/badge/feldera_sandbox-blue?logo=CodeSandbox)](https://www.feldera.com/sandbox)
 
-The [Feldera Continuous Analytics Platform](https://www.feldera.com), or Feldera Platform in short, is a
-fast computational engine and associated components for *continuous analytics* over data in motion. Feldera Platform
-allows users to configure data pipelines as standing SQL programs (DDLs) that are continuously
-evaluated as new data arrives from various sources. What makes Feldera's engine
-[unique](#theory) is its ability to *evaluate arbitrary SQL programs
-incrementally*, making it more expressive and performant than existing
-alternatives like streaming engines.
+[Feldera](https://www.feldera.com) is a
+fast query engine for *incremental computation*.
+Feldera has the [unique](#theory) ability to *evaluate arbitrary SQL programs
+incrementally*, making it more powerful, expressive and performant than existing
+alternatives like batch engines, warehouses, stream processors or streaming databases.
 
-With the Feldera Platform, software engineers and data scientists configuring data pipelines
-are not exposed to to the complexities of querying changing data, an otherwise
-notoriously hard problem. Instead, they can express their
-computations as *standing queries* and have the Feldera Platform evaluate
-these queries incrementally, correctly and efficiently.
+Our approach to incremental computation is simple. A Feldera `pipeline` is a set of SQL tables and views. Views can be deeply nested. 
+Users start, stop or pause pipelines to manage and advance a computation.
+Pipelines continuously process
+**changes**, which are any number of inserts, updates or deletes to a set of tables. When the pipeline receives changes,
+Feldera **incrementally** updates all the views by only looking at the changes and it completely avoids recomputing over older data.
+While a pipeline is running, users can inspect the results of the views at any time.
 
-To this end we set the following high-level objectives:
+Our approach to incremental computation makes Feldera incredibly fast (millions of events per second on a laptop). 
+It also enables unified offline and online compute over both live and historical data. Feldera users have built batch and real-time 
+feature engineering pipelines, ETL pipelines, various forms of incremental and periodic analytical jobs over batch data, and more.
 
-1. **Full SQL support and more.** Our goal is to support the complete SQL
-   syntax and semantics, including joins and aggregates, correlated subqueries,
+Our defining features:
+
+1. **Full SQL support and more.**  Our engine is the only one in existence that can evaluate full SQL
+   syntax and semantics completely incrementally. This includes joins and aggregates, group by, correlated subqueries,
    window functions, complex data types, time series operators, UDFs, and
-   recursive queries.
+   recursive queries. Pipelines can process deeply nested hierarchies of views.
 
-1. **Scalability in multiple dimensions.**  The platform scales with the number
-   and complexity of queries, input data rate and the amount of state the
-   system maintains in order to process the queries.
+3. **Fast out-of-the-box performance.**  Feldera users have reported getting complex use cases
+   implemented in 30 minutes or less, and hitting millions
+   of events per second in performance on a laptop without any tuning.
 
-1. **Performance out of the box.**  The user should be able to focus on the
-   business logic of their application, leaving it to the system to evaluate
-   this logic efficiently.
+4. **Datasets larger than RAM.** Feldera is designed to handle datasets
+   that exceed the available RAM by spilling efficiently to disk, taking advantage of recent advances in NVMe storage.
 
-1. **Datasets larger than RAM.** Our platform is designed to handle datasets
-   that exceed the available RAM, ensuring efficient retrieval from NVMe.
+5. **Strong guarantees on consistency and freshness.** Feldera is strongly consistent. It also [guarantees](https://www.feldera.com/blog/synchronous-streaming/) that the state of the views always corresponds
+   to what you'd get if you ran the queries in a batch system for the same input.
+
+6. **Connectors for your favorite data sources and destinations.** Feldera connects to myriad batch and streaming data sources, like Kafka, HTTP, CDC streams, S3, Data Lakes, Warehouses and more.
+   If you need a connector that we don't yet support, let us [know](https://github.com/feldera/feldera/issues).
+
 
 ## Architecture
 
-With Feldera Platform, users create data pipelines out of SQL programs and data
-connectors. An SQL program comprises tables and views. Connectors feed data to
-input tables in a program or receive outputs computed by views. Example
-connectors currently supported are Kafka, Redpanda and an HTTP API to push/pull
-directly to and from tables/views. We are working on more connectors such as
-ones for database CDC streams. Let us know of any connectors you would like us to
-develop.
-
-Feldera Platform fundamentally operates on changes to data, i.e., inserts and deletes to
-tables. This model covers all kinds of data in-motion use cases, like
-insert-only streams of event, log, HTTP and timeseries data, as well as changes
-to traditional databases extracted via CDC streams.
-
-The following diagram shows Feldera Platform's architecture.
+The following diagram shows Feldera's architecture
 
 ![Feldera Platform Architecture](architecture.svg)
-
-## What is in this repository?
-
-This repository comprises all the buildings blocks to run continuous analytics
-pipelines using Feldera Platform.
-
-* [web UI](web-console): a web interface for writing SQL, setting up connectors, and managing pipelines.
-* [pipeline-manager](crates/pipeline_manager): serves the web UI and is the REST API server for building and managing
-  data pipelines.
-* [dbsp](crates/dbsp): the core [engine](#theory) that allows us to evaluate arbitrary queries incrementally.
-* [SQL compiler](sql-to-dbsp-compiler): translates SQL programs into DBSP programs.
-* [connectors](crates/adapters/): to stream data in and out of Feldera Platform pipelines.
 
 ## Quick start with Docker
 
@@ -84,7 +65,7 @@ docker compose -f - --profile demo up
 
 It can take some time for the container images to be downloaded. About ten seconds after that, the Feldera
 web console will become available. Visit [http://localhost:8080](http://localhost:8080) on your browser
-to bring it up. We suggest going through our [demo](https://www.feldera.com/docs/demo) next.
+to bring it up. We suggest going through our [tutorial](https://www.feldera.com/docs/tutorials/basics/) next.
 
 Our [Getting Started](https://www.feldera.com/docs/get-started) guide has more detailed instructions on running the demo.
 

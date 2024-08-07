@@ -57,6 +57,12 @@ SELECT * FROM TABLE(
     SIZE => INTERVAL '1' MINUTE));
 ```
 
+The result is a table that has all the columns of the `order` table,
+and in addition the following columns, defined by the `TUMBLE`
+function:
+- `window_start`, of the same type as the column `order.rowtime`
+- `window_end`, of the same type as the column `order.rowtime`
+
 ### `HOP`
 
 `HOP` assigns windows that cover rows within the interval of size and
@@ -97,5 +103,11 @@ SELECT * FROM TABLE(
 
 applies hopping with 5-minute interval size on rows from table
 `orders` and shifting every 2 minutes.
+
+The result is a table that has all the columns of the `order` table,
+and in addition the following columns, defined by the `HOP`
+function:
+- `window_start`, of the same type as the column `order.rowtime`
+- `window_end`, of the same type as the column `order.rowtime`
 
 A `NULL` timestamp produces no rows in the result.

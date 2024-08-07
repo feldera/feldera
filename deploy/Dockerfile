@@ -46,7 +46,6 @@ RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg -
 ENV NODE_MAJOR=20
 RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
 RUN apt update --fix-missing && apt install nodejs -y
-RUN npm install --global yarn openapi-typescript-codegen
 
 ## Install Bun.js
 RUN apt install unzip -y
@@ -54,41 +53,22 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="$HOME/.bun/bin:$PATH"
 RUN ln -s $HOME/.bun/bin/bun /usr/bin/bun
 
-# - yarn
-COPY web-console/package.json web-console/
-COPY web-console/yarn.lock web-console/
-RUN cd web-console && yarn install
-# Use a glob here so that the .env file's presence is optional. This should
-# not fail in our CI/CD builds and if it does, we should see a MUIX license
-# error in the UI
-COPY web-console/.env* web-console/
-COPY web-console/public web-console/public
-COPY web-console/src web-console/src
-COPY web-console/.editorconfig web-console/
-COPY web-console/.eslintrc.json web-console/
-COPY web-console/.prettierrc.js web-console/
-COPY web-console/next-env.d.ts web-console/
-COPY web-console/next.config.js web-console/
-COPY web-console/next.d.ts web-console/
-COPY web-console/tsconfig.json web-console/
-RUN cd web-console && yarn build
-
 # sveltekit
-COPY web-console-sveltekit/package.json web-console-sveltekit/
-COPY web-console-sveltekit/bun.lockb web-console-sveltekit/
-RUN cd web-console-sveltekit && bun install
+COPY web-console/package.json web-console/
+COPY web-console/bun.lockb web-console/
+RUN cd web-console && bun install
 
-COPY web-console-sveltekit/static web-console-sveltekit/static
-COPY web-console-sveltekit/src web-console-sveltekit/src
-COPY web-console-sveltekit/.prettierignore web-console-sveltekit/
-COPY web-console-sveltekit/.prettierrc web-console-sveltekit/
-COPY web-console-sveltekit/eslint.config.js web-console-sveltekit/
-COPY web-console-sveltekit/postcss.config.js web-console-sveltekit/
-COPY web-console-sveltekit/svelte.config.js web-console-sveltekit/
-COPY web-console-sveltekit/tailwind.config.ts web-console-sveltekit/
-COPY web-console-sveltekit/tsconfig.json web-console-sveltekit/
-COPY web-console-sveltekit/vite.config.ts web-console-sveltekit/
-RUN cd web-console-sveltekit && bun run build
+COPY web-console/static web-console/static
+COPY web-console/src web-console/src
+COPY web-console/.prettierignore web-console/
+COPY web-console/.prettierrc web-console/
+COPY web-console/eslint.config.js web-console/
+COPY web-console/postcss.config.js web-console/
+COPY web-console/svelte.config.js web-console/
+COPY web-console/tailwind.config.ts web-console/
+COPY web-console/tsconfig.json web-console/
+COPY web-console/vite.config.ts web-console/
+RUN cd web-console && bun run build
 
 # Cache dependencies from rust
 FROM chef AS planner
@@ -110,8 +90,7 @@ COPY Cargo.lock Cargo.lock
 COPY crates crates
 RUN mkdir sql-to-dbsp-compiler || true
 COPY sql-to-dbsp-compiler/lib sql-to-dbsp-compiler/lib
-COPY --from=web-ui-builder /web-console/out web-console-out
-COPY --from=web-ui-builder /web-console-sveltekit/build web-console-build
+COPY --from=web-ui-builder /web-console/build web-console-build
 ENV WEBUI_BUILD_DIR=/app/web-console-out
 ENV WEBCONSOLE_BUILD_DIR=/app/web-console-build
 RUN /root/.cargo/bin/cargo build --release --bin=pipeline-manager --features=pg-embed
@@ -155,7 +134,14 @@ COPY sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp lib/sql-to-dbsp-compiler/SQL-
 
 # Install cargo and rust for this non-root user
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-ENV PATH="$PATH:/home/feldera/.cargo/bin"
+# The download URL for mold uses x86_64/aarch64 whereas dpkg --print-architecture says amd64/arm64
+RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86_64/g"`; \
+  curl -LO https://github.com/rui314/mold/releases/download/v2.32.1/mold-2.32.1-$arch-linux.tar.gz \
+  && tar -xzvf mold-2.32.1-$arch-linux.tar.gz \
+  && mv mold-2.32.1-$arch-linux /home/feldera/mold \
+  && rm mold-2.32.1-$arch-linux.tar.gz
+ENV PATH="$PATH:/home/feldera/.cargo/bin:/home/feldera/mold/bin"
+ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 # Run the precompile phase to speed up Rust compilations during deployment
 RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler --dbsp-override-path=/home/feldera/lib --precompile
 ENV BANNER_ADDR=localhost

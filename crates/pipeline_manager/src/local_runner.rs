@@ -1,16 +1,14 @@
 //! A local runner that watches for pipeline objects in the API
 //! and instantiates them locally as processes.
 
-use crate::db::PipelineRevision;
+use crate::db::storage_postgres::StoragePostgres;
+use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
+use crate::db::types::program::generate_pipeline_config;
 use crate::db_notifier::{DbNotification, Operation};
+use crate::error::ManagerError;
 use crate::pipeline_automata::{fetch_binary_ref, PipelineAutomaton};
 use crate::pipeline_automata::{PipelineExecutionDesc, PipelineExecutor};
-use crate::{
-    api::ManagerError,
-    config::LocalRunnerConfig,
-    db::{PipelineId, ProjectDB},
-    runner::RunnerError,
-};
+use crate::{config::LocalRunnerConfig, runner::RunnerError};
 use async_trait::async_trait;
 use log::trace;
 use pipeline_types::config::{StorageCacheConfig, StorageConfig};
@@ -56,12 +54,20 @@ impl PipelineExecutor for ProcessRunner {
     /// Convert a PipelineRevision into a PipelineExecutionDesc.
     async fn to_execution_desc(
         &self,
-        mut pr: PipelineRevision,
-        binary_ref: String,
+        pipeline: &ExtendedPipelineDescr,
     ) -> Result<PipelineExecutionDesc, ManagerError> {
-        let pipeline_dir = self.config.pipeline_dir(pr.pipeline.pipeline_id);
+        let mut deployment_config = generate_pipeline_config(
+            pipeline.id,
+            &pipeline.runtime_config,
+            &pipeline.program_info.clone().unwrap().input_connectors, // TODO: unwrap
+            &pipeline.program_info.clone().unwrap().output_connectors, // TODO: unwrap
+        );
+
+        // The deployment configuration must be modified to fill in the details for storage,
+        // which varies for each pipeline executor
+        let pipeline_dir = self.config.pipeline_dir(pipeline.id);
         let pipeline_data_dir = pipeline_dir.join("data");
-        pr.config.storage_config = if pr.config.global.storage {
+        deployment_config.storage_config = if deployment_config.global.storage {
             Some(StorageConfig {
                 path: pipeline_data_dir.to_string_lossy().into(),
                 cache: StorageCacheConfig::default(),
@@ -71,21 +77,19 @@ impl PipelineExecutor for ProcessRunner {
         };
 
         Ok(PipelineExecutionDesc {
-            pipeline_id: pr.pipeline.pipeline_id,
-            pipeline_name: pr.pipeline.name,
-            program_id: pr.program.program_id,
-            version: pr.program.version,
-            config: pr.config,
-            binary_ref,
+            pipeline_id: pipeline.id,
+            pipeline_name: pipeline.name.clone(),
+            program_version: pipeline.program_version,
+            program_binary_url: pipeline.program_binary_url.clone().unwrap(), // TODO: unwrap
+            deployment_config,
         })
     }
 
     async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError> {
         let pipeline_id = ped.pipeline_id;
-        let program_id = ped.program_id;
-        let version = ped.version;
+        let program_version = ped.program_version;
 
-        log::debug!("Pipeline config is '{:?}'", ped.config);
+        log::debug!("Pipeline config is '{:?}'", ped.deployment_config);
 
         // Create pipeline directory (delete old directory if exists); write metadata
         // and config files to it.
@@ -98,7 +102,7 @@ impl PipelineExecutor for ProcessRunner {
             )
         })?;
         if let Some(pipeline_data_dir) = ped
-            .config
+            .deployment_config
             .storage_config
             .as_ref()
             .map(|storage| &storage.path)
@@ -112,7 +116,7 @@ impl PipelineExecutor for ProcessRunner {
         }
 
         let config_file_path = self.config.config_file_path(pipeline_id);
-        let expanded_config = serde_yaml::to_string(&ped.config).unwrap();
+        let expanded_config = serde_yaml::to_string(&ped.deployment_config).unwrap();
         fs::write(&config_file_path, &expanded_config)
             .await
             .map_err(|e| {
@@ -124,10 +128,9 @@ impl PipelineExecutor for ProcessRunner {
 
         let fetched_executable = fetch_binary_ref(
             &self.config,
-            &ped.binary_ref,
+            &ped.program_binary_url,
             pipeline_id,
-            program_id,
-            version,
+            program_version,
         )
         .await?;
 
@@ -205,13 +208,13 @@ impl PipelineExecutor for ProcessRunner {
 /// To shutdown the pipeline, the runner sends a `/shutdown` HTTP request to the
 /// pipeline.  This request is asynchronous: the pipeline may continue running
 /// for a few seconds after the request succeeds.
-pub async fn run(db: Arc<Mutex<ProjectDB>>, config: &LocalRunnerConfig) {
+pub async fn run(db: Arc<Mutex<StoragePostgres>>, config: &LocalRunnerConfig) {
     let runner_task = spawn(reconcile(db, Arc::new(config.clone())));
     runner_task.await.unwrap().unwrap();
 }
 
 async fn reconcile(
-    db: Arc<Mutex<ProjectDB>>,
+    db: Arc<Mutex<StoragePostgres>>,
     config: Arc<LocalRunnerConfig>,
 ) -> Result<(), ManagerError> {
     let pipelines: Mutex<BTreeMap<PipelineId, Arc<Notify>>> = Mutex::new(BTreeMap::new());

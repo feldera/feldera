@@ -5,5 +5,7 @@ export const showOnHashPart =
   (target: string | RegExp) => ({
     show: typeof target === 'string' ? hash.startsWith(target) : target.test(hash),
     setShow: (show: SetStateAction<boolean>) =>
-      (show => setHash(show ? window.location.hash.slice(1) : ''))(show instanceof Function ? show(true) : show)
+      ((show) => setHash(show ? window.location.hash.slice(1) : ''))(
+        show instanceof Function ? show(true) : show
+      )
   })

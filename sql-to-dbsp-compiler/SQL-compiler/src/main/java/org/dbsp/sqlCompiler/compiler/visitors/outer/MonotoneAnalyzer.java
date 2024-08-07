@@ -45,20 +45,32 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
         final boolean debug = this.getDebugLevel() >= 1;
         final int details = this.getDebugLevel();
 
+        // Find relations which are append-only
+        AppendOnly appendOnly = new AppendOnly(this.reporter);
+        appendOnly.apply(circuit);
+
+        // Identify uses of primary and foreign keys
+        KeyPropagation keyPropagation = new KeyPropagation(this.reporter);
+        keyPropagation.apply(circuit);
+
         if (debug)
             ToDotVisitor.toDot(this.reporter, "original.png", details, "png", circuit);
-        ExpandOperators expander = new ExpandOperators(this.reporter);
+        ExpandOperators expander = new ExpandOperators(
+                this.reporter,
+                appendOnly.appendOnly::contains,
+                keyPropagation.joins::get);
         DBSPCircuit expanded = expander.apply(circuit);
 
         Monotonicity monotonicity = new Monotonicity(this.reporter);
         expanded = monotonicity.apply(expanded);
         if (debug) {
-            MonotoneDot.toDot("expanded.png", details, "png", expanded,
+            MonotoneDot.toDot("expanded.png", "png", expanded,
                     stream -> new MonotoneDot(reporter, stream, details, monotonicity.info));
         }
 
         InsertLimiters limiters = new InsertLimiters(
-                this.reporter, expanded, monotonicity.info, expander.expansion);
+                this.reporter, expanded, monotonicity.info, expander.expansion,
+                keyPropagation.joins::get);
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
         DBSPCircuit result = limiters.apply(circuit);
 

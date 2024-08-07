@@ -1,16 +1,13 @@
 //! This module contains helpers to build pipeline runners.
-use crate::db::{ProgramId, Version};
+use crate::db::error::DBError;
+use crate::db::storage_postgres::StoragePostgres;
+use crate::db::types::common::Version;
+use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId, PipelineStatus};
+use crate::db::types::program::generate_pipeline_config;
+use crate::db::types::tenant::TenantId;
+use crate::error::ManagerError;
 use crate::runner::RunnerApi;
-use crate::{
-    api::ManagerError,
-    auth::TenantId,
-    config::LocalRunnerConfig,
-    db::{
-        storage::Storage, DBError, PipelineId, PipelineRevision, PipelineRuntimeState,
-        PipelineStatus, ProjectDB,
-    },
-    runner::RunnerError,
-};
+use crate::{config::LocalRunnerConfig, db::storage::Storage, runner::RunnerError};
 use actix_web::http::{Method, StatusCode};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -24,44 +21,59 @@ use tokio::io::AsyncWriteExt;
 use tokio::{fs, sync::Mutex, time::Duration};
 use tokio::{sync::Notify, time::timeout};
 
-/// Trait to be implemented by any pipeline runner. The PipelineAutomaton
-/// invokes these methods per pipeline.
+/// A description of a pipeline to execute
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub struct PipelineExecutionDesc {
+    pub pipeline_id: PipelineId,
+    pub pipeline_name: String,
+    pub program_version: Version,
+    pub program_binary_url: String,
+    pub deployment_config: PipelineConfig,
+}
+
+/// Trait to be implemented by any pipeline runner.
+/// The `PipelineAutomaton` invokes these methods per pipeline.
 #[async_trait]
 pub trait PipelineExecutor: Sync + Send {
-    /// Starts a new pipeline (e.g., brings up a process that runs the pipeline
-    /// binary)
+    /// Starts a new pipeline
+    /// (e.g., brings up a process that runs the pipeline binary)
     async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError>;
 
-    /// Return the hostname:port over which the pipeline's HTTP server should be
-    /// reachable Ok(None) indicates that the pipeline is still initializing
+    /// Returns the hostname:port over which the pipeline's HTTP server should be
+    /// reachable. `Ok(None)` indicates that the pipeline is still initializing.
     async fn get_location(&mut self) -> Result<Option<String>, ManagerError>;
 
     /// Returns whether the pipeline has been shutdown
     async fn check_if_shutdown(&mut self) -> bool;
 
-    /// Initiates pipeline shutdown (e.g., send a SIGTERM successfully to the
-    /// process)
+    /// Initiates pipeline shutdown
+    /// (e.g., send a SIGTERM successfully to the process)
     async fn shutdown(&mut self) -> Result<(), ManagerError>;
 
-    /// Convert a PipelineRevision into a PipelineExecutionDesc.
+    /// Converts an extended pipeline descriptor retrieved from the database
+    /// into a execution descriptor which has no optional fields.
     async fn to_execution_desc(
         &self,
-        pr: PipelineRevision,
-        binary_ref: String,
+        pipeline: &ExtendedPipelineDescr,
     ) -> Result<PipelineExecutionDesc, ManagerError> {
+        let deployment_config = generate_pipeline_config(
+            pipeline.id,
+            &pipeline.runtime_config,
+            &pipeline.program_info.clone().unwrap().input_connectors, // TODO: unwrap
+            &pipeline.program_info.clone().unwrap().output_connectors, // TODO: unwrap
+        );
         Ok(PipelineExecutionDesc {
-            pipeline_id: pr.pipeline.pipeline_id,
-            pipeline_name: pr.pipeline.name,
-            program_id: pr.program.program_id,
-            version: pr.program.version,
-            config: pr.config,
-            binary_ref,
+            pipeline_id: pipeline.id,
+            pipeline_name: pipeline.name.clone(),
+            program_version: pipeline.program_version,
+            program_binary_url: pipeline.program_binary_url.clone().unwrap(), // TODO: unwrap
+            deployment_config,
         })
     }
 }
 
 /// Pipeline automaton monitors the runtime state of a single pipeline
-/// and continually reconciles desired and actual state.
+/// and continually reconciles actual with desired state.
 ///
 /// The automaton runs as a separate tokio task.
 pub struct PipelineAutomaton<T>
@@ -71,19 +83,8 @@ where
     pipeline_id: PipelineId,
     tenant_id: TenantId,
     pipeline_handle: T,
-    db: Arc<Mutex<ProjectDB>>,
+    db: Arc<Mutex<StoragePostgres>>,
     notifier: Arc<Notify>,
-}
-
-/// A description of a pipeline to execute
-#[derive(Eq, PartialEq, Debug, Clone)]
-pub struct PipelineExecutionDesc {
-    pub pipeline_id: PipelineId,
-    pub pipeline_name: String,
-    pub program_id: ProgramId,
-    pub version: Version,
-    pub config: PipelineConfig,
-    pub binary_ref: String,
 }
 
 impl<T: PipelineExecutor> PipelineAutomaton<T> {
@@ -117,7 +118,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     pub fn new(
         pipeline_id: PipelineId,
         tenant_id: TenantId,
-        db: Arc<Mutex<ProjectDB>>,
+        db: Arc<Mutex<StoragePostgres>>,
         notifier: Arc<Notify>,
         pipeline_handle: T,
     ) -> Self {
@@ -139,23 +140,35 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             // Wait until the timeout expires or we get notified that
             // the desired state of the pipelime has changed.
             let _ = timeout(poll_timeout, self.notifier.notified()).await;
-            poll_timeout = self.do_run().await.map_err(|e| {
-                match e {
-                    ManagerError::DBError { ref db_error } => {
-                        // Pipeline deletions should not lead to errors in the logs.
-                        if let DBError::UnknownPipeline { pipeline_id } = db_error {
-                            info!("Pipeline {pipeline_id} no longer exists. Shutting down pipeline automaton.");
-                        }
-                    }
-                    _ => {
-                        error!(
-                            "Pipeline automaton '{}' terminated with error: '{e}'",
-                            pipeline_id
-                        );
-                    }
+            match self.do_run().await {
+                Ok(new_poll_timeout) => {
+                    poll_timeout = new_poll_timeout;
                 }
-                e
-            })?;
+                Err(e) => {
+                    match &e {
+                        ManagerError::DBError { db_error } => {
+                            match db_error {
+                                // Pipeline deletions should not lead to errors in the logs.
+                                DBError::UnknownPipeline { pipeline_id } => {
+                                    info!("Pipeline {pipeline_id} no longer exists. Shutting down pipeline automaton.");
+                                }
+                                _ => {
+                                    error!("Pipeline automaton '{pipeline_id}' terminated with database error: '{e}'")
+                                }
+                            }
+                        }
+                        _ => {
+                            error!(
+                                "Pipeline automaton '{pipeline_id}' terminated with error: '{e}'"
+                            );
+                        }
+                    };
+                    // By stopping the run, the automata will consume itself.
+                    // As such, the pipeline_handle it owns will be dropped,
+                    // which in turn will shutdown by itself as a consequence.
+                    return Err(e);
+                }
+            }
         }
     }
 
@@ -163,52 +176,48 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let mut poll_timeout = Self::DEFAULT_PIPELINE_POLL_PERIOD;
         let db = self.db.lock().await;
         let mut pipeline = db
-            .get_pipeline_runtime_state_by_id(self.tenant_id, self.pipeline_id)
+            .get_pipeline_by_id(self.tenant_id, self.pipeline_id)
             .await?;
         drop(db);
-        let transition: State = match (pipeline.current_status, pipeline.desired_status) {
+        let transition: State = match (
+            pipeline.deployment_status,
+            pipeline.deployment_desired_status,
+        ) {
             (PipelineStatus::Shutdown, PipelineStatus::Running)
             | (PipelineStatus::Shutdown, PipelineStatus::Paused) => {
-                let db = self.db.lock().await;
-                let revision = db
-                    .get_pipeline_deployment(self.tenant_id, self.pipeline_id)
-                    .await?;
-                db.update_pipeline_runtime_state(self.tenant_id, self.pipeline_id, &pipeline)
-                    .await?;
-                // txn.commit();
-                // Locate project executable.
-                let executable_ref = db
-                    .get_compiled_binary_ref(revision.program.program_id, revision.program.version)
-                    .await?;
-                let pipeline_id = self.pipeline_id;
-                if executable_ref.is_none() {
-                    return Err(RunnerError::BinaryFetchError {
-                        pipeline_id,
-                        error: format!("Did not receieve a compiled binary URL for {pipeline_id}"),
+                match self.pipeline_handle.to_execution_desc(&pipeline).await {
+                    Ok(execution_desc) => {
+                        poll_timeout = Self::PROVISIONING_POLL_PERIOD;
+                        // This requires start() to be idempotent. If the process crashes after start
+                        // is called but before the state machine is correctly updated in the DB, then
+                        // on restart, start will be called again
+                        match self.pipeline_handle.start(execution_desc.clone()).await {
+                            Ok(_) => {
+                                info!(
+                                    "Pipeline {} started (Tenant {})",
+                                    self.pipeline_id, self.tenant_id
+                                );
+                                State::Transition(
+                                    PipelineStatus::Provisioning,
+                                    None,
+                                    Some(execution_desc.deployment_config.clone()),
+                                    None,
+                                )
+                            }
+                            Err(e) => State::Transition(
+                                PipelineStatus::Failed,
+                                Some(ErrorResponse::from(&e)),
+                                None,
+                                None,
+                            ),
+                        }
                     }
-                    .into());
-                }
-                drop(db);
-                let execution_desc = self
-                    .pipeline_handle
-                    .to_execution_desc(revision, executable_ref.unwrap())
-                    .await?;
-
-                poll_timeout = Self::PROVISIONING_POLL_PERIOD;
-                // This requires start() to be idempotent. If the process crashes after start
-                // is called but before the state machine is correctly updated in the DB, then
-                // on restart, start will be called again
-                match self.pipeline_handle.start(execution_desc).await {
-                    Ok(_) => {
-                        info!(
-                            "Pipeline {} started (Tenant {})",
-                            self.pipeline_id, self.tenant_id
-                        );
-                        State::Transition(PipelineStatus::Provisioning, None)
-                    }
-                    Err(e) => {
-                        State::Transition(PipelineStatus::Failed, Some(ErrorResponse::from(&e)))
-                    }
+                    Err(e) => State::Transition(
+                        PipelineStatus::Failed,
+                        Some(ErrorResponse::from(&e)),
+                        None,
+                        None,
+                    ),
                 }
             }
             // We're waiting for the pipeline's HTTP server to come online.
@@ -217,14 +226,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             | (PipelineStatus::Provisioning, PipelineStatus::Paused) => {
                 match self.pipeline_handle.get_location().await {
                     Ok(Some(location)) => {
-                        pipeline.set_location(location);
-                        pipeline.set_created();
                         poll_timeout = Self::INITIALIZATION_POLL_PERIOD;
-                        State::Transition(PipelineStatus::Initializing, None)
+                        State::Transition(PipelineStatus::Initializing, None, None, Some(location))
                     }
                     Ok(None) => {
-                        if Self::timeout_expired(pipeline.status_since, Self::PROVISIONING_TIMEOUT)
-                        {
+                        if Self::timeout_expired(
+                            pipeline.deployment_status_since,
+                            Self::PROVISIONING_TIMEOUT,
+                        ) {
                             State::Transition(
                                 PipelineStatus::Failed,
                                 Some(
@@ -234,20 +243,25 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                     }
                                     .into(),
                                 ),
+                                None,
+                                None,
                             )
                         } else {
                             poll_timeout = Self::PROVISIONING_POLL_PERIOD;
                             State::Unchanged
                         }
                     }
-                    Err(e) => {
-                        State::Transition(PipelineStatus::Failed, Some(ErrorResponse::from(&e)))
-                    }
+                    Err(e) => State::Transition(
+                        PipelineStatus::Failed,
+                        Some(ErrorResponse::from(&e)),
+                        None,
+                        None,
+                    ),
                 }
             }
             // User cancels the pipeline while it's still provisioning.
             (PipelineStatus::Provisioning, PipelineStatus::Shutdown) => {
-                State::Transition(PipelineStatus::Failed, None)
+                State::Transition(PipelineStatus::Failed, None, None, None)
             }
             // We're waiting for the pipeline to initialize.
             // Poll the pipeline's status.  Kill the pipeline on timeout or error.
@@ -258,14 +272,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     self.pipeline_id,
                     Method::GET,
                     "stats",
-                    &pipeline.location,
+                    &pipeline.deployment_location.unwrap(), // TODO: unwrap
                 )
                 .await
                 {
                     Err(e) => {
                         info!("Could not connect to pipeline {e:?}");
                         if Self::timeout_expired(
-                            pipeline.status_since,
+                            pipeline.deployment_status_since,
                             Self::INITIALIZATION_TIMEOUT,
                         ) {
                             State::Transition(
@@ -277,6 +291,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                     }
                                     .into(),
                                 ),
+                                None,
+                                None,
                             )
                         } else {
                             poll_timeout = Self::INITIALIZATION_POLL_PERIOD;
@@ -285,10 +301,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     }
                     Ok((status, body)) => {
                         if status.is_success() {
-                            State::Transition(PipelineStatus::Paused, None)
+                            State::Transition(PipelineStatus::Paused, None, None, None)
                         } else if status == StatusCode::SERVICE_UNAVAILABLE {
                             if Self::timeout_expired(
-                                pipeline.status_since,
+                                pipeline.deployment_status_since,
                                 Self::INITIALIZATION_TIMEOUT,
                             ) {
                                 State::Transition(
@@ -300,6 +316,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                         }
                                         .into(),
                                     ),
+                                    None,
+                                    None,
                                 )
                             } else {
                                 poll_timeout = Self::INITIALIZATION_POLL_PERIOD;
@@ -308,14 +326,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         } else {
                             let error =
                                 Self::error_response_from_json(self.pipeline_id, status, &body);
-                            State::Transition(PipelineStatus::Failed, Some(error))
+                            State::Transition(PipelineStatus::Failed, Some(error), None, None)
                         }
                     }
                 }
             }
             // User cancels the pipeline while it is still initalizing.
             (PipelineStatus::Initializing, PipelineStatus::Shutdown) => {
-                State::Transition(PipelineStatus::Failed, None)
+                State::Transition(PipelineStatus::Failed, None, None, None)
             }
             // Unpause the pipeline.
             (PipelineStatus::Paused, PipelineStatus::Running) => {
@@ -323,18 +341,18 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     self.pipeline_id,
                     Method::GET,
                     "start",
-                    &pipeline.location,
+                    &pipeline.deployment_location.unwrap(), // TODO: unwrap
                 )
                 .await
                 {
-                    Err(e) => State::Transition(PipelineStatus::Failed, Some(e.into())),
+                    Err(e) => State::Transition(PipelineStatus::Failed, Some(e.into()), None, None),
                     Ok((status, body)) => {
                         if status.is_success() {
-                            State::Transition(PipelineStatus::Running, None)
+                            State::Transition(PipelineStatus::Running, None, None, None)
                         } else {
                             let error =
                                 Self::error_response_from_json(self.pipeline_id, status, &body);
-                            State::Transition(PipelineStatus::Failed, Some(error))
+                            State::Transition(PipelineStatus::Failed, Some(error), None, None)
                         }
                     }
                 }
@@ -345,18 +363,18 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     self.pipeline_id,
                     Method::GET,
                     "pause",
-                    &pipeline.location,
+                    &pipeline.deployment_location.unwrap(),
                 )
                 .await
                 {
-                    Err(e) => State::Transition(PipelineStatus::Failed, Some(e.into())),
+                    Err(e) => State::Transition(PipelineStatus::Failed, Some(e.into()), None, None),
                     Ok((status, body)) => {
                         if status.is_success() {
-                            State::Transition(PipelineStatus::Paused, None)
+                            State::Transition(PipelineStatus::Paused, None, None, None)
                         } else {
                             let error =
                                 Self::error_response_from_json(self.pipeline_id, status, &body);
-                            State::Transition(PipelineStatus::Failed, Some(error))
+                            State::Transition(PipelineStatus::Failed, Some(error), None, None)
                         }
                     }
                 }
@@ -367,7 +385,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 match self.pipeline_handle.shutdown().await {
                     Ok(_) => {
                         poll_timeout = Self::SHUTDOWN_POLL_PERIOD;
-                        State::Transition(PipelineStatus::ShuttingDown, None)
+                        State::Transition(PipelineStatus::ShuttingDown, None, None, None)
                     }
                     Err(e) => State::Transition(
                         PipelineStatus::Failed,
@@ -378,14 +396,19 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             }
                             .into(),
                         ),
+                        None,
+                        None,
                     ),
                 }
             }
             // Shutdown in progress. Wait for the pipeline process to terminate.
             (PipelineStatus::ShuttingDown, _) => {
                 if self.pipeline_handle.check_if_shutdown().await {
-                    State::Transition(PipelineStatus::Shutdown, None)
-                } else if Self::timeout_expired(pipeline.status_since, Self::SHUTDOWN_TIMEOUT) {
+                    State::Transition(PipelineStatus::Shutdown, None, None, None)
+                } else if Self::timeout_expired(
+                    pipeline.deployment_status_since,
+                    Self::SHUTDOWN_TIMEOUT,
+                ) {
                     State::Transition(
                         PipelineStatus::Failed,
                         Some(
@@ -395,6 +418,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             }
                             .into(),
                         ),
+                        None,
+                        None,
                     )
                 } else {
                     poll_timeout = Self::SHUTDOWN_POLL_PERIOD;
@@ -404,58 +429,135 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             // User acknowledges pipeline failure by invoking the `/shutdown` endpoint.
             // Move to the `Shutdown` state so that the pipeline can be started again.
             (PipelineStatus::Failed, PipelineStatus::Shutdown) => {
-                let error = pipeline.error.clone();
-                let _ = self.pipeline_handle.shutdown().await;
-                State::Transition(PipelineStatus::Shutdown, error)
+                if let Err(e) = self.pipeline_handle.shutdown().await {
+                    error!("Shutdown operation from Failed status was not successful: {e}");
+                    // TODO: should the transition to Shutdown happen in this case?
+                }
+                State::Transition(PipelineStatus::Shutdown, None, None, None)
             }
             // Steady-state operation.  Periodically poll the pipeline.
-            (PipelineStatus::Running, _)
-            | (PipelineStatus::Paused, _)
-            | (PipelineStatus::Failed, _) => self.probe(&mut pipeline).await?,
+            (PipelineStatus::Running, _) | (PipelineStatus::Paused, _) => {
+                self.probe(&mut pipeline).await?
+            }
+            (PipelineStatus::Failed, _) => State::Unchanged, // All other cases where it is failed, just leave it as-is
             (PipelineStatus::Shutdown, PipelineStatus::Shutdown) => State::Unchanged,
             _ => {
                 error!(
                     "Unexpected current/desired pipeline status combination {:?}/{:?}",
-                    pipeline.current_status, pipeline.desired_status
+                    pipeline.deployment_status, pipeline.deployment_desired_status
                 );
                 State::Unchanged
             }
         };
-        if let State::Transition(new_status, error) = transition {
+        if let State::Transition(new_status, error, deployment_config, location) = transition {
             debug!(
                 "Pipeline {} current state is changing from {:?} to {:?} (desired: {:?})",
-                self.pipeline_id, pipeline.current_status, new_status, pipeline.desired_status
+                self.pipeline_id,
+                pipeline.deployment_status,
+                new_status,
+                pipeline.deployment_desired_status
             );
-            pipeline.set_current_status(new_status, error);
-            self.update_pipeline_runtime_state(&pipeline).await?;
+            match new_status {
+                PipelineStatus::Shutdown => {
+                    self.db
+                        .lock()
+                        .await
+                        .transit_deployment_status_to_shutdown(self.tenant_id, pipeline.id)
+                        .await?
+                }
+                PipelineStatus::Provisioning => {
+                    self.db
+                        .lock()
+                        .await
+                        .transit_deployment_status_to_provisioning(
+                            self.tenant_id,
+                            pipeline.id,
+                            deployment_config.unwrap(),
+                        ) // TODO: unwrap
+                        .await?
+                }
+                PipelineStatus::Initializing => {
+                    self.db
+                        .lock()
+                        .await
+                        .transit_deployment_status_to_initializing(
+                            self.tenant_id,
+                            pipeline.id,
+                            &location.unwrap(),
+                        )
+                        .await? // TODO: unwrap
+                }
+                PipelineStatus::Paused => {
+                    self.db
+                        .lock()
+                        .await
+                        .transit_deployment_status_to_paused(self.tenant_id, pipeline.id)
+                        .await?
+                }
+                PipelineStatus::Running => {
+                    self.db
+                        .lock()
+                        .await
+                        .transit_deployment_status_to_running(self.tenant_id, pipeline.id)
+                        .await?
+                }
+                PipelineStatus::ShuttingDown => {
+                    self.db
+                        .lock()
+                        .await
+                        .transit_deployment_status_to_shutting_down(self.tenant_id, pipeline.id)
+                        .await?
+                }
+                PipelineStatus::Failed => {
+                    self.db
+                        .lock()
+                        .await
+                        .transit_deployment_status_to_failed(
+                            self.tenant_id,
+                            pipeline.id,
+                            &error.unwrap(),
+                        )
+                        .await? // TODO: unwrap
+                }
+            };
         }
         Ok(poll_timeout)
     }
 
-    async fn probe(&mut self, pipeline: &mut PipelineRuntimeState) -> Result<State, ManagerError> {
+    async fn probe(&mut self, pipeline: &mut ExtendedPipelineDescr) -> Result<State, ManagerError> {
         match pipeline_http_request_json_response(
             self.pipeline_id,
             Method::GET,
             "stats",
-            &pipeline.location,
+            &pipeline.deployment_location.clone().unwrap(), // TODO: unwrap
         )
         .await
         {
             Err(e) => {
                 // Cannot reach the pipeline.
-                if pipeline.current_status != PipelineStatus::Failed {
-                    Ok(State::Transition(PipelineStatus::Failed, Some(e.into())))
+                if pipeline.deployment_status != PipelineStatus::Failed {
+                    Ok(State::Transition(
+                        PipelineStatus::Failed,
+                        Some(e.into()),
+                        None,
+                        None,
+                    ))
                 } else {
                     Ok(State::Unchanged)
                 }
             }
             Ok((status, body)) => {
                 if !status.is_success() {
-                    if pipeline.current_status != PipelineStatus::Failed {
+                    if pipeline.deployment_status != PipelineStatus::Failed {
                         // Pipeline responds with an error, meaning that the pipeline
                         // HTTP server is still running, but the pipeline itself failed.
                         let error = Self::error_response_from_json(self.pipeline_id, status, &body);
-                        Ok(State::Transition(PipelineStatus::Failed, Some(error)))
+                        Ok(State::Transition(
+                            PipelineStatus::Failed,
+                            Some(error),
+                            None,
+                            None,
+                        ))
                     } else {
                         Ok(State::Unchanged)
                     }
@@ -485,37 +587,26 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                     })?
                     };
 
-                    if state == "Paused" && pipeline.current_status != PipelineStatus::Paused {
-                        Ok(State::Transition(PipelineStatus::Paused, None))
+                    if state == "Paused" && pipeline.deployment_status != PipelineStatus::Paused {
+                        Ok(State::Transition(PipelineStatus::Paused, None, None, None))
                     } else if state == "Running"
-                        && pipeline.current_status != PipelineStatus::Running
+                        && pipeline.deployment_status != PipelineStatus::Running
                     {
-                        Ok(State::Transition(PipelineStatus::Running, None))
+                        Ok(State::Transition(PipelineStatus::Running, None, None, None))
                     } else if state != "Paused"
                         && state != "Running"
-                        && pipeline.current_status != PipelineStatus::Failed
+                        && pipeline.deployment_status != PipelineStatus::Failed
                     {
                         Ok(State::Transition(PipelineStatus::Failed, Some(RunnerError::HttpForwardError {
                                         pipeline_id: self.pipeline_id,
                                         error: format!("Pipeline reported unexpected status '{state}', expected 'Paused' or 'Running'")
-                                    }.into())))
+                                    }.into()), None, None))
                     } else {
                         Ok(State::Unchanged)
                     }
                 }
             }
         }
-    }
-
-    async fn update_pipeline_runtime_state(
-        &self,
-        state: &PipelineRuntimeState,
-    ) -> Result<(), DBError> {
-        self.db
-            .lock()
-            .await
-            .update_pipeline_runtime_state(self.tenant_id, self.pipeline_id, state)
-            .await
     }
 
     // We store timestamps in the DB and retrieve them as Utc times;
@@ -542,7 +633,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
 /// Utility type for the pipeline automaton to describe state changes
 enum State {
-    Transition(PipelineStatus, Option<ErrorResponse>),
+    Transition(
+        PipelineStatus,
+        Option<ErrorResponse>,
+        Option<PipelineConfig>,
+        Option<String>,
+    ), // Last is location
     Unchanged,
 }
 
@@ -550,8 +646,7 @@ pub async fn fetch_binary_ref(
     config: &LocalRunnerConfig,
     binary_ref: &str,
     pipeline_id: PipelineId,
-    program_id: ProgramId,
-    version: Version,
+    program_version: Version,
 ) -> Result<String, ManagerError> {
     let parsed =
         url::Url::parse(binary_ref).expect("Can only be invoked with valid URLs created by us");
@@ -587,7 +682,7 @@ pub async fn fetch_binary_ref(
                 Ok(resp) => {
                     let resp = resp.bytes().await.expect("Binary reference should be accessible as bytes");
                     let resp_ref = resp.as_ref();
-                    let path = config.binary_file_path(pipeline_id, program_id, version);
+                    let path = config.binary_file_path(pipeline_id, program_version);
                     let mut file = tokio::fs::File::options()
                         .create(true)
                         .truncate(true)
@@ -654,22 +749,22 @@ async fn pipeline_http_request_json_response(
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-
+    use super::{PipelineExecutionDesc, PipelineExecutor};
+    use crate::auth::TenantRecord;
+    use crate::db::storage::Storage;
+    use crate::db::storage_postgres::StoragePostgres;
+    use crate::db::types::common::Version;
+    use crate::db::types::pipeline::{PipelineDescr, PipelineId, PipelineStatus};
+    use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramInfo};
+    use crate::error::ManagerError;
+    use crate::logging;
+    use crate::pipeline_automata::PipelineAutomaton;
     use async_trait::async_trait;
     use pipeline_types::config::RuntimeConfig;
+    use pipeline_types::program_schema::ProgramSchema;
+    use std::sync::Arc;
     use tokio::sync::{Mutex, Notify};
     use uuid::Uuid;
-
-    use crate::compiler::ProgramConfig;
-    use crate::config::CompilationProfile;
-    use crate::db::storage::Storage;
-    use crate::db::{PipelineId, PipelineStatus, ProjectDB};
-    use crate::pipeline_automata::PipelineAutomaton;
-    use crate::{api::ManagerError, auth::TenantRecord};
-
-    use super::{PipelineExecutionDesc, PipelineExecutor};
-    use crate::logging;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -697,31 +792,59 @@ mod test {
     }
 
     struct AutomatonTest {
-        conn: Arc<Mutex<ProjectDB>>,
+        db: Arc<Mutex<StoragePostgres>>,
         automaton: PipelineAutomaton<MockPipeline>,
     }
 
     impl AutomatonTest {
         async fn set_desired_state(&self, status: PipelineStatus) {
             let automaton = &self.automaton;
-            self.conn
+            let pipeline = self
+                .db
                 .lock()
                 .await
-                .set_pipeline_desired_status(automaton.tenant_id, automaton.pipeline_id, status)
+                .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
                 .await
                 .unwrap();
+            match status {
+                PipelineStatus::Shutdown => {
+                    self.db
+                        .lock()
+                        .await
+                        .set_deployment_desired_status_shutdown(automaton.tenant_id, &pipeline.name)
+                        .await
+                        .unwrap();
+                }
+                PipelineStatus::Paused => {
+                    self.db
+                        .lock()
+                        .await
+                        .set_deployment_desired_status_paused(automaton.tenant_id, &pipeline.name)
+                        .await
+                        .unwrap();
+                }
+                PipelineStatus::Running => {
+                    self.db
+                        .lock()
+                        .await
+                        .set_deployment_desired_status_running(automaton.tenant_id, &pipeline.name)
+                        .await
+                        .unwrap();
+                }
+                _ => panic!("Invalid desired status"),
+            }
         }
 
         async fn check_current_state(&self, status: PipelineStatus) {
             let automaton = &self.automaton;
             let pipeline = self
-                .conn
+                .db
                 .lock()
                 .await
-                .get_pipeline_runtime_state_by_id(automaton.tenant_id, automaton.pipeline_id)
+                .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
                 .await
                 .unwrap();
-            assert_eq!(status, pipeline.current_status);
+            assert_eq!(status, pipeline.deployment_status);
         }
 
         async fn tick(&mut self) {
@@ -729,91 +852,77 @@ mod test {
         }
     }
 
-    async fn setup(conn: Arc<Mutex<ProjectDB>>, uri: String) -> AutomatonTest {
-        // Create some programs and pipelines before listening for changes
+    async fn setup(db: Arc<Mutex<StoragePostgres>>, uri: String) -> AutomatonTest {
+        // Create a pipeline and a corresponding automaton
         let tenant_id = TenantRecord::default().id;
-        let program_id = Uuid::now_v7();
-
-        let (program_id, version) = conn
-            .lock()
-            .await
-            .new_program(
-                tenant_id,
-                program_id,
-                "test0",
-                "program desc",
-                "ignored",
-                &ProgramConfig {
-                    profile: Some(CompilationProfile::Unoptimized),
-                },
-                None,
-            )
-            .await
-            .unwrap();
-        let _ = conn
-            .lock()
-            .await
-            .set_program_status_guarded(
-                tenant_id,
-                program_id,
-                version,
-                crate::api::ProgramStatus::Success,
-            )
-            .await
-            .unwrap();
-        let _ = conn
-            .lock()
-            .await
-            .set_program_schema(
-                tenant_id,
-                program_id,
-                pipeline_types::program_schema::ProgramSchema {
-                    inputs: vec![],
-                    outputs: vec![],
-                },
-            )
-            .await
-            .unwrap();
-        let rc = RuntimeConfig::from_yaml("");
-        let pipeline_id = Uuid::now_v7();
-        let _ = conn
+        let pipeline_id = PipelineId(Uuid::now_v7());
+        let _ = db
             .lock()
             .await
             .new_pipeline(
                 tenant_id,
-                pipeline_id,
-                &Some("test0".to_string()),
-                "pipeline-id",
-                "2",
-                &rc,
-                &Some(vec![]),
-                None,
+                pipeline_id.0,
+                PipelineDescr {
+                    name: "example1".to_string(),
+                    description: "Description of example1".to_string(),
+                    runtime_config: RuntimeConfig::from_yaml(""),
+                    program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
+                    program_config: ProgramConfig {
+                        profile: Some(CompilationProfile::Unoptimized),
+                    },
+                },
             )
             .await
             .unwrap();
-        let pipeline_id = PipelineId(pipeline_id);
-        let _ = conn
+
+        // Transition the pipeline program to success
+        let _ = db
             .lock()
             .await
-            .create_pipeline_deployment(Uuid::now_v7(), tenant_id, pipeline_id)
+            .transit_program_status_to_compiling_sql(tenant_id, pipeline_id, Version(1))
             .await
             .unwrap();
-        let _ = conn
+        let _ = db
             .lock()
             .await
-            .create_compiled_binary_ref(program_id, version, "ignored".to_string())
+            .transit_program_status_to_compiling_rust(
+                tenant_id,
+                pipeline_id,
+                Version(1),
+                &ProgramInfo {
+                    schema: ProgramSchema {
+                        inputs: vec![],
+                        outputs: vec![],
+                    },
+                    input_connectors: Default::default(),
+                    output_connectors: Default::default(),
+                },
+            )
             .await
             .unwrap();
+        let _ = db
+            .lock()
+            .await
+            .transit_program_status_to_success(
+                tenant_id,
+                pipeline_id,
+                Version(1),
+                "not-used-program-binary-url",
+            )
+            .await
+            .unwrap();
+
+        // Construct the automaton
         let notifier = Arc::new(Notify::new());
         let automaton = PipelineAutomaton::new(
             pipeline_id,
             tenant_id,
-            conn.clone(),
+            db.clone(),
             notifier.clone(),
             MockPipeline { uri },
         );
         AutomatonTest {
-            conn: conn.clone(),
+            db: db.clone(),
             automaton,
         }
     }
@@ -821,8 +930,8 @@ mod test {
     #[tokio::test]
     async fn pipeline_start() {
         logging::init_logging("foo".into());
-        let (conn, _temp) = crate::db::test::setup_pg().await;
-        let conn = Arc::new(tokio::sync::Mutex::new(conn));
+        let (db, _temp) = crate::db::test::setup_pg().await;
+        let db = Arc::new(Mutex::new(db));
         // Start a background HTTP server on a random local port
         let mock_server = MockServer::start().await;
         let template = ResponseTemplate::new(200).set_body_json(r#"{}"#);
@@ -835,7 +944,7 @@ mod test {
             .await;
 
         let addr = mock_server.address().to_string();
-        let mut test = setup(conn.clone(), addr).await;
+        let mut test = setup(db.clone(), addr).await;
         test.set_desired_state(PipelineStatus::Paused).await;
         test.check_current_state(PipelineStatus::Shutdown).await;
         test.tick().await;

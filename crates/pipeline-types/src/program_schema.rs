@@ -1,4 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::BTreeMap;
 use utoipa::ToSchema;
 
 #[cfg(feature = "testing")]
@@ -37,6 +38,23 @@ pub struct ProgramSchema {
     pub outputs: Vec<Relation>,
 }
 
+#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
+#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
+pub struct SourcePosition {
+    pub start_line_number: usize,
+    pub start_column: usize,
+    pub end_line_number: usize,
+    pub end_column: usize,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]
+#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
+pub struct PropertyValue {
+    pub value: String,
+    pub key_position: SourcePosition,
+    pub value_position: SourcePosition,
+}
+
 /// A SQL table or view. It has a name and a list of fields.
 ///
 /// Matches the Calcite JSON format.
@@ -52,6 +70,8 @@ pub struct Relation {
     pub fields: Vec<Field>,
     #[serde(default)]
     pub materialized: bool,
+    #[serde(default)]
+    pub properties: BTreeMap<String, PropertyValue>,
 }
 
 impl Relation {
@@ -61,15 +81,23 @@ impl Relation {
             case_sensitive: false,
             fields: Vec::new(),
             materialized: false,
+            properties: BTreeMap::new(),
         }
     }
 
-    pub fn new(name: &str, case_sensitive: bool, fields: Vec<Field>, materialized: bool) -> Self {
+    pub fn new(
+        name: &str,
+        case_sensitive: bool,
+        fields: Vec<Field>,
+        materialized: bool,
+        properties: BTreeMap<String, PropertyValue>,
+    ) -> Self {
         Self {
             name: name.to_string(),
             case_sensitive,
             fields,
             materialized,
+            properties,
         }
     }
 

@@ -1,6 +1,7 @@
-use super::{ConnectorId, PipelineId, ProgramId, Version};
-use crate::auth::TenantId;
-use crate::db::ServiceId;
+use crate::db::types::common::Version;
+use crate::db::types::pipeline::{PipelineId, PipelineStatus};
+use crate::db::types::program::ProgramStatus;
+use crate::db::types::tenant::TenantId;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
@@ -37,96 +38,79 @@ pub enum DBError {
         error: Box<pg_embed::pg_errors::PgEmbedError>,
         backtrace: Backtrace,
     },
-    // Catch-all error for unexpected invalid data extracted from DB.
-    // We can split it into several separate error variants if needed.
+    // Catch-all error for unexpected invalid data extracted from the database.
+    // This error is thrown when deserialization fails.
     #[serde(serialize_with = "serialize_invalid_data")]
     InvalidData {
         error: String,
         backtrace: Backtrace,
     },
-    #[serde(serialize_with = "serialize_invalid_status")]
-    InvalidStatus {
+    #[serde(serialize_with = "serialize_invalid_program_status")]
+    InvalidProgramStatus {
         status: String,
         backtrace: Backtrace,
     },
-    UnknownProgram {
-        program_id: ProgramId,
+    #[serde(serialize_with = "serialize_invalid_pipeline_status")]
+    InvalidPipelineStatus {
+        status: String,
+        backtrace: Backtrace,
     },
-    UnknownProgramName {
-        program_name: String,
+    #[serde(serialize_with = "serialize_unique_key_violation")]
+    UniqueKeyViolation {
+        constraint: &'static str,
+        backtrace: Backtrace,
     },
-    ProgramInUseByPipeline {
-        program_name: String,
+    #[serde(serialize_with = "serialize_duplicate_key")]
+    DuplicateKey {
+        backtrace: Backtrace,
     },
-    OutdatedProgramVersion {
-        latest_version: Version,
+    // General errors
+    MissingMigrations {
+        expected: u32,
+        actual: u32,
     },
+    DuplicateName, // When a database unique name constraint is violated
+    EmptyName,
+    // Tenant-related errors
+    UnknownTenant {
+        tenant_id: TenantId,
+    },
+    // API key-related errors
+    UnknownApiKey {
+        name: String,
+    },
+    InvalidApiKey,
+    // Pipeline-related errors
     UnknownPipeline {
         pipeline_id: PipelineId,
     },
     UnknownPipelineName {
         pipeline_name: String,
     },
-    UnknownConnector {
-        connector_id: ConnectorId,
-    },
-    UnknownConnectorName {
-        connector_name: String,
+    CannotUpdateNonShutdownPipeline,
+    CannotDeleteNonShutdownPipeline,
+    CannotRenameNonExistingPipeline,
+    OutdatedProgramVersion {
+        latest_version: Version,
     },
     InvalidConnectorTransport {
         reason: String,
     },
-    UnknownService {
-        service_id: ServiceId,
-    },
-    UnknownServiceName {
-        service_name: String,
-    },
-    UnknownApiKey {
-        name: String,
-    },
-    UnknownTenant {
-        tenant_id: TenantId,
-    },
-    UnknownAttachedConnector {
-        pipeline_id: PipelineId,
-        name: String,
-    },
-    UnknownName {
-        name: String,
-    },
-    DuplicateName,
-    #[serde(serialize_with = "serialize_duplicate_key")]
-    DuplicateKey {
-        backtrace: Backtrace,
-    },
-    InvalidKey,
-    #[serde(serialize_with = "serialize_unique_key_violation")]
-    UniqueKeyViolation {
-        constraint: &'static str,
-        backtrace: Backtrace,
-    },
-    #[serde(serialize_with = "serialize_unknown_pipeline_status")]
-    UnknownPipelineStatus {
-        status: String,
-        backtrace: Backtrace,
-    },
-    ProgramNotSet,
-    ProgramNotCompiled,
+    ProgramNotYetCompiled,
     ProgramFailedToCompile,
-    NoRevisionAvailable {
-        pipeline_id: PipelineId,
+    InvalidProgramStatusTransition {
+        current: ProgramStatus,
+        transition_to: ProgramStatus,
     },
-    RevisionNotChanged,
-    TablesNotInSchema {
-        missing: Vec<(String, String)>,
+    InvalidDeploymentStatusTransition {
+        current: PipelineStatus,
+        transition_to: PipelineStatus,
     },
-    ViewsNotInSchema {
-        missing: Vec<(String, String)>,
-    },
-    MissingMigrations {
-        expected: u32,
-        actual: u32,
+    IllegalPipelineStateTransition {
+        hint: String,
+        status: PipelineStatus,
+        desired_status: PipelineStatus,
+        requested_desired_status: PipelineStatus,
     },
 }
 
@@ -137,14 +121,14 @@ impl DBError {
             backtrace: Backtrace::capture(),
         }
     }
-    pub fn invalid_status(status: String) -> Self {
-        Self::InvalidStatus {
+    pub fn invalid_program_status(status: String) -> Self {
+        Self::InvalidProgramStatus {
             status,
             backtrace: Backtrace::capture(),
         }
     }
-    pub fn unknown_pipeline_status(status: String) -> Self {
-        Self::UnknownPipelineStatus {
+    pub fn invalid_pipeline_status(status: String) -> Self {
+        Self::InvalidPipelineStatus {
             status,
             backtrace: Backtrace::capture(),
         }
@@ -233,7 +217,7 @@ where
     ser.end()
 }
 
-fn serialize_invalid_status<S>(
+fn serialize_invalid_program_status<S>(
     error: &String,
     backtrace: &Backtrace,
     serializer: S,
@@ -241,17 +225,22 @@ fn serialize_invalid_status<S>(
 where
     S: Serializer,
 {
-    let mut ser = serializer.serialize_struct("InvalidStatus", 2)?;
+    let mut ser = serializer.serialize_struct("InvalidProgramStatus", 2)?;
     ser.serialize_field("error", error)?;
     ser.serialize_field("backtrace", &backtrace.to_string())?;
     ser.end()
 }
 
-fn serialize_duplicate_key<S>(backtrace: &Backtrace, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_invalid_pipeline_status<S>(
+    status: &String,
+    backtrace: &Backtrace,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let mut ser = serializer.serialize_struct("DuplicateKey", 1)?;
+    let mut ser = serializer.serialize_struct("InvalidPipelineStatus", 2)?;
+    ser.serialize_field("status", &status.to_string())?;
     ser.serialize_field("backtrace", &backtrace.to_string())?;
     ser.end()
 }
@@ -270,16 +259,11 @@ where
     ser.end()
 }
 
-fn serialize_unknown_pipeline_status<S>(
-    status: &String,
-    backtrace: &Backtrace,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
+fn serialize_duplicate_key<S>(backtrace: &Backtrace, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let mut ser = serializer.serialize_struct("UnknownPipelineStatus", 2)?;
-    ser.serialize_field("status", &status.to_string())?;
+    let mut ser = serializer.serialize_struct("DuplicateKey", 1)?;
     ser.serialize_field("backtrace", &backtrace.to_string())?;
     ser.end()
 }
@@ -338,25 +322,40 @@ impl Display for DBError {
                 write!(f, "PG-embed error: '{error}'")
             }
             DBError::InvalidData { error, .. } => {
-                write!(f, "Invalid DB data '{error}'")
+                write!(f, "Invalid database data '{error}'")
             }
-            DBError::InvalidStatus { status, .. } => {
+            DBError::InvalidProgramStatus { status, .. } => {
                 write!(f, "Invalid program status string '{status}'")
             }
-            DBError::UnknownProgram { program_id } => {
-                write!(f, "Unknown program id '{program_id}'")
+            DBError::InvalidPipelineStatus { status, .. } => {
+                write!(f, "Invalid pipeline status string '{status}'")
             }
-            DBError::UnknownProgramName { program_name } => {
-                write!(f, "Unknown program name '{program_name}'")
+            DBError::UniqueKeyViolation { constraint, .. } => {
+                write!(f, "Unique key violation for '{constraint}'")
             }
-            DBError::ProgramInUseByPipeline { program_name } => {
-                write!(f, "Program named '{program_name}' is in use by a pipeline")
+            DBError::DuplicateKey { .. } => {
+                write!(f, "A key with the same hash already exists")
             }
-            DBError::OutdatedProgramVersion { latest_version } => {
+            DBError::MissingMigrations { expected, actual } => {
                 write!(
                     f,
-                    "Outdated program version. Latest version: '{latest_version}'"
+                    "Expected database migrations to be applied up to {expected}, but database only has applied migrations up to {actual}"
                 )
+            }
+            DBError::DuplicateName => {
+                write!(f, "An entity with this name already exists")
+            }
+            DBError::EmptyName => {
+                write!(f, "Name cannot be be empty")
+            }
+            DBError::UnknownTenant { tenant_id } => {
+                write!(f, "Unknown tenant id '{tenant_id}'")
+            }
+            DBError::UnknownApiKey { name } => {
+                write!(f, "Unknown API key '{name}'")
+            }
+            DBError::InvalidApiKey => {
+                write!(f, "Invalid API key")
             }
             DBError::UnknownPipeline { pipeline_id } => {
                 write!(f, "Unknown pipeline id '{pipeline_id}'")
@@ -364,91 +363,57 @@ impl Display for DBError {
             DBError::UnknownPipelineName { pipeline_name } => {
                 write!(f, "Unknown pipeline name '{pipeline_name}'")
             }
-            DBError::UnknownAttachedConnector { pipeline_id, name } => {
+            DBError::CannotUpdateNonShutdownPipeline => {
+                write!(f, "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.")
+            }
+            DBError::CannotDeleteNonShutdownPipeline => {
+                write!(f, "Cannot delete a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.")
+            }
+            DBError::CannotRenameNonExistingPipeline => {
+                write!(f, "The pipeline name in the request body does not match the one provided in the URL path. This is not allowed when no pipeline with the name provided in the URL path exists.")
+            }
+            DBError::OutdatedProgramVersion { latest_version } => {
                 write!(
                     f,
-                    "Pipeline '{pipeline_id}' does not have a connector named '{name}'"
+                    "Outdated program version. Latest version: '{latest_version}'"
                 )
-            }
-            DBError::UnknownConnector { connector_id } => {
-                write!(f, "Unknown connector id '{connector_id}'")
-            }
-            DBError::UnknownConnectorName { connector_name } => {
-                write!(f, "Unknown connector name '{connector_name}'")
             }
             DBError::InvalidConnectorTransport { reason } => {
                 write!(f, "Invalid connector transport: '{reason}'")
             }
-            DBError::UnknownService { service_id } => {
-                write!(f, "Unknown service id '{service_id}'")
-            }
-            DBError::UnknownServiceName { service_name } => {
-                write!(f, "Unknown service name '{service_name}'")
-            }
-            DBError::UnknownApiKey { name } => {
-                write!(f, "Unknown API key '{name}'")
-            }
-            DBError::UnknownTenant { tenant_id } => {
-                write!(f, "Unknown tenant id '{tenant_id}'")
-            }
-            DBError::DuplicateName => {
-                write!(f, "An entity with this name already exists")
-            }
-            DBError::DuplicateKey { .. } => {
-                write!(f, "A key with the same hash already exists")
-            }
-            DBError::InvalidKey => {
-                write!(f, "Could not validate API")
-            }
-            DBError::UnknownName { name } => {
-                write!(f, "An entity with name {name} was not found")
-            }
-            DBError::UniqueKeyViolation { constraint, .. } => {
-                write!(f, "Unique key violation for '{constraint}'")
-            }
-            DBError::UnknownPipelineStatus { status, .. } => {
-                write!(f, "Unknown pipeline status '{status}' encountered")
-            }
-            DBError::ProgramNotSet => write!(f, "The pipeline does not have a program attached"),
-            DBError::ProgramNotCompiled => {
-                write!(
-                    f,
-                    "The program attached to the pipeline hasn't been compiled yet."
-                )
+            DBError::ProgramNotYetCompiled => {
+                write!(f, "The program hasn't been compiled yet")
             }
             DBError::ProgramFailedToCompile => {
+                write!(f, "The program did not compile successfully")
+            }
+            DBError::InvalidProgramStatusTransition {
+                current,
+                transition_to,
+            } => {
                 write!(
                     f,
-                    "The program attached to the pipeline did not compile successfully"
+                    "Cannot transition from program status '{current:?}' to '{transition_to:?}'"
                 )
             }
-            DBError::NoRevisionAvailable { pipeline_id } => {
+            DBError::InvalidDeploymentStatusTransition {
+                current,
+                transition_to,
+            } => {
                 write!(
                     f,
-                    "The pipeline {pipeline_id} does not have a committed revision"
+                    "Cannot transition from deployment status '{current:?}' to '{transition_to:?}'"
                 )
             }
-            DBError::RevisionNotChanged => {
-                write!(f, "There is no change to commit for pipeline")
-            }
-            DBError::TablesNotInSchema { missing } => {
+            DBError::IllegalPipelineStateTransition {
+                hint,
+                status,
+                desired_status,
+                requested_desired_status,
+            } => {
                 write!(
                     f,
-                    "Pipeline configuration specifies invalid connector->table pairs '{}': The table(s) don't exist in the program",
-                    missing.iter().map(|(ac, t)| format!("{} -> {}", ac, t)).collect::<Vec<String>>().join(", ").trim_end_matches(", ")
-                )
-            }
-            DBError::ViewsNotInSchema { missing } => {
-                write!(
-                    f,
-                    "Pipeline configuration specifies invalid connector->view pairs '{}': The view(s) don't exist in the program",
-                    missing.iter().map(|(ac, v)| format!("{} -> {}", ac, v)).collect::<Vec<String>>().join(", ").trim_end_matches(", ")
-                )
-            }
-            DBError::MissingMigrations { expected, actual } => {
-                write!(
-                    f,
-                    "Expected DB migrations to be applied up to {expected}, but DB only has applied migrations up to {actual}"
+                    "Deployment status (current: '{status:?}', desired: '{desired_status:?}') cannot have desired changed to '{requested_desired_status:?}'. {hint}"
                 )
             }
         }
@@ -464,46 +429,46 @@ impl DetailedError for DBError {
             #[cfg(feature = "pg-embed")]
             Self::PgEmbedError { .. } => Cow::from("PgEmbedError"),
             Self::InvalidData { .. } => Cow::from("InvalidData"),
-            Self::InvalidStatus { .. } => Cow::from("InvalidStatus"),
-            Self::UnknownProgram { .. } => Cow::from("UnknownProgram"),
-            Self::UnknownProgramName { .. } => Cow::from("UnknownProgramName"),
-            Self::ProgramInUseByPipeline { .. } => Cow::from("ProgramInUseByPipeline"),
-            Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
+            Self::InvalidProgramStatus { .. } => Cow::from("InvalidProgramStatus"),
+            Self::InvalidPipelineStatus { .. } => Cow::from("InvalidPipelineStatus"),
+            Self::UniqueKeyViolation { .. } => Cow::from("UniqueKeyViolation"),
+            Self::DuplicateKey { .. } => Cow::from("DuplicateKey"),
+            Self::MissingMigrations { .. } => Cow::from("MissingMigrations"),
+            Self::DuplicateName => Cow::from("DuplicateName"),
+            Self::EmptyName => Cow::from("EmptyName"),
+            Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
+            Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
+            Self::InvalidApiKey => Cow::from("InvalidApiKey"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
             Self::UnknownPipelineName { .. } => Cow::from("UnknownPipelineName"),
-            Self::UnknownConnector { .. } => Cow::from("UnknownConnector"),
-            Self::UnknownConnectorName { .. } => Cow::from("UnknownConnectorName"),
+            Self::CannotUpdateNonShutdownPipeline { .. } => {
+                Cow::from("CannotUpdateNonShutdownPipeline")
+            }
+            Self::CannotDeleteNonShutdownPipeline { .. } => {
+                Cow::from("CannotDeleteNonShutdownPipeline")
+            }
+            Self::CannotRenameNonExistingPipeline { .. } => {
+                Cow::from("CannotRenameNonExistingPipeline")
+            }
+            Self::OutdatedProgramVersion { .. } => Cow::from("OutdatedProgramVersion"),
             Self::InvalidConnectorTransport { .. } => Cow::from("InvalidConnectorTransport"),
-            Self::UnknownService { .. } => Cow::from("UnknownService"),
-            Self::UnknownServiceName { .. } => Cow::from("UnknownServiceName"),
-            Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
-            Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
-            Self::UnknownAttachedConnector { .. } => Cow::from("UnknownAttachedConnector"),
-            Self::UnknownName { .. } => Cow::from("UnknownName"),
-            Self::DuplicateName => Cow::from("DuplicateName"),
-            Self::DuplicateKey { .. } => Cow::from("DuplicateKey"),
-            Self::InvalidKey => Cow::from("InvalidKey"),
-            Self::UniqueKeyViolation { .. } => Cow::from("UniqueKeyViolation"),
-            Self::UnknownPipelineStatus { .. } => Cow::from("UnknownPipelineStatus"),
-            Self::ProgramNotSet => Cow::from("ProgramNotSet"),
-            Self::ProgramNotCompiled => Cow::from("ProgramNotCompiled"),
-            Self::ProgramFailedToCompile => Cow::from("ProgramFailedToCompile"),
-            Self::NoRevisionAvailable { .. } => Cow::from("NoRevisionAvailable"),
-            Self::RevisionNotChanged => Cow::from("RevisionNotChanged"),
-            Self::TablesNotInSchema { .. } => Cow::from("TablesNotInSchema"),
-            Self::ViewsNotInSchema { .. } => Cow::from("ViewsNotInSchema"),
-            Self::MissingMigrations { .. } => Cow::from("MissingMigrations"),
+            Self::ProgramNotYetCompiled { .. } => Cow::from("ProgramNotYetCompiled"),
+            Self::ProgramFailedToCompile { .. } => Cow::from("ProgramFailedToCompile"),
+            Self::InvalidProgramStatusTransition { .. } => {
+                Cow::from("InvalidProgramStatusTransition")
+            }
+            Self::InvalidDeploymentStatusTransition { .. } => {
+                Cow::from("InvalidDeploymentStatusTransition")
+            }
+            Self::IllegalPipelineStateTransition { .. } => {
+                Cow::from("IllegalPipelineStateTransition")
+            }
         }
     }
 
     fn log_level(&self) -> Level {
         match self {
-            Self::UnknownProgram { .. } => Level::Info,
-            Self::UnknownProgramName { .. } => Level::Info,
             Self::UnknownPipeline { .. } => Level::Info,
-            Self::UnknownConnector { .. } => Level::Info,
-            Self::UnknownConnectorName { .. } => Level::Info,
-            Self::UnknownName { .. } => Level::Info,
             _ => Level::Error,
         }
     }
@@ -520,39 +485,28 @@ impl ResponseError for DBError {
             #[cfg(feature = "pg-embed")]
             Self::PgEmbedError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidData { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::InvalidStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::UnknownProgram { .. } => StatusCode::NOT_FOUND,
-            Self::UnknownProgramName { .. } => StatusCode::NOT_FOUND,
-            Self::ProgramInUseByPipeline { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidProgramStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidPipelineStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UniqueKeyViolation { .. } => StatusCode::INTERNAL_SERVER_ERROR, // UUID conflict
+            Self::DuplicateKey { .. } => StatusCode::INTERNAL_SERVER_ERROR, // This error should never bubble up till here
+            Self::MissingMigrations { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::DuplicateName => StatusCode::CONFLICT,
-            Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
+            Self::EmptyName => StatusCode::BAD_REQUEST,
+            Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED, // TODO: should we report not found instead?
+            Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
+            Self::InvalidApiKey => StatusCode::UNAUTHORIZED,
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
             Self::UnknownPipelineName { .. } => StatusCode::NOT_FOUND,
-            Self::UnknownConnector { .. } => StatusCode::NOT_FOUND,
-            Self::UnknownConnectorName { .. } => StatusCode::NOT_FOUND,
+            Self::CannotUpdateNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
+            Self::CannotDeleteNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
+            Self::CannotRenameNonExistingPipeline { .. } => StatusCode::BAD_REQUEST,
+            Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
             Self::InvalidConnectorTransport { .. } => StatusCode::BAD_REQUEST,
-            Self::UnknownService { .. } => StatusCode::NOT_FOUND,
-            Self::UnknownServiceName { .. } => StatusCode::NOT_FOUND,
-            Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
-            // TODO: should we report not found instead?
-            Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED,
-            Self::UnknownAttachedConnector { .. } => StatusCode::NOT_FOUND,
-            // This error should never bubble up till here
-            Self::DuplicateKey { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::InvalidKey => StatusCode::UNAUTHORIZED,
-            Self::UnknownName { .. } => StatusCode::NOT_FOUND,
-            Self::ProgramNotCompiled => StatusCode::SERVICE_UNAVAILABLE,
-            Self::ProgramFailedToCompile => StatusCode::BAD_REQUEST,
-            Self::ProgramNotSet => StatusCode::BAD_REQUEST,
-            // should in practice not happen, e.g., would mean a Uuid conflict:
-            Self::UniqueKeyViolation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::MissingMigrations { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            // should in practice not happen, e.g., would mean invalid status in db:
-            Self::UnknownPipelineStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::NoRevisionAvailable { .. } => StatusCode::NOT_FOUND,
-            Self::RevisionNotChanged => StatusCode::BAD_REQUEST,
-            Self::TablesNotInSchema { .. } => StatusCode::BAD_REQUEST,
-            Self::ViewsNotInSchema { .. } => StatusCode::BAD_REQUEST,
+            Self::ProgramNotYetCompiled => StatusCode::BAD_REQUEST, // User trying to start a pipeline whose program has not yet finished compilation
+            Self::ProgramFailedToCompile => StatusCode::BAD_REQUEST, // User trying to start a pipeline whose program failed to compile
+            Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
+            Self::InvalidDeploymentStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
+            Self::IllegalPipelineStateTransition { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which is not valid
         }
     }
 

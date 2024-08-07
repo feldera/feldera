@@ -62,6 +62,9 @@ Usage: sql-to-dbsp [options] Input file to compile
     --outputsAreSets
       Ensure that outputs never contain duplicates
       Default: false
+    --streaming
+      Compiling a streaming program, where only inserts are allowed
+      Default: false
     --udf
       Specify a Rust file containing implementations of user-defined functions
       Default: <empty string>
@@ -154,6 +157,9 @@ Here is a description of the non-obvious command-line options:
 -d:  Sets the lexical rules used.  SQL dialects differ in rules for
      allowed identifiers, quoting identifiers, conversions to
      uppercase, case sensitivity of identifiers.
+
+--streaming: Equivalent to adding the following property to all program tables:
+     `'appendOnly' = 'true'`.
 
 ### Example: Compiling a SQL program to Rust
 

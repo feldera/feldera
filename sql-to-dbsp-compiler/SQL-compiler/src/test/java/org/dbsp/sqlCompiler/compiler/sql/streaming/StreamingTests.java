@@ -29,18 +29,17 @@ import java.util.List;
 public class StreamingTests extends StreamingTestBase {
     @Test
     public void issue2004() {
-        // Based on Q9
         String sql = """
                 CREATE TABLE auction (
                    date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
                    expires   TIMESTAMP NOT NULL,
-                   id        INT
+                   id        INT NOT NULL PRIMARY KEY
                 );
                 
                 CREATE TABLE bid (
                    date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
                    price INT,
-                   auction INT
+                   auction INT FOREIGN KEY REFERENCES auction(id)
                 );
                 
                 CREATE VIEW Q9 AS
@@ -1190,6 +1189,27 @@ public class StreamingTests extends StreamingTestBase {
                  1                | -1
                  2                | 1""");
         this.addRustTestCase("testAggregate", ccs);
+    }
+
+    @Test
+    public void testHopNotImplemented() {
+        // This syntax is not supported, one should use the HOP table functions
+        String sql = """
+                CREATE TABLE bid (
+                    auction  BIGINT FOREIGN KEY REFERENCES auction(id),
+                    date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS
+                );
+                CREATE VIEW V AS SELECT
+                  B1.auction,
+                  count(*) AS num,
+                  HOP_START(B1.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS starttime,
+                  HOP_END(B1.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND) AS endtime
+                FROM bid B1
+                GROUP BY
+                  B1.auction,
+                  HOP(B1.date_time, INTERVAL '2' SECOND, INTERVAL '10' SECOND);
+                """;
+        this.statementsFailingInCompilation(sql, "Please use the TABLE function HOP");
     }
 
     @Test

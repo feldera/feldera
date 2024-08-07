@@ -47,7 +47,6 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -110,7 +109,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -1161,17 +1159,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     throw new UnimplementedException(node);
                 DBSPType collectionType = ops.get(0).getType();
                 DBSPExpression index = ops.get(1);
-                if (collectionType.is(DBSPTypeVec.class)) {
-                    // index into a vector: cast to unsigned
-                    index = index.cast(new DBSPTypeUSize(CalciteObject.EMPTY, false));
-                } else if (collectionType.is(DBSPTypeMap.class)) {
+                DBSPOpcode opcode = DBSPOpcode.SQL_INDEX;
+                if (collectionType.is(DBSPTypeMap.class)) {
                     // index into a map
                     DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                     index = index.cast(map.getKeyType());
-                } else {
-                    throw new UnsupportedException(node);
+                    opcode = DBSPOpcode.MAP_INDEX;
                 }
-                return new DBSPBinaryExpression(node, type, DBSPOpcode.SQL_INDEX, ops.get(0), index);
+                return new DBSPBinaryExpression(node, type, opcode, ops.get(0), index);
             }
             case TIMESTAMP_DIFF:
             case TRIM: {
@@ -1336,6 +1331,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 // Calcite thinks this is nullable, but it probably shouldn't be
                 DBSPType nonNull = type.setMayBeNull(false);
                 return new DBSPApplyExpression(node, method, nonNull, ops.get(0), ops.get(1)).cast(type);
+            }
+            case HOP: {
+                throw new UnimplementedException("Please use the TABLE function HOP", node);
             }
             case DOT:
             default:

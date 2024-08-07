@@ -15,7 +15,15 @@ import invariant from 'tiny-invariant'
 import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
 
-export type SQLValueJS = string | number | boolean | BigNumber | Dayjs | SQLValueJS[] | Map<string, SQLValueJS> | null
+export type SQLValueJS =
+  | string
+  | number
+  | boolean
+  | BigNumber
+  | Dayjs
+  | SQLValueJS[]
+  | Map<string, SQLValueJS>
+  | null
 
 /**
  * The format we get back from the ingress rest API.
@@ -74,10 +82,17 @@ export const sqlValueToXgressJSON = (type: ColumnType, value: SQLValueJS): JSONX
       invariant(BigNumber.isBigNumber(value))
       return value.toFixed()
     })
-    .with({ type: 'TINYINT' }, { type: 'SMALLINT' }, { type: 'INTEGER' }, { type: 'REAL' }, { type: 'DOUBLE' }, () => {
-      invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
-      return value
-    })
+    .with(
+      { type: 'TINYINT' },
+      { type: 'SMALLINT' },
+      { type: 'INTEGER' },
+      { type: 'REAL' },
+      { type: 'DOUBLE' },
+      () => {
+        invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
+        return value
+      }
+    )
     .with({ type: 'TIME' }, () => {
       invariant(typeof value === 'string' || isDayjs(value))
       if (typeof value === 'string') {
@@ -95,7 +110,7 @@ export const sqlValueToXgressJSON = (type: ColumnType, value: SQLValueJS): JSONX
     })
     .with({ type: 'ARRAY' }, () => {
       invariant(Array.isArray(value))
-      return value.map(v => {
+      return value.map((v) => {
         invariant(nonNull(type.component))
         return sqlValueToXgressJSON(type.component, v)
       })
@@ -125,16 +140,16 @@ export const sqlValueToXgressJSON = (type: ColumnType, value: SQLValueJS): JSONX
     .with({ type: 'NULL' }, () => {
       invariant(false, 'NULL type is not supported for ingress')
     })
-    .with({ type: 'MAP' }, () => {
-      invariant(false, 'MAP type is not supported for ingress')
-    })
     .exhaustive()
 }
 
 export const sqlRowToXgressJSON = (relation: Relation, row: Row) =>
   Object.fromEntries(
-    relation.fields.map(field =>
-      tuple(getCaseIndependentName(field), sqlValueToXgressJSON(field.columntype, row.record[field.name]))
+    relation.fields.map((field) =>
+      tuple(
+        getCaseIndependentName(field),
+        sqlValueToXgressJSON(field.columntype, row.record[field.name])
+      )
     )
   )
 
@@ -159,10 +174,17 @@ export const xgressJSONToSQLValue = (type: ColumnType, value: JSONXgressValue): 
       invariant(!number.isNaN())
       return number
     })
-    .with({ type: 'TINYINT' }, { type: 'SMALLINT' }, { type: 'INTEGER' }, { type: 'REAL' }, { type: 'DOUBLE' }, () => {
-      invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
-      return typeof value === 'number' ? value : value.toNumber()
-    })
+    .with(
+      { type: 'TINYINT' },
+      { type: 'SMALLINT' },
+      { type: 'INTEGER' },
+      { type: 'REAL' },
+      { type: 'DOUBLE' },
+      () => {
+        invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
+        return typeof value === 'number' ? value : value.toNumber()
+      }
+    )
     .with({ type: 'TIME' }, () => {
       invariant(typeof value === 'string' && value.length === 8)
       const time = dayjs(value, 'HH:mm:ss')
@@ -183,7 +205,7 @@ export const xgressJSONToSQLValue = (type: ColumnType, value: JSONXgressValue): 
     })
     .with({ type: 'ARRAY' }, () => {
       invariant(Array.isArray(value))
-      return value.map(v => {
+      return value.map((v) => {
         invariant(nonNull(type.component))
         return xgressJSONToSQLValue(type.component, v)
       })
@@ -213,9 +235,6 @@ export const xgressJSONToSQLValue = (type: ColumnType, value: JSONXgressValue): 
     .with({ type: 'NULL' }, () => {
       invariant(false, 'NULL type is not supported for ingress')
     })
-    .with({ type: 'MAP' }, () => {
-      invariant(false, 'MAP type is not supported for ingress')
-    })
     .exhaustive()
 }
 
@@ -224,8 +243,11 @@ export const xgressJSONToSQLRecord = (
   value: Record<string, JSONXgressValue>
 ): Record<string, SQLValueJS> =>
   Object.fromEntries(
-    relation.fields.map(field =>
-      tuple(getCaseIndependentName(field), xgressJSONToSQLValue(field.columntype, value[getCaseIndependentName(field)]))
+    relation.fields.map((field) =>
+      tuple(
+        getCaseIndependentName(field),
+        xgressJSONToSQLValue(field.columntype, value[getCaseIndependentName(field)])
+      )
     )
   )
 
@@ -247,8 +269,14 @@ export const numericRange = (sqlType: ColumnType) =>
   match(sqlType)
     .with({ type: 'TINYINT' }, () => ({ min: new BigNumber(-128), max: new BigNumber(127) }))
     .with({ type: 'SMALLINT' }, () => ({ min: new BigNumber(-32768), max: new BigNumber(32767) }))
-    .with({ type: 'INTEGER' }, () => ({ min: new BigNumber(-2147483648), max: new BigNumber(2147483647) }))
-    .with({ type: 'BIGINT' }, () => ({ min: new BigNumber(-2).pow(63), max: new BigNumber(2).pow(63).minus(1) }))
+    .with({ type: 'INTEGER' }, () => ({
+      min: new BigNumber(-2147483648),
+      max: new BigNumber(2147483647)
+    }))
+    .with({ type: 'BIGINT' }, () => ({
+      min: new BigNumber(-2).pow(63),
+      max: new BigNumber(2).pow(63).minus(1)
+    }))
     .with({ type: 'REAL' }, () => ({
       min: new BigNumber('-3.402823466e+38'),
       max: new BigNumber('3.402823466e+38')
@@ -257,10 +285,13 @@ export const numericRange = (sqlType: ColumnType) =>
       min: new BigNumber('-1.7976931348623158e+308'),
       max: new BigNumber('1.7976931348623158e+308')
     }))
-    .with({ type: 'DECIMAL' }, ct => {
+    .with({ type: 'DECIMAL' }, (ct) => {
       invariant(nonNull(ct.precision))
       invariant(nonNull(ct.scale))
-      const max = new BigNumber(10).pow(ct.precision!).minus(1).div(new BigNumber(10).pow(ct.scale!))
+      const max = new BigNumber(10)
+        .pow(ct.precision!)
+        .minus(1)
+        .div(new BigNumber(10).pow(ct.scale!))
       const min = max.negated()
       return { min, max }
     })
@@ -278,7 +309,6 @@ export const numericRange = (sqlType: ColumnType) =>
       { type: { Interval: P._ } },
       { type: 'STRUCT' },
       { type: 'NULL' },
-      { type: 'MAP' },
       () => {
         throw new Error(`Not a numeric type: ${sqlType.type}`)
       }
@@ -292,8 +322,14 @@ export const dateTimeRange = (sqlType: ColumnType): Dayjs[] =>
     // is also a rendering issue if we have too many years for the datepicker
     // components so we're a bit more conservative than we need to be.
     // - https://github.com/mui/mui-x/issues/4746
-    .with('DATE', 'TIMESTAMP', () => [dayjs(new Date('1500-01-01 00:00:00')), dayjs(new Date('2500-12-31 23:59:59'))])
-    .with('TIME', () => [dayjs(new Date('1500-01-01 00:00:00')), dayjs(new Date('1500-01-01 23:59:59'))])
+    .with('DATE', 'TIMESTAMP', () => [
+      dayjs(new Date('1500-01-01 00:00:00')),
+      dayjs(new Date('2500-12-31 23:59:59'))
+    ])
+    .with('TIME', () => [
+      dayjs(new Date('1500-01-01 00:00:00')),
+      dayjs(new Date('1500-01-01 23:59:59'))
+    ])
     .with(
       'BOOLEAN',
       'TINYINT',
@@ -311,7 +347,6 @@ export const dateTimeRange = (sqlType: ColumnType): Dayjs[] =>
       'ARRAY',
       'STRUCT',
       'NULL',
-      'MAP',
       () => {
         throw new Error('Not a date/time type')
       }
@@ -353,7 +388,6 @@ export const sqlValueComparator = (sqlType: ColumnType) => {
     .with('VARBINARY', () => () => 0)
     .with('STRUCT', () => () => 0)
     .with('NULL', () => () => 0)
-    .with('MAP', () => () => 0)
     .exhaustive()
 
   return (a: SQLValueJS, b: SQLValueJS) => {

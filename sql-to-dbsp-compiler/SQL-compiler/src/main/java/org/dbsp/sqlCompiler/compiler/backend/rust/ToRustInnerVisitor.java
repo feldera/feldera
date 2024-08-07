@@ -28,6 +28,8 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
@@ -116,8 +118,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -761,37 +765,40 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return VisitDecision.STOP;
         } else if (expression.operation == DBSPOpcode.SQL_INDEX) {
             DBSPType collectionType = expression.left.getType();
-            if (collectionType.is(DBSPTypeVec.class)) {
-                DBSPTypeVec vec = collectionType.to(DBSPTypeVec.class);
-                this.builder.append("index")
-                        .append("_")
-                        .append(expression.left.getType().nullableSuffix())
-                        .append("_")
-                        .append(vec.getElementType().nullableSuffix())
-                        .append("_")
-                        .append(expression.right.getType().nullableSuffix())
-                        .append("(");
-                expression.left.accept(this);
-                this.builder.append(", ");
-                expression.right.accept(this);
-                this.builder.append(" - 1)");
-            } else if (collectionType.is(DBSPTypeMap.class)) {
-                DBSPTypeMap vec = collectionType.to(DBSPTypeMap.class);
-                this.builder.append("map_index")
-                        .append("_")
-                        .append(expression.left.getType().nullableSuffix())
-                        .append("_")
-                        .append(vec.getKeyType().nullableSuffix())
-                        .append("_")
-                        .append(expression.right.getType().nullableSuffix())
-                        .append("(");
-                expression.left.accept(this);
-                this.builder.append(", ");
-                expression.right.accept(this);
-                this.builder.append(")");
-            } else {
-                throw new UnsupportedException(expression.getNode());
-            }
+            DBSPType indexType = expression.right.getType();
+            DBSPTypeVec vec = collectionType.to(DBSPTypeVec.class);
+            this.builder.append("index")
+                    .append("_")
+                    .append(expression.left.getType().nullableSuffix())
+                    .append("_")
+                    .append(vec.getElementType().nullableSuffix())
+                    .append("_")
+                    .append(indexType.nullableSuffix())
+                    .append("(");
+            expression.left.accept(this);
+            this.builder.append(", ");
+            DBSPExpression sub1 = ExpressionCompiler.makeBinaryExpression(
+                    expression.getNode(), indexType, DBSPOpcode.SUB,
+                    expression.right, indexType.to(IsNumericType.class).getOne());
+            sub1 = sub1.cast(new DBSPTypeISize(CalciteObject.EMPTY, indexType.mayBeNull));
+            sub1.accept(this);
+            this.builder.append(")");
+            return VisitDecision.STOP;
+        } else if (expression.operation == DBSPOpcode.MAP_INDEX) {
+            DBSPType collectionType = expression.left.getType();
+            DBSPTypeMap vec = collectionType.to(DBSPTypeMap.class);
+            this.builder.append("map_index")
+                    .append("_")
+                    .append(expression.left.getType().nullableSuffix())
+                    .append("_")
+                    .append(vec.getKeyType().nullableSuffix())
+                    .append("_")
+                    .append(expression.right.getType().nullableSuffix())
+                    .append("(");
+            expression.left.accept(this);
+            this.builder.append(", ");
+            expression.right.accept(this);
+            this.builder.append(")");
             return VisitDecision.STOP;
         } else if (expression.operation == DBSPOpcode.DIV_NULL) {
             this.builder.append("div_null")

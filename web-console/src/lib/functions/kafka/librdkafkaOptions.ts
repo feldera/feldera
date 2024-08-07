@@ -949,7 +949,7 @@ export const librdkafkaOptions = [
       `The Kafka topic to write to  \n*Type: string*`
     ]
   ])
-  .map(row => {
+  .map((row) => {
     const data = {
       name: row[0].trim(),
       label: row[0].trim().replaceAll('_', '.'),
@@ -1001,16 +1001,19 @@ export const librdkafkaAuthOptions = [
 
 export const librdkafkaNonAuthFieldsSchema = (() => {
   const nonAuthFields = librdkafkaOptions
-    .filter(o => !librdkafkaAuthOptions.includes(o.name as any))
-    .map(o =>
+    .filter((o) => !librdkafkaAuthOptions.includes(o.name as any))
+    .map((o) =>
       tuple(
         o.name.replaceAll('.', '_'),
         match(o)
-          .with({ type: 'number' }, option => {
+          .with({ type: 'number' }, (option) => {
             const error = `Must be in the range of ${option.range.min} to ${option.range.max}`
-            return va.number([va.minValue(option.range.min, error), va.maxValue(option.range.max, error)])
+            return va.number([
+              va.minValue(option.range.min, error),
+              va.maxValue(option.range.max, error)
+            ])
           })
-          .with({ type: 'enum' }, option => va.picklist(option.range as [string, ...string[]]))
+          .with({ type: 'enum' }, (option) => va.picklist(option.range as [string, ...string[]]))
           .with({ type: 'array' }, { type: 'list' }, () => va.array(va.string()))
           .with({ type: 'boolean' }, () => va.boolean())
           .with({ type: 'string' }, () => va.string([va.minLength(1)]))
@@ -1022,7 +1025,11 @@ export const librdkafkaNonAuthFieldsSchema = (() => {
 
 export type LibrdkafkaOptionType = string | number | boolean | string[]
 
-const toKafkaOption = (optionName: string, v: LibrdkafkaOptionType, type: ReturnType<typeof deduceType>) => {
+const toKafkaOption = (
+  optionName: string,
+  v: LibrdkafkaOptionType,
+  type: ReturnType<typeof deduceType>
+) => {
   return match(type)
     .with('boolean', 'number', () => String(v))
     .with('list', () => {
@@ -1034,7 +1041,10 @@ const toKafkaOption = (optionName: string, v: LibrdkafkaOptionType, type: Return
       return v as unknown as string // TODO: the hiding of string[] type is temporary until better typing in kafka-related APIs
     })
     .with('string', 'enum', () => {
-      invariant(typeof v === 'string', 'librdkafka option ' + optionName + ' ' + v + ' is not a string')
+      invariant(
+        typeof v === 'string',
+        'librdkafka option ' + optionName + ' ' + v + ' is not a string'
+      )
       return v
     })
     .exhaustive()
@@ -1048,21 +1058,25 @@ const toKafkaOption = (optionName: string, v: LibrdkafkaOptionType, type: Return
  */
 export const toLibrdkafkaConfig = (formFields: Partial<Record<string, LibrdkafkaOptionType>>) => {
   const config = {} as Record<string, string>
-  Object.keys(formFields).forEach(fieldName => {
+  Object.keys(formFields).forEach((fieldName) => {
     const v = formFields[fieldName]
     if (v === undefined) {
       return
     }
     const optionName = fieldName.replaceAll('_', '.')
     // TODO: Optimize .find()
-    const type = librdkafkaOptions.find(option => option.name === optionName)?.type ?? 'string'
+    const type = librdkafkaOptions.find((option) => option.name === optionName)?.type ?? 'string'
     config[optionName] = toKafkaOption(optionName, v, type)
   })
   return config
 }
 
-export const toKafkaConfig = (formFields: Record<string, LibrdkafkaOptionType>) =>
+export const toKafkaConfig = ({
+  preset_service,
+  ...formFields
+}: Record<string, LibrdkafkaOptionType>) =>
   ({
+    kafka_service: preset_service,
     ...toLibrdkafkaConfig(formFields)
   }) as ReturnType<typeof toLibrdkafkaConfig>
 
@@ -1074,11 +1088,11 @@ export const toKafkaConfig = (formFields: Record<string, LibrdkafkaOptionType>) 
  */
 export const fromLibrdkafkaConfig = (config: Record<string, string | string[]>) => {
   const formFields = {} as Record<string, LibrdkafkaOptionType>
-  Object.keys(config).forEach(optionName => {
+  Object.keys(config).forEach((optionName) => {
     const v = config[optionName]
     const fieldName = optionName.replaceAll('.', '_')
     // TODO: Optimize .find()
-    const type = librdkafkaOptions.find(option => option.name === optionName)?.type
+    const type = librdkafkaOptions.find((option) => option.name === optionName)?.type
     if (!type) {
       // Ignore options that are not in librdkafka spec
       return
@@ -1089,7 +1103,10 @@ export const fromLibrdkafkaConfig = (config: Record<string, string | string[]>) 
           ? true
           : v === 'false'
             ? false
-            : (invariant(false, 'librdkafka option ' + optionName + ' ' + v + ' is not a boolean') as never)
+            : (invariant(
+                false,
+                'librdkafka option ' + optionName + ' ' + v + ' is not a boolean'
+              ) as never)
       )
       .with('number', () => parseInt(v as string))
       .with('list', () => (v as string).split(', '))
@@ -1101,8 +1118,12 @@ export const fromLibrdkafkaConfig = (config: Record<string, string | string[]>) 
   return formFields
 }
 
-export const fromKafkaConfig = (config: Record<string, string | string[]>) => {
+export const fromKafkaConfig = ({
+  kafka_service,
+  ...config
+}: Record<string, string | string[]>) => {
   return {
+    ...(kafka_service ? { preset_service: kafka_service } : {}),
     ...fromLibrdkafkaConfig(config)
   } as ReturnType<typeof fromLibrdkafkaConfig>
 }

@@ -2,11 +2,11 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Feldera API",
-    "description": "\nWith Feldera, users create data pipelines out of SQL programs and data connectors. A SQL program comprises tables and views. Connectors feed data to input tables in a program or receive outputs computed by views.\n\nThis API allows users to create and manage data pipelines, and the programs\nand connectors that comprise these pipelines.\n\n# API concepts\n\n* *Program*.  A SQL program with a unique name and a unique ID\n  attached to it. A program contains tables and views. A program\n  needs to be compiled before it can be executed in a pipeline.\n\n* *Connector*. A data connector that can be used to feed input data to\nSQL tables or consume outputs from SQL views. Every connector\nhas a unique name and identifier. We currently support Kafka and Redpanda.\nWe also support directly ingesting and consuming data via HTTP;\nsee the `pipelines/{pipeline_id}/ingress` and `pipelines/{pipeline_id}/egress`\nendpoints.\n\n* *Service*. A service with a unique name and ID.\n  It represents a service (such as Kafka, etc.) that a connector can refer to in\n  its config. Services are declared separately to reduce duplication and to make it\n  easier to create connectors. A service has its own configuration, which\n  generally includes hostname, port, authentication, and any service parameters.\n\n* *Pipeline*.  A pipeline is a running instance of a program and\nsome attached connectors. A client can create multiple pipelines that make use of\nthe same program and connectors. Every pipeline has a unique name and identifier.\nDeploying a pipeline instantiates the pipeline with the then latest version of\nthe referenced program and connectors. This allows the API to accumulate edits\nto programs and connectors before use in a pipeline.\n\n# Concurrency\n\nAll programs have an associated *version*. This is done to prevent\nrace conditions due to multiple users accessing the same\nprogram concurrently.  An example is user 1 modifying the program,\nwhile user 2 is starting a pipeline for the same program. It would be confusing\nif the pipeline could end up running the old or the new version.\n\nA version is a monotonically increasing number, associated with each\nprogram and pipeline. Every request to compile the program or start a\npipeline must include the program id and version number. If the version number\nisn't equal to the current version in the database, this means that the\nlast version of the program observed by the client is outdated, so the\nrequest is rejected.",
+    "description": "\nWith Feldera, users create data pipelines out of SQL programs.\nA SQL program comprises tables and views, and includes as well the definition of\ninput and output connectors for each respectively. A connector defines a data\nsource or data sink to feed input data into tables or receive output data\ncomputed by the views respectively.\n\n## Pipeline\n\nThe API is centered around the **pipeline**, which most importantly consists\nout of the SQL program, but also has accompanying metadata and configuration parameters\n(e.g., compilation profile, number of workers, etc.).\n\n* A pipeline is identified and referred to by a user-provided unique name.\n* The pipeline program is asynchronously compiled when the pipeline is first created or\n  its program code or configuration is updated.\n* Running the pipeline (*deployment*) is only possible once the program is compiled\n* A pipeline cannot be updated while it is running\n\n## Concurrency\n\nBoth the pipeline and its program have an associated *version*.\nA version is a monotonically increasing number.\nAnytime the core fields (name, description, runtime_config, program_code, program_config) are modified,\nthe pipeline version is incremented.\nAnytime the program core fields (program_code, program_config) are modified,\nthe program version is incremented.\nThe program version is used internally by the compiler to know when to recompile.",
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.21.0"
+    "version": "0.23.0"
   },
   "paths": {
     "/config/authentication": {
@@ -14,8 +14,8 @@
         "tags": [
           "Authentication"
         ],
-        "summary": "Get authentication provider configuration",
-        "operationId": "get_authentication_config",
+        "summary": "Retrieve authentication provider configuration.",
+        "operationId": "get_config_authentication",
         "responses": {
           "200": {
             "description": "The response body contains Authentication Provider configuration, or is empty if no auth is configured.",
@@ -45,7 +45,7 @@
         "tags": [
           "API keys"
         ],
-        "summary": "List all API keys",
+        "summary": "Retrieve the list of API keys.",
         "operationId": "list_api_keys",
         "parameters": [
           {
@@ -84,10 +84,10 @@
                   "Unknown API key name": {
                     "value": {
                       "details": {
-                        "name": "unknown_name"
+                        "name": "unknown_api_key"
                       },
-                      "error_code": "UnknownName",
-                      "message": "An entity with name unknown_name was not found"
+                      "error_code": "UnknownApiKey",
+                      "message": "Unknown API key 'unknown_api_key'"
                     }
                   }
                 }
@@ -105,7 +105,7 @@
         "tags": [
           "API keys"
         ],
-        "summary": "Create an API key",
+        "summary": "Create a new API key.",
         "operationId": "create_api_key",
         "requestBody": {
           "description": "",
@@ -130,7 +130,7 @@
             }
           },
           "409": {
-            "description": "An api key with this name already exists.",
+            "description": "An API key with this name already exists.",
             "content": {
               "application/json": {
                 "schema": {
@@ -157,7 +157,7 @@
         "tags": [
           "API keys"
         ],
-        "summary": "Get an API key description",
+        "summary": "Retrieve an API key.",
         "operationId": "get_api_key",
         "parameters": [
           {
@@ -192,10 +192,10 @@
                   "Unknown API key name": {
                     "value": {
                       "details": {
-                        "name": "unknown_name"
+                        "name": "unknown_api_key"
                       },
-                      "error_code": "UnknownName",
-                      "message": "An entity with name unknown_name was not found"
+                      "error_code": "UnknownApiKey",
+                      "message": "Unknown API key 'unknown_api_key'"
                     }
                   }
                 }
@@ -213,7 +213,7 @@
         "tags": [
           "API keys"
         ],
-        "summary": "Delete an API key",
+        "summary": "Delete an API key.",
         "operationId": "delete_api_key",
         "parameters": [
           {
@@ -241,10 +241,10 @@
                   "Unknown API key name": {
                     "value": {
                       "details": {
-                        "name": "unknown_name"
+                        "name": "unknown_api_key"
                       },
-                      "error_code": "UnknownName",
-                      "message": "An entity with name unknown_name was not found"
+                      "error_code": "UnknownApiKey",
+                      "message": "Unknown API key 'unknown_api_key'"
                     }
                   }
                 }
@@ -264,8 +264,8 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "Get the list of demos.",
-        "operationId": "get_demos",
+        "summary": "Retrieve the list of demos.",
+        "operationId": "get_config_demos",
         "responses": {
           "200": {
             "description": "List of demos.",
@@ -298,409 +298,118 @@
         ]
       }
     },
-    "/v0/connectors": {
-      "get": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Fetch connectors, optionally filtered by name or ID",
-        "operationId": "list_connectors",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "query",
-            "description": "Unique connector identifier.",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "nullable": true
-            }
-          },
-          {
-            "name": "name",
-            "in": "query",
-            "description": "Unique connector name.",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of connectors retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ConnectorDescr"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified connector name or ID does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Unknown connector ID": {
-                    "value": {
-                      "details": {
-                        "connector_id": "d764b9e2-19f2-4572-ba20-8b42641b07c4"
-                      },
-                      "error_code": "UnknownConnector",
-                      "message": "Unknown connector id 'd764b9e2-19f2-4572-ba20-8b42641b07c4'"
-                    }
-                  },
-                  "Unknown connector name": {
-                    "value": {
-                      "details": {
-                        "name": "unknown_name"
-                      },
-                      "error_code": "UnknownName",
-                      "message": "An entity with name unknown_name was not found"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Create a new connector.",
-        "operationId": "new_connector",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewConnectorRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Connector successfully created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NewConnectorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A connector with this name already exists in the database",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": null,
-                  "error_code": "DuplicateName",
-                  "message": "An entity with this name already exists"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
-    "/v0/connectors/{connector_name}": {
-      "get": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Fetch a connector by name.",
-        "operationId": "get_connector",
-        "parameters": [
-          {
-            "name": "connector_name",
-            "in": "path",
-            "description": "Unique connector name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Connector retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConnectorDescr"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified connector name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "name": "unknown_name"
-                  },
-                  "error_code": "UnknownName",
-                  "message": "An entity with name unknown_name was not found"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      },
-      "put": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Create or replace a connector.",
-        "operationId": "create_or_replace_connector",
-        "parameters": [
-          {
-            "name": "connector_name",
-            "in": "path",
-            "description": "Unique connector name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateOrReplaceConnectorRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Connector updated successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateOrReplaceConnectorResponse"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Connector created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateOrReplaceConnectorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A connector with this name already exists in the database",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": null,
-                  "error_code": "DuplicateName",
-                  "message": "An entity with this name already exists"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      },
-      "delete": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Delete an existing connector.",
-        "operationId": "delete_connector",
-        "parameters": [
-          {
-            "name": "connector_name",
-            "in": "path",
-            "description": "Unique connector name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Connector successfully deleted"
-          },
-          "404": {
-            "description": "Specified connector name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "name": "unknown_name"
-                  },
-                  "error_code": "UnknownName",
-                  "message": "An entity with name unknown_name was not found"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      },
-      "patch": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Update the name, description and/or configuration of a connector.",
-        "operationId": "update_connector",
-        "parameters": [
-          {
-            "name": "connector_name",
-            "in": "path",
-            "description": "Unique connector name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateConnectorRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Connector successfully updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpdateConnectorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified connector name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "name": "unknown_name"
-                  },
-                  "error_code": "UnknownName",
-                  "message": "An entity with name unknown_name was not found"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
     "/v0/pipelines": {
       "get": {
         "tags": [
           "Pipelines"
         ],
-        "summary": "Fetch pipelines, optionally filtered by name or ID.",
+        "summary": "Retrieve the list of pipelines.",
+        "description": "Inclusion of program code is configured with by the `code` boolean query parameter.",
         "operationId": "list_pipelines",
         "parameters": [
           {
-            "name": "id",
+            "name": "code",
             "in": "query",
-            "description": "Unique pipeline id.",
+            "description": "Whether to include program code in the response (default: `true`).\nPassing `false` reduces the response size, which is particularly handy\nwhen frequently monitoring the endpoint over low bandwidth connections.",
             "required": false,
             "schema": {
-              "type": "string",
-              "format": "uuid",
-              "nullable": true
-            }
-          },
-          {
-            "name": "name",
-            "in": "query",
-            "description": "Unique pipeline name.",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "nullable": true
+              "type": "boolean"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Pipeline list retrieved successfully.",
+            "description": "List of pipelines retrieved successfully",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Pipeline"
+                    "$ref": "#/components/schemas/ExtendedPipelineDescrOptionalCode"
                   }
-                }
+                },
+                "example": [
+                  {
+                    "created_at": "1970-01-01T00:00:00Z",
+                    "deployment_config": null,
+                    "deployment_desired_status": "Shutdown",
+                    "deployment_error": null,
+                    "deployment_location": null,
+                    "deployment_status": "Shutdown",
+                    "deployment_status_since": "1970-01-01T00:00:00Z",
+                    "description": "Description of the pipeline example1",
+                    "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                    "name": "example1",
+                    "program_binary_url": null,
+                    "program_code": null,
+                    "program_config": {
+                      "profile": "optimized"
+                    },
+                    "program_info": null,
+                    "program_status": "Pending",
+                    "program_status_since": "1970-01-01T00:00:00Z",
+                    "program_version": 2,
+                    "runtime_config": {
+                      "cpu_profiler": false,
+                      "max_buffering_delay_usecs": 0,
+                      "min_batch_size_records": 0,
+                      "min_storage_bytes": null,
+                      "resources": {
+                        "cpu_cores_max": null,
+                        "cpu_cores_min": null,
+                        "memory_mb_max": null,
+                        "memory_mb_min": null,
+                        "storage_class": null,
+                        "storage_mb_max": null
+                      },
+                      "storage": false,
+                      "tracing": false,
+                      "tracing_endpoint_jaeger": "",
+                      "workers": 16
+                    },
+                    "version": 4
+                  },
+                  {
+                    "created_at": "1970-01-01T00:00:00Z",
+                    "deployment_config": null,
+                    "deployment_desired_status": "Shutdown",
+                    "deployment_error": null,
+                    "deployment_location": null,
+                    "deployment_status": "Shutdown",
+                    "deployment_status_since": "1970-01-01T00:00:00Z",
+                    "description": "Description of the pipeline example2",
+                    "id": "67e55044-10b1-426f-9247-bb680e5fe0c9",
+                    "name": "example2",
+                    "program_binary_url": null,
+                    "program_code": null,
+                    "program_config": {
+                      "profile": "unoptimized"
+                    },
+                    "program_info": null,
+                    "program_status": "Pending",
+                    "program_status_since": "1970-01-01T00:00:00Z",
+                    "program_version": 1,
+                    "runtime_config": {
+                      "cpu_profiler": false,
+                      "max_buffering_delay_usecs": 0,
+                      "min_batch_size_records": 100000,
+                      "min_storage_bytes": null,
+                      "resources": {
+                        "cpu_cores_max": null,
+                        "cpu_cores_min": null,
+                        "memory_mb_max": null,
+                        "memory_mb_min": 1000,
+                        "storage_class": null,
+                        "storage_mb_max": 10000
+                      },
+                      "storage": true,
+                      "tracing": false,
+                      "tracing_endpoint_jaeger": "",
+                      "workers": 10
+                    },
+                    "version": 1
+                  }
+                ]
               }
             }
           }
@@ -716,56 +425,107 @@
           "Pipelines"
         ],
         "summary": "Create a new pipeline.",
-        "operationId": "new_pipeline",
+        "operationId": "post_pipeline",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewPipelineRequest"
+                "$ref": "#/components/schemas/PipelineDescr"
+              },
+              "example": {
+                "description": "Description of the pipeline example1",
+                "name": "example1",
+                "program_code": "CREATE TABLE table1 ( col1 INT );",
+                "program_config": {
+                  "profile": "optimized"
+                },
+                "runtime_config": {
+                  "cpu_profiler": false,
+                  "max_buffering_delay_usecs": 0,
+                  "min_batch_size_records": 0,
+                  "min_storage_bytes": null,
+                  "resources": {
+                    "cpu_cores_max": null,
+                    "cpu_cores_min": null,
+                    "memory_mb_max": null,
+                    "memory_mb_min": null,
+                    "storage_class": null,
+                    "storage_mb_max": null
+                  },
+                  "storage": false,
+                  "tracing": false,
+                  "tracing_endpoint_jaeger": "",
+                  "workers": 16
+                }
               }
             }
           },
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Pipeline successfully created.",
+          "201": {
+            "description": "Pipeline successfully created",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NewPipelineResponse"
+                  "$ref": "#/components/schemas/ExtendedPipelineDescr"
+                },
+                "example": {
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "deployment_config": null,
+                  "deployment_desired_status": "Shutdown",
+                  "deployment_error": null,
+                  "deployment_location": null,
+                  "deployment_status": "Shutdown",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "description": "Description of the pipeline example1",
+                  "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                  "name": "example1",
+                  "program_binary_url": null,
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
+                  "program_config": {
+                    "profile": "optimized"
+                  },
+                  "program_info": null,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_version": 2,
+                  "runtime_config": {
+                    "cpu_profiler": false,
+                    "max_buffering_delay_usecs": 0,
+                    "min_batch_size_records": 0,
+                    "min_storage_bytes": null,
+                    "resources": {
+                      "cpu_cores_max": null,
+                      "cpu_cores_min": null,
+                      "memory_mb_max": null,
+                      "memory_mb_min": null,
+                      "storage_class": null,
+                      "storage_mb_max": null
+                    },
+                    "storage": false,
+                    "tracing": false,
+                    "tracing_endpoint_jaeger": "",
+                    "workers": 16
+                  },
+                  "version": 4
                 }
               }
             }
           },
           "404": {
-            "description": "Specified program id or connector ids do not exist.",
+            "description": "Pipeline with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "examples": {
-                  "Unknown connector": {
-                    "description": "One or more connector ids do not exist.",
-                    "value": {
-                      "details": {
-                        "connector_id": "d764b9e2-19f2-4572-ba20-8b42641b07c4"
-                      },
-                      "error_code": "UnknownConnector",
-                      "message": "Unknown connector id 'd764b9e2-19f2-4572-ba20-8b42641b07c4'"
-                    }
+                "example": {
+                  "details": {
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
                   },
-                  "Unknown program": {
-                    "description": "Specified program id does not exist",
-                    "value": {
-                      "details": {
-                        "program_id": "67e55044-10b1-426f-9247-bb680e5fe0c8"
-                      },
-                      "error_code": "UnknownProgram",
-                      "message": "Unknown program id '67e55044-10b1-426f-9247-bb680e5fe0c8'"
-                    }
-                  }
+                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
                 }
               }
             }
@@ -783,7 +543,7 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "Fetch a pipeline by ID.",
+        "summary": "Retrieve a pipeline.",
         "operationId": "get_pipeline",
         "parameters": [
           {
@@ -798,93 +558,57 @@
         ],
         "responses": {
           "200": {
-            "description": "Pipeline descriptor retrieved successfully.",
+            "description": "Pipeline retrieved successfully",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Pipeline"
+                  "$ref": "#/components/schemas/ExtendedPipelineDescr"
                 },
                 "example": {
-                  "cpu_profiler": false,
-                  "inputs": {
-                    "Input-To-Table": {
-                      "enable_output_buffer": false,
-                      "format": {
-                        "config": null,
-                        "name": "csv"
-                      },
-                      "max_output_buffer_size_records": 18446744073709551615,
-                      "max_output_buffer_time_millis": 18446744073709551615,
-                      "max_queued_records": 1000000,
-                      "paused": false,
-                      "stream": "my_input_table",
-                      "transport": {
-                        "config": {
-                          "auto.offset.reset": "earliest",
-                          "bootstrap.servers": "localhost:9092",
-                          "fault_tolerance": null,
-                          "group.instance.id": "group0",
-                          "group_join_timeout_secs": 10,
-                          "kafka_service": null,
-                          "log_level": null,
-                          "poller_threads": null,
-                          "topics": [
-                            "test_input1"
-                          ]
-                        },
-                        "name": "kafka_input"
-                      }
-                    }
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "deployment_config": null,
+                  "deployment_desired_status": "Shutdown",
+                  "deployment_error": null,
+                  "deployment_location": null,
+                  "deployment_status": "Shutdown",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "description": "Description of the pipeline example1",
+                  "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                  "name": "example1",
+                  "program_binary_url": null,
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
+                  "program_config": {
+                    "profile": "optimized"
                   },
-                  "max_buffering_delay_usecs": 0,
-                  "min_batch_size_records": 0,
-                  "min_storage_bytes": null,
-                  "name": "pipeline-67e55044-10b1-426f-9247-bb680e5fe0c8",
-                  "outputs": {
-                    "Output-To-View": {
-                      "enable_output_buffer": false,
-                      "format": {
-                        "config": null,
-                        "name": "csv"
-                      },
-                      "max_output_buffer_size_records": 18446744073709551615,
-                      "max_output_buffer_time_millis": 18446744073709551615,
-                      "max_queued_records": 1000000,
-                      "paused": false,
-                      "stream": "my_output_view",
-                      "transport": {
-                        "config": {
-                          "fault_tolerance": null,
-                          "headers": [],
-                          "initialization_timeout_secs": 60,
-                          "kafka_service": null,
-                          "log_level": null,
-                          "max_inflight_messages": 1000,
-                          "topic": "test_output1"
-                        },
-                        "name": "kafka_output"
-                      }
-                    }
+                  "program_info": null,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_version": 2,
+                  "runtime_config": {
+                    "cpu_profiler": false,
+                    "max_buffering_delay_usecs": 0,
+                    "min_batch_size_records": 0,
+                    "min_storage_bytes": null,
+                    "resources": {
+                      "cpu_cores_max": null,
+                      "cpu_cores_min": null,
+                      "memory_mb_max": null,
+                      "memory_mb_min": null,
+                      "storage_class": null,
+                      "storage_mb_max": null
+                    },
+                    "storage": false,
+                    "tracing": false,
+                    "tracing_endpoint_jaeger": "",
+                    "workers": 16
                   },
-                  "resources": {
-                    "cpu_cores_max": null,
-                    "cpu_cores_min": null,
-                    "memory_mb_max": null,
-                    "memory_mb_min": null,
-                    "storage_class": null,
-                    "storage_mb_max": null
-                  },
-                  "storage": false,
-                  "storage_config": null,
-                  "tracing": true,
-                  "tracing_endpoint_jaeger": "127.0.0.1:6831",
-                  "workers": 8
+                  "version": 4
                 }
               }
             }
           },
           "404": {
-            "description": "Specified pipeline ID does not exist.",
+            "description": "Pipeline with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -911,8 +635,8 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "Create or replace a pipeline.",
-        "operationId": "create_or_replace_pipeline",
+        "summary": "Fully update a pipeline if it already exists, otherwise create a new pipeline.",
+        "operationId": "put_pipeline",
         "parameters": [
           {
             "name": "pipeline_name",
@@ -928,7 +652,33 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateOrReplacePipelineRequest"
+                "$ref": "#/components/schemas/PipelineDescr"
+              },
+              "example": {
+                "description": "Description of the pipeline example1",
+                "name": "example1",
+                "program_code": "CREATE TABLE table1 ( col1 INT );",
+                "program_config": {
+                  "profile": "optimized"
+                },
+                "runtime_config": {
+                  "cpu_profiler": false,
+                  "max_buffering_delay_usecs": 0,
+                  "min_batch_size_records": 0,
+                  "min_storage_bytes": null,
+                  "resources": {
+                    "cpu_cores_max": null,
+                    "cpu_cores_min": null,
+                    "memory_mb_max": null,
+                    "memory_mb_min": null,
+                    "storage_class": null,
+                    "storage_mb_max": null
+                  },
+                  "storage": false,
+                  "tracing": false,
+                  "tracing_endpoint_jaeger": "",
+                  "workers": 16
+                }
               }
             }
           },
@@ -936,27 +686,122 @@
         },
         "responses": {
           "200": {
-            "description": "Pipeline updated successfully",
+            "description": "Pipeline successfully updated",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateOrReplacePipelineResponse"
+                  "$ref": "#/components/schemas/ExtendedPipelineDescr"
+                },
+                "example": {
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "deployment_config": null,
+                  "deployment_desired_status": "Shutdown",
+                  "deployment_error": null,
+                  "deployment_location": null,
+                  "deployment_status": "Shutdown",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "description": "Description of the pipeline example1",
+                  "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                  "name": "example1",
+                  "program_binary_url": null,
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
+                  "program_config": {
+                    "profile": "optimized"
+                  },
+                  "program_info": null,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_version": 2,
+                  "runtime_config": {
+                    "cpu_profiler": false,
+                    "max_buffering_delay_usecs": 0,
+                    "min_batch_size_records": 0,
+                    "min_storage_bytes": null,
+                    "resources": {
+                      "cpu_cores_max": null,
+                      "cpu_cores_min": null,
+                      "memory_mb_max": null,
+                      "memory_mb_min": null,
+                      "storage_class": null,
+                      "storage_mb_max": null
+                    },
+                    "storage": false,
+                    "tracing": false,
+                    "tracing_endpoint_jaeger": "",
+                    "workers": 16
+                  },
+                  "version": 4
                 }
               }
             }
           },
           "201": {
-            "description": "Pipeline created successfully",
+            "description": "Pipeline successfully created",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateOrReplacePipelineResponse"
+                  "$ref": "#/components/schemas/ExtendedPipelineDescr"
+                },
+                "example": {
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "deployment_config": null,
+                  "deployment_desired_status": "Shutdown",
+                  "deployment_error": null,
+                  "deployment_location": null,
+                  "deployment_status": "Shutdown",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "description": "Description of the pipeline example1",
+                  "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                  "name": "example1",
+                  "program_binary_url": null,
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
+                  "program_config": {
+                    "profile": "optimized"
+                  },
+                  "program_info": null,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_version": 2,
+                  "runtime_config": {
+                    "cpu_profiler": false,
+                    "max_buffering_delay_usecs": 0,
+                    "min_batch_size_records": 0,
+                    "min_storage_bytes": null,
+                    "resources": {
+                      "cpu_cores_max": null,
+                      "cpu_cores_min": null,
+                      "memory_mb_max": null,
+                      "memory_mb_min": null,
+                      "storage_class": null,
+                      "storage_mb_max": null
+                    },
+                    "storage": false,
+                    "tracing": false,
+                    "tracing_endpoint_jaeger": "",
+                    "workers": 16
+                  },
+                  "version": 4
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pipeline needs to be shutdown to be modified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": null,
+                  "error_code": "CannotUpdateNonShutdownPipeline",
+                  "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint."
                 }
               }
             }
           },
           "409": {
-            "description": "A pipeline with this name already exists in the database.",
+            "description": "Cannot rename pipeline as the name already exists",
             "content": {
               "application/json": {
                 "schema": {
@@ -981,8 +826,8 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "Delete a pipeline. The pipeline must be in the shutdown state.",
-        "operationId": "pipeline_delete",
+        "summary": "Delete a pipeline.",
+        "operationId": "delete_pipeline",
         "parameters": [
           {
             "name": "pipeline_name",
@@ -996,46 +841,25 @@
         ],
         "responses": {
           "200": {
-            "description": "Pipeline successfully deleted."
+            "description": "Pipeline successfully deleted"
           },
           "400": {
-            "description": "Pipeline ID is invalid or pipeline is already running.",
+            "description": "Pipeline needs to be shutdown to be deleted",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "examples": {
-                  "Invalid Pipeline ID": {
-                    "value": {
-                      "details": {
-                        "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
-                        "value": "not_a_uuid"
-                      },
-                      "error_code": "InvalidUuidParam",
-                      "message": "Invalid UUID string 'not_a_uuid': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1'"
-                    }
-                  },
-                  "Pipeline is running": {
-                    "description": "Pipeline cannot be deleted while executing. Shutdown the pipeline first.",
-                    "value": {
-                      "details": {
-                        "current_status": "Running",
-                        "desired_status": "Running",
-                        "error": "Cannot delete a running pipeline. Shutdown the pipeline first by invoking the '/shutdown' endpoint.",
-                        "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                        "requested_status": null
-                      },
-                      "error_code": "IllegalPipelineStateTransition",
-                      "message": "Action is not applicable in the current state of the pipeline: Cannot delete a running pipeline. Shutdown the pipeline first by invoking the '/shutdown' endpoint."
-                    }
-                  }
+                "example": {
+                  "details": null,
+                  "error_code": "CannotDeleteNonShutdownPipeline",
+                  "message": "Cannot delete a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint."
                 }
               }
             }
           },
           "404": {
-            "description": "Specified pipeline id does not exist.",
+            "description": "Pipeline with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -1062,9 +886,8 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "Change a pipeline's name, description, code, configuration, or connectors.",
-        "description": "On success, increments the pipeline's version by 1.",
-        "operationId": "update_pipeline",
+        "summary": "Partially update a pipeline.",
+        "operationId": "patch_pipeline",
         "parameters": [
           {
             "name": "pipeline_name",
@@ -1080,7 +903,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdatePipelineRequest"
+                "$ref": "#/components/schemas/PatchPipeline"
+              },
+              "example": {
+                "description": "This is a new description",
+                "name": null,
+                "program_code": "CREATE TABLE table3 ( col3 INT );",
+                "program_config": null,
+                "runtime_config": null
               }
             }
           },
@@ -1088,85 +918,72 @@
         },
         "responses": {
           "200": {
-            "description": "Pipeline successfully updated.",
+            "description": "Pipeline successfully updated",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UpdatePipelineResponse"
+                  "$ref": "#/components/schemas/ExtendedPipelineDescr"
+                },
+                "example": {
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "deployment_config": null,
+                  "deployment_desired_status": "Shutdown",
+                  "deployment_error": null,
+                  "deployment_location": null,
+                  "deployment_status": "Shutdown",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "description": "Description of the pipeline example1",
+                  "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                  "name": "example1",
+                  "program_binary_url": null,
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
+                  "program_config": {
+                    "profile": "optimized"
+                  },
+                  "program_info": null,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_version": 2,
+                  "runtime_config": {
+                    "cpu_profiler": false,
+                    "max_buffering_delay_usecs": 0,
+                    "min_batch_size_records": 0,
+                    "min_storage_bytes": null,
+                    "resources": {
+                      "cpu_cores_max": null,
+                      "cpu_cores_min": null,
+                      "memory_mb_max": null,
+                      "memory_mb_min": null,
+                      "storage_class": null,
+                      "storage_mb_max": null
+                    },
+                    "storage": false,
+                    "tracing": false,
+                    "tracing_endpoint_jaeger": "",
+                    "workers": 16
+                  },
+                  "version": 4
                 }
               }
             }
           },
-          "404": {
-            "description": "Specified pipeline or connector does not exist.",
+          "400": {
+            "description": "Pipeline needs to be shutdown to be modified",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "examples": {
-                  "Unknown connector name": {
-                    "value": {
-                      "details": {
-                        "name": "unknown_name"
-                      },
-                      "error_code": "UnknownName",
-                      "message": "An entity with name unknown_name was not found"
-                    }
-                  },
-                  "Unknown pipeline name": {
-                    "value": {
-                      "details": {
-                        "name": "unknown_name"
-                      },
-                      "error_code": "UnknownName",
-                      "message": "An entity with name unknown_name was not found"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
-    "/v0/pipelines/{pipeline_name}/config": {
-      "get": {
-        "tags": [
-          "Pipelines"
-        ],
-        "summary": "Fetch a pipeline's configuration.",
-        "description": "When defining a pipeline, clients have to provide an optional\n`RuntimeConfig` for the pipelines and references to existing\nconnectors to attach to the pipeline. This endpoint retrieves\nthe *expanded* definition of the pipeline's configuration,\nwhich comprises both the `RuntimeConfig` and the complete\ndefinitions of the attached connectors.",
-        "operationId": "get_pipeline_config",
-        "parameters": [
-          {
-            "name": "pipeline_name",
-            "in": "path",
-            "description": "Unique pipeline name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Expanded pipeline configuration retrieved successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PipelineConfig"
+                "example": {
+                  "details": null,
+                  "error_code": "CannotUpdateNonShutdownPipeline",
+                  "message": "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint."
                 }
               }
             }
           },
           "404": {
-            "description": "Specified pipeline ID does not exist.",
+            "description": "Pipeline with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -1181,62 +998,18 @@
                 }
               }
             }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
-    "/v0/pipelines/{pipeline_name}/deployed": {
-      "get": {
-        "tags": [
-          "Pipelines"
-        ],
-        "summary": "Return the currently deployed version of the pipeline, if any.",
-        "operationId": "pipeline_deployed",
-        "parameters": [
-          {
-            "name": "pipeline_name",
-            "in": "path",
-            "description": "Unique pipeline name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Last deployed version of the pipeline retrieved successfully (returns null if pipeline was never deployed yet).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/PipelineRevision"
-                    }
-                  ],
-                  "nullable": true
-                }
-              }
-            }
           },
-          "404": {
-            "description": "Specified `pipeline_id` does not exist.",
+          "409": {
+            "description": "Cannot rename pipeline as the name already exists",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  "details": null,
+                  "error_code": "DuplicateName",
+                  "message": "An entity with this name already exists"
                 }
               }
             }
@@ -1249,13 +1022,13 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_name}/dump_profile": {
+    "/v0/pipelines/{pipeline_name}/circuit_profile": {
       "get": {
         "tags": [
           "Pipelines"
         ],
-        "summary": "Initiate profile dump.",
-        "operationId": "dump_profile",
+        "summary": "Retrieve the circuit performance profile of a running or paused pipeline.",
+        "operationId": "get_pipeline_circuit_profile",
         "parameters": [
           {
             "name": "pipeline_name",
@@ -1279,7 +1052,7 @@
             }
           },
           "400": {
-            "description": "Specified pipeline id is not a valid uuid.",
+            "description": "Pipeline is not running or paused",
             "content": {
               "application/json": {
                 "schema": {
@@ -1287,17 +1060,16 @@
                 },
                 "example": {
                   "details": {
-                    "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
-                    "value": "not_a_uuid"
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
                   },
-                  "error_code": "InvalidUuidParam",
-                  "message": "Invalid UUID string 'not_a_uuid': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1'"
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
                 }
               }
             }
           },
           "404": {
-            "description": "Specified pipeline id does not exist.",
+            "description": "Pipeline with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -1476,8 +1248,8 @@
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
                   },
-                  "error_code": "PipelineShutdown",
-                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running."
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
                 }
               }
             }
@@ -1505,8 +1277,8 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "Retrieve heap profile of the pipeline.",
-        "operationId": "heap_profile",
+        "summary": "Retrieve the heap profile of a running or paused pipeline.",
+        "operationId": "get_pipeline_heap_profile",
         "parameters": [
           {
             "name": "pipeline_name",
@@ -1520,7 +1292,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Pipeline's heap usage profile as a gzipped protobuf that can be inspected by the pprof tool.",
+            "description": "Pipeline's heap usage profile as a gzipped protobuf that can be inspected by the pprof tool",
             "content": {
               "application/protobuf": {
                 "schema": {
@@ -1531,7 +1303,7 @@
             }
           },
           "400": {
-            "description": "Specified pipeline id is not a valid uuid.",
+            "description": "Pipeline is not running or paused",
             "content": {
               "application/json": {
                 "schema": {
@@ -1539,17 +1311,16 @@
                 },
                 "example": {
                   "details": {
-                    "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
-                    "value": "not_a_uuid"
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
                   },
-                  "error_code": "InvalidUuidParam",
-                  "message": "Invalid UUID string 'not_a_uuid': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1'"
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
                 }
               }
             }
           },
           "404": {
-            "description": "Specified pipeline id does not exist.",
+            "description": "Pipeline with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -1679,8 +1450,8 @@
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
                   },
-                  "error_code": "PipelineShutdown",
-                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running."
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
                 }
               }
             }
@@ -1753,27 +1524,6 @@
                 }
               }
             }
-          },
-          "500": {
-            "description": "Timeout waiting for the pipeline to initialize.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "timeout": {
-                      "nanos": 0,
-                      "secs": 10
-                    }
-                  },
-                  "error_code": "PipelineInitializationTimeout",
-                  "message": "Waiting for pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 initialization timed out after 10s"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -1788,8 +1538,8 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "Retrieve pipeline metrics and performance counters.",
-        "operationId": "pipeline_stats",
+        "summary": "Retrieve pipeline statistics (e.g., metrics, performance counters).",
+        "operationId": "get_pipeline_stats",
         "parameters": [
           {
             "name": "pipeline_name",
@@ -1813,25 +1563,7 @@
             }
           },
           "400": {
-            "description": "Specified pipeline id is not a valid uuid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
-                    "value": "not_a_uuid"
-                  },
-                  "error_code": "InvalidUuidParam",
-                  "message": "Invalid UUID string 'not_a_uuid': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1'"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified pipeline id does not exist.",
+            "description": "Pipeline is not running or paused",
             "content": {
               "application/json": {
                 "schema": {
@@ -1841,129 +1573,14 @@
                   "details": {
                     "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
                   },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
-    "/v0/pipelines/{pipeline_name}/validate": {
-      "get": {
-        "tags": [
-          "Pipelines"
-        ],
-        "summary": "Validate a pipeline.",
-        "description": "Checks whether a pipeline is configured correctly. This includes\nchecking whether the pipeline references a valid compiled program,\nwhether the connectors reference valid tables/views in the program,\nand more.",
-        "operationId": "pipeline_validate",
-        "parameters": [
-          {
-            "name": "pipeline_name",
-            "in": "path",
-            "description": "Unique pipeline name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Validate a Pipeline config.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid pipeline.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Invalid Pipeline ID": {
-                    "description": "Specified pipeline id is not a valid uuid.",
-                    "value": {
-                      "details": {
-                        "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
-                        "value": "not_a_uuid"
-                      },
-                      "error_code": "InvalidUuidParam",
-                      "message": "Invalid UUID string 'not_a_uuid': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1'"
-                    }
-                  },
-                  "Invalid table or view reference": {
-                    "description": "Connectors reference a view that doesn't exist.",
-                    "value": {
-                      "details": {
-                        "missing": [
-                          [
-                            "ac_name",
-                            "my_view"
-                          ]
-                        ]
-                      },
-                      "error_code": "ViewsNotInSchema",
-                      "message": "Pipeline configuration specifies invalid connector->view pairs 'ac_name -> my_view': The view(s) don't exist in the program"
-                    }
-                  },
-                  "Invalid table reference": {
-                    "description": "Connectors reference a table that doesn't exist.",
-                    "value": {
-                      "details": {
-                        "missing": [
-                          [
-                            "ac_name",
-                            "my_table"
-                          ]
-                        ]
-                      },
-                      "error_code": "TablesNotInSchema",
-                      "message": "Pipeline configuration specifies invalid connector->table pairs 'ac_name -> my_table': The table(s) don't exist in the program"
-                    }
-                  },
-                  "Program has compilation errors": {
-                    "description": "The program associated with the pipeline raised compilation error.",
-                    "value": {
-                      "details": null,
-                      "error_code": "ProgramFailedToCompile",
-                      "message": "The program attached to the pipeline did not compile successfully"
-                    }
-                  },
-                  "Program not compiled": {
-                    "description": "The program associated with this pipeline has not been compiled.",
-                    "value": {
-                      "details": null,
-                      "error_code": "ProgramNotCompiled",
-                      "message": "The program attached to the pipeline hasn't been compiled yet."
-                    }
-                  },
-                  "Program not set": {
-                    "description": "Pipeline does not have a program set.",
-                    "value": {
-                      "details": null,
-                      "error_code": "ProgramNotSet",
-                      "message": "The pipeline does not have a program attached"
-                    }
-                  }
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
                 }
               }
             }
           },
           "404": {
-            "description": "Specified pipeline id does not exist.",
+            "description": "Pipeline with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -1992,9 +1609,9 @@
         "tags": [
           "Pipelines"
         ],
-        "summary": "Change the desired state of the pipeline.",
-        "description": "This endpoint allows the user to control the execution of the pipeline,\nby changing its desired state attribute (see the discussion of the desired\nstate model in the [`PipelineStatus`] documentation).\n\nThe endpoint returns immediately after validating the request and forwarding\nit to the pipeline. The requested status change completes asynchronously.\nOn success, the pipeline enters the requested desired state.  On error, the\npipeline transitions to the `Failed` state. The user\ncan monitor the current status of the pipeline by polling the `GET\n/pipeline` endpoint.\n\nThe following values of the `action` argument are accepted by this endpoint:\n\n- 'start': Start processing data.\n- 'pause': Pause the pipeline.\n- 'shutdown': Terminate the execution of the pipeline.",
-        "operationId": "pipeline_action",
+        "summary": "Start, pause or shutdown a pipeline.",
+        "description": "The endpoint returns immediately after performing initial request validation\n(e.g., upon start checking the program is compiled) and initiating the relevant\nprocedure (e.g., informing the runner or the already running pipeline).\nThe state changes completely asynchronously. On error, the pipeline\ntransitions to the `Failed` state. The user can monitor the current status\nof the pipeline by polling the `GET /pipelines` and\n`GET /pipelines/{pipeline_name}` endpoint.\n\nThe following values of the `action` argument are accepted:\n- `start`: Start the pipeline\n- `pause`: Pause the pipeline\n- `shutdown`: Terminate the pipeline",
+        "operationId": "post_pipeline_action",
         "parameters": [
           {
             "name": "pipeline_name",
@@ -2008,7 +1625,7 @@
           {
             "name": "action",
             "in": "path",
-            "description": "Pipeline action [start, pause, shutdown]",
+            "description": "Pipeline action (one of: start, pause, shutdown)",
             "required": true,
             "schema": {
               "type": "string"
@@ -2017,118 +1634,53 @@
         ],
         "responses": {
           "202": {
-            "description": "Request accepted."
+            "description": "Action accepted and is being performed"
           },
           "400": {
-            "description": "Pipeline desired state is not valid.",
+            "description": "Unable to accept action",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
-                  "Action cannot be applied": {
-                    "description": "Action is not applicable in the current state of the pipeline.",
+                  "Illegal action": {
+                    "description": "Action is not applicable in the current state",
                     "value": {
                       "details": {
-                        "current_status": "ShuttingDown",
                         "desired_status": "Shutdown",
-                        "error": "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.",
-                        "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                        "requested_status": "Running"
+                        "hint": "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.",
+                        "requested_desired_status": "Running",
+                        "status": "ShuttingDown"
                       },
                       "error_code": "IllegalPipelineStateTransition",
-                      "message": "Action is not applicable in the current state of the pipeline: Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline."
-                    }
-                  },
-                  "Invalid Pipeline ID": {
-                    "description": "Specified pipeline id is not a valid uuid.",
-                    "value": {
-                      "details": {
-                        "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
-                        "value": "not_a_uuid"
-                      },
-                      "error_code": "InvalidUuidParam",
-                      "message": "Invalid UUID string 'not_a_uuid': 'invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1'"
+                      "message": "Deployment status (current: 'ShuttingDown', desired: 'Shutdown') cannot have desired changed to 'Running'. Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline."
                     }
                   },
                   "Invalid action": {
                     "description": "Invalid action specified",
                     "value": {
                       "details": {
-                        "action": "my_action"
+                        "action": "dance"
                       },
                       "error_code": "InvalidPipelineAction",
-                      "message": "Invalid pipeline action 'my_action'; valid actions are: 'deploy', 'start', 'pause', or 'shutdown'"
+                      "message": "Invalid pipeline action 'dance'; valid actions are: 'deploy', 'start', 'pause', or 'shutdown'"
                     }
                   },
-                  "Invalid table or view reference": {
-                    "description": "Connectors reference a view that doesn't exist.",
-                    "value": {
-                      "details": {
-                        "missing": [
-                          [
-                            "ac_name",
-                            "my_view"
-                          ]
-                        ]
-                      },
-                      "error_code": "ViewsNotInSchema",
-                      "message": "Pipeline configuration specifies invalid connector->view pairs 'ac_name -> my_view': The view(s) don't exist in the program"
-                    }
-                  },
-                  "Invalid table reference": {
-                    "description": "Connectors reference a table that doesn't exist.",
-                    "value": {
-                      "details": {
-                        "missing": [
-                          [
-                            "ac_name",
-                            "my_table"
-                          ]
-                        ]
-                      },
-                      "error_code": "TablesNotInSchema",
-                      "message": "Pipeline configuration specifies invalid connector->table pairs 'ac_name -> my_table': The table(s) don't exist in the program"
-                    }
-                  },
-                  "Invalidtable or view reference": {
-                    "description": "Connectors reference a view that doesn't exist.",
-                    "value": {
-                      "details": {
-                        "missing": [
-                          [
-                            "ac_name",
-                            "my_view"
-                          ]
-                        ]
-                      },
-                      "error_code": "ViewsNotInSchema",
-                      "message": "Pipeline configuration specifies invalid connector->view pairs 'ac_name -> my_view': The view(s) don't exist in the program"
-                    }
-                  },
-                  "Program has compilation errors": {
-                    "description": "The program associated with the pipeline raised compilation error.",
+                  "Program failed compilation": {
+                    "description": "Program failed compilation",
                     "value": {
                       "details": null,
                       "error_code": "ProgramFailedToCompile",
-                      "message": "The program attached to the pipeline did not compile successfully"
+                      "message": "The program did not compile successfully"
                     }
                   },
-                  "Program not compiled": {
-                    "description": "The program associated with this pipeline has not been compiled.",
+                  "Program not (yet) compiled": {
+                    "description": "Program has not (yet) been compiled",
                     "value": {
                       "details": null,
-                      "error_code": "ProgramNotCompiled",
-                      "message": "The program attached to the pipeline hasn't been compiled yet."
-                    }
-                  },
-                  "Program not set": {
-                    "description": "Pipeline does not have a program set.",
-                    "value": {
-                      "details": null,
-                      "error_code": "ProgramNotSet",
-                      "message": "The pipeline does not have a program attached"
+                      "error_code": "ProgramNotYetCompiled",
+                      "message": "The program hasn't been compiled yet"
                     }
                   }
                 }
@@ -2136,7 +1688,7 @@
             }
           },
           "404": {
-            "description": "Specified pipeline id does not exist.",
+            "description": "Pipeline with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
@@ -2148,820 +1700,6 @@
                   },
                   "error_code": "UnknownPipeline",
                   "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Timeout waiting for the pipeline to initialize.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
-                    "timeout": {
-                      "nanos": 0,
-                      "secs": 10
-                    }
-                  },
-                  "error_code": "PipelineInitializationTimeout",
-                  "message": "Waiting for pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 initialization timed out after 10s"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
-    "/v0/programs": {
-      "get": {
-        "tags": [
-          "Programs"
-        ],
-        "summary": "Fetch programs, optionally filtered by name or ID.",
-        "operationId": "get_programs",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "query",
-            "description": "Unique program identifier.",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "nullable": true
-            }
-          },
-          {
-            "name": "name",
-            "in": "query",
-            "description": "Unique program name.",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "with_code",
-            "in": "query",
-            "description": "Option to include the SQL program code or not\nin the Program objects returned by the query.\nIf false (default), the returned program object\nwill not include the code.",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "nullable": true
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of programs retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ProgramDescr"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified program name or ID does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Unknown program ID": {
-                    "value": {
-                      "details": {
-                        "program_id": "67e55044-10b1-426f-9247-bb680e5fe0c8"
-                      },
-                      "error_code": "UnknownProgram",
-                      "message": "Unknown program id '67e55044-10b1-426f-9247-bb680e5fe0c8'"
-                    }
-                  },
-                  "Unknown program name": {
-                    "value": {
-                      "details": {
-                        "name": "unknown_name"
-                      },
-                      "error_code": "UnknownName",
-                      "message": "An entity with name unknown_name was not found"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "Programs"
-        ],
-        "summary": "Create a new program.",
-        "operationId": "new_program",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewProgramRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Program created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NewProgramResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A program with this name already exists in the database",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": null,
-                  "error_code": "DuplicateName",
-                  "message": "An entity with this name already exists"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
-    "/v0/programs/{program_name}": {
-      "get": {
-        "tags": [
-          "Programs"
-        ],
-        "summary": "Fetch a program by name.",
-        "operationId": "get_program",
-        "parameters": [
-          {
-            "name": "program_name",
-            "in": "path",
-            "description": "Unique program name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "with_code",
-            "in": "query",
-            "description": "Option to include the SQL program code or not\nin the Program objects returned by the query.\nIf false (default), the returned program object\nwill not include the code.",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "nullable": true
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Program retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProgramDescr"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified program name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "name": "unknown_name"
-                  },
-                  "error_code": "UnknownName",
-                  "message": "An entity with name unknown_name was not found"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      },
-      "put": {
-        "tags": [
-          "Programs"
-        ],
-        "summary": "Create or replace a program.",
-        "operationId": "create_or_replace_program",
-        "parameters": [
-          {
-            "name": "program_name",
-            "in": "path",
-            "description": "Unique program name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateOrReplaceProgramRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Program updated successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateOrReplaceProgramResponse"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Program created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateOrReplaceProgramResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A program with this name already exists in the database",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": null,
-                  "error_code": "DuplicateName",
-                  "message": "An entity with this name already exists"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      },
-      "delete": {
-        "tags": [
-          "Programs"
-        ],
-        "summary": "Delete a program.",
-        "description": "Deletion fails if there is at least one pipeline associated with the\nprogram.",
-        "operationId": "delete_program",
-        "parameters": [
-          {
-            "name": "program_name",
-            "in": "path",
-            "description": "Unique program name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Program successfully deleted"
-          },
-          "400": {
-            "description": "Specified program is referenced by a pipeline",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "program_name": "unknown_name"
-                  },
-                  "error_code": "ProgramInUseByPipeline",
-                  "message": "Program named 'unknown_name' is in use by a pipeline"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified program name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "name": "unknown_name"
-                  },
-                  "error_code": "UnknownName",
-                  "message": "An entity with name unknown_name was not found"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      },
-      "patch": {
-        "tags": [
-          "Programs"
-        ],
-        "summary": "Change one or more of a program's code, description or name.",
-        "description": "If a program's code changes, any ongoing compilation gets cancelled,\nthe program status is reset to `None`, and the program version\nis incremented by 1.\n\nChanging only the program's name or description does not affect its\nversion or the compilation process.",
-        "operationId": "update_program",
-        "parameters": [
-          {
-            "name": "program_name",
-            "in": "path",
-            "description": "Unique program name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateProgramRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Program updated successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpdateProgramResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified program name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "name": "unknown_name"
-                  },
-                  "error_code": "UnknownName",
-                  "message": "An entity with name unknown_name was not found"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A program with this name already exists in the database",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": null,
-                  "error_code": "DuplicateName",
-                  "message": "An entity with this name already exists"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
-    "/v0/programs/{program_name}/compile": {
-      "post": {
-        "tags": [
-          "Programs"
-        ],
-        "summary": "Deprecated. Mark a program for compilation.",
-        "description": "The client can track a program's compilation status by polling the\n`/program/{program_name}` or `/programs` endpoints, and\nthen checking the `status` field of the program object.",
-        "operationId": "compile_program",
-        "parameters": [
-          {
-            "name": "program_name",
-            "in": "path",
-            "description": "Unique program name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CompileProgramRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "description": "Compilation request submitted"
-          },
-          "404": {
-            "description": "Specified program name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "name": "unknown_name"
-                  },
-                  "error_code": "UnknownName",
-                  "message": "An entity with name unknown_name was not found"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Program version specified in the request doesn't match the latest program version in the database",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "latest_version": 5
-                  },
-                  "error_code": "OutdatedProgramVersion",
-                  "message": "Outdated program version. Latest version: '5'"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
-    "/v0/services": {
-      "get": {
-        "tags": [
-          "Services"
-        ],
-        "summary": "Fetch services, optionally filtered by name, ID or configuration type.",
-        "operationId": "list_services",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "query",
-            "description": "If provided, will filter based on exact match of the service identifier.",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "nullable": true
-            }
-          },
-          {
-            "name": "name",
-            "in": "query",
-            "description": "If provided, will filter based on exact match of the service name.",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "config_type",
-            "in": "query",
-            "description": "If provided, will filter based on exact match of the configuration type.",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of services retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ServiceDescr"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified service name or ID does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Unknown service ID": {
-                    "value": {
-                      "details": {
-                        "service_id": "12345678-9123-4567-8912-345678912345"
-                      },
-                      "error_code": "UnknownService",
-                      "message": "Unknown service id '12345678-9123-4567-8912-345678912345'"
-                    }
-                  },
-                  "Unknown service name": {
-                    "value": {
-                      "details": {
-                        "name": "unknown_name"
-                      },
-                      "error_code": "UnknownName",
-                      "message": "An entity with name unknown_name was not found"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "Services"
-        ],
-        "summary": "Create a new service.",
-        "operationId": "new_service",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewServiceRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Service successfully created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NewServiceResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A service with this name already exists in the database",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": null,
-                  "error_code": "DuplicateName",
-                  "message": "An entity with this name already exists"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
-    "/v0/services/{service_name}": {
-      "get": {
-        "tags": [
-          "Services"
-        ],
-        "summary": "Fetch a service by name.",
-        "operationId": "get_service",
-        "parameters": [
-          {
-            "name": "service_name",
-            "in": "path",
-            "description": "Unique service name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Service retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ServiceDescr"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified service name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "name": "unknown_name"
-                  },
-                  "error_code": "UnknownName",
-                  "message": "An entity with name unknown_name was not found"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      },
-      "delete": {
-        "tags": [
-          "Services"
-        ],
-        "summary": "Delete an existing service.",
-        "operationId": "delete_service",
-        "parameters": [
-          {
-            "name": "service_name",
-            "in": "path",
-            "description": "Unique service name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Service successfully deleted"
-          },
-          "404": {
-            "description": "Specified service name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "name": "unknown_name"
-                  },
-                  "error_code": "UnknownName",
-                  "message": "An entity with name unknown_name was not found"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      },
-      "patch": {
-        "tags": [
-          "Services"
-        ],
-        "summary": "Update the name, description and/or configuration of a service.",
-        "operationId": "update_service",
-        "parameters": [
-          {
-            "name": "service_name",
-            "in": "path",
-            "description": "Unique service name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateServiceRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Service successfully updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpdateServiceResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Specified service name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "details": {
-                    "name": "unknown_name"
-                  },
-                  "error_code": "UnknownName",
-                  "message": "An entity with name unknown_name was not found"
                 }
               }
             }
@@ -2979,7 +1717,7 @@
     "schemas": {
       "ApiKeyDescr": {
         "type": "object",
-        "description": "ApiKey descriptor.",
+        "description": "API key descriptor.",
         "required": [
           "id",
           "name",
@@ -3003,48 +1741,15 @@
       "ApiKeyId": {
         "type": "string",
         "format": "uuid",
-        "description": "ApiKey ID."
+        "description": "API key identifier."
       },
       "ApiPermission": {
         "type": "string",
-        "description": "Permission types for invoking pipeline manager APIs",
+        "description": "Permission types for invoking API endpoints.",
         "enum": [
           "Read",
           "Write"
         ]
-      },
-      "AttachedConnector": {
-        "type": "object",
-        "description": "Format to add attached connectors during a config update.",
-        "required": [
-          "name",
-          "is_input",
-          "connector_name",
-          "relation_name"
-        ],
-        "properties": {
-          "connector_name": {
-            "type": "string",
-            "description": "The name of the connector to attach."
-          },
-          "is_input": {
-            "type": "boolean",
-            "description": "True for input connectors, false for output connectors."
-          },
-          "name": {
-            "type": "string",
-            "description": "A unique identifier for this attachement."
-          },
-          "relation_name": {
-            "type": "string",
-            "description": "The table or view this connector is attached to. Unquoted\ntable/view names in the SQL program need to be capitalized\nhere. Quoted table/view names have to exactly match the\ncasing from the SQL program."
-          }
-        }
-      },
-      "AttachedConnectorId": {
-        "type": "string",
-        "format": "uuid",
-        "description": "Unique attached connector id."
       },
       "AuthProvider": {
         "oneOf": [
@@ -3216,18 +1921,6 @@
           "optimized"
         ]
       },
-      "CompileProgramRequest": {
-        "type": "object",
-        "description": "Request to queue a program for compilation.",
-        "required": [
-          "version"
-        ],
-        "properties": {
-          "version": {
-            "$ref": "#/components/schemas/Version"
-          }
-        }
-      },
       "ConnectorConfig": {
         "allOf": [
           {
@@ -3265,35 +1958,6 @@
         ],
         "description": "A data connector's configuration"
       },
-      "ConnectorDescr": {
-        "type": "object",
-        "description": "Connector descriptor.",
-        "required": [
-          "connector_id",
-          "name",
-          "description",
-          "config"
-        ],
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/ConnectorConfig"
-          },
-          "connector_id": {
-            "$ref": "#/components/schemas/ConnectorId"
-          },
-          "description": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
-      "ConnectorId": {
-        "type": "string",
-        "format": "uuid",
-        "description": "Unique connector id."
-      },
       "ConsumeStrategy": {
         "oneOf": [
           {
@@ -3327,162 +1991,6 @@
         ],
         "description": "Strategy to feed a fetched object into an InputConsumer."
       },
-      "CreateOrReplaceConnectorRequest": {
-        "type": "object",
-        "description": "Request to create or replace a connector.",
-        "required": [
-          "description",
-          "config"
-        ],
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/ConnectorConfig"
-          },
-          "description": {
-            "type": "string",
-            "description": "New connector description."
-          }
-        }
-      },
-      "CreateOrReplaceConnectorResponse": {
-        "type": "object",
-        "description": "Response to a create or replace connector request.",
-        "required": [
-          "connector_id"
-        ],
-        "properties": {
-          "connector_id": {
-            "$ref": "#/components/schemas/ConnectorId"
-          }
-        }
-      },
-      "CreateOrReplacePipelineRequest": {
-        "type": "object",
-        "description": "Request to create or replace an existing pipeline.",
-        "required": [
-          "description",
-          "config"
-        ],
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/RuntimeConfig"
-          },
-          "connectors": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AttachedConnector"
-            },
-            "description": "Attached connectors.",
-            "nullable": true
-          },
-          "description": {
-            "type": "string",
-            "description": "Pipeline description."
-          },
-          "program_name": {
-            "type": "string",
-            "description": "Name of the program to create a pipeline for.",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "CreateOrReplacePipelineResponse": {
-        "type": "object",
-        "description": "Response to a pipeline create or replace request.",
-        "required": [
-          "pipeline_id",
-          "version"
-        ],
-        "properties": {
-          "pipeline_id": {
-            "$ref": "#/components/schemas/PipelineId"
-          },
-          "version": {
-            "$ref": "#/components/schemas/Version"
-          }
-        }
-      },
-      "CreateOrReplaceProgramRequest": {
-        "type": "object",
-        "description": "Request to create or replace a program.",
-        "required": [
-          "description",
-          "code"
-        ],
-        "properties": {
-          "code": {
-            "type": "string",
-            "description": "SQL code of the program.",
-            "example": "CREATE TABLE example(name VARCHAR);"
-          },
-          "config": {
-            "$ref": "#/components/schemas/ProgramConfig"
-          },
-          "description": {
-            "type": "string",
-            "description": "Program description.",
-            "example": "Example description"
-          }
-        }
-      },
-      "CreateOrReplaceProgramResponse": {
-        "type": "object",
-        "description": "Response to a create or replace program request.",
-        "required": [
-          "program_id",
-          "version"
-        ],
-        "properties": {
-          "program_id": {
-            "$ref": "#/components/schemas/ProgramId"
-          },
-          "version": {
-            "$ref": "#/components/schemas/Version"
-          }
-        }
-      },
-      "CreateOrReplaceServiceRequest": {
-        "type": "object",
-        "description": "Request to create or replace a service.",
-        "required": [
-          "description",
-          "config"
-        ],
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/ServiceConfig"
-          },
-          "description": {
-            "type": "string",
-            "description": "Service description."
-          }
-        }
-      },
-      "CreateOrReplaceServiceResponse": {
-        "type": "object",
-        "description": "Response to a create or replace service request.",
-        "required": [
-          "service_id"
-        ],
-        "properties": {
-          "service_id": {
-            "$ref": "#/components/schemas/ServiceId"
-          }
-        }
-      },
-      "CsvEncoderConfig": {
-        "type": "object",
-        "properties": {
-          "buffer_size_records": {
-            "type": "integer",
-            "minimum": 0
-          }
-        }
-      },
-      "CsvParserConfig": {
-        "type": "object"
-      },
       "DatagenInputConfig": {
         "type": "object",
         "description": "Configuration for generating random data for a table.",
@@ -3497,7 +2005,7 @@
           "seed": {
             "type": "integer",
             "format": "int64",
-            "description": "Optional seed for the random generator.\n\nSetting this to a fixed value will make the generator produce the same sequence of records\nevery time the pipeline is run.",
+            "description": "Optional seed for the random generator.\n\nSetting this to a fixed value will make the generator produce the same sequence of records\nevery time the pipeline is run.\n\n# Notes\n- To ensure the set of generated input records is deterministic across multiple runs,\napart from setting a seed, `workers` also needs to remain unchanged.\n- The input will arrive in non-deterministic order if `workers > 1`.",
             "nullable": true,
             "minimum": 0
           },
@@ -3509,82 +2017,82 @@
         }
       },
       "DatagenStrategy": {
-        "oneOf": [
-          {
-            "type": "object",
-            "description": "Whether the field should be incremented for each new\nrecord rather than generated randomly.\n\nA scale factor can be set as the `param` field to apply a multiplier to the increment.\nThe default scale factor is 1.",
-            "required": [
-              "name"
-            ],
-            "properties": {
-              "name": {
-                "type": "string",
-                "enum": [
-                  "increment"
-                ]
-              },
-              "scale": {
-                "type": "integer",
-                "format": "int64"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "name"
-            ],
-            "properties": {
-              "name": {
-                "type": "string",
-                "enum": [
-                  "uniform"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A Zipf distribution is chosen with the specified exponent (`s`) and\n`n` (set automatically) for the range `[1..n]` to generate the value in.\n\nNote that the Zipf distribution is only available for numbers or types that\nspecify `values` or `range`.\n\n- In case `values` is set, the `n` is set to `values.len()`.\n- In case `values` is not set, `n` is set to the length of the `range`.\n- In case `range` is not set, the `n` is set to cover the default range of the type.",
-            "required": [
-              "name"
-            ],
-            "properties": {
-              "name": {
-                "type": "string",
-                "enum": [
-                  "zipf"
-                ]
-              },
-              "s": {
-                "type": "integer",
-                "minimum": 0
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A strategy to produce a random string for various data.\n\n- This strategy is only available for string types.",
-            "required": [
-              "name"
-            ],
-            "properties": {
-              "method": {
-                "$ref": "#/components/schemas/StringMethod"
-              },
-              "name": {
-                "type": "string",
-                "enum": [
-                  "string"
-                ]
-              }
-            }
-          }
-        ],
+        "type": "string",
         "description": "Strategy used to generate values.",
-        "discriminator": {
-          "propertyName": "name"
-        }
+        "enum": [
+          "increment",
+          "uniform",
+          "zipf",
+          "word",
+          "words",
+          "sentence",
+          "sentences",
+          "paragraph",
+          "paragraphs",
+          "first_name",
+          "last_name",
+          "title",
+          "suffix",
+          "name",
+          "name_with_title",
+          "domain_suffix",
+          "email",
+          "username",
+          "password",
+          "field",
+          "position",
+          "seniority",
+          "job_title",
+          "i_pv4",
+          "i_pv6",
+          "i_p",
+          "m_a_c_address",
+          "user_agent",
+          "rfc_status_code",
+          "valid_status_code",
+          "company_suffix",
+          "company_name",
+          "buzzword",
+          "buzzword_middle",
+          "buzzword_tail",
+          "catch_phrase",
+          "bs_verb",
+          "bs_adj",
+          "bs_noun",
+          "bs",
+          "profession",
+          "industry",
+          "currency_code",
+          "currency_name",
+          "currency_symbol",
+          "credit_card_number",
+          "city_prefix",
+          "city_suffix",
+          "city_name",
+          "country_name",
+          "country_code",
+          "street_suffix",
+          "street_name",
+          "time_zone",
+          "state_name",
+          "state_abbr",
+          "secondary_address_type",
+          "secondary_address",
+          "zip_code",
+          "post_code",
+          "building_number",
+          "latitude",
+          "longitude",
+          "isbn",
+          "isbn13",
+          "isbn10",
+          "phone_number",
+          "cell_number",
+          "file_path",
+          "file_name",
+          "file_extension",
+          "dir_path"
+        ]
       },
       "DeltaTableIngestMode": {
         "type": "string",
@@ -3670,27 +2178,15 @@
         "type": "object",
         "required": [
           "title",
-          "description",
-          "prefix",
-          "steps"
+          "pipeline"
         ],
         "properties": {
-          "description": {
-            "type": "string",
-            "description": "Description of the demo."
-          },
-          "prefix": {
-            "type": "string",
-            "description": "Demo prefix prepended to each of the entities."
-          },
-          "steps": {
-            "type": "array",
-            "items": {},
-            "description": "The steps which define the entities to create."
+          "pipeline": {
+            "$ref": "#/components/schemas/PipelineDescr"
           },
           "title": {
             "type": "string",
-            "description": "Title of the demo."
+            "description": "Demo title."
           }
         }
       },
@@ -3723,6 +2219,212 @@
             "type": "string",
             "description": "Human-readable error message.",
             "example": "Unknown input format 'xml'."
+          }
+        }
+      },
+      "ExtendedPipelineDescr": {
+        "type": "object",
+        "description": "Pipeline descriptor which besides the basic fields in direct regular control of the user\nalso has all additional fields generated and maintained by the back-end.",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "version",
+          "created_at",
+          "runtime_config",
+          "program_code",
+          "program_config",
+          "program_version",
+          "program_status",
+          "program_status_since",
+          "deployment_status",
+          "deployment_status_since",
+          "deployment_desired_status"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the pipeline was originally created."
+          },
+          "deployment_config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PipelineConfig"
+              }
+            ],
+            "nullable": true
+          },
+          "deployment_desired_status": {
+            "$ref": "#/components/schemas/PipelineStatus"
+          },
+          "deployment_error": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ErrorResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "deployment_location": {
+            "type": "string",
+            "description": "Location where the pipeline can be reached at runtime\n(e.g., a TCP port number or a URI).",
+            "nullable": true
+          },
+          "deployment_status": {
+            "$ref": "#/components/schemas/PipelineStatus"
+          },
+          "deployment_status_since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time when the pipeline was assigned its current status\nof the pipeline."
+          },
+          "description": {
+            "type": "string",
+            "description": "Pipeline description."
+          },
+          "id": {
+            "$ref": "#/components/schemas/PipelineId"
+          },
+          "name": {
+            "type": "string",
+            "description": "Pipeline name."
+          },
+          "program_binary_url": {
+            "type": "string",
+            "description": "URL where to download the program binary from.",
+            "nullable": true
+          },
+          "program_code": {
+            "type": "string",
+            "description": "Program SQL code."
+          },
+          "program_config": {
+            "$ref": "#/components/schemas/ProgramConfig"
+          },
+          "program_info": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramInfo"
+              }
+            ],
+            "nullable": true
+          },
+          "program_status": {
+            "$ref": "#/components/schemas/ProgramStatus"
+          },
+          "program_status_since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the current program status was set."
+          },
+          "program_version": {
+            "$ref": "#/components/schemas/Version"
+          },
+          "runtime_config": {
+            "$ref": "#/components/schemas/RuntimeConfig"
+          },
+          "version": {
+            "$ref": "#/components/schemas/Version"
+          }
+        }
+      },
+      "ExtendedPipelineDescrOptionalCode": {
+        "type": "object",
+        "description": "Extended pipeline descriptor with code being optionally included.",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "version",
+          "created_at",
+          "runtime_config",
+          "program_config",
+          "program_version",
+          "program_status",
+          "program_status_since",
+          "deployment_status",
+          "deployment_status_since",
+          "deployment_desired_status"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deployment_config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PipelineConfig"
+              }
+            ],
+            "nullable": true
+          },
+          "deployment_desired_status": {
+            "$ref": "#/components/schemas/PipelineStatus"
+          },
+          "deployment_error": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ErrorResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "deployment_location": {
+            "type": "string",
+            "nullable": true
+          },
+          "deployment_status": {
+            "$ref": "#/components/schemas/PipelineStatus"
+          },
+          "deployment_status_since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/PipelineId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "program_binary_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "program_code": {
+            "type": "string",
+            "nullable": true
+          },
+          "program_config": {
+            "$ref": "#/components/schemas/ProgramConfig"
+          },
+          "program_info": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramInfo"
+              }
+            ],
+            "nullable": true
+          },
+          "program_status": {
+            "$ref": "#/components/schemas/ProgramStatus"
+          },
+          "program_status_since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "program_version": {
+            "$ref": "#/components/schemas/Version"
+          },
+          "runtime_config": {
+            "$ref": "#/components/schemas/RuntimeConfig"
+          },
+          "version": {
+            "$ref": "#/components/schemas/Version"
           }
         }
       },
@@ -3801,9 +2503,6 @@
       "GenerationPlan": {
         "type": "object",
         "description": "A random generation plan for a table that generates either a limited amount of rows or runs continuously.",
-        "required": [
-          "fields"
-        ],
         "properties": {
           "fields": {
             "type": "object",
@@ -3819,12 +2518,11 @@
             "minimum": 0
           },
           "rate": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/NonZeroU32"
-              }
-            ],
-            "nullable": true
+            "type": "integer",
+            "format": "int32",
+            "description": "Non-zero number of rows to generate per second.\n\nIf not set, the generator will produce rows as fast as possible.",
+            "nullable": true,
+            "minimum": 0
           }
         }
       },
@@ -3866,57 +2564,6 @@
           "YEAR",
           "YEARTOMONTH"
         ]
-      },
-      "JsonEncoderConfig": {
-        "type": "object",
-        "properties": {
-          "array": {
-            "type": "boolean"
-          },
-          "buffer_size_records": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "json_flavor": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/JsonFlavor"
-              }
-            ],
-            "nullable": true
-          },
-          "update_format": {
-            "$ref": "#/components/schemas/JsonUpdateFormat"
-          }
-        }
-      },
-      "JsonFlavor": {
-        "type": "string",
-        "description": "Specifies JSON encoding used of table records.",
-        "enum": [
-          "default",
-          "debezium_mysql",
-          "debezium_postgres",
-          "snowflake",
-          "kafka_connect_json_converter",
-          "pandas"
-        ]
-      },
-      "JsonParserConfig": {
-        "type": "object",
-        "description": "JSON parser configuration.\n\nDescribes the shape of an input JSON stream.\n\n# Examples\n\nA configuration with `update_format=\"raw\"` and `array=false`\nis used to parse a stream of JSON objects without any envelope\nthat get inserted in the input table.\n\n```json\n{\"b\": false, \"i\": 100, \"s\": \"foo\"}\n{\"b\": true, \"i\": 5, \"s\": \"bar\"}\n```\n\nA configuration with `update_format=\"insert_delete\"` and\n`array=false` is used to parse a stream of JSON data change events\nin the insert/delete format:\n\n```json\n{\"delete\": {\"b\": false, \"i\": 15, \"s\": \"\"}}\n{\"insert\": {\"b\": false, \"i\": 100, \"s\": \"foo\"}}\n```\n\nA configuration with `update_format=\"insert_delete\"` and\n`array=true` is used to parse a stream of JSON arrays\nwhere each array contains multiple data change events in\nthe insert/delete format.\n\n```json\n[{\"insert\": {\"b\": true, \"i\": 0}}, {\"delete\": {\"b\": false, \"i\": 100, \"s\": \"foo\"}}]\n```",
-        "properties": {
-          "array": {
-            "type": "boolean",
-            "description": "Set to `true` if updates in this stream are packaged into JSON arrays.\n\n# Example\n\n```json\n[{\"b\": true, \"i\": 0},{\"b\": false, \"i\": 100, \"s\": \"foo\"}]\n```"
-          },
-          "json_flavor": {
-            "$ref": "#/components/schemas/JsonFlavor"
-          },
-          "update_format": {
-            "$ref": "#/components/schemas/JsonUpdateFormat"
-          }
-        }
       },
       "JsonUpdateFormat": {
         "type": "string",
@@ -4142,27 +2789,13 @@
           }
         }
       },
-      "KafkaService": {
+      "ListPipelinesQueryParameters": {
         "type": "object",
-        "description": "Configuration for accessing a Kafka service.",
-        "required": [
-          "bootstrap_servers",
-          "options"
-        ],
+        "description": "Query parameters for GET the list of pipelines.",
         "properties": {
-          "bootstrap_servers": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "List of bootstrap servers, each formatted as hostname:port (e.g.,\n\"example.com:1234\"). It will be used to set the `bootstrap.servers`\nKafka option."
-          },
-          "options": {
-            "type": "object",
-            "description": "Additional Kafka options.\n\nShould not contain the bootstrap.servers key\nas it is passed explicitly via its field.\n\nThese options will likely encompass things\nlike SSL and authentication configuration.",
-            "additionalProperties": {
-              "type": "string"
-            }
+          "code": {
+            "type": "boolean",
+            "description": "Whether to include program code in the response (default: `true`).\nPassing `false` reduces the response size, which is particularly handy\nwhen frequently monitoring the endpoint over low bandwidth connections."
           }
         }
       },
@@ -4228,171 +2861,6 @@
           }
         }
       },
-      "NewConnectorRequest": {
-        "type": "object",
-        "description": "Request to create a new connector.",
-        "required": [
-          "name",
-          "description",
-          "config"
-        ],
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/ConnectorConfig"
-          },
-          "description": {
-            "type": "string",
-            "description": "Connector description."
-          },
-          "name": {
-            "type": "string",
-            "description": "Connector name."
-          }
-        }
-      },
-      "NewConnectorResponse": {
-        "type": "object",
-        "description": "Response to a connector creation request.",
-        "required": [
-          "connector_id"
-        ],
-        "properties": {
-          "connector_id": {
-            "$ref": "#/components/schemas/ConnectorId"
-          }
-        }
-      },
-      "NewPipelineRequest": {
-        "type": "object",
-        "description": "Request to create a new pipeline.",
-        "required": [
-          "name",
-          "description",
-          "config"
-        ],
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/RuntimeConfig"
-          },
-          "connectors": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AttachedConnector"
-            },
-            "description": "Attached connectors.",
-            "nullable": true
-          },
-          "description": {
-            "type": "string",
-            "description": "Pipeline description."
-          },
-          "name": {
-            "type": "string",
-            "description": "Unique pipeline name."
-          },
-          "program_name": {
-            "type": "string",
-            "description": "Name of the program to create a pipeline for.",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "NewPipelineResponse": {
-        "type": "object",
-        "description": "Response to a pipeline creation request.",
-        "required": [
-          "pipeline_id",
-          "version"
-        ],
-        "properties": {
-          "pipeline_id": {
-            "$ref": "#/components/schemas/PipelineId"
-          },
-          "version": {
-            "$ref": "#/components/schemas/Version"
-          }
-        }
-      },
-      "NewProgramRequest": {
-        "type": "object",
-        "description": "Request to create a new program.",
-        "required": [
-          "name",
-          "description",
-          "code"
-        ],
-        "properties": {
-          "code": {
-            "type": "string",
-            "description": "SQL code of the program.",
-            "example": "CREATE TABLE example(name VARCHAR);"
-          },
-          "config": {
-            "$ref": "#/components/schemas/ProgramConfig"
-          },
-          "description": {
-            "type": "string",
-            "description": "Program description.",
-            "example": "Example description"
-          },
-          "name": {
-            "type": "string",
-            "description": "Program name.",
-            "example": "example-program"
-          }
-        }
-      },
-      "NewProgramResponse": {
-        "type": "object",
-        "description": "Response to a new program request.",
-        "required": [
-          "program_id",
-          "version"
-        ],
-        "properties": {
-          "program_id": {
-            "$ref": "#/components/schemas/ProgramId"
-          },
-          "version": {
-            "$ref": "#/components/schemas/Version"
-          }
-        }
-      },
-      "NewServiceRequest": {
-        "type": "object",
-        "description": "Request to create a new service.",
-        "required": [
-          "name",
-          "description",
-          "config"
-        ],
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/ServiceConfig"
-          },
-          "description": {
-            "type": "string",
-            "description": "Service description."
-          },
-          "name": {
-            "type": "string",
-            "description": "Service name."
-          }
-        }
-      },
-      "NewServiceResponse": {
-        "type": "object",
-        "description": "Response to a service creation request.",
-        "required": [
-          "service_id"
-        ],
-        "properties": {
-          "service_id": {
-            "$ref": "#/components/schemas/ServiceId"
-          }
-        }
-      },
       "OutputBufferConfig": {
         "type": "object",
         "properties": {
@@ -4441,33 +2909,37 @@
           "quantiles"
         ]
       },
-      "ParquetEncoderConfig": {
+      "PatchPipeline": {
         "type": "object",
+        "description": "Patch (partially) update the pipeline.\n\nNote that the patching only applies to the main fields, not subfields.\nFor instance, it is not possible to update only the number of workers;\nit is required to again pass the whole runtime configuration with the\nchange.",
         "properties": {
-          "buffer_size_records": {
-            "type": "integer",
-            "description": "Number of records before a new parquet file is written.\n\nThe default is 100_000.",
-            "minimum": 0
-          }
-        }
-      },
-      "ParquetParserConfig": {
-        "type": "object",
-        "description": "Configuration for the parquet parser."
-      },
-      "Pipeline": {
-        "type": "object",
-        "description": "State of a pipeline, including static configuration\nand runtime status.",
-        "required": [
-          "descriptor",
-          "state"
-        ],
-        "properties": {
-          "descriptor": {
-            "$ref": "#/components/schemas/PipelineDescr"
+          "description": {
+            "type": "string",
+            "nullable": true
           },
-          "state": {
-            "$ref": "#/components/schemas/PipelineRuntimeState"
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "program_code": {
+            "type": "string",
+            "nullable": true
+          },
+          "program_config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramConfig"
+              }
+            ],
+            "nullable": true
+          },
+          "runtime_config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeConfig"
+              }
+            ],
+            "nullable": true
           }
         }
       },
@@ -4479,7 +2951,7 @@
             "properties": {
               "cpu_profiler": {
                 "type": "boolean",
-                "description": "Enable CPU profiler."
+                "description": "Enable CPU profiler.\n\nThe default value is `true`."
               },
               "max_buffering_delay_usecs": {
                 "type": "integer",
@@ -4558,143 +3030,47 @@
             }
           }
         ],
-        "description": "Pipeline configuration specified by the user when creating\na new pipeline instance.\n\nThis is the shape of the overall pipeline configuration. It encapsulates a\n[`RuntimeConfig`], which is the publicly exposed way for users to configure\npipelines."
+        "description": "Pipeline deployment configuration.\nIt represents configuration entries directly provided by the user\n(e.g., runtime configuration) and entries derived from the schema\nof the compiled program (e.g., connectors). Storage configuration,\nif applicable, is set by the runner."
       },
       "PipelineDescr": {
         "type": "object",
         "description": "Pipeline descriptor.",
         "required": [
-          "pipeline_id",
-          "version",
           "name",
           "description",
-          "config",
-          "attached_connectors"
+          "runtime_config",
+          "program_code",
+          "program_config"
         ],
         "properties": {
-          "attached_connectors": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AttachedConnector"
-            }
-          },
-          "config": {
-            "$ref": "#/components/schemas/RuntimeConfig"
-          },
           "description": {
-            "type": "string"
+            "type": "string",
+            "description": "Pipeline description."
           },
           "name": {
-            "type": "string"
-          },
-          "pipeline_id": {
-            "$ref": "#/components/schemas/PipelineId"
-          },
-          "program_name": {
             "type": "string",
-            "nullable": true
+            "description": "Pipeline name."
           },
-          "version": {
-            "$ref": "#/components/schemas/Version"
+          "program_code": {
+            "type": "string",
+            "description": "Program SQL code."
+          },
+          "program_config": {
+            "$ref": "#/components/schemas/ProgramConfig"
+          },
+          "runtime_config": {
+            "$ref": "#/components/schemas/RuntimeConfig"
           }
         }
       },
       "PipelineId": {
         "type": "string",
         "format": "uuid",
-        "description": "Unique pipeline id."
-      },
-      "PipelineRevision": {
-        "type": "object",
-        "description": "A pipeline revision is a versioned, immutable configuration struct that\ncontains all information necessary to run a pipeline.",
-        "required": [
-          "revision",
-          "pipeline",
-          "connectors",
-          "services_for_connectors",
-          "program",
-          "config"
-        ],
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/PipelineConfig"
-          },
-          "connectors": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ConnectorDescr"
-            },
-            "description": "The versioned connectors."
-          },
-          "pipeline": {
-            "$ref": "#/components/schemas/PipelineDescr"
-          },
-          "program": {
-            "$ref": "#/components/schemas/ProgramDescr"
-          },
-          "revision": {
-            "$ref": "#/components/schemas/Revision"
-          },
-          "services_for_connectors": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": {
-                "$ref": "#/components/schemas/ServiceDescr"
-              }
-            },
-            "description": "The versioned services for each connector."
-          }
-        }
-      },
-      "PipelineRuntimeState": {
-        "type": "object",
-        "description": "Runtime state of the pipeine.",
-        "required": [
-          "pipeline_id",
-          "location",
-          "desired_status",
-          "current_status",
-          "status_since",
-          "created"
-        ],
-        "properties": {
-          "created": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Time when the pipeline started executing."
-          },
-          "current_status": {
-            "$ref": "#/components/schemas/PipelineStatus"
-          },
-          "desired_status": {
-            "$ref": "#/components/schemas/PipelineStatus"
-          },
-          "error": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ErrorResponse"
-              }
-            ],
-            "nullable": true
-          },
-          "location": {
-            "type": "string",
-            "description": "Location where the pipeline can be reached at runtime.\ne.g., a TCP port number or a URI."
-          },
-          "pipeline_id": {
-            "$ref": "#/components/schemas/PipelineId"
-          },
-          "status_since": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Time when the pipeline was assigned its current status\nof the pipeline."
-          }
-        }
+        "description": "Pipeline identifier."
       },
       "PipelineStatus": {
         "type": "string",
-        "description": "Pipeline status.\n\nThis type represents the state of the pipeline tracked by the pipeline\nrunner and observed by the API client via the `GET /pipeline` endpoint.\n\n### The lifecycle of a pipeline\n\nThe following automaton captures the lifecycle of the pipeline.  Individual\nstates and transitions of the automaton are described below.\n\n* In addition to the transitions shown in the diagram, all states have an\nimplicit \"forced shutdown\" transition to the `Shutdown` state.  This\ntransition is triggered when the pipeline runner is unable to communicate\nwith the pipeline and thereby forces a shutdown.\n\n* States labeled with the hourglass symbol (⌛) are **timed** states.  The\nautomaton stays in timed state until the corresponding operation completes\nor until the runner performs a forced shutdown of the pipeline after a\npre-defined timeout perioud.\n\n* State transitions labeled with API endpoint names (`/deploy`, `/start`,\n`/pause`, `/shutdown`) are triggered by invoking corresponding endpoint,\ne.g., `POST /v0/pipelines/{pipeline_id}/start`.\n\n```text\nShutdown◄────┐\n│         │\n/deploy│         │\n│   ⌛ShuttingDown\n▼         ▲\n⌛Provisioning    │\n│         │\nProvisioned        │         │\n▼         │/shutdown\n⌛Initializing    │\n│         │\n┌────────┴─────────┴─┐\n│        ▼           │\n│      Paused        │\n│      │    ▲        │\n│/start│    │/pause  │\n│      ▼    │        │\n│     Running        │\n└──────────┬─────────┘\n│\n▼\nFailed\n```\n\n### Desired and actual status\n\nWe use the desired state model to manage the lifecycle of a pipeline.\nIn this model, the pipeline has two status attributes associated with\nit at runtime: the **desired** status, which represents what the user\nwould like the pipeline to do, and the **current** status, which\nrepresents the actual state of the pipeline.  The pipeline runner\nservice continuously monitors both fields and steers the pipeline\ntowards the desired state specified by the user.\nOnly three of the states in the pipeline automaton above can be\nused as desired statuses: `Paused`, `Running`, and `Shutdown`.\nThese statuses are selected by invoking REST endpoints shown\nin the diagram.\n\nThe user can monitor the current state of the pipeline via the\n`/status` endpoint, which returns an object of type `Pipeline`.\nIn a typical scenario, the user first sets\nthe desired state, e.g., by invoking the `/deploy` endpoint, and\nthen polls the `GET /pipeline` endpoint to monitor the actual status\nof the pipeline until its `state.current_status` attribute changes\nto \"paused\" indicating that the pipeline has been successfully\ninitialized, or \"failed\", indicating an error.",
+        "description": "Pipeline status.\n\nThis type represents the state of the pipeline tracked by the pipeline\nrunner and observed by the API client via the `GET /pipeline` endpoint.\n\n### The lifecycle of a pipeline\n\nThe following automaton captures the lifecycle of the pipeline.  Individual\nstates and transitions of the automaton are described below.\n\n* In addition to the transitions shown in the diagram, all states have an\nimplicit \"forced shutdown\" transition to the `Shutdown` state.  This\ntransition is triggered when the pipeline runner is unable to communicate\nwith the pipeline and thereby forces a shutdown.\n\n* States labeled with the hourglass symbol (⌛) are **timed** states.  The\nautomaton stays in timed state until the corresponding operation completes\nor until the runner performs a forced shutdown of the pipeline after a\npre-defined timeout period.\n\n* State transitions labeled with API endpoint names (`/deploy`, `/start`,\n`/pause`, `/shutdown`) are triggered by invoking corresponding endpoint,\ne.g., `POST /v0/pipelines/{pipeline_id}/start`.\n\n```text\nShutdown◄────┐\n│         │\n/deploy│         │\n│   ⌛ShuttingDown\n▼         ▲\n⌛Provisioning    │\n│         │\nProvisioned        │         │\n▼         │/shutdown\n⌛Initializing    │\n│         │\n┌────────┴─────────┴─┐\n│        ▼           │\n│      Paused        │\n│      │    ▲        │\n│/start│    │/pause  │\n│      ▼    │        │\n│     Running        │\n└──────────┬─────────┘\n│\n▼\nFailed\n```\n\n### Desired and actual status\n\nWe use the desired state model to manage the lifecycle of a pipeline.\nIn this model, the pipeline has two status attributes associated with\nit at runtime: the **desired** status, which represents what the user\nwould like the pipeline to do, and the **current** status, which\nrepresents the actual state of the pipeline.  The pipeline runner\nservice continuously monitors both fields and steers the pipeline\ntowards the desired state specified by the user.\nOnly three of the states in the pipeline automaton above can be\nused as desired statuses: `Paused`, `Running`, and `Shutdown`.\nThese statuses are selected by invoking REST endpoints shown\nin the diagram.\n\nThe user can monitor the current state of the pipeline via the\n`/status` endpoint, which returns an object of type `Pipeline`.\nIn a typical scenario, the user first sets\nthe desired state, e.g., by invoking the `/deploy` endpoint, and\nthen polls the `GET /pipeline` endpoint to monitor the actual status\nof the pipeline until its `state.current_status` attribute changes\nto \"paused\" indicating that the pipeline has been successfully\ninitialized, or \"failed\", indicating an error.",
         "enum": [
           "Shutdown",
           "Provisioning",
@@ -4719,57 +3095,33 @@
           }
         }
       },
-      "ProgramDescr": {
+      "ProgramInfo": {
         "type": "object",
-        "description": "Program descriptor.",
+        "description": "Program information which includes schema, input connectors and output connectors.",
         "required": [
-          "program_id",
-          "name",
-          "description",
-          "version",
-          "status",
-          "config"
+          "schema",
+          "input_connectors",
+          "output_connectors"
         ],
         "properties": {
-          "code": {
-            "type": "string",
-            "description": "SQL code",
-            "nullable": true
+          "input_connectors": {
+            "type": "object",
+            "description": "Input connectors derived from the schema.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InputEndpointConfig"
+            }
           },
-          "config": {
-            "$ref": "#/components/schemas/ProgramConfig"
-          },
-          "description": {
-            "type": "string",
-            "description": "Program description."
-          },
-          "name": {
-            "type": "string",
-            "description": "Program name (doesn't have to be unique)."
-          },
-          "program_id": {
-            "$ref": "#/components/schemas/ProgramId"
+          "output_connectors": {
+            "type": "object",
+            "description": "Output connectors derived from the schema.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OutputEndpointConfig"
+            }
           },
           "schema": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ProgramSchema"
-              }
-            ],
-            "nullable": true
-          },
-          "status": {
-            "$ref": "#/components/schemas/ProgramStatus"
-          },
-          "version": {
-            "$ref": "#/components/schemas/Version"
+            "$ref": "#/components/schemas/ProgramSchema"
           }
         }
-      },
-      "ProgramId": {
-        "type": "string",
-        "format": "uuid",
-        "description": "Unique program id."
       },
       "ProgramSchema": {
         "type": "object",
@@ -4864,6 +3216,25 @@
           }
         ],
         "description": "Program compilation status."
+      },
+      "PropertyValue": {
+        "type": "object",
+        "required": [
+          "value",
+          "key_position",
+          "value_position"
+        ],
+        "properties": {
+          "key_position": {
+            "$ref": "#/components/schemas/SourcePosition"
+          },
+          "value": {
+            "type": "string"
+          },
+          "value_position": {
+            "$ref": "#/components/schemas/SourcePosition"
+          }
+        }
       },
       "ProviderAwsCognito": {
         "type": "object",
@@ -4967,6 +3338,12 @@
           },
           "name": {
             "type": "string"
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PropertyValue"
+            }
           }
         }
       },
@@ -5015,15 +3392,15 @@
           }
         }
       },
-      "Revision": {
-        "type": "string",
-        "format": "uuid",
-        "description": "Revision number."
-      },
       "RngFieldSettings": {
         "type": "object",
         "description": "Configuration for generating random data for a field of a table.",
         "properties": {
+          "e": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The frequency rank exponent for the Zipf distribution.\n\n- This value is only used if the strategy is set to `Zipf`.\n- The default value is 1.0."
+          },
           "fields": {
             "type": "object",
             "description": "Specifies the values that the generator should produce in case the field is a struct type.",
@@ -5063,6 +3440,11 @@
             "description": "An optional, exclusive range [a, b) to limit the range of values the generator should produce.\n\n- For integer/floating point types specifies min/max values.\nIf not set, the generator will produce values for the entire range of the type for number types.\n- For string/binary types specifies min/max length, values are required to be >=0.\nIf not set, a range of [0, 25) is used by default.\n- For timestamp types specifies the min/max in milliseconds from the number of non-leap\nmilliseconds since January 1, 1970 0:00:00.000 UTC (aka “UNIX timestamp”).\nIf not set, a range of [0, 4102444800) is used by default (1970-01-01 -- 2100-01-01).\n- For time types specifies the min/max in milliseconds.\nIf not set, the range is 24h. Range values are required to be >=0.\n- For date types specifies the min/max in days from the number of days since January 1, 1970.\nIf not set, a range of [0, 54787) is used by default (1970-01-01 -- 2100-01-01).\n- For array types specifies the min/max number of elements.\nIf not set, a range of [0, 5) is used by default. Range values are required to be >=0.\n- For map types specifies the min/max number of key-value pairs.\nIf not set, a range of [0, 5) is used by default.\n- For struct/boolean/null types `range` is ignored.",
             "nullable": true
           },
+          "scale": {
+            "type": "integer",
+            "format": "int64",
+            "description": "A scale factor to apply a multiplier to the generated value.\n\n- For integer/floating point types, the value is multiplied by the scale factor.\n- For timestamp types, the generated value (milliseconds) is multiplied by the scale factor.\n- For time types, the generated value (milliseconds) is multiplied by the scale factor.\n- For date types, the generated value (days) is multiplied by the scale factor.\n- For string/binary/array/map/struct/boolean/null types, the scale factor is ignored.\n\n- If `values` is specified, the scale factor is ignored.\n- If `range` is specified and the range is required to be positive (struct, map, array etc.)\nthe scale factor is required to be positive too.\n\nThe default scale factor is 1."
+          },
           "strategy": {
             "$ref": "#/components/schemas/DatagenStrategy"
           },
@@ -5090,7 +3472,7 @@
         "properties": {
           "cpu_profiler": {
             "type": "boolean",
-            "description": "Enable CPU profiler."
+            "description": "Enable CPU profiler.\n\nThe default value is `true`."
           },
           "max_buffering_delay_usecs": {
             "type": "integer",
@@ -5162,87 +3544,69 @@
           }
         }
       },
-      "ServiceConfig": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "kafka"
-            ],
-            "properties": {
-              "kafka": {
-                "$ref": "#/components/schemas/KafkaService"
-              }
-            }
-          }
-        ],
-        "description": "Configuration for a Service, which typically includes how to establish a\nconnection (e.g., hostname, port) and authenticate (e.g., credentials).\n\nThis configuration can be used to easily derive connectors for the service."
-      },
-      "ServiceDescr": {
+      "SourcePosition": {
         "type": "object",
-        "description": "Service descriptor.",
         "required": [
-          "service_id",
-          "name",
-          "description",
-          "config",
-          "config_type"
+          "start_line_number",
+          "start_column",
+          "end_line_number",
+          "end_column"
         ],
         "properties": {
-          "config": {
-            "$ref": "#/components/schemas/ServiceConfig"
+          "end_column": {
+            "type": "integer",
+            "minimum": 0
           },
-          "config_type": {
-            "type": "string"
+          "end_line_number": {
+            "type": "integer",
+            "minimum": 0
           },
-          "description": {
-            "type": "string"
+          "start_column": {
+            "type": "integer",
+            "minimum": 0
           },
-          "name": {
-            "type": "string"
-          },
-          "service_id": {
-            "$ref": "#/components/schemas/ServiceId"
+          "start_line_number": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
-      "ServiceId": {
-        "type": "string",
-        "format": "uuid",
-        "description": "Unique service id."
-      },
       "SqlCompilerMessage": {
         "type": "object",
-        "description": "A SQL compiler error.\n\nThe SQL compiler returns a list of errors in the following JSON format if\nit's invoked with the `-je` option.\n\n```ignore\n[ {\n\"startLineNumber\" : 14,\n\"startColumn\" : 13,\n\"endLineNumber\" : 14,\n\"endColumn\" : 13,\n\"warning\" : false,\n\"errorType\" : \"Error parsing SQL\",\n\"message\" : \"Encountered \\\"<EOF>\\\" at line 14, column 13.\"\n} ]\n```",
+        "description": "A SQL compiler error.\n\nThe SQL compiler returns a list of errors in the following JSON format if\nit's invoked with the `-je` option.\n\n```ignore\n[ {\n\"start_line_number\" : 2,\n\"start_column\" : 4,\n\"end_line_number\" : 2,\n\"end_column\" : 8,\n\"warning\" : false,\n\"error_type\" : \"PRIMARY KEY cannot be nullable\",\n\"message\" : \"PRIMARY KEY column 'C' has type INTEGER, which is nullable\",\n\"snippet\" : \"    2|   c INT PRIMARY KEY\\n         ^^^^^\\n    3|);\\n\"\n} ]\n```",
         "required": [
-          "startLineNumber",
-          "startColumn",
-          "endLineNumber",
-          "endColumn",
+          "start_line_number",
+          "start_column",
+          "end_line_number",
+          "end_column",
           "warning",
-          "errorType",
+          "error_type",
           "message"
         ],
         "properties": {
-          "endColumn": {
+          "end_column": {
             "type": "integer",
             "minimum": 0
           },
-          "endLineNumber": {
+          "end_line_number": {
             "type": "integer",
             "minimum": 0
           },
-          "errorType": {
+          "error_type": {
             "type": "string"
           },
           "message": {
             "type": "string"
           },
-          "startColumn": {
+          "snippet": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_column": {
             "type": "integer",
             "minimum": 0
           },
-          "startLineNumber": {
+          "start_line_number": {
             "type": "integer",
             "minimum": 0
           },
@@ -5424,85 +3788,6 @@
             "description": "The location where the pipeline state is stored or will be stored.\n\nIt should point to a path on the file-system of the machine/container\nwhere the pipeline will run. If that path doesn't exist yet, or if it\ndoes not contain any checkpoints, then the pipeline creates it and\nstarts from an initial state in which no data has yet been received. If\nit does exist, then the pipeline starts from the most recent checkpoint\nthat already exists there. In either case, (further) checkpoints will be\nwritten there."
           }
         }
-      },
-      "StringMethod": {
-        "type": "string",
-        "description": "Various methods to generate different random strings.",
-        "enum": [
-          "word",
-          "words",
-          "sentence",
-          "sentences",
-          "paragraph",
-          "paragraphs",
-          "first_name",
-          "last_name",
-          "title",
-          "suffix",
-          "name",
-          "name_with_title",
-          "domain_suffix",
-          "email",
-          "username",
-          "password",
-          "field",
-          "position",
-          "seniority",
-          "job_title",
-          "i_pv4",
-          "i_pv6",
-          "i_p",
-          "m_a_c_address",
-          "user_agent",
-          "rfc_status_code",
-          "valid_status_code",
-          "company_suffix",
-          "company_name",
-          "buzzword",
-          "buzzword_middle",
-          "buzzword_tail",
-          "catch_phrase",
-          "bs_verb",
-          "bs_adj",
-          "bs_noun",
-          "bs",
-          "profession",
-          "industry",
-          "currency_code",
-          "currency_name",
-          "currency_symbol",
-          "credit_card_number",
-          "city_prefix",
-          "city_suffix",
-          "city_name",
-          "country_name",
-          "country_code",
-          "street_suffix",
-          "street_name",
-          "time_zone",
-          "state_name",
-          "state_abbr",
-          "secondary_address_type",
-          "secondary_address",
-          "zip_code",
-          "post_code",
-          "building_number",
-          "latitude",
-          "longitude",
-          "isbn",
-          "isbn13",
-          "isbn10",
-          "phone_number",
-          "cell_number",
-          "file_path",
-          "file_name",
-          "file_extension",
-          "dir_path"
-        ]
-      },
-      "TenantId": {
-        "type": "string",
-        "format": "uuid"
       },
       "TransportConfig": {
         "oneOf": [
@@ -5702,163 +3987,6 @@
           "propertyName": "name"
         }
       },
-      "UpdateConnectorRequest": {
-        "type": "object",
-        "description": "Request to update an existing connector.",
-        "properties": {
-          "config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ConnectorConfig"
-              }
-            ],
-            "nullable": true
-          },
-          "description": {
-            "type": "string",
-            "description": "New connector description. If absent, existing name will be kept\nunmodified.",
-            "nullable": true
-          },
-          "name": {
-            "type": "string",
-            "description": "New connector name. If absent, existing name will be kept unmodified.",
-            "nullable": true
-          }
-        }
-      },
-      "UpdateConnectorResponse": {
-        "type": "object",
-        "description": "Response to a connector update request."
-      },
-      "UpdatePipelineRequest": {
-        "type": "object",
-        "description": "Request to update an existing pipeline.",
-        "required": [
-          "name",
-          "description"
-        ],
-        "properties": {
-          "config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RuntimeConfig"
-              }
-            ],
-            "nullable": true
-          },
-          "connectors": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AttachedConnector"
-            },
-            "description": "Attached connectors.\n\n- If absent, existing connectors will be kept unmodified.\n\n- If present all existing connectors will be replaced with the new\nspecified list.",
-            "nullable": true
-          },
-          "description": {
-            "type": "string",
-            "description": "New pipeline description."
-          },
-          "name": {
-            "type": "string",
-            "description": "New pipeline name."
-          },
-          "program_name": {
-            "type": "string",
-            "description": "New program to create a pipeline for. If absent, program will be set to\nNULL.",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "UpdatePipelineResponse": {
-        "type": "object",
-        "description": "Response to a config update request.",
-        "required": [
-          "version"
-        ],
-        "properties": {
-          "version": {
-            "$ref": "#/components/schemas/Version"
-          }
-        }
-      },
-      "UpdateProgramRequest": {
-        "type": "object",
-        "description": "Request to update an existing program.",
-        "properties": {
-          "code": {
-            "type": "string",
-            "description": "New SQL code for the program. If absent, existing program code will be\nkept unmodified.",
-            "nullable": true
-          },
-          "config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ProgramConfig"
-              }
-            ],
-            "nullable": true
-          },
-          "description": {
-            "type": "string",
-            "description": "New program description. If absent, existing description will be kept\nunmodified.",
-            "nullable": true
-          },
-          "guard": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Version"
-              }
-            ],
-            "nullable": true
-          },
-          "name": {
-            "type": "string",
-            "description": "New program name. If absent, existing name will be kept unmodified.",
-            "nullable": true
-          }
-        }
-      },
-      "UpdateProgramResponse": {
-        "type": "object",
-        "description": "Response to a program update request.",
-        "required": [
-          "version"
-        ],
-        "properties": {
-          "version": {
-            "$ref": "#/components/schemas/Version"
-          }
-        }
-      },
-      "UpdateServiceRequest": {
-        "type": "object",
-        "description": "Request to update an existing service.",
-        "properties": {
-          "config": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ServiceConfig"
-              }
-            ],
-            "nullable": true
-          },
-          "description": {
-            "type": "string",
-            "description": "New service description. If absent, existing name will be kept\nunmodified.",
-            "nullable": true
-          },
-          "name": {
-            "type": "string",
-            "description": "New service name. If absent, existing name will be kept unmodified.",
-            "nullable": true
-          }
-        }
-      },
-      "UpdateServiceResponse": {
-        "type": "object",
-        "description": "Response to a service update request."
-      },
       "UrlInputConfig": {
         "type": "object",
         "description": "Configuration for reading data from an HTTP or HTTPS URL with\n`UrlInputTransport`.",
@@ -5895,24 +4023,24 @@
   },
   "tags": [
     {
-      "name": "Manager",
-      "description": "Configure system behavior"
-    },
-    {
-      "name": "Programs",
-      "description": "Manage programs"
-    },
-    {
       "name": "Pipelines",
-      "description": "Manage pipelines"
+      "description": "Manage pipelines and their deployment."
     },
     {
-      "name": "Connectors",
-      "description": "Manage data connectors"
+      "name": "HTTP input/output",
+      "description": "Interact with running pipelines using HTTP."
     },
     {
-      "name": "Services",
-      "description": "Manage services"
+      "name": "Authentication",
+      "description": "Retrieve authentication configuration."
+    },
+    {
+      "name": "Configuration",
+      "description": "Retrieve general configuration."
+    },
+    {
+      "name": "API keys",
+      "description": "Manage API keys."
     }
   ]
 }

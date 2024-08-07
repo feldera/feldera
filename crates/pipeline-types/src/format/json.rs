@@ -152,6 +152,10 @@ pub enum JsonFlavor {
     /// (For internal use only)
     #[serde(skip)]
     ParquetConverter,
+    /// Datagen format.
+    /// (For internal use only)
+    #[serde(rename = "datagen")]
+    Datagen,
 }
 
 const fn default_buffer_size_records() -> usize {

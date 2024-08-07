@@ -104,11 +104,14 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentCharacterString;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
@@ -135,7 +138,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
-import java.util.TreeMap;
 import java.util.function.Consumer;
 
 /**
@@ -246,7 +248,7 @@ public class CalciteCompiler implements IWritesLogs {
             SqlTypeNameSpec typeNameSpec = type.getTypeNameSpec();
             if (typeNameSpec instanceof SqlBasicTypeNameSpec basic) {
                 // I don't know how to get the SqlTypeName otherwise
-                RelDataType relDataType = CalciteCompiler.this.specToRel(type);
+                RelDataType relDataType = CalciteCompiler.this.specToRel(type, false);
                 if (relDataType.getSqlTypeName() == SqlTypeName.DECIMAL) {
                     if (basic.getPrecision() < basic.getScale()) {
                         SourcePositionRange position = new SourcePositionRange(typeNameSpec.getParserPos());
@@ -494,7 +496,10 @@ public class CalciteCompiler implements IWritesLogs {
         return rel;
     }
 
-    public RelDataType specToRel(SqlDataTypeSpec spec) {
+    /** Convert a type from Sql to Rel.
+     * @param spec            Type specification in Sql representation.
+     * @param ignoreNullable  If true never return a nullable type. */
+    public RelDataType specToRel(SqlDataTypeSpec spec, boolean ignoreNullable) {
         SqlTypeNameSpec typeName = spec.getTypeNameSpec();
         String name = "";
         if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
@@ -505,7 +510,7 @@ public class CalciteCompiler implements IWritesLogs {
         }
         RelDataType result = typeName.deriveType(this.getValidator());
         Boolean nullable = spec.getNullable();
-        if (nullable != null && nullable)
+        if (nullable != null && nullable && !ignoreNullable)
             result = this.typeFactory.createTypeWithNullability(result, true);
         if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
             if (result.isStruct()) {
@@ -525,9 +530,13 @@ public class CalciteCompiler implements IWritesLogs {
         for (SqlNode cfk: table.columnsOrForeignKeys) {
             if (cfk instanceof SqlForeignKey fk) {
                 ForeignKey.TableAndColumns thisTable = new ForeignKey.TableAndColumns(
-                        fk.columnList.getParserPosition(), table.name, Linq.map(fk.columnList, c -> (SqlIdentifier) c));
+                        new SourcePositionRange(fk.columnList.getParserPosition()),
+                        new SqlFragmentIdentifier(table.name),
+                        Linq.map(fk.columnList, c -> new SqlFragmentIdentifier((SqlIdentifier) c)));
                 ForeignKey.TableAndColumns otherTable = new ForeignKey.TableAndColumns(
-                        fk.otherColumnList.getParserPosition(), fk.otherTable, Linq.map(fk.otherColumnList, c -> (SqlIdentifier) c));
+                        new SourcePositionRange(fk.otherColumnList.getParserPosition()),
+                        new SqlFragmentIdentifier(fk.otherTable),
+                        Linq.map(fk.otherColumnList, c -> new SqlFragmentIdentifier((SqlIdentifier) c)));
                 ForeignKey foreignKey = new ForeignKey(thisTable, otherTable);
                 result.add(foreignKey);
             } else if (cfk instanceof SqlExtendedColumnDeclaration decl) {
@@ -536,10 +545,14 @@ public class CalciteCompiler implements IWritesLogs {
                     SqlIdentifier otherTable = decl.foreignKeyTables.get(i);
                     ForeignKey.TableAndColumns thisTable =
                             new ForeignKey.TableAndColumns(
-                                    decl.name.getParserPosition(), table.name, Linq.list(decl.name));
+                                    new SourcePositionRange(decl.name.getParserPosition()),
+                                    new SqlFragmentIdentifier(table.name),
+                                    Linq.list(new SqlFragmentIdentifier(decl.name)));
                     ForeignKey.TableAndColumns ot =
                             new ForeignKey.TableAndColumns(
-                                    otherColumn.getParserPosition(), otherTable, Linq.list(otherColumn));
+                                    new SourcePositionRange(otherColumn.getParserPosition()),
+                                    new SqlFragmentIdentifier(otherTable),
+                                    Linq.list(new SqlFragmentIdentifier(otherColumn)));
                     ForeignKey foreignKey = new ForeignKey(thisTable, ot);
                     result.add(foreignKey);
                 }
@@ -548,13 +561,10 @@ public class CalciteCompiler implements IWritesLogs {
         return result;
     }
 
-    @Nullable Map<String, String> createConnectorProperties(@Nullable SqlNodeList list) {
+    @Nullable PropertyList createConnectorProperties(@Nullable SqlNodeList list) {
         if (list == null)
             return null;
-        // Keep keys sorted
-        Map<String, String> result = new TreeMap<>();
-        // For error reporting
-        Map<String, SqlNode> previous = new HashMap<>();
+        PropertyList result = new PropertyList();
         assert list.size() % 2 == 0;
         for (int i = 0; i < list.size(); i += 2) {
             SqlNode inode = list.get(i);
@@ -570,19 +580,7 @@ public class CalciteCompiler implements IWritesLogs {
                 continue;
             }
 
-            String keyString = key.toValue();
-            assert keyString != null;
-            if (result.containsKey(keyString)) {
-                SqlNode prev = Utilities.getExists(previous, keyString);
-                this.errorReporter.reportError(new SourcePositionRange(key.getParserPosition()),
-                        "Duplicate key", "property " + Utilities.singleQuote(keyString) +
-                                " already declared");
-                this.errorReporter.reportError(new SourcePositionRange(prev.getParserPosition()),
-                        "Duplicate key", "Previous declaration");
-                continue;
-            }
-            Utilities.putNew(previous, keyString, key);
-            result.put(keyString, value.toValue());
+            result.addProperty(new SqlFragmentCharacterString(key), new SqlFragmentCharacterString(value));
         }
         return result;
     }
@@ -691,7 +689,26 @@ public class CalciteCompiler implements IWritesLogs {
             } else {
                 columnDefinition.put(colName, col);
             }
-            RelDataType type = this.specToRel(typeSpec);
+            RelDataType type = this.specToRel(typeSpec, false);
+            if (isPrimaryKey) {
+                if (type.isNullable()) {
+                    // This is either an error or a warning, depending on the value of the 'lenient' flag
+                    this.errorReporter.reportProblem(new SourcePositionRange(typeSpec.getParserPosition()),
+                            this.options.languageOptions.lenient,
+                            "PRIMARY KEY cannot be nullable",
+                            "PRIMARY KEY column " + Utilities.singleQuote(name.getSimple()) +
+                                    " has type " + type + ", which is nullable");
+                    // Correct the type to be not-null
+                    type = this.specToRel(typeSpec, true);
+                }
+                SqlTypeName tn = type.getSqlTypeName();
+                if (tn == SqlTypeName.ARRAY || tn == SqlTypeName.MULTISET || tn == SqlTypeName.MAP) {
+                    this.errorReporter.reportError(new SourcePositionRange(typeSpec.getParserPosition()),
+                            "Illegal PRIMARY KEY type",
+                            "PRIMARY KEY column " + Utilities.singleQuote(name.getSimple()) +
+                                    " cannot have type " + type);
+                }
+            }
             RelDataTypeField field = new RelDataTypeFieldImpl(
                     name.getSimple(), index++, type);
             RelColumnMetadata meta = new RelColumnMetadata(
@@ -920,7 +937,9 @@ public class CalciteCompiler implements IWritesLogs {
                     throw new UnsupportedException("IF NOT EXISTS not supported", object);
                 String tableName = ct.name.getSimple();
                 List<RelColumnMetadata> cols = this.createTableColumnsMetadata(Objects.requireNonNull(ct.columnsOrForeignKeys));
-                @Nullable Map<String, String> properties = this.createConnectorProperties(ct.connectorProperties);
+                @Nullable PropertyList properties = this.createConnectorProperties(ct.connectorProperties);
+                if (properties != null)
+                    properties.checkDuplicates(this.errorReporter);
                 List<ForeignKey> fk = this.createForeignKeys(ct);
                 CreateTableStatement table = new CreateTableStatement(
                         node, sqlStatement, tableName, Utilities.identifierIsQuoted(ct.name), cols, fk, properties);
@@ -936,12 +955,12 @@ public class CalciteCompiler implements IWritesLogs {
                         decl.getParameters(), param -> {
                             SqlAttributeDefinition attr = (SqlAttributeDefinition) param;
                             String name = attr.name.getSimple();
-                            RelDataType type = this.specToRel(attr.dataType);
+                            RelDataType type = this.specToRel(attr.dataType, false);
                             return new MapEntry<>(name, type);
                         });
                 RelDataType structType = this.typeFactory.createStructType(parameters);
                 SqlDataTypeSpec retType = decl.getReturnType();
-                RelDataType returnType = this.specToRel(retType);
+                RelDataType returnType = this.specToRel(retType, false);
                 Boolean nullableResult = retType.getNullable();
                 if (nullableResult != null)
                     returnType = this.typeFactory.createTypeWithNullability(returnType,  nullableResult);
@@ -962,7 +981,9 @@ public class CalciteCompiler implements IWritesLogs {
                 RelRoot relRoot = converter.convertQuery(query, true, true);
                 List<RelColumnMetadata> columns = this.createColumnsMetadata(CalciteObject.create(node),
                         cv.name, true, relRoot, cv.columnList);
-                @Nullable Map<String, String> connectorProperties = this.createConnectorProperties(cv.connectorProperties);
+                @Nullable PropertyList connectorProperties = this.createConnectorProperties(cv.connectorProperties);
+                if (connectorProperties != null)
+                    connectorProperties.checkDuplicates(this.errorReporter);
                 RelNode optimized = this.optimize(relRoot.rel);
                 relRoot = relRoot.withRel(optimized);
                 String viewName = cv.name.getSimple();
@@ -980,7 +1001,7 @@ public class CalciteCompiler implements IWritesLogs {
                 SqlCreateType ct = (SqlCreateType) node;
                 RelProtoDataType proto = typeFactory -> {
                     if (ct.dataType != null) {
-                        return this.specToRel(ct.dataType);
+                        return this.specToRel(ct.dataType, false);
                     } else {
                         String name = ct.name.getSimple();
                         if (CalciteCompiler.this.udt.containsKey(name))
@@ -990,7 +1011,7 @@ public class CalciteCompiler implements IWritesLogs {
                             final SqlAttributeDefinition attributeDef =
                                     (SqlAttributeDefinition) def;
                             final SqlDataTypeSpec typeSpec = attributeDef.dataType;
-                            final RelDataType type = this.specToRel(typeSpec);
+                            final RelDataType type = this.specToRel(typeSpec, false);
                             builder.add(attributeDef.name.getSimple(), type);
                         }
                         RelDataType result = builder.build();

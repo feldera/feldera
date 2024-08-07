@@ -14,7 +14,9 @@ export interface RandomNormalBigNumber extends RandomBigNumberGenerationSource {
   (mu?: BigNumber, sigma?: BigNumber): () => BigNumber
 }
 
-export const randomNormalBigNumber: RandomNormalBigNumber = (function sourceRandomNormalBigNumber(source) {
+export const randomNormalBigNumber: RandomNormalBigNumber = (function sourceRandomNormalBigNumber(
+  source
+) {
   function randomNormalBigNumber(mu = new BigNumber(0), sigma = new BigNumber(1)): () => BigNumber {
     let x: number | null, r: number
     return function () {

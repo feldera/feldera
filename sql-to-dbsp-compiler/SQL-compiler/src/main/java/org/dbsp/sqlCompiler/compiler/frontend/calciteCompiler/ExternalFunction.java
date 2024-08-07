@@ -162,7 +162,7 @@ public class ExternalFunction extends SqlFunction {
             // +1 because the first parameter is the source position parameter
             int index = inputRef.getIndex() + 1;
             if (index < this.parameters.size()) {
-                return this.parameters.get(index).asVariable();
+                return this.parameters.get(index).asVariable().applyCloneIfNeeded();
             }
             throw new InternalCompilerError("Parameter index out of bounds ", node);
         }
@@ -183,7 +183,7 @@ public class ExternalFunction extends SqlFunction {
     public DBSPFunction getImplementation(TypeCompiler typeCompiler, DBSPCompiler compiler) {
         if (this.body != null) {
             List<DBSPParameter> parameters = new ArrayList<>();
-            // First paramter is always source position
+            // First parameter is always source position
             parameters.add(sourcePositionParameter());
             for (RelDataTypeField param: this.parameterList) {
                 DBSPType type = typeCompiler.convertType(param.getType(), true);

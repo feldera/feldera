@@ -2,7 +2,7 @@
 //!
 //! CLI for running Nexmark benchmarks with DBSP.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use ascii_table::AsciiTable;
 use clap::Parser;
 use dbsp::circuit::metrics::{
@@ -70,17 +70,12 @@ struct InputStats {
     num_events: u64,
 }
 
-enum StepCompleted {
-    Dbsp,
-    Source(usize),
-}
-
 fn spawn_dbsp_consumer(
     query: &str,
     profile_path: Option<&str>,
     mut dbsp: DBSPHandle,
     step_do_rx: mpsc::Receiver<()>,
-    step_done_tx: mpsc::SyncSender<StepCompleted>,
+    step_done_tx: mpsc::SyncSender<()>,
 ) -> JoinHandle<()> {
     let query = query.to_string();
     let profile_path = profile_path.map(ToString::to_string);
@@ -93,7 +88,7 @@ fn spawn_dbsp_consumer(
             }
             while let Ok(()) = step_do_rx.recv() {
                 dbsp.step().unwrap();
-                step_done_tx.send(StepCompleted::Dbsp).unwrap();
+                step_done_tx.send(()).unwrap();
             }
             if let Some(profile_path) = profile_path {
                 dbsp.dump_profile(<String as AsRef<Path>>::as_ref(&profile_path).join(query))
@@ -107,7 +102,7 @@ fn spawn_source_producer(
     nexmark_config: NexmarkConfig,
     input_handle: ZSetHandle<Event>,
     step_do_rx: mpsc::Receiver<()>,
-    step_done_tx: mpsc::SyncSender<StepCompleted>,
+    step_done_tx: mpsc::SyncSender<usize>,
     source_exhausted_tx: mpsc::SyncSender<InputStats>,
 ) {
     thread::Builder::new()
@@ -132,9 +127,7 @@ fn spawn_source_producer(
                 input_handle.append(&mut events);
                 num_events += batch_count as u64;
 
-                step_done_tx
-                    .send(StepCompleted::Source(batch_count))
-                    .unwrap();
+                step_done_tx.send(batch_count).unwrap();
                 // If we're unable to fetch a full batch, then we're done.
                 if batch_count < batch_size {
                     break batch_count;
@@ -143,9 +136,7 @@ fn spawn_source_producer(
             };
 
             source_exhausted_tx.send(InputStats { num_events }).unwrap();
-            step_done_tx
-                .send(StepCompleted::Source(last_batch_count))
-                .unwrap();
+            step_done_tx.send(last_batch_count).unwrap();
         })
         .unwrap();
 }
@@ -155,7 +146,8 @@ fn coordinate_input_and_steps(
     expected_num_events: u64,
     dbsp_step_tx: mpsc::SyncSender<()>,
     source_step_tx: mpsc::SyncSender<()>,
-    step_done_rx: mpsc::Receiver<StepCompleted>,
+    dbsp_step_done_rx: mpsc::Receiver<()>,
+    source_step_done_rx: mpsc::Receiver<usize>,
     source_exhausted_rx: mpsc::Receiver<InputStats>,
     dbsp_join_handle: JoinHandle<()>,
 ) -> Result<InputStats> {
@@ -174,9 +166,7 @@ fn coordinate_input_and_steps(
         .progress_chars("=>-"),
     );
 
-    if let Ok(StepCompleted::Dbsp) = step_done_rx.recv() {
-        return Err(anyhow!("Expected initial source step, got DBSP step"));
-    }
+    source_step_done_rx.recv()?;
 
     // Continue until the source is exhausted.
     loop {
@@ -185,7 +175,7 @@ fn coordinate_input_and_steps(
             // to ensure the last input is processed, before dropping the dbsp_step_tx
             // half of the channel to ensure the dbsp thread terminates.
             dbsp_step_tx.send(())?;
-            step_done_rx.recv()?;
+            source_step_done_rx.recv()?;
             drop(dbsp_step_tx);
             dbsp_join_handle
                 .join()
@@ -199,11 +189,8 @@ fn coordinate_input_and_steps(
         source_step_tx.send(())?;
 
         // Ensure both the dbsp and source finish before continuing.
-        for _ in 0..2 {
-            if let Ok(StepCompleted::Source(num_events)) = step_done_rx.recv() {
-                progress_bar.inc(num_events as u64);
-            }
-        }
+        dbsp_step_done_rx.recv()?;
+        progress_bar.inc(source_step_done_rx.recv()? as u64);
     }
 }
 
@@ -278,9 +265,10 @@ fn run_query(config: &NexmarkConfig, snapshotter: &Snapshotter, query: Query) ->
         })
         .unwrap();
 
-    // Create a channel for the coordinating thread to determine whether the
-    // producer or consumer step is completed first.
-    let (step_done_tx, step_done_rx) = mpsc::sync_channel(2);
+    // Create channels for the coordinating thread to determine when the
+    // producer and consumer steps are completed.
+    let (dbsp_step_done_tx, dbsp_step_done_rx) = mpsc::sync_channel(1);
+    let (source_step_done_tx, source_step_done_rx) = mpsc::sync_channel(1);
 
     // Start the DBSP runtime processing steps only when it receives a message to do
     // so. The DBSP processing happens in its own thread where the resource usage
@@ -291,7 +279,7 @@ fn run_query(config: &NexmarkConfig, snapshotter: &Snapshotter, query: Query) ->
         config.profile_path.as_deref(),
         dbsp,
         dbsp_step_rx,
-        step_done_tx.clone(),
+        dbsp_step_done_tx,
     );
 
     // Start the generator inputting the specified number of batches to the circuit
@@ -303,7 +291,7 @@ fn run_query(config: &NexmarkConfig, snapshotter: &Snapshotter, query: Query) ->
         config.clone(),
         input_handle,
         source_step_rx,
-        step_done_tx,
+        source_step_done_tx,
         source_exhausted_tx,
     );
 
@@ -317,7 +305,8 @@ fn run_query(config: &NexmarkConfig, snapshotter: &Snapshotter, query: Query) ->
         expected_num_events,
         dbsp_step_tx,
         source_step_tx,
-        step_done_rx,
+        dbsp_step_done_rx,
+        source_step_done_rx,
         source_exhausted_rx,
         dbsp_join_handle,
     )

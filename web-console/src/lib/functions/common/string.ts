@@ -29,7 +29,8 @@ export const isUrl = (url: string | undefined) => {
  * Generate a random name, used for giving random names in certain cases.
  * @returns
  */
-export const randomString = (): string => new Date().getTime().toString(36) + Math.random().toString(36).slice(2)
+export const randomString = (): string =>
+  new Date().getTime().toString(36) + Math.random().toString(36).slice(2)
 
 /**
  * Remove a prefix in a string if it exists

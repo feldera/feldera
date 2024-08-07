@@ -7,7 +7,7 @@ CREATE TABLE person (
     state VARCHAR,
     date_time TIMESTAMP(3) NOT NULL {lateness},
     extra  VARCHAR
-);
+) WITH ('connectors' = '{person}');
 CREATE TABLE auction (
     id  BIGINT,
     itemName  VARCHAR,
@@ -19,7 +19,7 @@ CREATE TABLE auction (
     seller  BIGINT,
     category  BIGINT,
     extra  VARCHAR
-);
+) WITH ('connectors' = '{auction}');
 CREATE TABLE bid (
     auction  BIGINT,
     bidder  BIGINT,
@@ -28,4 +28,4 @@ CREATE TABLE bid (
     url  VARCHAR,
     date_time TIMESTAMP(3) NOT NULL {lateness},
     extra  VARCHAR
-);
+) WITH ('connectors' = '{bid}');

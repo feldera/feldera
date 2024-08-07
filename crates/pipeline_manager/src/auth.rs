@@ -45,7 +45,6 @@
 //! pipeline manager side, we store a hash of the API key in the database along
 //! with the permissions.
 
-use std::fmt::{self, Display};
 use std::{collections::HashMap, env};
 
 use actix_web::HttpMessage;
@@ -67,7 +66,11 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::api::ServerState;
-use crate::db::{storage::Storage, ApiPermission, DBError, ProjectDB};
+use crate::db::error::DBError;
+use crate::db::storage::Storage;
+use crate::db::storage_postgres::StoragePostgres;
+use crate::db::types::api_key::ApiPermission;
+use crate::db::types::tenant::TenantId;
 
 // Used when no auth is configured, so we tag the request with the default user
 // and passthrough
@@ -111,7 +114,7 @@ async fn bearer_auth(
             let tenant = {
                 let ad = req.app_data::<Data<ServerState>>();
                 let db = &ad.unwrap().db.lock().await;
-                db.get_or_create_tenant_id(claim.tenant_name(), claim.provider())
+                db.get_or_create_tenant_id(Uuid::now_v7(), claim.tenant_name(), claim.provider())
                     .await
             };
 
@@ -205,17 +208,6 @@ pub(crate) struct TenantRecord {
 
     /// Corresponds to the identity provider from a claim
     pub provider: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, ToSchema)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub struct TenantId(
-    #[cfg_attr(test, proptest(strategy = "crate::db::test::limited_uuid()"))] pub Uuid,
-);
-impl Display for TenantId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
 }
 
 const DEFAULT_TENANT_ID: TenantId = TenantId(Uuid::nil());
@@ -595,7 +587,7 @@ fn validate_field_is_str<'a>(key: &str, json: &'a Value) -> Option<&'a str> {
 // Fetch keys on every authentication attempt, so cache the
 // results.
 async fn validate_api_keys(
-    db: &ProjectDB,
+    db: &StoragePostgres,
     api_key: &str,
 ) -> Result<(TenantId, Vec<ApiPermission>), DBError> {
     db.validate_api_key(api_key).await
@@ -634,13 +626,14 @@ mod test {
     use tokio::sync::Mutex;
     use uuid::Uuid;
 
+    use crate::db::types::api_key::ApiPermission;
     use crate::{
         api::ServerState,
         auth::{
             self, fetch_jwk_aws_cognito_keys, AuthConfiguration, AuthProvider, AwsCognitoClaim,
         },
         config::ApiServerConfig,
-        db::{storage::Storage, ApiPermission},
+        db::storage::Storage,
     };
 
     use super::AuthError;
@@ -734,7 +727,11 @@ mod test {
         let (conn, _temp) = crate::db::test::setup_pg().await;
         if api_key.is_some() {
             let tenant_id = conn
-                .get_or_create_tenant_id("some-name".to_string(), "some-provider".to_string())
+                .get_or_create_tenant_id(
+                    Uuid::now_v7(),
+                    "some-name".to_string(),
+                    "some-provider".to_string(),
+                )
                 .await
                 .unwrap();
             conn.store_api_key_hash(

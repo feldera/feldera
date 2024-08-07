@@ -1,9 +1,10 @@
 /// API to create and delete API keys
 use super::{ManagerError, ServerState};
+use crate::db::types::api_key::{ApiKeyId, ApiPermission};
+use crate::db::types::tenant::TenantId;
 use crate::{
     api::{examples, parse_string_param},
-    auth::TenantId,
-    db::{storage::Storage, ApiKeyId},
+    db::storage::Storage,
 };
 use actix_web::{
     delete, get,
@@ -45,7 +46,7 @@ pub(crate) struct NewApiKeyResponse {
     api_key: String,
 }
 
-/// Query for an APIkey name
+/// Query for an API key by name.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub(crate) struct ApiKeyNameQuery {
     /// API key name
@@ -53,7 +54,7 @@ pub(crate) struct ApiKeyNameQuery {
     name: Option<String>,
 }
 
-/// List all API keys
+/// Retrieve the list of API keys.
 #[utoipa::path(
     responses(
         (status = OK, description = "API keys retrieved successfully", body = [ApiKeyDescr]),
@@ -61,7 +62,7 @@ pub(crate) struct ApiKeyNameQuery {
             , description = "Specified API key name does not exist."
             , body = ErrorResponse
             , examples(
-                ("Unknown API key name" = (value = json!(examples::unknown_name()))),
+                ("Unknown API key name" = (value = json!(examples::error_unknown_api_key()))),
             ),
         )
     ),
@@ -89,7 +90,7 @@ pub(crate) async fn list_api_keys(
     }
 }
 
-/// Get an API key description
+/// Retrieve an API key.
 #[utoipa::path(
     responses(
         (status = OK, description = "API key retrieved successfully", body = ApiKeyDescr),
@@ -97,7 +98,7 @@ pub(crate) async fn list_api_keys(
             , description = "Specified API key name does not exist."
             , body = ErrorResponse
             , examples(
-                ("Unknown API key name" = (value = json!(examples::unknown_name()))),
+                ("Unknown API key name" = (value = json!(examples::error_unknown_api_key()))),
             ),
         )
     ),
@@ -121,7 +122,7 @@ pub(crate) async fn get_api_key(
         .json(&[api_key]))
 }
 
-/// Delete an API key
+/// Delete an API key.
 #[utoipa::path(
     responses(
         (status = OK, description = "API key deleted successfully"),
@@ -129,7 +130,7 @@ pub(crate) async fn get_api_key(
             , description = "Specified API key name does not exist."
             , body = ErrorResponse
             , examples(
-                ("Unknown API key name" = (value = json!(examples::unknown_name()))),
+                ("Unknown API key name" = (value = json!(examples::error_unknown_api_key()))),
             ),
         )
     ),
@@ -158,14 +159,14 @@ pub(crate) async fn delete_api_key(
     Ok(resp)
 }
 
-/// Create an API key
+/// Create a new API key.
 #[utoipa::path(
     responses(
         (status = OK, description = "API key created successfully.", body = NewApiKeyResponse),
         (status = CONFLICT
-            , description = "An api key with this name already exists."
+            , description = "An API key with this name already exists."
             , body = ErrorResponse
-            , example = json!(examples::duplicate_name())),
+            , example = json!(examples::error_duplicate_name())),
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -188,10 +189,7 @@ async fn create_api_key(
             id,
             &req.name,
             &api_key,
-            vec![
-                crate::db::ApiPermission::Read,
-                crate::db::ApiPermission::Write,
-            ],
+            vec![ApiPermission::Read, ApiPermission::Write],
         )
         .await
         .map(|_| {

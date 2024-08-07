@@ -1,15 +1,15 @@
-use crate::config::TransportConfigVariant;
+use std::collections::HashMap;
+use std::default::Default;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
-use std::num::NonZeroU32;
 use utoipa::ToSchema;
 
 fn default_scale() -> i64 {
     1
 }
 
-fn default_exponent() -> usize {
+fn default_exponent() -> i64 {
     1
 }
 
@@ -21,11 +21,28 @@ fn default_sequence() -> Vec<GenerationPlan> {
     vec![GenerationPlan::default()]
 }
 
-/// Various methods to generate different random strings.
-#[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+/// Strategy used to generate values.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum StringMethod {
-    #[default]
+#[non_exhaustive]
+pub enum DatagenStrategy {
+    /// Whether the field should be incremented for each new
+    /// record rather than generated randomly.
+    Increment,
+    /// A uniform random distribution is chosen to generate the value.
+    Uniform,
+    /// A Zipf distribution is chosen with the specified exponent (defined in field `e`) and
+    /// `n` (which is set automatically) for the range `[1..n]` to generate the value in.
+    ///
+    /// Note that the Zipf distribution is only available for numbers or types that
+    /// specify `values` or `range`.
+    ///
+    /// - In case `values` is set, the `n` is set to `values.len()`.
+    /// - In case `values` is not set, `n` is set to the length of the `range`.
+    /// - In case `range` is not set, the `n` is set to cover the default range of the type.
+    Zipf,
+    // Next are various methods to generate random strings, they are only applicable for string
+    // types.
     Word,
     Words,
     Sentence,
@@ -97,56 +114,14 @@ pub enum StringMethod {
     DirPath,
 }
 
-/// Strategy used to generate values.
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-#[serde(tag = "name")]
-pub enum DatagenStrategy {
-    /// Whether the field should be incremented for each new
-    /// record rather than generated randomly.
-    ///
-    /// A scale factor can be set as the `param` field to apply a multiplier to the increment.
-    /// The default scale factor is 1.
-    #[serde(rename = "increment")]
-    Increment {
-        #[serde(default = "default_scale")]
-        scale: i64,
-    },
-    /// A uniform random distribution is chosen to generate the value.
-    #[serde(rename = "uniform")]
-    Uniform,
-    /// A Zipf distribution is chosen with the specified exponent (`s`) and
-    /// `n` (set automatically) for the range `[1..n]` to generate the value in.
-    ///
-    /// Note that the Zipf distribution is only available for numbers or types that
-    /// specify `values` or `range`.
-    ///
-    /// - In case `values` is set, the `n` is set to `values.len()`.
-    /// - In case `values` is not set, `n` is set to the length of the `range`.
-    /// - In case `range` is not set, the `n` is set to cover the default range of the type.
-    #[serde(rename = "zipf")]
-    Zipf {
-        #[serde(default = "default_exponent")]
-        s: usize,
-    },
-    /// A strategy to produce a random string for various data.
-    ///
-    /// - This strategy is only available for string types.
-    #[serde(rename = "string")]
-    String {
-        #[serde(default)]
-        method: StringMethod,
-    },
-}
-
 impl Default for DatagenStrategy {
-    /// If `mode` is not specified, default to `Watch`.
     fn default() -> Self {
-        Self::Increment { scale: 1 }
+        Self::Increment
     }
 }
 
 /// Configuration for generating random data for a field of a table.
-#[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct RngFieldSettings {
     /// Percentage of records where this field should be set to NULL.
     ///
@@ -178,6 +153,30 @@ pub struct RngFieldSettings {
     /// - For struct/boolean/null types `range` is ignored.
     pub range: Option<(i64, i64)>,
 
+    /// A scale factor to apply a multiplier to the generated value.
+    ///
+    /// - For integer/floating point types, the value is multiplied by the scale factor.
+    /// - For timestamp types, the generated value (milliseconds) is multiplied by the scale factor.
+    /// - For time types, the generated value (milliseconds) is multiplied by the scale factor.
+    /// - For date types, the generated value (days) is multiplied by the scale factor.
+    /// - For string/binary/array/map/struct/boolean/null types, the scale factor is ignored.
+    ///
+    /// - If `values` is specified, the scale factor is ignored.
+    /// - If `range` is specified and the range is required to be positive (struct, map, array etc.)
+    ///   the scale factor is required to be positive too.
+    ///
+    /// The default scale factor is 1.
+    #[serde(default = "default_scale")]
+    pub scale: i64,
+
+    /// The frequency rank exponent for the Zipf distribution.
+    ///
+    /// - This value is only used if the strategy is set to `Zipf`.
+    /// - The default value is 1.0.
+    // TODO: make this f64 after API merge
+    #[serde(default = "default_exponent")]
+    pub e: i64,
+
     /// An optional set of values the generator will pick from.
     ///
     /// If set, the generator will pick values from the specified set.
@@ -200,13 +199,33 @@ pub struct RngFieldSettings {
     pub value: Option<Box<RngFieldSettings>>,
 }
 
+/// Derive the default for `RngFieldSettings`.
+///
+/// We to implement this ourselves because this needs
+/// to match the serde default semantics which sets scale to 1.
+impl Default for RngFieldSettings {
+    fn default() -> Self {
+        Self {
+            null_percentage: None,
+            strategy: DatagenStrategy::default(),
+            range: None,
+            scale: 1,
+            e: 1,
+            values: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+}
+
 /// A random generation plan for a table that generates either a limited amount of rows or runs continuously.
 #[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct GenerationPlan {
-    /// Number of rows to generate per second.
+    /// Non-zero number of rows to generate per second.
     ///
     /// If not set, the generator will produce rows as fast as possible.
-    pub rate: Option<NonZeroU32>,
+    pub rate: Option<u32>,
 
     /// Total number of new rows to generate.
     ///
@@ -220,6 +239,7 @@ pub struct GenerationPlan {
     pub limit: Option<usize>,
 
     /// Specifies the values that the generator should produce.
+    #[serde(default)]
     pub fields: HashMap<String, Box<RngFieldSettings>>,
 }
 
@@ -244,11 +264,10 @@ pub struct DatagenInputConfig {
     ///
     /// Setting this to a fixed value will make the generator produce the same sequence of records
     /// every time the pipeline is run.
+    ///
+    /// # Notes
+    /// - To ensure the set of generated input records is deterministic across multiple runs,
+    ///   apart from setting a seed, `workers` also needs to remain unchanged.
+    /// - The input will arrive in non-deterministic order if `workers > 1`.
     pub seed: Option<u64>,
-}
-
-impl TransportConfigVariant for DatagenInputConfig {
-    fn name(&self) -> String {
-        "datagen".to_string()
-    }
 }

@@ -9,6 +9,7 @@ import org.apache.calcite.schema.SchemaPlus;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
@@ -17,6 +18,8 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.util.HSQDBManager;
 import org.dbsp.util.Utilities;
 import org.hsqldb.server.ServerAcl;
@@ -58,10 +61,38 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertNotNull(c);
         String str = c.toPrettyString();
         Assert.assertEquals("""
-               {
-                 "connector" : "kafka",
-                 "url" : "localhost"
-               }""", str);
+                {
+                  "connector" : {
+                    "value" : "kafka",
+                    "key_position" : {
+                      "start_line_number" : 4,
+                      "start_column" : 4,
+                      "end_line_number" : 4,
+                      "end_column" : 14
+                    },
+                    "value_position" : {
+                      "start_line_number" : 4,
+                      "start_column" : 18,
+                      "end_line_number" : 4,
+                      "end_column" : 24
+                    }
+                  },
+                  "url" : {
+                    "value" : "localhost",
+                    "key_position" : {
+                      "start_line_number" : 5,
+                      "start_column" : 4,
+                      "end_line_number" : 5,
+                      "end_column" : 8
+                    },
+                    "value_position" : {
+                      "start_line_number" : 5,
+                      "start_column" : 12,
+                      "end_line_number" : 5,
+                      "end_column" : 22
+                    }
+                  }
+                }""", str);
 
         JsonNode outputs = meta.get("outputs");
         Assert.assertNotNull(inputs);
@@ -70,10 +101,38 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertNotNull(c);
         str = c.toPrettyString();
         Assert.assertEquals("""
-               {
-                 "connector" : "file",
-                 "path" : "/tmp/x"
-               }""", str);
+                {
+                  "connector" : {
+                    "value" : "file",
+                    "key_position" : {
+                      "start_line_number" : 8,
+                      "start_column" : 4,
+                      "end_line_number" : 8,
+                      "end_column" : 14
+                    },
+                    "value_position" : {
+                      "start_line_number" : 8,
+                      "start_column" : 18,
+                      "end_line_number" : 8,
+                      "end_column" : 23
+                    }
+                  },
+                  "path" : {
+                    "value" : "/tmp/x",
+                    "key_position" : {
+                      "start_line_number" : 9,
+                      "start_column" : 4,
+                      "end_line_number" : 9,
+                      "end_column" : 9
+                    },
+                    "value_position" : {
+                      "start_line_number" : 9,
+                      "start_column" : 13,
+                      "end_line_number" : 9,
+                      "end_column" : 20
+                    }
+                  }
+                }""", str);
     }
 
     @Test
@@ -91,6 +150,29 @@ public class MetadataTests extends BaseSQLTests {
         compiler.compileStatements(ddl);
         TestUtil.assertMessagesContain(compiler, "Duplicate key");
         TestUtil.assertMessagesContain(compiler, "Previous declaration");
+    }
+
+    @Test
+    public void nullKey() {
+        String ddl = """
+               CREATE TABLE T (
+                  COL1 INT PRIMARY KEY
+               );
+               CREATE VIEW V AS SELECT * FROM T;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.options.languageOptions.lenient = true;  // produces warning for primary key
+        compiler.options.ioOptions.quiet = false; // show warnings
+        compiler.compileStatements(ddl);
+        DBSPCircuit circuit = getCircuit(compiler);
+        TestUtil.assertMessagesContain(compiler, "PRIMARY KEY cannot be nullable");
+        DBSPSourceTableOperator t = circuit.getInput("T");
+        Assert.assertNotNull(t);
+        DBSPType ix = t.getOutputZSetElementType();
+        Assert.assertTrue(ix.is(DBSPTypeTuple.class));
+        DBSPTypeTuple tuple = ix.to(DBSPTypeTuple.class);
+        // The type should not be nullable despite the declaration
+        Assert.assertFalse(tuple.tupFields[0].mayBeNull);
     }
 
     // Test the --unquotedCasing command-line parameter
@@ -474,7 +556,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE T (
                    c INT ARRAY NOT NULL PRIMARY KEY
                 );""",
-                "PRIMARY KEY column 'C' cannot have type INTEGER NOT NULL ARRAY NOT NULL");
+                "PRIMARY KEY column 'C' cannot have type INTEGER ARRAY");
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (
                    FOREIGN KEY (a, b) REFERENCES S(a)

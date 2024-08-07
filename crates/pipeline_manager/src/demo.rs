@@ -1,22 +1,10 @@
+use crate::db::types::pipeline::PipelineDescr;
 use crate::error::ManagerError;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use thiserror::Error as ThisError;
 use utoipa::ToSchema;
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, ToSchema)]
-pub struct Demo {
-    /// Title of the demo.
-    title: String,
-    /// Description of the demo.
-    description: String,
-    /// Demo prefix prepended to each of the entities.
-    prefix: String,
-    /// The steps which define the entities to create.
-    // TODO: once the demo JSON format is further standardized, make this strongly typed.
-    steps: Vec<serde_json::Value>,
-}
 
 #[derive(ThisError, Serialize, Debug, PartialEq)]
 pub enum DemoError {
@@ -34,27 +22,46 @@ pub enum DemoError {
     DeserializationFailed { path: String, error: String },
 }
 
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub struct Demo {
+    /// Demo title.
+    pub title: String,
+
+    /// Demo pipeline.
+    pub pipeline: PipelineDescr,
+}
+
 /// Reads the JSON demos from the demos directory.
 ///
 /// Every file in the directory must be a JSON file, and there cannot be
 /// any other files or directories in there.
 pub fn read_demos_from_directory(demos_dir: &Path) -> Result<Vec<Demo>, ManagerError> {
     let mut result: Vec<Demo> = vec![];
-    let entries = fs::read_dir(demos_dir).map_err(|error| ManagerError::DemoError {
-        demo_error: DemoError::UnableToReadDirectory {
-            path: demos_dir.to_string_lossy().to_string(),
-            error: error.to_string(),
-        },
-    })?;
-    for entry in entries {
-        let path = entry
-            .map_err(|error| ManagerError::DemoError {
-                demo_error: DemoError::UnableToReadDirEntry {
-                    error: error.to_string(),
-                },
-            })?
-            .path();
 
+    // Directory entries
+    let entries = fs::read_dir(demos_dir)
+        .map_err(|error| ManagerError::DemoError {
+            demo_error: DemoError::UnableToReadDirectory {
+                path: demos_dir.to_string_lossy().to_string(),
+                error: error.to_string(),
+            },
+        })?
+        .collect::<Vec<_>>();
+
+    // Sorted paths
+    let mut paths = vec![];
+    for entry in entries {
+        let entry = entry.map_err(|error| ManagerError::DemoError {
+            demo_error: DemoError::UnableToReadDirEntry {
+                error: error.to_string(),
+            },
+        })?;
+        paths.push(entry.path());
+    }
+    paths.sort();
+
+    // Convert each file read from a path to a demo
+    for path in paths {
         let content =
             fs::read_to_string(path.as_path()).map_err(|error| ManagerError::DemoError {
                 demo_error: DemoError::UnableToReadFile {
@@ -75,8 +82,9 @@ pub fn read_demos_from_directory(demos_dir: &Path) -> Result<Vec<Demo>, ManagerE
 
 #[cfg(test)]
 mod test {
-    use crate::api::ManagerError;
+    use crate::db::types::pipeline::PipelineDescr;
     use crate::demo::{read_demos_from_directory, Demo, DemoError};
+    use crate::error::ManagerError;
     use std::fs;
     use std::fs::File;
     use std::io::Write;
@@ -143,10 +151,14 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
         let demo = Demo {
-            title: "abc".to_string(),
-            description: "def".to_string(),
-            prefix: "ghi-".to_string(),
-            steps: Default::default(),
+            title: "Example 1".to_string(),
+            pipeline: PipelineDescr {
+                name: "example1".to_string(),
+                description: "Description of example1".to_string(),
+                runtime_config: Default::default(),
+                program_code: "CREATE TABLE example1(col1 INT);".to_string(),
+                program_config: Default::default(),
+            },
         };
         let mut file = File::create(dir_path.join("file.txt").as_path()).unwrap();
         file.write(serde_json::to_string(&demo).unwrap().as_bytes())
@@ -162,29 +174,50 @@ mod test {
         let dir_path = dir.path();
         let demos = vec![
             Demo {
-                title: "abc".to_string(),
-                description: "def".to_string(),
-                prefix: "ghi-".to_string(),
-                steps: Default::default(),
+                title: "Example 1".to_string(),
+                pipeline: PipelineDescr {
+                    name: "example1".to_string(),
+                    description: "Description of example1".to_string(),
+                    runtime_config: Default::default(),
+                    program_code: "CREATE TABLE example1(col1 INT);".to_string(),
+                    program_config: Default::default(),
+                },
             },
             Demo {
-                title: "jkl".to_string(),
-                description: "mno".to_string(),
-                prefix: "pqr-".to_string(),
-                steps: Default::default(),
+                title: "Example 3".to_string(),
+                pipeline: PipelineDescr {
+                    name: "example3".to_string(),
+                    description: "Description of example3".to_string(),
+                    runtime_config: Default::default(),
+                    program_code: "CREATE TABLE example3(col3 INT);".to_string(),
+                    program_config: Default::default(),
+                },
+            },
+            Demo {
+                title: "Example 2".to_string(),
+                pipeline: PipelineDescr {
+                    name: "example2".to_string(),
+                    description: "Description of example2".to_string(),
+                    runtime_config: Default::default(),
+                    program_code: "CREATE TABLE example2(col2 INT);".to_string(),
+                    program_config: Default::default(),
+                },
             },
         ];
         for demo in &demos {
-            let mut file =
-                File::create(dir_path.join(format!("{}.json", demo.title)).as_path()).unwrap();
+            let mut file = File::create(
+                dir_path
+                    .join(format!("{}.json", demo.pipeline.name))
+                    .as_path(),
+            )
+            .unwrap();
             file.write(serde_json::to_string(&demo).unwrap().as_bytes())
                 .unwrap();
         }
         let read_demos = read_demos_from_directory(dir_path).unwrap();
-        assert_eq!(read_demos.len(), 2);
+        assert_eq!(read_demos.len(), 3);
         assert!(
-            (read_demos[0] == demos[0] || read_demos[1] == demos[1])
-                || (read_demos[0] == demos[1] || read_demos[1] == demos[0])
+            read_demos[0] == demos[0] && read_demos[1] == demos[2] && read_demos[2] == demos[1]
         );
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "pipeline-manager"
-version = "0.21.0"
+version = "0.23.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Data pipeline manager for the Feldera continuous analytics platform."
@@ -34,7 +34,7 @@ utoipa-swagger-ui = { version = "4", features = ["actix-web"] }
 chrono = { version = "0.4.38", default-features = false, features = ["clock", "serde"] }
 tempfile = { version = "3" }
 futures-util = "0.3.28"
-tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-uuid-1"]}
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"]}
 async-trait = "0.1"
 colored = "2.0.0"
 deadpool-postgres = "0.10.5"

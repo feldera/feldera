@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::Path;
@@ -84,7 +85,7 @@ format:
     // Send the data through the mock pipeline
     let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct2, TestStruct2>(
         serde_yaml::from_str(&config_str).unwrap(),
-        Relation::new("test", false, TestStruct2::schema(), false),
+        Relation::new("test", false, TestStruct2::schema(), false, BTreeMap::new()),
     )
     .unwrap();
     sleep(Duration::from_millis(10));
@@ -117,7 +118,13 @@ fn parquet_output() {
     let mut encoder = ParquetEncoder::new(
         Box::new(consumer),
         config,
-        Relation::new("TestStruct2", false, TestStruct2::schema(), false),
+        Relation::new(
+            "TestStruct2",
+            false,
+            TestStruct2::schema(),
+            false,
+            BTreeMap::new(),
+        ),
     )
     .expect("Can't create encoder");
     let zset = OrdZSet::from_keys(

@@ -31,12 +31,14 @@ export function tuples<T extends unknown[]>(...t: [...T][]) {
  * @param arr Arrays to zip
  * @returns
  */
-export function zip<T extends unknown[][]>(...args: T): { [K in keyof T]: T[K] extends (infer V)[] ? V : never }[] {
-  const minLength = Math.min(...args.map(arr => arr.length))
+export function zip<T extends unknown[][]>(
+  ...args: T
+): { [K in keyof T]: T[K] extends (infer V)[] ? V : never }[] {
+  const minLength = Math.min(...args.map((arr) => arr.length))
   // @ts-expect-error This is too much for ts
   return Array(minLength)
     .fill(undefined)
-    .map((_, i) => args.map(arr => arr[i]))
+    .map((_, i) => args.map((arr) => arr[i]))
 }
 
 /**
@@ -48,7 +50,7 @@ export function zip<T extends unknown[][]>(...args: T): { [K in keyof T]: T[K] e
 export function unzip<T extends [...{ [K in keyof S]: S[K] }][], S extends any[]>(
   arr: [...T]
 ): T[0] extends infer A ? { [K in keyof A]: T[number][K & keyof T[number]][] } : never {
-  const maxLength = Math.max(...arr.map(x => x.length))
+  const maxLength = Math.max(...arr.map((x) => x.length))
 
   return arr.reduce((acc: any, val) => {
     val.forEach((v, i) => acc[i].push(v))

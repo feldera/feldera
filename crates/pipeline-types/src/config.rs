@@ -5,20 +5,17 @@
 //! endpoint configs.  We represent these configs as opaque yaml values, so
 //! that the entire configuration tree can be deserialized from a yaml file.
 
-use serde::{Deserialize, Serialize};
-use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, collections::BTreeMap};
-use utoipa::ToSchema;
-
 use crate::query::OutputQuery;
-use crate::service::ServiceConfig;
 use crate::transport::datagen::DatagenInputConfig;
 use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
-use crate::transport::error::{TransportReplaceError, TransportResolveError};
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
+use serde::{Deserialize, Serialize};
+use serde_yaml::Value as YamlValue;
+use std::{borrow::Cow, collections::BTreeMap};
+use utoipa::ToSchema;
 
 /// Default value of `ConnectorConfig::max_queued_records`.
 /// It is declared as a function and not as a constant, so it can
@@ -42,12 +39,11 @@ fn default_tracing() -> bool {
     true
 }
 
-/// Pipeline configuration specified by the user when creating
-/// a new pipeline instance.
-///
-/// This is the shape of the overall pipeline configuration. It encapsulates a
-/// [`RuntimeConfig`], which is the publicly exposed way for users to configure
-/// pipelines.
+/// Pipeline deployment configuration.
+/// It represents configuration entries directly provided by the user
+/// (e.g., runtime configuration) and entries derived from the schema
+/// of the compiled program (e.g., connectors). Storage configuration,
+/// if applicable, is set by the runner.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PipelineConfig {
     /// Global controller configuration.
@@ -72,6 +68,16 @@ pub struct PipelineConfig {
     /// Output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+}
+
+impl PipelineConfig {
+    pub fn from_yaml(s: &str) -> Self {
+        serde_yaml::from_str(s).unwrap()
+    }
+
+    pub fn to_yaml(&self) -> String {
+        serde_yaml::to_string(self).unwrap()
+    }
 }
 
 /// Configuration for persistent storage in a [`PipelineConfig`].
@@ -124,9 +130,14 @@ impl StorageCacheConfig {
     }
 }
 
+/// Enable the CPU profile by default.
+fn default_cpu_profiler() -> bool {
+    true
+}
+
 /// Global pipeline configuration settings. This is the publicly
 /// exposed type for users to configure pipelines.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
     #[serde(default = "default_workers")]
@@ -146,7 +157,9 @@ pub struct RuntimeConfig {
     pub storage: bool,
 
     /// Enable CPU profiler.
-    #[serde(default)]
+    ///
+    /// The default value is `true`.
+    #[serde(default = "default_cpu_profiler")]
     pub cpu_profiler: bool,
 
     /// Enable pipeline tracing.
@@ -193,8 +206,8 @@ impl RuntimeConfig {
         serde_yaml::from_str(s).unwrap()
     }
 
-    pub fn to_yaml(config: &Self) -> String {
-        serde_yaml::to_string(config).unwrap()
+    pub fn to_yaml(&self) -> String {
+        serde_yaml::to_string(self).unwrap()
     }
 }
 
@@ -250,16 +263,6 @@ pub struct ConnectorConfig {
     /// The default is `false`.
     #[serde(default)]
     pub paused: bool,
-}
-
-impl ConnectorConfig {
-    pub fn from_yaml_str(s: &str) -> Self {
-        serde_yaml::from_str(s).unwrap()
-    }
-
-    pub fn to_yaml(&self) -> String {
-        serde_yaml::to_string(&self).unwrap()
-    }
 }
 
 fn default_max_buffer_time_millis() -> usize {
@@ -357,62 +360,6 @@ pub struct OutputEndpointConfig {
     pub connector_config: ConnectorConfig,
 }
 
-/// Required trait for every transport configuration, as it needs to be
-/// convertible to its storable variant with the service names resolved
-/// to identifiers that are stored in separate columns alongside it.
-pub trait TransportConfigVariant {
-    /// Returns the name of the transport config variant.
-    fn name(&self) -> String;
-
-    /// Retrieves all the service names in the configuration.
-    /// This is used just before storing in the database, such that the names
-    /// are resolved to identifiers while stored. Upon deserialization from
-    /// the database, the exact same order of names is expected in
-    /// [replace_any_service_names](Self::replace_any_service_names).
-    fn service_names(&self) -> Vec<String> {
-        vec![]
-    }
-
-    /// Replaces the service names in the direct deserialized version with the
-    /// service names fetched using the identifier foreign key relations.
-    fn replace_any_service_names(
-        self,
-        replacement_service_names: &[String],
-    ) -> Result<Self, TransportReplaceError>
-    where
-        Self: Sized,
-    {
-        if replacement_service_names.is_empty() {
-            Ok(self)
-        } else {
-            Err(TransportReplaceError {
-                expected: 0,
-                actual: replacement_service_names.len(),
-            })
-        }
-    }
-
-    /// Converts the configuration to its final form by resolving the services
-    /// that it refers to. Resolution in this case means applying the service
-    /// configuration as basis (e.g., providing defaults for certain fields).
-    fn resolve_any_services(
-        self,
-        services: &BTreeMap<String, ServiceConfig>,
-    ) -> Result<Self, TransportResolveError>
-    where
-        Self: Sized,
-    {
-        if services.is_empty() {
-            Ok(self)
-        } else {
-            Err(TransportResolveError::IncorrectNumServices {
-                expected: 0,
-                actual: services.len(),
-            })
-        }
-    }
-}
-
 /// Transport-specific endpoint configuration passed to
 /// `crate::OutputTransport::new_endpoint`
 /// and `crate::InputTransport::new_endpoint`.
@@ -434,126 +381,20 @@ pub enum TransportConfig {
     HttpOutput,
 }
 
-impl TransportConfigVariant for TransportConfig {
-    fn name(&self) -> String {
+impl TransportConfig {
+    pub fn name(&self) -> String {
         match self {
-            TransportConfig::FileInput(config) => config.name(),
-            TransportConfig::FileOutput(config) => config.name(),
-            TransportConfig::KafkaInput(config) => config.name(),
-            TransportConfig::KafkaOutput(config) => config.name(),
-            TransportConfig::UrlInput(config) => config.name(),
-            TransportConfig::S3Input(config) => config.name(),
-            TransportConfig::DeltaTableInput(config) => config.name(),
-            TransportConfig::DeltaTableOutput(config) => config.name(),
-            TransportConfig::Datagen(config) => config.name(),
+            TransportConfig::FileInput(_) => "file_input".to_string(),
+            TransportConfig::FileOutput(_) => "file_output".to_string(),
+            TransportConfig::KafkaInput(_) => "kafka_input".to_string(),
+            TransportConfig::KafkaOutput(_) => "kafka_output".to_string(),
+            TransportConfig::UrlInput(_) => "url_input".to_string(),
+            TransportConfig::S3Input(_) => "s3_input".to_string(),
+            TransportConfig::DeltaTableInput(_) => "delta_table_input".to_string(),
+            TransportConfig::DeltaTableOutput(_) => "delta_table_output".to_string(),
+            TransportConfig::Datagen(_) => "datagen".to_string(),
             TransportConfig::HttpInput => "http_input".to_string(),
             TransportConfig::HttpOutput => "http_output".to_string(),
-        }
-    }
-
-    fn service_names(&self) -> Vec<String> {
-        match self {
-            TransportConfig::FileInput(config) => config.service_names(),
-            TransportConfig::FileOutput(config) => config.service_names(),
-            TransportConfig::KafkaInput(config) => config.service_names(),
-            TransportConfig::KafkaOutput(config) => config.service_names(),
-            TransportConfig::UrlInput(config) => config.service_names(),
-            TransportConfig::S3Input(config) => config.service_names(),
-            TransportConfig::DeltaTableInput(config) => config.service_names(),
-            TransportConfig::DeltaTableOutput(config) => config.service_names(),
-            TransportConfig::Datagen(config) => config.service_names(),
-            TransportConfig::HttpInput => vec![],
-            TransportConfig::HttpOutput => vec![],
-        }
-    }
-
-    fn replace_any_service_names(
-        self,
-        replacement_service_names: &[String],
-    ) -> Result<Self, TransportReplaceError> {
-        match self {
-            TransportConfig::FileInput(config) => Ok(TransportConfig::FileInput(
-                config.replace_any_service_names(replacement_service_names)?,
-            )),
-            TransportConfig::FileOutput(config) => Ok(TransportConfig::FileOutput(
-                config.replace_any_service_names(replacement_service_names)?,
-            )),
-            TransportConfig::KafkaInput(config) => Ok(TransportConfig::KafkaInput(
-                config.replace_any_service_names(replacement_service_names)?,
-            )),
-            TransportConfig::KafkaOutput(config) => Ok(TransportConfig::KafkaOutput(
-                config.replace_any_service_names(replacement_service_names)?,
-            )),
-            TransportConfig::UrlInput(config) => Ok(TransportConfig::UrlInput(
-                config.replace_any_service_names(replacement_service_names)?,
-            )),
-            TransportConfig::S3Input(config) => Ok(TransportConfig::S3Input(
-                config.replace_any_service_names(replacement_service_names)?,
-            )),
-            TransportConfig::DeltaTableInput(config) => Ok(TransportConfig::DeltaTableInput(
-                config.replace_any_service_names(replacement_service_names)?,
-            )),
-            TransportConfig::DeltaTableOutput(config) => Ok(TransportConfig::DeltaTableOutput(
-                config.replace_any_service_names(replacement_service_names)?,
-            )),
-            TransportConfig::Datagen(config) => Ok(TransportConfig::Datagen(
-                config.replace_any_service_names(replacement_service_names)?,
-            )),
-            TransportConfig::HttpInput | TransportConfig::HttpOutput => {
-                if replacement_service_names.is_empty() {
-                    Ok(self)
-                } else {
-                    Err(TransportReplaceError {
-                        expected: 0,
-                        actual: replacement_service_names.len(),
-                    })
-                }
-            }
-        }
-    }
-
-    fn resolve_any_services(
-        self,
-        services: &BTreeMap<String, ServiceConfig>,
-    ) -> Result<TransportConfig, TransportResolveError> {
-        match self {
-            TransportConfig::FileInput(config) => Ok(TransportConfig::FileInput(
-                config.resolve_any_services(services)?,
-            )),
-            TransportConfig::FileOutput(config) => Ok(TransportConfig::FileOutput(
-                config.resolve_any_services(services)?,
-            )),
-            TransportConfig::KafkaInput(config) => Ok(TransportConfig::KafkaInput(
-                config.resolve_any_services(services)?,
-            )),
-            TransportConfig::KafkaOutput(config) => Ok(TransportConfig::KafkaOutput(
-                config.resolve_any_services(services)?,
-            )),
-            TransportConfig::UrlInput(config) => Ok(TransportConfig::UrlInput(
-                config.resolve_any_services(services)?,
-            )),
-            TransportConfig::S3Input(config) => Ok(TransportConfig::S3Input(
-                config.resolve_any_services(services)?,
-            )),
-            TransportConfig::DeltaTableInput(config) => Ok(TransportConfig::DeltaTableInput(
-                config.resolve_any_services(services)?,
-            )),
-            TransportConfig::DeltaTableOutput(config) => Ok(TransportConfig::DeltaTableOutput(
-                config.resolve_any_services(services)?,
-            )),
-            TransportConfig::Datagen(config) => Ok(TransportConfig::Datagen(
-                config.resolve_any_services(services)?,
-            )),
-            TransportConfig::HttpInput | TransportConfig::HttpOutput => {
-                if services.is_empty() {
-                    Ok(self)
-                } else {
-                    Err(TransportResolveError::IncorrectNumServices {
-                        expected: 0,
-                        actual: services.len(),
-                    })
-                }
-            }
         }
     }
 }

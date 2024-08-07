@@ -1,14 +1,11 @@
-use std::{sync::Arc, time::Duration};
-
+use crate::db::storage::Storage;
+use crate::db::storage_postgres::StoragePostgres;
+use crate::error::ManagerError;
 use actix_web::{HttpResponse, ResponseError};
 use chrono::{DateTime, Local};
 use log::{error, trace};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
-
-use crate::{
-    api::ManagerError,
-    db::{storage::Storage, ProjectDB},
-};
 
 #[derive(Debug)]
 pub struct Probe {
@@ -18,7 +15,7 @@ pub struct Probe {
 
 async fn check_if_db_reachable(
     probe: Arc<Mutex<Probe>>,
-    db: Arc<Mutex<ProjectDB>>,
+    db: Arc<Mutex<StoragePostgres>>,
     interval: Duration,
 ) {
     loop {
@@ -36,7 +33,7 @@ async fn check_if_db_reachable(
 }
 
 impl Probe {
-    pub async fn new(db: Arc<Mutex<ProjectDB>>) -> Arc<Mutex<Probe>> {
+    pub async fn new(db: Arc<Mutex<StoragePostgres>>) -> Arc<Mutex<Probe>> {
         let probe = Probe {
             last_checked: Local::now(),
             last_error: None,

@@ -11,6 +11,7 @@ use pipeline_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs::{read_dir, File};
 use std::io::Read;
@@ -131,8 +132,8 @@ where
         name: Cow::from("json"),
         config: serde_yaml::to_value(JsonParserConfig {
             update_format: JsonUpdateFormat::Raw,
-            json_flavor: JsonFlavor::Default,
-            array: false,
+            json_flavor: JsonFlavor::Datagen,
+            array: true,
         })
         .unwrap(),
     };
@@ -172,12 +173,23 @@ where
         let mut catalog = Catalog::new();
         let (input, hinput) = circuit.add_input_zset::<T>();
 
-        let input_schema =
-            serde_json::to_string(&Relation::new("test_input1", false, schema.clone(), false))
-                .unwrap();
+        let input_schema = serde_json::to_string(&Relation::new(
+            "test_input1",
+            false,
+            schema.clone(),
+            false,
+            BTreeMap::new(),
+        ))
+        .unwrap();
 
-        let output_schema =
-            serde_json::to_string(&Relation::new("test_output1", false, schema, false)).unwrap();
+        let output_schema = serde_json::to_string(&Relation::new(
+            "test_output1",
+            false,
+            schema,
+            false,
+            BTreeMap::new(),
+        ))
+        .unwrap();
 
         catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
         catalog.register_materialized_output_zset(input, &output_schema);
@@ -215,7 +227,7 @@ where
     let buffer = MockDeZSet::<T, T>::new();
 
     // Input parsers don't care about schema yet.
-    let schema = Relation::new("mock_schema", false, vec![], false);
+    let schema = Relation::new("mock_schema", false, vec![], false, BTreeMap::new());
 
     let mut parser = format
         .new_parser(

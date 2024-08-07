@@ -15,16 +15,15 @@ export interface RandomExponentialBigNumber extends RandomBigNumberGenerationSou
   (lambda: BigNumber): () => BigNumber
 }
 
-export const randomExponentialBigNumber: RandomExponentialBigNumber = (function sourceRandomExponentialBigNumber(
-  source
-) {
-  function randomExponentialBigNumber(lambda: BigNumber) {
-    return function () {
-      return new BigNumber(-Math.log(1 - source())).div(lambda)
+export const randomExponentialBigNumber: RandomExponentialBigNumber =
+  (function sourceRandomExponentialBigNumber(source) {
+    function randomExponentialBigNumber(lambda: BigNumber) {
+      return function () {
+        return new BigNumber(-Math.log(1 - source())).div(lambda)
+      }
     }
-  }
 
-  randomExponentialBigNumber.source = sourceRandomExponentialBigNumber
+    randomExponentialBigNumber.source = sourceRandomExponentialBigNumber
 
-  return randomExponentialBigNumber
-})(Math.random)
+    return randomExponentialBigNumber
+  })(Math.random)

@@ -262,7 +262,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.errorReporter, node);
         DBSPOperator result = new DBSPJoinFilterMapOperator(node.getNode(), node.getOutputZSetType(),
                 newFunction, null, null, node.isMultiset,
-                this.mapped(node.left()), this.mapped(node.right()));
+                this.mapped(node.left()), this.mapped(node.right()))
+                .copyAnnotations(node);
         this.map(node, result);
     }
 

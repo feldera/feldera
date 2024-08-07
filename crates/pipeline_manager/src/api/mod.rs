@@ -18,17 +18,16 @@
 
 mod api_key;
 mod config_api;
-mod connector;
 mod examples;
 mod http_io;
 mod pipeline;
-mod program;
-mod service;
 
 use crate::auth::JwkCache;
-use crate::compiler;
-use crate::config;
+use crate::config::ApiServerConfig;
+use crate::db::storage_postgres::StoragePostgres;
+use crate::error::ManagerError;
 use crate::probe::Probe;
+use crate::runner::RunnerApi;
 use actix_web::dev::Service;
 use actix_web::Scope;
 use actix_web::{
@@ -42,24 +41,11 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use log::info;
-use pipeline_types::error::ErrorResponse;
 use std::{env, net::TcpListener, sync::Arc};
 use tokio::sync::Mutex;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
-
-pub(crate) use crate::compiler::ProgramStatus;
-pub(crate) use crate::config::ApiServerConfig;
-use crate::db::{
-    AttachedConnectorId, ConnectorId, PipelineId, ProgramId, ProjectDB, ServiceId, Version,
-};
-pub use crate::error::ManagerError;
-use crate::runner::RunnerApi;
-use pipeline_types::config as pipeline_types_config;
-
-use crate::auth::TenantId;
-use crate::demo::Demo;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -67,225 +53,164 @@ use crate::demo::Demo;
     info(
         title = "Feldera API",
         description = r"
-With Feldera, users create data pipelines out of SQL programs and data connectors. A SQL program comprises tables and views. Connectors feed data to input tables in a program or receive outputs computed by views.
+With Feldera, users create data pipelines out of SQL programs.
+A SQL program comprises tables and views, and includes as well the definition of
+input and output connectors for each respectively. A connector defines a data
+source or data sink to feed input data into tables or receive output data
+computed by the views respectively.
 
-This API allows users to create and manage data pipelines, and the programs
-and connectors that comprise these pipelines.
+## Pipeline
 
-# API concepts
+The API is centered around the **pipeline**, which most importantly consists
+out of the SQL program, but also has accompanying metadata and configuration parameters
+(e.g., compilation profile, number of workers, etc.).
 
-* *Program*.  A SQL program with a unique name and a unique ID
-  attached to it. A program contains tables and views. A program
-  needs to be compiled before it can be executed in a pipeline.
+* A pipeline is identified and referred to by a user-provided unique name.
+* The pipeline program is asynchronously compiled when the pipeline is first created or
+  its program code or configuration is updated.
+* Running the pipeline (*deployment*) is only possible once the program is compiled
+* A pipeline cannot be updated while it is running
 
-* *Connector*. A data connector that can be used to feed input data to
-SQL tables or consume outputs from SQL views. Every connector
-has a unique name and identifier. We currently support Kafka and Redpanda.
-We also support directly ingesting and consuming data via HTTP;
-see the `pipelines/{pipeline_id}/ingress` and `pipelines/{pipeline_id}/egress`
-endpoints.
+## Concurrency
 
-* *Service*. A service with a unique name and ID.
-  It represents a service (such as Kafka, etc.) that a connector can refer to in
-  its config. Services are declared separately to reduce duplication and to make it
-  easier to create connectors. A service has its own configuration, which
-  generally includes hostname, port, authentication, and any service parameters.
-
-* *Pipeline*.  A pipeline is a running instance of a program and
-some attached connectors. A client can create multiple pipelines that make use of
-the same program and connectors. Every pipeline has a unique name and identifier.
-Deploying a pipeline instantiates the pipeline with the then latest version of
-the referenced program and connectors. This allows the API to accumulate edits
-to programs and connectors before use in a pipeline.
-
-# Concurrency
-
-All programs have an associated *version*. This is done to prevent
-race conditions due to multiple users accessing the same
-program concurrently.  An example is user 1 modifying the program,
-while user 2 is starting a pipeline for the same program. It would be confusing
-if the pipeline could end up running the old or the new version.
-
-A version is a monotonically increasing number, associated with each
-program and pipeline. Every request to compile the program or start a
-pipeline must include the program id and version number. If the version number
-isn't equal to the current version in the database, this means that the
-last version of the program observed by the client is outdated, so the
-request is rejected."
+Both the pipeline and its program have an associated *version*.
+A version is a monotonically increasing number.
+Anytime the core fields (name, description, runtime_config, program_code, program_config) are modified,
+the pipeline version is incremented.
+Anytime the program core fields (program_code, program_config) are modified,
+the program version is incremented.
+The program version is used internally by the compiler to know when to recompile."
     ),
     paths(
-        program::get_programs,
-        program::get_program,
-        program::new_program,
-        program::update_program,
-        program::create_or_replace_program,
-        program::compile_program,
-        program::delete_program,
-        pipeline::new_pipeline,
-        pipeline::update_pipeline,
-        pipeline::create_or_replace_pipeline,
+        // Regular pipeline endpoints
         pipeline::list_pipelines,
-        pipeline::pipeline_stats,
         pipeline::get_pipeline,
-        pipeline::get_pipeline_config,
-        pipeline::pipeline_validate,
-        pipeline::pipeline_action,
+        pipeline::post_pipeline,
+        pipeline::put_pipeline,
+        pipeline::patch_pipeline,
+        pipeline::delete_pipeline,
+
+        // Special pipeline endpoints
+        pipeline::post_pipeline_action,
         pipeline::input_endpoint_action,
-        pipeline::pipeline_deployed,
-        pipeline::pipeline_delete,
-        pipeline::dump_profile,
-        pipeline::heap_profile,
-        connector::list_connectors,
-        connector::get_connector,
-        connector::new_connector,
-        connector::update_connector,
-        connector::create_or_replace_connector,
-        connector::delete_connector,
-        service::list_services,
-        service::get_service,
-        service::new_service,
-        service::update_service,
-        service::delete_service,
+        pipeline::get_pipeline_stats,
+        pipeline::get_pipeline_circuit_profile,
+        pipeline::get_pipeline_heap_profile,
+
+        // HTTP input/output
         http_io::http_input,
         http_io::http_output,
+
+        // API keys
         api_key::create_api_key,
         api_key::list_api_keys,
         api_key::get_api_key,
         api_key::delete_api_key,
-        config_api::get_authentication_config,
-        config_api::get_demos,
+
+        // Configuration
+        config_api::get_config_authentication,
+        config_api::get_config_demos,
     ),
     components(schemas(
+        // Authentication
         crate::auth::AuthProvider,
         crate::auth::ProviderAwsCognito,
         crate::auth::ProviderGoogleIdentity,
-        crate::compiler::SqlCompilerMessage,
-        crate::db::AttachedConnector,
-        crate::db::ProgramDescr,
-        crate::db::ConnectorDescr,
-        crate::db::ServiceDescr,
-        crate::db::Pipeline,
-        crate::db::PipelineRuntimeState,
-        crate::db::PipelineDescr,
-        crate::db::PipelineRevision,
-        crate::db::Revision,
-        crate::db::PipelineStatus,
-        crate::db::ApiKeyId,
-        crate::db::ApiKeyDescr,
-        crate::db::ApiPermission,
-        pipeline_types::program_schema::ProgramSchema,
-        pipeline_types::program_schema::Relation,
-        pipeline_types::program_schema::SqlType,
-        pipeline_types::program_schema::Field,
-        pipeline_types::program_schema::ColumnType,
-        pipeline_types::program_schema::IntervalUnit,
-        pipeline_types::query::NeighborhoodQuery,
-        pipeline_types::query::OutputQuery,
+
+        // Common
+        crate::db::types::common::Version,
+
+        // Pipeline
+        crate::db::types::pipeline::PipelineId,
+        crate::db::types::pipeline::PipelineDescr,
+        crate::db::types::pipeline::ExtendedPipelineDescr,
+        crate::db::types::pipeline::PipelineStatus,
+        crate::api::pipeline::ListPipelinesQueryParameters,
+        crate::api::pipeline::PatchPipeline,
+        crate::api::pipeline::ExtendedPipelineDescrOptionalCode,
+
+        // Demo
+        crate::demo::Demo,
+
+        // Program
+        crate::db::types::program::CompilationProfile,
+        crate::db::types::program::SqlCompilerMessage,
+        crate::db::types::program::ProgramStatus,
+        crate::db::types::program::ProgramConfig,
+        crate::db::types::program::ProgramInfo,
+
+        // API key
+        crate::db::types::api_key::ApiKeyId,
+        crate::db::types::api_key::ApiPermission,
+        crate::db::types::api_key::ApiKeyDescr,
+        crate::api::api_key::NewApiKeyRequest,
+        crate::api::api_key::NewApiKeyResponse,
+
+        // From the pipeline-types crate
         pipeline_types::config::PipelineConfig,
         pipeline_types::config::StorageConfig,
         pipeline_types::config::StorageCacheConfig,
-        pipeline_types::config::InputEndpointConfig,
-        pipeline_types::config::OutputEndpointConfig,
-        pipeline_types::config::FormatConfig,
         pipeline_types::config::RuntimeConfig,
+        pipeline_types::config::InputEndpointConfig,
         pipeline_types::config::ConnectorConfig,
+        pipeline_types::config::OutputBufferConfig,
+        pipeline_types::config::OutputEndpointConfig,
         pipeline_types::config::TransportConfig,
         pipeline_types::config::FormatConfig,
         pipeline_types::config::ResourceConfig,
         pipeline_types::transport::file::FileInputConfig,
         pipeline_types::transport::file::FileOutputConfig,
         pipeline_types::transport::url::UrlInputConfig,
-        pipeline_types::transport::kafka::KafkaInputConfig,
-        pipeline_types::transport::kafka::KafkaInputFtConfig,
         pipeline_types::transport::kafka::KafkaHeader,
         pipeline_types::transport::kafka::KafkaHeaderValue,
-        pipeline_types::transport::kafka::KafkaOutputConfig,
-        pipeline_types::transport::kafka::KafkaOutputFtConfig,
         pipeline_types::transport::kafka::KafkaLogLevel,
-        pipeline_types::transport::http::Chunk,
-        pipeline_types::transport::http::EgressMode,
-        pipeline_types::transport::s3::AwsCredentials,
+        pipeline_types::transport::kafka::KafkaInputConfig,
+        pipeline_types::transport::kafka::KafkaOutputConfig,
+        pipeline_types::transport::kafka::KafkaInputFtConfig,
+        pipeline_types::transport::kafka::KafkaOutputFtConfig,
         pipeline_types::transport::s3::ConsumeStrategy,
         pipeline_types::transport::s3::ReadStrategy,
+        pipeline_types::transport::s3::AwsCredentials,
         pipeline_types::transport::s3::S3InputConfig,
-        pipeline_types::transport::delta_table::DeltaTableIngestMode,
-        pipeline_types::transport::delta_table::DeltaTableReaderConfig,
-        pipeline_types::transport::delta_table::DeltaTableWriteMode,
-        pipeline_types::transport::delta_table::DeltaTableWriterConfig,
-        pipeline_types::transport::datagen::DatagenInputConfig,
-        pipeline_types::transport::datagen::GenerationPlan,
-        pipeline_types::transport::datagen::RngFieldSettings,
         pipeline_types::transport::datagen::DatagenStrategy,
-        pipeline_types::transport::datagen::StringMethod,
-        pipeline_types::format::csv::CsvEncoderConfig,
-        pipeline_types::format::csv::CsvParserConfig,
-        pipeline_types::format::json::JsonEncoderConfig,
-        pipeline_types::format::json::JsonParserConfig,
-        pipeline_types::format::json::JsonFlavor,
+        pipeline_types::transport::datagen::RngFieldSettings,
+        pipeline_types::transport::datagen::GenerationPlan,
+        pipeline_types::transport::datagen::DatagenInputConfig,
+        pipeline_types::transport::delta_table::DeltaTableIngestMode,
+        pipeline_types::transport::delta_table::DeltaTableWriteMode,
+        pipeline_types::transport::delta_table::DeltaTableReaderConfig,
+        pipeline_types::transport::delta_table::DeltaTableWriterConfig,
+        pipeline_types::transport::http::Chunk,
+        pipeline_types::transport::http::EgressMode,
+        pipeline_types::query::OutputQuery,
+        pipeline_types::query::NeighborhoodQuery,
         pipeline_types::format::json::JsonUpdateFormat,
-        pipeline_types::format::parquet::ParquetEncoderConfig,
-        pipeline_types::format::parquet::ParquetParserConfig,
+        pipeline_types::program_schema::ProgramSchema,
+        pipeline_types::program_schema::Relation,
+        pipeline_types::program_schema::SqlType,
+        pipeline_types::program_schema::Field,
+        pipeline_types::program_schema::ColumnType,
+        pipeline_types::program_schema::IntervalUnit,
+        pipeline_types::program_schema::SourcePosition,
+        pipeline_types::program_schema::PropertyValue,
         pipeline_types::error::ErrorResponse,
-        pipeline_types::service::ServiceConfig,
-        pipeline_types::service::KafkaService,
-        TenantId,
-        ProgramId,
-        PipelineId,
-        ConnectorId,
-        AttachedConnectorId,
-        ServiceId,
-        Version,
-        ProgramStatus,
-        ErrorResponse,
-        program::NewProgramRequest,
-        program::NewProgramResponse,
-        program::UpdateProgramRequest,
-        program::UpdateProgramResponse,
-        program::CreateOrReplaceProgramRequest,
-        program::CreateOrReplaceProgramResponse,
-        program::CompileProgramRequest,
-        pipeline::NewPipelineRequest,
-        pipeline::NewPipelineResponse,
-        pipeline::UpdatePipelineRequest,
-        pipeline::UpdatePipelineResponse,
-        pipeline::CreateOrReplacePipelineRequest,
-        pipeline::CreateOrReplacePipelineResponse,
-        connector::NewConnectorRequest,
-        connector::NewConnectorResponse,
-        connector::UpdateConnectorRequest,
-        connector::UpdateConnectorResponse,
-        connector::CreateOrReplaceConnectorRequest,
-        connector::CreateOrReplaceConnectorResponse,
-        service::NewServiceRequest,
-        service::NewServiceResponse,
-        service::UpdateServiceRequest,
-        service::UpdateServiceResponse,
-        service::CreateOrReplaceServiceRequest,
-        service::CreateOrReplaceServiceResponse,
-        api_key::NewApiKeyRequest,
-        api_key::NewApiKeyResponse,
-        compiler::ProgramConfig,
-        config::CompilationProfile,
-        pipeline_types_config::OutputBufferConfig,
-        pipeline_types_config::OutputEndpointConfig,
-        Demo,
+
+        // Configuration
+        pipeline_types::config::OutputBufferConfig,
+        pipeline_types::config::OutputEndpointConfig,
     ),),
     tags(
-        (name = "Manager", description = "Configure system behavior"),
-        (name = "Programs", description = "Manage programs"),
-        (name = "Pipelines", description = "Manage pipelines"),
-        (name = "Connectors", description = "Manage data connectors"),
-        (name = "Services", description = "Manage services"),
+        (name = "Pipelines", description = "Manage pipelines and their deployment."),
+        (name = "HTTP input/output", description = "Interact with running pipelines using HTTP."),
+        (name = "Authentication", description = "Retrieve authentication configuration."),
+        (name = "Configuration", description = "Retrieve general configuration."),
+        (name = "API keys", description = "Manage API keys."),
     ),
 )]
 pub struct ApiDoc;
 
 // `static_files` magic.
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
-
-mod web_v2 {
-    include!(concat!(env!("OUT_DIR"), "/v2/generated.rs"));
-}
 
 // The scope for all unauthenticated API endpoints
 fn public_scope() -> Scope {
@@ -295,61 +220,40 @@ fn public_scope() -> Scope {
     // app, always attach other scopes without empty prefixes before this one,
     // or route resolution does not work correctly.
     web::scope("")
-        .service(config_api::get_authentication_config)
+        .service(config_api::get_config_authentication)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(healthz)
-        .service(ResourceFiles::new("/", generate()))
-}
-
-fn new_scope() -> Scope {
-    web::scope("/new")
-        .service(ResourceFiles::new("/", web_v2::generate()).resolve_not_found_to_root())
+        .service(ResourceFiles::new("/", generate()).resolve_not_found_to_root())
 }
 
 // The scope for all authenticated API endpoints
 fn api_scope() -> Scope {
     // Make APIs available under the /v0/ prefix
     web::scope("/v0")
-        .service(program::get_programs)
-        .service(program::get_program)
-        .service(program::new_program)
-        .service(program::update_program)
-        .service(program::create_or_replace_program)
-        .service(program::compile_program)
-        .service(program::delete_program)
-        .service(pipeline::new_pipeline)
-        .service(pipeline::update_pipeline)
-        .service(pipeline::create_or_replace_pipeline)
+        // Typical pipeline endpoints
         .service(pipeline::list_pipelines)
-        .service(pipeline::pipeline_stats)
         .service(pipeline::get_pipeline)
-        .service(pipeline::get_pipeline_config)
-        .service(pipeline::pipeline_action)
+        .service(pipeline::post_pipeline)
+        .service(pipeline::put_pipeline)
+        .service(pipeline::patch_pipeline)
+        .service(pipeline::delete_pipeline)
+        // Special pipeline endpoints
+        .service(pipeline::post_pipeline_action)
         .service(pipeline::input_endpoint_action)
-        .service(pipeline::pipeline_validate)
-        .service(pipeline::pipeline_deployed)
-        .service(pipeline::pipeline_delete)
-        .service(pipeline::dump_profile)
-        .service(pipeline::heap_profile)
-        .service(connector::list_connectors)
-        .service(connector::get_connector)
-        .service(connector::new_connector)
-        .service(connector::update_connector)
-        .service(connector::create_or_replace_connector)
-        .service(connector::delete_connector)
-        .service(service::list_services)
-        .service(service::get_service)
-        .service(service::new_service)
-        .service(service::update_service)
-        .service(service::create_or_replace_service)
-        .service(service::delete_service)
+        .service(pipeline::get_pipeline_stats)
+        .service(pipeline::get_pipeline_circuit_profile)
+        .service(pipeline::get_pipeline_heap_profile)
+        // API keys endpoints
         .service(api_key::create_api_key)
         .service(api_key::list_api_keys)
         .service(api_key::get_api_key)
         .service(api_key::delete_api_key)
+        // HTTP input/output endpoints
         .service(http_io::http_input)
         .service(http_io::http_output)
-        .service(config_api::get_demos)
+        // Configuration endpoints
+        .service(config_api::get_config_authentication)
+        .service(config_api::get_config_demos)
 }
 
 struct SecurityAddon;
@@ -396,7 +300,7 @@ pub(crate) fn parse_string_param(
 pub(crate) struct ServerState {
     // The server must avoid holding this lock for a long time to avoid blocking concurrent
     // requests.
-    pub db: Arc<Mutex<ProjectDB>>,
+    pub db: Arc<Mutex<StoragePostgres>>,
     runner: RunnerApi,
     _config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
@@ -404,7 +308,7 @@ pub(crate) struct ServerState {
 }
 
 impl ServerState {
-    pub async fn new(config: ApiServerConfig, db: Arc<Mutex<ProjectDB>>) -> AnyResult<Self> {
+    pub async fn new(config: ApiServerConfig, db: Arc<Mutex<StoragePostgres>>) -> AnyResult<Self> {
         let runner = RunnerApi::new(db.clone());
         let db_copy = db.clone();
         Ok(Self {
@@ -430,7 +334,7 @@ fn create_listener(api_config: &ApiServerConfig) -> AnyResult<TcpListener> {
     Ok(listener)
 }
 
-pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyResult<()> {
+pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -> AnyResult<()> {
     let listener = create_listener(&api_config)?;
     let state = WebData::new(ServerState::new(api_config.clone(), db).await?);
     let bind_address = api_config.bind_address.clone();
@@ -471,7 +375,6 @@ pub async fn run(db: Arc<Mutex<ProjectDB>>, api_config: ApiServerConfig) -> AnyR
                         let req = crate::auth::tag_with_default_tenant_id(req);
                         srv.call(req)
                     }))
-                    .service(new_scope())
                     .service(public_scope())
             });
             server.listen(listener)?.run()

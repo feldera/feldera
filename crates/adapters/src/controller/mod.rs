@@ -83,11 +83,11 @@ mod stats;
 use crate::catalog::{SerBatchReader, SerTrace};
 use crate::integrated::create_integrated_input_endpoint;
 pub use error::{ConfigError, ControllerError};
+use pipeline_types::config::OutputBufferConfig;
 pub use pipeline_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };
-use pipeline_types::config::{OutputBufferConfig, TransportConfigVariant};
 use pipeline_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use pipeline_types::program_schema::canonical_identifier;
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
@@ -1157,8 +1157,8 @@ impl ControllerInner {
                         name: Cow::from("json"),
                         config: serde_yaml::to_value(JsonParserConfig {
                             update_format: JsonUpdateFormat::Raw,
-                            json_flavor: JsonFlavor::Default,
-                            array: false,
+                            json_flavor: JsonFlavor::Datagen,
+                            array: true,
                         })
                         .unwrap(),
                     }

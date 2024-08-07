@@ -6,10 +6,8 @@ use actix_web::{
 };
 use log::debug;
 
-use crate::{
-    api::{examples, parse_string_param},
-    auth::TenantId,
-};
+use crate::api::{examples, parse_string_param};
+use crate::db::types::tenant::TenantId;
 
 use super::{ManagerError, ServerState};
 
@@ -31,29 +29,29 @@ use super::{ManagerError, ServerState};
         (status = BAD_REQUEST
             , description = "Specified pipeline id is not a valid uuid."
             , body = ErrorResponse
-            , example = json!(examples::invalid_uuid_param())),
+            , example = json!(examples::error_invalid_uuid_param())),
         (status = NOT_FOUND
             , description = "Specified pipeline id does not exist."
             , body = ErrorResponse
-            , example = json!(examples::unknown_pipeline())),
+            , example = json!(examples::error_unknown_pipeline())),
         (status = NOT_FOUND
             , description = "Specified table does not exist."
             , body = ErrorResponse
-            // , example = json!(examples::unknown_input_table("MyTable"))
+            // , example = json!(examples::error_unknown_input_table("MyTable"))
             ),
         (status = NOT_FOUND
             , description = "Pipeline is not currently running because it has been shutdown or not yet started."
             , body = ErrorResponse
-            , example = json!(examples::pipeline_shutdown())),
+            , example = json!(examples::error_pipeline_not_running_or_paused())),
         (status = BAD_REQUEST
             , description = "Unknown data format specified in the '?format=' argument."
             , body = ErrorResponse
-            // , example = json!(examples::unknown_input_format())
+            // , example = json!(examples::error_unknown_input_format())
             ),
         (status = BAD_REQUEST
             , description = "Error parsing input data."
             , body = ErrorResponse
-            // , example = json!(examples::parse_errors())
+            // , example = json!(examples::error_parse_errors())
             ),
         (status = INTERNAL_SERVER_ERROR
             , description = "Request failed."
@@ -134,24 +132,24 @@ async fn http_input(
         (status = BAD_REQUEST
             , description = "Specified pipeline id is not a valid uuid."
             , body = ErrorResponse
-            , example = json!(examples::invalid_uuid_param())),
+            , example = json!(examples::error_invalid_uuid_param())),
         (status = NOT_FOUND
             , description = "Specified pipeline id does not exist."
             , body = ErrorResponse
-            , example = json!(examples::unknown_pipeline())),
+            , example = json!(examples::error_unknown_pipeline())),
         (status = NOT_FOUND
             , description = "Specified table or view does not exist."
             , body = ErrorResponse
-            // , example = json!(examples::unknown_output_table("MyTable"))
+            // , example = json!(examples::error_unknown_output_table("MyTable"))
             ),
         (status = GONE
             , description = "Pipeline is not currently running because it has been shutdown or not yet started."
             , body = ErrorResponse
-            , example = json!(examples::pipeline_shutdown())),
+            , example = json!(examples::error_pipeline_not_running_or_paused())),
         (status = BAD_REQUEST
             , description = "Unknown data format specified in the '?format=' argument."
             , body = ErrorResponse
-            // , example = json!(examples::unknown_output_format())
+            // , example = json!(examples::error_unknown_output_format())
             ),
         (status = INTERNAL_SERVER_ERROR
             , description = "Request failed."

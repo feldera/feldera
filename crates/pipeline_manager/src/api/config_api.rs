@@ -1,4 +1,4 @@
-/// Configuration API to retrieve the current authentication configuration
+// Configuration API to retrieve the current authentication configuration and list of demos
 use crate::demo::{read_demos_from_directory, Demo};
 use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
 use log::debug;
@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 
 use super::{ManagerError, ServerState};
 
-/// Get authentication provider configuration
+/// Retrieve authentication provider configuration.
 #[utoipa::path(
     path="/config/authentication",
     responses(
@@ -24,7 +24,7 @@ use super::{ManagerError, ServerState};
     tag = "Authentication"
 )]
 #[get("/config/authentication")]
-async fn get_authentication_config(
+async fn get_config_authentication(
     state: WebData<ServerState>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
@@ -36,7 +36,7 @@ async fn get_authentication_config(
     Ok(HttpResponse::Ok().json(&auth_config.provider))
 }
 
-/// Get the list of demos.
+/// Retrieve the list of demos.
 #[utoipa::path(
     path="/config/demos",
     responses(
@@ -53,7 +53,7 @@ async fn get_authentication_config(
     tag = "Configuration",
 )]
 #[get("/config/demos")]
-async fn get_demos(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
+async fn get_config_demos(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
     match &state._config.demos_dir {
         None => Ok(HttpResponse::Ok().json(Vec::<Demo>::new())),
         Some(demos_dir) => {

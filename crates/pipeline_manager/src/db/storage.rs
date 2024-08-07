@@ -1,338 +1,42 @@
-use super::{
-    ApiKeyDescr, ApiPermission, AttachedConnector, ConnectorDescr, ConnectorId, DBError, Pipeline,
-    PipelineDescr, PipelineId, PipelineRevision, PipelineRuntimeState, PipelineStatus,
-    ProgramDescr, ProgramId, Revision, Version,
-};
-use crate::api::ProgramStatus;
-use crate::auth::TenantId;
-use crate::compiler::ProgramConfig;
-use crate::db::{ServiceDescr, ServiceId};
+use crate::db::error::DBError;
+use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
+use crate::db::types::common::Version;
+use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineDescr, PipelineId};
+use crate::db::types::program::{ProgramConfig, ProgramInfo, SqlCompilerMessage};
+use crate::db::types::tenant::TenantId;
 use async_trait::async_trait;
-use deadpool_postgres::Transaction;
-use pipeline_types::config::ConnectorConfig;
-use pipeline_types::service::ServiceConfig;
-use pipeline_types::{config::RuntimeConfig, program_schema::ProgramSchema};
+use pipeline_types::config::{PipelineConfig, RuntimeConfig};
+use pipeline_types::error::ErrorResponse;
 use uuid::Uuid;
 
-/// The storage trait contains the methods to interact with the pipeline manager
-/// storage layer (e.g., PostgresDB) to implement the public API.
-///
-/// We use a trait so we can mock the storage layer in tests.
+/// The [`Storage`] trait has all methods the API uses to interact with storage.
+/// The implementation of these methods varies depending on the backing storage.
+/// Although we have only one supported storage back-end (Postgres), we use a trait
+/// to define the interface such that we can mock the storage layer in tests.
 #[async_trait]
 pub(crate) trait Storage {
-    async fn list_programs(
+    /// Checks whether the database can be connected to.
+    async fn check_connection(&self) -> Result<(), DBError>;
+
+    /// Retrieves the tenant identifier for a given tenant (name, provider).
+    /// If there does not yet exist a tenant named (name, provider), it is created.
+    async fn get_or_create_tenant_id(
         &self,
-        tenant_id: TenantId,
-        with_code: bool,
-    ) -> Result<Vec<ProgramDescr>, DBError>;
+        new_id: Uuid, // Used only if the tenant does not yet exist
+        name: String,
+        provider: String,
+    ) -> Result<TenantId, DBError>;
 
-    /// Update program schema.
-    ///
-    /// # Note
-    /// This should be called after the SQL compilation succeeded, e.g., in the
-    /// same transaction that sets status to  [`ProgramStatus::CompilingRust`].
-    #[allow(dead_code)]
-    async fn set_program_schema(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        schema: ProgramSchema,
-    ) -> Result<(), DBError> {
-        self.update_program(
-            tenant_id,
-            program_id,
-            &None,
-            &None,
-            &None,
-            &None,
-            &Some(schema),
-            &None,
-            None,
-            None,
-        )
-        .await?;
-        Ok(())
-    }
-
-    /// Update program status after a version check.
-    ///
-    /// Updates program status to `status` if the current program version in the
-    /// database matches `expected_version`. Setting the status to
-    /// `ProgramStatus::Pending` resets the schema and is used to queue the
-    /// program for compilation.
-    #[allow(dead_code)]
-    async fn set_program_status_guarded(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        expected_version: Version,
-        status: ProgramStatus,
-    ) -> Result<(), DBError> {
-        self.update_program(
-            tenant_id,
-            program_id,
-            &None,
-            &None,
-            &None,
-            &Some(status),
-            &None,
-            &None,
-            Some(expected_version),
-            None,
-        )
-        .await?;
-        Ok(())
-    }
-
-    /// Create a new program.
-    #[allow(clippy::too_many_arguments)]
-    async fn new_program(
-        &self,
-        tenant_id: TenantId,
-        id: Uuid,
-        program_name: &str,
-        program_description: &str,
-        program_code: &str,
-        program_config: &ProgramConfig,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<(ProgramId, Version), DBError>;
-
-    /// Update program name, description and, optionally, code.
-    #[allow(clippy::too_many_arguments)]
-    async fn update_program(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        program_name: &Option<String>,
-        program_description: &Option<String>,
-        program_code: &Option<String>,
-        status: &Option<ProgramStatus>,
-        schema: &Option<ProgramSchema>,
-        config: &Option<ProgramConfig>,
-        guard: Option<Version>,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<Version, DBError>;
-
-    /// Retrieve program descriptor.
-    ///
-    /// Returns `None` if `program_id` is not found in the database.
-    async fn get_program_by_id(
-        &self,
-        tenant_id: TenantId,
-        program_id: ProgramId,
-        with_code: bool,
-    ) -> Result<ProgramDescr, DBError>;
-
-    /// Lookup program by name.
-    async fn get_program_by_name(
-        &self,
-        tenant_id: TenantId,
-        program_name: &str,
-        with_code: bool,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<ProgramDescr, DBError>;
-
-    /// Delete program from the database.
-    async fn delete_program(&self, tenant_id: TenantId, program_name: &str) -> Result<(), DBError>;
-
-    /// Retrieves all programs in the DB. Intended to be used by
-    /// reconciliation loops.
-    async fn all_programs(&self) -> Result<Vec<(TenantId, ProgramDescr)>, DBError>;
-
-    /// Retrieves all pipelines in the DB. Intended to be used by
-    /// reconciliation loops.
-    async fn all_pipelines(&self) -> Result<Vec<(TenantId, PipelineId)>, DBError>;
-
-    /// Retrieves the first pending program from the queue.
-    ///
-    /// Returns a pending program with the most recent `status_since` or `None`
-    /// if there are no pending programs in the DB.
-    async fn next_job(&self) -> Result<Option<(TenantId, ProgramId, Version)>, DBError>;
-
-    /// Create a pipeline deployment, which is an immutable and complete
-    /// configuration for running a pipeline.
-    ///
-    /// Returns the deployment ID for the pipeline.
-    async fn create_pipeline_deployment(
-        &self,
-        deployment_id: Uuid,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Result<Revision, DBError>;
-
-    /// Retrieves the deployment for a pipeline, if created
-    async fn get_pipeline_deployment(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Result<PipelineRevision, DBError>;
-
-    /// Create a new config.
-    #[allow(clippy::too_many_arguments)]
-    async fn new_pipeline(
-        &self,
-        tenant_id: TenantId,
-        id: Uuid,
-        program_name: &Option<String>,
-        pipline_name: &str,
-        pipeline_description: &str,
-        config: &RuntimeConfig,
-        connectors: &Option<Vec<AttachedConnector>>,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<(PipelineId, Version), DBError>;
-
-    /// Update existing config.
-    ///
-    /// Update config name and, optionally, YAML.
-    #[allow(clippy::too_many_arguments)]
-    async fn update_pipeline(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        program_id: &Option<String>,
-        pipline_name: &str,
-        pipeline_description: &str,
-        config: &Option<RuntimeConfig>,
-        connectors: &Option<Vec<AttachedConnector>>,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<Version, DBError>;
-
-    /// Get input/output status for an attached connector.
-    #[allow(dead_code)]
-    async fn attached_connector_is_input(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        name: &str,
-    ) -> Result<bool, DBError>;
-
-    /// Delete pipeline from the DB.
-    async fn delete_pipeline(
-        &self,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-    ) -> Result<(), DBError>;
-
-    /// Retrieve pipeline for a given id.
-    async fn get_pipeline_descr_by_id(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<PipelineDescr, DBError>;
-
-    async fn get_pipeline_by_id(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Result<Pipeline, DBError>;
-
-    /// Retrieve pipeline for a given name.
-    async fn get_pipeline_descr_by_name(
-        &self,
-        tenant_id: TenantId,
-        name: &str,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<PipelineDescr, DBError>;
-
-    async fn get_pipeline_by_name(
-        &self,
-        tenant_id: TenantId,
-        name: &str,
-    ) -> Result<Pipeline, DBError>;
-
-    async fn get_pipeline_runtime_state_by_id(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-    ) -> Result<PipelineRuntimeState, DBError>;
-
-    async fn get_pipeline_runtime_state_by_name(
-        &self,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-    ) -> Result<PipelineRuntimeState, DBError>;
-
-    async fn update_pipeline_runtime_state(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        state: &PipelineRuntimeState,
-    ) -> Result<(), DBError>;
-
-    async fn set_pipeline_desired_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        desired_status: PipelineStatus,
-    ) -> Result<(), DBError>;
-
-    async fn list_pipelines(&self, tenant_id: TenantId) -> Result<Vec<Pipeline>, DBError>;
-
-    /// Create a new connector.
-    async fn new_connector(
-        &self,
-        tenant_id: TenantId,
-        id: Uuid,
-        name: &str,
-        description: &str,
-        config: &ConnectorConfig,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<ConnectorId, DBError>;
-
-    /// Retrieve connectors list from the DB.
-    async fn list_connectors(&self, tenant_id: TenantId) -> Result<Vec<ConnectorDescr>, DBError>;
-
-    /// Retrieve connector descriptor for the given `connector_id`.
-    async fn get_connector_by_id(
-        &self,
-        tenant_id: TenantId,
-        connector_id: ConnectorId,
-    ) -> Result<ConnectorDescr, DBError>;
-
-    /// Retrieve connector descriptor for the given `name`.
-    async fn get_connector_by_name(
-        &self,
-        tenant_id: TenantId,
-        name: &str,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<ConnectorDescr, DBError>;
-
-    /// Updates the name, description and/or configuration of the existing
-    /// connector, of which the identifier is provided. If new values are not
-    /// provided, the existing values in storage are kept.
-    ///
-    /// Returns error if there does not exist a connector with the provided
-    /// identifier.
-    async fn update_connector(
-        &self,
-        tenant_id: TenantId,
-        connector_id: ConnectorId,
-        connector_name: &Option<&str>,
-        description: &Option<&str>,
-        config: &Option<ConnectorConfig>,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<(), DBError>;
-
-    /// Delete connector from the database.
-    ///
-    /// This will delete all connector configs and pipelines.
-    async fn delete_connector(
-        &self,
-        tenant_id: TenantId,
-        connector_name: &str,
-    ) -> Result<(), DBError>;
-
-    /// Get a list of API key names
+    /// Retrieves the list of all API keys.
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError>;
 
-    /// Get an API key by name
+    /// Retrieves an API key by name.
     async fn get_api_key(&self, tenant_id: TenantId, name: &str) -> Result<ApiKeyDescr, DBError>;
 
-    /// Delete an API key by name
+    /// Deletes an API key by name.
     async fn delete_api_key(&self, tenant_id: TenantId, name: &str) -> Result<(), DBError>;
 
-    /// Persist an SHA-256 hash of an API key in the database
+    /// Persists an SHA-256 hash of an API key in the database.
     async fn store_api_key_hash(
         &self,
         tenant_id: TenantId,
@@ -342,113 +46,225 @@ pub(crate) trait Storage {
         permissions: Vec<ApiPermission>,
     ) -> Result<(), DBError>;
 
-    /// Validate an API key against the database by comparing its SHA-256 hash
+    /// Validates an API key against the database by comparing its SHA-256 hash
     /// against the stored value.
     async fn validate_api_key(&self, key: &str) -> Result<(TenantId, Vec<ApiPermission>), DBError>;
 
-    /// Get the tenant ID from the database for a given tenant name and
-    /// provider, else create a new tenant ID
-    async fn get_or_create_tenant_id(
-        &self,
-        tenant_name: String,
-        provider: String,
-    ) -> Result<TenantId, DBError>;
-
-    /// Create a new tenant ID for a given tenant name and provider
-    async fn create_tenant_if_not_exists(
-        &self,
-        tenant_id: Uuid,
-        tenant_name: String,
-        provider: String,
-    ) -> Result<TenantId, DBError>;
-
-    /// Record a URL pointing to a compile. binary Supported URL types are
-    /// determined by the compiler service (e.g. file:///)
-    async fn create_compiled_binary_ref(
-        &self,
-        program_id: ProgramId,
-        version: Version,
-        url: String,
-    ) -> Result<(), DBError>;
-
-    /// Retrieve a compiled binary's URL
-    async fn get_compiled_binary_ref(
-        &self,
-        program_id: ProgramId,
-        version: Version,
-    ) -> Result<Option<String>, DBError>;
-
-    /// Retrieve a compiled binary's URL
-    async fn delete_compiled_binary_ref(
-        &self,
-        program_id: ProgramId,
-        version: Version,
-    ) -> Result<(), DBError>;
-
-    /// Creates a new service.
-    ///
-    /// Returns error if there already exists a service with the given
-    /// identifier or name.
-    async fn new_service(
+    /// Retrieves a list of pipelines as extended descriptors.
+    async fn list_pipelines(
         &self,
         tenant_id: TenantId,
-        id: Uuid,
-        name: &str,
-        description: &str,
-        config: &ServiceConfig,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<ServiceId, DBError>;
+    ) -> Result<Vec<ExtendedPipelineDescr>, DBError>;
 
-    /// Retrieves a list of all services of a tenant.
-    /// Optionally, filtered by service configuration type.
-    async fn list_services(
-        &self,
-        tenant_id: TenantId,
-        filter_config_type: &Option<&str>,
-    ) -> Result<Vec<ServiceDescr>, DBError>;
-
-    /// Retrieves service descriptor for the given `service_id`.
-    ///
-    /// Returns error if there does not exist a service with the provided
-    /// identifier.
-    async fn get_service_by_id(
-        &self,
-        tenant_id: TenantId,
-        service_id: ServiceId,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<ServiceDescr, DBError>;
-
-    /// Retrieves service descriptor for the given unique service `name`.
-    ///
-    /// Returns error if there does not exist a service with the provided name.
-    async fn get_service_by_name(
+    /// Retrieves a pipeline as extended descriptor.
+    async fn get_pipeline(
         &self,
         tenant_id: TenantId,
         name: &str,
-        txn: Option<&Transaction<'_>>,
-    ) -> Result<ServiceDescr, DBError>;
+    ) -> Result<ExtendedPipelineDescr, DBError>;
 
-    /// Updates the name, description and/or configuration of the existing
-    /// service, of which the identifier is provided. If new values are not
-    /// provided, the existing values in storage are kept.
-    ///
-    /// Returns error if there does not exist a service with the provided
-    /// identifier.
-    async fn update_service(
+    /// Retrieves a pipeline as extended descriptor using its identifier.
+    async fn get_pipeline_by_id(
         &self,
         tenant_id: TenantId,
-        service_id: ServiceId,
-        name: &Option<&str>,
-        description: &Option<&str>,
-        config: &Option<ServiceConfig>,
-        txn: Option<&Transaction<'_>>,
+        pipeline_id: PipelineId,
+    ) -> Result<ExtendedPipelineDescr, DBError>;
+
+    /// Creates a new pipeline.
+    async fn new_pipeline(
+        &self,
+        tenant_id: TenantId,
+        new_id: Uuid,
+        pipeline: PipelineDescr,
+    ) -> Result<ExtendedPipelineDescr, DBError>;
+
+    /// Creates a new pipeline if one with that name does not exist yet.
+    /// If it already exists, update the existing one.
+    /// The boolean returned is true iff the pipeline was newly created.
+    async fn new_or_update_pipeline(
+        &self,
+        tenant_id: TenantId,
+        new_id: Uuid, // Only used if the pipeline happens to not exist
+        original_name: &str,
+        pipeline: PipelineDescr,
+    ) -> Result<(bool, ExtendedPipelineDescr), DBError>;
+
+    /// Updates an existing pipeline.
+    #[allow(clippy::too_many_arguments)]
+    async fn update_pipeline(
+        &self,
+        tenant_id: TenantId,
+        original_name: &str,
+        name: &Option<String>,
+        description: &Option<String>,
+        runtime_config: &Option<RuntimeConfig>,
+        program_code: &Option<String>,
+        program_config: &Option<ProgramConfig>,
+    ) -> Result<ExtendedPipelineDescr, DBError>;
+
+    /// Deletes an existing pipeline.
+    async fn delete_pipeline(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<PipelineId, DBError>;
+
+    /// Transitions program status to `Pending`.
+    async fn transit_program_status_to_pending(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
     ) -> Result<(), DBError>;
 
-    /// Deletes the service by its provided name.
-    ///
-    /// Returns error if there does not exist a service with the provided name.
-    async fn delete_service(&self, tenant_id: TenantId, service_name: &str) -> Result<(), DBError>;
+    /// Transitions program status to `CompilingSql`.
+    async fn transit_program_status_to_compiling_sql(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+    ) -> Result<(), DBError>;
 
-    /// Check connectivity to the DB
-    async fn check_connection(&self) -> Result<(), DBError>;
+    /// Transitions program status to `CompilingRust`.
+    async fn transit_program_status_to_compiling_rust(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+        program_info: &ProgramInfo,
+    ) -> Result<(), DBError>;
+
+    /// Transitions program status to `Success`.
+    async fn transit_program_status_to_success(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+        program_binary_url: &str,
+    ) -> Result<(), DBError>;
+
+    /// Transitions program status to `SqlError`.
+    async fn transit_program_status_to_sql_error(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+        internal_sql_error: Vec<SqlCompilerMessage>,
+    ) -> Result<(), DBError>;
+
+    /// Transitions program status to `RustError`.
+    async fn transit_program_status_to_rust_error(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+        internal_rust_error: &str,
+    ) -> Result<(), DBError>;
+
+    /// Transitions program status to `SystemError`.
+    async fn transit_program_status_to_system_error(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+        internal_system_error: &str,
+    ) -> Result<(), DBError>;
+
+    /// Sets deployment desired status to `Running`.
+    async fn set_deployment_desired_status_running(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<(), DBError>;
+
+    /// Sets deployment desired status to `Paused`.
+    async fn set_deployment_desired_status_paused(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<(), DBError>;
+
+    /// Sets deployment desired status to `Shutdown`.
+    async fn set_deployment_desired_status_shutdown(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<(), DBError>;
+
+    /// Transitions deployment status to `Provisioning`.
+    async fn transit_deployment_status_to_provisioning(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        deployment_config: PipelineConfig,
+    ) -> Result<(), DBError>;
+
+    /// Transitions deployment status to `Initializing`.
+    async fn transit_deployment_status_to_initializing(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        deployment_location: &str,
+    ) -> Result<(), DBError>;
+
+    /// Transitions deployment status to `Running`.
+    async fn transit_deployment_status_to_running(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<(), DBError>;
+
+    /// Transitions deployment status to `Paused`.
+    async fn transit_deployment_status_to_paused(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<(), DBError>;
+
+    /// Transitions deployment status to `ShuttingDown`.
+    async fn transit_deployment_status_to_shutting_down(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<(), DBError>;
+
+    /// Transitions deployment status to `Shutdown`.
+    async fn transit_deployment_status_to_shutdown(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+    ) -> Result<(), DBError>;
+
+    /// Transitions deployment status to `Failed`.
+    async fn transit_deployment_status_to_failed(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        deployment_error: &ErrorResponse,
+    ) -> Result<(), DBError>;
+
+    /// Retrieves a list of all pipeline ids across all tenants.
+    async fn list_pipeline_ids_across_all_tenants(
+        &self,
+    ) -> Result<Vec<(TenantId, PipelineId)>, DBError>;
+
+    /// Retrieves a list of all pipeline ids across all tenants.
+    async fn list_pipelines_across_all_tenants(
+        &self,
+    ) -> Result<Vec<(TenantId, ExtendedPipelineDescr)>, DBError>;
+
+    /// Retrieves the pipeline whose program has been Pending for the longest.
+    /// Returns `None` if there are no pending programs.
+    async fn get_next_pipeline_program_to_compile(
+        &self,
+    ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError>;
+
+    /// Checks whether the provided pipeline program version is in use.
+    /// It is in use if the pipeline exists and the program version provided is the current one.
+    /// If the pipeline does not exist or the program version is not the latest, false is returned.
+    async fn is_pipeline_program_in_use(
+        &self,
+        pipeline_id: PipelineId,
+        program_version: Version,
+    ) -> Result<bool, DBError>;
 }

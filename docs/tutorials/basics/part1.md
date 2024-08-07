@@ -1,19 +1,12 @@
-# Part 1: Writing and testing your first SQL program
+# Part 1: Writing and testing your first SQL pipeline
 
-In this section of the tutorial we will:
-- Write and test our first SQL program using Feldera
-- Introduce *continuous analytics* -- one of the key concepts behind Feldera
+In this section of the tutorial we will write and test our first SQL pipeline using Feldera.
 
 ## The use case
 
-We will use Feldera to implement a real-time analytics pipeline for a
-supply chain management system.  The pipeline ingests data about suppliers,
-customers, and orders, and maintains an up-to-date summary of
-this data in an OLAP database.  The data can arrive from a variety of sources,
-such as databases and event streams.  In this tutorial we will ingest data from
-Amazon S3 and Redpanda, a Kafka-compatible message queue.
-
-![Real-time supply chain analytics](supply-chain-analytics.png)
+We will build a pipeline that ingests data about
+vendors, parts, and prices, and continuously tracks the lowest available
+price for each part across all vendors.
 
 ## Step 0. Launch Feldera
 
@@ -21,27 +14,10 @@ Make sure that you have Feldera up and running by following the [Getting
 Started](/docker.md) guide.  Open the Feldera Web Console on
 [localhost:8080](http://localhost:8080).
 
-:::tip For the impatient
+## Step 1. Create a pipeline
 
-If you started Feldera using the demo profile as described in the [Getting
-Started](/docker.md) guide, it has created a couple of SQL programs and
-pipelines.  One of these programs, called
-"Feldera Basics Tutorial" and the associated pipeline
-"Feldera Basics Tutorial Pipeline" are identical to the ones
-we will manually create in this three-part tutorial.
-
-We recommend that you follow the tutorial and build your own Feldera
-pipeline, but if you'd like to accelerate the journey, feel free
-to skim the tutorial and explore the resulting pipeline without
-going through all the steps.
-
-:::
-
-## Step 1. Declare input tables
-
-We start with modeling input data as SQL tables.  In the Feldera Web Console,
-navigate to the `SQL Programs` section and click on `ADD SQL PROGRAM`.  Give
-the program a name, e.g., "Supply Chain Analytics" and paste the following code
+In the Feldera Web Console,
+create a new pipeline, called named "supply_chain", and paste the following code
 in the SQL editor:
 
 ```sql
@@ -61,29 +37,7 @@ create table PRICE (
     vendor bigint not null,
     price decimal
 ) with ('materialized' = 'true');
-```
 
-This looks familiar, just plain old SQL `CREATE TABLE` statements.
-Indeed, SQL's data modeling language works for streaming
-data just as well as for tables stored on the disk.  No need to learn a new
-language: if you know SQL, you already know streaming SQL!
-
-It is worth pointing out that these declarations do not say anything
-about the sources of data.  Records for the `VENDOR`, `PART`, and `PRICE` tables
-could arrive from a Kafka stream, a database, or an HTTP request.  Below we will
-see how our SQL program can be instantiated with any of these data sources, or
-even multiple data sources connected to the same table.
-
-Finally, note the `'materialized' = 'true'` attribute on the
-tables.  This annotation instructs Feldera to store the entire contents of the table,
-so that the user can browse it at any time.
-
-## Step 2. Write queries
-
-We would like to compute the lowest price for each part
-across all vendors.  Add the following statements to your SQL program:
-
-```sql
 -- Lowest available price for each part across all vendors.
 create view LOW_PRICE (
     part,
@@ -117,100 +71,44 @@ create materialized view PREFERRED_VENDOR (
         VENDOR.id = PRICE.vendor;
 ```
 
-In Feldera we write queries as SQL views.  Views can be defined in terms of
-tables and other views, making it possible to express deeply nested queries.  In
-this example, the `PREFERRED_VENDOR` view is expressed in terms of the
-`LOW_PRICE` view.
+The first part of this listing declares inputs to the pipeline
+using SQL `CREATE TABLE` statements.
+Indeed, SQL's data modeling language works for streaming
+data just as well as for tables stored on the disk.  No need to learn a new
+language: if you know SQL, you already know streaming SQL!
+
+Note that these declarations do not say anything
+about the sources of data.  We will add that in Part 3 of the tutorial.
+
+Finally, note the `'materialized' = 'true'` attribute on the
+tables.  This annotation instructs Feldera to store the entire contents of the table,
+so that the user can browse it at any time.
+
+The second part of the listing defines queries on top of the input tables.
+In Feldera we write queries as SQL views.
+Views can be defined in terms of
+tables and other views, making it possible to express deeply nested queries
+in a modular way.
+In this example we compute the lowest price for each part
+across all vendors as the `LOW_PRICE` view. We then define the `PREFERRED_VENDOR`
+view on top of `LOW_PRICE`.
 
 We declare `PREFERRED_VENDOR` as a **materialized** view, instructing Feldera to
 store the entire contents of the view, so that the user can browse it at any time.
 This is in contrast to regular views, for which the user can only observe a stream
 of **changes** to the view, but cannot inspect its current contents.
 
-## Step 3. Run the program
+Click the PLAY button to run the pipeline.
 
-In order to run our SQL program, we must instantiate it as part of a _pipeline_.
-Navigate to the `Pipelines` section and click `ADD PIPELINE`.  Give the new
-pipeline the name `supply_chain` and select "Supply Chain Analytics" from the
-list of SQL programs.
+## Step 2. Populate tables manually
 
-The selected program is visualized as a rectangle with a blue dot for each table
-and view declared in the program.  These can be used to connect data sources and
-sinks.  For the time being, we will run our pipeline without any sources or
-sinks.  We will build more exciting pipelines in the next part of the tutorial.
+:::info UNDER CONSTRUCTION
 
-![Pipeline Builder](pipeline-builder.png)
+This section is under construction.
 
-Go back to the pipelines view (click on `Pipelines` in the navigation bar
-on the left).  Your newly created pipeline should appear in the list.  Click the
-play icon <icon icon="bx:play-circle" /> next to the pipeline.
+:::
 
-The pipeline is now running and is ready to process inputs; however since we
-have not connected any data sources to it, no data has been received yet.  Let
-us add some manually.
-
-## Step 4. Populate tables manually
-
-Expand the runtime state of the pipeline by clicking the chevron icon <icon
-icon="bx:chevron-down" /> on the left.  You should see the list
-of tables and views defined in your program.  Click on the <icon
-icon="bx:upload" /> icon next to the `PART` table.  This will open a
-view with `BROWSE PART` and `INSERT NEW ROWS` tabs.  The `BROWSE PART`
-tab should be empty because no data has been inserted yet.  Click
-`INSERT NEW ROWS`, where you can insert new rows to the table using a
-configurable random data generator (feel free to play around with it!)
-or by entering the data manually.  For example, you might add the
-following rows:
-
-| ID          | NAME           |
-| ----------- | -------------- |
-| 1           | Flux Capacitor |
-| 2           | Warp Core      |
-| 3           | Kyber Crystal  |
-
-Click `INSERT ROWS` to push the new rows to the table.  Switch to the
-`BROWSE PART` tab to see the contents of the table, which should
-contain the newly inserted rows.
-
-Follow the same process to populate `VENDOR`:
-
-| ID          | NAME                    | ADDRESS                |
-| ----------- | ----------------------- |------------------------|
-| 1           | Gravitech Dynamics      | 222 Graviton Lane      |
-| 2           | HyperDrive Innovations  | 456 Warp Way           |
-| 3           | DarkMatter Devices      | 333 Singularity Street |
-
-and `PRICE`:
-
-| PART        | VENDOR                  | PRICE                  |
-| ----------- | ----------------------- |------------------------|
-| 1           | 2                       | 10000                  |
-| 2           | 1                       | 15000                  |
-| 3           | 3                       | 9000                   |
-
-Select the `PREFERRED_VENDOR` view from the dropdown list to see the
-output of the query:
-
-![PREFERRED_VENDOR](preferred-vendor1.png)
-
-## Step 5. Make changes
-
-Let us see what happens if we add more input rows to the `PRICE` table:
-
-![Insert more PRICE rows](price-update.png)
-
-Click `INSERT ROWS` and switch back to the `PREFERRED_VENDOR` view.  The view has
-changed: DarkMatter Devices is now the cheapest supplier of Warp Cores, while
-Gravitech Dynamics offers lowest-priced Flux Capacitors.
-
-![Updated PREFERRED_VENDOR view](preferred-vendor2.png)
-
-As you make more changes to the input tables, Feldera will keep updating the view.
-
-This simple example illustrates the concept of **continuous analytics**.
-Feldera queries are always-on: the query engine continuously updates
-all views in response to input changes, making the most up-to-date results
-available at any time.
+<!-- ## Step 3. Make changes
 
 :::note
 
@@ -227,9 +125,9 @@ Click the stop icon <icon icon="bx:stop-circle" /> to shut down the pipeline.
 
 All pipeline state will be lost.
 
-:::
+::: -->
 
-## Takeaways
+<!-- ## Takeaways
 
 Let us recap what we have learned so far:
 
@@ -240,4 +138,4 @@ Let us recap what we have learned so far:
 - A SQL program is instantiated as part of a **pipeline**.
 
 - Feldera evaluates queries **continuously**, updating their results
-  as input data changes.
+  as input data changes. -->

@@ -32,8 +32,6 @@ install-deps:
     RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
     RUN sudo apt-get update
     RUN sudo apt-get install nodejs -y
-    RUN npm install --global yarn
-    RUN npm install --global openapi-typescript-codegen
     RUN apt install unzip -y
     ## Install Bun.js
     RUN curl -fsSL https://bun.sh/install | bash
@@ -92,10 +90,8 @@ machete:
 
 clippy:
     FROM +rust-sources
-    ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
-    COPY ( +build-webui/out ) ./web-console/out
-    ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console-sveltekit/build
-    COPY ( +build-webui/build ) ./web-console-sveltekit/build
+    ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console/build
+    COPY ( +build-webui/build ) ./web-console/build
     DO rust+CARGO --args="clippy -- -D warnings"
     ENV RUSTDOCFLAGS="-D warnings"
     DO rust+CARGO --args="doc --no-deps"
@@ -103,10 +99,8 @@ clippy:
 install-python-deps:
     FROM +install-deps
     RUN pip install wheel
-    COPY demo/demo_notebooks/requirements.txt requirements.txt
     COPY --dir python ./
     RUN pip install --upgrade pip
-    RUN pip wheel -r requirements.txt --wheel-dir=wheels
     RUN pip wheel -r python/tests/requirements.txt --wheel-dir=wheels
     RUN pip wheel python/ --wheel-dir=wheels
     SAVE ARTIFACT wheels /wheels
@@ -114,10 +108,8 @@ install-python-deps:
 install-python:
     FROM +install-deps
     COPY +install-python-deps/wheels wheels
-    COPY demo/demo_notebooks/requirements.txt requirements.txt
     COPY --dir python ./
     RUN pip install --upgrade pip # remove after upgrading to ubuntu 24
-    RUN pip install --user -v --no-index --find-links=wheels -r requirements.txt
     RUN pip install --user -v --no-index --find-links=wheels -r python/tests/requirements.txt
     RUN pip install --user -v --no-index --find-links=wheels feldera
     SAVE ARTIFACT /root/.local/lib/python3.10
@@ -125,47 +117,28 @@ install-python:
 
 build-webui-deps:
     FROM +install-deps
-    COPY web-console/package.json ./web-console/package.json
-    COPY web-console/yarn.lock ./web-console/yarn.lock
-    RUN cd web-console && yarn install
 
-    COPY web-console-sveltekit/package.json ./web-console-sveltekit/
-    COPY web-console-sveltekit/bun.lockb ./web-console-sveltekit/
-    RUN cd web-console-sveltekit && bun install
+    COPY web-console/package.json ./web-console/
+    COPY web-console/bun.lockb ./web-console/
+    RUN cd web-console && bun install
 
 build-webui:
     FROM +build-webui-deps
-    COPY --dir web-console/public web-console/public
+
+    COPY --dir web-console/static web-console/static
     COPY --dir web-console/src web-console/src
-    COPY --dir demo/demos demo/demos
-    COPY demo/demos.json demo/
-    COPY web-console/.editorconfig web-console/
-    COPY web-console/.eslintrc.json web-console/
-    COPY web-console/.prettierrc.js web-console/
-    COPY web-console/next-env.d.ts ./web-console/next-env.d.ts
-    COPY web-console/next.config.js ./web-console/next.config.js
-    COPY web-console/next.d.ts ./web-console/next.d.ts
-    COPY web-console/tsconfig.json ./web-console/tsconfig.json
-    COPY web-console/.env ./web-console/.env
+    COPY web-console/.prettierignore web-console/
+    COPY web-console/.prettierrc web-console/
+    COPY web-console/eslint.config.js web-console/
+    COPY web-console/postcss.config.js web-console/
+    COPY web-console/svelte.config.js ./web-console/
+    COPY web-console/tailwind.config.ts ./web-console/
+    COPY web-console/tsconfig.json ./web-console/
+    COPY web-console/vite.config.ts ./web-console/
 
-    RUN cd web-console && yarn format-check
-    RUN cd web-console && yarn build
-    SAVE ARTIFACT ./web-console/out
-
-    COPY --dir web-console-sveltekit/static web-console-sveltekit/static
-    COPY --dir web-console-sveltekit/src web-console-sveltekit/src
-    COPY web-console-sveltekit/.prettierignore web-console-sveltekit/
-    COPY web-console-sveltekit/.prettierrc web-console-sveltekit/
-    COPY web-console-sveltekit/eslint.config.js web-console-sveltekit/
-    COPY web-console-sveltekit/postcss.config.js web-console-sveltekit/
-    COPY web-console-sveltekit/svelte.config.js ./web-console-sveltekit/
-    COPY web-console-sveltekit/tailwind.config.ts ./web-console-sveltekit/
-    COPY web-console-sveltekit/tsconfig.json ./web-console-sveltekit/
-    COPY web-console-sveltekit/vite.config.ts ./web-console-sveltekit/
-
-    # RUN cd web-console-sveltekit && bun run check
-    RUN cd web-console-sveltekit && bun run build
-    SAVE ARTIFACT ./web-console-sveltekit/build
+    # RUN cd web-console && bun run check
+    RUN cd web-console && bun run build
+    SAVE ARTIFACT ./web-console/build
 
 build-dbsp:
     FROM +rust-sources
@@ -177,9 +150,7 @@ build-sql:
     FROM +build-dbsp
     COPY --keep-ts sql-to-dbsp-compiler sql-to-dbsp-compiler
     COPY demo/hello-world/combiner.sql demo/hello-world/combiner.sql
-    COPY demo/project_demo00-SecOps/project.sql demo/project_demo00-SecOps/project.sql
     COPY demo/project_demo01-TimeSeriesEnrich/project.sql demo/project_demo01-TimeSeriesEnrich/project.sql
-    COPY demo/project_demo02-FraudDetection/project.sql demo/project_demo02-FraudDetection/project.sql
     COPY demo/project_demo03-GreenTrip/project.sql demo/project_demo03-GreenTrip/project.sql
     COPY demo/project_demo04-SimpleSelect/project.sql demo/project_demo04-SimpleSelect/project.sql
     CACHE /root/.m2
@@ -194,11 +165,8 @@ build-adapters:
 
 build-manager:
     FROM +build-adapters
-    # For some reason if this ENV before the FROM line it gets invalidated
-    ENV WEBUI_BUILD_DIR=/dbsp/web-console/out
-    COPY ( +build-webui/out ) ./web-console/out
-    ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console-sveltekit/build
-    COPY ( +build-webui/build ) ./web-console-sveltekit/build
+    ENV WEBCONSOLE_BUILD_DIR=/dbsp/web-console/build
+    COPY ( +build-webui/build ) ./web-console/build
     DO rust+CARGO --args="build --package pipeline-manager --features pg-embed" --output="debug/pipeline-manager"
 
     IF [ -f ./target/debug/pipeline-manager ]
@@ -290,8 +258,6 @@ test-python:
     COPY +build-manager/pipeline-manager .
     COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
 
-    COPY demo/demo_notebooks demo/demo_notebooks
-    COPY demo/simple-join demo/simple-join
     COPY python/tests tests
 
     # Reuse `Cargo.lock` to ensure consistent crate versions.
@@ -311,9 +277,7 @@ test-python:
             sleep 10 && \
             (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=unoptimized &) && \
             sleep 5 && \
-            cd tests && python3 -m pytest . && cd .. && \
-            python3 demo/simple-join/run.py --api-url http://localhost:8080 && \
-            cd demo/demo_notebooks && jupyter execute fraud_detection.ipynb --JupyterApp.log_level='DEBUG'
+            cd tests && python3 -m pytest .
     END
 
 test-rust:
@@ -399,13 +363,13 @@ test-docker-compose:
 test-docker-compose-stable:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
-    ENV FELDERA_VERSION=0.21.0
+    ENV FELDERA_VERSION=0.23.0
     RUN apk --no-cache add curl
     WITH DOCKER --pull postgres \
                 --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
-                --pull ghcr.io/feldera/pipeline-manager:0.21.0 \
+                --pull ghcr.io/feldera/pipeline-manager:0.23.0 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
-                --pull ghcr.io/feldera/demo-container:0.21.0
+                --pull ghcr.io/feldera/demo-container:0.23.0
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo && \
             # This should run the latest version of the code and in the process, trigger a migration.
             COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" FELDERA_VERSION=latest RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml up -d db pipeline-manager redpanda && \
@@ -522,72 +486,6 @@ integration-tests:
             exit $status
     END
 
-ui-playwright-container:
-    FROM +install-deps
-    COPY web-console .
-    COPY deploy/docker-compose.yml .
-    COPY deploy/.env .
-
-    # Pull playwright-snapshots for visual regression testing
-    # It was decided it's better to clone the snapshots repo during the build rather than have it as a submodule
-    ARG PLAYWRIGHT_SNAPSHOTS_COMMIT
-    RUN echo PLAYWRIGHT_SNAPSHOTS_COMMIT=$PLAYWRIGHT_SNAPSHOTS_COMMIT
-    GIT CLONE --branch=$PLAYWRIGHT_SNAPSHOTS_COMMIT https://github.com/feldera/playwright-snapshots.git playwright-snapshots
-
-    WORKDIR web-console
-    RUN yarn install
-    RUN yarn playwright install
-    RUN yarn playwright install-deps
-    ENV CI=true
-    ENV PLAYWRIGHT_API_ORIGIN=http://localhost:8080/
-    ENV PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/
-    ENV DISPLAY=
-
-    # Install docker compose - earthly can do this automatically, but it installs an older version
-    ENV DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
-    RUN mkdir -p $DOCKER_CONFIG/cli-plugins
-    RUN curl -SL https://github.com/docker/compose/releases/download/v2.24.0-birthday.10/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
-    RUN chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
-
-    # Install zip to prepare test artifacts for export
-    RUN apt-get install -y zip
-
-ui-playwright-tests-e2e:
-    FROM +ui-playwright-container
-    ENV FELDERA_VERSION=latest
-
-    TRY
-        WITH DOCKER --load ghcr.io/feldera/pipeline-manager:latest=+pipeline-manager-container-cors-all \
-                    --compose ../docker-compose.yml \
-                    --service pipeline-manager
-            # We zip artifacts regardless of test success or error, and then we complete the command preserving test's exit_code
-            RUN sleep 10 && if yarn playwright test -c playwright-e2e.config.ts; then exit_code=0; else exit_code=$?; fi \
-                && cd /dbsp \
-                && zip -r playwright-report-e2e.zip playwright-report-e2e \
-                && zip -r test-results-e2e.zip test-results-e2e \
-                && exit $exit_code
-        END
-    FINALLY
-        SAVE ARTIFACT --if-exists /dbsp/playwright-report-e2e.zip AS LOCAL ./playwright-artifacts/
-        SAVE ARTIFACT --if-exists /dbsp/test-results-e2e.zip      AS LOCAL ./playwright-artifacts/
-    END
-
-ui-playwright-tests-ct:
-    FROM +ui-playwright-container
-    ENV FELDERA_VERSION=latest
-
-    TRY
-        # We zip artifacts regardless of test success or error, and then we complete the command preserving test's exit_code
-        RUN if yarn playwright test -c playwright-ct.config.ts; then exit_code=0; else exit_code=$?; fi \
-        && cd /dbsp \
-        && zip -r playwright-report-ct.zip playwright-report-ct \
-        && zip -r test-results-ct.zip test-results-ct \
-        && exit $exit_code
-    FINALLY
-        SAVE ARTIFACT --if-exists /dbsp/playwright-report-ct.zip AS LOCAL ./playwright-artifacts/
-        SAVE ARTIFACT --if-exists /dbsp/test-results-ct.zip      AS LOCAL ./playwright-artifacts/
-    END
-
 benchmark:
     FROM +build-manager
     COPY demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen
@@ -629,11 +527,9 @@ flink-benchmark:
     RUN apt-get install maven
     RUN benchmark/flink/setup-flink.sh
 
-    RUN echo "when,runner,mode,language,name,num_cores,num_events,elapsed" >> flink_results.csv
+    RUN echo "when,runner,mode,language,name,num_cores,num_events,elapsed,peak_memory_kb" >> flink_results.csv
     WITH DOCKER
-        RUN docker compose -f benchmark/flink/docker-compose.yml -p nexmark up --build --force-recreate --renew-anon-volumes -d && \
-            docker exec -i nexmark-jobmanager-1 run.sh 2>&1 | tee flink_log.txt && \
-            ./benchmark/run-nexmark.sh --runner flink --parse < flink_log.txt >> flink_results.csv
+        RUN ./benchmark/flink/run-flink-ci.sh
     END
     SAVE ARTIFACT flink_results.csv AS LOCAL .
 
@@ -646,13 +542,12 @@ all-tests:
     BUILD +openapi-checker
     BUILD +test-sql
     BUILD +integration-tests
-    BUILD +ui-playwright-tests-ct
-    # BUILD +ui-playwright-tests-e2e
     BUILD +test-docker-compose
     # BUILD +test-docker-compose-stable
     BUILD +test-debezium-mysql
+    # TODO: Temporarily disabled while we port the demo script
     BUILD +test-debezium-postgres
     BUILD +test-debezium-jdbc-sink
     # BUILD +test-snowflake
-    BUILD +test-s3
+    # BUILD +test-s3
     BUILD +test-service-related

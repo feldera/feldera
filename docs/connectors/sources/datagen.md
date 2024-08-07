@@ -3,6 +3,9 @@
 Datagen is a source connector that generates synthetic data for testing,
 prototyping and benchmarking purposes.
 
+For a tutorial on how to use the Datagen connector, see the
+[Random Data Generation](../../tutorials/basics/part4) tutorial.
+
 ## Datagen input connector configuration
 
 ### Config Parameters
@@ -20,8 +23,8 @@ All parameters are optional:
   By default, a random seed is used.
 
 * `plan` - A list of plans to generate rows. See the [Plan](#plan) section for details.
-   By default, a single plan is used that generates rows with incrementing values for
-   every type.
+  By default, a single plan is used that generates rows with incrementing values for
+  every type.
 
 ### Plan
 
@@ -29,21 +32,24 @@ A plan is a list of objects that describe how to generate rows. Each object can 
 fields:
 
 * `limit` - How many rows to generate. If not specified, the plan will run indefinitely.
-* `rate` - How many rows to generate per second. If not specified, the plan will run as fast as possible. See also the `workers` parameter.
-* `fields` - A map of field names to field generation options.
+* `rate` - How many rows to generate per second. If not specified, the plan will run as fast as possible. See also
+  the `workers` parameter.
+* `fields` - A map of field names to [field generation options](#random-field-settings).
 
 ### Random Field Settings
 
-Each field has a strategy that defines how a value is picked:
+Each field can set a strategy that defines how a value is picked:
 
 * `strategy` - The strategy to use for generating values. The following strategies are available:
-    * `increment` - (default) Use an incrementing sequence of values. An optional scale factor can be used to skip values.
+    * `increment` - (default) Generate an incrementing sequence of values for the given type where each value is
+      greater than the previous one (wrapping around once reaching the limit of numeric types).
     * `uniform` - Generate random values from a uniform distribution.
-    * `zipf` - Generate random values from a Zipf distribution. The exponent of the distribution can be set with the 
-      `s` parameter.
-    * `string` - Check the [String Generation](#string-generation-methods) section for details.
+    * `zipf` - Generate random values from a Zipf distribution. The exponent of the distribution can be set with the
+      `e` parameter.
+    * For string types, the [String Generation](#string-generation-strategies) section lists more strategies
+      on how to generate more specific strings.
 
-A field can have an optional `range` parameter that defines the range of values a strategy will pick from. The 
+A field can have an optional `range` parameter that defines the range of values a strategy will pick from. The
 meaning of the range depends on the type:
 
 - For integer/floating point types specifies min/max values.
@@ -63,32 +69,47 @@ meaning of the range depends on the type:
   If not set, a range of `[0, 5)` is used by default.
 - For struct/boolean/null types `range` is ignored.
 
-The `values` parameter can be used to specify a list of values to pick from. If set, the `range` parameter is ignored. 
+The `values` parameter can be used to specify a list of values to pick from. If set, the `range` parameter is ignored.
+The values given in the list must be of the same type as the field.
 
-`null_percentage` adds a chance for generating `null` values for this field. If not specified, the field will 
+A field can have an optional `scale` parameter that is applied as a multiplier to the value generated
+by the strategy. The default scale is `1`. The `scale` factor is only applicable in combination with either the
+`increment` or `uniform` strategy. The following rules apply:
+
+- For integer/floating point types, the value is multiplied by the scale factor.
+- For timestamp types, the generated value (milliseconds) is multiplied by the scale factor.
+- For time types, the generated value (milliseconds) is multiplied by the scale factor.
+- For date types, the generated value (days) is multiplied by the scale factor.
+- For string/binary types, the scale factor is ignored except with the `increment` strategy where
+  it applies the scale to the number that is formatted as a string.
+- For array/map/struct/boolean/null types, the scale factor is ignored.
+- If `values` is specified, the scale factor is ignored.
+
+`null_percentage` adds a chance for generating `null` values for this field. If not specified, the field will
 never be `null`.
 
-If the type of the field is a complex type (array, map, struct), the `value`, `key`/`value`, and `fields` parameter 
+If the type of the field is a complex type (array, map, struct), the `value`, `key`/`value`, and `fields` parameter
 respectively define the field settings for the complex type.
 
-#### String Generation Methods
+#### String Generation Strategies
 
-In case the field type is a string, the `string` strategy can be used to generate strings.
-The type of string is chosen by the `method` parameter. The following methods are available:
+In case the field type is a string, various strategies can be used to generate different kinds of strings.
 
 - Lorem: `word`, `words`, `sentence`, `sentences`, `paragraph`, `paragraphs`
 - Name: `first_name`, `last_name`, `title`, `suffix`, `name`, `name_with_title`, `phone_number`, `cell_number`
 - Internet: `domain_suffix`, `email`, `username`, `password`, `ipv4`, `ipv6`, `ip`, `mac_address`, `user_agent`
-- Company: `company_suffix`, `company_name`, `buzzword`, `buzzword_middle`, `buzzword_tail`, `catch_phrase`, `bs_verb`, `bs_adj`, `bs_noun`, `bs`, `profession`, `industry`
+-
+
+Company: `company_suffix`, `company_name`, `buzzword`, `buzzword_middle`, `buzzword_tail`, `catch_phrase`, `bs_verb`, `bs_adj`, `bs_noun`, `bs`, `profession`, `industry`
+
 - Currency: `currency_code`, `currency_name`, `currency_symbol`
 - Finance: `credit_card_number`
-- Address: `city_prefix`, `city_suffix`, `city_name`, `country_name`, `country_code`, `street_suffix`, `street_name`, `time_zone`, `state_name`, `state_abbr`, `secondary_address_type`, `secondary_address`, `zip_code`, `post_code`, `building_number`, `latitude`, `longitude`
+-
+
+Address: `city_prefix`, `city_suffix`, `city_name`, `country_name`, `country_code`, `street_suffix`, `street_name`, `time_zone`, `state_name`, `state_abbr`, `secondary_address_type`, `secondary_address`, `zip_code`, `post_code`, `building_number`, `latitude`, `longitude`
+
 - Barcode: `isbn10`, `isbn13`, `isbn`
 - Files: `file_path`, `file_name`, `file_extension`, `dir_path`
 
-For some of these parameters (`words`, `sentences`, `paragraphs`) the length is controlled by the `range` parameter.
-
-## Example usage
-
-For a tutorial on how to use the Datagen connector, see the
-[Random Data Generation](../../tutorials/basics/part4) tutorial.
+For some of these parameters (`words`, `sentences`, `paragraphs`) the length of the resulting string is controlled with
+the `range` parameter.

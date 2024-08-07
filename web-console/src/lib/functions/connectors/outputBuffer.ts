@@ -16,21 +16,23 @@ const maxU64 = BigNumber('18446744073709551615')
 
 export const outputBufferConfigSchema = va.object({
   enable_output_buffer: va.optional(va.boolean()),
-  max_output_buffer_time_millis: va.optional(bignumber([minBigNumber(minU64), maxBigNumber(maxU64)])),
-  max_output_buffer_size_records: va.optional(bignumber([minBigNumber(minU64), maxBigNumber(maxU64)]))
+  max_output_buffer_time_millis: va.optional(
+    bignumber([minBigNumber(minU64), maxBigNumber(maxU64)])
+  ),
+  max_output_buffer_size_records: va.optional(
+    bignumber([minBigNumber(minU64), maxBigNumber(maxU64)])
+  )
 })
 
 export const outputBufferConfigValidation = <
   T extends {
-    enable_output_buffer?: boolean
     max_output_buffer_time_millis?: BigNumber
     max_output_buffer_size_records?: BigNumber
   }
 >() =>
   va.forward<T>(
     va.custom(
-      input =>
-        !input.enable_output_buffer || !!input.max_output_buffer_time_millis || !!input.max_output_buffer_size_records,
+      (input) => !!input.max_output_buffer_time_millis || !!input.max_output_buffer_size_records,
       'Specify either max_output_buffer_time_millis or max_output_buffer_size_records'
     ),
     ['max_output_buffer_time_millis'] as va.PathList<T>
@@ -38,6 +40,12 @@ export const outputBufferConfigValidation = <
 
 export const outputBufferOptions: Record<string, FormFieldOptions> = {
   enable_output_buffer: { type: 'boolean' },
-  max_output_buffer_time_millis: { type: 'bignumber', range: { min: BigNumber(minU64), max: maxU64 } },
-  max_output_buffer_size_records: { type: 'bignumber', range: { min: BigNumber(minU64), max: maxU64 } }
+  max_output_buffer_time_millis: {
+    type: 'bignumber',
+    range: { min: BigNumber(minU64), max: maxU64 }
+  },
+  max_output_buffer_size_records: {
+    type: 'bignumber',
+    range: { min: BigNumber(minU64), max: maxU64 }
+  }
 }

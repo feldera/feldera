@@ -8,4 +8,4 @@ CREATE TABLE interactions (
     interaction_date TIMESTAMP LATENESS INTERVAL 15 MINUTES,
     previous_interaction_date TIMESTAMP,
     interaction_month TIMESTAMP
-);
+) WITH ('connectors' = '{interactions}');

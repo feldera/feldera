@@ -60,16 +60,17 @@ step.
     ./jaeger-all-in-one
     ```
 3. **Tracing a Feldera pipeline**
-    - Enable/disable tracing and specify the Jaeger endpoint in the pipeline configuration:
+    - Enable/disable tracing and specify the Jaeger endpoint in the pipeline `runtime_config`:
    ```bash
    curl -i -X PUT http://localhost:8080/v0/pipelines/tracing-pipeline \
-      -H 'Content-Type: application/json' \
-      -d '{
-        "description": "Example pipeline",
-        "program_name": "example-program",
-        "config": {"tracing": true, "tracing_endpoint_jaeger": "host.docker.internal:6831"},
-        "connectors": []
-      }'
+   -H 'Content-Type: application/json' \
+   -d '{
+     "name": "Traced-Pipeline",
+     "description": "",
+     "program_code": "",
+     "program_config": {},
+     "runtime_config": {"tracing": true, "tracing_endpoint_jaeger": "host.docker.internal:6831"}
+   }'
    ```
     - Use `host.docker.internal:6831` if you are running Feldera in docker or
       `localhost:6831` if you run Feldera directly.

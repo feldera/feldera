@@ -56,18 +56,13 @@ Delta Lake format only supports appending new data to a table in streaming mode.
 
 ## Example usage
 
-### curl
-
 Create a Delta Lake output connector that writes a stream of updates to a table
 stored in an S3 bucket, truncating any existing contents of the table.
 
-```bash
-curl -i -X PUT http://localhost:8080/v0/connectors/delta-output-test \
--H "Authorization: Bearer <API-KEY>" \
--H 'Content-Type: application/json' \
--d '{
-  "description": "Delta table output connector example",
-  "config": {
+```sql
+CREATE VIEW V AS ...
+WITH (
+ 'connectors' = '[{
     "transport": {
       "name": "delta_table_output",
       "config": {
@@ -80,11 +75,5 @@ curl -i -X PUT http://localhost:8080/v0/connectors/delta-output-test \
       "enable_output_buffer": true,
       "max_output_buffer_time_millis": 10000
     }
-  }
-}'
-```
-
-### Python SDK
-
-See [Delta Lake output connector documentation](https://www.feldera.com/python/feldera.html#feldera.sql_context.SQLContext.connect_sink_delta_table)
-in the Python SDK.
+ }]'
+)

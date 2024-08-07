@@ -35,7 +35,7 @@ batch and stream processing, offering a bridge between the two worlds.
 
 * `snapshot_filter` - Optional row filter.  This option is only valid when `mode` is set to
   `snapshot` or `snapshot_and_follow`.  When specified, only rows that satisfy the filter
-   condition are included in the snapshot.  The condition must be a valid SQL Boolean
+   condition are included in the snapshot.  The condition must be a valid SPARK SQL Boolean
    expression that can be used in the `where` clause of the `select * from snapshot where ..`
    query.
 
@@ -76,30 +76,27 @@ specific storage backends.  Refer to backend-specific documentation for details:
 
 ## Example usage
 
-### curl
-
 Create a Delta Lake input connector that reads a snapshot of a table from a public S3 bucket.
 Note the `aws_skip_signature` flag, required to read from the bucket without authentcation.  The
 snapshot will be sorted by the `unix_time` column.
 
-```bash
-curl -i -X PUT http://localhost:8080/v0/connectors/delta-input-test \
--H "Authorization: Bearer <API-KEY>" \
--H 'Content-Type: application/json' \
--d '{
-  "description": "Delta table input connector that reads from a public S3 bucket",
-  "config": {
-    "transport": {
-      "name": "delta_table_input",
-      "config": {
-        "uri": "s3://feldera-fraud-detection-data/transaction_train",
-        "mode": "snapshot",
-        "aws_skip_signature": "true",
-        "timestamp_column": "unix_time"
+```sql
+CREATE TABLE INPUT (
+   ... -- columns omitted
+) WITH (
+  'connectors' = '[
+    {
+      "transport": {
+        "name": "delta_table_input",
+        "config": {
+          "uri": "s3://feldera-fraud-detection-data/transaction_train",
+          "mode": "snapshot",
+          "aws_skip_signature": "true",
+          "timestamp_column": "unix_time"
+        }
       }
-    }
-  }
-}'
+    }]'
+)
 ```
 
 Read a full snapshot of version 10 of the table before ingesting the stream of
@@ -130,8 +127,3 @@ library we use does not currently auto-detect the AWS region.
   "aws_region": "us-east-1"
 }
 ```
-
-### Python SDK
-
-See [Delta Lake input connector documentation](https://www.feldera.com/python/feldera.html#feldera.sql_context.SQLContext.connect_source_delta_table)
-in the Python SDK.

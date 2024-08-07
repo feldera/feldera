@@ -23,7 +23,8 @@ public class FilterJoinVisitor extends CircuitCloneVisitor {
             DBSPOperator result =
                     new DBSPJoinFilterMapOperator(source.getNode(), source.getOutputZSetType(),
                             source.getFunction(), operator.getFunction(), null,
-                            source.isMultiset, source.inputs.get(0), source.inputs.get(1));
+                            source.isMultiset, source.inputs.get(0), source.inputs.get(1))
+                            .copyAnnotations(operator);
             this.map(operator, result);
             return;
         }
