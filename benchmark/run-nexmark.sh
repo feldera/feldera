@@ -364,10 +364,9 @@ feldera2csv() {
 		esac
 		parse_time() {
 		    case $1 in
-			*ms) expr="${1%ms}" ;;
-			*s) expr="${1%s}*1000" ;;
+			*ms) echo "${1%ms}/1000" | bc -l ;;
+			*s) echo "${1%s}" ;;
 		    esac
-		    echo "$expr" | bc -l | sed 's/\..*//'
 		}
 		parse_mem() {
 		    case $1 in
