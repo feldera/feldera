@@ -14,6 +14,7 @@ fi
 run=:
 storage=false
 parse=false
+skip_counting_events=false
 
 # Feldera SQL options.
 kafka_broker=localhost:9092
@@ -102,6 +103,9 @@ do
 	    ;;
 	--kafka-from-feldera)
 	    nextarg=kafka_from_feldera
+	    ;;
+	--skip-counting-events)
+	    skip_counting_events=:
 	    ;;
 	--api-url=*)
 	    api_url=${arg#--api-url=}
@@ -484,6 +488,10 @@ case $runner:$language in
 		return 1
 	    fi
 
+	    if $skip_counting_events; then
+		echo >&2 "$0: assuming '$topics' contained $events events (because of --skip-counting-events)"
+		return 0
+	    fi
 	    n_events=$(count_events)
 	    if test "$n_events" != "$events"; then
 		msg="topics '$topics' contained $n_events events instead of $events"
