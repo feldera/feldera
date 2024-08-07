@@ -65,7 +65,7 @@ docker compose -f - --profile demo up
 
 It can take some time for the container images to be downloaded. About ten seconds after that, the Feldera
 web console will become available. Visit [http://localhost:8080](http://localhost:8080) on your browser
-to bring it up. We suggest going through our [demo](https://www.feldera.com/docs/demo) next.
+to bring it up. We suggest going through our [tutorial](https://www.feldera.com/docs/tutorials/basics/) next.
 
 Our [Getting Started](https://www.feldera.com/docs/get-started) guide has more detailed instructions on running the demo.
 
