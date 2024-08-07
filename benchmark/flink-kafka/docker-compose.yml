@@ -2,8 +2,6 @@ version: "2.2"
 name: nexmark
 services:
   jobmanager:
-    build:
-      context: .
     image: nexmark-kafka:latest
     ports:
       - "8081:8081"
@@ -16,8 +14,6 @@ services:
         jobmanager.rpc.address: jobmanager
 
   taskmanager:
-    build:
-      context: .
     image: nexmark-kafka:latest
     depends_on:
       - jobmanager
