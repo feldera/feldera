@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
@@ -53,7 +54,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
                     this.map(operator, result);
                     return;
                 }
-            } else if (source.is(DBSPJoinOperator.class) || source.is(DBSPStreamJoinOperator.class)) {
+            } else if (source.is(DBSPJoinOperator.class)
+                    || source.is(DBSPStreamJoinOperator.class)
+                    || source.is(DBSPAsofJoinOperator.class)) {
                 if (inputFanout == 1 && projection.isShuffle()) {
                     // We only do this if the source is a projection, because then the join function
                     // will still have a simple shape.  Subsequent analyses may care about this.

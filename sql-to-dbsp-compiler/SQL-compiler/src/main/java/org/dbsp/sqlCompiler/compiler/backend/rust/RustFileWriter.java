@@ -107,6 +107,7 @@ public class RustFileWriter {
                             Generator,
                             FilterMap,
                             Fold,
+                            group::WithCustomOrd,
                             time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},
                             MaxSemigroup,
                             MinSemigroup,

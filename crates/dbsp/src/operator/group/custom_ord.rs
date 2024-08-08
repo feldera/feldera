@@ -123,12 +123,18 @@ where
 {
 }
 
-impl<T, F> WithCustomOrd<T, F> {
+impl<T, F> WithCustomOrd<T, F>
+    where T: Clone,
+{
     pub fn new(val: T) -> Self {
         Self {
             val,
             phantom: PhantomData,
         }
+    }
+
+    pub fn get(&self) -> T {
+        self.val.clone()
     }
 }
 

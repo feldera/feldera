@@ -44,6 +44,14 @@ public abstract class DBSPComparatorExpression extends DBSPExpression {
         visitor.postorder(this);
     }
 
-    /** Type of tuple that is being compared. */
-    public abstract DBSPType tupleType();
+    /** Type of value that is being compared. */
+    public abstract DBSPType comparedValueType();
+
+    public DBSPComparatorExpression field(int index, boolean ascending) {
+        return new DBSPFieldComparatorExpression(this.getNode(), this, index, ascending);
+    }
+
+    public String getComparatorStructName() {
+        return "Cmp" + this.getId();
+    }
 }

@@ -313,14 +313,14 @@ public class FunctionsTest extends SqlIoTest {
                 5""");
     }
 
-    // Tested on Postgres and some taken from MySQL
+    // Calcite rounds differently from Postgres and other databases
     @Test
     public void testRounding() {
         this.qs("""
                 select CAST((CAST('1234.1264' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
                 ------
-                 1234.13
+                 1234.12
                 (1 row)
                 
                 select CAST((CAST('1234.1234' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
@@ -332,7 +332,7 @@ public class FunctionsTest extends SqlIoTest {
                 select CAST((CAST('-1234.1264' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
                 ------
-                 -1234.13
+                 -1234.12
                 (1 row)
                 
                 select CAST((CAST('-1234.1234' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
@@ -344,19 +344,19 @@ public class FunctionsTest extends SqlIoTest {
                 select CAST((CAST('1234.1250' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
                 ------
-                 1234.13
+                 1234.12
                 (1 row)
                 
                 select CAST((CAST('-1234.1250' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
                 ------
-                 -1234.13
+                 -1234.12
                 (1 row)
                 
                 select CAST((CAST('.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
-                 0.13
+                 0.12
                 (1 row)
                 
                 select CAST((CAST('.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
@@ -368,7 +368,7 @@ public class FunctionsTest extends SqlIoTest {
                 select CAST((CAST('-.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
-                 -0.13
+                 -0.12
                 (1 row)
                 
                 select CAST((CAST('-.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
@@ -380,7 +380,7 @@ public class FunctionsTest extends SqlIoTest {
                 select CAST((CAST('00.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
-                 0.13
+                 0.12
                 (1 row)
                 
                 select CAST((CAST('00.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
@@ -392,7 +392,7 @@ public class FunctionsTest extends SqlIoTest {
                 select CAST((CAST('-00.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
-                 -0.13
+                 -0.12
                 (1 row)
                 
                 select CAST((CAST('-00.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
@@ -411,13 +411,13 @@ public class FunctionsTest extends SqlIoTest {
                 select ln(14000) as c1, cast(ln(14000) as decimal(5,3)) as c2, cast(ln(14000) as decimal(5,3)) as c3;
                         c1         |  c2   |  c3
                 -------------------+-------+-------
-                 9.546812608597396 | 9.547 | 9.547
+                 9.546812608597396 | 9.546 | 9.546
                 (1 row)
                 
                 select cast(143.481 as decimal(4,1));
                  cast(143.481 as decimal(4,1))
                 -------------------------------
-                143.5
+                143.4
                 (1 row)
                 
                 select cast(143.481 as decimal(4,0));
@@ -435,7 +435,7 @@ public class FunctionsTest extends SqlIoTest {
                 select cast(98.6 as decimal(2,0));
                  cast(98.6 as decimal(2,0))
                 -------------------------------
-                99
+                98
                 (1 row)
                 """
         );
@@ -453,11 +453,11 @@ public class FunctionsTest extends SqlIoTest {
         this.queryFailing("select cast(143.481 as decimal(2, 1))",
                 "cannot represent 143.481 as DECIMAL(2, 1)",
                 "cannot represent 143.481 as DECIMAL(2, 1)");
-        // Due to a bug in calcite this only fails at runtime currently.
-        this.qf("select cast(99.6 as decimal(2, 0))",
-                "cannot represent 99.6 as DECIMAL(2, 0)"
-                // "cannot represent 99.6 as DECIMAL(2, 0)"
-                );
+        this.q("""
+                select cast(99.6 as decimal(2, 0));
+                 result
+                --------
+                 99""");
         this.queryFailing("select cast(-13.4 as decimal(2,1))",
                 "cannot represent -13.4 as DECIMAL(2, 1)",
                 "cannot represent -13.4 as DECIMAL(2, 1)");

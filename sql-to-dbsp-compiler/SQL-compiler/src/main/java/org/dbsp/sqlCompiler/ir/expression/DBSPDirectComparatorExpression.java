@@ -31,24 +31,16 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
-/** This class does not correspond to any Rust primitive construct.
- * It is compiled into a function invocation, depending on the involved types.
- * It represents a cast of an expression to a given type. */
-public final class DBSPCastExpression extends DBSPExpression {
-    public final DBSPExpression source;
+/** A comparator that compares two values directly.
+ * It takes a direction, indicating whether the sort is ascending or descending. */
+public final class DBSPDirectComparatorExpression extends DBSPComparatorExpression {
+    public final DBSPComparatorExpression source;
+    public final boolean ascending;
 
-    @SuppressWarnings("CommentedOutCode")
-    public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to) {
-        super(node, to);
+    public DBSPDirectComparatorExpression(CalciteObject node, DBSPComparatorExpression source, boolean ascending) {
+        super(node);
         this.source = source;
-        // The following are not true e.g., because of casts that remove nullability from vectors.
-        // assert type.is(DBSPTypeBaseType.class);
-        // assert source.getType().is(DBSPTypeBaseType.class);
-    }
-
-    public DBSPCastExpression replaceSource(DBSPExpression source) {
-        assert source.getType().sameType(this.source.getType());
-        return new DBSPCastExpression(this.getNode(), source, this.type);
+        this.ascending = ascending;
     }
 
     @Override
@@ -57,40 +49,45 @@ public final class DBSPCastExpression extends DBSPExpression {
         if (decision.stop()) return;
         visitor.push(this);
         this.source.accept(visitor);
-        this.getType().accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }
 
+    public DBSPType comparedValueType() {
+        return this.source.comparedValueType();
+    }
+
     @Override
     public boolean sameFields(IDBSPNode other) {
-        DBSPCastExpression o = other.as(DBSPCastExpression.class);
+        DBSPDirectComparatorExpression o = other.as(DBSPDirectComparatorExpression.class);
         if (o == null)
             return false;
         return this.source == o.source &&
+                this.ascending == o.ascending &&
                 this.hasSameType(o);
     }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("((")
-                .append(this.type)
-                .append(")")
-                .append(this.source)
-                .append(")");
+        return builder.append(this.source)
+                .append(".then_")
+                .append(this.ascending ? "asc" : "desc")
+                .append("(|t| t)");
     }
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPCastExpression(this.getNode(), this.source.deepCopy(), this.getType());
+        return new DBSPDirectComparatorExpression(
+                this.getNode(), this.source.deepCopy().to(DBSPComparatorExpression.class),
+                this.ascending);
     }
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        DBSPCastExpression otherExpression = other.as(DBSPCastExpression.class);
+        DBSPDirectComparatorExpression otherExpression = other.as(DBSPDirectComparatorExpression.class);
         if (otherExpression == null)
             return false;
-        return context.equivalent(this.source, otherExpression.source) &&
-                this.hasSameType(other);
+        return this.ascending == otherExpression.ascending &&
+                this.source.equivalent(context, otherExpression.source);
     }
 }

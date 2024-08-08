@@ -707,6 +707,19 @@ where
     }
 }
 
+impl<V> Semigroup<Option<Vec<V>>> for ConcatSemigroup<Option<Vec<V>>>
+where
+    V: Clone + Ord,
+{
+    fn combine(left: &Option<Vec<V>>, right: &Option<Vec<V>>) -> Option<Vec<V>> {
+        match (left, right) {
+            (None, _) => right.clone(),
+            (_, None) => left.clone(),
+            (Some(left), Some(right)) => Some(left.iter().merge(right).cloned().collect()),
+        }
+    }
+}
+
 #[inline(always)]
 pub fn wrap_bool(b: Option<bool>) -> bool {
     b.unwrap_or_default()

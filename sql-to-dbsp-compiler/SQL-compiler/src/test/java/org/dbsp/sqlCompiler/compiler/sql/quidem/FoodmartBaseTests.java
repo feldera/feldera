@@ -55,7 +55,7 @@ public class FoodmartBaseTests extends SqlIoTest {
                 """);
     }
 
-    @Test @Ignore("Calcite does not desugar qualify, so we don't support it yet")
+    @Test @Ignore("Calcite desugars qualify into WINDOW aggregate with ROWS; not yet implemented")
     public void testQualify() {
         this.q("""
                 SELECT empno, ename, deptno, job, mgr

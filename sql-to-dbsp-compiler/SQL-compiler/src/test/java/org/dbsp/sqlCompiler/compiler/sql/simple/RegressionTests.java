@@ -131,7 +131,7 @@ public class RegressionTests extends SqlIoTest {
         this.compileRustTestCase(sql);
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/2097")
+    @Test
     public void testErrorPosition() {
         // Test that errors for functions report correct source position
         String sql = """

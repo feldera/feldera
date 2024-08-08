@@ -47,33 +47,48 @@ public class EquivalenceTests {
     public void testLambdas() {
         DBSPLiteral zero0 = new DBSPI32Literal(0);
         DBSPType i32 = zero0.getType();
-        DBSPVariablePath var0 = new DBSPVariablePath("x", i32);
-        DBSPVariablePath var1 = new DBSPVariablePath("y", i32);
-        DBSPExpression id0 = var0.closure(var0.asParameter());
-        DBSPExpression id1 = var0.closure(var0.asParameter());
+        DBSPVariablePath x = new DBSPVariablePath("x", i32);
+        DBSPExpression id0 = x.closure(x.asParameter());
+
+        DBSPVariablePath x1 = new DBSPVariablePath("x", i32);
+        DBSPExpression id1 = x1.closure(x1.asParameter());
         Assert.assertTrue(EquivalenceContext.equiv(id0, id1));
 
-        DBSPExpression id2 = var1.closure(var1.asParameter());
+        DBSPVariablePath y = new DBSPVariablePath("y", i32);
+        DBSPExpression id2 = y.closure(y.asParameter());
         Assert.assertTrue(EquivalenceContext.equiv(id0, id2));
 
+        DBSPVariablePath x2 = new DBSPVariablePath("x", i32);
+        DBSPVariablePath y2 = new DBSPVariablePath("y", i32);
         DBSPExpression plus0 = new DBSPBinaryExpression(
-                CalciteObject.EMPTY, i32, DBSPOpcode.ADD, var0, var1);
+                CalciteObject.EMPTY, i32, DBSPOpcode.ADD, x2, y2);
+        DBSPExpression lambda0 = plus0.closure(x2.asParameter(), y2.asParameter());
+
+        DBSPVariablePath x3 = new DBSPVariablePath("x", i32);
+        DBSPVariablePath y3 = new DBSPVariablePath("y", i32);
         DBSPExpression plus1 = new DBSPBinaryExpression(
-                CalciteObject.EMPTY, i32, DBSPOpcode.ADD, var1, var0);
-        DBSPExpression lambda0 = plus0.closure(var0.asParameter(), var1.asParameter());
-        DBSPExpression lambda1 = plus1.closure(var0.asParameter(), var1.asParameter());
-        // Compiled doesn't know plus is commutative
+                CalciteObject.EMPTY, i32, DBSPOpcode.ADD, y3, x3);
+        DBSPExpression lambda1 = plus1.closure(x3.asParameter(), y3.asParameter());
+        // Compiler doesn't know that ADD is commutative
         Assert.assertFalse(EquivalenceContext.equiv(lambda0, lambda1));
 
-        DBSPExpression lambda2 = plus1.closure(var1.asParameter(), var0.asParameter());
+        DBSPVariablePath x4 = new DBSPVariablePath("x", i32);
+        DBSPVariablePath y4 = new DBSPVariablePath("y", i32);
+        DBSPExpression plus1_1 = new DBSPBinaryExpression(
+                CalciteObject.EMPTY, i32, DBSPOpcode.ADD, x4, y4);
+        DBSPExpression lambda2 = plus1_1.closure(x4.asParameter(), y4.asParameter());
         Assert.assertTrue(EquivalenceContext.equiv(lambda0, lambda2));
 
         DBSPLetStatement stat0 = new DBSPLetStatement("z", plus0);
         DBSPBlockExpression block0 = new DBSPBlockExpression(Linq.list(stat0), stat0.getVarReference());
         DBSPLetStatement stat1 = new DBSPLetStatement("w", plus1);
         DBSPBlockExpression block1 = new DBSPBlockExpression(Linq.list(stat1), stat1.getVarReference());
-        DBSPExpression blockLambda0 = block0.closure(var0.asParameter(), var1.asParameter());
-        DBSPExpression blockLambda1 = block1.closure(var1.asParameter(), var0.asParameter());
+        DBSPExpression blockLambda0 = block0.closure(
+                x.deepCopy().to(DBSPVariablePath.class).asParameter(),
+                y.deepCopy().to(DBSPVariablePath.class).asParameter());
+        DBSPExpression blockLambda1 = block1.closure(
+                y.deepCopy().to(DBSPVariablePath.class).asParameter(),
+                x.deepCopy().to(DBSPVariablePath.class).asParameter());
         Assert.assertTrue(EquivalenceContext.equiv(blockLambda0, blockLambda1));
     }
 }
