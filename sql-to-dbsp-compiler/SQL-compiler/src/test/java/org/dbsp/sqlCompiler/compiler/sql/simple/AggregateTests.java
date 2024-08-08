@@ -161,7 +161,7 @@ public class AggregateTests extends SqlIoTest {
                 SELECT STDDEV_POP(B), STDDEV_POP(I), STDDEV_POP(S), STDDEV_POP(T), STDDEV_POP(R), STDDEV_POP(D), STDDEV_POP(E) FROM T;
                  B | I | S | T | R | D | E
                 ---------------------------
-                 0 | 0 | 0 | 0 | 0.8164966 | 0.816496580927726 | 0.82
+                 0 | 0 | 0 | 0 | 0.8164966 | 0.816496580927726 | 0.81
                 (1 row)
 
                 SELECT STDDEV_SAMP(B), STDDEV_SAMP(I), STDDEV_SAMP(S), STDDEV_SAMP(T), STDDEV_SAMP(R), STDDEV_SAMP(D), STDDEV_SAMP(E) FROM T;
@@ -231,7 +231,7 @@ public class AggregateTests extends SqlIoTest {
                 SELECT STDDEV_POP(DISTINCT B), STDDEV_POP(DISTINCT I), STDDEV_POP(DISTINCT S), STDDEV_POP(DISTINCT T), STDDEV_POP(DISTINCT R), STDDEV_POP(DISTINCT D), STDDEV_POP(DISTINCT E) FROM T;
                  B | I | S | T | R | D | E
                 ---------------------------
-                 0 | 0 | 0 | 0 | 0.8164966 | 0.816496580927726 | 0.82
+                 0 | 0 | 0 | 0 | 0.8164966 | 0.816496580927726 | 0.81
                 (1 row)
 
                 SELECT STDDEV_SAMP(DISTINCT B), STDDEV_SAMP(DISTINCT I), STDDEV_SAMP(DISTINCT S), STDDEV_SAMP(DISTINCT T), STDDEV_SAMP(DISTINCT R), STDDEV_SAMP(DISTINCT D), STDDEV_SAMP(DISTINCT E) FROM T;

@@ -65,10 +65,8 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
         this(node, false, fields.toArray(new DBSPExpression[0]));
     }
 
-    /**
-     * @param expressions A list of expressions with tuple types.
-     * @return  A tuple expressions that concatenates all fields of these tuple expressions.
-     */
+    /** @param expressions A list of expressions with tuple types.
+     * @return  A tuple expressions that concatenates all fields of these tuple expressions. */
     public static DBSPTupleExpression flatten(DBSPExpression... expressions) {
         List<DBSPExpression> fields = new ArrayList<>();
         for (DBSPExpression expression: expressions) {

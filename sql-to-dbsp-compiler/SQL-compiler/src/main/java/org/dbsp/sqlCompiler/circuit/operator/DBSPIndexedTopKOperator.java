@@ -57,7 +57,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
      * @param source          Input operator.
      */
     public DBSPIndexedTopKOperator(CalciteObject node, TopKNumbering numbering,
-                                   DBSPExpression comparator, DBSPExpression limit,
+                                   DBSPComparatorExpression comparator, DBSPExpression limit,
                                    @Nullable DBSPClosureExpression outputProducer, DBSPOperator source) {
         super(node, "topK", comparator,
                 outputType(source.getOutputIndexedZSetType(), outputProducer), source.isMultiset, source);
@@ -66,14 +66,13 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
         this.outputProducer = outputProducer;
         if (!this.outputType.is(DBSPTypeIndexedZSet.class))
             throw new InternalCompilerError("Expected the input to be an IndexedZSet type", source.outputType);
-        if (!comparator.is(DBSPComparatorExpression.class))
-            throw new InternalCompilerError("Expected a comparator expression", comparator);
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPIndexedTopKOperator(this.getNode(), this.numbering, this.getFunction(),
+            return new DBSPIndexedTopKOperator(this.getNode(), this.numbering,
+                    this.getFunction().to(DBSPComparatorExpression.class),
                     this.limit, this.outputProducer, newInputs.get(0)).copyAnnotations(this);
         return this;
     }
@@ -93,7 +92,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPIndexedTopKOperator(this.getNode(), this.numbering,
-                Objects.requireNonNull(expression), this.limit,
+                Objects.requireNonNull(expression).to(DBSPComparatorExpression.class), this.limit,
                 this.outputProducer, this.input()).copyAnnotations(this);
     }
 

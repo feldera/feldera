@@ -186,9 +186,7 @@ public abstract class DBSPExpression
      * @param other Expression to compare against.
      * @return True if this expression is equivalent with 'other' in the specified context.
      */
-    public abstract boolean equivalent(
-            EquivalenceContext context,
-            DBSPExpression other);
+    public abstract boolean equivalent(EquivalenceContext context, DBSPExpression other);
 
     /** Check expressions without free variables for equivalence.
      * @param other Expression to compare against.

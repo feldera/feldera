@@ -28,27 +28,20 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.IIndentStream;
 
-/** This class does not correspond to any Rust primitive construct.
- * It is compiled into a function invocation, depending on the involved types.
- * It represents a cast of an expression to a given type. */
-public final class DBSPCastExpression extends DBSPExpression {
+/** An expression that carries a comparator for custom ordering */
+public final class DBSPCustomOrdExpression extends DBSPExpression {
     public final DBSPExpression source;
+    public final DBSPComparatorExpression comparator;
 
-    @SuppressWarnings("CommentedOutCode")
-    public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to) {
-        super(node, to);
+    public DBSPCustomOrdExpression(
+            CalciteObject node, DBSPExpression source,
+            DBSPComparatorExpression comparator) {
+        super(node, new DBSPTypeWithCustomOrd(node, source.getType()));
         this.source = source;
-        // The following are not true e.g., because of casts that remove nullability from vectors.
-        // assert type.is(DBSPTypeBaseType.class);
-        // assert source.getType().is(DBSPTypeBaseType.class);
-    }
-
-    public DBSPCastExpression replaceSource(DBSPExpression source) {
-        assert source.getType().sameType(this.source.getType());
-        return new DBSPCastExpression(this.getNode(), source, this.type);
+        this.comparator = comparator;
     }
 
     @Override
@@ -57,6 +50,7 @@ public final class DBSPCastExpression extends DBSPExpression {
         if (decision.stop()) return;
         visitor.push(this);
         this.source.accept(visitor);
+        this.comparator.accept(visitor);
         this.getType().accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
@@ -64,33 +58,34 @@ public final class DBSPCastExpression extends DBSPExpression {
 
     @Override
     public boolean sameFields(IDBSPNode other) {
-        DBSPCastExpression o = other.as(DBSPCastExpression.class);
+        DBSPCustomOrdExpression o = other.as(DBSPCustomOrdExpression.class);
         if (o == null)
             return false;
         return this.source == o.source &&
+                this.comparator == o.comparator &&
                 this.hasSameType(o);
     }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("((")
-                .append(this.type)
-                .append(")")
+        return builder.append("WithCustomOrd(")
                 .append(this.source)
                 .append(")");
     }
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPCastExpression(this.getNode(), this.source.deepCopy(), this.getType());
+        return new DBSPCustomOrdExpression(
+                this.getNode(), this.source.deepCopy(),
+                this.comparator.deepCopy().to(DBSPComparatorExpression.class));
     }
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        DBSPCastExpression otherExpression = other.as(DBSPCastExpression.class);
+        DBSPCustomOrdExpression otherExpression = other.as(DBSPCustomOrdExpression.class);
         if (otherExpression == null)
             return false;
         return context.equivalent(this.source, otherExpression.source) &&
-                this.hasSameType(other);
+                context.equivalent(this.comparator, otherExpression.comparator);
     }
 }

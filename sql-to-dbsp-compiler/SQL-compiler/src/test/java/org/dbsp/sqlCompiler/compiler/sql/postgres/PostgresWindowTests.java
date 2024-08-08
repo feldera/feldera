@@ -202,7 +202,7 @@ public class PostgresWindowTests extends SqlIoTest {
                 (10 rows)""", false);
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6382")
+    @Test
     public void testFails() {
         this.qs("""
                 SELECT lead(ten * 2, 1, -1.4) OVER (PARTITION BY four ORDER BY ten), ten, four

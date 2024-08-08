@@ -48,7 +48,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
@@ -68,6 +70,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
@@ -276,10 +279,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (hasSource)
             this.builder.newline().append(".then(");
         this.builder.append("Extract::new(move |r: &");
-        expression.tupleType().accept(this);
+        expression.comparedValueType().accept(this);
         this.builder.append("| r.")
                 .append(expression.fieldNo);
-        if (!expression.tupleType().to(DBSPTypeTuple.class).getFieldType(expression.fieldNo).hasCopy())
+        if (!expression.comparedValueType().to(DBSPTypeTuple.class).getFieldType(expression.fieldNo).hasCopy())
             this.builder.append(".clone()");
         this.builder.append(")");
         if (!expression.ascending)
@@ -1108,6 +1111,45 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append(expression.enumName)
                 .append("::")
                 .append(expression.constructor);
+        return VisitDecision.STOP;
+    }
+
+    public VisitDecision preorder(DBSPCustomOrdExpression expression) {
+        this.builder.append("WithCustomOrd::<");
+        expression.source.getType().accept(this);
+        this.builder.append(", ")
+                .append(expression.comparator.getComparatorStructName())
+                .append(">::new(");
+        expression.source.accept(this);
+        this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    public VisitDecision preorder(DBSPUnwrapCustomOrdExpression expression) {
+        this.builder.append("(");
+        expression.expression.accept(this);
+        this.builder.append(".get())");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPCustomOrdField expression) {
+        DBSPType fieldType = expression.getFieldType();
+        this.builder.append("match ");
+        expression.expression.accept(this);
+        this.builder.append(" {")
+                .increase()
+                .append("None => None,").newline()
+                .append("Some(x) => ");
+        if (expression.needsSome())
+            this.builder.append("Some(");
+        this.builder.append("(*x).get().")
+                .append(expression.field);
+        if (!fieldType.hasCopy())
+            this.builder.append(".clone()");
+        if (expression.needsSome())
+            this.builder.append(")");
+        this.builder.decrease().append("}").newline();
         return VisitDecision.STOP;
     }
 

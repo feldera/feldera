@@ -35,11 +35,9 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Ignore;
 import org.junit.Test;
 
-/**
- * Tests manually adapted from
+/* Tests manually adapted from
  * https://github.com/postgres/postgres/blob/master/src/test/regress/expected/numeric.out
- */
-@SuppressWarnings("JavadocLinkAsPlainText")
+ * Since Calcite rounds differently, these tests give slightly different results from Postgres. */
 public class PostgresNumericTests extends SqlIoTest {
     protected static final int WIDTH = 28;
 
@@ -145,15 +143,15 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (2,1,2);\n" +
                 "INSERT INTO num_exp_add VALUES (2,2,'-68676984.430794094');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,2,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,2,'1179132047626883.596862135856320209');\n" +
+                "INSERT INTO num_exp_mul VALUES (2,2,'1179132047626883.5968621358');\n" +
                 "INSERT INTO num_exp_div VALUES (2,2,'1.00000000000000000000');\n" +
                 "INSERT INTO num_exp_add VALUES (2,3,'-34338487.905397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,3,'-34338496.525397047');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,3,'-147998901.44836127257');\n" +
+                "INSERT INTO num_exp_mul VALUES (2,3,'-147998901.4483612725');\n" +
                 "INSERT INTO num_exp_div VALUES (2,3,'-7967167.56737750510440835266');\n" +
                 "INSERT INTO num_exp_add VALUES (2,4,'-26539030.803497047');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,4,'-42137953.627297047');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,4,'-267821744976817.8111137106593');\n" +
+                "INSERT INTO num_exp_mul VALUES (2,4,'-267821744976817.8111137106');\n" +
                 "INSERT INTO num_exp_div VALUES (2,4,'-4.40267480046830116685');\n" +
                 "INSERT INTO num_exp_add VALUES (2,5,'-34322095.176906047');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,5,'-34354889.253888047');\n" +
@@ -161,7 +159,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (2,5,'-2094.18866914563535496429');\n" +
                 "INSERT INTO num_exp_add VALUES (2,6,'-34244590.637766787');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,6,'-34432393.793027307');\n" +
-                "INSERT INTO num_exp_mul VALUES (2,6,'-3224438592470.18449811926184222');\n" +
+                "INSERT INTO num_exp_mul VALUES (2,6,'-3224438592470.1844981192');\n" +
                 "INSERT INTO num_exp_div VALUES (2,6,'-365.68599891479766440940');\n" +
                 "INSERT INTO num_exp_add VALUES (2,7,'-117366977.215397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (2,7,'48689992.784602953');\n" +
@@ -185,7 +183,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (3,1,'3');\n" +
                 "INSERT INTO num_exp_add VALUES (3,2,'-34338487.905397047');\n" +
                 "INSERT INTO num_exp_sub VALUES (3,2,'34338496.525397047');\n" +
-                "INSERT INTO num_exp_mul VALUES (3,2,'-147998901.44836127257');\n" +
+                "INSERT INTO num_exp_mul VALUES (3,2,'-147998901.4483612725');\n" +
                 "INSERT INTO num_exp_div VALUES (3,2,'-.00000012551512084352');\n" +
                 "INSERT INTO num_exp_add VALUES (3,3,'8.62');\n" +
                 "INSERT INTO num_exp_sub VALUES (3,3,'0');\n" +
@@ -225,7 +223,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (4,1,'4');\n" +
                 "INSERT INTO num_exp_add VALUES (4,2,'-26539030.803497047');\n" +
                 "INSERT INTO num_exp_sub VALUES (4,2,'42137953.627297047');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,2,'-267821744976817.8111137106593');\n" +
+                "INSERT INTO num_exp_mul VALUES (4,2,'-267821744976817.8111137106');\n" +
                 "INSERT INTO num_exp_div VALUES (4,2,'-.22713465002993920385');\n" +
                 "INSERT INTO num_exp_add VALUES (4,3,'7799465.7219');\n" +
                 "INSERT INTO num_exp_sub VALUES (4,3,'7799457.1019');\n" +
@@ -241,7 +239,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (4,5,'475.66281046305802686061');\n" +
                 "INSERT INTO num_exp_add VALUES (4,6,'7893362.98953026');\n" +
                 "INSERT INTO num_exp_sub VALUES (4,6,'7705559.83426974');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,6,'732381731243.745115764094');\n" +
+                "INSERT INTO num_exp_mul VALUES (4,6,'732381731243.7451157640');\n" +
                 "INSERT INTO num_exp_div VALUES (4,6,'83.05996138436129499606');\n" +
                 "INSERT INTO num_exp_add VALUES (4,7,'-75229023.5881');\n" +
                 "INSERT INTO num_exp_sub VALUES (4,7,'90827946.4119');\n" +
@@ -253,7 +251,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (4,8,'104.15808298366741897143');\n" +
                 "INSERT INTO num_exp_add VALUES (4,9,'-17127342.633147420');\n" +
                 "INSERT INTO num_exp_sub VALUES (4,9,'32726265.456947420');\n" +
-                "INSERT INTO num_exp_mul VALUES (4,9,'-194415646271340.1815956522980');\n" +
+                "INSERT INTO num_exp_mul VALUES (4,9,'-194415646271340.1815956522');\n" +
                 "INSERT INTO num_exp_div VALUES (4,9,'-.31289456112403769409');\n" +
                 "INSERT INTO num_exp_add VALUES (5,0,'16397.038491');\n" +
                 "INSERT INTO num_exp_sub VALUES (5,0,'16397.038491');\n" +
@@ -277,7 +275,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (5,4,'.00210232958726897192');\n" +
                 "INSERT INTO num_exp_add VALUES (5,5,'32794.076982');\n" +
                 "INSERT INTO num_exp_sub VALUES (5,5,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (5,5,'268862871.275335557081');\n" +
+                "INSERT INTO num_exp_mul VALUES (5,5,'268862871.2753355570');\n" +
                 "INSERT INTO num_exp_div VALUES (5,5,'1.00000000000000000000');\n" +
                 "INSERT INTO num_exp_add VALUES (5,6,'110298.61612126');\n" +
                 "INSERT INTO num_exp_sub VALUES (5,6,'-77504.53913926');\n" +
@@ -305,7 +303,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (6,1,'6');\n" +
                 "INSERT INTO num_exp_add VALUES (6,2,'-34244590.637766787');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,2,'34432393.793027307');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,2,'-3224438592470.18449811926184222');\n" +
+                "INSERT INTO num_exp_mul VALUES (6,2,'-3224438592470.1844981192');\n" +
                 "INSERT INTO num_exp_div VALUES (6,2,'-.00273458651128995823');\n" +
                 "INSERT INTO num_exp_add VALUES (6,3,'93905.88763026');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,3,'93897.26763026');\n" +
@@ -313,7 +311,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (6,3,'21786.90896293735498839907');\n" +
                 "INSERT INTO num_exp_add VALUES (6,4,'7893362.98953026');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,4,'-7705559.83426974');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,4,'732381731243.745115764094');\n" +
+                "INSERT INTO num_exp_mul VALUES (6,4,'732381731243.7451157640');\n" +
                 "INSERT INTO num_exp_div VALUES (6,4,'.01203949512295682469');\n" +
                 "INSERT INTO num_exp_add VALUES (6,5,'110298.61612126');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,5,'77504.53913926');\n" +
@@ -321,7 +319,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (6,5,'5.72674008674192359679');\n" +
                 "INSERT INTO num_exp_add VALUES (6,6,'187803.15526052');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,6,'0');\n" +
-                "INSERT INTO num_exp_mul VALUES (6,6,'8817506281.4517452372676676');\n" +
+                "INSERT INTO num_exp_mul VALUES (6,6,'8817506281.4517452372');\n" +
                 "INSERT INTO num_exp_div VALUES (6,6,'1.00000000000000000000');\n" +
                 "INSERT INTO num_exp_add VALUES (6,7,'-82934583.42236974');\n" +
                 "INSERT INTO num_exp_sub VALUES (6,7,'83122386.57763026');\n" +
@@ -433,7 +431,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (9,3,'-5783481.21694835730858468677');\n" +
                 "INSERT INTO num_exp_add VALUES (9,4,'-17127342.633147420');\n" +
                 "INSERT INTO num_exp_sub VALUES (9,4,'-32726265.456947420');\n" +
-                "INSERT INTO num_exp_mul VALUES (9,4,'-194415646271340.1815956522980');\n" +
+                "INSERT INTO num_exp_mul VALUES (9,4,'-194415646271340.1815956522');\n" +
                 "INSERT INTO num_exp_div VALUES (9,4,'-3.19596478892958416484');\n" +
                 "INSERT INTO num_exp_add VALUES (9,5,'-24910407.006556420');\n" +
                 "INSERT INTO num_exp_sub VALUES (9,5,'-24943201.083538420');\n" +
@@ -457,34 +455,34 @@ public class PostgresNumericTests extends SqlIoTest {
                 "INSERT INTO num_exp_div VALUES (9,9,'1.00000000000000000000');\n" +
                 "INSERT INTO num_exp_sqrt VALUES (0,'0');\n" +
                 "INSERT INTO num_exp_sqrt VALUES (1,'0');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (2,'5859.90547836712524903505');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (3,'2.07605394920266944396');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (4,'2792.75158435189147418923');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (5,'128.05092147657509145473');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (6,'306.43364311096782703406');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (7,'9111.99676251039939975230');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (8,'273.64392922189960397542');\n" +
-                "INSERT INTO num_exp_sqrt VALUES (9,'4992.67503899937593364766');\n" +
+                "INSERT INTO num_exp_sqrt VALUES (2,'5859.9054783671');\n" +
+                "INSERT INTO num_exp_sqrt VALUES (3,'2.0760539492');\n" +
+                "INSERT INTO num_exp_sqrt VALUES (4,'2792.7515843518');\n" +
+                "INSERT INTO num_exp_sqrt VALUES (5,'128.0509214765');\n" +
+                "INSERT INTO num_exp_sqrt VALUES (6,'306.4336431109');\n" +
+                "INSERT INTO num_exp_sqrt VALUES (7,'9111.9967625104');\n" +
+                "INSERT INTO num_exp_sqrt VALUES (8,'273.6439292218');\n" +
+                "INSERT INTO num_exp_sqrt VALUES (9,'4992.6750389993');\n" +
                 "INSERT INTO num_exp_ln VALUES (0,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_ln VALUES (1,NULL);\n" + // No NaN
-                "INSERT INTO num_exp_ln VALUES (2,'17.35177750493897715514');\n" +
-                "INSERT INTO num_exp_ln VALUES (3,'1.46093790411565641971');\n" +
-                "INSERT INTO num_exp_ln VALUES (4,'15.86956523951936572464');\n" +
-                "INSERT INTO num_exp_ln VALUES (5,'9.70485601768871834038');\n" +
-                "INSERT INTO num_exp_ln VALUES (6,'11.45000246622944403127');\n" +
-                "INSERT INTO num_exp_ln VALUES (7,'18.23469429965478772991');\n" +
-                "INSERT INTO num_exp_ln VALUES (8,'11.22365546576315513668');\n" +
-                "INSERT INTO num_exp_ln VALUES (9,'17.03145425013166006962');\n" +
+                "INSERT INTO num_exp_ln VALUES (2,'17.3517775049');\n" +
+                "INSERT INTO num_exp_ln VALUES (3,'1.4609379041');\n" +
+                "INSERT INTO num_exp_ln VALUES (4,'15.8695652395');\n" +
+                "INSERT INTO num_exp_ln VALUES (5,'9.7048560176');\n" +
+                "INSERT INTO num_exp_ln VALUES (6,'11.4500024662');\n" +
+                "INSERT INTO num_exp_ln VALUES (7,'18.2346942996');\n" +
+                "INSERT INTO num_exp_ln VALUES (8,'11.2236554657');\n" +
+                "INSERT INTO num_exp_ln VALUES (9,'17.0314542501');\n" +
                 "INSERT INTO num_exp_log10 VALUES (0,NULL);\n" +  // No NaN
                 "INSERT INTO num_exp_log10 VALUES (1,NULL);\n" +  // No NaN
-                "INSERT INTO num_exp_log10 VALUES (2,'7.53578122160797276459');\n" +
-                "INSERT INTO num_exp_log10 VALUES (3,'.63447727016073160075');\n" +
-                "INSERT INTO num_exp_log10 VALUES (4,'6.89206461372691743345');\n" +
-                "INSERT INTO num_exp_log10 VALUES (5,'4.21476541614777768626');\n" +
-                "INSERT INTO num_exp_log10 VALUES (6,'4.97267288886207207671');\n" +
-                "INSERT INTO num_exp_log10 VALUES (7,'7.91922711353275546914');\n" +
-                "INSERT INTO num_exp_log10 VALUES (8,'4.87437163556421004138');\n" +
-                "INSERT INTO num_exp_log10 VALUES (9,'7.39666659961986567059');\n" +
+                "INSERT INTO num_exp_log10 VALUES (2,'7.5357812216');\n" +
+                "INSERT INTO num_exp_log10 VALUES (3,'.6344772701');\n" +
+                "INSERT INTO num_exp_log10 VALUES (4,'6.8920646137');\n" +
+                "INSERT INTO num_exp_log10 VALUES (5,'4.2147654161');\n" +
+                "INSERT INTO num_exp_log10 VALUES (6,'4.9726728888');\n" +
+                "INSERT INTO num_exp_log10 VALUES (7,'7.9192271135');\n" +
+                "INSERT INTO num_exp_log10 VALUES (8,'4.8743716355');\n" +
+                "INSERT INTO num_exp_log10 VALUES (9,'7.3966665996');\n" +
                 "INSERT INTO num_exp_power_10_ln VALUES (0,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_power_10_ln VALUES (1,NULL);\n" + // No NaN
                 "INSERT INTO num_exp_power_10_ln VALUES (2,'224790267919917955.13261618583642653184');\n" +
@@ -509,10 +507,8 @@ public class PostgresNumericTests extends SqlIoTest {
         compiler.compileStatements(insert);
     }
 
-    /**
-     * @param intermediate  A SQL query that defines an intermediate view, which is not output by the circuit.
-     * @param last          A SQL query that defines the final view, which is output from the circuit.
-     */
+    /** @param intermediate  A SQL query that defines an intermediate view, which is not output by the circuit.
+     * @param last          A SQL query that defines the final view, which is output from the circuit. */
     public void testTwoViews(String intermediate, String last) {
         DBSPCompiler compiler = new DBSPCompiler(this.getOptions(true));
         this.prepareInputs(compiler);
@@ -609,7 +605,7 @@ public class PostgresNumericTests extends SqlIoTest {
         this.testTwoViews(intermediate, last);
     }
 
-    @Test
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6464")
     public void testDivision() {
         String intermediate = "CREATE LOCAL VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(t1.val / t2.val AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +
@@ -623,7 +619,7 @@ public class PostgresNumericTests extends SqlIoTest {
         this.testTwoViews(intermediate, last);
     }
 
-    @Test
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6464")
     public void testDivisionRound() {
         String intermediate = "CREATE LOCAL VIEW num_result AS SELECT t1.id AS ID1, t2.id AS ID2, " +
                 "CAST(round(t1.val / t2.val, 10) AS NUMERIC(" + WIDTH + ", 10)) AS results\n" +

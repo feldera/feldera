@@ -30,12 +30,14 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.core.Uncollect;
 import org.apache.calcite.rel.core.Window;
 import org.apache.calcite.rel.logical.LogicalAggregate;
+import org.apache.calcite.rel.logical.LogicalAsofJoin;
 import org.apache.calcite.rel.logical.LogicalCorrelate;
 import org.apache.calcite.rel.logical.LogicalFilter;
 import org.apache.calcite.rel.logical.LogicalIntersect;
@@ -70,6 +72,7 @@ import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
@@ -130,8 +133,10 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
@@ -143,6 +148,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -177,6 +183,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.IWritesLogs;
@@ -903,11 +910,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.assignOperator(filter, fop);
     }
 
-    private DBSPOperator filterNonNullKeys(LogicalJoin join,
-            List<Integer> keyFields, DBSPOperator input) {
+    /** Apply a filter on a set of fields, keeping only rows that have non-null values in all these fields
+     * @param join    Join node that requires filtering the inputs.
+     * @param fields  List of fields to filter.
+     * @param input   Join input node that is being filtered.
+     * @return        An operator that performs the filtering.  If none of the fields are
+     *                nullable, the original input is returned. */
+    private DBSPOperator filterNonNullFields(Join join, List<Integer> fields, DBSPOperator input) {
         CalciteObject node = CalciteObject.create(join);
         DBSPTypeTuple rowType = input.getType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
-        boolean shouldFilter = Linq.any(keyFields, i -> rowType.tupFields[i].mayBeNull);
+        boolean shouldFilter = Linq.any(fields, i -> rowType.tupFields[i].mayBeNull);
         if (!shouldFilter) return input;
 
         DBSPVariablePath var = rowType.ref().var();
@@ -915,7 +927,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         @Nullable
         DBSPExpression condition = null;
         for (int i = 0; i < rowType.size(); i++) {
-            if (keyFields.contains(i)) {
+            if (fields.contains(i)) {
                 DBSPFieldExpression field = var.deref().field(i);
                 DBSPExpression expr = field.is_null();
                 if (condition == null)
@@ -952,10 +964,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
         JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join.getCondition());
         // If any key field is nullable we need to filter the inputs; this will make key columns non-nullable
-        DBSPOperator filteredLeft = this.filterNonNullKeys(join, Linq.map(decomposition.comparisons, c -> c.leftColumn), left);
-        DBSPOperator filteredRight = this.filterNonNullKeys(join, Linq.map(decomposition.comparisons, c -> c.rightColumn), right);
+        DBSPOperator filteredLeft = this.filterNonNullFields(join, Linq.map(decomposition.comparisons, c -> c.leftColumn), left);
+        DBSPOperator filteredRight = this.filterNonNullFields(join, Linq.map(decomposition.comparisons, c -> c.rightColumn), right);
 
-        leftElementType = filteredLeft.getType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
+        // leftElementType = filteredLeft.getType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
         DBSPTypeTuple rightElementType = filteredRight.getType().to(DBSPTypeZSet.class).elementType
                 .to(DBSPTypeTuple.class);
 
@@ -965,74 +977,87 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple leftResultType = resultType.slice(0, leftColumns);
         DBSPTypeTuple rightResultType = resultType.slice(leftColumns, leftColumns + rightColumns);
 
-        DBSPVariablePath l = leftElementType.ref().var();
-        DBSPVariablePath r = rightElementType.ref().var();
-        DBSPTupleExpression lr = DBSPTupleExpression.flatten(l.deref(), r.deref());
-        List<DBSPExpression> leftKeyFields = Linq.map(
-                decomposition.comparisons,
-                c -> l.deepCopy().deref().field(c.leftColumn).applyCloneIfNeeded().cast(c.commonType));
-        List<DBSPExpression> rightKeyFields = Linq.map(
-                decomposition.comparisons,
-                c -> r.deepCopy().deref().field(c.rightColumn).applyCloneIfNeeded().cast(c.commonType));
-        DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
-        DBSPExpression rightKey = new DBSPTupleExpression(node, rightKeyFields);
+        DBSPMapIndexOperator leftIndex, rightIndex;
+        DBSPType keyType;
+        {
+            DBSPVariablePath l = leftElementType.ref().var();
+            DBSPVariablePath r = rightElementType.ref().var();
+            List<DBSPExpression> leftKeyFields = Linq.map(
+                    decomposition.comparisons,
+                    c -> l.deepCopy().deref().field(c.leftColumn).applyCloneIfNeeded().cast(c.commonType));
+            List<DBSPExpression> rightKeyFields = Linq.map(
+                    decomposition.comparisons,
+                    c -> r.deepCopy().deref().field(c.rightColumn).applyCloneIfNeeded().cast(c.commonType));
+            DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
+            keyType = leftKey.getType();
 
-        @Nullable
-        RexNode leftOver = decomposition.getLeftOver();
-        DBSPExpression condition = null;
-        DBSPExpression originalCondition = null;
-        if (leftOver != null) {
-            DBSPVariablePath t = lr.getType().ref().var();
-            ExpressionCompiler expressionCompiler = new ExpressionCompiler(t, this.compiler);
-            condition = expressionCompiler.compile(leftOver);
-            if (condition.getType().mayBeNull)
-                condition = ExpressionCompiler.wrapBoolIfNeeded(condition);
-            originalCondition = condition;
-            condition = new DBSPClosureExpression(CalciteObject.create(join.getCondition()), condition, t.asParameter());
+            DBSPTupleExpression tuple = DBSPTupleExpression.flatten(l.deref());
+            DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(leftKey, tuple)
+                    .closure(l.asParameter());
+            leftIndex = new DBSPMapIndexOperator(
+                    node, toLeftKey,
+                    makeIndexedZSet(leftKey.getType(), leftElementType), false, filteredLeft);
+            this.circuit.addOperator(leftIndex);
+
+            DBSPExpression rightKey = new DBSPTupleExpression(node, rightKeyFields);
+            DBSPClosureExpression toRightKey = new DBSPRawTupleExpression(
+                    rightKey, DBSPTupleExpression.flatten(r.deref()))
+                    .closure(r.asParameter());
+            rightIndex = new DBSPMapIndexOperator(
+                    node, toRightKey,
+                    makeIndexedZSet(rightKey.getType(), rightElementType), false, filteredRight);
+            this.circuit.addOperator(rightIndex);
         }
-        DBSPVariablePath k = leftKey.getType().ref().var();
 
-        DBSPTupleExpression tuple = DBSPTupleExpression.flatten(l.deref());
-        DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(leftKey, tuple)
-                .closure(l.asParameter());
-        DBSPOperator leftIndex = new DBSPMapIndexOperator(
-                node, toLeftKey,
-                makeIndexedZSet(leftKey.getType(), leftElementType), false, filteredLeft);
-        this.circuit.addOperator(leftIndex);
-
-        DBSPClosureExpression toRightKey = new DBSPRawTupleExpression(
-                rightKey, DBSPTupleExpression.flatten(r.deref()))
-                .closure(r.asParameter());
-        DBSPOperator rIndex = new DBSPMapIndexOperator(
-                node, toRightKey,
-                makeIndexedZSet(rightKey.getType(), rightElementType), false, filteredRight);
-        this.circuit.addOperator(rIndex);
-
-        DBSPClosureExpression makeTuple = lr.closure(k.asParameter(), l.asParameter(), r.asParameter());
-        DBSPOperator joinResult = new DBSPStreamJoinOperator(node, this.makeZSet(lr.getType()),
-                makeTuple, left.isMultiset || right.isMultiset, leftIndex, rIndex);
-
-        // Save the result of the inner join here
-        DBSPOperator inner = joinResult;
-        if (originalCondition != null) {
-            // Apply additional filters
-            DBSPBoolLiteral bLit = originalCondition.as(DBSPBoolLiteral.class);
-            if (bLit == null || bLit.value == null || !bLit.value) {
-                // Technically if blit.value == null or !blit.value then
-                // the filter is false, and the result is empty.  But hopefully
-                // the calcite optimizer won't allow that.
-                this.circuit.addOperator(joinResult);
-                inner = new DBSPFilterOperator(node, condition, joinResult);
-                joinResult = inner;
+        DBSPOperator joinResult;
+        DBSPOperator inner;
+        DBSPTypeTuple lrType;
+        {
+            DBSPVariablePath l0 = leftElementType.ref().var();
+            DBSPVariablePath r0 = rightElementType.ref().var();
+            DBSPTupleExpression lr = DBSPTupleExpression.flatten(l0.deref(), r0.deref());
+            lrType = lr.getType().to(DBSPTypeTuple.class);
+            @Nullable
+            RexNode leftOver = decomposition.getLeftOver();
+            DBSPExpression condition = null;
+            DBSPExpression originalCondition = null;
+            if (leftOver != null) {
+                DBSPVariablePath t = lr.getType().ref().var();
+                ExpressionCompiler expressionCompiler = new ExpressionCompiler(t, this.compiler);
+                condition = expressionCompiler.compile(leftOver);
+                if (condition.getType().mayBeNull)
+                    condition = ExpressionCompiler.wrapBoolIfNeeded(condition);
+                originalCondition = condition;
+                condition = new DBSPClosureExpression(CalciteObject.create(join.getCondition()), condition, t.asParameter());
             }
-            // if bLit it true we don't need to filter.
+            DBSPVariablePath k = keyType.ref().var();
+
+            DBSPClosureExpression makeTuple = lr.closure(k.asParameter(), l0.asParameter(), r0.asParameter());
+             joinResult = new DBSPStreamJoinOperator(node, this.makeZSet(lr.getType()),
+                    makeTuple, left.isMultiset || right.isMultiset, leftIndex, rightIndex);
+
+            // Save the result of the inner join here
+            inner = joinResult;
+            if (originalCondition != null) {
+                // Apply additional filters
+                DBSPBoolLiteral bLit = originalCondition.as(DBSPBoolLiteral.class);
+                if (bLit == null || bLit.value == null || !bLit.value) {
+                    // Technically if blit.value == null or !blit.value then
+                    // the filter is false, and the result is empty.  But hopefully
+                    // the calcite optimizer won't allow that.
+                    this.circuit.addOperator(joinResult);
+                    inner = new DBSPFilterOperator(node, condition, joinResult);
+                    joinResult = inner;
+                }
+                // if bLit it true we don't need to filter.
+            }
         }
 
-        if (!resultType.sameType(lr.getType())) {
+        if (!resultType.sameType(lrType)) {
             // For outer joins additional columns may become nullable.
-            DBSPVariablePath t = new DBSPVariablePath(lr.getType().ref());
-            DBSPExpression[] casts = new DBSPExpression[lr.size()];
-            for (int index = 0; index < lr.size(); index++) {
+            DBSPVariablePath t = new DBSPVariablePath(lrType.ref());
+            DBSPExpression[] casts = new DBSPExpression[lrType.size()];
+            for (int index = 0; index < lrType.size(); index++) {
                 casts[index] = t.deepCopy().deref().field(index).applyCloneIfNeeded().cast(resultType.getFieldType(index));
             }
             DBSPTupleExpression allFields = new DBSPTupleExpression(casts);
@@ -1043,7 +1068,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         // Handle outer joins
         DBSPOperator result = joinResult;
-        DBSPVariablePath joinVar = lr.getType().ref().var();
+        DBSPVariablePath joinVar = lrType.ref().var();
         if (joinType == JoinRelType.LEFT || joinType == JoinRelType.FULL) {
             this.circuit.addOperator(result);
             // project the join on the left columns
@@ -1059,11 +1084,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             // subtract from left relation
             DBSPOperator leftCast = left;
+            DBSPVariablePath l1 = leftElementType.ref().var();
             if (!leftResultType.sameType(leftElementType)) {
                 DBSPClosureExpression castLeft =
-                    DBSPTupleExpression.flatten(l.deref())
-                            .pointwiseCast(leftResultType).closure(l.asParameter()
-                );
+                    DBSPTupleExpression.flatten(l1.deref())
+                            .pointwiseCast(leftResultType).closure(l1.asParameter());
                 leftCast = new DBSPMapOperator(node, castLeft, this.makeZSet(leftResultType), left);
                 this.circuit.addOperator(leftCast);
             }
@@ -1100,11 +1125,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             // subtract from right relation
             DBSPOperator rightCast = right;
+            DBSPVariablePath r1 = rightElementType.ref().var();
             if (!rightResultType.sameType(rightElementType)) {
                 DBSPClosureExpression castRight =
-                        DBSPTupleExpression.flatten(r.deref())
+                        DBSPTupleExpression.flatten(r1.deref())
                                 .pointwiseCast(rightResultType).closure(
-                        r.asParameter());
+                        r1.asParameter());
                 rightCast = new DBSPMapOperator(node, castRight, this.makeZSet(rightResultType), right);
                 this.circuit.addOperator(rightCast);
             }
@@ -1127,6 +1153,182 @@ public class CalciteToDBSPCompiler extends RelVisitor
             result = new DBSPSumOperator(node, result, expand);
         }
 
+        this.assignOperator(join, Objects.requireNonNull(result));
+    }
+
+    private void visitAsofJoin(LogicalAsofJoin join) {
+        // This shares a lot of code with the LogicalJoin
+        CalciteObject node = CalciteObject.create(join);
+        JoinRelType joinType = join.getJoinType();
+        if (// joinType != JoinRelType.ASOF &&  // TODO
+                joinType != JoinRelType.LEFT_ASOF)
+            throw new UnimplementedException(node);
+
+        DBSPTypeTuple resultType = this.convertType(join.getRowType(), false).to(DBSPTypeTuple.class);
+        if (join.getInputs().size() != 2)
+            throw new InternalCompilerError("Unexpected join with " + join.getInputs().size() + " inputs", node);
+        DBSPOperator left = this.getInputAs(join.getInput(0), true);
+        DBSPOperator right = this.getInputAs(join.getInput(1), true);
+        DBSPTypeTuple leftElementType = left.getType().to(DBSPTypeZSet.class).elementType
+                .to(DBSPTypeTuple.class);
+        int leftSize = leftElementType.size();
+
+        JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(node,
+                leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
+        JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join.getCondition());
+        @Nullable
+        RexNode leftOver = decomposition.getLeftOver();
+        assert leftOver == null;
+
+        int leftTsIndex;  // Index of "timestamp" column in left input
+        int rightTsIndex;
+        SqlKind comparison;  // Comparison operation, with left table column always on the left
+
+        {
+            // Analyze match condition.  We know it's always a simple comparison between
+            // two columns (enforced by the Validator).
+            RexNode matchCondition = join.getMatchCondition();
+            assert matchCondition instanceof RexCall;
+            RexCall call = (RexCall) matchCondition;
+            comparison = call.getOperator().getKind();
+            assert SqlKind.ORDER_COMPARISON.contains(comparison);
+            List<RexNode> operands = call.getOperands();
+            assert operands.size() == 2;
+            RexNode lc = operands.get(0);
+            RexNode rc = operands.get(1);
+            assert lc instanceof RexInputRef;
+            assert rc instanceof RexInputRef;
+            RexInputRef li = (RexInputRef) lc;
+            RexInputRef ri = (RexInputRef) rc;
+
+            if (li.getIndex() < leftSize) {
+                leftTsIndex = li.getIndex();
+                rightTsIndex = ri.getIndex() - leftSize;
+            } else {
+                leftTsIndex = ri.getIndex();
+                rightTsIndex = li.getIndex() - leftSize;
+                comparison = comparison.reverse();
+            }
+        }
+
+        // Throw away all rows in the right collection that have a NULL in a join key column
+        // or in the timestamp column.  They can never surface in the join output.
+        List<JoinConditionAnalyzer.EqualityTest> comparisons = decomposition.comparisons;
+        List<Integer> rightFilteredColumns = Linq.map(comparisons, c -> c.rightColumn);
+        rightFilteredColumns.add(rightTsIndex);
+        DBSPOperator filteredRight = this.filterNonNullFields(join, rightFilteredColumns, right);
+        DBSPTypeTuple rightElementType = filteredRight.getType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
+
+        // We don't filter nulls in the left column, because this is a left join.
+        // So the resulting types may be nullable.
+        // The 'commonType' in 'comparisons' are never null.
+        for (int i = 0; i < comparisons.size(); i++) {
+            JoinConditionAnalyzer.EqualityTest test = comparisons.get(i);
+            DBSPType leftType = leftElementType.tupFields[i];
+            DBSPType useType = test.commonType.setMayBeNull(leftType.mayBeNull);
+            comparisons.set(i, test.withType(useType));
+        }
+
+        DBSPOperator rightIndex, leftIndex;
+        DBSPTypeTuple keyType;
+        {
+            // Index both inputs
+            DBSPVariablePath l = leftElementType.ref().var();
+            DBSPVariablePath r = rightElementType.ref().var();
+            List<DBSPExpression> leftKeyFields = Linq.map(
+                    comparisons,
+                    c -> l.deepCopy().deref().field(c.leftColumn).applyCloneIfNeeded().cast(c.commonType));
+            List<DBSPExpression> rightKeyFields = Linq.map(
+                    comparisons,
+                    c -> r.deepCopy().deref().field(c.rightColumn).applyCloneIfNeeded().cast(c.commonType));
+            DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
+            keyType = leftKey.getType().to(DBSPTypeTuple.class);
+            DBSPExpression rightKey = new DBSPTupleExpression(node, rightKeyFields);
+
+            // Index left input
+            DBSPTupleExpression tuple = DBSPTupleExpression.flatten(l.deref());
+            DBSPComparatorExpression leftComparator =
+                    new DBSPNoComparatorExpression(node, leftElementType)
+                            .field(leftTsIndex, true);
+            DBSPExpression wrapper = new DBSPCustomOrdExpression(node, tuple, leftComparator);
+            DBSPClosureExpression toLeftKey =
+                    new DBSPRawTupleExpression(leftKey, wrapper)
+                    .closure(l.asParameter());
+            leftIndex = new DBSPMapIndexOperator(
+                    node, toLeftKey,
+                    makeIndexedZSet(leftKey.getType(), wrapper.getType()), false, left);
+            this.circuit.addOperator(leftIndex);
+
+            // Index right input
+            DBSPComparatorExpression rightComparator =
+                    new DBSPNoComparatorExpression(node, rightElementType)
+                            .field(rightTsIndex, true);
+            wrapper = new DBSPCustomOrdExpression(node,
+                    DBSPTupleExpression.flatten(r.deref()), rightComparator);
+            DBSPClosureExpression toRightKey = new DBSPRawTupleExpression(rightKey, wrapper)
+                    .closure(r.asParameter());
+            rightIndex = new DBSPMapIndexOperator(
+                    node, toRightKey,
+                    makeIndexedZSet(rightKey.getType(), wrapper.getType()),
+                    false, filteredRight);
+            this.circuit.addOperator(rightIndex);
+
+            // ASOF joins are only incremental, so need to differentiate the inputs
+            rightIndex = new DBSPDifferentiateOperator(node, rightIndex);
+            this.circuit.addOperator(rightIndex);
+            leftIndex = new DBSPDifferentiateOperator(node, leftIndex);
+            this.circuit.addOperator(leftIndex);
+        }
+
+        DBSPType wrappedLeftType = new DBSPTypeWithCustomOrd(node, leftElementType);
+        DBSPType wrappedRightType = new DBSPTypeWithCustomOrd(node, rightElementType);
+
+        DBSPVariablePath leftVar = wrappedLeftType.ref().var();
+        DBSPVariablePath rightVar = wrappedRightType.ref().var();
+
+        DBSPExpression leftTS = new DBSPUnwrapCustomOrdExpression(leftVar.deref())
+                .field(leftTsIndex);
+        DBSPExpression rightTS = new DBSPUnwrapCustomOrdExpression(rightVar.deref())
+                .field(rightTsIndex);
+
+        DBSPType leftTSType = leftTS.getType();
+        DBSPType rightTSType = rightTS.getType();
+        // Rust expects both timestamps to have the same type
+        boolean nullable = leftTSType.mayBeNull || rightTSType.mayBeNull;
+        DBSPType commonTSType = leftTSType.setMayBeNull(nullable);
+        assert commonTSType.sameType(rightTSType.setMayBeNull(nullable));
+
+        DBSPClosureExpression leftTimestamp = leftTS.cast(commonTSType).closure(leftVar.asParameter());
+        DBSPClosureExpression rightTimestamp = rightTS.cast(commonTSType).closure(rightVar.asParameter());
+
+        // Currently not used
+        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, leftTimestamp.getResultType());
+        boolean ascending = comparison == SqlKind.GREATER_THAN || comparison == SqlKind.GREATER_THAN_OR_EQUAL;
+        if (comparison != SqlKind.GREATER_THAN_OR_EQUAL) {
+            // Not yet supported by DBSP
+            throw new UnimplementedException(
+                    "Currently the only MATCH_CONDITION comparison supported is '>='", node);
+        }
+        comparator = new DBSPDirectComparatorExpression(node, comparator, ascending);
+
+        DBSPVariablePath k = keyType.ref().var();
+        DBSPVariablePath l0 = wrappedLeftType.ref().var();
+        // Signature of the function is (k: &K, l: &L, r: Option<&R>)
+        DBSPVariablePath r0 = wrappedRightType.ref().setMayBeNull(true).var();
+        List<DBSPExpression> lrFields = new ArrayList<>();
+        for (int i = 0; i < leftElementType.size(); i++)
+            lrFields.add(new DBSPUnwrapCustomOrdExpression(l0.deepCopy().deref()).field(i));
+        for (int i = 0; i < rightElementType.size(); i++)
+            lrFields.add(new DBSPCustomOrdField(r0.deepCopy(), i));
+        DBSPTupleExpression lr = new DBSPTupleExpression(lrFields, false);
+        DBSPClosureExpression makeTuple = lr.closure(k.asParameter(), l0.asParameter(), r0.asParameter());
+        DBSPOperator result = new DBSPAsofJoinOperator(node, this.makeZSet(resultType),
+                makeTuple, leftTimestamp, rightTimestamp, comparator,
+                left.isMultiset || right.isMultiset, join.getJoinType().isOuterJoin(),
+                leftIndex, rightIndex);
+        this.circuit.addOperator(result);
+
+        result = new DBSPIntegrateOperator(node, result);
         this.assignOperator(join, Objects.requireNonNull(result));
     }
 
@@ -1273,7 +1475,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 case DESCENDING -> false;
                 default -> throw new UnimplementedException(comparator.getNode());
             };
-            comparator = new DBSPFieldComparatorExpression(comparator.getNode(), comparator, field, ascending);
+            comparator = comparator.field(field, ascending);
         }
         return comparator;
     }
@@ -2031,7 +2233,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 case DESCENDING -> false;
                 default -> throw new UnimplementedException(node);
             };
-            comparator = new DBSPFieldComparatorExpression(node, comparator, field, ascending);
+            comparator = comparator.field(field, ascending);
         }
         return comparator;
     }
@@ -2074,7 +2276,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 this.visitIfMatches(node, LogicalWindow.class, this::visitWindow) ||
                 this.visitIfMatches(node, LogicalSort.class, this::visitSort) ||
                 this.visitIfMatches(node, Uncollect.class, this::visitUncollect) ||
-                this.visitIfMatches(node, LogicalTableFunctionScan.class, this::visitTableFunction);
+                this.visitIfMatches(node, LogicalTableFunctionScan.class, this::visitTableFunction) ||
+                this.visitIfMatches(node, LogicalAsofJoin.class, this::visitAsofJoin);
         if (!success)
             throw new UnimplementedException(CalciteObject.create(node));
     }

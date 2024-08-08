@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 VMware, Inc.
+ * Copyright 2022 VMware, Inc.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -23,32 +23,46 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.IIndentStream;
 
-/** This class does not correspond to any Rust primitive construct.
- * It is compiled into a function invocation, depending on the involved types.
- * It represents a cast of an expression to a given type. */
-public final class DBSPCastExpression extends DBSPExpression {
-    public final DBSPExpression source;
+/** An expression of the form '(*expression).0.field' or
+ * Some((*expression).0.field), where
+ * - expression has a type of the form Option[&WithCustomOrd[T, S]]
+ * The result type is always nullable */
+public final class DBSPCustomOrdField extends DBSPExpression {
+    public final DBSPExpression expression;
+    public final int field;
 
-    @SuppressWarnings("CommentedOutCode")
-    public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to) {
-        super(node, to);
-        this.source = source;
-        // The following are not true e.g., because of casts that remove nullability from vectors.
-        // assert type.is(DBSPTypeBaseType.class);
-        // assert source.getType().is(DBSPTypeBaseType.class);
+    private static DBSPType getFieldType(DBSPType sourceType, int field) {
+        return sourceType.deref()
+                .to(DBSPTypeWithCustomOrd.class)
+                .getDataType()
+                .to(DBSPTypeTupleBase.class)
+                .tupFields[field];
     }
 
-    public DBSPCastExpression replaceSource(DBSPExpression source) {
-        assert source.getType().sameType(this.source.getType());
-        return new DBSPCastExpression(this.getNode(), source, this.type);
+    /** True if the original source field is not nullable, and thus the
+     * final result needs to be wrapped in a Some(). */
+    public boolean needsSome() {
+        return !this.getFieldType().mayBeNull;
+    }
+
+    public DBSPCustomOrdField(DBSPExpression expression, int field) {
+        super(expression.getNode(), getFieldType(expression.getType(), field).setMayBeNull(true));
+        assert expression.getType().mayBeNull;
+        this.expression = expression;
+        this.field = field;
+    }
+
+    public DBSPType getFieldType() {
+        return getFieldType(this.expression.getType(), this.field);
     }
 
     @Override
@@ -56,41 +70,41 @@ public final class DBSPCastExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        this.source.accept(visitor);
-        this.getType().accept(visitor);
+        this.type.accept(visitor);
+        this.expression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }
 
     @Override
     public boolean sameFields(IDBSPNode other) {
-        DBSPCastExpression o = other.as(DBSPCastExpression.class);
+        DBSPCustomOrdField o = other.as(DBSPCustomOrdField.class);
         if (o == null)
             return false;
-        return this.source == o.source &&
+        return this.expression == o.expression &&
+                this.field == o.field &&
                 this.hasSameType(o);
     }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("((")
-                .append(this.type)
-                .append(")")
-                .append(this.source)
-                .append(")");
+        return builder.append("(*")
+                .append(this.expression)
+                .append(").get().")
+                .append(this.field);
     }
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPCastExpression(this.getNode(), this.source.deepCopy(), this.getType());
+        return new DBSPCustomOrdField(this.expression.deepCopy(), this.field);
     }
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        DBSPCastExpression otherExpression = other.as(DBSPCastExpression.class);
+        DBSPCustomOrdField otherExpression = other.as(DBSPCustomOrdField.class);
         if (otherExpression == null)
             return false;
-        return context.equivalent(this.source, otherExpression.source) &&
-                this.hasSameType(other);
+        return context.equivalent(this.expression, otherExpression.expression) &&
+                this.field == otherExpression.field;
     }
 }

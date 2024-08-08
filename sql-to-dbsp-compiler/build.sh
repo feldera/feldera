@@ -4,8 +4,8 @@
 # it has an optional argument which specifies whether to build
 # using the current version of Calcite or the next unreleased version
 
-# Default is to use the current version
-NEXT='n'
+# Default is to use the next version
+NEXT='y'
 
 CALCITE_NEXT="1.38.0"
 CALCITE_NEXT_COMMIT="7fa73c0079b03b8cd9657df0058a5743b80c1be9"
@@ -61,6 +61,3 @@ else
 fi
 
 mvn package -DskipTests --no-transfer-progress -q -B
-
-
-

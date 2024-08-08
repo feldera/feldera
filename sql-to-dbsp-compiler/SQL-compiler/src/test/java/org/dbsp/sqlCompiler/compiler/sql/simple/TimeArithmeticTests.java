@@ -304,7 +304,7 @@ public class TimeArithmeticTests extends SqlIoTest {
                 """);
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1658")
+    @Test
     public void testTimeAddInterval1() {
         this.qs("""
                 SELECT '12:34:56'::time + INTERVAL '25' DAYS;

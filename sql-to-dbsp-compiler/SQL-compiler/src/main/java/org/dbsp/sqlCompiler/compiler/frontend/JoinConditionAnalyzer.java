@@ -62,6 +62,10 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                 throw new InternalCompilerError("Illegal column number " +
                         leftColumn + ":" + rightColumn, commonType);
         }
+
+        public EqualityTest withType(DBSPType type) {
+            return new EqualityTest(this.leftColumn, this.rightColumn, type);
+        }
     }
 
     /**

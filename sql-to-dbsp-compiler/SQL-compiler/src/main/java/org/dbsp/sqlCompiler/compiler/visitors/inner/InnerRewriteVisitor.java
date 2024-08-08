@@ -21,7 +21,10 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
@@ -41,6 +44,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
@@ -93,6 +97,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.IWritesLogs;
@@ -119,9 +124,7 @@ public abstract class InnerRewriteVisitor
         super(reporter);
     }
 
-    /**
-     * Result produced by the last preorder invocation.
-     */
+    /** Result produced by the last preorder invocation. */
     @Nullable
     protected IDBSPInnerNode lastResult;
 
@@ -139,8 +142,7 @@ public abstract class InnerRewriteVisitor
 
     /**
      * Replace the 'old' IR node with the 'newOp' IR node if
-     * any of its fields differs.
-     */
+     * any of its fields differs. */
     protected void map(IDBSPInnerNode old, IDBSPInnerNode newOp) {
         if (old == newOp || old.sameFields(newOp)) {
             // Ignore new op.
@@ -330,6 +332,16 @@ public abstract class InnerRewriteVisitor
         DBSPType valueType = this.transform(type.getValueType());
         this.pop(type);
         DBSPType result = new DBSPTypeMap(keyType, valueType, type.mayBeNull);
+        this.map(type, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTypeWithCustomOrd type) {
+        this.push(type);
+        DBSPType keyType = this.transform(type.getDataType());
+        this.pop(type);
+        DBSPType result = new DBSPTypeWithCustomOrd(type.getNode(), keyType);
         this.map(type, result);
         return VisitDecision.STOP;
     }
@@ -816,6 +828,18 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPDirectComparatorExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.source);
+        this.pop(expression);
+        DBSPExpression result = new DBSPDirectComparatorExpression(
+                expression.getNode(), source.to(DBSPComparatorExpression.class),
+                expression.ascending);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPNoComparatorExpression expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.tupleType);
@@ -826,11 +850,43 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPCustomOrdExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.source);
+        DBSPExpression comparator = this.transform(expression.comparator);
+        this.pop(expression);
+        DBSPExpression result = new DBSPCustomOrdExpression(
+                expression.getNode(), source, comparator.to(DBSPComparatorExpression.class));
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPUnwrapCustomOrdExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.expression);
+        this.pop(expression);
+        DBSPExpression result = new DBSPUnwrapCustomOrdExpression(source);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPDerefExpression expression) {
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
         DBSPExpression result = new DBSPDerefExpression(source);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPCustomOrdField expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.expression);
+        this.pop(expression);
+        DBSPExpression result = new DBSPCustomOrdField(source, expression.field);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

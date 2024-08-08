@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
@@ -50,6 +51,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.ir.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
@@ -64,10 +66,8 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.function.Predicate;
 
-/**
- * Applies a function (this.transform) to every function within an operator,
- * and to every type within the operator.
- */
+/** Applies a function (this.transform) to every function within an operator,
+ * and to every type within the operator. */
 public class CircuitRewriter extends CircuitCloneVisitor {
     public final IRTransform transform;
     /** Only optimize functions for nodes where this predicate returns 'true'.
@@ -296,6 +296,31 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPJoinOperator(operator.getNode(),
                     outputType.to(DBSPTypeZSet.class), function, operator.isMultiset,
+                    sources.get(0), sources.get(1))
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPAsofJoinOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPComparatorExpression comparator = this.transform(operator.comparator).to(DBSPComparatorExpression.class);
+        DBSPClosureExpression leftTimestamp = this.transform(operator.leftTimestamp).to(DBSPClosureExpression.class);
+        DBSPClosureExpression rightTimestamp = this.transform(operator.rightTimestamp).to(DBSPClosureExpression.class);
+        List<DBSPOperator> sources = Linq.map(operator.inputs, this::mapped);
+        DBSPOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || function != operator.function
+                || comparator != operator.comparator
+                || leftTimestamp != operator.leftTimestamp
+                || rightTimestamp != operator.rightTimestamp
+                || Linq.different(sources, operator.inputs)) {
+            result = new DBSPAsofJoinOperator(operator.getNode(),
+                    outputType.to(DBSPTypeZSet.class), function,
+                    leftTimestamp, rightTimestamp, comparator,
+                    operator.isMultiset, operator.isLeft,
                     sources.get(0), sources.get(1))
                     .copyAnnotations(operator);
         }
