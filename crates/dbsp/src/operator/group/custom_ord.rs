@@ -124,7 +124,8 @@ where
 }
 
 impl<T, F> WithCustomOrd<T, F>
-    where T: Clone,
+where
+    T: Clone,
 {
     pub fn new(val: T) -> Self {
         Self {
