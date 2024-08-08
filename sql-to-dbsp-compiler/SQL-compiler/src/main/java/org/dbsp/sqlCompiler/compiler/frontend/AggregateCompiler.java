@@ -252,16 +252,16 @@ public class AggregateCompiler implements ICompilerComponent {
         boolean ignoreNulls = this.call.ignoreNulls();
         boolean distinct = this.call.isDistinct();
         DBSPType elementType = this.resultType.to(DBSPTypeVec.class).getElementType();
-        DBSPExpression zero = DBSPVecLiteral.emptyWithElementType(elementType, false);
+        DBSPExpression zero = DBSPVecLiteral.emptyWithElementType(elementType, this.resultType.mayBeNull);
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         DBSPVariablePath accumulator = this.resultType.var();
         String functionName;
         DBSPExpression[] arguments;
         if (ignoreNulls && elementType.mayBeNull) {
-            functionName = "array_agg_opt";
+            functionName = "array_agg_opt" + this.resultType.nullableSuffix();
             arguments = new DBSPExpression[5];
         } else {
-            functionName = "array_agg";
+            functionName = "array_agg" + this.resultType.nullableSuffix();
             arguments = new DBSPExpression[4];
         }
         arguments[0] = accumulator.borrow(true);

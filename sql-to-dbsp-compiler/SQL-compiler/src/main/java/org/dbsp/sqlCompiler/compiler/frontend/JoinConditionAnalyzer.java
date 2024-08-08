@@ -64,6 +64,10 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
                 throw new InternalCompilerError("Illegal column number " +
                         leftColumn + ":" + rightColumn, commonType);
         }
+
+        public EqualityTest withType(DBSPType type) {
+            return new EqualityTest(this.leftColumn, this.rightColumn, type);
+        }
     }
 
     /**

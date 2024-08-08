@@ -24,9 +24,8 @@ public class PostgresInt8Tests extends SqlIoTest {
         compiler.compileStatements(insert);
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6395")
+    @Test
     public void precisionLossTest() {
-        System.out.println((long)(float)36854775807.0);
         this.qs("""
                 SELECT CAST('36854775807.0'::float4 AS int64);
                     int8

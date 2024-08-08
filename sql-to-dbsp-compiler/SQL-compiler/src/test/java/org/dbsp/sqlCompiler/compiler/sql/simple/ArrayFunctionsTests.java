@@ -756,16 +756,10 @@ public class ArrayFunctionsTests extends SqlIoTest {
         this.queryFailingInCompilation("SELECT ARRAYS_OVERLAP(ARRAY [1, 2, 3], ARRAY [2.0, 4.0])", "different types", false);
     }
 
-    @Test @Ignore("similar to: https://github.com/feldera/feldera/issues/1465")
+    @Test
     public void testArraysOverlapNull() {
-        this.qs("""
-                SELECT ARRAYS_OVERLAP(null, null);
-                 arrays_overlap
-                ----------------
-                 NULL
-                (1 row)
-                """
-        );
+        this.queryFailingInCompilation("SELECT ARRAYS_OVERLAP(null, null)",
+                 "Cannot apply 'ARRAYS_OVERLAP' to arguments of type 'ARRAYS_OVERLAP(<NULL>, <NULL>)'");
     }
 
     @Test
