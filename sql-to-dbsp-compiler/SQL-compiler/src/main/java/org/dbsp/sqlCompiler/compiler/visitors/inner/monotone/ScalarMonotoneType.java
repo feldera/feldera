@@ -4,8 +4,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 
 public abstract class ScalarMonotoneType
-        extends BaseMonotoneType
-        implements IMaybeMonotoneType {
+        extends BaseMonotoneType {
     final DBSPType type;
 
     // "Scalar" types include Vec and Map.

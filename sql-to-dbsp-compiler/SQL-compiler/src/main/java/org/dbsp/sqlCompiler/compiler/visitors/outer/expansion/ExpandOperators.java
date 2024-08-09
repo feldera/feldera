@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.expansion;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctIncrementalOperator;
@@ -124,6 +125,14 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPNoopOperator node) {
+        this.identity(node);
+    }
+
+    @Override
+    public void postorder(DBSPAsofJoinOperator node) {
+        // This is not entirely accurate, but for now we don't need a more precise model
+        // In fact this join expands into two integrators and a quaternary operator
+        // (taking the two deltas and the two integrals as inputs).
         this.identity(node);
     }
 

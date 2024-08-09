@@ -8,7 +8,7 @@ import org.dbsp.util.IHasId;
 import javax.annotation.Nullable;
 import java.util.List;
 
-/** Interfae representing the monotonicity as type information. */
+/** Interface representing the monotonicity as type information. */
 public interface IMaybeMonotoneType extends ICastable, IHasId {
     /** The type whose monotonicity is represented */
     DBSPType getType();

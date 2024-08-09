@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
@@ -40,9 +41,11 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTransferFunctions;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.ScalarMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.WrapperMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.CommonJoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctExpansion;
@@ -71,6 +74,7 @@ import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.NullableFunction;
@@ -566,6 +570,129 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
     }
 
+    DBSPApplyOperator extractTimestamp(
+            CalciteObject node,
+            PartiallyMonotoneTuple sourceType, int tsIndex, DBSPOperator source) {
+        // First index to apply to the limiter
+        int outerIndex = sourceType.getField(0).mayBeMonotone() ? 1 : 0;
+        PartiallyMonotoneTuple sourceTypeValue = sourceType.getField(1)
+                .to(WrapperMonotoneType.class).getWrappedType();
+        // Second index to apply to the limiter
+        int innerIndex = 0;
+        for (int i = 0; i < tsIndex; i++) {
+            if (sourceTypeValue.getField(i).mayBeMonotone())
+                innerIndex++;
+        }
+
+        DBSPVariablePath var = source.outputType.ref().var();
+        DBSPClosureExpression tsFunction = var
+                .deref()
+                .field(outerIndex)
+                .field(innerIndex)
+                .closure(var.asParameter());
+        DBSPApplyOperator result = new DBSPApplyOperator(
+                node, tsFunction, tsFunction.body.getType(), source, null);
+        this.addOperator(result);
+        return result;
+    }
+
+    @Override
+    public void postorder(DBSPAsofJoinOperator join) {
+        OperatorExpansion expansion = this.expandedInto.get(join);
+        if (expansion == null) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+        ReplacementExpansion repl = expansion.to(ReplacementExpansion.class);
+        DBSPAsofJoinOperator expanded = repl.replacement.to(DBSPAsofJoinOperator.class);
+
+        DBSPOperator leftLimiter = this.bound.get(join.left());
+        DBSPOperator rightLimiter = this.bound.get(join.right());
+        if (leftLimiter == null || rightLimiter == null) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+
+        int leftTSIndex = join.getLeftTimestampIndex();
+        int rightTSIndex = join.getRightTimestampIndex();
+        // Check if the timestamps are monotone
+
+        PartiallyMonotoneTuple leftMono = null;
+        MonotoneExpression lm = this.expansionMonotoneValues.get(expanded.left());
+        if (lm != null) {
+            leftMono = Monotonicity.getBodyType(lm).to(PartiallyMonotoneTuple.class);
+        }
+        PartiallyMonotoneTuple rightMono = null;
+        MonotoneExpression rm = this.expansionMonotoneValues.get(expanded.right());
+        if (rm != null) {
+            rightMono = Monotonicity.getBodyType(rm).to(PartiallyMonotoneTuple.class);
+        }
+
+        if (leftMono == null || rightMono == null) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+
+        // Extract the value part from the key-value tuple
+        IMaybeMonotoneType leftValue = leftMono.getField(1);
+        IMaybeMonotoneType rightValue = rightMono.getField(1);
+        if (!leftValue.mayBeMonotone() || !rightValue.mayBeMonotone()) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+
+        PartiallyMonotoneTuple leftValueTuple = leftValue.to(WrapperMonotoneType.class).getWrappedType();
+        PartiallyMonotoneTuple rightValueTuple = rightValue.to(WrapperMonotoneType.class).getWrappedType();
+        IMaybeMonotoneType leftTS = leftValueTuple.getField(leftTSIndex);
+        IMaybeMonotoneType rightTS = rightValueTuple.getField(rightTSIndex);
+        if (!leftTS.mayBeMonotone() || !rightTS.mayBeMonotone()) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+
+        // Extract the timestamps from the limiters
+        DBSPApplyOperator extractLeftTS = this.extractTimestamp(join.getNode(), leftMono, leftTSIndex, leftLimiter);
+        DBSPApplyOperator extractRightTS = this.extractTimestamp(join.getNode(), rightMono, rightTSIndex, rightLimiter);
+
+        // Compute the min of the timestamps
+        DBSPVariablePath leftVar = extractLeftTS.outputType.ref().var();
+        DBSPVariablePath rightVar = extractRightTS.outputType.ref().var();
+        DBSPExpression min = new DBSPTupleExpression(this.min(leftVar.deref(), rightVar.deref()));
+        DBSPApply2Operator minOperator = new DBSPApply2Operator(
+                join.getNode(), min.closure(leftVar.asParameter(), rightVar.asParameter()),
+                min.getType(), extractLeftTS, extractRightTS);
+        this.addOperator(minOperator);
+
+        DBSPTypeTuple keyType = join.getKeyType().to(DBSPTypeTuple.class);
+        PartiallyMonotoneTuple keyPart = PartiallyMonotoneTuple.noMonotoneFields(keyType);
+
+        DBSPTypeWithCustomOrd leftValueType = join.getLeftInputValueType().to(DBSPTypeWithCustomOrd.class);
+        List<IMaybeMonotoneType> value = new ArrayList<>();
+        for (int i = 0; i < leftValueType.size(); i++) {
+            DBSPType field = leftValueType.getDataType().getFieldType(i);
+            IMaybeMonotoneType mono;
+            if (i == leftTSIndex) {
+                mono = new MonotoneType(field);
+            } else {
+                mono = NonMonotoneType.nonMonotone(field);
+            }
+            value.add(mono);
+        }
+        PartiallyMonotoneTuple valuePart = new PartiallyMonotoneTuple(value, false, false);
+        PartiallyMonotoneTuple dataProjection = new PartiallyMonotoneTuple(
+                Linq.list(keyPart, new WrapperMonotoneType(valuePart, leftValueType)), true, false);
+
+        DBSPIntegrateTraceRetainValuesOperator retain = DBSPIntegrateTraceRetainValuesOperator.create(
+                join.getNode(), this.mapped(join.left()), dataProjection, minOperator);
+        this.addOperator(retain);
+        super.postorder(join);
+    }
+
     @Override
     public void postorder(DBSPJoinFilterMapOperator join) {
         OperatorExpansion expanded = this.expandedInto.get(join);
@@ -594,8 +721,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.processFilter(expansion.rightFilter);
         this.processSum(expansion.sum);
 
-        // If one of the filters leftFilter or rightFilter has monotone outputs,
-        // we can use these to GC the input of the join using
+        // If any of the filters leftFilter or rightFilter has monotone outputs,
+        // we can use these to GC the other input of the join using
         // DBSPIntegrateTraceRetainValuesOperator.
 
         Projection proj = new Projection(this.errorReporter);
@@ -606,12 +733,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         int rightSize = outputs.size() - leftSize;
 
         DBSPTypeTuple keyType = join.getKeyType().to(DBSPTypeTuple.class);
-        int keySize = keyType.size();
-        List<IMaybeMonotoneType> keyParts = new ArrayList<>();
-        for (int i = 0; i < keySize; i++)
-            // a key projection with no monotone fields
-            keyParts.add(NonMonotoneType.nonMonotone(keyType.getFieldType(i)));
-        PartiallyMonotoneTuple keyPart = new PartiallyMonotoneTuple(keyParts, false, false);
+        PartiallyMonotoneTuple keyPart = PartiallyMonotoneTuple.noMonotoneFields(keyType);
 
         // Check the left side and insert a GC operator if possible
         DBSPOperator leftLimiter = this.bound.get(expansion.leftFilter);
@@ -1110,7 +1232,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     /** Apply MIN pointwise to two expressions */
     DBSPExpression min(DBSPExpression left,
                        DBSPExpression right) {
-        assert left.getType().sameType(right.getType());
+        assert left.getType().sameTypeIgnoringNullability(right.getType());
         if (left.getType().is(DBSPTypeBaseType.class)) {
             return ExpressionCompiler.makeBinaryExpression(
                     left.getNode(), left.getType(), DBSPOpcode.MIN, left, right);
@@ -1175,7 +1297,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPClosureExpression min = this.min(l.deref(), r.deref())
                 .closure(l.asParameter(), r.asParameter());
 
-        // expand into a binary unbalanced tree
+        // expand into a binary unbalanced tree (this could be a star if we had an applyN operator).
         DBSPOperator current = this.project(limiters.get(0), mono.get(0), out);
         for (int i = 1; i < expanded.inputs.size(); i++) {
             DBSPOperator next = this.project(limiters.get(i), mono.get(i), out);

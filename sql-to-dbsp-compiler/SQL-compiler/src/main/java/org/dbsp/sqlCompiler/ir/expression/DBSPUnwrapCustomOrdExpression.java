@@ -7,7 +7,8 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.IIndentStream;
 
-/** Unpacks the data from a {@link DBSPCustomOrdExpression} */
+/** Unpacks the data from a {@link DBSPCustomOrdExpression}.
+ * The result has an ordinary tuple type. */
 public final class DBSPUnwrapCustomOrdExpression extends DBSPExpression {
     public final DBSPExpression expression;
 

@@ -3,9 +3,12 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -79,6 +82,14 @@ public final class DBSPAsofJoinOperator extends DBSPBinaryOperator {
         visitor.pop(this);
     }
 
+    public DBSPType getKeyType() {
+        return this.left().getOutputIndexedZSetType().keyType;
+    }
+
+    public DBSPType getLeftInputValueType() {
+        return this.left().getOutputIndexedZSetType().elementType;
+    }
+
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPAsofJoinOperator(this.getNode(),
@@ -98,5 +109,21 @@ public final class DBSPAsofJoinOperator extends DBSPBinaryOperator {
                     newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         return this;
+    }
+
+    public int getLeftTimestampIndex() {
+        // This relies on the leftTimestamp function having a very specific shape
+        DBSPExpression body = this.leftTimestamp.body;
+        if (body.is(DBSPCastExpression.class))
+            body = body.to(DBSPCastExpression.class).source;
+        return body.to(DBSPFieldExpression.class).fieldNo;
+    }
+
+    public int getRightTimestampIndex() {
+        // This relies on the rightTimestamp function having a very specific shape
+        DBSPExpression body = this.rightTimestamp.body;
+        if (body.is(DBSPCastExpression.class))
+            body = body.to(DBSPCastExpression.class).source;
+        return body.to(DBSPFieldExpression.class).fieldNo;
     }
 }
