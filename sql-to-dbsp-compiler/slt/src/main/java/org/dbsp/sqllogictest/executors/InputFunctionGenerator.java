@@ -92,7 +92,7 @@ class InputFunctionGenerator {
                     ToCsvVisitor.toCsv(compiler, file, inputSets[i].contents);
                     fields[i] = new DBSPApplyExpression(CalciteObject.EMPTY, "read_csv",
                             inputSets[i].contents.getType(),
-                            new DBSPStrLiteral(fileName));
+                            new DBSPStrLiteral("./src/" + inputSets[i].tableName + ".csv"));
                 }
             } else {
                 // read from DB

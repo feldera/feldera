@@ -37,9 +37,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * Execute all SqlLogicTest tests.
- */
+/** Execute some or all of SqlLogicTest tests. */
 public class Main {
     public static final String rustDirectory = "./temp/src/";
     public static final String testFileName = "lib";

@@ -211,8 +211,6 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
  * the previously defined tables and views.  Multiple views can be
  * compiled.  The result is a circuit which has an input for each table
  * and an output for each view.
- * The function generateOutputForNextView can be used to prevent
- * some views from generating outputs.
  */
 public class CalciteToDBSPCompiler extends RelVisitor
         implements IWritesLogs, ICompilerComponent {
@@ -293,16 +291,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
             return true;
         }
         return false;
-    }
-
-    private boolean generateOutputForNextView = true;
-
-    /**
-     * @param generate If 'false' the next "create view" statements will not generate
-     *                 an output for the circuit.  This is sticky, it has to be
-     *                 explicitly reset. */
-    public void generateOutputForNextView(boolean generate) {
-         this.generateOutputForNextView = generate;
     }
 
     /**
@@ -2381,7 +2369,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         ViewMetadata meta = new ViewMetadata(additionalMetadata, view.viewKind);
-        if (this.generateOutputForNextView && view.viewKind != SqlCreateView.ViewKind.LOCAL) {
+        if (view.viewKind != SqlCreateView.ViewKind.LOCAL) {
             this.metadata.addView(view);
             // Create two operators chained, a ViewOperator and a SinkOperator.
             DBSPViewOperator vo = new DBSPViewOperator(
