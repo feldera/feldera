@@ -551,7 +551,7 @@ case $runner:$language in
 	fi
 	rm -f results.csv
 	CARGO=$(find_program cargo)
-	run_log feldera-sql/run.py \
+	PYTHONUNBUFFERED=1 run_log feldera-sql/run.py \
 	    --api-url="$api_url" \
 	    -O bootstrap.servers="${kafka_from_feldera:-${kafka_broker}}" \
 	    --cores $cores \
