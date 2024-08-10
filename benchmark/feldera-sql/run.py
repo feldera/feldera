@@ -20,18 +20,20 @@ def load_queries(folder):
             queries[f.split('.')[0]] = file.read()
     return queries
 
-def load_table(folder, with_lateness, suffix):
+def load_table(folder, with_lateness, suffix, events, cores):
     p = os.path.join(FILE_DIR, folder + '/table.sql')
     file = open(p, 'r')
     text = file.read()
     table_start_string = 'create table '
-    inputs = [] 
+    inputs = []
     for line in text.lower().split('\n'):
         i = line.find(table_start_string)
         if i >= 0:
             inputs += [line[i + len(table_start_string):].split(' ')[0]]
     subst = {input: make_connector(input, suffix) for input in inputs}
     subst["lateness"] = "LATENESS INTERVAL 4 SECONDS"
+    subst["events"] = events
+    subst["cores"] = cores
     return text.format(**subst)
 
 def sort_queries(queries):
@@ -60,7 +62,7 @@ def parse_queries(all_queries, arg):
     return queries
 
 def make_connector(topic, suffix):
-    name = "kafka_input"
+    name = "nexmark"
     config = {
         "topics": [topic + suffix],
         "enable.partition.eof": "true",
@@ -123,39 +125,47 @@ def main():
     parser = argparse.ArgumentParser(
         description='Nexmark benchmark demo'
     )
-    parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
-    parser.add_argument("--api-key", required=False, help="Feldera API key (e.g., \"apikey:0123456789ABCDEF\")")
-    parser.add_argument("-O", "--option", action='append', required=True,
-                        help="Kafka options passed as -O option=value, e.g., -O bootstrap.servers=localhost:9092")
-    parser.add_argument("--cores", type=int, help="Number of cores to use for workers (default: 16)")
-    parser.add_argument('--lateness', action=argparse.BooleanOptionalAction, help='whether to use lateness for GC to save memory (default: --lateness)')
-    parser.add_argument('--storage', action=argparse.BooleanOptionalAction, help='whether to enable storage (default: --no-storage)')
-    parser.add_argument("--poller-threads", required=False, type=int, help="Override number of poller threads to use")
-    parser.add_argument('--min-storage-bytes', type=int, help='If storage is enabled, the minimum number of bytes to write a batch to storage.')
-    parser.add_argument('--folder', help='Folder with table and queries, organized as folder/table.sql, folder/queries/qN.sql for numbers N (default: nexmark)')
-    parser.add_argument('--query', action='append', help='queries to run (by default, all queries), specify one or more')
-    parser.add_argument('--input-topic-suffix', help='suffix to apply to input topic names (by default, "")')
-    parser.add_argument('--csv', help='File to write results in .csv format')
-    parser.add_argument('--csv-metrics', help='File to write pipeline metrics (memory, disk) in .csv format')
-    parser.add_argument('--metrics-interval', help='How often metrics should be sampled, in seconds (default: 1)')
-    parser.set_defaults(lateness=True, storage=False, cores=16, metrics_interval=1, folder='benchmarks/nexmark')
+
+    group = parser.add_argument_group("Options for all benchmarks")
+    group.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
+    group.add_argument("--api-key", required=False, help="Feldera API key (e.g., \"apikey:0123456789ABCDEF\")")
+    group.add_argument("--cores", type=int, help="Number of cores to use for workers (default: 16)")
+    group.add_argument('--storage', action=argparse.BooleanOptionalAction, help='whether to enable storage (default: --no-storage)')
+    group.add_argument('--min-storage-bytes', type=int, help='If storage is enabled, the minimum number of bytes to write a batch to storage.')
+    group.add_argument('--folder', help='Folder with table and queries, organized as folder/table.sql, folder/queries/qN.sql for numbers N (default: benchmarks/nexmark)')
+    group.add_argument('--query', action='append', help='queries to run (by default, all queries), specify one or more')
+    group.add_argument('--csv', help='File to write results in .csv format')
+    group.add_argument('--csv-metrics', help='File to write pipeline metrics (memory, disk) in .csv format')
+    group.add_argument('--metrics-interval', help='How often metrics should be sampled, in seconds (default: 1)')
+
+    group = parser.add_argument_group("Options for Nexmark benchmark only")
+    group.add_argument('--lateness', action=argparse.BooleanOptionalAction, help='whether to use lateness for GC to save memory (default: --lateness)')
+    group.add_argument('--events', help='How many events to simulate (default: 100000)')
+
+    group = parser.add_argument_group("Options only for benchmarks other than Nexmark")
+    group.add_argument("-O", "--option", action='append', required=False,
+                        help="Kafka options passed as -O option=value, e.g., -O bootstrap.servers=localhost:9092; ignored for Nexmark, required for other benchmarks")
+    group.add_argument("--poller-threads", required=False, type=int, help="Override number of poller threads to use")
+    group.add_argument('--input-topic-suffix', help='suffix to apply to input topic names (by default, "")')
+    parser.set_defaults(lateness=True, storage=False, cores=16, metrics_interval=1, folder='benchmarks/nexmark', events=100000)
     
     global api_url, kafka_options, headers
     api_url = parser.parse_args().api_url
     api_key = parser.parse_args().api_key
     headers = {} if api_key is None else {"authorization": f"Bearer {api_key}"}
     kafka_options = {}
-    for option_value in parser.parse_args().option:
+    for option_value in parser.parse_args().option or ():
         option, value = option_value.split("=")
         kafka_options[option] = value
     suffix = parser.parse_args().input_topic_suffix or ''
+    events = parser.parse_args().events
+    cores = int(parser.parse_args().cores)
 
     folder = parser.parse_args().folder
-    table = load_table(folder, parser.parse_args().lateness, suffix)
+    table = load_table(folder, parser.parse_args().lateness, suffix, events, cores)
     all_queries = load_queries(folder)
 
     queries = sort_queries(parse_queries(all_queries, parser.parse_args().query))
-    cores = int(parser.parse_args().cores)
     storage = parser.parse_args().storage
     poller_threads = parser.parse_args().poller_threads
     if poller_threads is not None:

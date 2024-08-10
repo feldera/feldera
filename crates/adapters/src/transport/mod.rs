@@ -38,6 +38,9 @@ mod secret_resolver;
 #[cfg(feature = "with-kafka")]
 pub(crate) mod kafka;
 
+#[cfg(feature = "with-nexmark")]
+mod nexmark;
+
 use crate::catalog::InputCollectionHandle;
 use pipeline_types::config::TransportConfig;
 use pipeline_types::program_schema::Relation;
@@ -48,6 +51,8 @@ use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
 use crate::transport::kafka::{
     KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaInputEndpoint, KafkaOutputEndpoint,
 };
+#[cfg(feature = "with-nexmark")]
+use crate::transport::nexmark::NexmarkEndpoint;
 use crate::transport::s3::S3InputEndpoint;
 use crate::transport::url::UrlInputEndpoint;
 
@@ -84,7 +89,16 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::Datagen(config) => {
             Ok(Some(Box::new(GeneratorEndpoint::new(config.clone()))))
         }
-        _ => Ok(None),
+        #[cfg(feature = "with-nexmark")]
+        TransportConfig::Nexmark(config) => {
+            Ok(Some(Box::new(NexmarkEndpoint::new(config.clone()))))
+        }
+        TransportConfig::FileOutput(_)
+        | TransportConfig::KafkaOutput(_)
+        | TransportConfig::DeltaTableInput(_)
+        | TransportConfig::DeltaTableOutput(_)
+        | TransportConfig::HttpInput
+        | TransportConfig::HttpOutput => Ok(None),
     }
 }
 

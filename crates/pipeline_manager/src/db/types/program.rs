@@ -492,7 +492,8 @@ pub fn generate_program_info_from_schema(
                 | TransportConfig::UrlInput(_)
                 | TransportConfig::S3Input(_)
                 | TransportConfig::DeltaTableInput(_)
-                | TransportConfig::Datagen(_) => {}
+                | TransportConfig::Datagen(_)
+                | TransportConfig::Nexmark(_) => {}
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedInputConnector {
                         position: origin_value.value_position,

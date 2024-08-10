@@ -7,7 +7,26 @@ CREATE TABLE person (
     state VARCHAR,
     date_time TIMESTAMP(3) NOT NULL {lateness},
     extra  VARCHAR
-) WITH ('connectors' = '{person}');
+) WITH ('connectors' = '[
+    {{
+        "format": {{
+            "name": "csv",
+            "config": {{}}
+        }},
+        "transport": {{
+            "name": "nexmark",
+            "config": {{
+                "table": "person",
+                "options": {{
+                    "events": {events},
+                    "threads": {cores},
+                    "batch_size": 10000,
+                    "synchronize_threads": true
+                }}
+            }}
+        }}
+    }}
+]');
 CREATE TABLE auction (
     id  BIGINT,
     itemName  VARCHAR,
@@ -19,7 +38,20 @@ CREATE TABLE auction (
     seller  BIGINT,
     category  BIGINT,
     extra  VARCHAR
-) WITH ('connectors' = '{auction}');
+) WITH ('connectors' = '[
+    {{
+        "format": {{
+            "name": "csv",
+            "config": {{}}
+        }},
+        "transport": {{
+            "name": "nexmark",
+            "config": {{
+                "table": "auction"
+            }}
+        }}
+    }}
+]');
 CREATE TABLE bid (
     auction  BIGINT,
     bidder  BIGINT,
@@ -28,4 +60,17 @@ CREATE TABLE bid (
     url  VARCHAR,
     date_time TIMESTAMP(3) NOT NULL {lateness},
     extra  VARCHAR
-) WITH ('connectors' = '{bid}');
+) WITH ('connectors' = '[
+    {{
+        "format": {{
+            "name": "csv",
+            "config": {{}}
+        }},
+        "transport": {{
+            "name": "nexmark",
+            "config": {{
+                "table": "bid"
+            }}
+        }}
+    }}
+]');

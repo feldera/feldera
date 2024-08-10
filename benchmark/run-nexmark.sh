@@ -14,13 +14,9 @@ fi
 run=:
 storage=false
 parse=false
-skip_counting_events=false
 
 # Feldera SQL options.
-kafka_broker=localhost:9092
-kafka_from_feldera=
 api_url=http://localhost:8080
-partitions=1
 
 # Dataflow options.
 project=
@@ -92,32 +88,11 @@ do
 	    parse=:
 	    run=false
 	    ;;
-	--kafka-broker=*)
-	    kafka_broker=${arg#--kafka-broker=}
-	    ;;
-	--kafka-broker)
-	    nextarg=kafka_broker
-	    ;;
-	--kafka-from-feldera=*)
-	    kafka_from_feldera=${arg#--kafka-from-feldera=}
-	    ;;
-	--kafka-from-feldera)
-	    nextarg=kafka_from_feldera
-	    ;;
-	--skip-counting-events)
-	    skip_counting_events=:
-	    ;;
 	--api-url=*)
 	    api_url=${arg#--api-url=}
 	    ;;
 	--api-url)
 	    nextarg=api_url
-	    ;;
-	--partitions=*)
-	    partitions=${arg#--partitions=}
-	    ;;
-	--partitions)
-	    nextarg=partitions
 	    ;;
 	--storage)
 	    storage=:
@@ -168,11 +143,7 @@ nexmark.txt.  These options select other modes of operation:
   --parse < LOG         Parse log output from stdin, print results to stdout.
 
 The feldera backend with --language=sql takes the following additional options:
-  --kafka-broker=BROKER  Kafka broker (default: $kafka_broker)
-  --kafka-from-feldera=BROKER  Kafka broker as accessed from Feldera (defaults
-                               to the same as --kafka-broker)
   --api-url=URL         URL to the Feldera API (default: $api_url)
-  --partitions=N        number of Kafka partitions (default: 1)
 
 The beam.dataflow backend takes more configuration.  These settings are
 required:
@@ -502,61 +473,11 @@ case $runner:$language in
 	;;
 
     feldera:sql)
-	RPK=$(find_program rpk)
-	CARGO=$(find_program cargo)
-	topics="auction-$partitions-$events bid-$partitions-$events person-$partitions-$events"
-	echo >&2 "$0: checking for already generated events in '$topics'..."
-	count_events() {
-	    for topic in $topics; do
-		for p in $(seq 0 $(expr $partitions - 1)); do
-		    $RPK -X brokers="$kafka_broker" topic consume -p $p -f '%v' -o :end $topic
-		done
-	    done | wc -l
-	}
-	count_partitions() {
-	    for topic in $topics; do
-		$RPK -X brokers="$kafka_broker" topic describe $topic 2>/dev/null | awk '{if ($1 == "PARTITIONS") {printf("%d,", $2);}}'
-	    done
-	}
-	check_topics() {
-	    n_partitions=$(count_partitions | sed 's/,$//')
-	    expect_partitions="$partitions,$partitions,$partitions"
-	    if test "$n_partitions" != "$expect_partitions"; then
-		msg="topics '$topics' contained '$n_partitions' partitions instead of '$expect_partitions'"
-		return 1
-	    fi
-
-	    if $skip_counting_events; then
-		echo >&2 "$0: assuming '$topics' contained $events events (because of --skip-counting-events)"
-		return 0
-	    fi
-	    n_events=$(count_events)
-	    if test "$n_events" != "$events"; then
-		msg="topics '$topics' contained $n_events events instead of $events"
-		return 1
-	    fi
-
-	    return 0
-	}
-	if ! check_topics; then
-	    echo >&2 "$0: $msg.  (Re)creating..."
-	    run_log $RPK topic -X brokers=$kafka_broker delete $topics
-	    run_log $RPK topic -X brokers=$kafka_broker create --partitions $partitions $topics
-	    run_log $CARGO run -p dbsp_nexmark --example generate --features with-kafka -- --max-events $events --topic-suffix=-$partitions-$events -O bootstrap.servers=$kafka_broker || exit 1
-
-	    if ! check_topics; then
-		echo >&2 "$0: generation failed ($msg)."
-		exit 1
-	    fi
-	fi
 	rm -f results.csv
-	CARGO=$(find_program cargo)
 	PYTHONUNBUFFERED=1 run_log feldera-sql/run.py \
 	    --api-url="$api_url" \
-	    -O bootstrap.servers="${kafka_from_feldera:-${kafka_broker}}" \
 	    --cores $cores \
-	    --poller-threads 10 \
-	    --input-topic-suffix="-$partitions-$events" \
+	    --events $events \
 	    --csv results.csv \
 	    $(if $storage; then printf "%s" --storage; fi) \
 	    --query $(if test $query = all; then echo all; else echo q$query; fi)

@@ -11,10 +11,11 @@ categories = ["database", "api-bindings", "network-programming"]
 publish = false
 
 [features]
-default = ["with-kafka", "with-deltalake", "with-avro"]
+default = ["with-kafka", "with-deltalake", "with-avro", "with-nexmark"]
 with-kafka = ["rdkafka"]
 with-deltalake = ["deltalake"]
 with-avro = ["apache-avro", "schema_registry_converter"]
+with-nexmark = ["dbsp_nexmark"]
 # Run delta table tests against an S3 bucket.  Requires S3 authentication key
 # to be provided via an environment variable.
 delta-s3-test = []
@@ -90,6 +91,8 @@ governor = { version = "0.6.3" }
 fake = { version = "2.9.2", features = ["http"] }
 atomic = "0.6.0"
 bytemuck = "1.16.3"
+dbsp_nexmark = { path = "../nexmark", features = [], optional = true }
+enum-map = "2.7.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemalloc_pprof = "0.1.0"
