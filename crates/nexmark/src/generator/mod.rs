@@ -4,7 +4,6 @@
 
 use self::config::Config;
 use super::model::Event;
-use anyhow::Result;
 use bids::CHANNELS_NUMBER;
 use cached::SizedCache;
 use rand::Rng;
@@ -36,15 +35,13 @@ pub struct NexmarkGenerator<R: Rng> {
     wallclock_base_time: u64,
 }
 
-impl<R: Rng> NexmarkGenerator<R> {
-    pub fn has_next(&self) -> bool {
-        self.get_next_event_id() < self.config.max_events
-    }
+impl<R: Rng> Iterator for NexmarkGenerator<R> {
+    type Item = NextEvent;
 
-    pub fn next_event(&mut self) -> Result<Option<NextEvent>> {
+    fn next(&mut self) -> Option<NextEvent> {
         let new_event_id = self.get_next_event_id();
         if new_event_id >= self.config.max_events {
-            return Ok(None);
+            return None;
         }
 
         // When, in event time, we should generate the event. Monotonic.
@@ -81,20 +78,22 @@ impl<R: Rng> NexmarkGenerator<R> {
                 self.events_count_so_far,
                 new_event_id,
                 adjusted_event_timestamp,
-            )?)
+            ))
         } else {
             Event::Bid(self.next_bid(new_event_id, adjusted_event_timestamp))
         };
 
         self.events_count_so_far += 1;
-        Ok(Some(NextEvent {
+        Some(NextEvent {
             wallclock_timestamp,
             event_timestamp,
             event,
             watermark,
-        }))
+        })
     }
+}
 
+impl<R: Rng> NexmarkGenerator<R> {
     pub fn new(config: Config, rng: R, wallclock_base_time: u64) -> NexmarkGenerator<R> {
         NexmarkGenerator {
             config,
@@ -215,7 +214,7 @@ pub mod tests {
         let mut ng = make_test_generator();
         ng.wallclock_base_time = wallclock_base_time;
 
-        (0..num_events).map(|_| ng.next_event().unwrap()).collect()
+        (0..num_events).map(|_| ng.next()).collect()
     }
 
     #[test]
@@ -223,12 +222,9 @@ pub mod tests {
         let mut ng = make_test_generator();
         ng.config.max_events = 2;
 
-        assert!(ng.has_next());
-        ng.next_event().unwrap();
-        assert!(ng.has_next());
-        ng.next_event().unwrap();
-
-        assert!(!ng.has_next());
+        ng.next().unwrap();
+        ng.next().unwrap();
+        assert!(ng.next().is_none());
     }
 
     #[rstest]
@@ -256,7 +252,7 @@ pub mod tests {
 
         for expected_id in expected_next_event_ids.into_iter() {
             assert_eq!(generator.get_next_event_id(), expected_id);
-            generator.next_event().unwrap();
+            generator.next().unwrap();
         }
     }
 
@@ -277,7 +273,7 @@ pub mod tests {
         );
 
         // The first event with the default config is the person
-        let next_event = ng.next_event().unwrap();
+        let next_event = ng.next();
         assert!(next_event.is_some());
         let next_event = next_event.unwrap();
 
@@ -290,7 +286,7 @@ pub mod tests {
 
         // The next 3 events with the default config are auctions
         for event_num in 1..=3 {
-            let next_event = ng.next_event().unwrap();
+            let next_event = ng.next();
             assert!(next_event.is_some());
             let next_event = next_event.unwrap();
 
@@ -304,7 +300,7 @@ pub mod tests {
 
         // And the rest of the events in the first epoch are bids.
         for _ in 4..=49 {
-            let next_event = ng.next_event().unwrap();
+            let next_event = ng.next();
             assert!(next_event.is_some());
             let next_event = next_event.unwrap();
 
@@ -316,10 +312,7 @@ pub mod tests {
         }
 
         // The next epoch begins with another person etc.
-        let next_event = ng.next_event().unwrap();
-        assert!(next_event.is_some());
-        let next_event = next_event.unwrap();
-
+        let next_event = ng.next().unwrap();
         assert!(
             matches!(next_event.event, Event::Person(_)),
             "got: {:?}, want: Event::NewPerson(_)",
@@ -341,7 +334,7 @@ pub mod tests {
 
         assert_eq!(
             (0..100)
-                .map(|_| ng.next_event().unwrap())
+                .map(|_| ng.next())
                 .collect::<Vec<Option<NextEvent>>>(),
             expected_events
         );

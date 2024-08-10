@@ -136,7 +136,7 @@ fn create_generators_for_config<R: Rng + Default>(
                 .spawn(move || {
                     let mut generator =
                         NexmarkGenerator::new(generator_config, R::default(), wallclock_base_time);
-                    while let Ok(Some(event)) = generator.next_event() {
+                    for event in &mut generator {
                         tx.send(event).unwrap();
                     }
                     tx.flush().unwrap();
@@ -243,7 +243,7 @@ pub mod tests {
         );
         let mut v = VecDeque::new();
         for _ in 0..max_events {
-            v.push_back(generator.next_event().unwrap().unwrap());
+            v.push_back(generator.next().unwrap());
         }
         next_event_tx.send(v).unwrap();
 

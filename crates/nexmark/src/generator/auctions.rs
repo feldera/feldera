@@ -7,7 +7,6 @@ use super::{
     config::{FIRST_AUCTION_ID, FIRST_CATEGORY_ID, FIRST_PERSON_ID},
     NexmarkGenerator,
 };
-use anyhow::Result;
 use rand::Rng;
 use std::{
     cmp,
@@ -29,7 +28,7 @@ impl<R: Rng> NexmarkGenerator<R> {
         events_count_so_far: u64,
         event_id: u64,
         timestamp: u64,
-    ) -> Result<Auction> {
+    ) -> Auction {
         let id = self.last_base0_auction_id(event_id) + FIRST_AUCTION_ID;
 
         // Here P(auction will be for a hot seller) = 1 - 1/hot_sellers_ratio.
@@ -60,7 +59,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             + size_of::<usize>() * 3
             // seller, expires
             + size_of::<u64>() * 2;
-        Ok(Auction {
+        Auction {
             id,
             item_name,
             description,
@@ -71,7 +70,7 @@ impl<R: Rng> NexmarkGenerator<R> {
             seller,
             category,
             extra: self.next_extra(current_size, self.config.options.avg_auction_byte_size),
-        })
+        }
     }
 
     /// Return the last valid auction id (ignoring FIRST_AUCTION_ID). Will be
@@ -147,7 +146,7 @@ mod tests {
     fn test_next_auction() {
         let mut ng = make_test_generator();
 
-        let auction = ng.next_auction(0, 0, 0).unwrap();
+        let auction = ng.next_auction(0, 0, 0);
 
         // Note: due to usize differences on windows, need to calculate the
         // size explicitly:

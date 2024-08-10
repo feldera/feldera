@@ -40,7 +40,7 @@ macro_rules! with_rng {
             let start = std::time::Instant::now();
             let mut prev_e = std::time::Instant::now();
             for _ in 0..count {
-                generator.next_event().unwrap();
+                generator.next().unwrap();
                 let end_e = std::time::Instant::now();
                 hist.add_value((end_e - prev_e).as_nanos() as u64);
                 prev_e = end_e;
