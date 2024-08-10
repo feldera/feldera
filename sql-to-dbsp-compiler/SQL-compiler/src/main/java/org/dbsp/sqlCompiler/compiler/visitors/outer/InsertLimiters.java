@@ -872,16 +872,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 timestamp.closure(t.asParameter(), new DBSPTypeRawTuple().ref().var().asParameter()),
                 max, replacement);
         this.addOperator(waterline);
-        this.markBound(replacement, waterline);
-        if (operator != replacement)
-            this.markBound(operator, waterline);
-        if (operator != expansion)
-            this.markBound(expansion, waterline);
 
         // Waterline fed through a delay
         DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), min, waterline);
         this.addOperator(delay);
-        this.markBound(delay, waterline);
+        this.markBound(replacement, delay);
+        if (operator != replacement)
+            this.markBound(operator, delay);
+        if (operator != expansion)
+            this.markBound(expansion, delay);
         return DBSPControlledFilterOperator.create(
                 operator.getNode(), replacement, Monotonicity.getBodyType(expression), delay);
     }
