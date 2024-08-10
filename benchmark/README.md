@@ -43,6 +43,10 @@ options are:
   * By default, only 100k events are generated.  This only takes a few
     seconds.  Add `--events=100M` to analyze 100,000,000 events.
 
+  * The Feldera runner has Rust-only and SQL implementations.  The
+    Rust-only implementation is the default.  Add `--language=sql` to
+    use the SQL implementation.
+
   * The Apache Beam runners support multiple forms of some queries.
     By default, they are implemented in Beam's native Java-based form.
     Add `--language=sql` to use Calcite-based SQL or
@@ -78,17 +82,11 @@ more mature and more complete than the SQL implementation.
 ## Feldera setup for SQL
 
 To use `run-nexmark.sh` for the SQL implementation of Nexmark with
-Feldera, first follow the instructions for step 1 in
-`feldera-sql/README.md`, that is, start Kafka (or Redpanda) and the
-Feldera pipeline manager.  If you start them as suggested there, then
-nothing additional is needed; otherwise, you might need to use
-`--kafka-broker` and `--api-url` to tell `run-nexmark.sh` where to
-find them.
-
-The first time you run `run-nexmark.sh` for a given number of events
-with a particular Kafka broker, the script will generate that number
-of events into the Kafka broker, which can take a while.  Afterward,
-subsequent runs with the same broker and event count will run faster.
+Feldera, first start the Feldera pipeline manager (see
+`feldera-sql/README.md` for instructions).  If you start them as
+suggested there, then nothing additional is needed; otherwise, you
+might need to use `--api-url` to tell `run-nexmark.sh` where to find
+them.
 
 ## Feldera setup for Rust
 
