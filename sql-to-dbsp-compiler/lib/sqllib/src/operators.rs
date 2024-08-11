@@ -2,7 +2,7 @@ use std::ops::{Add, Div, Mul, Sub};
 
 use dbsp::algebra::{HasZero, F32, F64};
 use num::PrimInt;
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, SaturatingSub, ToPrimitive};
 
 use crate::{
     for_all_comparable_operator, for_all_compare, for_all_int_compare, for_all_int_operator,
@@ -112,6 +112,23 @@ where
 
 for_all_int_operator!(minus);
 some_operator!(minus, decimal, Decimal, Decimal);
+
+#[inline(always)]
+fn minus_sat<T>(left: T, right: T) -> T
+where
+    T: SaturatingSub,
+{
+    left.saturating_sub(&right)
+}
+
+for_all_int_operator!(minus_sat);
+
+// rust_decimal does not implement the SaturatingSub trait
+#[inline(always)]
+fn decimal_minus_sat(left: Decimal, right: Decimal) -> Decimal {
+    left.saturating_sub(right)
+}
+some_operator!(decimal_minus_sat, minus_sat, decimal, Decimal, Decimal);
 
 fn fp_minus<T>(left: T, right: T) -> T
 where

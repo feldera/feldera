@@ -842,7 +842,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 DBSPExpression field = t.deref().field(index);
                 DBSPType type = field.getType();
                 field = ExpressionCompiler.makeBinaryExpression(operator.getNode(), field.getType(),
-                        DBSPOpcode.SUB, field, lateness);
+                        DBSPOpcode.SUB_SAT, field, lateness);
                 timestamps.add(field);
                 DBSPExpression min = type.to(IsBoundedType.class).getMinValue();
                 minimums.add(min);
@@ -910,7 +910,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 fields.add(field);
                 DBSPType type = field.getType();
                 field = ExpressionCompiler.makeBinaryExpression(operator.getNode(), field.getType(),
-                        DBSPOpcode.SUB, field.deepCopy(), lateness);
+                        DBSPOpcode.SUB_SAT, field.deepCopy(), lateness);
                 timestamps.add(field);
                 DBSPExpression min = type.to(IsBoundedType.class).getMinValue();
                 minimums.add(min);

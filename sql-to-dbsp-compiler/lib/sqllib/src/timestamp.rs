@@ -267,6 +267,23 @@ polymorphic_return_function2!(
     ShortInterval
 );
 
+pub fn minus_sat_Timestamp_Timestamp_ShortInterval(
+    left: Timestamp,
+    right: Timestamp,
+) -> ShortInterval {
+    ShortInterval::from(left.milliseconds().saturating_sub(right.milliseconds()))
+}
+
+polymorphic_return_function2!(
+    minus_sat,
+    Timestamp,
+    Timestamp,
+    Timestamp,
+    Timestamp,
+    ShortInterval,
+    ShortInterval
+);
+
 pub fn minus_Timestamp_ShortInterval_Timestamp(left: Timestamp, right: ShortInterval) -> Timestamp {
     Timestamp::new(left.milliseconds() - right.milliseconds())
 }
@@ -281,12 +298,43 @@ polymorphic_return_function2!(
     Timestamp
 );
 
+pub fn minus_sat_Timestamp_ShortInterval_Timestamp(
+    left: Timestamp,
+    right: ShortInterval,
+) -> Timestamp {
+    Timestamp::new(left.milliseconds().saturating_sub(right.milliseconds()))
+}
+
+polymorphic_return_function2!(
+    minus_sat,
+    Timestamp,
+    Timestamp,
+    ShortInterval,
+    ShortInterval,
+    Timestamp,
+    Timestamp
+);
+
 pub fn minus_Date_ShortInterval_Timestamp(left: Date, right: ShortInterval) -> Timestamp {
     minus_Timestamp_ShortInterval_Timestamp(cast_to_Timestamp_Date(left), right)
 }
 
 polymorphic_return_function2!(
     minus,
+    Date,
+    Date,
+    ShortInterval,
+    ShortInterval,
+    Timestamp,
+    Timestamp
+);
+
+pub fn minus_sat_Date_ShortInterval_Timestamp(left: Date, right: ShortInterval) -> Timestamp {
+    minus_sat_Timestamp_ShortInterval_Timestamp(cast_to_Timestamp_Date(left), right)
+}
+
+polymorphic_return_function2!(
+    minus_sat,
     Date,
     Date,
     ShortInterval,
@@ -310,6 +358,22 @@ pub fn minus_Date_ShortInterval_Date(left: Date, right: ShortInterval) -> Date {
 }
 
 polymorphic_return_function2!(minus, Date, Date, ShortInterval, ShortInterval, Date, Date);
+
+pub fn minus_sat_Date_ShortInterval_Date(left: Date, right: ShortInterval) -> Date {
+    let days = (right.milliseconds() / (86400 * 1000)) as i32;
+    let diff = left.days().saturating_sub(days);
+    Date::new(diff)
+}
+
+polymorphic_return_function2!(
+    minus_sat,
+    Date,
+    Date,
+    ShortInterval,
+    ShortInterval,
+    Date,
+    Date
+);
 
 pub fn plus_Date_LongInterval_Date(left: Date, right: LongInterval) -> Date {
     let date = left.to_date();

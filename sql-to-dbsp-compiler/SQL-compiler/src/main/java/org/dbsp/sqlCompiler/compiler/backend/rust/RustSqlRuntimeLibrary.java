@@ -57,6 +57,7 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put("gte", DBSPOpcode.GTE);
         this.arithmeticFunctions.put("plus", DBSPOpcode.ADD);
         this.arithmeticFunctions.put("minus", DBSPOpcode.SUB);
+        this.arithmeticFunctions.put("minus_sat", DBSPOpcode.SUB_SAT);
         this.arithmeticFunctions.put("modulo", DBSPOpcode.MOD);
         this.arithmeticFunctions.put("times", DBSPOpcode.MUL);
         this.arithmeticFunctions.put("div", DBSPOpcode.DIV);
@@ -80,6 +81,7 @@ public class RustSqlRuntimeLibrary {
 
         this.dateFunctions.put("plus", DBSPOpcode.ADD);
         this.dateFunctions.put("minus", DBSPOpcode.SUB);
+        this.dateFunctions.put("minus_sat", DBSPOpcode.SUB_SAT);
         this.dateFunctions.put("times", DBSPOpcode.MUL);
         this.dateFunctions.put("eq", DBSPOpcode.EQ);
         this.dateFunctions.put("neq", DBSPOpcode.NEQ);
@@ -176,7 +178,7 @@ public class RustSqlRuntimeLibrary {
             map = this.booleanFunctions;
         } else if (ltype.is(IsDateType.class)) {
             map = this.dateFunctions;
-            if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD) {
+            if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.SUB_SAT) {
                 if (ltype.is(DBSPTypeTimestamp.class) || ltype.is(DBSPTypeDate.class)) {
                     assert expectedReturnType != null;
                     assert rtype != null;

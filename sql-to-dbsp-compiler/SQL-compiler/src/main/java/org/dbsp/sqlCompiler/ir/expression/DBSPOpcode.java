@@ -19,6 +19,7 @@ public enum DBSPOpcode {
     // Binary operations
     ADD("+", false),
     SUB("-", false),
+    SUB_SAT("-", false),  // Saturating addition
     MUL("*", false),
     DIV("/", false),
     // DIV_NULL is like DIV, but returns NULL for a 0 denominator

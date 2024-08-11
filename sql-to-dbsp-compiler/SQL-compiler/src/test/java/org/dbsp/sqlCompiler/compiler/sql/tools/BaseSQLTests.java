@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Logger;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
 import org.junit.AfterClass;
@@ -60,6 +61,12 @@ public class BaseSQLTests {
      * @param messageFragment   This fragment should appear in the error message. */
     public void queryFailingInCompilation(String query, String messageFragment) {
         this.statementsFailingInCompilation("CREATE VIEW VV AS " + query, messageFragment);
+    }
+
+    protected void generateJPG(String sql) {
+        int level = Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
+        this.compileRustTestCase(sql);
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, level);
     }
 
     /** Run one or more statements that are expected to fail in compilation.
