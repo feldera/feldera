@@ -26,7 +26,7 @@ export const useWritablePipeline = (pipelineName: () => string, preloaded: Exten
   })
 
   return {
-    get pipeline() {
+    get current() {
       invariant(pipeline, 'useWritablePipeline: pipeline was not preloaded')
       return pipeline
     },

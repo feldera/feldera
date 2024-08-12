@@ -3,7 +3,7 @@
 </script>
 
 <script lang="ts">
-  import PipelineStatus from '$lib/components/pipelines/list/Status.svelte'
+  import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import { base } from '$app/paths'
   import { postPipeline, type PipelineThumb } from '$lib/services/pipelineManager'
   import { goto, replaceState } from '$app/navigation'

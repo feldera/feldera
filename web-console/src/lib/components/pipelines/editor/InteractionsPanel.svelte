@@ -9,7 +9,7 @@
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
   import type { ExtendedPipeline, Pipeline } from '$lib/services/pipelineManager'
 
-  let { pipeline }: { pipeline: ExtendedPipeline } = $props()
+  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   const pipelineName = $derived(pipeline)
   let currentTab = $derived(
     useLocalStorage('pipelines/' + pipelineName + '/currentInteractionTab', 'errors')
@@ -28,7 +28,8 @@
     <Tabs.Control
       bind:group={currentTab.value}
       name={tabName}
-      contentClasses="group-hover:preset-tonal-surface">
+      contentClasses="group-hover:preset-tonal-surface"
+    >
       <span>{tabName}</span>
     </Tabs.Control>
   {/each}
@@ -39,7 +40,8 @@
     <Tabs.Panel
       bind:group={currentTab.value}
       value={tabName}
-      classes="h-full overflow-y-auto relative">
+      classes="h-full overflow-y-auto relative"
+    >
       <div class="ggg absolute h-full w-full p-4 pt-0">
         <TabComponent {pipeline}></TabComponent>
       </div>

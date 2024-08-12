@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#2179](https://github.com/feldera/feldera/pull/2088))
 - [SQL] Added support for SQL functions `DATE_TRUNC`, `TIME_TRUNC`, and
   `TIMETSTAMP_TRUNC`. ([#2227](https://github.com/feldera/feldera/pull/2227))
+- [WebConsole] separate SQL and Rust compilation status into separate indicators
 
 ## [0.23.0] - 2024-08-06
 

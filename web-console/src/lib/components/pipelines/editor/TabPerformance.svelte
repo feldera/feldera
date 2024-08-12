@@ -3,15 +3,20 @@
   import { useAggregatePipelineStats } from '$lib/compositions/useAggregatePipelineStats.svelte'
   import { humanSize } from '$lib/functions/common/string'
   import { emptyPipelineMetrics, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import type { Pipeline } from '$lib/services/pipelineManager'
+  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
 
-  let { pipeline }: { pipeline: Pipeline } = $props()
+  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
-  let pipelineName = $derived(pipeline.name)
+  let pipelineName = $derived(pipeline.current.name)
 
   let pipelineStats = $state({ metrics: emptyPipelineMetrics } as { metrics: PipelineMetrics })
 
+  let pipelineStatus = $derived(pipeline.current.status)
   $effect(() => {
+    if (pipelineStatus !== 'Running' && pipelineStatus !== 'Paused') {
+      pipelineStats = { metrics: emptyPipelineMetrics }
+      return
+    }
     pipelineStats = useAggregatePipelineStats(pipelineName, 1000, 5000)
   })
 

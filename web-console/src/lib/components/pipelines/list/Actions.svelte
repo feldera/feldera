@@ -56,6 +56,8 @@
   const actions = {
     _start,
     _start_paused,
+    _start_error,
+    _start_disabled,
     _pause,
     _shutdown,
     _delete,
@@ -68,7 +70,7 @@
     match(status.status)
       .returnType<(keyof typeof actions)[]>()
       .with('Shutdown', () => ['_start_paused', '_configure', '_delete'])
-      .with('Queued', () => ['_spacer', '_configure', '_delete'])
+      .with('Queued', () => ['_start_disabled', '_configure', '_delete'])
       .with('Starting up', () => ['_spinner', '_configure', '_spacer'])
       .with('Initializing', () => ['_spinner', '_configure', '_spacer'])
       .with('Running', () => ['_pause', '_configure', '_shutdown'])
@@ -76,10 +78,10 @@
       .with('Paused', () => ['_start', '_configure', '_shutdown'])
       .with('ShuttingDown', () => ['_spinner', '_configure', '_spacer'])
       .with({ PipelineError: P.any }, () => ['_spacer', '_configure', '_shutdown'])
-      .with('Compiling sql', () => ['_spinner', '_configure', '_delete'])
-      .with('Compiling bin', () => ['_spinner', '_configure', '_delete'])
+      .with('Compiling sql', () => ['_start_disabled', '_configure', '_delete'])
+      .with('Compiling bin', () => ['_start_disabled', '_configure', '_delete'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
-        '_spacer',
+        '_start_error',
         '_configure',
         '_delete'
       ])
@@ -148,6 +150,17 @@
       Save the pipeline before running
     </Tooltip>
   {/if}
+{/snippet}
+{#snippet _start_disabled()}
+  <div class="{buttonClass} !filter-none">
+    <button class="bx bx-play" disabled> </button>
+  </div>
+{/snippet}
+{#snippet _start_error()}
+  {@render _start_disabled()}
+  <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+    Resolve errors before running
+  </Tooltip>
 {/snippet}
 {#snippet _pause()}
   <button

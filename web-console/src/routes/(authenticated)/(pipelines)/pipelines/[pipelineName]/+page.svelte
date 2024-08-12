@@ -28,9 +28,9 @@
   const pipeline = useWritablePipeline(() => pipelineName, data.preloadedPipeline)
 
   const programErrors = $derived(
-    extractProgramError(programErrorReport(pipeline.pipeline))({
+    extractProgramError(programErrorReport(pipeline.current))({
       name: pipelineName,
-      status: pipeline.pipeline.programStatus
+      status: pipeline.current.programStatus
     })
   )
 </script>
