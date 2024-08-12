@@ -93,9 +93,9 @@
   import type { Relation } from '$lib/services/manager'
   import { accumulateChanges } from '$lib/functions/pipelines/changeStream'
 
-  let { pipeline }: { pipeline: Pipeline } = $props()
+  let { pipeline }: { pipeline: { current: Pipeline } } = $props()
 
-  let pipelineName = $derived(pipeline.name)
+  let pipelineName = $derived(pipeline.current.name)
 
   const reloadSchema = async () => {
     registerPipelineName(pipelineName)
@@ -169,7 +169,8 @@
                     startReadingStream(pipelineName, relation.relationName)
                 }
               }}
-              value={relation} />
+              value={relation}
+            />
             {relation.relationName}
           </label>
         {/snippet}
@@ -190,13 +191,13 @@
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="bg-surface-100-900 w-2"></PaneResizer>
+    <PaneResizer class="w-2 bg-surface-100-900"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
       {#if getRows()[pipelineName]?.length}
         <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="text-surface-500 px-4">
+        <span class="px-4 text-surface-500">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}

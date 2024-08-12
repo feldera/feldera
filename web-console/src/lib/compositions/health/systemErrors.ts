@@ -69,7 +69,10 @@ export const programErrorReport = (pipeline: Pipeline) => (pipelineName: string,
     name: 'Report: program compilation error',
     '1-description':
       '```\n' + limitMessage(message, 1000, '\n...Beginning of the error...') + '\n```',
-    '6-extra': 'SQL:\n```\n' + limitMessage(pipeline.programCode, 7000, '\n...Beginning of the code...') + '\n```'
+    '6-extra':
+      'SQL:\n```\n' +
+      limitMessage(pipeline.programCode, 7000, '\n...Beginning of the code...') +
+      '\n```'
   }) as ReportDetails
 
 const fetchedProgramErrorReport = async (pipelineName: string, message: string) => {
@@ -80,75 +83,77 @@ const fetchedProgramErrorReport = async (pipelineName: string, message: string) 
 export const showSqlCompilerMessage = (e: SqlCompilerMessage) =>
   `${e.error_type ? e.error_type + ':\n' : ''}${e.message}${e.snippet ? '\n' + e.snippet : ''}`
 
-export const extractProgramError = <Report>(getReport: (pipelineName: string, message: string) => Report) => (pipeline: {
-  name: string
-  status:
-    | { RustError: string }
-    | { SystemError: string }
-    | { SqlError: SqlCompilerMessage[] }
-    | string
-    | { PipelineError: ErrorResponse }
-}) => {
-  const source = `${base}/pipelines/${encodeURI(pipeline.name)}/`
-  const result = match(pipeline.status)
-    .returnType<SystemError<any, Report>[]>()
-    .with({ RustError: P.any }, (e) => [
-      (() => ({
-        name: `Error compiling ${pipeline.name}`,
-        message:
-          'Compilation error occurred when compiling the program - see the details below:\n' +
-          e.RustError,
-        cause: {
-          entityName: pipeline.name,
-          tag: 'programError',
-          source,
-          report: getReport(pipeline.name, e.RustError),
-          body: e.RustError
-        }
-      }))()
-    ])
-    .with(
-      {
-        SystemError: P.any
-      },
-      (e) => [
+export const extractProgramError =
+  <Report>(getReport: (pipelineName: string, message: string) => Report) =>
+  (pipeline: {
+    name: string
+    status:
+      | { RustError: string }
+      | { SystemError: string }
+      | { SqlError: SqlCompilerMessage[] }
+      | string
+      | { PipelineError: ErrorResponse }
+  }) => {
+    const source = `${base}/pipelines/${encodeURI(pipeline.name)}/`
+    const result = match(pipeline.status)
+      .returnType<SystemError<any, Report>[]>()
+      .with({ RustError: P.any }, (e) => [
         (() => ({
           name: `Error compiling ${pipeline.name}`,
-          message: e.SystemError,
+          message:
+            'Compilation error occurred when compiling the program - see the details below:\n' +
+            e.RustError,
           cause: {
             entityName: pipeline.name,
             tag: 'programError',
             source,
-            report: getReport(pipeline.name, e.SystemError),
-            body: e.SystemError
+            report: getReport(pipeline.name, e.RustError),
+            body: e.RustError
           }
         }))()
-      ]
-    )
-    .with(
-      {
-        SqlError: P.any
-      },
-      (es) =>
-        es.SqlError.map((e) => ({
-          name: `Error in SQL code of ${pipeline.name}`,
-          message: showSqlCompilerMessage(e),
-          cause: {
-            entityName: pipeline.name,
-            tag: 'programError',
-            source:
-              source +
-              '#:' +
-              e.start_line_number +
-              (e.start_column > 1 ? ':' + e.start_column.toString() : ''),
-            report: getReport(pipeline.name, e.message),
-            body: e
-          }
-        }))
-    )
-    .otherwise(() => [])
-  return result
-}
+      ])
+      .with(
+        {
+          SystemError: P.any
+        },
+        (e) => [
+          (() => ({
+            name: `Error compiling ${pipeline.name}`,
+            message: e.SystemError,
+            cause: {
+              entityName: pipeline.name,
+              tag: 'programError',
+              source,
+              report: getReport(pipeline.name, e.SystemError),
+              body: e.SystemError
+            }
+          }))()
+        ]
+      )
+      .with(
+        {
+          SqlError: P.any
+        },
+        (es) =>
+          es.SqlError.map((e) => ({
+            name: `Error in SQL code of ${pipeline.name}`,
+            message: showSqlCompilerMessage(e),
+            cause: {
+              entityName: pipeline.name,
+              tag: 'programError',
+              source:
+                source +
+                '#:' +
+                e.start_line_number +
+                (e.start_column > 1 ? ':' + e.start_column.toString() : ''),
+              report: getReport(pipeline.name, e.message),
+              body: e
+            }
+          }))
+      )
+      .otherwise(() => [])
+    return result
+  }
 
 export const extractPipelineXgressErrors = ({
   pipelineName,

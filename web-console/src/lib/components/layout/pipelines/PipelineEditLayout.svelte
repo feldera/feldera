@@ -5,7 +5,7 @@
   import InteractionsPanel from '$lib/components/pipelines/editor/InteractionsPanel.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import PipelineEditorStatusBar from './PipelineEditorStatusBar.svelte'
-  import PipelineStatus from '$lib/components/pipelines/list/Status.svelte'
+  import DeploymentStatus from '$lib/components/pipelines/list/DeploymentStatus.svelte'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
   import { asyncDebounced } from '$lib/compositions/asyncDebounced'
   import { useChangedPipelines } from '$lib/compositions/pipelines/useChangedPipelines.svelte'
@@ -34,7 +34,7 @@
     programErrors
   }: {
     pipeline: {
-      pipeline: ExtendedPipeline
+      current: ExtendedPipeline
       patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
       optimisticUpdate: (newPipeline: Partial<ExtendedPipeline>) => Promise<void>
     }
@@ -43,7 +43,7 @@
   } = $props()
   const pipelineCode = {
     get current() {
-      return pipeline.pipeline.programCode
+      return pipeline.current.programCode
     },
     set current(programCode: string) {
       // pipeline.optimisticUpdate({ programCode })
@@ -55,7 +55,7 @@
   let decoupledCode = useDecoupledState(pipelineCode, () => wait)
   {
     // TODO: handle remote update of the program code that conflicts with currently edited version
-    let pipelineName = $derived(pipeline.pipeline.name)
+    let pipelineName = $derived(pipeline.current.name)
     $effect(() => {
       // Fetch new code when switching pipeline
       pipelineName
@@ -76,22 +76,22 @@
   const changedPipelines = useChangedPipelines()
 
   $effect(() => {
-    if (!pipeline.pipeline.name) {
+    if (!pipeline.current.name) {
       return
     }
     decoupledCode.downstreamChanged
-      ? changedPipelines.add(pipeline.pipeline.name)
-      : changedPipelines.remove(pipeline.pipeline.name)
+      ? changedPipelines.add(pipeline.current.name)
+      : changedPipelines.remove(pipeline.current.name)
   })
 
   {
-    let oldPipelineName = $state(pipeline.pipeline.name)
+    let oldPipelineName = $state(pipeline.current.name)
     $effect(() => {
-      if (pipeline.pipeline.name === oldPipelineName) {
+      if (pipeline.current.name === oldPipelineName) {
         return
       }
       changedPipelines.remove(oldPipelineName || '')
-      oldPipelineName = pipeline.pipeline.name
+      oldPipelineName = pipeline.current.name
     })
   }
   const mode = useDarkMode()
@@ -111,15 +111,24 @@
     }, 50)
   })
 
-  let status = {
+  const makeStatus = () => ({
     get status() {
-      return pipeline.pipeline.status
+      return pipeline.current.status
     },
     set status(status: PipelineStatusType) {
       pipeline.optimisticUpdate({
         status
       })
     }
+  })
+
+  let status = $state({ status: makeStatus().status })
+  {
+    let pipelineName = $derived(pipeline.current.name)
+    $effect(() => {
+      pipelineName
+      status.status = makeStatus().status
+    })
   }
 
   let editDisabled = $derived(nonNull(status) && !isPipelineIdle(status.status))
@@ -144,19 +153,20 @@
         <PipelineEditorStatusBar
           downstreamChanged={decoupledCode.downstreamChanged}
           saveCode={decoupledCode.push}
-          programStatus={pipeline.pipeline.programStatus}></PipelineEditorStatusBar>
+          programStatus={pipeline.current.programStatus}
+        ></PipelineEditorStatusBar>
         {#if status}
-          <PipelineStatus class="ml-auto h-full w-36 text-[1rem] " status={status.status}
-          ></PipelineStatus>
+          <DeploymentStatus class="ml-auto h-full w-40 text-[1rem] " status={status.status}
+          ></DeploymentStatus>
           <PipelineActions
-            name={pipeline.pipeline.name}
+            name={pipeline.current.name}
             bind:status
             {reloadStatus}
             onDeletePipeline={(pipelineName) =>
               (pipelines.pipelines = pipelines.pipelines.filter((p) => p.name !== pipelineName))}
             pipelineBusy={editDisabled}
             unsavedChanges={decoupledCode.downstreamChanged}
-            onActionSuccess={(action) => handleActionSuccess(pipeline.pipeline.name, action)}
+            onActionSuccess={(action) => handleActionSuccess(pipeline.current.name, action)}
           ></PipelineActions>
         {/if}
       </div>
@@ -188,14 +198,15 @@
                 vertical: 'visible'
               },
               language: 'sql'
-            }} />
+            }}
+          />
         </div>
       </div>
     </Pane>
-    <PaneResizer class="bg-surface-100-900 h-2" />
+    <PaneResizer class="h-2 bg-surface-100-900" />
     <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
-      {#if pipeline.pipeline.name}
-        <InteractionsPanel pipeline={pipeline.pipeline}></InteractionsPanel>
+      {#if pipeline.current.name}
+        <InteractionsPanel {pipeline}></InteractionsPanel>
       {/if}
     </Pane>
   </PaneGroup>

@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { getStatusLabel } from '$lib/functions/pipelines/status'
-  import { getPipelineStatus, type PipelineStatus } from '$lib/services/pipelineManager'
-  import { asyncDerived, asyncReadable, readable } from '@square/svelte-store'
+  import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
+  import { type PipelineStatus } from '$lib/services/pipelineManager'
   import { match, P } from 'ts-pattern'
 
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
@@ -33,8 +32,5 @@
     ' ' +
     _class}
 >
-  {getStatusLabel(status)}
+  {getPipelineStatusLabel(status)}
 </div>
-<!-- {#each ['preset-tonal-primary', 'preset-tonal-secondary', 'preset-tonal-tertiary', 'preset-tonal-success', 'preset-tonal-warning', 'preset-tonal-error', 'preset-tonal-surface'] as color}
-  <div class={'chip ' + color}>fffffffff</div>
-{/each} -->

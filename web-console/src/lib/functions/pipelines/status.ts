@@ -1,7 +1,7 @@
 import type { PipelineStatus } from '$lib/services/pipelineManager'
 import { P, match } from 'ts-pattern'
 
-export const getStatusLabel = (status: PipelineStatus) => {
+export const getPipelineStatusLabel = (status: PipelineStatus) => {
   return match(status)
     .with('Shutdown', () => 'Ready To Run')
     .with('Starting up', () => 'Starting up')
@@ -16,6 +16,24 @@ export const getStatusLabel = (status: PipelineStatus) => {
     .with({ SqlError: P.select() }, () => 'Program Error')
     .with({ RustError: P.select() }, () => 'Program Error')
     .with({ SystemError: P.select() }, () => 'Program Error')
+    .exhaustive()
+}
+
+export const getDeploymentStatusLabel = (status: PipelineStatus) => {
+  return match(status)
+    .with('Shutdown', () => '')
+    .with('Starting up', () => 'Starting up')
+    .with('Initializing', () => 'Initializing')
+    .with('Paused', () => 'Paused')
+    .with('Running', () => 'Running')
+    .with('ShuttingDown', () => 'Shutting Down')
+    .with({ PipelineError: P.select() }, () => 'Pipeline Error')
+    .with('Compiling sql', () => '')
+    .with('Queued', () => '')
+    .with('Compiling bin', () => '')
+    .with({ SqlError: P.select() }, () => '')
+    .with({ RustError: P.select() }, () => '')
+    .with({ SystemError: P.select() }, () => '')
     .exhaustive()
 }
 
