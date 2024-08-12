@@ -109,7 +109,7 @@ use updater::radix_tree_update;
 
 // We use constant radix to reduce the need to dynamically allocate a vector of
 // child nodes.
-const RADIX: usize = 16;
+const RADIX: usize = 2;
 
 // Number of bits in `RADIX`.
 const RADIX_BITS: u32 = RADIX.trailing_zeros();
