@@ -468,9 +468,9 @@ impl RecordGenerator {
                 .range
                 .map(|(a, b)| (a.try_into().unwrap_or(0), b.try_into().unwrap_or(5)))
                 .unwrap_or((0usize, 5usize));
-            if min > max {
+            if min >= max {
                 return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
+                    "Empty range, min >= max for field {:?}",
                     field.name
                 ));
             }
@@ -566,9 +566,9 @@ impl RecordGenerator {
                     )
                 })
                 .unwrap_or((0, MAX_TIME_VALUE));
-            if min > max {
+            if min >= max {
                 return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
+                    "Empty range, min >= max for field {:?}",
                     field.name
                 ));
             }
@@ -633,9 +633,9 @@ impl RecordGenerator {
             str.clear();
 
             let (min, max) = settings.range.unwrap_or((0, MAX_DATE_VALUE));
-            if min > max {
+            if min >= max {
                 return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
+                    "Empty range, min >= max for field {:?}",
                     field.name
                 ));
             }
@@ -727,9 +727,9 @@ impl RecordGenerator {
             str.clear();
 
             let (min, max) = settings.range.unwrap_or((0, MAX_DATETIME_VALUE)); // 4102444800 => 2100-01-01
-            if min > max {
+            if min >= max {
                 return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
+                    "Empty range, min >= max for field {:?}",
                     field.name
                 ));
             }
@@ -828,9 +828,9 @@ impl RecordGenerator {
                 .range
                 .map(|(a, b)| (a.try_into().unwrap_or(0), b.try_into().unwrap_or(25)))
                 .unwrap_or((0, 25));
-            if min > max {
+            if min >= max {
                 return Err(anyhow!(
-                    "Invalid range, min > max for field {:?}",
+                    "Empty range, min >= max for field {:?}",
                     field.name
                 ));
             }
@@ -1252,10 +1252,11 @@ impl RecordGenerator {
         let mut obj = self.json_obj.take().unwrap();
         self.current = idx;
 
-        self.generate_fields(&self.schema.fields, &self.config.fields, &mut rng, &mut obj)?;
-
+        let r = self.generate_fields(&self.schema.fields, &self.config.fields, &mut rng, &mut obj);
         self.rng = Some(rng);
         self.json_obj = Some(obj);
+        r?;
+
         Ok(self.json_obj.as_ref().unwrap())
     }
 }
