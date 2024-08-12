@@ -1,6 +1,6 @@
 CREATE VIEW q15 AS
 SELECT
-     FORMAT_DATE('yyyy-MM-dd', date_time) as 'day',
+     CAST(date_time AS DATE) as 'day',
      count(*) AS total_bids,
      count(*) filter (where price < 10000) AS rank1_bids,
      count(*) filter (where price >= 10000 and price < 1000000) AS rank2_bids,
@@ -14,4 +14,4 @@ SELECT
      count(distinct auction) filter (where price >= 10000 and price < 1000000) AS rank2_auctions,
      count(distinct auction) filter (where price >= 1000000) AS rank3_auctions
 FROM bid
-GROUP BY FORMAT_DATE('yyyy-MM-dd', date_time);
+GROUP BY CAST(date_time AS DATE);
