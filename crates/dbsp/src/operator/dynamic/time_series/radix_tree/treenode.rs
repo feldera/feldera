@@ -453,7 +453,7 @@ mod test {
         assert_eq!(aggregate_default(node), None);
 
         node.slot_mut(1).set_some_with(&mut |ptr| {
-            ptr.from_timestamp(0x1000_0000_0000_0000u64, 10u64.erase_mut())
+            ptr.from_timestamp(0x8000_0000_0000_0000u64, 10u64.erase_mut())
         });
         assert_eq!(node.occupied_slots(), 1);
 
@@ -461,40 +461,47 @@ mod test {
             node.first_occupied_slot()
                 .unwrap()
                 .downcast_checked::<ChildPtr<_, _>>(),
-            &child_from_timestamp(0x1000_0000_0000_0000u64, 10u64)
+            &child_from_timestamp(0x8000_0000_0000_0000u64, 10u64)
         );
 
         assert_eq!(aggregate_default(node), Some(10));
 
-        node.slot_mut(4).set_some_with(&mut |ptr| {
-            ptr.from_timestamp(0x4000_0000_0000_0000u64, 40u64.erase_mut())
+        // Used for testing with RADIX=16.
+        // node.slot_mut(4).set_some_with(&mut |ptr| {
+        //     ptr.from_timestamp(0x4000_0000_0000_0000u64, 40u64.erase_mut())
+        // });
+        // assert_eq!(node.occupied_slots(), 2);
+        // assert_eq!(
+        //     node.first_occupied_slot()
+        //         .unwrap()
+        //         .downcast_checked::<ChildPtr<_, _>>(),
+        //     &child_from_timestamp(0x1000_0000_0000_0000u64, 10u64)
+        // );
+        // assert_eq!(aggregate_default(node), Some(50));
+
+        node.slot_mut(0).set_some_with(&mut |ptr| {
+            *ptr.downcast_mut_checked() = ChildPtr::new(
+                Prefix {
+                    key: 0x0fff_ffff_ffff_ffffu64,
+                    prefix_len: 4,
+                },
+                80u64,
+            )
         });
         assert_eq!(node.occupied_slots(), 2);
         assert_eq!(
             node.first_occupied_slot()
                 .unwrap()
                 .downcast_checked::<ChildPtr<_, _>>(),
-            &child_from_timestamp(0x1000_0000_0000_0000u64, 10u64)
-        );
-        assert_eq!(aggregate_default(node), Some(50));
-
-        node.slot_mut(8).set_some_with(&mut |ptr| {
-            *ptr.downcast_mut_checked() = ChildPtr::new(
+            &ChildPtr::new(
                 Prefix {
-                    key: 0x8fff_ffff_ffff_ffffu64,
+                    key: 0x0fff_ffff_ffff_ffffu64,
                     prefix_len: 4,
                 },
                 80u64,
             )
-        });
-        assert_eq!(node.occupied_slots(), 3);
-        assert_eq!(
-            node.first_occupied_slot()
-                .unwrap()
-                .downcast_checked::<ChildPtr<_, _>>(),
-            &child_from_timestamp(0x1000_0000_0000_0000u64, 10u64)
         );
-        assert_eq!(aggregate_default(node), Some(130));
+        assert_eq!(aggregate_default(node), Some(90));
     }
 
     #[test]

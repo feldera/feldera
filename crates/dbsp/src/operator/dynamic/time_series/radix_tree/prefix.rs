@@ -113,6 +113,7 @@ where
     /// Computes the longest common prefix that covers both `self` and `key`.
     pub fn longest_common_prefix(&self, key: TS) -> Self {
         let longest_common_len = min((key ^ self.key).leading_zeros(), self.prefix_len);
+        #[allow(clippy::modulo_one)]
         let prefix_len = longest_common_len - longest_common_len % RADIX_BITS;
 
         Self {
@@ -203,7 +204,7 @@ mod test {
         );
         assert_eq!(
             Prefix::new(0xff00_0000_0000_0000u64, 8).longest_common_prefix(0xfcff_ffff_ffff_ffff),
-            Prefix::new(0xf000_0000_0000_0000u64, 4)
+            Prefix::new(0xfc00_0000_0000_0000u64, 6)
         );
         assert_eq!(
             Prefix::new(0xff00_0000_0000_0000u64, 8).longest_common_prefix(0x00ff_ffff_ffff_ffff),
@@ -243,15 +244,15 @@ mod test {
         );
         assert_eq!(
             Prefix::new(0x0000_0000_0000_0000u64, 0).slot_of_timestamp(0x1000_0000_0000_0001),
-            1
+            0
         );
         assert_eq!(
             Prefix::new(0x0000_0000_0000_0000u64, 0).slot_of_timestamp(0xa000_0000_0000_0001),
-            0xa
+            1
         );
         assert_eq!(
             Prefix::new(0x0000_0000_0000_0000u64, 0).slot_of_timestamp(0xf000_0000_0000_0001),
-            0xf
+            1
         );
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 32).slot_of_timestamp(0xffff_ffff_0000_0001),
@@ -259,15 +260,15 @@ mod test {
         );
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 32).slot_of_timestamp(0xffff_ffff_1000_0001),
-            1
+            0
         );
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 32).slot_of_timestamp(0xffff_ffff_a000_0001),
-            0xa
+            1
         );
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 32).slot_of_timestamp(0xffff_ffff_f000_0001),
-            0xf
+            1
         );
 
         assert_eq!(
@@ -278,17 +279,17 @@ mod test {
         assert_eq!(
             Prefix::new(0x0000_0000_0000_0000u64, 0)
                 .slot_of(&Prefix::new(0x1000_0000_0000_0000, 8)),
-            1
+            0
         );
         assert_eq!(
             Prefix::new(0x0000_0000_0000_0000u64, 0)
                 .slot_of(&Prefix::new(0xa000_0000_0000_0000, 16)),
-            0xa
+            1
         );
         assert_eq!(
             Prefix::new(0x0000_0000_0000_0000u64, 0)
                 .slot_of(&Prefix::new(0xf000_0000_0000_0000, 32)),
-            0xf
+            1
         );
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 32)
@@ -298,67 +299,75 @@ mod test {
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 32)
                 .slot_of(&Prefix::new(0xffff_ffff_1000_0000, 40)),
-            1
+            0
         );
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 32)
                 .slot_of(&Prefix::new(0xffff_ffff_a000_0000, 44)),
-            0xa
+            1
         );
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 32)
                 .slot_of(&Prefix::new(0xffff_ffff_f000_0000, 64)),
-            0xf
+            1
         );
 
         assert_eq!(
             Prefix::new(0x0000_0000_0000_0000u64, 0).extend(0),
-            Prefix::new(0x0000_0000_0000_0000, 4)
+            Prefix::new(0x0000_0000_0000_0000, 1)
         );
         assert_eq!(
             Prefix::new(0x0000_0000_0000_0000u64, 0).extend(1),
-            Prefix::new(0x1000_0000_0000_0000, 4)
+            Prefix::new(0x8000_0000_0000_0000, 1)
         );
-        assert_eq!(
-            Prefix::new(0x0000_0000_0000_0000u64, 0).extend(0xa),
-            Prefix::new(0xa000_0000_0000_0000, 4)
-        );
-        assert_eq!(
-            Prefix::new(0x0000_0000_0000_0000u64, 0).extend(0xf),
-            Prefix::new(0xf000_0000_0000_0000, 4)
-        );
+        // Used for testing RADIX=16
+        // assert_eq!(
+        //     Prefix::new(0x0000_0000_0000_0000u64, 0).extend(0xa),
+        //     Prefix::new(0xf000_0000_0000_0000, 4)
+        // );
+        // assert_eq!(
+        //     Prefix::new(0x0000_0000_0000_0000u64, 0).extend(0xf),
+        //     Prefix::new(0xf000_0000_0000_0000, 4)
+        // );
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 32).extend(0),
-            Prefix::new(0xffff_ffff_0000_0000, 36)
+            Prefix::new(0xffff_ffff_0000_0000, 33)
         );
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 32).extend(1),
-            Prefix::new(0xffff_ffff_1000_0000, 36)
+            Prefix::new(0xffff_ffff_8000_0000, 33)
         );
-        assert_eq!(
-            Prefix::new(0xffff_ffff_0000_0000u64, 32).extend(0xa),
-            Prefix::new(0xffff_ffff_a000_0000, 36)
-        );
-        assert_eq!(
-            Prefix::new(0xffff_ffff_0000_0000u64, 32).extend(0xf),
-            Prefix::new(0xffff_ffff_f000_0000, 36)
-        );
+        // Used for testing RADIX=16
+        // assert_eq!(
+        //     Prefix::new(0xffff_ffff_0000_0000u64, 32).extend(0xa),
+        //     Prefix::new(0xffff_ffff_a000_0000, 36)
+        // );
+        // assert_eq!(
+        //     Prefix::new(0xffff_ffff_0000_0000u64, 32).extend(0xf),
+        //     Prefix::new(0xffff_ffff_f000_0000, 36)
+        // );
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 60).extend(0),
-            Prefix::new(0xffff_ffff_0000_0000, 64)
+            Prefix::new(0xffff_ffff_0000_0000, 61)
         );
         assert_eq!(
             Prefix::new(0xffff_ffff_0000_0000u64, 60).extend(1),
+            Prefix::new(0xffff_ffff_0000_0008, 61)
+        );
+        assert_eq!(
+            Prefix::new(0xffff_ffff_0000_0000u64, 63).extend(1),
             Prefix::new(0xffff_ffff_0000_0001, 64)
         );
-        assert_eq!(
-            Prefix::new(0xffff_ffff_0000_0000u64, 60).extend(0xa),
-            Prefix::new(0xffff_ffff_0000_000a, 64)
-        );
-        assert_eq!(
-            Prefix::new(0xffff_ffff_0000_0000u64, 60).extend(0xf),
-            Prefix::new(0xffff_ffff_0000_000f, 64)
-        );
+
+        // Used for testing RADIX=16
+        // assert_eq!(
+        //     Prefix::new(0xffff_ffff_0000_0000u64, 60).extend(0xa),
+        //     Prefix::new(0xffff_ffff_0000_000a, 64)
+        // );
+        // assert_eq!(
+        //     Prefix::new(0xffff_ffff_0000_0000u64, 60).extend(0xf),
+        //     Prefix::new(0xffff_ffff_0000_000f, 64)
+        // );
     }
 
     #[test]
