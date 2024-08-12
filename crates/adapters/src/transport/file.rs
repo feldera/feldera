@@ -3,17 +3,14 @@ use super::{
 };
 use crate::PipelineState;
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
+use atomic::Atomic;
 use crossbeam::sync::{Parker, Unparker};
-use num_traits::FromPrimitive;
 use pipeline_types::program_schema::Relation;
 use pipeline_types::transport::file::{FileInputConfig, FileOutputConfig};
 use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
-    },
+    sync::{atomic::Ordering, Arc},
     thread::{sleep, spawn},
     time::Duration,
 };
@@ -48,7 +45,7 @@ impl TransportInputEndpoint for FileInputEndpoint {
 }
 
 struct FileInputReader {
-    status: Arc<AtomicU32>,
+    status: Arc<Atomic<PipelineState>>,
     unparker: Option<Unparker>,
 }
 
@@ -64,7 +61,7 @@ impl FileInputReader {
 
         let parker = Parker::new();
         let unparker = Some(parker.unparker().clone());
-        let status = Arc::new(AtomicU32::new(PipelineState::Paused as u32));
+        let status = Arc::new(Atomic::new(PipelineState::Paused));
         let status_clone = status.clone();
         let follow = config.follow;
         let _worker =
@@ -83,13 +80,13 @@ impl FileInputReader {
         mut reader: BufReader<File>,
         mut consumer: Box<dyn InputConsumer>,
         parker: Parker,
-        status: Arc<AtomicU32>,
+        status: Arc<Atomic<PipelineState>>,
         follow: bool,
     ) {
         loop {
-            match PipelineState::from_u32(status.load(Ordering::Acquire)) {
-                Some(PipelineState::Paused) => parker.park(),
-                Some(PipelineState::Running) => {
+            match status.load(Ordering::Acquire) {
+                PipelineState::Paused => parker.park(),
+                PipelineState::Running => {
                     let data = reader.fill_buf();
                     match data {
                         Err(e) => {
@@ -115,8 +112,7 @@ impl FileInputReader {
                         }
                     }
                 }
-                Some(PipelineState::Terminated) => return,
-                _ => unreachable!(),
+                PipelineState::Terminated => return,
             }
         }
     }
@@ -126,14 +122,12 @@ impl InputReader for FileInputReader {
     fn pause(&self) -> AnyResult<()> {
         // Notify worker thread via the status flag.  The worker may
         // send another buffer downstream before the flag takes effect.
-        self.status
-            .store(PipelineState::Paused as u32, Ordering::Release);
+        self.status.store(PipelineState::Paused, Ordering::Release);
         Ok(())
     }
 
     fn start(&self, _step: Step) -> AnyResult<()> {
-        self.status
-            .store(PipelineState::Running as u32, Ordering::Release);
+        self.status.store(PipelineState::Running, Ordering::Release);
 
         // Wake up the worker if it's paused.
         self.unpark();
@@ -142,7 +136,7 @@ impl InputReader for FileInputReader {
 
     fn disconnect(&self) {
         self.status
-            .store(PipelineState::Terminated as u32, Ordering::Release);
+            .store(PipelineState::Terminated, Ordering::Release);
 
         // Wake up the worker if it's paused.
         self.unpark();

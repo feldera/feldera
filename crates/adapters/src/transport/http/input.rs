@@ -7,17 +7,14 @@ use crate::{
 };
 use actix_web::{web::Payload, HttpResponse};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use atomic::Atomic;
 use circular_queue::CircularQueue;
 use futures_util::StreamExt;
 use log::debug;
-use num_traits::FromPrimitive;
 use pipeline_types::program_schema::Relation;
 use serde::Deserialize;
 use std::{
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc, Mutex,
-    },
+    sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
 };
 use tokio::{sync::watch, time::timeout};
@@ -59,7 +56,7 @@ impl HttpInputTransport {
 
 struct HttpInputEndpointInner {
     name: String,
-    state: AtomicU32,
+    state: Atomic<PipelineState>,
     status_notifier: watch::Sender<()>,
     consumer: Mutex<Option<Box<dyn InputConsumer>>>,
     /// Ingest data even if the pipeline is paused.
@@ -70,10 +67,10 @@ impl HttpInputEndpointInner {
     fn new(name: &str, force: bool) -> Self {
         Self {
             name: name.to_string(),
-            state: AtomicU32::new(if force {
-                PipelineState::Running as u32
+            state: Atomic::new(if force {
+                PipelineState::Running
             } else {
-                PipelineState::Paused as u32
+                PipelineState::Paused
             }),
             status_notifier: watch::channel(()).0,
             consumer: Mutex::new(None),
@@ -96,7 +93,7 @@ impl HttpInputEndpoint {
     }
 
     fn state(&self) -> PipelineState {
-        PipelineState::from_u32(self.inner.state.load(Ordering::Acquire)).unwrap()
+        self.inner.state.load(Ordering::Acquire)
     }
 
     fn name(&self) -> &str {
@@ -222,7 +219,7 @@ impl InputReader for HttpInputEndpoint {
         if !self.inner.force {
             self.inner
                 .state
-                .store(PipelineState::Paused as u32, Ordering::Release);
+                .store(PipelineState::Paused, Ordering::Release);
             self.notify();
         }
 
@@ -232,7 +229,7 @@ impl InputReader for HttpInputEndpoint {
     fn start(&self, _step: Step) -> AnyResult<()> {
         self.inner
             .state
-            .store(PipelineState::Running as u32, Ordering::Release);
+            .store(PipelineState::Running, Ordering::Release);
         self.notify();
 
         Ok(())
@@ -241,7 +238,7 @@ impl InputReader for HttpInputEndpoint {
     fn disconnect(&self) {
         self.inner
             .state
-            .store(PipelineState::Terminated as u32, Ordering::Release);
+            .store(PipelineState::Terminated, Ordering::Release);
         self.notify();
     }
 }

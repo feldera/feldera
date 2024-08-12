@@ -88,6 +88,8 @@ minitrace = { version = "0.6", features = ["enable"] }
 minitrace-jaeger = { version = "0.6" }
 governor = { version = "0.6.3" }
 fake = { version = "2.9.2", features = ["http"] }
+atomic = "0.6.0"
+bytemuck = "1.16.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemalloc_pprof = "0.1.0"
