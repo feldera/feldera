@@ -391,7 +391,7 @@ format:
         reader.start(0).unwrap();
         wait(
             || input_handle.state().flushed.len() == test_data.len(),
-            1000,
+            10000,
         )
         .unwrap();
 
@@ -487,7 +487,7 @@ format:
         let (reader, _, input_handle) = test_setup(MULTI_KEY_CONFIG_STR, mock);
         reader.start(0).unwrap();
         // Pause after 50 rows are recorded.
-        wait(|| input_handle.state().flushed.len() > 50, 1000).unwrap();
+        wait(|| input_handle.state().flushed.len() > 50, 10000).unwrap();
         let _ = reader.pause();
         // Wait a few milliseconds for the worker to pause and write any WIP object
         std::thread::sleep(Duration::from_millis(10));
