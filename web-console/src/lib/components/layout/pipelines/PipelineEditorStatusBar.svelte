@@ -1,9 +1,18 @@
 <script lang="ts">
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+  import type { ProgramStatus } from '$lib/services/pipelineManager'
+  import { match, P } from 'ts-pattern'
 
-  let { downstreamChanged, saveCode }: { downstreamChanged: boolean; saveCode: () => void } =
-    $props()
+  let {
+    downstreamChanged,
+    saveCode,
+    programStatus
+  }: {
+    downstreamChanged: boolean
+    saveCode: () => void
+    programStatus: ProgramStatus | undefined
+  } = $props()
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 </script>
@@ -13,19 +22,17 @@
     {downstreamChanged ? 'changed' : 'saved'}
   </div> -->
   <button
-    class={'px-4 hover:preset-filled-primary-200-800 ' +
+    class={'hover:preset-filled-primary-200-800 px-4 ' +
       (downstreamChanged ? 'preset-tonal-primary' : 'bg-surface-50-950')}
     class:disabled={!downstreamChanged}
-    onclick={saveCode}
-  >
+    onclick={saveCode}>
     Save
   </button>
-  <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black">Ctrl + S</Tooltip>
+  <Tooltip class="text-surface-950-50 z-20 bg-white dark:bg-black">Ctrl + S</Tooltip>
   <button
-    class="w-32 px-2 hover:preset-filled-primary-200-800"
+    class="hover:preset-filled-primary-200-800 w-32 px-2"
     tabindex={10}
-    onclick={() => (autoSavePipeline.value = !autoSavePipeline.value)}
-  >
+    onclick={() => (autoSavePipeline.value = !autoSavePipeline.value)}>
     Autosave: {autoSavePipeline.value ? 'on' : 'off'}
   </button>
 </div>

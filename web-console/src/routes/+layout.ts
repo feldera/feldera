@@ -1,7 +1,6 @@
 import '$lib/compositions/setupHttpClient'
 import { loadAuthConfig } from '$lib/compositions/auth'
 import * as AxaOidc from '@axa-fr/oidc-client'
-import type { OidcUserInfo } from '@axa-fr/oidc-client'
 import { fromAxaUserInfo, toAxaOidcConfig } from '$lib/compositions/@axa-fr/auth'
 import { client } from '@hey-api/client-fetch'
 import { base } from '$app/paths'
