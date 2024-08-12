@@ -307,6 +307,7 @@ build-pipeline-manager-container:
     COPY crates/dbsp database-stream-processor/crates/dbsp
     COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
     COPY crates/adapters database-stream-processor/crates/adapters
+    COPY crates/nexmark database-stream-processor/crates/nexmark
     COPY README.md database-stream-processor/README.md
 
     # Then copy over the required SQL compiler files
