@@ -397,7 +397,7 @@ WHERE 0.908 * price > 1000000 AND 0.908 * price < 50000000;""",
 
 CREATE VIEW Q15 AS
 SELECT
-     FORMAT_DATE('yyyy-MM-dd', date_time) as 'day',
+     CAST(date_time AS DATE) as 'day',
      count(*) AS total_bids,
      count(*) filter (where price < 10000) AS rank1_bids,
      count(*) filter (where price >= 10000 and price < 1000000) AS rank2_bids,
@@ -411,7 +411,7 @@ SELECT
      count(distinct auction) filter (where price >= 10000 and price < 1000000) AS rank2_auctions,
      count(distinct auction) filter (where price >= 1000000) AS rank3_auctions
 FROM bid
-GROUP BY FORMAT_DATE('yyyy-MM-dd', date_time);""",
+GROUP BY CAST(date_time AS DATE);""",
 
             """
 -- -------------------------------------------------------------------------------------------------
@@ -424,7 +424,7 @@ GROUP BY FORMAT_DATE('yyyy-MM-dd', date_time);""",
 CREATE VIEW Q16 AS
 SELECT
     channel,
-    format_date('yyyy-MM-dd', date_time) as 'day',
+    CAST(date_time AS DATE) as 'day',
     max(format_date('HH:mm', date_time)) as 'minute',
     count(*) AS total_bids,
     count(*) filter (where price < 10000) AS rank1_bids,
@@ -439,7 +439,7 @@ SELECT
     count(distinct auction) filter (where price >= 10000 and price < 1000000) AS rank2_auctions,
     count(distinct auction) filter (where price >= 1000000) AS rank3_auctions
 FROM bid
-GROUP BY channel, format_date('yyyy-MM-dd', date_time);""",
+GROUP BY channel, CAST(date_time AS date);""",
 
             """
 -- -------------------------------------------------------------------------------------------------
@@ -452,7 +452,7 @@ GROUP BY channel, format_date('yyyy-MM-dd', date_time);""",
 CREATE VIEW Q17 AS
 SELECT
      auction,
-     format_date('yyyy-MM-dd', date_time) as 'day',
+     CAST(date_time AS DATE) as 'day',
      count(*) AS total_bids,
      count(*) filter (where price < 10000) AS rank1_bids,
      count(*) filter (where price >= 10000 and price < 1000000) AS rank2_bids,
@@ -462,7 +462,7 @@ SELECT
      avg(price) AS avg_price,
      sum(price) AS sum_price
 FROM bid
-GROUP BY auction, format_date('yyyy-MM-dd', date_time);""",
+GROUP BY auction, CAST(date_time AS DATE);""",
 
             """
 -- -------------------------------------------------------------------------------------------------
@@ -841,6 +841,14 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
                 """
  day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------""");
+    }
+
+    @Test
+    public void q16test() {
+        this.createTest(16, "",
+                """
+ channel | day | minute | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------""");
     }
 
     @Test
