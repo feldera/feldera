@@ -145,6 +145,7 @@
 //!
 //! [`Step`]: crate::transport::Step
 
+use bytemuck::NoUninit;
 use num_derive::FromPrimitive;
 use serde::Serialize;
 
@@ -163,16 +164,18 @@ pub mod test;
 
 pub use integrated::{create_integrated_output_endpoint, IntegratedOutputEndpoint};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPrimitive, Serialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, FromPrimitive, Serialize, NoUninit)]
+#[repr(u8)]
 pub enum PipelineState {
     /// All input endpoints are paused (or are in the process of being paused).
-    Paused = 0,
+    #[default]
+    Paused,
 
     /// Controller is running.
-    Running = 1,
+    Running,
 
     /// Controller is being terminated.
-    Terminated = 2,
+    Terminated,
 }
 
 // Re-export `DetailedError`.

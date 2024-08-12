@@ -4,13 +4,14 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::num::NonZeroU32;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::transport::Step;
 use crate::{InputConsumer, InputEndpoint, InputReader, PipelineState, TransportInputEndpoint};
 use anyhow::{anyhow, Result as AnyResult};
+use atomic::Atomic;
 use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime};
 use dbsp::circuit::tokio::TOKIO;
@@ -18,7 +19,7 @@ use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Jitter, Quota, RateLimiter};
-use num_traits::{clamp, Bounded, FromPrimitive, ToPrimitive};
+use num_traits::{clamp, Bounded, ToPrimitive};
 use pipeline_types::program_schema::{Field, Relation, SqlType};
 use pipeline_types::transport::datagen::{
     DatagenInputConfig, DatagenStrategy, GenerationPlan, RngFieldSettings,
@@ -62,7 +63,7 @@ impl TransportInputEndpoint for GeneratorEndpoint {
 }
 
 struct InputGenerator {
-    status: Arc<AtomicU32>,
+    status: Arc<Atomic<PipelineState>>,
     config: DatagenInputConfig,
     /// Amount of records generated so far.
     generated: Arc<AtomicUsize>,
@@ -78,7 +79,7 @@ impl InputGenerator {
         let notifier = Arc::new(Notify::new());
 
         let generated = Arc::new(AtomicUsize::new(0));
-        let status = Arc::new(AtomicU32::new(PipelineState::Paused as u32));
+        let status = Arc::new(Atomic::new(PipelineState::Paused));
 
         let rate_limiters = config
             .plan
@@ -176,7 +177,7 @@ impl InputGenerator {
         schema: Relation,
         mut consumer: Box<dyn InputConsumer>,
         notifier: Arc<Notify>,
-        status: Arc<AtomicU32>,
+        status: Arc<Atomic<PipelineState>>,
         generated: Arc<AtomicUsize>,
     ) {
         let mut buffer = Vec::new();
@@ -213,11 +214,10 @@ impl InputGenerator {
 
                 for idx in generate_range.clone() {
                     let record = generator.make_json_record(idx);
-                    match PipelineState::from_u32(status.load(Ordering::Acquire)) {
-                        Some(PipelineState::Paused) => notifier.notified().await,
-                        Some(PipelineState::Running) => { /* continue */ }
-                        Some(PipelineState::Terminated) => return,
-                        _ => unreachable!(),
+                    match status.load(Ordering::Acquire) {
+                        PipelineState::Paused => notifier.notified().await,
+                        PipelineState::Running => { /* continue */ }
+                        PipelineState::Terminated => return,
                     }
                     match record {
                         Ok(record) => {
@@ -267,14 +267,12 @@ impl InputReader for InputGenerator {
     fn pause(&self) -> AnyResult<()> {
         // Notify worker thread via the status flag.  The worker may
         // send another buffer downstream before the flag takes effect.
-        self.status
-            .store(PipelineState::Paused as u32, Ordering::Release);
+        self.status.store(PipelineState::Paused, Ordering::Release);
         Ok(())
     }
 
     fn start(&self, _step: Step) -> AnyResult<()> {
-        self.status
-            .store(PipelineState::Running as u32, Ordering::Release);
+        self.status.store(PipelineState::Running, Ordering::Release);
 
         // Wake up the worker if it's paused.
         self.unpark();
@@ -283,7 +281,7 @@ impl InputReader for InputGenerator {
 
     fn disconnect(&self) {
         self.status
-            .store(PipelineState::Terminated as u32, Ordering::Release);
+            .store(PipelineState::Terminated, Ordering::Release);
 
         // Wake up the worker if it's paused.
         self.unpark();

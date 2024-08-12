@@ -8,9 +8,9 @@ use crate::{
     InputConsumer, PipelineState, TransportInputEndpoint,
 };
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use atomic::Atomic;
 use crossbeam::queue::ArrayQueue;
 use log::debug;
-use num_traits::FromPrimitive;
 use pipeline_types::program_schema::Relation;
 use pipeline_types::{secret_ref::MaybeSecretRef, transport::kafka::KafkaInputConfig};
 use rdkafka::config::RDKafkaLogLevel;
@@ -26,10 +26,7 @@ use std::sync::mpsc::{channel, Sender};
 use std::thread::{available_parallelism, JoinHandle};
 use std::{
     collections::HashSet,
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc, Mutex, Weak,
-    },
+    sync::{atomic::Ordering, Arc, Mutex, Weak},
     thread::spawn,
     time::{Duration, Instant},
 };
@@ -114,7 +111,7 @@ impl ConsumerContext for KafkaInputContext {
 
 struct KafkaInputReaderInner {
     config: Arc<KafkaInputConfig>,
-    state: AtomicU32,
+    state: Atomic<PipelineState>,
     kafka_consumer: BaseConsumer<KafkaInputContext>,
     errors: ArrayQueue<(KafkaError, String)>,
 }
@@ -177,11 +174,11 @@ impl KafkaInputReaderInner {
     }
 
     fn state(&self) -> PipelineState {
-        PipelineState::from_u32(self.state.load(Ordering::Acquire)).unwrap()
+        self.state.load(Ordering::Acquire)
     }
 
     fn set_state(&self, state: PipelineState) {
-        self.state.store(state as u32, Ordering::Release);
+        self.state.store(state, Ordering::Release);
     }
 
     /// Pause all partitions assigned to the consumer.
@@ -240,7 +237,7 @@ impl KafkaInputReader {
         debug!("Creating Kafka consumer");
         let inner = Arc::new(KafkaInputReaderInner {
             config: config.clone(),
-            state: AtomicU32::new(PipelineState::Paused as u32),
+            state: Atomic::new(PipelineState::Paused),
             kafka_consumer: BaseConsumer::from_config_and_context(&client_config, context)?,
             errors: ArrayQueue::new(ERROR_BUFFER_SIZE),
         });

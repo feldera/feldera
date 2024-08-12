@@ -36,6 +36,7 @@ use crate::{
     PipelineState,
 };
 use anyhow::Error as AnyError;
+use atomic::Atomic;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use log::error;
 use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
@@ -43,7 +44,6 @@ use metrics_util::{
     debugging::{DebugValue, Snapshot},
     CompositeKey,
 };
-use num_traits::FromPrimitive;
 use ordered_float::OrderedFloat;
 use pipeline_types::config::PipelineConfig;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -54,7 +54,7 @@ use std::{
     cmp::min,
     collections::BTreeMap,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
     time::Duration,
@@ -64,7 +64,7 @@ use std::{
 pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
     #[serde(serialize_with = "serialize_pipeline_state")]
-    state: AtomicU32,
+    state: Atomic<PipelineState>,
 
     /// Resident set size of the pipeline process, in bytes.
     // This field is computed on-demand by calling `ControllerStatus::update`.
@@ -106,19 +106,20 @@ pub struct GlobalControllerMetrics {
     pub step_requested: AtomicBool,
 }
 
-fn serialize_pipeline_state<S>(state: &AtomicU32, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_pipeline_state<S>(
+    state: &Atomic<PipelineState>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    PipelineState::from_u32(state.load(Ordering::Acquire))
-        .unwrap()
-        .serialize(serializer)
+    state.load(Ordering::Acquire).serialize(serializer)
 }
 
 impl GlobalControllerMetrics {
     fn new() -> Self {
         Self {
-            state: AtomicU32::from(PipelineState::Paused as u32),
+            state: Atomic::new(PipelineState::Paused),
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             rss_bytes: Some(AtomicU64::new(0)),
             cpu_msecs: Some(AtomicU64::new(0)),
@@ -403,13 +404,11 @@ impl ControllerStatus {
     }
 
     pub fn state(&self) -> PipelineState {
-        PipelineState::from_u32(self.global_metrics.state.load(Ordering::Acquire)).unwrap()
+        self.global_metrics.state.load(Ordering::Acquire)
     }
 
     pub fn set_state(&self, state: PipelineState) {
-        self.global_metrics
-            .state
-            .store(state as u32, Ordering::Release);
+        self.global_metrics.state.store(state, Ordering::Release);
     }
 
     /// Initialize stats for a new input endpoint.
