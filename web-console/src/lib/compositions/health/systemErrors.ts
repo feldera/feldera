@@ -1,28 +1,24 @@
 import { base } from '$app/paths'
-import { nonNull } from '$lib/functions/common/function'
-import { handled } from '$lib/functions/request'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
+import type { ErrorResponse } from '$lib/services/manager'
 import {
   getPipeline,
-  getPipelines,
-  getPipelineStats,
-  type PipelineStatus,
+  type ExtendedPipeline,
+  type Pipeline,
   type PipelineThumb,
   type SqlCompilerMessage
 } from '$lib/services/pipelineManager'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
-import { asyncDerived, asyncReadable, derived, get, type Readable } from '@square/svelte-store'
-import { onMount } from 'svelte'
 
 import JSONbig from 'true-json-bigint'
 import { match, P } from 'ts-pattern'
 
-export type SystemError<T = any> = Error & {
+export type SystemError<T = any, Report = ReportDetails> = Error & {
   message: string
   cause: {
     entityName: string
     source: string
-    report: ReportDetails
+    report: Report
     tag: string
     body: T
   }
@@ -31,13 +27,13 @@ export type SystemError<T = any> = Error & {
 const limitMessage = (text: string | null | undefined, max: number, prefix: string) =>
   ((t) => (t.length > max ? prefix : '') + t.slice(Math.max(0, t.length - max)))(text || '')
 
-const extractPipelineErrors = (pipeline: PipelineThumb) => {
+export const extractPipelineErrors = (pipeline: ExtendedPipeline) => {
   if (!(typeof pipeline.status === 'object' && 'PipelineError' in pipeline.status)) {
     return []
   }
   const error = pipeline.status.PipelineError
   return [
-    (async () => ({
+    (() => ({
       name: `Error running pipeline ${pipeline.name}`,
       message: error.message,
       cause: {
@@ -49,11 +45,10 @@ const extractPipelineErrors = (pipeline: PipelineThumb) => {
           name: 'Report: pipeline execution error',
           '1-description':
             '```\n' + limitMessage(error.message, 1000, '\n...Beginning of the error...') + '\n```',
-          '6-extra': await (async () => {
-            const fullPipeline = await getPipeline(pipeline.name)
+          '6-extra': (() => {
             const programCode =
               'SQL:\n```\n' +
-              limitMessage(fullPipeline.programCode, 6600, '\n...Beginning of the code...') +
+              limitMessage(pipeline.programCode, 6600, '\n...Beginning of the code...') +
               '\n```'
             const pipelineConfig =
               'Pipelince config:\n```\n' +
@@ -68,27 +63,37 @@ const extractPipelineErrors = (pipeline: PipelineThumb) => {
   ]
 }
 
-const programErrorReport = async (pipeline: { name: string }, message: string) =>
+export const programErrorReport = (pipeline: Pipeline) => (pipelineName: string, message: string) =>
   ({
     ...defaultGithubReportSections,
     name: 'Report: program compilation error',
     '1-description':
       '```\n' + limitMessage(message, 1000, '\n...Beginning of the error...') + '\n```',
-    '6-extra': await getPipeline(pipeline.name).then(
-      (p) =>
-        'SQL:\n```\n' + limitMessage(p.programCode, 7000, '\n...Beginning of the code...') + '\n```'
-    )
+    '6-extra': 'SQL:\n```\n' + limitMessage(pipeline.programCode, 7000, '\n...Beginning of the code...') + '\n```'
   }) as ReportDetails
+
+const fetchedProgramErrorReport = async (pipelineName: string, message: string) => {
+  const pipeline = await getPipeline(pipelineName)
+  return programErrorReport(pipeline)(pipelineName, message)
+}
 
 export const showSqlCompilerMessage = (e: SqlCompilerMessage) =>
   `${e.error_type ? e.error_type + ':\n' : ''}${e.message}${e.snippet ? '\n' + e.snippet : ''}`
 
-const extractProgramError = (pipeline: { name: string; status: PipelineStatus }) => {
+export const extractProgramError = <Report>(getReport: (pipelineName: string, message: string) => Report) => (pipeline: {
+  name: string
+  status:
+    | { RustError: string }
+    | { SystemError: string }
+    | { SqlError: SqlCompilerMessage[] }
+    | string
+    | { PipelineError: ErrorResponse }
+}) => {
   const source = `${base}/pipelines/${encodeURI(pipeline.name)}/`
   const result = match(pipeline.status)
-    .returnType<Promise<SystemError>[]>()
+    .returnType<SystemError<any, Report>[]>()
     .with({ RustError: P.any }, (e) => [
-      (async () => ({
+      (() => ({
         name: `Error compiling ${pipeline.name}`,
         message:
           'Compilation error occurred when compiling the program - see the details below:\n' +
@@ -97,7 +102,7 @@ const extractProgramError = (pipeline: { name: string; status: PipelineStatus })
           entityName: pipeline.name,
           tag: 'programError',
           source,
-          report: await programErrorReport(pipeline, e.RustError),
+          report: getReport(pipeline.name, e.RustError),
           body: e.RustError
         }
       }))()
@@ -107,14 +112,14 @@ const extractProgramError = (pipeline: { name: string; status: PipelineStatus })
         SystemError: P.any
       },
       (e) => [
-        (async () => ({
+        (() => ({
           name: `Error compiling ${pipeline.name}`,
           message: e.SystemError,
           cause: {
             entityName: pipeline.name,
             tag: 'programError',
             source,
-            report: await programErrorReport(pipeline, e.SystemError),
+            report: getReport(pipeline.name, e.SystemError),
             body: e.SystemError
           }
         }))()
@@ -125,7 +130,7 @@ const extractProgramError = (pipeline: { name: string; status: PipelineStatus })
         SqlError: P.any
       },
       (es) =>
-        es.SqlError.map(async (e) => ({
+        es.SqlError.map((e) => ({
           name: `Error in SQL code of ${pipeline.name}`,
           message: showSqlCompilerMessage(e),
           cause: {
@@ -136,29 +141,16 @@ const extractProgramError = (pipeline: { name: string; status: PipelineStatus })
               '#:' +
               e.start_line_number +
               (e.start_column > 1 ? ':' + e.start_column.toString() : ''),
-            report: await programErrorReport(pipeline, e.message),
+            report: getReport(pipeline.name, e.message),
             body: e
           }
         }))
     )
-    .with(
-      'Shutdown',
-      'Initializing',
-      'Paused',
-      'Running',
-      'ShuttingDown',
-      'Compiling sql',
-      'Queued',
-      'Compiling bin',
-      'Starting up',
-      { PipelineError: P.any },
-      () => []
-    )
-    .exhaustive()
+    .otherwise(() => [])
   return result
 }
 
-const extractPipelineXgressErrors = ({
+export const extractPipelineXgressErrors = ({
   pipelineName,
   status
 }: {
@@ -169,7 +161,7 @@ const extractPipelineXgressErrors = ({
   const source = `${base}/pipelines/${pipelineName}/`
   const stringifyConfig = (config: any) =>
     `Connector config:\n\`\`\`\n${JSONbig.stringify(config, undefined, '\t')}\n\`\`\`\n`
-  const z = stats.inputs
+  return stats.inputs
     .flatMap((input) => [
       ...(input.metrics.num_parse_errors
         ? [
@@ -252,59 +244,4 @@ const extractPipelineXgressErrors = ({
           : [])
       ])
     )
-  return z
-}
-
-const referencePipelines = asyncReadable([], () => getPipelines(), { reloadable: true })
-const pipelinesErrors = asyncDerived(
-  referencePipelines,
-  (ps) => Promise.all<SystemError>(ps.flatMap(extractPipelineErrors)),
-  { initial: [] }
-)
-const programsErrors = asyncDerived(
-  referencePipelines,
-  (ps) => {
-    return Promise.all<SystemError>(ps.flatMap(extractProgramError)).then(
-      (errors) => errors,
-      () => {
-        return [] as SystemError[]
-      }
-    )
-  },
-  { reloadable: true, initial: [] }
-)
-const pipelineXgressErrors = asyncDerived(
-  referencePipelines,
-  (ps) =>
-    Promise.all(ps.map((p) => getPipelineStats(p.name))).then((ss) => {
-      return ss.flatMap(extractPipelineXgressErrors)
-    }),
-  { initial: [] }
-)
-const systemErrors = derived(
-  [programsErrors, pipelinesErrors, pipelineXgressErrors],
-  ([a, b, c]) => {
-    return ([] as SystemError[]).concat(a, b, c)
-  }
-)
-
-export const useSqlErrors = (pipelineName?: Readable<string>) => {
-  if (pipelineName) {
-    return derived([pipelineName, programsErrors], ([pipelineName, errors]) =>
-      errors.filter((error) => error.cause.entityName === pipelineName)
-    )
-  }
-  return programsErrors
-}
-
-export const useSystemErrors = () => {
-  onMount(() => {
-    let interval = setInterval(() => {
-      systemErrors.reload?.()
-    }, 2000)
-    return () => {
-      clearInterval(interval)
-    }
-  })
-  return systemErrors
 }

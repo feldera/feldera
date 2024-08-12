@@ -1,23 +1,13 @@
 <script lang="ts">
-  import { SplitPane } from '@rich_harris/svelte-split-pane'
   import { PaneGroup, Pane, PaneResizer } from 'paneforge'
   import MonacoEditor, { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import InteractionsPanel from '$lib/components/pipelines/editor/InteractionsPanel.svelte'
-  import {
-    asyncWritable,
-    get,
-    type Readable,
-    type Writable,
-    type WritableLoadable
-  } from '@square/svelte-store'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import { Store, useDebounce } from 'runed'
   import PipelineEditorStatusBar from './PipelineEditorStatusBar.svelte'
   import PipelineStatus from '$lib/components/pipelines/list/Status.svelte'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
   import { asyncDebounced } from '$lib/compositions/asyncDebounced'
-  import { asyncDecoupled } from '$lib/compositions/asyncDecoupled.svelte'
   import { useChangedPipelines } from '$lib/compositions/pipelines/useChangedPipelines.svelte'
   import type { SystemError } from '$lib/compositions/health/systemErrors'
   import { editor } from 'monaco-editor'
@@ -25,6 +15,7 @@
   import { page } from '$app/stores'
   import {
     postPipelineAction,
+    type ExtendedPipeline,
     type Pipeline,
     type PipelineAction,
     type PipelineStatus as PipelineStatusType
@@ -33,67 +24,74 @@
   import { nonNull } from '$lib/functions/common/function'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { useDecoupledState } from '$lib/compositions/decoupledState.svelte'
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
   let {
     pipeline,
-    status = $bindable(),
     reloadStatus,
-    errors
+    programErrors
   }: {
-    pipeline: WritableLoadable<Pipeline>
-    status: { status: PipelineStatusType } | undefined
+    pipeline: {
+      pipeline: ExtendedPipeline
+      patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
+      optimisticUpdate: (newPipeline: Partial<ExtendedPipeline>) => Promise<void>
+    }
     reloadStatus?: () => void
-    errors?: Readable<SystemError[]>
+    programErrors?: SystemError[]
   } = $props()
-  const pipelineCodeStore = asyncWritable(
-    pipeline,
-    (pipeline) => pipeline.programCode,
-    async (newCode, pipeline, oldCode) => {
-      if (!pipeline) {
-        return oldCode
-      }
-      $pipeline = {
-        ...pipeline,
-        programCode: newCode
-      }
-      return newCode
+  const pipelineCode = {
+    get current() {
+      return pipeline.pipeline.programCode
     },
-    { initial: get(pipeline).programCode }
-  )
+    set current(programCode: string) {
+      // pipeline.optimisticUpdate({ programCode })
+      pipeline.patch({ programCode })
+    }
+  }
 
-  const decoupledCode = asyncDecoupled(pipelineCodeStore, () =>
-    autoSavePipeline.value ? 1000 : 'decoupled'
-  )
+  let wait = $derived(autoSavePipeline.value ? 1000 : ('decoupled' as const))
+  let decoupledCode = useDecoupledState(pipelineCode, () => wait)
+  {
+    // TODO: handle remote update of the program code that conflicts with currently edited version
+    let pipelineName = $derived(pipeline.pipeline.name)
+    $effect(() => {
+      // Fetch new code when switching pipeline
+      pipelineName
+      setTimeout(() => {
+        decoupledCode.pull()
+      })
+    })
+  }
 
-  const changedPipelines = useChangedPipelines()
   $effect(() => {
-    autoSavePipeline.value ? decoupledCode.debounce(1000) : decoupledCode.decouple()
-  })
-  $effect(() => {
-    if (!decoupledCode.upstreamChanged) {
+    // Trigger save right away when autosave is turned on
+    if (!autoSavePipeline.value) {
       return
     }
-    decoupledCode.pull()
+    setTimeout(() => decoupledCode.push())
   })
+
+  const changedPipelines = useChangedPipelines()
+
   $effect(() => {
-    if (!$pipeline.name) {
+    if (!pipeline.pipeline.name) {
       return
     }
     decoupledCode.downstreamChanged
-      ? changedPipelines.add($pipeline.name)
-      : changedPipelines.remove($pipeline.name)
+      ? changedPipelines.add(pipeline.pipeline.name)
+      : changedPipelines.remove(pipeline.pipeline.name)
   })
 
   {
-    let oldPipelineName = $state($pipeline.name)
+    let oldPipelineName = $state(pipeline.pipeline.name)
     $effect(() => {
-      if ($pipeline.name === oldPipelineName) {
+      if (pipeline.pipeline.name === oldPipelineName) {
         return
       }
       changedPipelines.remove(oldPipelineName || '')
-      oldPipelineName = $pipeline.name
+      oldPipelineName = pipeline.pipeline.name
     })
   }
   const mode = useDarkMode()
@@ -112,6 +110,18 @@
       window.location.hash = ''
     }, 50)
   })
+
+  let status = {
+    get status() {
+      return pipeline.pipeline.status
+    },
+    set status(status: PipelineStatusType) {
+      pipeline.optimisticUpdate({
+        status
+      })
+    }
+  }
+
   let editDisabled = $derived(nonNull(status) && !isPipelineIdle(status.status))
 
   const pipelines = usePipelineList()
@@ -125,7 +135,6 @@
     }
     postPipelineAction(pipelineName, 'start')
   }
-  // let onStartCallbacks = $state<(() => Promise<void>)[]>([])
 </script>
 
 <div class="h-full w-full">
@@ -135,26 +144,28 @@
         <PipelineEditorStatusBar
           downstreamChanged={decoupledCode.downstreamChanged}
           saveCode={decoupledCode.push}
-        ></PipelineEditorStatusBar>
+          programStatus={pipeline.pipeline.programStatus}></PipelineEditorStatusBar>
         {#if status}
           <PipelineStatus class="ml-auto h-full w-36 text-[1rem] " status={status.status}
           ></PipelineStatus>
           <PipelineActions
-            name={$pipeline.name}
+            name={pipeline.pipeline.name}
             bind:status
             {reloadStatus}
             onDeletePipeline={(pipelineName) =>
               (pipelines.pipelines = pipelines.pipelines.filter((p) => p.name !== pipelineName))}
             pipelineBusy={editDisabled}
             unsavedChanges={decoupledCode.downstreamChanged}
-            onActionSuccess={(action) => handleActionSuccess($pipeline.name, action)}
+            onActionSuccess={(action) => handleActionSuccess(pipeline.pipeline.name, action)}
           ></PipelineActions>
         {/if}
       </div>
       <div class="relative h-full w-full">
         <div class="absolute h-full w-full" class:opacity-50={editDisabled}>
           <MonacoEditor
-            markers={$errors ? { sql: extractSQLCompilerErrorMarkers($errors) } : undefined}
+            markers={programErrors
+              ? { sql: extractSQLCompilerErrorMarkers(programErrors) }
+              : undefined}
             on:ready={(x) => {
               x.detail.onKeyDown((e) => {
                 if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
@@ -164,7 +175,7 @@
               })
             }}
             bind:editor={editorRef}
-            bind:value={$decoupledCode}
+            bind:value={decoupledCode.current}
             options={{
               theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
               automaticLayout: true,
@@ -177,15 +188,14 @@
                 vertical: 'visible'
               },
               language: 'sql'
-            }}
-          />
+            }} />
         </div>
       </div>
     </Pane>
-    <PaneResizer class="h-2 bg-surface-100-900" />
+    <PaneResizer class="bg-surface-100-900 h-2" />
     <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
-      {#if $pipeline.name}
-        <InteractionsPanel pipelineName={$pipeline.name}></InteractionsPanel>
+      {#if pipeline.pipeline.name}
+        <InteractionsPanel pipeline={pipeline.pipeline}></InteractionsPanel>
       {/if}
     </Pane>
   </PaneGroup>

@@ -1,24 +1,17 @@
 <script lang="ts">
-  import { asyncDerived, derived, readable, writable } from '@square/svelte-store'
-  import { useSystemErrors } from '$lib/compositions/health/systemErrors'
+  import { useSystemErrors } from '$lib/compositions/health/systemErrors.svelte'
+  import type { ExtendedPipeline, Pipeline } from '$lib/services/pipelineManager'
 
-  let { pipelineName }: { pipelineName: string } = $props()
-  let _pipelineName = writable(pipelineName)
-  $effect(() => {
-    $_pipelineName = pipelineName
-  })
-  let allErrors = useSystemErrors()
-  let errors = derived([allErrors, _pipelineName], ([errors, pipelineName]) =>
-    errors.filter((err) => err.cause.entityName === pipelineName)
-  )
+  let { pipeline }: { pipeline: ExtendedPipeline } = $props()
+
+  let errors = useSystemErrors(pipeline)
 </script>
 
 <div class="flex h-full flex-col gap-4">
-  {#each $errors as systemError}
+  {#each errors as systemError}
     <div class="whitespace-nowrap">
       <a href={systemError.cause.source}>
-        <span class=" bx bx-x-circle text-[20px] text-error-500"></span></a
-      >
+        <span class=" bx bx-x-circle text-error-500 text-[20px]"></span></a>
       <span class=" whitespace-pre-wrap break-words align-text-bottom font-mono">
         {systemError.message}
       </span>

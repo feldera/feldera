@@ -31,7 +31,7 @@ export type {
 } from '$lib/services/manager'
 import { P, match } from 'ts-pattern'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
-export type { ProgramSchema } from '$lib/services/manager'
+export type { ProgramSchema, ProgramStatus } from '$lib/services/manager'
 
 import * as AxaOidc from '@axa-fr/oidc-client'
 const { OidcClient } = AxaOidc
@@ -69,15 +69,50 @@ const toPipelineThumb = (pipeline: Omit<ExtendedPipelineDescr, 'program_code'>) 
     pipeline.deployment_status,
     pipeline.deployment_desired_status,
     pipeline.deployment_error
-  )
+  ),
+  programStatus: pipeline.program_status
 })
 
-const toPipeline = (pipeline: ExtendedPipelineDescr) => ({
+const toPipeline = <P extends PipelineDescr>(pipeline: P) => ({
   name: pipeline.name,
   description: pipeline.description,
   runtimeConfig: pipeline.runtime_config,
   programConfig: pipeline.program_config,
   programCode: pipeline.program_code
+})
+
+const toExtendedPipeline = ({
+  program_status,
+  deployment_status,
+  deployment_desired_status,
+  deployment_error,
+  ...pipeline
+}: ExtendedPipelineDescr) => ({
+  createdAt: pipeline.created_at,
+  deploymentConfig: pipeline.deployment_config,
+  deploymentDesiredStatus: deployment_desired_status,
+  deploymentError: deployment_error,
+  deploymentLocation: pipeline.deployment_location,
+  deploymentStatus: deployment_status,
+  deploymentStatusSince: pipeline.deployment_status_since,
+  description: pipeline.description,
+  id: pipeline.id,
+  name: pipeline.name,
+  programBinaryUrl: pipeline.program_binary_url,
+  programCode: pipeline.program_code,
+  programConfig: pipeline.program_config,
+  programInfo: pipeline.program_info,
+  programStatus: program_status,
+  programStatusSince: pipeline.program_status_since,
+  programVersion: pipeline.program_version,
+  runtimeConfig: pipeline.runtime_config,
+  version: pipeline.version,
+  status: consolidatePipelineStatus(
+    program_status,
+    deployment_status,
+    deployment_desired_status,
+    deployment_error
+  )
 })
 
 const fromPipeline = <T extends Partial<Pipeline>>(pipeline: T) => ({
@@ -89,37 +124,14 @@ const fromPipeline = <T extends Partial<Pipeline>>(pipeline: T) => ({
 })
 
 export type PipelineThumb = ReturnType<typeof toPipelineThumb>
-
 export type Pipeline = ReturnType<typeof toPipeline>
+export type ExtendedPipeline = ReturnType<typeof toExtendedPipeline>
 
 export const getPipeline = async (pipeline_name: string) => {
   return handled(_getPipeline)({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(
     toPipeline
   )
 }
-
-const toExtendedPipeline = <
-  Pipeline extends {
-    program_status: ProgramStatus
-    deployment_status: _PipelineStatus
-    deployment_desired_status: _PipelineStatus
-    deployment_error?: ErrorResponse | null | undefined
-  }
->({
-  program_status,
-  deployment_status,
-  deployment_desired_status,
-  deployment_error,
-  ...pipeline
-}: Pipeline) => ({
-  ...pipeline,
-  status: consolidatePipelineStatus(
-    program_status,
-    deployment_status,
-    deployment_desired_status,
-    deployment_error
-  )
-})
 
 export const getExtendedPipeline = async (pipeline_name: string) => {
   return handled(_getPipeline)({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(
@@ -148,10 +160,10 @@ export const putPipeline = async (pipeline_name: string, newPipeline: PipelineDe
 }
 
 export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pipeline>) => {
-  await handled(_patchPipeline)({
+  return await handled(_patchPipeline)({
     path: { pipeline_name: encodeURIComponent(pipeline_name) },
     body: fromPipeline(pipeline)
-  })
+  }).then(toExtendedPipeline)
 }
 
 export const getPipelines = async (): Promise<PipelineThumb[]> => {

@@ -3,13 +3,11 @@
   import { useAggregatePipelineStats } from '$lib/compositions/useAggregatePipelineStats.svelte'
   import { humanSize } from '$lib/functions/common/string'
   import { emptyPipelineMetrics, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
+  import type { Pipeline } from '$lib/services/pipelineManager'
 
-  let { pipelineName: _pipelineName }: { pipelineName: string } = $props()
+  let { pipeline }: { pipeline: Pipeline } = $props()
 
-  let pipelineName = $state(_pipelineName)
-  $effect(() => {
-    pipelineName = _pipelineName
-  })
+  let pipelineName = $derived(pipeline.name)
 
   let pipelineStats = $state({ metrics: emptyPipelineMetrics } as { metrics: PipelineMetrics })
 

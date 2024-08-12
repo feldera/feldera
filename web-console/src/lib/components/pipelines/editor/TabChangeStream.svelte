@@ -82,23 +82,24 @@
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
   import { getCaseIndependentName } from '$lib/functions/felderaRelation'
-  import { getExtendedPipeline, relationEggressStream } from '$lib/services/pipelineManager'
+  import {
+    getExtendedPipeline,
+    relationEggressStream,
+    type Pipeline
+  } from '$lib/services/pipelineManager'
   import type { XgressRecord } from '$lib/types/pipelineManager'
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type { Relation } from '$lib/services/manager'
   import { accumulateChanges } from '$lib/functions/pipelines/changeStream'
 
-  let { pipelineName: _pipelineName }: { pipelineName: string } = $props()
+  let { pipeline }: { pipeline: Pipeline } = $props()
 
-  let pipelineName = $state(_pipelineName)
-  $effect(() => {
-    pipelineName = _pipelineName
-  })
+  let pipelineName = $derived(pipeline.name)
 
   const reloadSchema = async () => {
     registerPipelineName(pipelineName)
-    const schema = (await getExtendedPipeline(pipelineName)).program_info?.schema
+    const schema = (await getExtendedPipeline(pipelineName)).programInfo?.schema
     if (!schema) {
       return
     }
@@ -168,8 +169,7 @@
                     startReadingStream(pipelineName, relation.relationName)
                 }
               }}
-              value={relation}
-            />
+              value={relation} />
             {relation.relationName}
           </label>
         {/snippet}
@@ -190,13 +190,13 @@
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="w-2 bg-surface-100-900"></PaneResizer>
+    <PaneResizer class="bg-surface-100-900 w-2"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
       {#if getRows()[pipelineName]?.length}
         <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="px-4 text-surface-500">
+        <span class="text-surface-500 px-4">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}
