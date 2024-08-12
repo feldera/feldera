@@ -1043,6 +1043,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             this.ensureInteger(ops, i, 32);
 
                         return compileFunction(call, node, type, ops, 2);
+                    case "timestamp_trunc":
+                    case "time_trunc":
+                        // Like DATE_TRUNC
+                        return compileKeywordFunction(call, node, null, type, ops, 1, 2);
                 }
                 return this.compileUDF(node, call, type, ops);
             }
@@ -1096,6 +1100,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case EXTRACT: {
                 // This is also hit for "date_part", which is an alias for "extract".
                 return compileKeywordFunction(call, node, "extract", type, ops, 0, 2);
+            }
+            case DATE_TRUNC: {
+                return compileKeywordFunction(call, node, "date_trunc", type, ops, 1, 2);
             }
             case RLIKE: {
                 // Calcite does not enforce the type of the arguments, why?

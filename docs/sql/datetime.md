@@ -52,6 +52,12 @@ Values BC or values greater than 10,000 years are not supported.
 
 The following operations are available on dates:
 
+`DATE_TRUNC(date, <unit>)`, where `<unit>` is a time unit, as
+described above, between `MILLENNIUM` and `DAY`.  Result is a `DATE`.
+Rounds down the date to the specified time unit.  Example:
+`DATE_TRUNC('2020-01-10', MONTH)` produces the result
+`2020-01-01`.
+
 `EXTRACT(<unit> FROM date)` where `<unit>` is a time unit, as
 described above.  Result is always a `BIGINT` value.
 `DATE_PART` is a synonym for `EXTRACT`.
@@ -110,6 +116,12 @@ not allowed between quotes.
 
 ### Time operations
 
+`TIME_TRUNC(time, <unit>)`, where `<unit>` is a time unit,
+as described above, between `HOUR` and `SECOND`.  Result is a
+`TIME`.  Rounds down the time to the specified time unit.
+Example: `TIME_TRUNC('12:34:56.78', MINUTE)` produces the
+result `12:34:00`.
+
 `EXTRACT(<unit> FROM time)` where `<unit>` is a time unit from
 `HOUR`, `MINUTE`, `SECOND`, `MILLISECOND`; the semantics is as
 described above.  Result is always a `BIGINT` value.
@@ -147,6 +159,18 @@ Values BC or values greater than 10,000 years are not supported.
 The following operations are available on timestamps:
 
 ### Operations on timestamps
+
+`DATE_TRUNC(timestamp, <unit>)`, where `<unit>` is a time unit, as
+described above, between `MILLENNIUM` and `DAY`.  Result is a
+`TIMESTAMP`.  Rounds down the timestamp to the specified time unit.
+Example: `DATE_TRUNC('2020-01-10 10:00:00', MONTH)` produces the
+result `2020-01-01 00:00:00`.
+
+`TIMESTAMP_TRUNC(timestamp, <unit>)`, where `<unit>` is a time unit,
+as described above, between `MILLENNIUM` and `SECOND`.  Result is a
+`TIMESTAMP`.  Rounds down the timestamp to the specified time unit.
+Example: `TIMESTAMP_TRUNC('2020-01-10 10:00:00', MONTH)` produces the
+result `2020-01-01 00:00:00`.
 
 `EXTRACT(<unit> FROM timestamp)` where `<unit>` is a time unit, as
 described above.  Result is always a `BIGINT` value.

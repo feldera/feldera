@@ -156,10 +156,7 @@ pub fn cast_to_Date_s(value: String) -> Date {
 cast_function!(Date, Date, s, String);
 
 pub fn cast_to_Date_Timestamp(value: Timestamp) -> Date {
-    let dt = value.to_dateTime();
-    let seconds = dt.timestamp();
-    // Is this right for negative timestamps?
-    Date::new((seconds / 86400i64) as i32)
+    value.get_date()
 }
 
 cast_function!(Date, Date, Timestamp, Timestamp);
