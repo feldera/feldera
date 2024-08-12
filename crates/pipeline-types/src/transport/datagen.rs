@@ -63,9 +63,13 @@ pub enum DatagenStrategy {
     Position,
     Seniority,
     JobTitle,
+    #[serde(rename = "ipv4")]
     IPv4,
+    #[serde(rename = "ipv6")]
     IPv6,
+    #[serde(rename = "ip")]
     IP,
+    #[serde(rename = "mac_address")]
     MACAddress,
     UserAgent,
     RfcStatusCode,
