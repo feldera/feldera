@@ -898,6 +898,52 @@ export type NewApiKeyResponse = {
   name: string
 }
 
+/**
+ * Configuration for generating Nexmark input data.
+ *
+ * This connector must be used exactly three times in a pipeline if it is used
+ * at all, once for each [`NexmarkTable`].
+ */
+export type NexmarkInputConfig = {
+  options?: NexmarkInputOptions | null
+  table: NexmarkTable
+}
+
+/**
+ * Configuration for generating Nexmark input data.
+ */
+export type NexmarkInputOptions = {
+  /**
+   * Number of events to generate and submit together.
+   */
+  batch_size?: number
+  /**
+   * Number of events to generate.
+   */
+  events?: number
+  /**
+   * Whether to synchronize event generator threads after submitting each
+   * batch.
+   *
+   * If true (which is the default), then the event generator threads will
+   * submit data in lockstep, clustering their event sequence numbers. If
+   * false, scheduling can cause some threads to get ahead of others.
+   */
+  synchronize_threads?: boolean
+  /**
+   * Number of event generator threads.
+   *
+   * It's reasonable to choose the same number of generator threads as worker
+   * threads.
+   */
+  threads?: number
+}
+
+/**
+ * Table in Nexmark.
+ */
+export type NexmarkTable = 'bid' | 'auction' | 'person'
+
 export type OutputBufferConfig = {
   /**
    * Enable output buffering.
@@ -1613,6 +1659,10 @@ export type TransportConfig =
   | {
       config: DatagenInputConfig
       name: 'datagen'
+    }
+  | {
+      config: NexmarkInputConfig
+      name: 'nexmark'
     }
   | {
       name: 'http_input'

@@ -1315,6 +1315,74 @@ pipeline-manager, so store it securely.`,
   }
 } as const
 
+export const $NexmarkInputConfig = {
+  type: 'object',
+  description: `Configuration for generating Nexmark input data.
+
+This connector must be used exactly three times in a pipeline if it is used
+at all, once for each [\`NexmarkTable\`].`,
+  required: ['table'],
+  properties: {
+    options: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/NexmarkInputOptions'
+        }
+      ],
+      nullable: true
+    },
+    table: {
+      $ref: '#/components/schemas/NexmarkTable'
+    }
+  }
+} as const
+
+export const $NexmarkInputOptions = {
+  type: 'object',
+  description: 'Configuration for generating Nexmark input data.',
+  properties: {
+    batch_size: {
+      type: 'integer',
+      format: 'int64',
+      description: 'Number of events to generate and submit together.',
+      default: 40000,
+      minimum: 0
+    },
+    events: {
+      type: 'integer',
+      format: 'int64',
+      description: 'Number of events to generate.',
+      default: 100000000,
+      minimum: 0
+    },
+    synchronize_threads: {
+      type: 'boolean',
+      description: `Whether to synchronize event generator threads after submitting each
+batch.
+
+If true (which is the default), then the event generator threads will
+submit data in lockstep, clustering their event sequence numbers. If
+false, scheduling can cause some threads to get ahead of others.`,
+      default: true
+    },
+    threads: {
+      type: 'integer',
+      description: `Number of event generator threads.
+
+It's reasonable to choose the same number of generator threads as worker
+threads.`,
+      default: 4,
+      minimum: 0
+    }
+  }
+} as const
+
+export const $NexmarkTable = {
+  type: 'string',
+  description: 'Table in Nexmark.',
+  enum: ['bid', 'auction', 'person']
+} as const
+
 export const $OutputBufferConfig = {
   type: 'object',
   properties: {
@@ -2514,6 +2582,19 @@ export const $TransportConfig = {
         name: {
           type: 'string',
           enum: ['datagen']
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['name', 'config'],
+      properties: {
+        config: {
+          $ref: '#/components/schemas/NexmarkInputConfig'
+        },
+        name: {
+          type: 'string',
+          enum: ['nexmark']
         }
       }
     },
