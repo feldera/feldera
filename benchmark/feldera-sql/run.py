@@ -11,12 +11,11 @@ import argparse
 # File locations
 FILE_DIR = os.path.join(os.path.dirname(__file__))
 
-def load_queries(folder):
+def load_queries(dir):
     queries = {}
-    p = os.path.join(FILE_DIR, folder)
-    for f in os.listdir(p):
+    for f in os.listdir(dir):
         if f.endswith('.sql'):
-            file = open(p + f, 'r')
+            file = open(dir + f, 'r')
             queries[f.split('.')[0]] = file.read()
     return queries
 
@@ -164,9 +163,9 @@ def main():
 
     folder = parser.parse_args().folder
     table = load_table(folder, parser.parse_args().lateness, suffix, events, cores)
-    all_queries = load_queries(folder + '/queries/')
+    all_queries = load_queries(os.path.join(FILE_DIR, folder + '/queries/'))
     include_disabled = parser.parse_args().include_disabled or False
-    disabled_folder = folder + '/disabled-queries/'
+    disabled_folder = os.path.join(FILE_DIR, folder + '/disabled-queries/')
     if include_disabled and os.path.exists(disabled_folder):
         all_queries |= load_queries(disabled_folder)
 
