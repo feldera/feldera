@@ -241,8 +241,9 @@ impl InputGenerator {
                         }
                         Err(e) => {
                             // We skip this plan and continue with the next one.
-                            consumer.error(false, e);
-                            break;
+                            consumer.error(true, e);
+                            consumer.eoi();
+                            return;
                         }
                     }
 
@@ -359,6 +360,14 @@ impl RecordGenerator {
         obj: &mut Value,
     ) -> AnyResult<()> {
         let map = obj.as_object_mut().unwrap();
+        for key in settings.keys() {
+            if !fields.iter().any(|f| f.name.eq(key)) {
+                return Err(anyhow!(
+                    "Field `{}` specified in datagen does not exist in the table schema.",
+                    key
+                ));
+            }
+        }
 
         let default_settings = Box::<RngFieldSettings>::default();
         for field in fields {
