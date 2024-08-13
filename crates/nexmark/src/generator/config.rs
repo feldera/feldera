@@ -35,11 +35,6 @@ pub struct Config {
     /// generating different event numbers (using `first_event_number +
     /// events_count_so_far*num_generators`, for example).
     pub first_event_number: usize,
-
-    /// Delay between events, in microseconds. If the array has more than one
-    /// entry then the rate is changed every {@link #stepLengthSec}, and wraps
-    /// around.
-    pub inter_event_delay_us: [f64; 1],
 }
 
 /// Implementation of config methods based on the Java implementation at
@@ -51,16 +46,6 @@ impl Config {
         first_event_id: u64,
         first_event_number: usize,
     ) -> Config {
-        // The inter_event_delay is calculated as the number (or fraction) of
-        // micro seconds that pass between each event. Unlike the Java
-        // implementation, this is not dependent on the number of generators
-        // because each generator here returns interleaved events. For example,
-        // with 3 generators, the first generator emits events based on the
-        // event numbers 0, 3 and 6 etc., where as the Java implementation uses
-        // 0, 1 and 2 locally for each generator and so adds a factor of
-        // num_generators.
-        let inter_event_delay = 1_000_000.0 / (options.first_event_rate as f64);
-
         // Original Java implementation says:
         // "Scale maximum down to avoid overflow in getEstimatedSizeBytes."
         // but including to ensure similar behavior.
@@ -84,7 +69,6 @@ impl Config {
             first_event_id,
             max_events,
             first_event_number,
-            inter_event_delay_us: [inter_event_delay],
         }
     }
 
@@ -115,7 +99,7 @@ impl Config {
     // What timestamp should the event with `eventNumber` have for this
     // generator?
     pub fn timestamp_for_event(&self, event_number: u64) -> u64 {
-        self.base_time + (self.inter_event_delay_us[0] * event_number as f64) as u64 / 1000
+        self.base_time + self.options.event_interval as u64 * event_number
     }
 }
 
@@ -264,13 +248,11 @@ pub mod tests {
         assert_eq!(config.next_adjusted_event_number(num_events), expected);
     }
 
-    // With the default first event rate of 10_000_000 events per second there
-    // is 1_000_000 µs/s / 10_000_000 events/s = 0.1µs / event, so the timestamp
-    // should increase by 0.1µs, or 0.0001ms for each event.
+    // The default event interval is 10 ms.
     #[rstest]
-    #[case(10_000, 1)]
-    #[case(20_000, 2)]
-    #[case(50_000, 5)]
+    #[case(1, 10)]
+    #[case(2, 20)]
+    #[case(5, 50)]
     fn test_timestamp_for_event_single_generator(#[case] event_number: u64, #[case] expected: u64) {
         assert_eq!(
             Config::default().timestamp_for_event(event_number),

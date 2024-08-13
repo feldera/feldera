@@ -21,18 +21,16 @@ rm -rf ${RESULTS_DIR}
 mkdir -p ${RESULTS_DIR}
 
 # Run nexmark benchmark
-EVENT_RATE=10000000
 MAX_EVENTS=100000000
 GENERATORS=8
 CORES=6
 if [ "$SMOKE" != "" ]; then
-  EVENT_RATE=10000000
   MAX_EVENTS=1000000
 fi
 
 FILES=( "q0" "q1" "q2" "q3" "q4" "q5" "q6" "q7" "q8" "q9" "q12" "q13" "q14" "q15" "q16" "q17" "q18" "q19" "q20" "q21" "q22" )
 for FILE in "${FILES[@]}"
-  do cargo bench --bench nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES}  --num-event-generators ${GENERATORS} --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE} --query $FILE
+  do cargo bench --bench nexmark -- --max-events=${MAX_EVENTS} --cpu-cores ${CORES}  --num-event-generators ${GENERATORS} --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_CSV_FILE} --query $FILE
 done
 mkdir -p ${NEXMARK_RESULTS_DIR}
 mv crates/nexmark/${NEXMARK_CSV_FILE} $NEXMARK_RESULTS_DIR
@@ -90,14 +88,12 @@ fi
 #mv crates/dbsp/${LDBC_CSV_FILE} ${LDBC_RESULTS_DIR}
 
 # Run nexmark benchmark with persistence
-EVENT_RATE=5000000
 MAX_EVENTS=3000000
 CORES=1
 if [ "$SMOKE" != "" ]; then
-  EVENT_RATE=5000000
   MAX_EVENTS=100000
 fi
-cargo bench --bench nexmark -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_DRAM_CSV_FILE}
+cargo bench --bench nexmark -- --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_DRAM_CSV_FILE}
 mv crates/nexmark/${NEXMARK_DRAM_CSV_FILE} $NEXMARK_RESULTS_DIR 
-#cargo bench --bench nexmark --features persistence -- --first-event-rate=${EVENT_RATE} --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_PERSISTENCE_CSV_FILE}
+#cargo bench --bench nexmark --features persistence -- --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_PERSISTENCE_CSV_FILE}
 #mv crates/nexmark/${NEXMARK_PERSISTENCE_CSV_FILE} $NEXMARK_RESULTS_DIR 

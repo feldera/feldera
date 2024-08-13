@@ -91,9 +91,9 @@ pub struct GeneratorOptions {
     #[clap(long, default_value = "46", env = "NEXMARK_BID_PROPORTION")]
     pub bid_proportion: usize,
 
-    /// Initial overall event rate (per second).
-    #[clap(long, default_value = "10000000", env = "NEXMARK_FIRST_EVENT_RATE")]
-    pub first_event_rate: usize,
+    /// Time between events, in milliseconds.
+    #[clap(long, default_value = "10", env = "NEXMARK_EVENT_INTERVAL")]
+    pub event_interval: usize,
 
     /// Ratio of bids to 'hot' auctions compared to all other auctions.
     #[clap(long, default_value = "2", env = "NEXMARK_HOT_AUCTION_RATIO")]
@@ -170,7 +170,7 @@ impl Default for GeneratorOptions {
             avg_bid_byte_size: 100,
             avg_person_byte_size: 200,
             bid_proportion: 46,
-            first_event_rate: 10_000_000,
+            event_interval: 10,
             hot_auction_ratio: 2,
             hot_bidders_ratio: 4,
             hot_sellers_ratio: 4,

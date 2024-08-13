@@ -462,7 +462,6 @@ case $runner:$language in
 	esac
 	for query in $queries; do
 	    run_log $CARGO bench --bench nexmark -- \
-		--first-event-rate=10000000 \
 		--max-events=$events \
 		--cpu-cores $cores \
 		--num-event-generators $cores \
