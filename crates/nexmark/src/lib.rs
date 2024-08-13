@@ -297,7 +297,6 @@ pub mod tests {
     #[test]
     fn test_source_with_multiple_generators() {
         let options = GeneratorOptions {
-            first_event_rate: 1_000_000,
             num_event_generators: 3,
             max_events: 10,
             ..GeneratorOptions::default()

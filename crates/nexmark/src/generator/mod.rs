@@ -295,7 +295,7 @@ pub mod tests {
                 "got: {:?}, want: Event::NewAuction(_)",
                 next_event.event
             );
-            assert_eq!(next_event.event_timestamp, event_num / 10);
+            assert_eq!(next_event.event_timestamp, event_num * 10);
         }
 
         // And the rest of the events in the first epoch are bids.
