@@ -1142,17 +1142,12 @@ pub fn date_trunc_day_Date(date: Date) -> Date {
     date
 }
 
-pub fn date_trunc_hour_Date(date: Date) -> Date {
-    date
-}
-
 some_polymorphic_function1!(date_trunc_millennium, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_century, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_decade, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_year, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_month, Date, Date, Date);
 some_polymorphic_function1!(date_trunc_day, Date, Date, Date);
-some_polymorphic_function1!(date_trunc_hour, Date, Date, Date);
 
 //////////////////////////// Time
 

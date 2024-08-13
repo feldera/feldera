@@ -594,7 +594,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         name.startsWith("extract_hour_Time") ||
                         name.startsWith("dateadd_") ||
                         name.equals("hop_start_timestamp") ||
-                        name.startsWith("to_bound_")
+                        name.startsWith("to_bound_") ||
+                        name.startsWith("date_trunc_") ||
+                        name.startsWith("time_trunc_") ||
+                        name.startsWith("timestamp_trunc_")
                 ) {
                     resultType = new MonotoneType(expression.getType());
                     reduced = expression.replaceArguments(reducedArgs);
