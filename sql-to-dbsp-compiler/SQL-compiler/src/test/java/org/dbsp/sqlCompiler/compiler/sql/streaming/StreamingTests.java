@@ -394,6 +394,33 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void testOverDateTrunc() {
+        String sql = """
+                CREATE TABLE table_name (
+                    id INT NOT NULL PRIMARY KEY,
+                    customer_id INT NOT NULL,
+                    timestamp_column TIMESTAMP NOT NULL LATENESS INTERVAL 0 DAYS,
+                    column_name DECIMAL(10, 2) NOT NULL,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP
+                );
+
+                CREATE VIEW V AS SELECT
+                    customer_id,
+                    timestamp_column,
+                    column_name,
+                    SUM(column_name) OVER (
+                        PARTITION BY customer_id, DATE_TRUNC(timestamp_column, MONTH)
+                        ORDER BY timestamp_column
+                        RANGE BETWEEN INTERVAL 31 DAYS PRECEDING AND CURRENT ROW
+                    ) AS cumulative_sum
+                FROM
+                    table_name;
+                """;
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void smallTaxiTest() {
         String sql = """
                 CREATE TABLE tripdata (

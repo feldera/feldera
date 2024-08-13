@@ -196,10 +196,32 @@ impl Timestamp {
         .unwrap()
     }
 
+    // Cannot make this into a From trait because Rust reserved it
     pub fn from_dateTime(date: DateTime<Utc>) -> Self {
         Self {
             milliseconds: date.timestamp_millis(),
         }
+    }
+
+    pub fn from_naiveDateTime(date: NaiveDateTime) -> Self {
+        Self {
+            milliseconds: date.and_utc().timestamp_millis(),
+        }
+    }
+
+    // Cannot make this into a From trait because Rust reserved it
+    pub fn from_naiveDate(date: NaiveDate) -> Self {
+        let date = Date::from_date(date);
+        Timestamp::from_dateTime(date.to_dateTime())
+    }
+
+    pub fn from_date(date: Date) -> Self {
+        Timestamp::from_dateTime(date.to_dateTime())
+    }
+
+    pub fn get_date(&self) -> Date {
+        // Is this right for negative timestamps?
+        Date::new((self.milliseconds / 86_400_000i64) as i32)
     }
 }
 
@@ -981,6 +1003,152 @@ pub fn format_date__(format: String, date: Date) -> String {
 
 some_function2!(format_date, String, Date, String);
 
+pub fn date_trunc_millennium_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.get_date();
+    let dt = date_trunc_millennium_Date(dt);
+    Timestamp::from_date(dt)
+}
+
+pub fn date_trunc_century_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.get_date();
+    let dt = date_trunc_century_Date(dt);
+    Timestamp::from_date(dt)
+}
+
+pub fn date_trunc_decade_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.get_date();
+    let dt = date_trunc_decade_Date(dt);
+    Timestamp::from_date(dt)
+}
+
+pub fn date_trunc_year_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.get_date();
+    let dt = date_trunc_year_Date(dt);
+    Timestamp::from_date(dt)
+}
+
+pub fn date_trunc_month_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.get_date();
+    let dt = date_trunc_month_Date(dt);
+    Timestamp::from_date(dt)
+}
+
+pub fn date_trunc_day_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.get_date();
+    let dt = date_trunc_day_Date(dt);
+    Timestamp::from_date(dt)
+}
+
+some_polymorphic_function1!(date_trunc_millennium, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(date_trunc_century, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(date_trunc_decade, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(date_trunc_year, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(date_trunc_month, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(date_trunc_day, Timestamp, Timestamp, Timestamp);
+
+pub fn timestamp_trunc_millennium_Timestamp(timestamp: Timestamp) -> Timestamp {
+    date_trunc_millennium_Timestamp(timestamp)
+}
+
+pub fn timestamp_trunc_century_Timestamp(timestamp: Timestamp) -> Timestamp {
+    date_trunc_century_Timestamp(timestamp)
+}
+
+pub fn timestamp_trunc_decade_Timestamp(timestamp: Timestamp) -> Timestamp {
+    date_trunc_decade_Timestamp(timestamp)
+}
+
+pub fn timestamp_trunc_year_Timestamp(timestamp: Timestamp) -> Timestamp {
+    date_trunc_year_Timestamp(timestamp)
+}
+
+pub fn timestamp_trunc_month_Timestamp(timestamp: Timestamp) -> Timestamp {
+    date_trunc_month_Timestamp(timestamp)
+}
+
+pub fn timestamp_trunc_day_Timestamp(timestamp: Timestamp) -> Timestamp {
+    date_trunc_day_Timestamp(timestamp)
+}
+
+pub fn timestamp_trunc_hour_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.to_dateTime();
+    let nd = NaiveDate::from_ymd_opt(dt.year(), dt.month(), dt.day())
+        .unwrap()
+        .and_hms_opt(dt.hour(), 0, 0)
+        .unwrap();
+    Timestamp::from_naiveDateTime(nd)
+}
+
+pub fn timestamp_trunc_minute_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.to_dateTime();
+    let nd = NaiveDate::from_ymd_opt(dt.year(), dt.month(), dt.day())
+        .unwrap()
+        .and_hms_opt(dt.hour(), dt.minute(), 0)
+        .unwrap();
+    Timestamp::from_naiveDateTime(nd)
+}
+
+pub fn timestamp_trunc_second_Timestamp(timestamp: Timestamp) -> Timestamp {
+    let dt = timestamp.to_dateTime();
+    let nd = NaiveDate::from_ymd_opt(dt.year(), dt.month(), dt.day())
+        .unwrap()
+        .and_hms_opt(dt.hour(), dt.minute(), dt.second())
+        .unwrap();
+    Timestamp::from_naiveDateTime(nd)
+}
+
+some_polymorphic_function1!(timestamp_trunc_millennium, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(timestamp_trunc_century, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(timestamp_trunc_decade, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(timestamp_trunc_year, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(timestamp_trunc_month, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(timestamp_trunc_day, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(timestamp_trunc_hour, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(timestamp_trunc_minute, Timestamp, Timestamp, Timestamp);
+some_polymorphic_function1!(timestamp_trunc_second, Timestamp, Timestamp, Timestamp);
+
+pub fn date_trunc_millennium_Date(date: Date) -> Date {
+    let m = extract_millennium_Date(date) - 1;
+    let rounded = NaiveDate::from_ymd_opt((m as i32) * 1000 + 1, 1, 1).unwrap();
+    Date::from_date(rounded)
+}
+
+pub fn date_trunc_century_Date(date: Date) -> Date {
+    let c = extract_century_Date(date) - 1;
+    let rounded = NaiveDate::from_ymd_opt((c as i32) * 100 + 1, 1, 1).unwrap();
+    Date::from_date(rounded)
+}
+
+pub fn date_trunc_decade_Date(date: Date) -> Date {
+    let date = date.to_dateTime();
+    let rounded = NaiveDate::from_ymd_opt((date.year() / 10) * 10, 1, 1).unwrap();
+    println!("{:?} {:?}", date, rounded);
+    Date::from_date(rounded)
+}
+
+pub fn date_trunc_year_Date(date: Date) -> Date {
+    let date = date.to_dateTime();
+    let rounded = NaiveDate::from_ymd_opt(date.year(), 1, 1).unwrap();
+    Date::from_date(rounded)
+}
+
+pub fn date_trunc_month_Date(date: Date) -> Date {
+    let date = date.to_dateTime();
+    let rounded = NaiveDate::from_ymd_opt(date.year(), date.month(), 1).unwrap();
+    Date::from_date(rounded)
+}
+
+pub fn date_trunc_day_Date(date: Date) -> Date {
+    date
+}
+
+some_polymorphic_function1!(date_trunc_millennium, Date, Date, Date);
+some_polymorphic_function1!(date_trunc_century, Date, Date, Date);
+some_polymorphic_function1!(date_trunc_decade, Date, Date, Date);
+some_polymorphic_function1!(date_trunc_year, Date, Date, Date);
+some_polymorphic_function1!(date_trunc_month, Date, Date, Date);
+some_polymorphic_function1!(date_trunc_day, Date, Date, Date);
+
 //////////////////////////// Time
 
 #[derive(
@@ -1333,3 +1501,25 @@ num_entries_scalar! {
     Date,
     Time,
 }
+
+pub fn time_trunc_hour_Time(time: Time) -> Time {
+    let t = time.to_time();
+    let n = NaiveTime::from_hms_opt(t.hour(), 0, 0).unwrap();
+    Time::from_time(n)
+}
+
+pub fn time_trunc_minute_Time(time: Time) -> Time {
+    let t = time.to_time();
+    let n = NaiveTime::from_hms_opt(t.hour(), t.minute(), 0).unwrap();
+    Time::from_time(n)
+}
+
+pub fn time_trunc_second_Time(time: Time) -> Time {
+    let t = time.to_time();
+    let n = NaiveTime::from_hms_opt(t.hour(), t.minute(), t.second()).unwrap();
+    Time::from_time(n)
+}
+
+some_polymorphic_function1!(time_trunc_hour, Time, Time, Time);
+some_polymorphic_function1!(time_trunc_minute, Time, Time, Time);
+some_polymorphic_function1!(time_trunc_second, Time, Time, Time);

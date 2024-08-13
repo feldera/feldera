@@ -1401,64 +1401,183 @@ public class PostgresDateTests extends SqlIoTest {
     //SELECT EXTRACT(TIMEZONE_H    FROM DATE '2020-08-11');
     //ERROR:  unit "timezone_h" not supported for type date
 
-    // In the BigQuery library there is a DATE_TRUNC, but arguments are swapped
-    // and the result is a timestamp
-    // SELECT DATE_TRUNC(DATE '1970-03-20', MILLENNIUM)
-    //  date_trunc
-    //  --------------------------
-    //   Thu Jan 01 00:00:00 1001
-    // SELECT DATE_TRUNC('MILLENNIUM', DATE '1970-03-20'); -- 1001-01-01
-    //          date_trunc
-    //------------------------------
-    // Thu Jan 01 00:00:00 1001 PST
-    //(1 row)
-    //
-    //SELECT DATE_TRUNC('CENTURY', TIMESTAMP '1970-03-20 04:30:00.00000'); -- 1901
-    //        date_trunc
-    //--------------------------
-    // Tue Jan 01 00:00:00 1901
-    //(1 row)
-    //
-    //SELECT DATE_TRUNC('CENTURY', DATE '1970-03-20'); -- 1901
-    //          date_trunc
-    //------------------------------
-    // Tue Jan 01 00:00:00 1901 PST
-    //(1 row)
-    //
-    //SELECT DATE_TRUNC('CENTURY', DATE '2004-08-10'); -- 2001-01-01
-    //          date_trunc
-    //------------------------------
-    // Mon Jan 01 00:00:00 2001 PST
-    //(1 row)
-    //
-    //SELECT DATE_TRUNC('CENTURY', DATE '0002-02-04'); -- 0001-01-01
-    //          date_trunc
-    //------------------------------
-    // Mon Jan 01 00:00:00 0001 PST
-    //(1 row)
-    //
-    //SELECT DATE_TRUNC('CENTURY', DATE '0055-08-10 BC'); -- 0100-01-01 BC
-    //           date_trunc
-    //---------------------------------
-    // Tue Jan 01 00:00:00 0100 PST BC
-    //(1 row)
-    //
-    //SELECT DATE_TRUNC('DECADE', DATE '1993-12-25'); -- 1990-01-01
-    //          date_trunc
-    //------------------------------
-    // Mon Jan 01 00:00:00 1990 PST
-    //(1 row)
-    //
-    //SELECT DATE_TRUNC('DECADE', DATE '0004-12-25'); -- 0001-01-01 BC
-    //           date_trunc
-    //---------------------------------
-    // Sat Jan 01 00:00:00 0001 PST BC
-    //(1 row)
-    //
-    //SELECT DATE_TRUNC('DECADE', DATE '0002-12-31 BC'); -- 0011-01-01 BC
-    //           date_trunc
-    //---------------------------------
-    // Mon Jan 01 00:00:00 0011 PST BC
+    @Test
+    public void testDateTrunc() {
+        // In the BigQuery library there is a DATE_TRUNC, but arguments are swapped
+        // I added many more tests
+        this.qs("""
+                 SELECT DATE_TRUNC(DATE '1970-03-20', MILLENNIUM);
+                  date_trunc
+                --------------------------
+                 1001-01-01
+                (1 row)
+                                
+                SELECT DATE_TRUNC(DATE '1970-03-20', CENTURY); -- 1901
+                          date_trunc
+                ------------------------------
+                 1901-01-01
+                (1 row)
+                                
+                SELECT DATE_TRUNC(DATE '2004-08-10', CENTURY); -- 2001-01-01
+                          date_trunc
+                ------------------------------
+                 2001-01-01
+                (1 row)
+                                
+                SELECT DATE_TRUNC(DATE '0002-02-04', CENTURY); -- 0001-01-01
+                          date_trunc
+                ------------------------------
+                 0001-01-01
+                (1 row)
+                                
+                SELECT DATE_TRUNC(DATE '1993-12-25', DECADE); -- 1990-01-01
+                          date_trunc
+                ------------------------------
+                 1990-01-01
+                (1 row)
+                                
+                SELECT DATE_TRUNC(DATE '1993-12-25', YEAR);
+                          date_trunc
+                ------------------------------
+                 1993-01-01
+                (1 row)
+                                
+                SELECT DATE_TRUNC(DATE '1993-12-25', MONTH);
+                          date_trunc
+                ------------------------------
+                 1993-12-01
+                (1 row)
+                                
+                SELECT DATE_TRUNC(DATE '1993-12-25', DAY);
+                          date_trunc
+                ------------------------------
+                 1993-12-25
+                (1 row)
+
+                SELECT DATE_TRUNC(TIMESTAMP '1970-03-20 04:30:00.00000', MILLENNIUM);
+                        date_trunc
+                --------------------------
+                 1001-01-01 00:00:00
+                (1 row)
+                                
+                SELECT DATE_TRUNC(TIMESTAMP '1970-03-20 04:30:00.00000', CENTURY); -- 1901
+                        date_trunc
+                --------------------------
+                 1901-01-01 00:00:00
+                (1 row)
+                                
+                SELECT DATE_TRUNC(TIMESTAMP '1970-03-20 04:30:00.00000', DECADE);
+                        date_trunc
+                --------------------------
+                 1970-01-01 00:00:00
+                (1 row)
+                                
+                SELECT DATE_TRUNC(TIMESTAMP '1970-03-20 04:30:00.00000', YEAR);
+                        date_trunc
+                --------------------------
+                 1970-01-01 00:00:00
+                (1 row)
+                                
+                SELECT DATE_TRUNC(TIMESTAMP '1970-03-20 04:30:00.00000', MONTH);
+                        date_trunc
+                --------------------------
+                 1970-03-01 00:00:00
+                (1 row)
+                                
+                SELECT DATE_TRUNC(TIMESTAMP '1970-03-20 04:30:00.00000', DAY);
+                        date_trunc
+                --------------------------
+                 1970-03-20 00:00:00
+                (1 row)""");
+    }
+
+    @Test
+    public void testTimeststampTrunc() {
+        // Not in Postgres
+        this.qs("""
+                SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', MILLENNIUM);
+                        timestamp_trunc
+                --------------------------
+                 1001-01-01 00:00:00
+                (1 row)
+                
+                SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', CENTURY); -- 1901
+                        timestamp_trunc
+                --------------------------
+                 1901-01-01 00:00:00
+                (1 row)
+                
+                SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', DECADE);
+                        timestamp_trunc
+                --------------------------
+                 1970-01-01 00:00:00
+                (1 row)
+                
+                SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', YEAR);
+                        timestamp_trunc
+                --------------------------
+                 1970-01-01 00:00:00
+                (1 row)
+                
+                SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', MONTH);
+                        timestamp_trunc
+                --------------------------
+                 1970-03-01 00:00:00
+                (1 row)
+                
+                SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', DAY);
+                        timestamp_trunc
+                --------------------------
+                 1970-03-20 00:00:00
+                (1 row)
+                
+                SELECT timestamp_trunc(timestamp '2015-02-19 12:34:56.78', hour);
+                  trunc
+                --------
+                2015-02-19 12:00:00
+                (1 row)
+                
+                SELECT timestamp_trunc(timestamp '2015-02-19 12:34:56.78', minute);
+                  trunc
+                --------
+                2015-02-19 12:34:00
+                (1 row)
+                
+                SELECT timestamp_trunc(timestamp '2015-02-19 12:34:56.78', second);
+                  trunc
+                --------
+                2015-02-19 12:34:56
+                (1 row)""");
+    }
+
+    @Test
+    public void testTimeTrunc() {
+        // Not in Postgres
+        this.qs("""
+                SELECT time_trunc(time '12:34:56.78', hour);
+                  trunc
+                --------
+                12:00:00
+                (1 row)
+                
+                SELECT time_trunc(time '12:34:56.78', minute);
+                  trunc
+                --------
+                12:34:00
+                (1 row)
+                
+                SELECT time_trunc(time '12:34:56.78', second);
+                  trunc
+                --------
+                12:34:56
+                (1 row)""");
+    }
+    
+    @Test
+    public void illegalDateTrunc() {
+        this.queryFailingInCompilation("SELECT DATE_TRUNC(DATE '1993-12-25', HOUR)",
+                "'HOUR' is not a valid time frame");
+    }
 
     // select 'infinity'::date > 'today'::date as t;
     // t
