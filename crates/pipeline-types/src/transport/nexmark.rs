@@ -43,6 +43,9 @@ pub struct NexmarkInputOptions {
     pub events: u64,
 
     /// Number of event generator threads.
+    ///
+    /// It's reasonable to choose the same number of generator threads as worker
+    /// threads.
     pub threads: usize,
 
     /// Number of events to generate and submit together.
@@ -61,7 +64,7 @@ impl Default for NexmarkInputOptions {
     fn default() -> Self {
         Self {
             events: 100_000_000,
-            threads: 16,
+            threads: 4,
             batch_size: 40_000,
             synchronize_threads: true,
         }
