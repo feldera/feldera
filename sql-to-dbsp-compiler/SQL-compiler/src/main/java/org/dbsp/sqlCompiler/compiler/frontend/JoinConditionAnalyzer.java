@@ -23,7 +23,9 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend;
 
+import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rex.*;
+import org.apache.calcite.sql.SqlKind;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -35,15 +37,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWritesLogs {
+public class JoinConditionAnalyzer implements IWritesLogs {
     private final int leftTableColumnCount;
-    private final ConditionDecomposition result;
     private final TypeCompiler typeCompiler;
 
     public JoinConditionAnalyzer(CalciteObject object, int leftTableColumnCount, TypeCompiler typeCompiler) {
-        super(true);
         this.leftTableColumnCount = leftTableColumnCount;
-        this.result = new ConditionDecomposition(object);
         this.typeCompiler = typeCompiler;
     }
 
@@ -99,19 +98,80 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
                 throw new InternalCompilerError("Unexpected empty join condition", this.object);
         }
 
-        /**
-         * Part of the join condition that is not an equality test.
-         * @return Null if the entire condition is an equality test.
-         */
+        /** Part of the join condition that is not an equality test.
+         * @return Null if the entire condition is an equality test. */
         @Nullable
         public RexNode getLeftOver() {
             this.validate();
             return this.leftOver;
         }
-    }
 
-    public boolean completed() {
-        return this.result.leftOver != null;
+        void analyzeAnd(RexCall call) {
+            List<RexNode> operands = call.getOperands();
+            List<RexNode> unprocessed = new ArrayList<>();
+            for (int i = 0; i < operands.size(); i++) {
+                RexNode operand = call.operands.get(i);
+                if (!(operand instanceof RexCall opCall)) {
+                    unprocessed.add(operand);
+                    continue;
+                }
+
+                if (opCall.op.kind != SqlKind.EQUALS &&
+                        opCall.op.kind != SqlKind.IS_NOT_DISTINCT_FROM) {
+                    unprocessed.add(operand);
+                    continue;
+                }
+
+                boolean eq = this.analyzeEquals(opCall);
+                if (!eq) {
+                    unprocessed.add(opCall);
+                }
+            }
+
+            if (!unprocessed.isEmpty()) {
+                if (unprocessed.size() == 1) {
+                    this.setLeftOver(unprocessed.get(0));
+                } else {
+                    call = call.clone(call.type, unprocessed);
+                    this.setLeftOver(call);
+                }
+            }
+        }
+
+        /** Analyze an equality comparison.  Return 'true' if this is suitable for an equijoin */
+        public boolean analyzeEquals(RexCall call) {
+            assert call.operands.size() == 2: "Expected 2 operands for equality checking";
+            RexNode left = call.operands.get(0);
+            RexNode right = call.operands.get(1);
+            @Nullable
+            Boolean leftIsLeft = JoinConditionAnalyzer.this.isLeftTableColumnReference(left);
+            @Nullable
+            Boolean rightIsLeft = JoinConditionAnalyzer.this.isLeftTableColumnReference(right);
+            if (leftIsLeft == null || rightIsLeft == null) {
+                return false;
+            }
+            if (leftIsLeft == rightIsLeft) {
+                // Both columns refer to the same table.
+                return false;
+            }
+            DBSPType leftType = JoinConditionAnalyzer.this.typeCompiler.convertType(
+                    left.getType(), true);
+            DBSPType rightType = JoinConditionAnalyzer.this.typeCompiler.convertType(
+                    right.getType(), true);
+            if (call.op.kind == SqlKind.IS_NOT_DISTINCT_FROM) {
+                // Only used if the operands are not nullable
+                if (leftType.mayBeNull || rightType.mayBeNull) {
+                    return false;
+                }
+            }
+            DBSPType commonType = ExpressionCompiler.reduceType(leftType, rightType).setMayBeNull(false);
+            if (leftIsLeft) {
+                this.addEquality(left, right, commonType);
+            } else {
+                this.addEquality(right, left, commonType);
+            }
+            return true;
+        }
     }
 
     @Nullable
@@ -134,79 +194,26 @@ public class JoinConditionAnalyzer extends RexVisitorImpl<Void> implements IWrit
         return ref.getIndex() < this.leftTableColumnCount;
     }
 
-    @Override
-    public Void visitInputRef(RexInputRef ref) {
-        this.result.setLeftOver(ref);
-        return null;
-    }
-
-    @Override
-    public Void visitLiteral(RexLiteral lit) {
-        this.result.setLeftOver(lit);
-        return null;
-    }
-
-    @Override
-    public Void visitCall(RexCall call) {
-        switch (call.op.kind) {
-            case AND:
-                List<RexNode> operands = call.getOperands();
-                for (int i = 0; i < operands.size(); i++) {
-                    call.operands.get(i).accept(this);
-                    if (this.completed()) {
-                        if (i == operands.size() - 1) {
-                            // Just one left
-                            this.result.setLeftOver(operands.get(i));
-                            return null;
-                        }
-                        List<RexNode> remaining = new ArrayList<>();
-                        for (int j = i; j < operands.size(); j++)
-                            remaining.add(call.operands.get(j));
-                        call = call.clone(call.type, remaining);
-                        this.result.setLeftOver(call);
-                        return null;
-                    }
-                }
-                return null;
-            case EQUALS:
-                assert call.operands.size() == 2: "Expected 2 operands for equality checking";
-                RexNode left = call.operands.get(0);
-                RexNode right = call.operands.get(1);
-                @Nullable
-                Boolean leftIsLeft = this.isLeftTableColumnReference(left);
-                @Nullable
-                Boolean rightIsLeft = this.isLeftTableColumnReference(right);
-                if (leftIsLeft == null || rightIsLeft == null) {
-                    this.result.setLeftOver(call);
-                    return null;
-                }
-                if (leftIsLeft == rightIsLeft) {
-                    // Both columns refer to the same table.
-                    this.result.setLeftOver(call);
-                    return null;
-                }
-                DBSPType leftType = this.typeCompiler.convertType(left.getType(), true);
-                DBSPType rightType = this.typeCompiler.convertType(right.getType(), true);
-                DBSPType commonType = ExpressionCompiler.reduceType(leftType, rightType).setMayBeNull(false);
-                if (leftIsLeft) {
-                    this.result.addEquality(left, right, commonType);
-                } else {
-                    this.result.addEquality(right, left, commonType);
-                }
-                return null;
-            default:
-                // We are done: we don't know how to handle this condition.
-                this.result.setLeftOver(call);
-                return null;
-        }
-    }
-
     JoinConditionAnalyzer.ConditionDecomposition analyze(RexNode expression) {
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Analyzing ")
                 .append(expression.toString())
                 .newline();
-        expression.accept(this);
-        return this.result;
+        final ConditionDecomposition result = new ConditionDecomposition(CalciteObject.create(expression));
+        if (! (expression instanceof RexCall call)) {
+            result.setLeftOver(expression);
+            return result;
+        }
+        if (call.op.kind == SqlKind.AND) {
+            result.analyzeAnd(call);
+        } else if (call.op.kind == SqlKind.EQUALS || call.op.kind == SqlKind.IS_NOT_DISTINCT_FROM) {
+            boolean success = result.analyzeEquals(call);
+            if (!success) {
+                result.setLeftOver(call);
+            }
+        } else {
+            result.setLeftOver(call);
+        }
+        return result;
     }
 }

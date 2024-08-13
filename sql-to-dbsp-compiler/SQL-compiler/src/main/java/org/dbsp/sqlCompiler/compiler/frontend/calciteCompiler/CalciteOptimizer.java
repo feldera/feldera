@@ -157,7 +157,8 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN,
                 // Rule is unsound https://issues.apache.org/jira/browse/CALCITE-6403
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES));
-
+        this.addStep(new SimpleOptimizerStep("Not distinct", 0,
+            CoreRules.FILTER_EXPAND_IS_NOT_DISTINCT_FROM));
         this.addStep(new BaseOptimizerStep("Join order", level) {
             @Override
             HepProgram getProgram(RelNode node, int level) {

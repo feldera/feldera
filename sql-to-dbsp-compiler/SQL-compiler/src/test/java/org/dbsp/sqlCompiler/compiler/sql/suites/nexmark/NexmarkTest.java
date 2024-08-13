@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.sql.suites.nexmark;
 import org.apache.calcite.config.Lex;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.util.Logger;
 import org.junit.Assert;
@@ -832,6 +833,15 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
                 """
  auction | bidder | price | date_time | extra | date | time | weight
 ---------------------------------------------------------------------""");
+    }
+
+    @Test
+    public void q12test() {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 4);
+        this.createTest(12, "",
+                """
+ bidder | bid_count | starttime | endtime
+------------------------------------------""");
     }
 
     @Test

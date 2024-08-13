@@ -1,7 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -25,6 +27,7 @@ import org.dbsp.sqlCompiler.ir.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -187,7 +190,7 @@ public class ImplementNow extends Passes {
             this.compiler = compiler;
         }
 
-        DBSPStreamJoinOperator createJoin(DBSPUnaryOperator operator) {
+        DBSPOperator createJoin(DBSPUnaryOperator operator) {
             // Index the input
             DBSPType inputType = operator.input().getOutputZSetElementType();
             DBSPVariablePath var = inputType.ref().var();
@@ -210,10 +213,18 @@ public class ImplementNow extends Passes {
                     Linq.map(fields, DBSPExpression::getType)));
             DBSPExpression joinFunction = new DBSPTupleExpression(fields, false)
                     .closure(key.asParameter(), left.asParameter(), right.asParameter());
+            // We want a real streaming join: the now is evaluated only for each input record
+            assert nowIndexed != null;
+            DBSPDifferentiateOperator dIndex = new DBSPDifferentiateOperator(operator.getNode(), index);
+            this.addOperator(dIndex);
+            DBSPDifferentiateOperator dNow = new DBSPDifferentiateOperator(operator.getNode(), nowIndexed);
+            this.addOperator(dNow);
             DBSPStreamJoinOperator join = new DBSPStreamJoinOperator(operator.getNode(), joinType,
-                    joinFunction, operator.isMultiset, index, Objects.requireNonNull(this.nowIndexed));
+                    joinFunction, operator.isMultiset, dIndex, dNow);
             this.addOperator(join);
-            return join;
+            DBSPOperator integral = new DBSPIntegrateOperator(operator.getNode(), join);
+            this.addOperator(integral);
+            return integral;
         }
 
         @Override
@@ -222,7 +233,7 @@ public class ImplementNow extends Passes {
             DBSPExpression function = operator.getFunction();
             cn.apply(function);
             if (cn.found()) {
-                DBSPStreamJoinOperator join = this.createJoin(operator);
+                DBSPOperator join = this.createJoin(operator);
                 RewriteNowExpression rn = new RewriteNowExpression(this.errorReporter);
                 function = rn.apply(function).to(DBSPExpression.class);
                 DBSPOperator result = new DBSPMapOperator(operator.getNode(), function, operator.getOutputZSetType(), join);
@@ -238,7 +249,7 @@ public class ImplementNow extends Passes {
             DBSPExpression function = operator.getFunction();
             cn.apply(function);
             if (cn.found()) {
-                DBSPStreamJoinOperator join = this.createJoin(operator);
+                DBSPOperator join = this.createJoin(operator);
                 RewriteNowExpression rn = new RewriteNowExpression(this.errorReporter);
                 function = rn.apply(function).to(DBSPExpression.class);
                 DBSPOperator filter = new DBSPFilterOperator(operator.getNode(), function, join);
