@@ -97,7 +97,8 @@ public class TableContents implements ICompilerComponent {
     public void addToTable(String tableName, DBSPZSetLiteral value) {
         if (this.tableContents == null)
             throw new UnsupportedException("Not keeping track of table contents", CalciteObject.EMPTY);
-        this.tableContents.get(tableName).add(value);
+        DBSPZSetLiteral table = this.tableContents.get(tableName);
+        table.addUsingCast(value);
     }
 
     public int getTableIndex(String tableName) {

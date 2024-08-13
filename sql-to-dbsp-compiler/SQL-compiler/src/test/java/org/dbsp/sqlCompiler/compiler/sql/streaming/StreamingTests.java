@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -56,13 +57,13 @@ public class StreamingTests extends StreamingTestBase {
                    expires   TIMESTAMP NOT NULL,
                    id        INT NOT NULL PRIMARY KEY
                 );
-                
+
                 CREATE TABLE bid (
                    date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
                    price INT,
                    auction INT FOREIGN KEY REFERENCES auction(id)
                 );
-                
+
                 CREATE VIEW Q9 AS
                 SELECT A.*, B.price, B.date_time AS bid_dateTime
                 FROM auction A, bid B
@@ -141,13 +142,13 @@ public class StreamingTests extends StreamingTestBase {
                    expires   TIMESTAMP NOT NULL,
                    id        INT
                 );
-                
+
                 CREATE TABLE bid (
                    date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
                    price INT,
                    auction INT
                 );
-                
+
                 CREATE VIEW Q9 AS
                 SELECT A.*, B.price, B.date_time AS bid_dateTime
                 FROM auction A, bid B
@@ -185,12 +186,12 @@ public class StreamingTests extends StreamingTestBase {
                     id bigint not null,
                     ts bigint not null LATENESS 0
                 );
-                
+
                 CREATE VIEW v1 AS
                 SELECT ts, COUNT(*)
                 FROM t
                 GROUP BY ts;
-                
+
                 CREATE VIEW v2 as
                 select ts, count(*) from v1
                 group by ts;""";
@@ -332,7 +333,7 @@ public class StreamingTests extends StreamingTestBase {
                     end   TIMESTAMP,
                     start TIMESTAMP NOT NULL LATENESS INTERVAL '1' HOURS
                 );
-                
+
                 -- This is monotone because of the filter
                 CREATE VIEW event_duration AS SELECT DISTINCT end
                 FROM event
@@ -364,12 +365,12 @@ public class StreamingTests extends StreamingTestBase {
                     id  BIGINT,
                     start   TIMESTAMP NOT NULL LATENESS INTERVAL '1' HOURS
                 );
-                
+
                 CREATE VIEW event_duration AS SELECT DISTINCT
                     start,
                     id
                 FROM event;
-                
+
                 CREATE VIEW filtered_events AS
                 SELECT DISTINCT * FROM event_duration;""";
         this.compileRustTestCase(sql);
@@ -381,9 +382,9 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE TABLE event(
                     start   TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS
                 );
-                
+
                 LATENESS slotted_events.start 96;
-                
+
                 CREATE VIEW slotted_events AS
                 SELECT start
                 FROM event;""";
@@ -397,15 +398,15 @@ public class StreamingTests extends StreamingTestBase {
                     eve_key     VARCHAR,
                     eve_start   TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS
                 );
-                
+
                 CREATE VIEW filtered_events AS
                 SELECT DISTINCT * FROM event
                 WHERE eve_key IN ('foo', 'bar');
-                
+
                 CREATE VIEW slotted_events AS
                 SELECT eve_start, eve_key
                 FROM filtered_events;
-                
+
                 LATENESS slotted_events.eve_start INTERVAL 96 MINUTES;""";
         this.compileRustTestCase(sql);
     }
@@ -430,7 +431,51 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
-    public void testOverDateTrunc() {
+    public void testGC() {
+        String sql = """
+                create table t1(
+                    ts bigint not null lateness 100,
+                    id bigint
+                ) WITH (
+                    'connectors' = '[{
+                        "transport": {
+                            "name": "datagen",
+                            "config": {
+                                "plan": [{
+                                    "fields": {}
+                                }]
+                            }
+                        }
+                    }]'
+                );
+
+                create table t2(
+                    ts bigint not null lateness 100,
+                    id bigint
+                ) WITH (
+                    'connectors' = '[{
+                        "transport": {
+                            "name": "datagen",
+                            "config": {
+                                "plan": [{
+                                    "fields": {}
+                                }]
+                            }
+                        }
+                    }]'
+                );
+
+                create view v as
+                select t1.* from
+                t1 join t2
+                on t1.id = t2.id
+                where t1.ts  >= t2.ts - 10 and t1.ts <= t2.ts;
+                """;
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void testOver() {
         String sql = """
                 CREATE TABLE table_name (
                     id INT NOT NULL PRIMARY KEY,
@@ -461,7 +506,7 @@ public class StreamingTests extends StreamingTestBase {
                   t TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,
                   location INT NOT NULL
                 );
-                
+
                 CREATE VIEW V AS
                 SELECT
                 *,
@@ -935,7 +980,7 @@ public class StreamingTests extends StreamingTestBase {
                     fs::File,
                     time::SystemTime,
                 };
-                
+
                 use metrics::{Key, SharedString, Unit};
                 use metrics_util::{
                     debugging::{DebugValue, DebuggingRecorder},
@@ -967,7 +1012,7 @@ public class StreamingTests extends StreamingTestBase {
                     let recorder = DebuggingRecorder::new();
                     let snapshotter = recorder.snapshotter();
                     recorder.install().unwrap();
-                
+
                     let (mut circuit, streams) = circuit(
                          CircuitConfig {
                              layout: Layout::new_solo(2),
@@ -981,7 +1026,7 @@ public class StreamingTests extends StreamingTestBase {
                     let metrics = snapshotter.snapshot();
                     let decoded_metrics: MetricsSnapshot = metrics.into_hashmap();
                     let late = parse_counter(&decoded_metrics, TOTAL_LATE_RECORDS);
-                
+
                     let profile = circuit.retrieve_profile().expect("could not get profile");
                     let end = SystemTime::now();
                     let duration = end.duration_since(start).expect("could not get time");
@@ -1068,7 +1113,7 @@ public class StreamingTests extends StreamingTestBase {
                     metadata VARCHAR,
                     event_time TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
             );
-            
+
             CREATE TABLE shift(
                     person VARCHAR,
                     on_call DATE
@@ -1103,12 +1148,12 @@ public class StreamingTests extends StreamingTestBase {
                     metadata VARCHAR NOT NULL,
                     event_time TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
             );
-            
+
             CREATE TABLE shift(
                     person VARCHAR NOT NULL,
                     on_call DATE
             );
-        
+
             CREATE VIEW V AS
             (SELECT * FROM series JOIN shift ON series.metadata = shift.person);
             """;
@@ -1140,12 +1185,12 @@ public class StreamingTests extends StreamingTestBase {
                     metadata VARCHAR NOT NULL,
                     event_time TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
             );
-            
+
             CREATE TABLE shift(
                     person VARCHAR NOT NULL,
                     on_call DATE
             );
-        
+
             CREATE VIEW V AS
             (SELECT * FROM series JOIN shift
              ON series.metadata = shift.person AND CAST(series.event_time AS DATE) = shift.on_call);
@@ -1178,12 +1223,12 @@ public class StreamingTests extends StreamingTestBase {
                     metadata VARCHAR NOT NULL,
                     event_date DATE NOT NULL LATENESS INTERVAL 1 DAYS
             );
-            
+
             CREATE TABLE shift(
                     person VARCHAR NOT NULL,
                     on_call DATE NOT NULL LATENESS INTERVAL 1 DAYS
             );
-        
+
             CREATE VIEW V AS
             (SELECT metadata, event_date FROM series JOIN shift
              ON series.metadata = shift.person AND event_date > on_call);
@@ -1281,10 +1326,10 @@ public class StreamingTests extends StreamingTestBase {
                     amount DECIMAL(10, 2),
                     cc_num VARCHAR
                 );
-                
+
                 CREATE LOCAL VIEW hop AS
                 SELECT * FROM TABLE(HOP(TABLE DATA, DESCRIPTOR(moment), INTERVAL 4 HOURS, INTERVAL 1 HOURS));
-                
+
                 CREATE LOCAL VIEW agg AS
                 SELECT
                   AVG(amount) AS avg_amt,
@@ -1293,7 +1338,7 @@ public class StreamingTests extends StreamingTestBase {
                   ARRAY_AGG(moment) AS moments
                 FROM hop
                 GROUP BY cc_num, window_start;
-                
+
                 CREATE VIEW results AS
                 SELECT
                   avg_amt,

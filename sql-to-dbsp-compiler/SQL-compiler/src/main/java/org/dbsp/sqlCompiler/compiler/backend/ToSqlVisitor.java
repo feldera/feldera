@@ -96,6 +96,7 @@ public class ToSqlVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTupleExpression node) {
+        assert node.fields != null;
         for (DBSPExpression expression : node.fields) {
             expression.accept(this);
             this.appendable.append(",");

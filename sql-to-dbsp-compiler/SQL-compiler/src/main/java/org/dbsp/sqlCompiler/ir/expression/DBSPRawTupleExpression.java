@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
@@ -43,6 +44,11 @@ public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
                 new DBSPTypeRawTuple(Linq.map(expressions, DBSPExpression::getType, DBSPType.class)), expressions);
     }
 
+    /** A tuple with value 'null'. */
+    public DBSPRawTupleExpression(DBSPTypeRawTuple type) {
+        super(type.getNode(), type);
+    }
+
     public <T extends DBSPExpression> DBSPRawTupleExpression(List<T> fields) {
         this(fields.toArray(new DBSPExpression[0]));
     }
@@ -53,8 +59,10 @@ public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
         if (decision.stop()) return;
         visitor.push(this);
         this.type.accept(visitor);
-        for (DBSPExpression expression: this.fields)
-            expression.accept(visitor);
+        if (this.fields != null) {
+            for (DBSPExpression expression : this.fields)
+                expression.accept(visitor);
+        }
         visitor.pop(this);
         visitor.postorder(this);
     }
@@ -64,12 +72,18 @@ public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
         DBSPRawTupleExpression o = other.as(DBSPRawTupleExpression.class);
         if (o == null)
             return false;
+        if (this.fields == null)
+            return o.fields == null;
+        if (o.fields == null)
+            return false;
         return Linq.same(this.fields, o.fields) &&
                 this.hasSameType(o);
     }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
+        if (this.fields == null)
+            return builder.append("None");
         return builder.append("(")
                 .intercalateI(", ", this.fields)
                 .append(")");
@@ -88,6 +102,8 @@ public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
 
     @Override
     public DBSPExpression deepCopy() {
+        if (this.fields == null)
+            return new DBSPRawTupleExpression(this.getType().to(DBSPTypeRawTuple.class));
         return new DBSPRawTupleExpression(
                 Linq.map(this.fields, DBSPExpression::deepCopy, DBSPExpression.class));
     }
@@ -101,6 +117,12 @@ public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         DBSPRawTupleExpression otherExpression = other.as(DBSPRawTupleExpression.class);
         if (otherExpression == null)
+            return false;
+        if (!this.getType().sameType(other.getType()))
+            return false;
+        if (this.fields == null)
+            return otherExpression.fields == null;
+        if (otherExpression.fields == null)
             return false;
         return context.equivalent(this.fields, otherExpression.fields);
     }

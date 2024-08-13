@@ -5,7 +5,13 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -27,6 +33,70 @@ public class CatalogTests extends BaseSQLTests {
                 
                 CREATE VIEW V AS SELECT * FROM varchar_pk;""";
         this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void testNulls() {
+        // Test for nullability of array elements and structure fields
+        String sql = """
+                CREATE TYPE s AS (
+                    xN INT,
+                    x INT NOT NULL,
+                    aN INT ARRAY,
+                    -- aNN INT NOT NULL ARRAY NOT NULL, -- not allowed
+                    a INT ARRAY NOT NULL
+                );
+                
+                CREATE TYPE n AS (
+                    svN s,
+                    sv s NOT NULL,
+                    svAN s ARRAY -- vec of nullable s
+                );
+                
+                CREATE TABLE T (
+                   f s,
+                   g n,
+                   h s NOT NULL,
+                   i n NOT NULL
+                );
+                
+                CREATE VIEW V AS SELECT * FROM T;
+                """;
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        DBSPType type = circuit.getSingleOutputType().to(DBSPTypeZSet.class).elementType;
+        Assert.assertTrue(type.is(DBSPTypeTuple.class));
+        DBSPTypeTuple t = type.to(DBSPTypeTuple.class);
+        Assert.assertEquals(4, t.size());
+        DBSPType t0 = t.getFieldType(0);
+        Assert.assertTrue(t0.is(DBSPTypeTuple.class));
+
+        DBSPTypeTuple sN = t0.to(DBSPTypeTuple.class);
+        Assert.assertEquals(4, sN.size());
+        DBSPType i32 = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false);
+        DBSPType i32N = i32.setMayBeNull(true);
+        Assert.assertTrue(sN.mayBeNull);
+        Assert.assertTrue(sN.getFieldType(0).sameType(i32N));
+        Assert.assertTrue(sN.getFieldType(1).sameType(i32));
+        Assert.assertTrue(sN.getFieldType(2).sameType(new DBSPTypeVec(i32N, true)));
+        Assert.assertTrue(sN.getFieldType(3).sameType(new DBSPTypeVec(i32N, false)));
+
+        DBSPType t1 = t.getFieldType(1);
+        Assert.assertTrue(t1.is(DBSPTypeTuple.class));
+        DBSPTypeTuple nN = t1.to(DBSPTypeTuple.class);
+        Assert.assertEquals(3, nN.size());
+        DBSPType vecS = new DBSPTypeVec(sN.setMayBeNull(true), true);
+        Assert.assertTrue(nN.mayBeNull);
+        Assert.assertTrue(nN.getFieldType(0).sameType(sN));
+        Assert.assertTrue(nN.getFieldType(1).sameType(sN.setMayBeNull(false)));
+        Assert.assertTrue(nN.getFieldType(2).sameType(vecS));
+
+        DBSPType t2 = t.getFieldType(2);
+        Assert.assertTrue(t2.sameType(sN.setMayBeNull(false)));
+
+        DBSPType t3 = t.getFieldType(3);
+        Assert.assertTrue(t3.sameType(nN.setMayBeNull(false)));
     }
 
     @Test

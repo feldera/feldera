@@ -436,7 +436,7 @@ public class MetadataTests extends BaseSQLTests {
                       "case_sensitive" : false,
                       "columntype" : {
                         "component" : {
-                          "nullable" : false,
+                          "nullable" : true,
                           "precision" : 3,
                           "type" : "VARCHAR"
                         },
@@ -454,7 +454,7 @@ public class MetadataTests extends BaseSQLTests {
                         "nullable" : true,
                         "type" : "MAP",
                         "value" : {
-                          "nullable" : false,
+                          "nullable" : true,
                           "type" : "INTEGER"
                         }
                       }

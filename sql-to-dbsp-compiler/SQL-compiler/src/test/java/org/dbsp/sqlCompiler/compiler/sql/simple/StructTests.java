@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -11,14 +12,13 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.util.Linq;
 import org.junit.Test;
 
 public class StructTests extends SqlIoTest {
     @Override
     public CompilerOptions testOptions(boolean incremental, boolean optimize) {
-        CompilerOptions options = super.testOptions(incremental, optimize);
-        // options.ioOptions.emitHandles = false;
-        return options;
+        return super.testOptions(incremental, optimize);
     }
 
     @Test
@@ -40,13 +40,13 @@ public class StructTests extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPExpression address0 = new DBSPTupleExpression(
+        DBSPExpression address0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPStringLiteral("Broadway", true),
                 new DBSPStringLiteral("New York", true),
                 new DBSPStringLiteral("NY", true),
                 new DBSPStringLiteral("10000", true)
         );
-        DBSPExpression person0 = new DBSPTupleExpression(
+        DBSPExpression person0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPStringLiteral("Mike", true),
                 new DBSPStringLiteral("John", true),
                 address0
@@ -77,13 +77,13 @@ public class StructTests extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPExpression address0 = new DBSPTupleExpression(
+        DBSPExpression address0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPStringLiteral("Broadway", true),
                 new DBSPStringLiteral("New York", true),
                 new DBSPStringLiteral("NY", true),
                 new DBSPStringLiteral("10000", true)
         );
-        DBSPExpression person0 = new DBSPTupleExpression(
+        DBSPExpression person0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPStringLiteral("Mike", true),
                 new DBSPStringLiteral("John", true),
                 address0
@@ -111,11 +111,11 @@ public class StructTests extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPExpression pers = new DBSPTupleExpression(
+        DBSPExpression pers = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPVecLiteral(true,
-                    new DBSPStringLiteral("Broadway"),
-                    new DBSPStringLiteral("5th Avenue"),
-                    new DBSPStringLiteral("1st Street")));
+                    new DBSPStringLiteral("Broadway", true),
+                    new DBSPStringLiteral("5th Avenue", true),
+                    new DBSPStringLiteral("1st Street", true)));
         DBSPZSetLiteral input = new DBSPZSetLiteral(new DBSPTupleExpression(pers));
         DBSPZSetLiteral output = new DBSPZSetLiteral(new DBSPTupleExpression(
                         new DBSPStringLiteral("Broadway", true)));
@@ -134,19 +134,19 @@ public class StructTests extends SqlIoTest {
         compiler.compileStatements(ddl);
         compiler.compileStatements(v);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPExpression pers = new DBSPTupleExpression(
+        DBSPExpression pers = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPVecLiteral(true,
-                        new DBSPStringLiteral("Broadway"),
-                        new DBSPStringLiteral("5th Avenue"),
-                        new DBSPStringLiteral("1st Street")));
+                        new DBSPStringLiteral("Broadway", true),
+                        new DBSPStringLiteral("5th Avenue", true),
+                        new DBSPStringLiteral("1st Street", true)));
         DBSPZSetLiteral input = new DBSPZSetLiteral(new DBSPTupleExpression(pers));
         DBSPZSetLiteral output = new DBSPZSetLiteral(
                 new DBSPTupleExpression(
-                        new DBSPStringLiteral("Broadway")),
+                        new DBSPStringLiteral("Broadway", true)),
                 new DBSPTupleExpression(
-                        new DBSPStringLiteral("5th Avenue")),
+                        new DBSPStringLiteral("5th Avenue", true)),
                 new DBSPTupleExpression(
-                        new DBSPStringLiteral("1st Street")));
+                        new DBSPStringLiteral("1st Street", true)));
         ccs.addPair(new Change(input), new Change(output));
         this.addRustTestCase("unnestStructTest", ccs);
     }
@@ -162,16 +162,22 @@ public class StructTests extends SqlIoTest {
         compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
-        DBSPExpression t0 = new DBSPTupleExpression(
+        DBSPExpression t0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPVecLiteral(true,
-                        new DBSPTupleExpression(new DBSPI32Literal(0, true), t),
-                        new DBSPTupleExpression(new DBSPI32Literal(1, true), t),
-                        new DBSPTupleExpression(new DBSPI32Literal(2, true), t)));
-        DBSPExpression t1 = new DBSPTupleExpression(
+                        new DBSPTupleExpression(
+                                CalciteObject.EMPTY, true, new DBSPI32Literal(0, true), t),
+                        new DBSPTupleExpression(
+                                CalciteObject.EMPTY, true, new DBSPI32Literal(1, true), t),
+                        new DBSPTupleExpression(
+                                CalciteObject.EMPTY, true, new DBSPI32Literal(2, true), t)));
+        DBSPExpression t1 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPVecLiteral(true,
-                        new DBSPTupleExpression(new DBSPI32Literal(3, true), t),
-                        new DBSPTupleExpression(new DBSPI32Literal(4, true), t),
-                        new DBSPTupleExpression(new DBSPI32Literal(5, true), t)));
+                        new DBSPTupleExpression(
+                                CalciteObject.EMPTY, true, new DBSPI32Literal(3, true), t),
+                        new DBSPTupleExpression(
+                                CalciteObject.EMPTY, true, new DBSPI32Literal(4, true), t),
+                        new DBSPTupleExpression(
+                                CalciteObject.EMPTY, true, new DBSPI32Literal(5, true), t)));
         DBSPZSetLiteral input = new DBSPZSetLiteral(
                 new DBSPTupleExpression(t0),
                 new DBSPTupleExpression(t1));
@@ -197,16 +203,16 @@ public class StructTests extends SqlIoTest {
         compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
-        DBSPExpression t0 = new DBSPTupleExpression(
+        DBSPExpression t0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPVecLiteral(true,
-                        new DBSPTupleExpression(new DBSPI32Literal(0, true), t),
-                        new DBSPTupleExpression(new DBSPI32Literal(1, true), t),
-                        new DBSPTupleExpression(new DBSPI32Literal(2, true), t)));
-        DBSPExpression t1 = new DBSPTupleExpression(
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(0, true), t), true),
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(1, true), t), true),
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(2, true), t), true)));
+        DBSPExpression t1 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPVecLiteral(true,
-                        new DBSPTupleExpression(new DBSPI32Literal(3, true), t),
-                        new DBSPTupleExpression(new DBSPI32Literal(4, true), t),
-                        new DBSPTupleExpression(new DBSPI32Literal(5, true), t)));
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(3, true), t), true),
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(4, true), t), true),
+                        new DBSPTupleExpression(Linq.list(new DBSPI32Literal(5, true), t), true)));
         DBSPZSetLiteral input = new DBSPZSetLiteral(
                 new DBSPTupleExpression(t0),
                 new DBSPTupleExpression(t1));
@@ -239,20 +245,20 @@ public class StructTests extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPExpression address0 = new DBSPTupleExpression(
+        DBSPExpression address0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPStringLiteral("Broadway", true),
                 new DBSPStringLiteral("New York", true),
                 new DBSPStringLiteral("NY", true),
                 new DBSPStringLiteral("10000", true)
         );
-        DBSPExpression person0 = new DBSPTupleExpression(
+        DBSPExpression person0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPStringLiteral("Mike", true),
                 new DBSPStringLiteral("John", true),
                 new DBSPVecLiteral(true, address0, address0)
         );
         DBSPExpression data = new DBSPTupleExpression(person0);
         DBSPZSetLiteral input = new DBSPZSetLiteral(data);
-        DBSPZSetLiteral output = new DBSPZSetLiteral(new DBSPTupleExpression(address0.some()));
+        DBSPZSetLiteral output = new DBSPZSetLiteral(new DBSPTupleExpression(address0));
         ccs.addPair(new Change(input), new Change(output));
         this.addRustTestCase("structArrayStructTest", ccs);
     }

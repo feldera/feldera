@@ -637,6 +637,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     localIndex++;
                 } else {
                     assert i < reindexFields.length;
+                    assert globalKeys.fields != null;
                     reindexFields[i] = DBSPLiteral.none(globalKeys.fields[i].getType());
                 }
                 i++;
@@ -1512,6 +1513,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             int i = 0;
             for (AggregateCall call: this.aggregateCalls) {
                 List<Integer> args = call.getArgList();
+                assert lagTuple.fields != null;
                 DBSPType resultType = lagTuple.fields[i].getType();
                 if (args.size() > 2) {
                     int defaultIndex = args.get(2);
@@ -2239,6 +2241,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<RelDataTypeField> relFields = stat.relDataType.getFieldList();
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
         for (SqlNode def : Objects.requireNonNull(ct.attributeDefs)) {
+            // the relFields implementation has already flattened structs,
+            // so for structs we look them up again using the Sql representation
             DBSPType fieldType = null;
             final SqlAttributeDefinition attributeDef =
                     (SqlAttributeDefinition) def;
@@ -2248,8 +2252,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 SqlIdentifier identifier = typeSpec.getTypeNameSpec().getTypeName();
                 String referred = identifier.getSimple();
                 fieldType = this.compiler.getStructByName(referred);
+                if (typeSpec.getNullable() != null && typeSpec.getNullable() && fieldType != null)
+                    fieldType = fieldType.setMayBeNull(true);
             }
             if (fieldType == null) {
+                // Not a user-defined type
                 RelDataTypeField ft = relFields.get(index);
                 fieldType = this.convertType(ft.getType(), true);
             }

@@ -7,6 +7,17 @@ Array elements may be nullable types, e.g., `INT ARRAY NULL`.
 Multidimensional arrays are possible, e.g. `VARCHAR ARRAY ARRAY`
 is a two-dimensional array.
 
+In `CREATE TABLE` and `CREATE TYPE` declarations there is no way to
+specify the nullability of the elements of an `ARRAY`.  The compiler
+will always assume that array elements are nullable:
+
+```sql
+CREATE TABLE T(a INT ARRAY);
+```
+
+Table `T` will have a single column `a` whose values are nullable
+arrays; the array elements will be nullable INT values.
+
 ## Array literals
 
 Array literals have the syntax `ARRAY[`expr [`,`expr]*`]`.  An example
