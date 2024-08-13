@@ -42,7 +42,11 @@
   <div class="flex w-16 flex-nowrap justify-end gap-2 self-center">
     <span
       class={match(programStatus)
-        .with('Success', 'CompilingRust', () => 'bx bx-check text-[24px] text-success-500')
+        .with(
+          'Success',
+          'CompilingRust',
+          () => 'bx bx-check -mr-1 -mt-1 h-6 text-[32px] text-success-500'
+        )
         .with(
           'Pending',
           'CompilingSql',
