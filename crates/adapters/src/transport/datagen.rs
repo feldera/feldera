@@ -240,7 +240,6 @@ impl InputGenerator {
                             }
                         }
                         Err(e) => {
-                            // We skip this plan and continue with the next one.
                             consumer.error(true, e);
                             consumer.eoi();
                             return;
