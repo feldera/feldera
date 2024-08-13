@@ -336,11 +336,11 @@ CREATE VIEW Q12 AS
 SELECT
     B.bidder,
     count(*) as bid_count,
-    TUMBLE_START(B.p_time, INTERVAL '10' SECOND) as starttime,
-    TUMBLE_END(B.p_time, INTERVAL '10' SECOND) as endtime
-FROM (SELECT *, NOW() as p_time FROM bid) B
-GROUP BY B.bidder, TUMBLE(B.p_time, INTERVAL '10' SECOND);""",
-
+    -- original query used B.proctime, but it's not clear why
+    TUMBLE_START(B.date_time, INTERVAL '10' SECOND) as starttime,
+    TUMBLE_END(B.date_time, INTERVAL '10' SECOND) as endtime
+FROM bid B
+GROUP BY B.bidder, TUMBLE(B.date_time, INTERVAL '10' SECOND);""",
             """
 -- -------------------------------------------------------------------------------------------------
 -- Query 13: Bounded Side Input Join (Not in original suite)
@@ -832,6 +832,14 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
                 """
  auction | bidder | price | date_time | extra | date | time | weight
 ---------------------------------------------------------------------""");
+    }
+
+    @Test
+    public void q12test() {
+        this.createTest(12, "",
+                """
+ bidder | bid_count | starttime | endtime
+------------------------------------------""");
     }
 
     @Test

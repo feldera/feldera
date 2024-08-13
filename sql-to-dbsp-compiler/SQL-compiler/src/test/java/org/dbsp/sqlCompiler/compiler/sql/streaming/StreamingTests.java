@@ -28,6 +28,27 @@ import java.util.List;
 /** Tests that exercise streaming features. */
 public class StreamingTests extends StreamingTestBase {
     @Test
+    public void q16() {
+        String sql = """
+                CREATE TABLE bid (
+                   auction  BIGINT,
+                   bidder  BIGINT,
+                   price  BIGINT,
+                   channel  VARCHAR,
+                   url  VARCHAR,
+                   date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 minutes,
+                   extra  VARCHAR
+                ) WITH ('connectors' = '{bid}');
+                CREATE VIEW Q16 AS
+                SELECT
+                    count(distinct auction) filter (where price >= 10000 and price < 1000000) AS rank2_auctions,
+                    count(distinct auction) filter (where price >= 1000000) AS rank3_auctions
+                FROM bid
+                GROUP BY channel, CAST(date_time AS DATE);""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void issue2004() {
         String sql = """
                 CREATE TABLE auction (
@@ -217,25 +238,33 @@ public class StreamingTests extends StreamingTestBase {
         compiler.compileStatements(sql);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.step("""
-                        INSERT INTO T VALUES (2), (3);
-                        INSERT INTO now VALUES ('2024-12-12 00:00:00');
-                        """,
+                 INSERT INTO T VALUES (2), (3);
+                 INSERT INTO now VALUES ('2024-12-12 00:00:00');
+                 """,
                 """
-                         value | now                 | weight
-                        --------------------------------------
-                         2     | 2024-12-12 00:00:00 | 1
-                         3     | 2024-12-12 00:00:00 | 1""");
+                 value | now                 | weight
+                 -------------------------------------
+                  2    | 2024-12-12 00:00:00 | 1
+                  3    | 2024-12-12 00:00:00 | 1""");
+        ccs.step("INSERT INTO now VALUES ('2024-12-12 00:01:00');",
+                """
+                value | now                 | weight
+                -------------------------------------
+                 2 | 2024-12-12 00:00:00 | -1
+                 3 | 2024-12-12 00:00:00 | -1
+                 2 | 2024-12-12 00:01:00 | 1
+                 3 | 2024-12-12 00:01:00 | 1""");
         ccs.step("""
-                        REMOVE FROM now VALUES ('2024-12-12 00:00:00');
-                        INSERT INTO now VALUES ('2024-12-12 00:01:00');
-                        """,
-                """
-                         value | now                 | weight
-                        --------------------------------------
-                         2     | 2024-12-12 00:00:00 | -1
-                         3     | 2024-12-12 00:00:00 | -1
-                         2     | 2024-12-12 00:01:00 | 1
-                         3     | 2024-12-12 00:01:00 | 1""");
+                 INSERT INTO now VALUES ('2024-12-12 00:02:00');
+                 INSERT INTO T VALUES (4);""",
+                 """
+                  value | now                 | weight
+                 --------------------------------------
+                  2 | 2024-12-12 00:01:00 | -1
+                  3 | 2024-12-12 00:01:00 | -1
+                  2 | 2024-12-12 00:02:00 | 1
+                  3 | 2024-12-12 00:02:00 | 1
+                  4 | 2024-12-12 00:02:00 | 1""");
         this.addRustTestCase("testNow2", ccs);
     }
 
@@ -256,14 +285,21 @@ public class StreamingTests extends StreamingTestBase {
                         ----------------
                          5     | 1""");
         ccs.step("""
-                        REMOVE FROM now VALUES ('2024-12-12 00:00:00');
-                        INSERT INTO now VALUES ('2024-12-12 00:01:00');
-                        """,
-                """
-                         value | weight
-                        ----------------
-                         5     | -1
-                         6     | 1""");
+                 INSERT INTO now VALUES ('2024-12-12 00:01:00');
+                 """,
+                 """
+                 value | weight
+                 ----------------
+                  5     | -1
+                  6     | 1""");
+        ccs.step("""
+                 INSERT INTO T VALUES (1);
+                 INSERT INTO now VALUES ('2024-12-12 00:02:00');
+                 """, """
+                  value | weight
+                 ----------------
+                  6     | -1
+                  8     | 1""");
         this.addRustTestCase("testNow3", ccs);
     }
 
@@ -400,9 +436,7 @@ public class StreamingTests extends StreamingTestBase {
                     id INT NOT NULL PRIMARY KEY,
                     customer_id INT NOT NULL,
                     timestamp_column TIMESTAMP NOT NULL LATENESS INTERVAL 0 DAYS,
-                    column_name DECIMAL(10, 2) NOT NULL,
-                    created_at TIMESTAMP,
-                    updated_at TIMESTAMP
+                    column_name DECIMAL(10, 2) NOT NULL
                 );
 
                 CREATE VIEW V AS SELECT

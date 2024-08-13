@@ -310,17 +310,18 @@ CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
 ```
 
 All invocations of the `NOW()` function within the program
-will produce the value that currently exists in this table.
+will produce the last value inserted in this table.
 
-This table does not currently get populated automatically.
-Instead, the user is responsible for supplying the data to this table.
-The user has to maintain the invariant that this table always contains a
-single value.  Moreover, deleting a value and inserting a new one
-requires the newly inserted value to be larger than the original
-value.  The user can periodically update the contents of the table with
-the current physical timestamp.  Alternatively, they can use this table to
-evaluate queries over historical data by writing a series of increasing
-past timestamps to it.
+This table does not currently get populated automatically.  Instead,
+the user is responsible for supplying the data to this table.  In
+every step of the circuit the user has to insert a new value in this
+table, which should be larger than the previous value.
+
+:::warning
+
+Programs that use `NOW()` can be very inefficient.  For example, a
+program such as `SELECT * FROM T WHERE T.x > NOW()` has to scan the
+entire table T at every step.  Use this function judiciously.
 
 | Operation     | Description         | Example                        |
 |---------------|---------------------|--------------------------------|
