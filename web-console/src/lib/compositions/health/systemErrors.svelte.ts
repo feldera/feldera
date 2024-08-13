@@ -11,6 +11,18 @@ import {
   type SystemError
 } from './systemErrors'
 
+export const listPipelineErrors = (pipeline: ExtendedPipeline) => {
+  let programErrors = extractProgramError(() => pipeline)({
+    name: pipeline.name,
+    status: pipeline.programStatus
+  })
+  let pipelineErrors = extractPipelineErrors(pipeline)
+  return {
+    programErrors,
+    pipelineErrors
+  }
+}
+
 export const useSystemErrors = (pipeline: { current: ExtendedPipeline }) => {
   let stats = $state<{ pipelineName: string; status: ControllerStatus | null | 'not running' }>({
     pipelineName: pipeline.current.name,
@@ -22,13 +34,14 @@ export const useSystemErrors = (pipeline: { current: ExtendedPipeline }) => {
     }
     stats = await getPipelineStats(pipelineName)
   }
-  let programErrors = $derived(
-    extractProgramError(() => pipeline.current)({
-      name: pipeline.current.name,
-      status: pipeline.current.programStatus
-    })
-  )
-  let pipelineErrors = $derived(extractPipelineErrors(pipeline.current))
+  // let programErrors = $derived(
+  //   extractProgramError(() => pipeline.current)({
+  //     name: pipeline.current.name,
+  //     status: pipeline.current.programStatus
+  //   })
+  // )
+  // let pipelineErrors = $derived(extractPipelineErrors(pipeline.current))
+  let { programErrors, pipelineErrors } = $derived(listPipelineErrors(pipeline.current))
   let xgressErrors = $derived(extractPipelineXgressErrors(stats))
   {
     let pipelineName = $derived(pipeline.current.name)

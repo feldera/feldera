@@ -6,7 +6,7 @@
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import { base } from '$app/paths'
   import { postPipeline, type PipelineThumb } from '$lib/services/pipelineManager'
-  import { goto, replaceState } from '$app/navigation'
+  import { goto } from '$app/navigation'
   import { page } from '$app/stores'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
 
@@ -64,7 +64,7 @@
       description: '',
       program_code: ''
     })
-    pipelines.push(newPipeline)
+    pipelines = [...pipelines, newPipeline]
     goto(`${base}/pipelines/${encodeURIComponent(pipelineName)}/`)
   }
 
