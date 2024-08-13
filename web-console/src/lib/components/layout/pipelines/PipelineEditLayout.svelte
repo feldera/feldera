@@ -21,8 +21,7 @@
     postPipelineAction,
     type ExtendedPipeline,
     type Pipeline,
-    type PipelineAction,
-    type PipelineStatus as PipelineStatusType
+    type PipelineAction
   } from '$lib/services/pipelineManager'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
   import { nonNull } from '$lib/functions/common/function'
@@ -33,15 +32,13 @@
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
   let {
-    pipeline,
-    reloadStatus
+    pipeline
   }: {
     pipeline: {
       current: ExtendedPipeline
       patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
       optimisticUpdate: (newPipeline: Partial<ExtendedPipeline>) => Promise<void>
     }
-    reloadStatus?: () => void
   } = $props()
   const pipelineCode = {
     get current() {
@@ -113,27 +110,9 @@
     }, 50)
   })
 
-  const makeStatus = () => ({
-    get status() {
-      return pipeline.current.status
-    },
-    set status(status: PipelineStatusType) {
-      pipeline.optimisticUpdate({
-        status
-      })
-    }
-  })
-
-  let status = $state({ status: makeStatus().status })
-  {
-    let pipelineName = $derived(pipeline.current.name)
-    $effect(() => {
-      pipelineName
-      status.status = makeStatus().status
-    })
-  }
-
-  let editDisabled = $derived(nonNull(status) && !isPipelineIdle(status.status))
+  let editDisabled = $derived(
+    nonNull(pipeline.current.status) && !isPipelineIdle(pipeline.current.status)
+  )
 
   const { updatePipelines } = useUpdatePipelineList()
 
@@ -168,13 +147,13 @@
           saveCode={decoupledCode.push}
           programStatus={pipeline.current.programStatus}
         ></PipelineEditorStatusBar>
-        {#if status}
-          <DeploymentStatus class="ml-auto h-full w-40 text-[1rem] " status={status.status}
+        {#if pipeline.current.status}
+          <DeploymentStatus
+            class="ml-auto h-full w-40 text-[1rem] "
+            status={pipeline.current.status}
           ></DeploymentStatus>
           <PipelineActions
-            name={pipeline.current.name}
-            bind:status
-            {reloadStatus}
+            {pipeline}
             onDeletePipeline={(pipelineName) =>
               updatePipelines((pipelines) => pipelines.filter((p) => p.name !== pipelineName))}
             pipelineBusy={editDisabled}

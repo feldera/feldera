@@ -1,16 +1,12 @@
 <script lang="ts">
   import {
-    getPipeline,
-    getPipelineStatus,
-    patchPipeline,
     postPipelineAction,
-    type PipelineAction,
-    type PipelineStatus
+    type ExtendedPipeline,
+    type Pipeline,
+    type PipelineAction
   } from '$lib/services/pipelineManager'
-  import { asyncDerived, asyncReadable, readable, writable } from '@square/svelte-store'
   import { match, P } from 'ts-pattern'
   import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
-  import DangerDialog from '$lib/components/dialogs/DangerDialog.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
@@ -20,35 +16,28 @@
   import Tooltip from '$lib/components/common/Tooltip.svelte'
 
   let {
-    name: pipelineName,
-    status = $bindable(),
-    reloadStatus,
+    pipeline,
     onDeletePipeline,
     pipelineBusy,
     unsavedChanges,
     onActionSuccess,
     class: _class = ''
   }: {
-    name: string
-    status: { status: PipelineStatus }
-    reloadStatus?: () => void
+    pipeline: {
+      current: ExtendedPipeline
+      patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
+      optimisticUpdate: (newPipeline: Partial<ExtendedPipeline>) => Promise<void>
+    }
     onDeletePipeline?: (pipelineName: string) => void
     pipelineBusy: boolean
     unsavedChanges: boolean
     onActionSuccess?: (action: PipelineAction) => void
     class?: string
   } = $props()
-  $effect(() => {
-    let interval = setInterval(() => reloadStatus?.(), 2000)
-    return () => {
-      clearInterval(interval)
-    }
-  })
 
   const globalDialog = useGlobalDialog()
   const deletePipeline = async (pipelineName: string) => {
     await _deletePipeline(pipelineName)
-    reloadStatus?.()
     onDeletePipeline?.(pipelineName)
     goto(`${base}/`)
   }
@@ -67,7 +56,7 @@
   }
 
   const active = $derived(
-    match(status.status)
+    match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
       .with('Shutdown', () => ['_start_paused', '_configure', '_delete'])
       .with('Queued', () => ['_start_disabled', '_configure', '_delete'])
@@ -93,7 +82,11 @@
 
 {#snippet deleteDialog()}
   <DeleteDialog
-    {...deleteDialogProps('Delete', (name) => `${name} pipeline`, deletePipeline)(pipelineName)}
+    {...deleteDialogProps(
+      'Delete',
+      (name) => `${name} pipeline`,
+      deletePipeline
+    )(pipeline.current.name)}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
@@ -117,8 +110,8 @@
       class:disabled={unsavedChanges}
       class={'bx bx-play !bg-success-200-800 '}
       onclick={async () => {
-        const success = await postPipelineAction(pipelineName, 'start')
-        status.status = 'Starting up'
+        const success = await postPipelineAction(pipeline.current.name, 'start')
+        pipeline.optimisticUpdate({ status: 'Starting up' })
         await success()
         onActionSuccess?.('start')
       }}
@@ -137,8 +130,8 @@
       class:disabled={unsavedChanges}
       class={'bx bx-play !bg-success-200-800 '}
       onclick={async () => {
-        const success = await postPipelineAction(pipelineName, 'start_paused')
-        status.status = 'Starting up'
+        const success = await postPipelineAction(pipeline.current.name, 'start_paused')
+        pipeline.optimisticUpdate({ status: 'Starting up' })
         await success()
         onActionSuccess?.('start_paused')
       }}
@@ -166,9 +159,9 @@
   <button
     class={'bx bx-pause ' + buttonClass}
     onclick={() =>
-      postPipelineAction(pipelineName, 'pause').then(() => {
+      postPipelineAction(pipeline.current.name, 'pause').then(() => {
         onActionSuccess?.('pause')
-        status.status = 'ShuttingDown'
+        pipeline.optimisticUpdate({ status: 'ShuttingDown' })
       })}
   >
   </button>
@@ -177,33 +170,31 @@
   <button
     class={'bx bx-stop ' + buttonClass}
     onclick={() =>
-      postPipelineAction(pipelineName, 'shutdown').then(() => {
+      postPipelineAction(pipeline.current.name, 'shutdown').then(() => {
         onActionSuccess?.('shutdown')
-        status.status = 'ShuttingDown'
+        pipeline.optimisticUpdate({ status: 'ShuttingDown' })
       })}
   >
   </button>
 {/snippet}
 {#snippet _configure()}
   {#snippet pipelineResourcesDialog()}
-    {#await getPipeline(pipelineName) then pipeline}
-      <JSONDialog
-        disabled={pipelineBusy}
-        json={JSONbig.stringify(pipeline.runtimeConfig, undefined, '  ')}
-        onApply={async (json) => {
-          await patchPipeline(pipeline.name, {
-            runtimeConfig: JSONbig.parse(json)
-          })
-        }}
-        onClose={() => (globalDialog.dialog = null)}
-      >
-        {#snippet title()}
-          <div class="h5 text-center font-normal">
-            {`Configure ${pipelineName} runtime resources`}
-          </div>
-        {/snippet}
-      </JSONDialog>
-    {/await}
+    <JSONDialog
+      disabled={pipelineBusy}
+      json={JSONbig.stringify(pipeline.current.runtimeConfig, undefined, '  ')}
+      onApply={async (json) => {
+        await pipeline.patch({
+          runtimeConfig: JSONbig.parse(json)
+        })
+      }}
+      onClose={() => (globalDialog.dialog = null)}
+    >
+      {#snippet title()}
+        <div class="h5 text-center font-normal">
+          {`Configure ${pipeline.current.name} runtime resources`}
+        </div>
+      {/snippet}
+    </JSONDialog>
   {/snippet}
   <button
     onclick={() => (globalDialog.dialog = pipelineResourcesDialog)}
