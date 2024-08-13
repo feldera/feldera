@@ -9,7 +9,11 @@
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
   import { asyncDebounced } from '$lib/compositions/asyncDebounced'
   import { useChangedPipelines } from '$lib/compositions/pipelines/useChangedPipelines.svelte'
-  import type { SystemError } from '$lib/compositions/health/systemErrors'
+  import {
+    extractProgramError,
+    programErrorReport,
+    type SystemError
+  } from '$lib/compositions/health/systemErrors'
   import { editor } from 'monaco-editor'
   import { extractSQLCompilerErrorMarkers } from '$lib/functions/pipelines/monaco'
   import { page } from '$app/stores'
@@ -22,7 +26,7 @@
   } from '$lib/services/pipelineManager'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
   import { nonNull } from '$lib/functions/common/function'
-  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { useDecoupledState } from '$lib/compositions/decoupledState.svelte'
 
@@ -30,8 +34,7 @@
 
   let {
     pipeline,
-    reloadStatus,
-    programErrors
+    reloadStatus
   }: {
     pipeline: {
       current: ExtendedPipeline
@@ -39,7 +42,6 @@
       optimisticUpdate: (newPipeline: Partial<ExtendedPipeline>) => Promise<void>
     }
     reloadStatus?: () => void
-    programErrors?: SystemError[]
   } = $props()
   const pipelineCode = {
     get current() {
@@ -133,7 +135,7 @@
 
   let editDisabled = $derived(nonNull(status) && !isPipelineIdle(status.status))
 
-  const pipelines = usePipelineList()
+  const { updatePipelines } = useUpdatePipelineList()
 
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   const handleActionSuccess = async (pipelineName: string, action: PipelineAction) => {
@@ -144,6 +146,17 @@
     }
     postPipelineAction(pipelineName, 'start')
   }
+
+  const programErrors = $derived(
+    extractProgramError(programErrorReport(pipeline.current))({
+      name: pipeline.current.name,
+      status: pipeline.current.programStatus
+    })
+  )
+  let markers = $state<Record<string, editor.IMarkerData[]>>()
+  $effect(() => {
+    markers = programErrors ? { sql: extractSQLCompilerErrorMarkers(programErrors) } : undefined
+  })
 </script>
 
 <div class="h-full w-full">
@@ -163,7 +176,7 @@
             bind:status
             {reloadStatus}
             onDeletePipeline={(pipelineName) =>
-              (pipelines.pipelines = pipelines.pipelines.filter((p) => p.name !== pipelineName))}
+              updatePipelines((pipelines) => pipelines.filter((p) => p.name !== pipelineName))}
             pipelineBusy={editDisabled}
             unsavedChanges={decoupledCode.downstreamChanged}
             onActionSuccess={(action) => handleActionSuccess(pipeline.current.name, action)}
@@ -173,9 +186,7 @@
       <div class="relative h-full w-full">
         <div class="absolute h-full w-full" class:opacity-50={editDisabled}>
           <MonacoEditor
-            markers={programErrors
-              ? { sql: extractSQLCompilerErrorMarkers(programErrors) }
-              : undefined}
+            {markers}
             on:ready={(x) => {
               x.detail.onKeyDown((e) => {
                 if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {

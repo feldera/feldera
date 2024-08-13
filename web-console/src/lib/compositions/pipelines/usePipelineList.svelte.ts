@@ -6,6 +6,14 @@ const reload = async () => {
   pipelines = await getPipelines()
 }
 
+export const useUpdatePipelineList = () => {
+  return {
+    updatePipelines(updater: (ps: typeof pipelines) => typeof pipelines) {
+      pipelines = updater(pipelines)
+    }
+  }
+}
+
 export const usePipelineList = (preloaded?: { pipelines: typeof pipelines }) => {
   if (preloaded) {
     pipelines = preloaded.pipelines
