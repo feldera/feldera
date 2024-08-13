@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.ir.annotation.NoInc;
 import org.dbsp.util.Linq;
 
 import java.util.List;
@@ -38,6 +39,11 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPDifferentiateOperator operator) {
+        if (operator.hasAnnotation(p -> p.is(NoInc.class))) {
+            this.linear(operator);
+            return;
+        }
+
         DBSPOperator source = this.mapped(operator.input());
         if (source.is(DBSPIntegrateOperator.class)) {
             DBSPIntegrateOperator integral = source.to(DBSPIntegrateOperator.class);

@@ -590,8 +590,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         name.startsWith("sign_") ||
                         name.startsWith("numeric_inc") ||
                         name.startsWith("extract_year_") ||
+                        name.startsWith("extract_millennium_") ||
+                        name.startsWith("extract_century_") ||
                         name.startsWith("extract_epoch_") ||
-                        name.startsWith("extract_hour_Time") ||
+                        name.startsWith("extract_hour_Time_") ||
                         name.startsWith("dateadd_") ||
                         name.equals("hop_start_timestamp") ||
                         name.startsWith("to_bound_") ||

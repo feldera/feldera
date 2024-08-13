@@ -204,12 +204,14 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
             case "waterline" -> " style=filled fillcolor=lightgreen";
             case "controlled_filter" -> " style=filled fillcolor=cyan";
             case "apply", "apply2" -> " style=filled fillcolor=yellow";
-            case "integrate_trace_retain_keys", "integrate_trace_retain_values" -> " style=filled fillcolor=pink";
+            case "integrate_trace_retain_keys",
+                 "partitioned_rolling_aggregate_with_waterline",
+                 "integrate_trace_retain_values" -> " style=filled fillcolor=pink";
             // stateful operators
             case "distinct",
                  // all aggregates require an upsert, which is stateful, even the ones that are linear
                  "aggregate", "partitioned_rolling_aggregate", "aggregate_linear",
-                 "stream_aggregate", "stream_aggregate_linear", "partitioned_rolling_aggregate_with_waterline",
+                 "stream_aggregate", "stream_aggregate_linear",
                  "partitioned_tree_aggregate",
                  // some joins require integrators
                  "join", "join_flatmap",

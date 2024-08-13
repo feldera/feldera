@@ -23,7 +23,6 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend;
 
-import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rex.*;
 import org.apache.calcite.sql.SqlKind;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -159,8 +158,8 @@ public class JoinConditionAnalyzer implements IWritesLogs {
             DBSPType rightType = JoinConditionAnalyzer.this.typeCompiler.convertType(
                     right.getType(), true);
             if (call.op.kind == SqlKind.IS_NOT_DISTINCT_FROM) {
-                // Only used if the operands are not nullable
-                if (leftType.mayBeNull || rightType.mayBeNull) {
+                // Only used if any of the operands is not nullable
+                if (leftType.mayBeNull && rightType.mayBeNull) {
                     return false;
                 }
             }
