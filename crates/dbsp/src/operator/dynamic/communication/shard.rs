@@ -80,29 +80,30 @@ where
                             let factories_clone2 = factories_clone.clone();
                             let factories_clone3 = factories_clone.clone();
 
-                            let (sender, receiver) = new_exchange_operators(
-                                &runtime,
-                                Runtime::worker_index(),
-                                Some(location),
-                                move || Vec::new(),
-                                move |batch: IB, batches: &mut Vec<OB>| {
-                                    Self::shard_batch(
-                                        &batch,
-                                        num_workers,
-                                        &mut builders,
-                                        batches,
-                                        &factories_clone3,
-                                    );
-                                },
-                                |batches: &mut Vec<OB>, batch: OB| batches.push(batch),
-                            );
+                            let output = self.circuit().region("shard", || {
+                                let (sender, receiver) = new_exchange_operators(
+                                    &runtime,
+                                    Runtime::worker_index(),
+                                    Some(location),
+                                    move || Vec::new(),
+                                    move |batch: IB, batches: &mut Vec<OB>| {
+                                        Self::shard_batch(
+                                            &batch,
+                                            num_workers,
+                                            &mut builders,
+                                            batches,
+                                            &factories_clone3,
+                                        );
+                                    },
+                                    |batches: &mut Vec<OB>, batch: OB| batches.push(batch),
+                                );
 
-                            let output = self
-                                .circuit()
-                                .add_exchange(sender, receiver, self)
-                                .apply_owned_named("merge shards", move |batches| {
-                                    merge_batches(&factories_clone2, batches)
-                                });
+                                self.circuit()
+                                    .add_exchange(sender, receiver, self)
+                                    .apply_owned_named("merge shards", move |batches| {
+                                        merge_batches(&factories_clone2, batches)
+                                    })
+                            });
 
                             self.circuit().cache_insert(
                                 ShardId::new((
