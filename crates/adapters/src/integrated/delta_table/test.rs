@@ -200,32 +200,44 @@ where
     // Create controller.
     let config_str = format!(
         r#"
-name: test
-workers: 4
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: "{output_file_path}"
-        format:
-            name: json
-            config:
-                update_format: "insert_delete"
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: "delta_table_input"
-            config:
-                uri: "{table_uri}"
-{}
+{{
+  name: "test",
+  workers: 4,
+  outputs: {{
+    test_output1: {{
+      stream: "test_output1",
+      transport: {{
+        name: "file_output",
+        config: {{
+          path: "{output_file_path}"
+        }}
+      }},
+      format: {{
+        name: "json",
+        config: {{
+          update_format: "insert_delete"
+        }}
+      }}
+    }}
+  }},
+  inputs: {{
+    test_input1: {{
+      stream: "test_input1",
+      transport: {{
+        name: "delta_table_input",
+        config: {{
+          uri: "{table_uri}"
+        }}
+      }}
+    }}
+  }},
+  {}
+}}
 "#,
         storage_options,
     );
 
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
 
     Controller::with_config(
         |workers| Ok(test_circuit::<T>(workers, &TestStruct2::schema())),
@@ -265,32 +277,42 @@ where
     // Create controller.
     let config_str = format!(
         r#"
-name: test
-workers: 4
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: "delta_table_input"
-            config:
-                uri: "{input_table_uri}"
-{}
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: "delta_table_output"
-            config:
-                uri: "{output_table_uri}"
-{}
-        enable_output_buffer: true
-        max_output_buffer_size_records: {buffer_size}
-        max_output_buffer_time_millis: {buffer_timeout_ms}
+{{
+  name: "test",
+  workers: 4,
+  inputs: {{
+    test_input1: {{
+      stream: "test_input1",
+      transport: {{
+        name: "delta_table_input",
+        config: {{
+          uri: "{input_table_uri}",
+          {}
+        }}
+      }}
+    }}
+  }},
+  outputs: {{
+    test_output1: {{
+      stream: "test_output1",
+      transport: {{
+        name: "delta_table_output",
+        config: {{
+          uri: "{output_table_uri}",
+          {}
+        }}
+      }},
+      enable_output_buffer: true,
+      max_output_buffer_size_records: {buffer_size},
+      max_output_buffer_time_millis: {buffer_timeout_ms}
+    }}
+  }}
+}}
 "#,
         input_storage_options, output_storage_options,
     );
 
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
 
     Controller::with_config(
         |workers| Ok(test_circuit::<T>(workers, &TestStruct2::schema())),
@@ -343,32 +365,43 @@ fn delta_table_output_test(
 
     // Create controller.
     let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: "{}"
-        format:
-            name: json
-            config:
-                update_format: "raw"
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: "delta_table_output"
-            config:
-                uri: "{table_uri}"
-                mode: "truncate"
+        r#"{{
+  name: "test",
+  workers: 4,
+  inputs: {{
+    test_input1: {{
+      stream: "test_input1",
+      transport: {{
+        name: "file_input",
+        config: {{
+          path: "{}"
+        }}
+      }},
+      format: {{
+        name: "json",
+        config: {{
+          update_format: "raw"
+        }}
+      }}
+    }}
+  }},
+  outputs: {{
+    test_output1: {{
+      stream: "test_output1",
+      transport: {{
+        name: "delta_table_output",
+        config: {{
+          uri: "{table_uri}",
+          mode: "truncate"
+        }}
+      }},
 {}
-        enable_output_buffer: true
-        max_output_buffer_size_records: {buffer_size}
-        max_output_buffer_time_millis: {buffer_timeout_ms}
+      enable_output_buffer: true,
+      max_output_buffer_size_records: {buffer_size},
+      max_output_buffer_time_millis: {buffer_timeout_ms}
+    }}
+  }}
+}}
 "#,
         input_file.path().display(),
         storage_options,
@@ -379,7 +412,7 @@ outputs:
         data.len(),
         input_file.path().display(),
     );
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
 
     let controller = Controller::with_config(
         |workers| Ok(test_circuit::<TestStruct2>(workers, &TestStruct2::schema())),

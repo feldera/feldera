@@ -2,8 +2,8 @@
 //!
 //! This module defines the controller configuration structure.  The leaves of
 //! this structure are individual transport-specific and data-format-specific
-//! endpoint configs.  We represent these configs as opaque yaml values, so
-//! that the entire configuration tree can be deserialized from a yaml file.
+//! endpoint configs.  We represent these configs as opaque json5 values, so
+//! that the entire configuration tree can be deserialized from a JSON5 file.
 
 use crate::query::OutputQuery;
 use crate::transport::datagen::DatagenInputConfig;
@@ -14,7 +14,7 @@ use crate::transport::nexmark::NexmarkInputConfig;
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
 use serde::{Deserialize, Serialize};
-use serde_yaml::Value as YamlValue;
+use serde_json::Value;
 use std::{borrow::Cow, collections::BTreeMap};
 use utoipa::ToSchema;
 
@@ -72,12 +72,12 @@ pub struct PipelineConfig {
 }
 
 impl PipelineConfig {
-    pub fn from_yaml(s: &str) -> Self {
-        serde_yaml::from_str(s).unwrap()
+    pub fn from_json5(s: &str) -> Self {
+        json5::from_str(s).unwrap()
     }
 
-    pub fn to_yaml(&self) -> String {
-        serde_yaml::to_string(self).unwrap()
+    pub fn to_json5(&self) -> String {
+        json5::to_string(self).unwrap()
     }
 }
 
@@ -203,12 +203,12 @@ pub struct RuntimeConfig {
 }
 
 impl RuntimeConfig {
-    pub fn from_yaml(s: &str) -> Self {
-        serde_yaml::from_str(s).unwrap()
+    pub fn from_json5(s: &str) -> Self {
+        json5::from_str(s).unwrap()
     }
 
-    pub fn to_yaml(&self) -> String {
-        serde_yaml::to_string(self).unwrap()
+    pub fn to_json5(&self) -> String {
+        json5::to_string(self).unwrap()
     }
 }
 
@@ -267,11 +267,11 @@ pub struct ConnectorConfig {
 }
 
 fn default_max_buffer_time_millis() -> usize {
-    usize::MAX
+    i64::MAX as usize
 }
 
 fn default_max_buffer_size_records() -> usize {
-    usize::MAX
+    i64::MAX as usize
 }
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -412,7 +412,7 @@ pub struct FormatConfig {
     /// Format-specific parser or encoder configuration.
     #[serde(default)]
     #[schema(value_type = Object)]
-    pub config: YamlValue,
+    pub config: Value,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]

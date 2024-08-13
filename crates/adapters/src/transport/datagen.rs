@@ -1290,19 +1290,27 @@ mod test {
     {
         let relation = Relation::new("test_input", false, fields, true, BTreeMap::new());
         let (endpoint, consumer, zset) =
-            mock_input_pipeline::<T, U>(serde_yaml::from_str(config_str).unwrap(), relation)?;
+            mock_input_pipeline::<T, U>(json5::from_str(config_str).unwrap(), relation)?;
         endpoint.start(0)?;
         Ok((endpoint, consumer, zset))
     }
 
     #[test]
     fn test_limit_increment() {
-        let config_str = r#"
-stream: test_input
-transport:
-    name: datagen
-    config:
-        plan: [ { limit: 10, fields: {} } ]
+        let config_str = r#"{
+  stream: "test_input",
+  transport: {
+    name: "datagen",
+    config: {
+      plan: [
+        {
+          limit: 10,
+          fields: {}
+        }
+      ]
+    }
+  }
+}
 "#;
         let (_endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
@@ -1327,13 +1335,26 @@ transport:
 
     #[test]
     fn test_scaled_range_increment() {
-        let config_str = r#"
-stream: test_input
-transport:
-    name: datagen
-    config:
-        plan: [ { limit: 10, fields: { "id": { "strategy": "increment", "range": [10, 20], scale: 3 } } } ]
-"#;
+        let config_str = r#"{
+  stream: "test_input",
+  transport: {
+    name: "datagen",
+    config: {
+      plan: [
+        {
+          limit: 10,
+          fields: {
+            "id": {
+              strategy: "increment",
+              range: [10, 20],
+              scale: 3
+            }
+          }
+        }
+      ]
+    }
+  }
+}"#;
         let (_endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
 
@@ -1353,12 +1374,25 @@ transport:
 
     #[test]
     fn test_uniform_range() {
-        let config_str = r#"
-stream: test_input
-transport:
-    name: datagen
-    config:
-        plan: [ { limit: 1, fields: { "id": { "strategy": "uniform", "range": [10, 20] } } } ]
+        let config_str = r#"{
+  stream: "test_input",
+  transport: {
+    name: "datagen",
+    config: {
+      plan: [
+        {
+          limit: 1,
+          fields: {
+            "id": {
+              strategy: "uniform",
+              range: [10, 20]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
 "#;
         let (_endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
@@ -1377,12 +1411,24 @@ transport:
 
     #[test]
     fn test_values() {
-        let config_str = r#"
-stream: test_input
-transport:
-    name: datagen
-    config:
-        plan: [ { limit: 4, fields: { "id": { values: [99, 100, 101] } } } ]
+        let config_str = r#"{
+  stream: "test_input",
+  transport: {
+    name: "datagen",
+    config: {
+      plan: [
+        {
+          limit: 4,
+          fields: {
+            "id": {
+              values: [99, 100, 101]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
 "#;
         let (_endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
@@ -1406,14 +1452,17 @@ transport:
 
     #[test]
     fn missing_config_does_something_sane() {
-        let config_str = r#"
-stream: test_input
-transport:
-    name: datagen
-    config:
+        let config_str = r#"{
+  stream: "test_input",
+  transport: {
+    name: "datagen",
+    config: {
       workers: 3
+    }
+  }
+}
 "#;
-        let cfg: InputEndpointConfig = serde_yaml::from_str(config_str).unwrap();
+        let cfg: InputEndpointConfig = json5::from_str(config_str).unwrap();
 
         if let TransportConfig::Datagen(dtg) = cfg.connector_config.transport {
             assert_eq!(dtg.plan.len(), 1);
@@ -1423,12 +1472,24 @@ transport:
 
     #[test]
     fn test_null() {
-        let config_str = r#"
-stream: test_input
-transport:
-    name: datagen
-    config:
-        plan: [ { limit: 10, fields: { "name": { null_percentage: 100 } } } ]
+        let config_str = r#"{
+  stream: "test_input",
+  transport: {
+    name: "datagen",
+    config: {
+      plan: [
+        {
+          limit: 10,
+          fields: {
+            "name": {
+              null_percentage: 100
+            }
+          }
+        }
+      ]
+    }
+  }
+}
 "#;
         let (_endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
@@ -1447,12 +1508,24 @@ transport:
 
     #[test]
     fn test_null_percentage() {
-        let config_str = r#"
-stream: test_input
-transport:
-    name: datagen
-    config:
-        plan: [ { limit: 100, fields: { "name": { null_percentage: 50 } } } ]
+        let config_str = r#"{
+  stream: "test_input",
+  transport: {
+    name: "datagen",
+    config: {
+      plan: [
+        {
+          limit: 100,
+          fields: {
+            "name": {
+              null_percentage: 50
+            }
+          }
+        }
+      ]
+    }
+  }
+}
 "#;
         let (_endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
@@ -1475,12 +1548,24 @@ transport:
 
     #[test]
     fn test_string_generators() {
-        let config_str = r#"
-stream: test_input
-transport:
-    name: datagen
-    config:
-        plan: [ { limit: 2, fields: { "name": { "strategy": "word" } } } ]
+        let config_str = r#"{
+  stream: "test_input",
+  transport: {
+    name: "datagen",
+    config: {
+      plan: [
+        {
+          limit: 2,
+          fields: {
+            "name": {
+              strategy: "word"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
 "#;
         let (_endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
@@ -1511,13 +1596,16 @@ transport:
             .unwrap_or(DEFAULT_WORKERS);
 
         let config_str = format!(
-            "
-stream: test_input
-transport:
-    name: datagen
-    config:
-        plan: [ {{ limit: {size}, fields: {{}} }} ]
-        workers: {workers}
+            "{{
+  stream: \"test_input\",
+  transport: {{
+    name: \"datagen\",
+    config: {{
+      plan: [ {{ limit: {size}, fields: {{}} }} ],
+      workers: {workers}
+    }}
+  }}
+}}
 "
         );
         let (_endpoint, consumer, _zset) =

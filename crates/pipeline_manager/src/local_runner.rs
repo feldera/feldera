@@ -116,7 +116,7 @@ impl PipelineExecutor for ProcessRunner {
         }
 
         let config_file_path = self.config.config_file_path(pipeline_id);
-        let expanded_config = serde_yaml::to_string(&ped.deployment_config).unwrap();
+        let expanded_config = json5::to_string(&ped.deployment_config).unwrap();
         fs::write(&config_file_path, &expanded_config)
             .await
             .map_err(|e| {

@@ -252,7 +252,7 @@ impl BufferConsumer {
             .new_parser(
                 "BaseConsumer",
                 &InputCollectionHandle::new(schema, buffer.clone()),
-                &serde_yaml::from_str::<serde_yaml::Value>(format_config_yaml).unwrap(),
+                &json5::from_str::<serde_json::Value>(format_config_yaml).unwrap(),
             )
             .unwrap();
 

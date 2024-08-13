@@ -303,7 +303,7 @@ fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
     // Still running without logger here.
     eprintln!("Pipeline configuration:\n{yaml_config}");
 
-    serde_yaml::from_str(yaml_config.as_str())
+    json5::from_str(yaml_config.as_str())
         .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
 }
 
@@ -737,7 +737,7 @@ pub fn parser_config_from_http_request(
     // strongly typed format-specific config.
     Ok(FormatConfig {
         name: Cow::from(format_name.to_string()),
-        config: serde_yaml::to_value(config)
+        config: serde_json::to_value(config)
             .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, ""))?,
     })
 }
@@ -756,7 +756,7 @@ pub fn encoder_config_from_http_request(
 
     Ok(FormatConfig {
         name: Cow::from(format_name.to_string()),
-        config: serde_yaml::to_value(config)
+        config: serde_json::to_value(config)
             .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, ""))?,
     })
 }

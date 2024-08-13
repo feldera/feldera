@@ -258,12 +258,12 @@ pub struct ProgramConfig {
 }
 
 impl ProgramConfig {
-    pub fn from_yaml(s: &str) -> Self {
-        serde_yaml::from_str(s).unwrap()
+    pub fn from_json5(s: &str) -> Self {
+        json5::from_str(s).unwrap()
     }
 
-    pub fn to_yaml(&self) -> String {
-        serde_yaml::to_string(self).unwrap()
+    pub fn to_json5(&self) -> String {
+        json5::to_string(self).unwrap()
     }
 }
 
@@ -338,18 +338,17 @@ fn parse_named_connectors(
     }
     match properties.get("connectors") {
         Some(value) => {
-            let connectors =
-                serde_json::from_str::<Vec<NamedConnector>>(&value.value).map_err(|e| {
-                    ConnectorGenerationError::InvalidPropertyValue {
-                        position: value.value_position,
-                        relation: relation.clone(),
-                        key: "connectors".to_string(),
-                        value: value.value.clone(),
-                        reason: Box::new(format!(
-                            "deserialization failed: {e} (position is within the string itself)"
-                        )),
-                    }
-                })?;
+            let connectors = json5::from_str::<Vec<NamedConnector>>(&value.value).map_err(|e| {
+                ConnectorGenerationError::InvalidPropertyValue {
+                    position: value.value_position,
+                    relation: relation.clone(),
+                    key: "connectors".to_string(),
+                    value: value.value.clone(),
+                    reason: Box::new(format!(
+                        "deserialization failed: {e} (position is within the string itself)"
+                    )),
+                }
+            })?;
             for connector in &connectors {
                 if let Some(name) = &connector.name {
                     validate_name(name).map_err(|e| {
@@ -463,12 +462,17 @@ pub struct ProgramInfo {
 }
 
 impl ProgramInfo {
-    pub fn from_yaml(s: &str) -> Self {
-        serde_yaml::from_str(s).unwrap()
+    pub fn from_json5(s: &str) -> Self {
+        if let Err(e) = json5::from_str::<Self>(s) {
+            log::error!("Error: {:?}", e);
+            panic!("String: {:?}", s);
+        } else {
+            json5::from_str(s).unwrap()
+        }
     }
 
-    pub fn to_yaml(&self) -> String {
-        serde_yaml::to_string(self).unwrap()
+    pub fn to_json5(&self) -> String {
+        json5::to_string(self).unwrap()
     }
 }
 

@@ -111,11 +111,11 @@ impl ErrorResponse {
         }
     }
 
-    pub fn from_yaml(s: &str) -> Self {
-        serde_yaml::from_str(s).unwrap()
+    pub fn from_json5(s: &str) -> Self {
+        json5::from_str(s).unwrap()
     }
 
-    pub fn to_yaml(&self) -> String {
-        serde_yaml::to_string(self).unwrap()
+    pub fn to_json5(&self) -> String {
+        json5::to_string(self).unwrap()
     }
 }

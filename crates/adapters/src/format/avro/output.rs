@@ -11,12 +11,11 @@ use pipeline_types::program_schema::Relation;
 use schema_registry_converter::avro_common::get_supplied_schema;
 use schema_registry_converter::blocking::schema_registry::{post_schema, SrSettings};
 use serde::Deserialize;
+use serde_json::Value;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 use std::borrow::Cow;
 use std::str::FromStr;
 use std::time::Duration;
-
 // TODOs:
 // - This connector currently only supports raw Avro format, i.e., deletes cannot be represented.
 //   Add support for other variants such as Debezium that are able to represent deletions.
@@ -58,7 +57,7 @@ impl OutputFormat for AvroOutputFormat {
     fn new_encoder(
         &self,
         endpoint_name: &str,
-        config: &YamlValue,
+        config: &Value,
         _schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
@@ -66,7 +65,7 @@ impl OutputFormat for AvroOutputFormat {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &e,
-                &serde_yaml::to_string(config).unwrap_or_default(),
+                &json5::to_string(config).unwrap_or_default(),
             )
         })?;
 
@@ -106,14 +105,14 @@ impl AvroEncoder {
                     "'schema' string '{}' is not a valid JSON document: {e}",
                     &config.schema
                 ),
-                &serde_yaml::to_string(&config).unwrap_or_default(),
+                &json5::to_string(&config).unwrap_or_default(),
             )
         })?;
         let schema = AvroSchema::parse(&schema_json).map_err(|e| {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &format!("invalid Avro schema: {e}"),
-                &serde_yaml::to_string(&config).unwrap_or_default(),
+                &json5::to_string(&config).unwrap_or_default(),
             )
         })?;
 

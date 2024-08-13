@@ -28,7 +28,6 @@ log = "0.4.20"
 env_logger = "0.10.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.103"
-serde_yaml = "0.9.14"
 clap = { version = "4.0.32", features = ["derive"] }
 utoipa = { version = "4.1", features = ["actix_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "4", features = ["actix-web"] }
@@ -55,6 +54,7 @@ dirs = "5.0"
 thiserror = "1.0"
 metrics = "0.23"
 metrics-exporter-prometheus = "0.15.1"
+json5 = "0.4.1"
 
 [features]
 integration-test = []

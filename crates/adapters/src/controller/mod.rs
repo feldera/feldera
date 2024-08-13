@@ -1155,7 +1155,7 @@ impl ControllerInner {
                     }
                     FormatConfig {
                         name: Cow::from("json"),
-                        config: serde_yaml::to_value(JsonParserConfig {
+                        config: serde_json::to_value(JsonParserConfig {
                             update_format: JsonUpdateFormat::Raw,
                             json_flavor: JsonFlavor::Datagen,
                             array: true,
@@ -1928,7 +1928,7 @@ outputs:
 
             println!("input file: {}", temp_input_file.path().to_str().unwrap());
             println!("output file: {output_path}");
-            let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+            let config: PipelineConfig = serde_json::from_str(&config_str).unwrap();
             let controller = Controller::with_config(
                     |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[])),
                     &config,

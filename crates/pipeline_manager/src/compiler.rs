@@ -1006,7 +1006,7 @@ mod test {
                 PipelineDescr {
                     name: pname.to_string(),
                     description: "Description of the pipeline".to_string(),
-                    runtime_config: RuntimeConfig::from_yaml(""),
+                    runtime_config: RuntimeConfig::from_json5(""),
                     program_code: "code-not-used".to_string(),
                     program_config: ProgramConfig {
                         profile: Some(CompilationProfile::Unoptimized),

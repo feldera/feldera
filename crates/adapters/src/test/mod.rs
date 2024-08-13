@@ -130,7 +130,7 @@ where
 {
     let default_format = FormatConfig {
         name: Cow::from("json"),
-        config: serde_yaml::to_value(JsonParserConfig {
+        config: serde_json::to_value(JsonParserConfig {
             update_format: JsonUpdateFormat::Raw,
             json_flavor: JsonFlavor::Datagen,
             array: true,
@@ -233,7 +233,7 @@ where
         .new_parser(
             "BaseConsumer",
             &InputCollectionHandle::new(schema, buffer.clone()),
-            &serde_yaml::from_str::<serde_yaml::Value>(format_config_yaml).unwrap(),
+            &json5::from_str::<serde_json::Value>(format_config_yaml).unwrap(),
         )
         .unwrap();
 

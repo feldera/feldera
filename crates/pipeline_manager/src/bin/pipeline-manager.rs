@@ -43,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
             anyhow::Error::msg(format!("error reading config file '{config_file}': {e}"))
         })?;
         let config_yaml = String::from_utf8_lossy(&config_yaml);
-        api_config = serde_yaml::from_str(&config_yaml).map_err(|e| {
+        api_config = json5::from_str(&config_yaml).map_err(|e| {
             anyhow::Error::msg(format!("error parsing config file '{config_file}': {e}"))
         })?;
     }

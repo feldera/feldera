@@ -37,10 +37,10 @@ impl InputEndpoint for S3InputEndpoint {
 impl TransportInputEndpoint for S3InputEndpoint {
     fn open(
         &self,
-        consumer: Box<dyn crate::InputConsumer>,
+        consumer: Box<dyn InputConsumer>,
         _start_step: super::Step,
         _schema: Relation,
-    ) -> anyhow::Result<Box<dyn crate::InputReader>> {
+    ) -> anyhow::Result<Box<dyn InputReader>> {
         Ok(Box::new(S3InputReader::new(&self.config, consumer)))
     }
 }
@@ -312,43 +312,59 @@ mod test {
     deserialize_without_context!(TestStruct);
 
     const MULTI_KEY_CONFIG_STR: &str = r#"
-stream: test_input
-transport:
-    name: s3_input
-    config:
-        credentials:
-            type: AccessKey
-            aws_access_key_id: FAKE_ACCESS_KEY
-            aws_secret_access_key: FAKE_SECRET
-        bucket_name: test-bucket
-        region: us-west-1
-        read_strategy:
-            type: Prefix
-            prefix: ''
-        consume_strategy:
-            type: Fragment
-format:
-    name: csv
+{
+  stream: "test_input",
+  transport: {
+    name: "s3_input",
+    config: {
+      credentials: {
+        type: "AccessKey",
+        aws_access_key_id: "FAKE_ACCESS_KEY",
+        aws_secret_access_key: "FAKE_SECRET"
+      },
+      bucket_name: "test-bucket",
+      region: "us-west-1",
+      read_strategy: {
+        type: "Prefix",
+        prefix: ""
+      },
+      consume_strategy: {
+        type: "Fragment"
+      }
+    }
+  },
+  format: {
+    name: "csv"
+  }
+}
 "#;
 
     const SINGLE_KEY_CONFIG_STR: &str = r#"
-stream: test_input
-transport:
-    name: s3_input
-    config:
-        credentials:
-            type: AccessKey
-            aws_access_key_id: FAKE_ACCESS_KEY
-            aws_secret_access_key: FAKE_SECRET
-        bucket_name: test-bucket
-        region: us-west-1
-        read_strategy:
-            type: SingleKey
-            key: obj1
-        consume_strategy:
-            type: Object
-format:
-    name: csv
+{
+  stream: "test_input",
+  transport: {
+    name: "s3_input",
+    config: {
+      credentials: {
+        type: "AccessKey",
+        aws_access_key_id: "FAKE_ACCESS_KEY",
+        aws_secret_access_key: "FAKE_SECRET"
+      },
+      bucket_name: "test-bucket",
+      region: "us-west-1",
+      read_strategy: {
+        type: "SingleKey",
+        key: "obj1"
+      },
+      consume_strategy: {
+        type: "Object"
+      }
+    }
+  },
+  format: {
+    name: "csv"
+  }
+}
 "#;
 
     fn test_setup(
@@ -359,7 +375,7 @@ format:
         MockInputConsumer,
         MockDeZSet<TestStruct, TestStruct>,
     ) {
-        let config: InputEndpointConfig = serde_yaml::from_str(&config_str).unwrap();
+        let config: InputEndpointConfig = json5::from_str(&config_str).unwrap();
         let transport_config = config.connector_config.transport.clone();
         let transport_config: Arc<S3InputConfig> = match transport_config {
             TransportConfig::S3Input(config) => Arc::new(config),

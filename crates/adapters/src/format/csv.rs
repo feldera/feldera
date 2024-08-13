@@ -18,7 +18,7 @@ use crate::catalog::{InputCollectionHandle, SerBatchReader};
 pub use deserializer::byte_record_deserializer;
 pub use deserializer::string_record_deserializer;
 use pipeline_types::program_schema::Relation;
-use serde_yaml::Value as YamlValue;
+use serde_json::Value;
 
 /// When including a long CSV record in an error message,
 /// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.
@@ -47,7 +47,7 @@ impl InputFormat for CsvInputFormat {
         &self,
         _endpoint_name: &str,
         input_stream: &InputCollectionHandle,
-        _config: &YamlValue,
+        _config: &Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let input_stream = input_stream
             .handle
@@ -238,7 +238,7 @@ impl OutputFormat for CsvOutputFormat {
     fn new_encoder(
         &self,
         endpoint_name: &str,
-        config: &YamlValue,
+        config: &Value,
         _schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
@@ -246,7 +246,7 @@ impl OutputFormat for CsvOutputFormat {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &e,
-                &serde_yaml::to_string(&config).unwrap_or_default(),
+                &json5::to_string(&config).unwrap_or_default(),
             )
         })?;
 

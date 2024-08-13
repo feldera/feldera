@@ -13,8 +13,8 @@ use pipeline_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateForm
 use pipeline_types::program_schema::Relation;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::Deserialize;
+use serde_json::Value;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, io::Write, mem::take};
 
 /// JSON format encoder.
@@ -50,7 +50,7 @@ impl OutputFormat for JsonOutputFormat {
     fn new_encoder(
         &self,
         endpoint_name: &str,
-        config: &YamlValue,
+        config: &Value,
         schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
@@ -58,7 +58,7 @@ impl OutputFormat for JsonOutputFormat {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &e,
-                &serde_yaml::to_string(config).unwrap_or_default(),
+                &json5::to_string(config).unwrap_or_default(),
             )
         })?;
 

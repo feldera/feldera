@@ -90,28 +90,34 @@ fn test_kafka_output_errors() {
 
     info!("test_kafka_output_errors: Test invalid Kafka broker address");
 
-    let config_str = r#"
-name: test
-workers: 4
-inputs:
-outputs:
-    test_output:
-        stream: test_output1
-        transport:
-            name: kafka_output
-            config:
-                bootstrap.servers: localhost:11111
-                topic: ft_end_to_end_test_output_topic
-                max_inflight_messages: 0
-                fault_tolerance: {}
-        format:
-            name: csv
+    let config_str = r#"{
+  name: "test",
+  workers: 4,
+  inputs: {},
+  outputs: {
+    test_output: {
+      stream: "test_output1",
+      transport: {
+        name: "kafka_output",
+        config: {
+          "bootstrap.servers": "localhost:11111",
+          topic: "ft_end_to_end_test_output_topic",
+          max_inflight_messages: 0,
+          fault_tolerance: {}
+        }
+      },
+      format: {
+        name: "csv"
+      }
+    }
+  }
+}
 "#;
 
     info!("test_kafka_output_errors: Creating circuit");
 
     info!("test_kafka_output_errors: Starting controller");
-    let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
+    let config: PipelineConfig = json5::from_str(config_str).unwrap();
 
     match Controller::with_config(
         |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
@@ -146,41 +152,51 @@ fn ft_kafka_end_to_end_test(
     // Create controller.
 
     let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: kafka_input
-            config:
-                topics: ["{input_topic}"]
-                log_level: debug
-                fault_tolerance: {{}}
-        format:
-            name: csv
-outputs:
-    test_output2:
-        stream: test_output1
-        transport:
-            name: kafka_output
-            config:
-                topic: {output_topic}
-                max_inflight_messages: 0
-                message.max.bytes: "{message_max_bytes}"
-                fault_tolerance: {{}}
-        format:
-            name: {format}
-            config:
-                {format_config}
+        r#"{{
+  name: "test",
+  workers: 4,
+  inputs: {{
+    test_input1: {{
+      stream: "test_input1",
+      transport: {{
+        name: "kafka_input",
+        config: {{
+          topics: ["{input_topic}"],
+          log_level: "debug",
+          fault_tolerance: {{}}
+        }}
+      }},
+      format: {{
+        name: "csv"
+      }}
+    }}
+  }},
+  outputs: {{
+    test_output2: {{
+      stream: "test_output1",
+      transport: {{
+        name: "kafka_output",
+        config: {{
+          topic: "{output_topic}",
+          max_inflight_messages: 0,
+          "message.max.bytes": "{message_max_bytes}",
+          fault_tolerance: {{}}
+        }}
+      }},
+      format: {{
+        name: "{format}",
+        config: {{ "{format_config}" }}
+      }}
+    }}
+  }}
+}}
 "#
     );
 
     info!("{test_name}: Creating circuit. Config {config_str}");
 
     info!("{test_name}: Starting controller");
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
@@ -237,17 +253,19 @@ fn test_empty_input() {
         .unwrap();
 
     let config_str = format!(
-        r#"
-name: kafka_input
-config:
-    bootstrap.servers: "{bootstrap_servers}"
-    topics: [empty]
-    log_level: debug
+        r#"{{
+  name: "kafka_input",
+  config: {{
+    "bootstrap.servers": "{bootstrap_servers}",
+    topics: ["empty"],
+    log_level: "debug",
     fault_tolerance: {{}}
+  }}
+}}
 "#
     );
 
-    let endpoint = input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
+    let endpoint = input_transport_config_to_endpoint(json5::from_str(&config_str).unwrap())
         .unwrap()
         .unwrap();
     assert!(endpoint.is_fault_tolerant());
@@ -314,17 +332,20 @@ fn test_input() {
     let mut _kafka_resources = KafkaResources::create_topics(&[(topic, 1), (index_topic, 0)]);
 
     let config_str = format!(
-        r#"
-name: kafka_input
-config:
-    topics: [{topic}]
-    log_level: debug
-    fault_tolerance:
+        r#"{{
+  name: "kafka_input",
+  config: {{
+    topics: ["{topic}"],
+    log_level: "debug",
+    fault_tolerance: {{
         max_step_messages: 5
+    }}
+  }}
+}}
 "#
     );
 
-    let endpoint = input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
+    let endpoint = input_transport_config_to_endpoint(json5::from_str(&config_str).unwrap())
         .unwrap()
         .unwrap();
     assert!(endpoint.is_fault_tolerant());
@@ -569,17 +590,18 @@ fn kafka_output_test(
 
     let config_str = format!(
         r#"
-name: kafka_output
-config:
-    topic: {output_topic}
+{{
+  name: "kafka_output",
+  config: {{
+    topic: "{output_topic}",
     fault_tolerance: {{}}
+  }}
+}}
 "#
     );
-
-    let mut endpoint =
-        output_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
-            .unwrap()
-            .unwrap();
+    let mut endpoint = output_transport_config_to_endpoint(json5::from_str(&config_str).unwrap())
+        .unwrap()
+        .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))
@@ -595,16 +617,18 @@ config:
 
 fn _test() {
     let config_str = r#"
-name: kafka_output
-config:
-    topic: my_topic
-    fault_tolerance: {{}}
+{
+  name: "kafka_output",
+  config: {
+    topic: "my_topic",
+    fault_tolerance: {}
+  }
+}
 "#;
 
-    let mut endpoint =
-        output_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
-            .unwrap()
-            .unwrap();
+    let mut endpoint = output_transport_config_to_endpoint(json5::from_str(&config_str).unwrap())
+        .unwrap()
+        .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))
@@ -636,21 +660,26 @@ fn test_ft_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
 
     let config_str = format!(
         r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        bootstrap.servers: localhost:11111
-        topics: ["{topic1}", "{topic2}"]
-        log_level: debug
-        fault_tolerance: {{}}
-format:
-    name: csv
+{{
+  stream: "test_input",
+  transport: {{
+    name: "kafka_input",
+    config: {{
+      "bootstrap.servers": "localhost:11111",
+      topics: ["{topic1}", "{topic2}"],
+      log_level: "debug",
+      fault_tolerance: {{}}
+    }}
+  }},
+  format: {{
+    name: "csv"
+  }}
+}}
 "#
     );
 
     let (reader, consumer, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str).unwrap(),
+        json5::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
     .unwrap();
@@ -665,19 +694,24 @@ format:
     info!("proptest_kafka_input: Test: Specify invalid Kafka topic name");
 
     let config_str = r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        topics: ["this_topic_does_not_exist"]
-        log_level: debug
-        fault_tolerance: {}
-format:
-    name: csv
+{
+  stream: "test_input",
+  transport: {
+    name: "kafka_input",
+    config: {
+      topics: ["this_topic_does_not_exist"],
+      log_level: "debug",
+      fault_tolerance: {}
+    }
+  },
+  format: {
+    name: "csv"
+  }
+}
 "#;
 
     let (reader, consumer, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(config_str).unwrap(),
+        json5::from_str(config_str).unwrap(),
         Relation::empty(),
     )
     .unwrap();
@@ -691,22 +725,27 @@ format:
 
     let config_str = format!(
         r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        topics: [{topic1}, {topic2}]
-        log_level: debug
-        fault_tolerance: {{}}
-format:
-    name: csv
+{{
+  stream: "test_input",
+  transport: {{
+    name: "kafka_input",
+    config: {{
+      topics: ["{topic1}", "{topic2}"],
+      log_level: "debug",
+      fault_tolerance: {{}}
+    }}
+  }},
+  format: {{
+    name: "csv"
+  }}
+}}
 "#
     );
 
     info!("proptest_kafka_input: Building input pipeline");
 
     let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str).unwrap(),
+        json5::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
     .unwrap();

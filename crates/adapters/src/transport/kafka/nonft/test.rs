@@ -88,26 +88,33 @@ fn test_kafka_output_errors() {
     info!("test_kafka_output_errors: Test invalid Kafka broker address");
 
     let config_str = r#"
-name: test
-workers: 4
-inputs:
-outputs:
-    test_output:
-        stream: test_output1
-        transport:
-            name: kafka_output
-            config:
-                bootstrap.servers: localhost:11111
-                topic: end_to_end_test_output_topic
-                max_inflight_messages: 0
-        format:
-            name: csv
+{
+  name: "test",
+  workers: 4,
+  inputs: {},
+  outputs: {
+    test_output: {
+      stream: "test_output1",
+      transport: {
+        name: "kafka_output",
+        config: {
+          "bootstrap.servers": "localhost:11111",
+          topic: "end_to_end_test_output_topic",
+          max_inflight_messages: 0
+        }
+      },
+      format: {
+        name: "csv"
+      }
+    }
+  }
+}
 "#;
 
     info!("test_kafka_output_errors: Creating circuit");
 
     info!("test_kafka_output_errors: Starting controller");
-    let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
+    let config: PipelineConfig = json5::from_str(config_str).unwrap();
 
     match Controller::with_config(
         |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
@@ -141,40 +148,53 @@ fn kafka_end_to_end_test(
     // rebalancing protocol kicks in).
     let config_str = format!(
         r#"
-name: test
-workers: 4
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: kafka_input
-            config:
-                auto.offset.reset: "earliest"
-                group.instance.id: "{test_name}"
-                topics: [{input_topic}]
-                log_level: debug
-        format:
-            name: csv
-outputs:
-    test_output2:
-        stream: test_output1
-        transport:
-            name: kafka_output
-            config:
-                topic: {output_topic}
-                max_inflight_messages: 0
-                message.max.bytes: "{message_max_bytes}"
-        format:
-            name: {format}
-            config:
-                {format_config}
+{{
+  name: "test",
+  workers: 4,
+  inputs: {{
+    test_input1: {{
+      stream: "test_input1",
+      transport: {{
+        name: "kafka_input",
+        config: {{
+          "auto.offset.reset": "earliest",
+          "group.instance.id": "{test_name}",
+          topics: ["{input_topic}"],
+          log_level: "debug"
+        }}
+      }},
+      format: {{
+        name: "csv"
+      }}
+    }}
+  }},
+  outputs: {{
+    test_output2: {{
+      stream: "test_output1",
+      transport: {{
+        name: "kafka_output",
+        config: {{
+          topic: "{output_topic}",
+          max_inflight_messages: 0,
+          "message.max.bytes": "{message_max_bytes}"
+        }}
+      }},
+      format: {{
+        name: "{format}",
+        config: {{
+          {format_config}
+        }}
+      }}
+    }}
+  }}
+}}
 "#
     );
 
     info!("{test_name}: Creating circuit. Config {config_str}");
 
     info!("{test_name}: Starting controller");
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
@@ -226,21 +246,26 @@ fn test_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str, poll
 
     let config_str = format!(
         r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        bootstrap.servers: localhost:11111
-        auto.offset.reset: "earliest"
-        topics: [{topic1}, {topic2}]
-        log_level: debug
-format:
-    name: csv
+{{
+  stream: "test_input",
+  transport: {{
+    name: "kafka_input",
+    config: {{
+      "bootstrap.servers": "localhost:11111",
+      "auto.offset.reset": "earliest",
+      topics: ["{topic1}", "{topic2}"],
+      log_level: "debug"
+    }}
+  }},
+  format: {{
+    name: "csv"
+  }}
+}}
 "#
     );
 
     match mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str).unwrap(),
+        json5::from_str(&config_str).unwrap(),
         Relation::empty(),
     ) {
         Ok(_) => panic!("expected an error"),
@@ -250,19 +275,24 @@ format:
     info!("proptest_kafka_input: Test: Specify invalid Kafka topic name");
 
     let config_str = r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        auto.offset.reset: "earliest"
-        topics: [input_test_topic1, this_topic_does_not_exist]
-        log_level: debug
-format:
-    name: csv
+{
+  stream: "test_input",
+  transport: {
+    name: "kafka_input",
+    config: {
+      "auto.offset.reset": "earliest",
+      topics: ["input_test_topic1", "this_topic_does_not_exist"],
+      log_level: "debug"
+    }
+  },
+  format: {
+    name: "csv"
+  }
+}
 "#;
 
     match mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(config_str).unwrap(),
+        json5::from_str(config_str).unwrap(),
         Relation::empty(),
     ) {
         Ok(_) => panic!("expected an error"),
@@ -275,23 +305,28 @@ format:
     // rebalancing protocol kicks in).
     let config_str = format!(
         r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        auto.offset.reset: "earliest"
-        topics: [{topic1}, {topic2}]
-        log_level: debug
-        poller_threads: {poller_threads}
-format:
-    name: csv
+{{
+  stream: "test_input",
+  transport: {{
+    name: "kafka_input",
+    config: {{
+      "auto.offset.reset": "earliest",
+      topics: ["{topic1}", "{topic2}"],
+      log_level: "debug",
+      poller_threads: {poller_threads}
+    }}
+  }},
+  format: {{
+    name: "csv"
+  }}
+}}
 "#
     );
 
     info!("proptest_kafka_input: Building input pipeline");
 
     let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str).unwrap(),
+        json5::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
     .unwrap();
@@ -397,47 +432,65 @@ fn buffer_test() {
     // Create controller.
     let config_str = format!(
         r#"
-name: test
-workers: 4
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: kafka_input
-            config:
-                auto.offset.reset: "earliest"
-                group.instance.id: "buffer_test"
-                topics: [{input_topic}]
-                log_level: debug
-        format:
-            name: csv
-outputs:
-    test_output2:
-        stream: test_output1
-        transport:
-            name: kafka_output
-            config:
-                topic: {output_topic}
-                max_inflight_messages: 0
-                message.max.bytes: "1000000"
-                headers:
-                    - key: header1
-                      value: "foobar"
-                    - key: header2
-                      value: [1,2,3,4,5]
-        format:
-            name: csv
-            config:
-        enable_output_buffer: true
-        max_output_buffer_size_records: {buffer_size}
-        max_output_buffer_time_millis: {buffer_timeout_ms}
+{{
+  name: "test",
+  workers: 4,
+  inputs: {{
+    test_input1: {{
+      stream: "test_input1",
+      transport: {{
+        name: "kafka_input",
+        config: {{
+          "auto.offset.reset": "earliest",
+          "group.instance.id": "buffer_test",
+          topics: ["{input_topic}"],
+          log_level: "debug"
+        }}
+      }},
+      format: {{
+        name: "csv"
+      }}
+    }}
+  }},
+  outputs: {{
+    test_output2: {{
+      stream: "test_output1",
+      transport: {{
+        name: "kafka_output",
+        config: {{
+          topic: "{output_topic}",
+          max_inflight_messages: 0,
+          "message.max.bytes": "1000000",
+          headers: [
+            {{
+              key: "header1",
+              value: "foobar"
+            }},
+            {{
+              key: "header2",
+              value: [1,2,3,4,5]
+            }}
+          ]
+        }}
+      }},
+      format: {{
+        name: "csv",
+        config: {{
+          enable_output_buffer: true,
+          max_output_buffer_size_records: {buffer_size},
+          max_output_buffer_time_millis: {buffer_timeout_ms}
+        }}
+      }}
+    }}
+  }}
+}}
 "#
     );
 
     info!("buffer_test: Creating circuit. Config {config_str}");
 
     info!("buffer_test: Starting controller");
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();

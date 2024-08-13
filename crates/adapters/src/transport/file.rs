@@ -233,14 +233,19 @@ mod test {
         // Use a very small buffer size for testing.
         let config_str = format!(
             r#"
-stream: test_input
-transport:
-    name: file_input
-    config:
-        path: {:?}
-        buffer_size_bytes: 5
-format:
-    name: csv
+{{
+  stream: "test_input",
+  transport: {{
+    name: "file_input",
+    config: {{
+      path: {:?},
+      buffer_size_bytes: 5
+    }}
+  }},
+  format: {{
+    name: "csv"
+  }}
+}}
 "#,
             temp_file.path().to_str().unwrap()
         );
@@ -256,7 +261,7 @@ format:
         writer.flush().unwrap();
 
         let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-            serde_yaml::from_str(&config_str).unwrap(),
+            json5::from_str(&config_str).unwrap(),
             Relation::empty(),
         )
         .unwrap();
@@ -290,16 +295,20 @@ format:
         // Create a transport endpoint attached to the file.
         // Use a very small buffer size for testing.
         let config_str = format!(
-            r#"
-stream: test_input
-transport:
-    name: file_input
-    config:
-        path: {:?}
-        buffer_size_bytes: 5
-        follow: true
-format:
-    name: csv
+            r#"{{
+  stream: "test_input",
+  transport: {{
+    name: "file_input",
+    config: {{
+      path: {:?},
+      buffer_size_bytes: 5,
+      follow: true
+    }}
+  }},
+  format: {{
+    name: "csv"
+  }}
+}}
 "#,
             temp_file.path().to_str().unwrap()
         );
@@ -311,7 +320,7 @@ format:
             .from_writer(temp_file.as_file());
 
         let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-            serde_yaml::from_str(&config_str).unwrap(),
+            json5::from_str(&config_str).unwrap(),
             Relation::empty(),
         )
         .unwrap();

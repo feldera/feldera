@@ -56,16 +56,19 @@ fn parquet_input() {
     let test_data = TestStruct2::data();
     let temp_file = NamedTempFile::new().unwrap();
     let config_str = format!(
-        r#"
-stream: test_input
-transport:
-    name: file_input
-    config:
-        path: {:?}
+        r#"{{
+stream: "test_input",
+transport: {{
+    name: "file_input",
+    config: {{
+        path: {:?},
         buffer_size_bytes: 5
-format:
-    name: parquet
-"#,
+    }}
+}},
+format: {{
+    name: "parquet"
+}},
+}}"#,
         temp_file.path().to_str().unwrap()
     );
 
@@ -84,7 +87,7 @@ format:
 
     // Send the data through the mock pipeline
     let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct2, TestStruct2>(
-        serde_yaml::from_str(&config_str).unwrap(),
+        json5::from_str(&config_str).unwrap(),
         Relation::new("test", false, TestStruct2::schema(), false, BTreeMap::new()),
     )
     .unwrap();

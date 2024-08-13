@@ -88,12 +88,7 @@ mod tests {
     fn test_deserialize_string() {
         let data = "{ \"string\": \"example123\" }";
         assert_eq!(
-            serde_json::from_str::<MaybeSecretRef>(data).unwrap(),
-            MaybeSecretRef::String("example123".to_string())
-        );
-        let data = "!string \"example123\"";
-        assert_eq!(
-            serde_yaml::from_str::<MaybeSecretRef>(data).unwrap(),
+            json5::from_str::<MaybeSecretRef>(data).unwrap(),
             MaybeSecretRef::String("example123".to_string())
         );
     }
@@ -102,12 +97,7 @@ mod tests {
     fn test_deserialize_secret_ref() {
         let data = "{ \"secret_ref\": \"example456\" }";
         assert_eq!(
-            serde_json::from_str::<MaybeSecretRef>(data).unwrap(),
-            MaybeSecretRef::SecretRef("example456".to_string())
-        );
-        let data = "!secret_ref \"example456\"";
-        assert_eq!(
-            serde_yaml::from_str::<MaybeSecretRef>(data).unwrap(),
+            json5::from_str::<MaybeSecretRef>(data).unwrap(),
             MaybeSecretRef::SecretRef("example456".to_string())
         );
     }

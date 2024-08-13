@@ -362,19 +362,24 @@ mod test {
         // Create a transport endpoint attached to the file.
         let config_str = format!(
             r#"
-stream: test_input
-transport:
-    name: url_input
-    config:
-        path: http://{addr}/{path}
-        pause_timeout: {pause_timeout}
-format:
-    name: csv
+{{
+  stream: "test_input",
+  transport: {{
+    name: "url_input",
+    config: {{
+      path: "http://{addr}/{path}",
+      pause_timeout: {pause_timeout}
+    }}
+  }},
+  format: {{
+    name: "csv"
+  }}
+}}
 "#
         );
 
         mock_input_pipeline::<TestStruct, TestStruct>(
-            serde_yaml::from_str(&config_str).unwrap(),
+            json5::from_str(&config_str).unwrap(),
             Relation::empty(),
         )
         .unwrap()

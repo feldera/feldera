@@ -15,8 +15,8 @@ use parquet::file::reader::{FileReader, SerializedFileReader};
 use serde::Deserialize;
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
+use serde_json::Value;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 
 use crate::catalog::{CursorWithPolarity, SerBatchReader};
 use crate::format::MAX_DUPLICATES;
@@ -55,7 +55,7 @@ impl InputFormat for ParquetInputFormat {
         &self,
         _endpoint_name: &str,
         input_stream: &InputCollectionHandle,
-        _config: &YamlValue,
+        _config: &Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let input_stream = input_stream
             .handle
@@ -204,7 +204,7 @@ impl OutputFormat for ParquetOutputFormat {
     fn new_encoder(
         &self,
         endpoint_name: &str,
-        config: &YamlValue,
+        config: &Value,
         schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
@@ -212,7 +212,7 @@ impl OutputFormat for ParquetOutputFormat {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &e,
-                &serde_yaml::to_string(&config).unwrap_or_default(),
+                &json5::to_string(&config).unwrap_or_default(),
             )
         })?;
         Ok(Box::new(ParquetEncoder::new(

@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use pipeline_types::program_schema::Relation;
 use pipeline_types::serde_with_context::FieldParseError;
 use serde::Serialize;
-use serde_yaml::Value as YamlValue;
+use serde_json::Value;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
@@ -383,7 +383,7 @@ pub trait InputFormat: Send + Sync {
         &self,
         endpoint_name: &str,
         input_stream: &InputCollectionHandle,
-        config: &YamlValue,
+        config: &Value,
     ) -> Result<Box<dyn Parser>, ControllerError>;
 }
 
@@ -476,7 +476,7 @@ pub trait OutputFormat: Send + Sync {
     fn new_encoder(
         &self,
         endpoint_name: &str,
-        config: &YamlValue,
+        config: &Value,
         schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError>;

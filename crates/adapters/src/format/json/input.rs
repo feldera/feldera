@@ -13,8 +13,8 @@ use erased_serde::Serialize as ErasedSerialize;
 use pipeline_types::format::json::{JsonParserConfig, JsonUpdateFormat};
 use serde::Deserialize;
 use serde_json::value::RawValue;
+use serde_json::Value;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 use std::{borrow::Cow, mem::take};
 
 /// JSON format parser.
@@ -175,13 +175,13 @@ impl InputFormat for JsonInputFormat {
         &self,
         endpoint_name: &str,
         input_handle: &InputCollectionHandle,
-        config: &YamlValue,
+        config: &Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let config = JsonParserConfig::deserialize(config).map_err(|e| {
             ControllerError::parser_config_parse_error(
                 endpoint_name,
                 &e,
-                &serde_yaml::to_string(config).unwrap_or_default(),
+                &json5::to_string(config).unwrap_or_default(),
             )
         })?;
         validate_parser_config(&config, endpoint_name)?;
@@ -534,7 +534,7 @@ mod test {
             trace!("test: {test:?}");
             let format_config = FormatConfig {
                 name: Cow::from("json"),
-                config: serde_yaml::to_value(test.config).unwrap(),
+                config: serde_json::to_value(test.config).unwrap(),
             };
 
             let (mut consumer, outputs) = mock_parser_pipeline(&format_config).unwrap();
