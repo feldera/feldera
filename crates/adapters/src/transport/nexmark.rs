@@ -308,15 +308,24 @@ impl Inner {
             }
 
             // Write the batches to the consumers.
-            for (table, writer) in writers {
-                // Get the data out of the writer and submit it to the circuit.
-                let mut data = writer.into_inner().unwrap().into_inner();
-                consumers[table].input_chunk(data.as_slice());
+            //
+            // We do this in a particular order--first `Person`, then `Auction`,
+            // then `Bid`--to honor the dependency graph among the tables,
+            // because auctions refer to people and bids refer to auctions and
+            // people.
+            let mut data = writers.map(|_table, writer| writer.into_inner().unwrap().into_inner());
+            for table in [
+                NexmarkTable::Person,
+                NexmarkTable::Auction,
+                NexmarkTable::Bid,
+            ] {
+                // Submit the data to the circuit.
+                consumers[table].input_chunk(data[table].as_slice());
 
                 // Clear the data and stick it back into our collection of
                 // buffers so we can reuse the allocation for the next batch.
-                data.clear();
-                buffers[table] = data;
+                data[table].clear();
+                buffers[table] = mem::take(&mut data[table]);
             }
 
             // Synchronize with the other threads.
