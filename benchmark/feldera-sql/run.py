@@ -13,7 +13,7 @@ FILE_DIR = os.path.join(os.path.dirname(__file__))
 
 def load_queries(folder):
     queries = {}
-    p = os.path.join(FILE_DIR, folder + '/queries/')
+    p = os.path.join(FILE_DIR, folder)
     for f in os.listdir(p):
         if f.endswith('.sql'):
             file = open(p + f, 'r')
@@ -137,6 +137,7 @@ def main():
     group.add_argument('--csv', help='File to write results in .csv format')
     group.add_argument('--csv-metrics', help='File to write pipeline metrics (memory, disk) in .csv format')
     group.add_argument('--metrics-interval', help='How often metrics should be sampled, in seconds (default: 1)')
+    group.add_argument('--include-disabled', action=argparse.BooleanOptionalAction, help='Include queries from the disabled-queries/ directory.')
 
     group = parser.add_argument_group("Options for Nexmark benchmark only")
     group.add_argument('--lateness', action=argparse.BooleanOptionalAction, help='whether to use lateness for GC to save memory (default: --lateness)')
@@ -163,7 +164,11 @@ def main():
 
     folder = parser.parse_args().folder
     table = load_table(folder, parser.parse_args().lateness, suffix, events, cores)
-    all_queries = load_queries(folder)
+    all_queries = load_queries(folder + '/queries/')
+    include_disabled = parser.parse_args().include_disabled or False
+    disabled_folder = folder + '/disabled-queries/'
+    if include_disabled and os.path.exists(disabled_folder):
+        all_queries |= load_queries(disabled_folder)
 
     queries = sort_queries(parse_queries(all_queries, parser.parse_args().query))
     storage = parser.parse_args().storage
