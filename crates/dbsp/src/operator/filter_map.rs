@@ -45,10 +45,12 @@ pub trait FilterMap: BatchReader + Sized {
     /// `(key, value, weight)` tuples or `&K` if the value type is `()`.
     type ItemRef<'a>;
 
+    #[track_caller]
     fn filter<C: Circuit, F>(stream: &Stream<C, Self>, filter_func: F) -> Stream<C, Self>
     where
         F: Fn(Self::ItemRef<'_>) -> bool + 'static;
 
+    #[track_caller]
     fn map_generic<C: Circuit, F, K, V, O>(stream: &Stream<C, Self>, map_func: F) -> Stream<C, O>
     where
         K: DBData + Erase<O::DynK>,
@@ -56,6 +58,7 @@ pub trait FilterMap: BatchReader + Sized {
         F: Fn(Self::ItemRef<'_>) -> (K, V) + 'static,
         O: Batch<Key = K, Val = V, Time = (), R = Self::R, DynR = Self::DynR>;
 
+    #[track_caller]
     fn flat_map_generic<C: Circuit, F, K, V, I, O>(
         stream: &Stream<C, Self>,
         func: F,
@@ -71,6 +74,7 @@ pub trait FilterMap: BatchReader + Sized {
 impl<C: Circuit, B: FilterMap> Stream<C, B> {
     /// Filter input stream only retaining records that satisfy the
     /// `filter_func` predicate.
+    #[track_caller]
     pub fn filter<F>(&self, filter_func: F) -> Self
     where
         F: Fn(B::ItemRef<'_>) -> bool + 'static,
@@ -80,6 +84,7 @@ impl<C: Circuit, B: FilterMap> Stream<C, B> {
 
     /// Applies `map_func` to each record in the input stream.  Assembles output
     /// record into `OrdZSet` batches.
+    #[track_caller]
     pub fn map<F, K>(&self, map_func: F) -> Stream<C, OrdWSet<K, B::R, B::DynR>>
     where
         K: DBData,
@@ -91,6 +96,7 @@ impl<C: Circuit, B: FilterMap> Stream<C, B> {
     /// Behaves as [`Self::map`] followed by [`index`](`crate::Stream::index`),
     /// but is more efficient.  Assembles output records into
     /// `OrdIndexedZSet` batches.
+    #[track_caller]
     pub fn map_index<F, K, V>(&self, map_func: F) -> Stream<C, OrdIndexedWSet<K, V, B::R, B::DynR>>
     where
         K: DBData,
@@ -101,6 +107,7 @@ impl<C: Circuit, B: FilterMap> Stream<C, B> {
     }
 
     /// Like [`Self::map_index`], but can return any batch type.
+    #[track_caller]
     pub fn map_generic<F, K, V, O>(&self, map_func: F) -> Stream<C, O>
     where
         K: DBData + Erase<O::DynK>,
@@ -116,6 +123,7 @@ impl<C: Circuit, B: FilterMap> Stream<C, B> {
     ///
     /// The output of `func` can be any type that implements `trait
     /// IntoIterator`, e.g., `Option<>` or `Vecxxxxv<>`.
+    #[track_caller]
     pub fn flat_map<F, I>(&self, mut func: F) -> Stream<C, OrdWSet<I::Item, B::R, B::DynR>>
     where
         F: FnMut(B::ItemRef<'_>) -> I + 'static,
@@ -128,6 +136,7 @@ impl<C: Circuit, B: FilterMap> Stream<C, B> {
     /// Behaves as [`Self::flat_map`] followed by
     /// [`index`](`crate::Stream::index`), but is more efficient.  Assembles
     /// output records into `OrdIndexedZSet` batches.
+    #[track_caller]
     pub fn flat_map_index<F, K, V, I>(
         &self,
         func: F,
@@ -142,6 +151,7 @@ impl<C: Circuit, B: FilterMap> Stream<C, B> {
     }
 
     /// Like [`Self::flat_map_index`], but can return any batch type.
+    #[track_caller]
     pub fn flat_map_generic<F, K, V, I, O>(&self, func: F) -> Stream<C, O>
     where
         K: DBData + Erase<O::DynK>,
