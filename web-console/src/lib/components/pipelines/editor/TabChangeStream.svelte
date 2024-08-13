@@ -97,7 +97,7 @@
 
   let pipelineName = $derived(pipeline.current.name)
 
-  const reloadSchema = async () => {
+  const reloadSchema = async (pipelineName: string) => {
     registerPipelineName(pipelineName)
     const schema = (await getExtendedPipeline(pipelineName)).programInfo?.schema
     if (!schema) {
@@ -120,8 +120,8 @@
   }
 
   $effect(() => {
-    let interval = setInterval(reloadSchema, 2000)
-    reloadSchema()
+    let interval = setInterval(() => reloadSchema(pipelineName), 2000)
+    reloadSchema(pipelineName)
     return () => {
       clearInterval(interval)
     }
