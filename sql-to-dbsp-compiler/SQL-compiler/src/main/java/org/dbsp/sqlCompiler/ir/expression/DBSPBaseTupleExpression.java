@@ -30,13 +30,27 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
 
+import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 public abstract class DBSPBaseTupleExpression extends DBSPExpression {
+    // Nullable only for constant null tuple expressions
+    @Nullable
     public final DBSPExpression[] fields;
 
-    public int size() { return this.fields.length; }
+    public int size() { return Objects.requireNonNull(this.fields).length; }
+
+    public DBSPBaseTupleExpression(CalciteObject node, DBSPType type) {
+        super(node, type);
+        assert type.mayBeNull;
+        this.fields = null;
+    }
+
+    public boolean isNull() {
+        return this.fields == null;
+    }
 
     public DBSPBaseTupleExpression(CalciteObject node, DBSPType type, DBSPExpression... expressions) {
         super(node, type);
@@ -44,7 +58,7 @@ public abstract class DBSPBaseTupleExpression extends DBSPExpression {
     }
 
     public DBSPExpression get(int index) {
-        if (index >= this.fields.length)
+        if (index >= Objects.requireNonNull(this.fields).length)
             throw new InternalCompilerError("Index " + index + " out of bounds " + this.fields.length);
         return this.fields[index];
     }
@@ -62,7 +76,7 @@ public abstract class DBSPBaseTupleExpression extends DBSPExpression {
     public abstract DBSPBaseTupleExpression fromFields(List<DBSPExpression> fields);
 
     public DBSPBaseTupleExpression shuffle(Shuffle data) {
-        List<DBSPExpression> fields = data.shuffle(Linq.list(this.fields));
+        List<DBSPExpression> fields = data.shuffle(Linq.list(Objects.requireNonNull(this.fields)));
         return this.fromFields(fields);
     }
 

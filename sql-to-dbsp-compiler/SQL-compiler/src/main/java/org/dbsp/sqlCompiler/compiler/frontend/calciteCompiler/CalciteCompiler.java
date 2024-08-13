@@ -49,6 +49,7 @@ import org.apache.calcite.rel.type.RelDataTypeFieldImpl;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
 import org.apache.calcite.rel.type.RelProtoDataType;
+import org.apache.calcite.rel.type.RelRecordType;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
@@ -83,6 +84,8 @@ import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.pretty.SqlPrettyWriter;
+import org.apache.calcite.sql.type.ArraySqlType;
+import org.apache.calcite.sql.type.MapSqlType;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.util.SqlOperatorTables;
@@ -496,22 +499,57 @@ public class CalciteCompiler implements IWritesLogs {
         return rel;
     }
 
+    RelDataType createNullableType(RelDataType type) {
+        if (type instanceof RelRecordType) {
+            // This function seems to be buggy in Calcite:
+            // there is sets the nullability of all record fields.
+            return new RelRecordType(type.getStructKind(), type.getFieldList(), true);
+        }
+        return this.typeFactory.createTypeWithNullability(type, true);
+    }
+
+    RelDataType nullableElements(RelDataType dataType) {
+        if (dataType instanceof ArraySqlType array) {
+            RelDataType elementType = array.getComponentType();
+            elementType = this.nullableElements(elementType);
+            elementType = this.createNullableType(elementType);
+            return new ArraySqlType(elementType, dataType.isNullable());
+        } else if (dataType instanceof MapSqlType map) {
+            RelDataType valueType = map.getValueType();
+            valueType = this.nullableElements(valueType);
+            valueType = this.createNullableType(valueType);
+            return new MapSqlType(map.getKeyType(), valueType, map.isNullable());
+        } else {
+            return dataType;
+        }
+    }
+
     /** Convert a type from Sql to Rel.
      * @param spec            Type specification in Sql representation.
      * @param ignoreNullable  If true never return a nullable type. */
     public RelDataType specToRel(SqlDataTypeSpec spec, boolean ignoreNullable) {
         SqlTypeNameSpec typeName = spec.getTypeNameSpec();
         String name = "";
+        RelDataType result;
         if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
             SqlIdentifier identifier = udtObject.getTypeName();
             name = identifier.getSimple();
-            if (this.udt.containsKey(name))
-                return Utilities.getExists(this.udt, name);
+            if (this.udt.containsKey(name)) {
+                result = Utilities.getExists(this.udt, name);
+                Boolean nullable = spec.getNullable();
+                if (nullable != null && nullable && !ignoreNullable) {
+                    result = this.createNullableType(result);
+                }
+                return result;
+            }
         }
-        RelDataType result = typeName.deriveType(this.getValidator());
+        result = typeName.deriveType(this.getValidator());
+        result = this.nullableElements(result);
+
         Boolean nullable = spec.getNullable();
-        if (nullable != null && nullable && !ignoreNullable)
-            result = this.typeFactory.createTypeWithNullability(result, true);
+        if (nullable != null && nullable && !ignoreNullable) {
+            result = this.createNullableType(result);
+        }
         if (typeName instanceof SqlUserDefinedTypeNameSpec udtObject) {
             if (result.isStruct()) {
                 RelStruct retval = new RelStruct(udtObject.getTypeName(), result.getFieldList(), result.isNullable());
@@ -906,7 +944,7 @@ public class CalciteCompiler implements IWritesLogs {
         if (e.getEndPosLine() == startLineNumberInGeneratedCode)
             endCol += original.getColumnNum() - 1;
         return new CalciteContextException(
-                e.getMessage(), e.getCause(),
+                e.getMessage() == null ? "" : e.getMessage(), e.getCause(),
                 line, col, endLine, endCol);
     }
 
@@ -962,8 +1000,8 @@ public class CalciteCompiler implements IWritesLogs {
                 SqlDataTypeSpec retType = decl.getReturnType();
                 RelDataType returnType = this.specToRel(retType, false);
                 Boolean nullableResult = retType.getNullable();
-                if (nullableResult != null)
-                    returnType = this.typeFactory.createTypeWithNullability(returnType,  nullableResult);
+                if (nullableResult != null && nullableResult)
+                    returnType = this.createNullableType(returnType);
                 RexNode bodyExp = this.createFunction(decl, sources);
                 ExternalFunction function = this.customFunctions.createUDF(
                         CalciteObject.create(node), decl.getName(), structType, returnType, bodyExp);
@@ -1011,7 +1049,13 @@ public class CalciteCompiler implements IWritesLogs {
                             final SqlAttributeDefinition attributeDef =
                                     (SqlAttributeDefinition) def;
                             final SqlDataTypeSpec typeSpec = attributeDef.dataType;
-                            final RelDataType type = this.specToRel(typeSpec, false);
+                            RelDataType type = this.specToRel(typeSpec, false);
+                            if (typeSpec.getNullable() != null && typeSpec.getNullable()) {
+                                // This is tricky, because it is not using the typeFactory that is
+                                // the lambda argument above, but hopefully it should be the same
+                                assert typeFactory == this.typeFactory;
+                                type = this.createNullableType(type);
+                            }
                             builder.add(attributeDef.name.getSimple(), type);
                         }
                         RelDataType result = builder.build();

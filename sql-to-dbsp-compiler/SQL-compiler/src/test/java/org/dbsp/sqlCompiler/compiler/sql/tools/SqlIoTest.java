@@ -100,6 +100,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
             DBSPExpression row = entry.getKey();
             DBSPTupleExpression tuple = row.to(DBSPTupleExpression.class);
             DBSPExpression[] prefix = new DBSPExpression[rowSize - 1];
+            assert tuple.fields != null;
             System.arraycopy(tuple.fields, 0, prefix, 0, prefix.length);
             DBSPExpression rowWeight = tuple.fields[rowSize - 1];
             weight *= rowWeight.to(DBSPI64Literal.class).value;
@@ -191,13 +192,6 @@ public abstract class SqlIoTest extends BaseSQLTests {
 
     public void q(String queryAndOutput) {
         this.q(queryAndOutput, true);
-    }
-
-    /** Run a query that is expected to fail in compilation.
-     * @param query             Query to run.
-     * @param messageFragment   This fragment should appear in the error message. */
-    public void queryFailingInCompilation(String query, String messageFragment) {
-        this.statementsFailingInCompilation("CREATE VIEW VV AS " + query, messageFragment);
     }
 
     /** Run a query that is expected to fail in compilation or at runtime, depending on the

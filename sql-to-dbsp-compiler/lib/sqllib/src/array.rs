@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
 use std::ops::Index;
 
-pub fn element<T>(array: Vec<T>) -> Option<T>
+pub fn element__<T>(array: Vec<T>) -> Option<T>
 where
     T: Clone,
 {
@@ -18,12 +18,33 @@ where
     }
 }
 
-pub fn elementN<T>(array: Option<Vec<T>>) -> Option<T>
+pub fn elementN_<T>(array: Option<Vec<T>>) -> Option<T>
 where
     T: Clone,
 {
     let array = array?;
-    element(array)
+    element__(array)
+}
+
+pub fn element_N<T>(array: Vec<Option<T>>) -> Option<T>
+where
+    T: Clone,
+{
+    if array.is_empty() {
+        None
+    } else if array.len() == 1 {
+        array[0].clone()
+    } else {
+        panic!("'ELEMENT()' called on array that does not have exactly 1 element");
+    }
+}
+
+pub fn elementNN<T>(array: Option<Vec<Option<T>>>) -> Option<T>
+where
+    T: Clone,
+{
+    let array = array?;
+    element_N(array)
 }
 
 pub fn cardinality<T>(value: Vec<T>) -> i32 {

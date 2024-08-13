@@ -1,18 +1,24 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Linq;
 import org.dbsp.util.ToIndentableString;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -115,6 +121,39 @@ public final class DBSPZSetLiteral extends DBSPLiteral
                     this.getElementType() + " vs " + other.getElementType(), this.elementType);
         other.data.forEach(this::add);
         return this;
+    }
+
+    public DBSPZSetLiteral addUsingCast(DBSPZSetLiteral other) {
+        other.data.forEach(this::addUsingCast);
+        return this;
+    }
+
+    public DBSPExpression castRecursive(DBSPExpression expression, DBSPType type) {
+        if (type.is(DBSPTypeBaseType.class)) {
+            return expression.cast(type);
+        } else if (type.is(DBSPTypeVec.class)) {
+            DBSPTypeVec vec = type.to(DBSPTypeVec.class);
+            DBSPVecLiteral vecLit = expression.to(DBSPVecLiteral.class);
+            if (vecLit.data == null) {
+                return new DBSPVecLiteral(type, type.mayBeNull);
+            }
+            List<DBSPExpression> fields = Linq.map(vecLit.data, e -> castRecursive(e, vec.getElementType()));
+            return new DBSPVecLiteral(expression.getNode(), type, fields);
+        } else if (type.is(DBSPTypeTupleBase.class)) {
+            DBSPTypeTupleBase tuple = this.elementType.to(DBSPTypeTupleBase.class);
+            DBSPExpression[] fields = new DBSPExpression[tuple.size()];
+            for (int i = 0; i < tuple.size(); i++) {
+                fields[i] = this.castRecursive(expression.field(i).simplify(), tuple.tupFields[i]);
+            }
+            return tuple.makeTuple(fields);
+        } else {
+            throw new UnimplementedException();
+        }
+    }
+
+    public void addUsingCast(DBSPExpression row, Long weight) {
+        DBSPExpression toAdd = this.castRecursive(row, this.elementType);
+        this.add(toAdd, weight);
     }
 
     public DBSPZSetLiteral negate() {

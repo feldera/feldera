@@ -219,7 +219,7 @@ public class DBSPTypeStruct extends DBSPType {
         if (type.is(DBSPTypeStruct.class)) {
             DBSPTypeStruct struct = type.to(DBSPTypeStruct.class);
             List<DBSPType> types = Linq.list(Linq.map(struct.fields.values(), f -> toTupleDeep(f.type)));
-            return new DBSPTypeTuple(struct.getNode(), types);
+            return new DBSPTypeTuple(struct.getNode(), type.mayBeNull, types);
         } else if (type.is(DBSPTypeUser.class)) {
             DBSPTypeUser user = type.to(DBSPTypeUser.class);
             DBSPType[] args = Linq.map(user.typeArgs, DBSPTypeStruct::toTupleDeep, DBSPType.class);

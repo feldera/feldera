@@ -145,6 +145,12 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         return this.mayBeNull ? "N" : "";
     }
 
+    /** Returns "N" if the type may be nullable, "_" otherwise.
+     * Used in the code generation. */
+    public String nullableUnderlineSuffix() {
+        return this.mayBeNull ? "N" : "_";
+    }
+
     @Nullable
     public String asSqlString() {
         return this.code.sqlName;

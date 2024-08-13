@@ -948,9 +948,15 @@ public abstract class InnerRewriteVisitor
     @Override
     public VisitDecision preorder(DBSPRawTupleExpression expression) {
         this.push(expression);
-        DBSPExpression[] fields = this.transform(expression.fields);
+        DBSPExpression[] fields = null;
+        if (expression.fields != null)
+            fields = this.transform(expression.fields);
         this.pop(expression);
-        DBSPExpression result = new DBSPRawTupleExpression(fields);
+        DBSPExpression result;
+        if (fields != null)
+            result = new DBSPRawTupleExpression(fields);
+        else
+            result = new DBSPRawTupleExpression(expression.getType().to(DBSPTypeRawTuple.class));
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -982,14 +988,17 @@ public abstract class InnerRewriteVisitor
 
     @Override
     public VisitDecision preorder(DBSPTupleExpression expression) {
+        DBSPExpression[] fields = null;
         this.push(expression);
-        DBSPExpression[] fields = this.transform(expression.fields);
+        if (expression.fields != null)
+            fields = this.transform(expression.fields);
         this.pop(expression);
         DBSPExpression result;
-        if (expression.isNull)
+        if (fields == null)
             result = new DBSPTupleExpression(expression.getType().to(DBSPTypeTuple.class));
         else
-            result = new DBSPTupleExpression(fields);
+            result = new DBSPTupleExpression(expression.getNode(), expression.getType().mayBeNull, fields);
+        // assert expression.getType().sameType(result.getType());
         this.map(expression, result);
         return VisitDecision.STOP;
     }

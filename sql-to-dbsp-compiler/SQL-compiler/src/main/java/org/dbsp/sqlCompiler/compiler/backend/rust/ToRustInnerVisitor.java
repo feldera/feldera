@@ -1182,15 +1182,19 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPRawTupleExpression expression) {
+        if (expression.getType().mayBeNull)
+            this.builder.append("Some");
         this.builder.append("(");
-        boolean newlines = this.compact && expression.fields.length > 2;
+        boolean newlines = this.compact && expression.fields != null && expression.fields.length > 2;
         if (newlines)
             this.builder.increase();
-        for (DBSPExpression field: expression.fields) {
-            field.accept(this);
-            this.builder.append(", ");
-            if (newlines)
-                this.builder.newline();
+        if (expression.fields != null) {
+            for (DBSPExpression field : expression.fields) {
+                field.accept(this);
+                this.builder.append(", ");
+                if (newlines)
+                    this.builder.newline();
+            }
         }
         if (newlines)
             this.builder.decrease();
@@ -1200,8 +1204,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTupleExpression expression) {
-        if (expression.isNull)
+        if (expression.fields == null)
             return this.doNullExpression(expression);
+        if (expression.getType().mayBeNull)
+            this.builder.append("Some(");
         boolean newlines = this.compact && expression.fields.length > 2;
         this.builder.append(DBSPTypeCode.TUPLE.rustName)
                 .append(expression.size())
@@ -1221,6 +1227,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (newlines)
             this.builder.decrease();
         this.builder.append(")");
+        if (expression.getType().mayBeNull)
+            this.builder.append(")");
         return VisitDecision.STOP;
     }
 

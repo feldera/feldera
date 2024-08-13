@@ -256,6 +256,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
         DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType.ref());
         DBSPExpression[] fields = EndToEndTests.e0NoDouble.fields; // Should be the same for e1NoDouble too
+        assert fields != null;
         final List<DBSPExpression> rowGets = new ArrayList<>(fields.length);
         for (int i = 0; i < fields.length; i++) {
             DBSPApplyMethodExpression rowGet =

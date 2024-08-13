@@ -167,6 +167,8 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void testAbs() {
         String query = "SELECT ABS(T.COL2) FROM T";
+        assert e0.fields != null;
+        assert e1.fields != null;
         this.testQuery(query, new DBSPZSetLiteral(
                 new DBSPTupleExpression(e0.fields[1]),
                 new DBSPTupleExpression(e1.fields[1])));

@@ -316,7 +316,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         MonotoneExpression result = new MonotoneExpression(expression, type, reduced);
         if (this.constantExpressions.contains(expression.expression))
             this.constantExpressions.add(expression);
-        this.maybeSet(expression, result);
+        this.set(expression, result);
     }
 
     @Override
@@ -329,16 +329,20 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         MonotoneExpression result = new MonotoneExpression(expression, type.to(MonotoneRefType.class).base, reduced);
         if (this.constantExpressions.contains(expression.expression))
             this.constantExpressions.add(expression);
-        this.maybeSet(expression, result);
+        this.set(expression, result);
     }
 
     @Override
     public void postorder(DBSPBaseTupleExpression expression) {
+        if (expression.fields == null) {
+            this.maybeSet(expression, null);
+            return;
+        }
+        DBSPExpression reduced = null;
         MonotoneExpression[] fields = Linq.map(expression.fields, this::get, MonotoneExpression.class);
         IMaybeMonotoneType[] types = Linq.map(fields, MonotoneExpression::getMonotoneType, IMaybeMonotoneType.class);
         PartiallyMonotoneTuple tuple = new PartiallyMonotoneTuple(
                 Linq.list(types), expression.isRaw(), expression.getType().mayBeNull);
-        DBSPExpression reduced = null;
         if (tuple.mayBeMonotone()) {
             MonotoneExpression[] monotoneFields = Linq.where(
                     fields, f -> f.getMonotoneType().mayBeMonotone(), MonotoneExpression.class);

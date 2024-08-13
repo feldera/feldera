@@ -140,6 +140,26 @@ public class ToRustVisitor extends CircuitVisitor {
         return new ToRustInnerVisitor(this.errorReporter, builder, options, false);
     }
 
+    void generateInto(DBSPType type) {
+        if (type.is(DBSPTypeOption.class)) {
+            DBSPTypeOption option = type.to(DBSPTypeOption.class);
+            this.builder.append(".map(|x| x");
+            this.generateInto(option.typeArgs[0]);
+            this.builder.append(")");
+        } else if (type.mayBeNull) {
+            this.builder.append(".map(|x| x");
+            this.generateInto(type.setMayBeNull(false));
+            this.builder.append(")");
+        } else if (type.is(DBSPTypeVec.class)) {
+            DBSPTypeVec vec = type.to(DBSPTypeVec.class);
+            this.builder.append(".into_iter().map(|y| y");
+            this.generateInto(vec.getElementType());
+            this.builder.append(").collect()");
+        } else {
+            this.builder.append(".into()");
+        }
+    }
+
     protected void generateFromTrait(DBSPTypeStruct type) {
         EliminateStructs es = new EliminateStructs(this.errorReporter);
         DBSPTypeTuple tuple = es.apply(type).to(DBSPTypeTuple.class);
@@ -159,17 +179,7 @@ public class ToRustVisitor extends CircuitVisitor {
         for (DBSPTypeStruct.Field field: type.fields.values()) {
             this.builder.append("table.")
                     .append(field.getSanitizedName());
-            if (field.type.mayBeNull || field.type.is(DBSPTypeOption.class)) {
-                this.builder.append(".map(|x| x");
-            }
-            if (field.type.is(DBSPTypeVec.class)) {
-                this.builder.append(".into_iter().map(|y| y.into()).collect()");
-            } else {
-                this.builder.append(".into()");
-            }
-            if (field.type.mayBeNull || field.type.is(DBSPTypeOption.class)) {
-                this.builder.append(")");
-            }
+            this.generateInto(field.type);
             this.builder.append(", ");
         }
         this.builder.append(")").newline();
@@ -199,17 +209,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(field.getSanitizedName())
                     .append(": tuple.")
                     .append(index++);
-            if (field.type.mayBeNull || field.type.is(DBSPTypeOption.class)) {
-                this.builder.append(".map(|x| x");
-            }
-            if (field.type.is(DBSPTypeVec.class)) {
-                this.builder.append(".into_iter().map(|y| y.into()).collect()");
-            } else {
-                this.builder.append(".into()");
-            }
-            if (field.type.mayBeNull || field.type.is(DBSPTypeOption.class))  {
-                this.builder.append(")");
-            }
+            this.generateInto(field.type);
             this.builder.append(", ")
                 .newline();
         }

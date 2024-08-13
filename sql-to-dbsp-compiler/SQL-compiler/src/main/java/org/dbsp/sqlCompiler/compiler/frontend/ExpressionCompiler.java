@@ -478,7 +478,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (vec != null)
             // This is the reverse of what you may expect
             result = typeString(vec.getElementType()) + "vec";
-        result += type.mayBeNull ? "N" : "_";
+        result += type.nullableUnderlineSuffix();
         return result;
     }
 
@@ -589,14 +589,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         String method = getCallName(call);
         StringBuilder stringBuilder = new StringBuilder(method);
 
-        for (DBSPExpression op : ops) {
-            if (op.getType().mayBeNull) {
-                stringBuilder.append("N");
-            } else {
-                stringBuilder.append("_");
-            }
-        }
-
+        for (DBSPExpression op : ops)
+            stringBuilder.append(op.getType().nullableUnderlineSuffix());
         return stringBuilder.toString();
     }
 
@@ -617,13 +611,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
         DBSPTypeVec vec = ops[0].type.to(DBSPTypeVec.class);
         DBSPType elemType = vec.getElementType();
-
-        if (elemType.mayBeNull) {
-            s = s + "N";
-        } else {
-            s = s + "_";
-        }
-
+        s = s + elemType.nullableUnderlineSuffix();
         return s;
     }
 
@@ -994,7 +982,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         String name = "cardinality";
 
                         nullLiteralToNullArray(ops, 0);
-
                         if (ops.get(0).getType().mayBeNull)
                             name += "N";
                         return new DBSPApplyExpression(node, name, type, ops.get(0));
@@ -1013,8 +1000,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         DBSPExpression arg = ops.get(0);
                         DBSPTypeVec arrayType = arg.getType().to(DBSPTypeVec.class);
                         String method = "element";
-                        if (arrayType.mayBeNull)
-                            method += "N";
+                        method += arrayType.nullableUnderlineSuffix();
+                        method += arrayType.getElementType().nullableUnderlineSuffix();
                         return new DBSPApplyExpression(node, method, type, arg);
                     }
                     case "substring": {

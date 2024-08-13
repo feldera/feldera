@@ -39,21 +39,18 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
-    public final boolean isNull;
-
     public DBSPTupleExpression(CalciteObject object, boolean mayBeNull, DBSPExpression... expressions) {
         super(object,
                 new DBSPTypeTuple(object, mayBeNull, Linq.map(expressions, DBSPExpression::getType, DBSPType.class)),
                 expressions);
-        this.isNull = false;
     }
 
     /** A tuple with value 'null'. */
     public DBSPTupleExpression(DBSPTypeTuple type) {
         super(type.getNode(), type);
-        this.isNull = true;
     }
 
     public DBSPTupleExpression(DBSPExpression... expressions) {
@@ -88,7 +85,7 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
     }
 
     public DBSPTupleExpression append(DBSPExpression expression) {
-        List<DBSPExpression> fields = Linq.list(this.fields);
+        List<DBSPExpression> fields = Linq.list(Objects.requireNonNull(this.fields));
         fields.add(expression);
         return new DBSPTupleExpression(this.getNode(), fields);
     }
@@ -99,14 +96,14 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
             throw new InternalCompilerError("Cannot cast " + this + " with " + this.size() + " fields "
                     + " to " + destType + " with " + destType.size() + " fields", this);
         return new DBSPTupleExpression(
-                Linq.zip(this.fields, destType.tupFields,
+                Linq.zip(Objects.requireNonNull(this.fields), destType.tupFields,
                         DBSPExpression::cast, DBSPExpression.class));
     }
 
     public DBSPTupleExpression slice(int start, int endExclusive) {
         if (endExclusive <= start)
             throw new InternalCompilerError("Incorrect slice parameters " + start + ":" + endExclusive, this);
-        return new DBSPTupleExpression(Utilities.arraySlice(this.fields, start, endExclusive));
+        return new DBSPTupleExpression(Utilities.arraySlice(Objects.requireNonNull(this.fields), start, endExclusive));
     }
 
     @Override
@@ -115,8 +112,10 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
         if (decision.stop()) return;
         visitor.push(this);
         this.type.accept(visitor);
-        for (DBSPExpression expression: this.fields)
-            expression.accept(visitor);
+        if (this.fields != null) {
+            for (DBSPExpression expression : this.fields)
+                expression.accept(visitor);
+        }
         visitor.pop(this);
         visitor.postorder(this);
     }
@@ -127,6 +126,10 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
         if (o == null)
             return false;
         if (!this.hasSameType(o))
+            return false;
+        if (this.fields == null)
+            return o.fields == null;
+        if (o.fields == null)
             return false;
         for (int index = 0; index < this.size(); index++) {
             DBSPExpression field = this.get(index);
@@ -139,7 +142,7 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        if (this.isNull)
+        if (this.fields == null)
             return builder.append("None");
         return builder.append(DBSPTypeCode.TUPLE.rustName)
                 .append(this.fields.length)
@@ -161,7 +164,7 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
 
     @Override
     public DBSPExpression deepCopy() {
-        if (this.isNull)
+        if (this.fields == null)
             return new DBSPTupleExpression(this.getType().to(DBSPTypeTuple.class));
         return new DBSPTupleExpression(this.getNode(), this.getType().mayBeNull,
                 Linq.map(this.fields, DBSPExpression::deepCopy, DBSPExpression.class));
@@ -172,8 +175,13 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
         DBSPTupleExpression otherExpression = other.as(DBSPTupleExpression.class);
         if (otherExpression == null)
             return false;
-        return this.isNull == otherExpression.isNull &&
-                context.equivalent(this.fields, otherExpression.fields);
+        if (!this.getType().sameType(other.getType()))
+            return false;
+        if (this.fields == null)
+            return otherExpression.fields == null;
+        if (otherExpression.fields == null)
+            return false;
+        return context.equivalent(this.fields, otherExpression.fields);
     }
 
     @Override

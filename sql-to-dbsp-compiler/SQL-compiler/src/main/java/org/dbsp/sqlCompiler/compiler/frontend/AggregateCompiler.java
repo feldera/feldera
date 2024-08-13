@@ -286,7 +286,7 @@ public class AggregateCompiler implements ICompilerComponent {
         }
         CalciteObject node = CalciteObject.create(function);
         DBSPTupleExpression tuple = Objects.requireNonNull(this.aggArgument).to(DBSPTupleExpression.class);
-        assert tuple.fields.length == 2: "Expected 2 arguments for " + kind;
+        assert tuple.fields != null && tuple.fields.length == 2: "Expected 2 arguments for " + kind;
         DBSPOpcode compareOpcode = switch (kind) {
             case ARG_MAX -> DBSPOpcode.AGG_GTE;
             case ARG_MIN -> DBSPOpcode.AGG_LTE;
