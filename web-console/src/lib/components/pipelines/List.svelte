@@ -82,7 +82,7 @@
   }
 </script>
 
-<div class="relative flex flex-col gap-2 overflow-y-auto px-4 pb-0.5" use:bindScrollY={{ scrollY }}>
+<div class="relative flex flex-col gap-2 overflow-y-auto px-4 pb-2" use:bindScrollY={{ scrollY }}>
   <div class="sticky top-0 m-0 pt-1 bg-surface-50-950">
     <input
       bind:this={createPipelineInputRef}

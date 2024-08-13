@@ -24,7 +24,7 @@
 </script>
 
 <div class="flex h-full">
-  <Drawer width="w-72" bind:open={showDrawer.value} side="left">
+  <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
     <div class="flex h-full w-full flex-col gap-1">
       <a href="{base}/">
         {#if darkMode.value === 'dark'}

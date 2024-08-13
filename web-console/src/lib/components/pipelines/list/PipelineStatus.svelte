@@ -1,36 +1,37 @@
 <script lang="ts">
   import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
   import { type PipelineStatus } from '$lib/services/pipelineManager'
+  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import { match, P } from 'ts-pattern'
 
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', () => 'preset-tonal-success')
-      .with('Starting up', () => 'preset-tonal-tertiary')
-      .with('Initializing', () => 'preset-tonal-warning')
-      .with('Paused', () => 'preset-tonal-success')
-      .with('Running', () => 'preset-tonal-success')
-      .with('ShuttingDown', () => 'preset-tonal-tertiary')
-      .with({ PipelineError: P.any }, () => 'preset-tonal-error')
-      .with('Compiling sql', () => 'preset-tonal-warning')
-      .with('Queued', () => 'preset-tonal-warning')
-      .with('Compiling bin', () => 'preset-tonal-warning')
+      .with('Shutdown', () => 'preset-filled-success-400-600')
+      .with('Starting up', () => 'preset-filled-tertiary-400-600')
+      .with('Initializing', () => 'preset-filled-warning-400-600')
+      .with('Paused', () => 'preset-filled-success-400-600')
+      .with('Running', () => 'preset-filled-success-400-600')
+      .with('ShuttingDown', () => 'preset-filled-tertiary-400-600')
+      .with({ PipelineError: P.any }, () => 'preset-filled-error-400-600')
+      .with('Compiling sql', () => 'preset-filled-warning-400-600')
+      .with('Queued', () => 'preset-filled-warning-400-600')
+      .with('Compiling bin', () => 'preset-filled-warning-400-600')
       .with(
         { SqlError: P.any },
         { RustError: P.any },
         { SystemError: P.any },
-        () => 'preset-tonal-error'
+        () => 'preset-filled-error-400-600'
       )
       .exhaustive()
   )
 </script>
 
-<div
-  class={'w-30 chip pointer-events-none h-6 flex-none text-[0.66rem] uppercase ' +
-    chipClass +
-    ' ' +
-    _class}
->
-  {getPipelineStatusLabel(status)}
+<div class="p-2">
+  <div
+    class={'h-4 w-4 flex-none rounded-full text-[0.66rem] uppercase ' + chipClass + ' ' + _class}
+  ></div>
 </div>
+<Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="left"
+  >{getPipelineStatusLabel(status)}</Tooltip
+>
