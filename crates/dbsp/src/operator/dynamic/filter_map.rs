@@ -1,5 +1,6 @@
 //! Filter and transform data record-by-record.
 
+use crate::circuit::metadata::OperatorLocation;
 use crate::trace::VecWSet;
 use crate::{
     circuit::{
@@ -13,6 +14,7 @@ use crate::{
     },
 };
 use minitrace::trace;
+use std::panic::Location;
 use std::{borrow::Cow, marker::PhantomData};
 
 /// See [`crate::operator::FilterMap`].
@@ -24,11 +26,13 @@ pub trait DynFilterMap: BatchReader {
     fn item_ref<'a>(key: &'a Self::Key, val: &'a Self::Val) -> Self::DynItemRef<'a>;
     fn item_ref_keyval(item_ref: Self::DynItemRef<'_>) -> (&Self::Key, &Self::Val);
 
+    #[track_caller]
     fn dyn_filter<C: Circuit>(
         stream: &Stream<C, Self>,
         filter_func: Box<dyn Fn(Self::DynItemRef<'_>) -> bool>,
     ) -> Stream<C, Self>;
 
+    #[track_caller]
     fn dyn_map_generic<C: Circuit, O>(
         stream: &Stream<C, Self>,
         output_factories: &O::Factories,
@@ -37,6 +41,7 @@ pub trait DynFilterMap: BatchReader {
     where
         O: Batch<Time = (), R = Self::R>;
 
+    #[track_caller]
     fn dyn_flat_map_generic<C: Circuit, O>(
         stream: &Stream<C, Self>,
         output_factories: &O::Factories,
@@ -48,11 +53,13 @@ pub trait DynFilterMap: BatchReader {
 
 impl<C: Circuit, B: DynFilterMap> Stream<C, B> {
     /// See [`Stream::filter`].
+    #[track_caller]
     pub fn dyn_filter(&self, filter_func: Box<dyn Fn(B::DynItemRef<'_>) -> bool>) -> Self {
         DynFilterMap::dyn_filter(self, filter_func)
     }
 
     /// See [`Stream::map`].
+    #[track_caller]
     pub fn dyn_map<K: DataTrait + ?Sized>(
         &self,
         output_factories: &OrdWSetFactories<K, B::R>,
@@ -64,6 +71,7 @@ impl<C: Circuit, B: DynFilterMap> Stream<C, B> {
     /// Behaves as [`Self::dyn_map`] followed by
     /// [`index`](`crate::Stream::index`), but is more efficient.  Assembles
     /// output records into `VecIndexedZSet` batches.
+    #[track_caller]
     pub fn dyn_map_index<K: DataTrait + ?Sized, V: DataTrait + ?Sized>(
         &self,
         output_factories: &OrdIndexedWSetFactories<K, V, B::R>,
@@ -73,6 +81,7 @@ impl<C: Circuit, B: DynFilterMap> Stream<C, B> {
     }
 
     /// Like [`Self::dyn_map_index`], but can return any batch type.
+    #[track_caller]
     pub fn dyn_map_generic<O>(
         &self,
         output_factories: &O::Factories,
@@ -85,6 +94,7 @@ impl<C: Circuit, B: DynFilterMap> Stream<C, B> {
     }
 
     /// See [`Stream::flat_map`].
+    #[track_caller]
     pub fn dyn_flat_map<K: DataTrait + ?Sized>(
         &self,
         output_factories: &OrdWSetFactories<K, B::R>,
@@ -94,6 +104,7 @@ impl<C: Circuit, B: DynFilterMap> Stream<C, B> {
     }
 
     /// See [`Stream::flat_map_index`].
+    #[track_caller]
     pub fn dyn_flat_map_index<K: DataTrait + ?Sized, V: DataTrait + ?Sized>(
         &self,
         output_factories: &OrdIndexedWSetFactories<K, V, B::R>,
@@ -103,6 +114,7 @@ impl<C: Circuit, B: DynFilterMap> Stream<C, B> {
     }
 
     /// Like [`Self::dyn_flat_map_index`], but can return any batch type.
+    #[track_caller]
     pub fn dyn_flat_map_generic<O>(
         &self,
         output_factories: &O::Factories,
@@ -137,9 +149,10 @@ where
         stream: &Stream<C, Self>,
         filter_func: Box<dyn Fn(Self::DynItemRef<'_>) -> bool>,
     ) -> Stream<C, Self> {
-        let filtered = stream
-            .circuit()
-            .add_unary_operator(FilterZSet::new(filter_func), &stream.try_sharded_version());
+        let filtered = stream.circuit().add_unary_operator(
+            FilterZSet::new(filter_func, Location::caller()),
+            &stream.try_sharded_version(),
+        );
         filtered.mark_sharded_if(stream);
         if stream.is_distinct() {
             filtered.mark_distinct();
@@ -155,9 +168,10 @@ where
     where
         O: Batch<Time = (), R = Self::R>,
     {
-        stream
-            .circuit()
-            .add_unary_operator(MapZSet::new(output_factories, map_func), stream)
+        stream.circuit().add_unary_operator(
+            MapZSet::new(output_factories, Location::caller(), map_func),
+            stream,
+        )
     }
 
     fn dyn_flat_map_generic<C: Circuit, O>(
@@ -168,9 +182,10 @@ where
     where
         O: Batch<Time = (), R = Self::R>,
     {
-        stream
-            .circuit()
-            .add_unary_operator(FlatMapZSet::new(output_factories, func), stream)
+        stream.circuit().add_unary_operator(
+            FlatMapZSet::new(output_factories, Location::caller(), func),
+            stream,
+        )
     }
 }
 
@@ -196,7 +211,7 @@ where
         filter_func: Box<dyn Fn(Self::DynItemRef<'_>) -> bool>,
     ) -> Stream<C, Self> {
         let filtered = stream.circuit().add_unary_operator(
-            FilterIndexedZSet::new(filter_func),
+            FilterIndexedZSet::new(Location::caller(), filter_func),
             &stream.try_sharded_version(),
         );
         filtered.mark_sharded_if(stream);
@@ -214,9 +229,10 @@ where
     where
         O: Batch<Time = (), R = Self::R>,
     {
-        stream
-            .circuit()
-            .add_unary_operator(MapIndexedZSet::new(output_factories, map_func), stream)
+        stream.circuit().add_unary_operator(
+            MapIndexedZSet::new(output_factories, Location::caller(), map_func),
+            stream,
+        )
     }
 
     fn dyn_flat_map_generic<C: Circuit, O>(
@@ -227,9 +243,10 @@ where
     where
         O: Batch<Time = (), R = Self::R>,
     {
-        stream
-            .circuit()
-            .add_unary_operator(FlatMapIndexedZSet::new(output_factories, func), stream)
+        stream.circuit().add_unary_operator(
+            FlatMapIndexedZSet::new(output_factories, Location::caller(), func),
+            stream,
+        )
     }
 }
 
@@ -253,9 +270,10 @@ where
         stream: &Stream<C, Self>,
         filter_func: Box<dyn Fn(Self::DynItemRef<'_>) -> bool>,
     ) -> Stream<C, Self> {
-        let filtered = stream
-            .circuit()
-            .add_unary_operator(FilterZSet::new(filter_func), &stream.try_sharded_version());
+        let filtered = stream.circuit().add_unary_operator(
+            FilterZSet::new(filter_func, Location::caller()),
+            &stream.try_sharded_version(),
+        );
         filtered.mark_sharded_if(stream);
         if stream.is_distinct() {
             filtered.mark_distinct();
@@ -271,9 +289,10 @@ where
     where
         O: Batch<Time = (), R = Self::R>,
     {
-        stream
-            .circuit()
-            .add_unary_operator(MapZSet::new(output_factories, map_func), stream)
+        stream.circuit().add_unary_operator(
+            MapZSet::new(output_factories, Location::caller(), map_func),
+            stream,
+        )
     }
 
     fn dyn_flat_map_generic<C: Circuit, O>(
@@ -284,9 +303,10 @@ where
     where
         O: Batch<Time = (), R = Self::R>,
     {
-        stream
-            .circuit()
-            .add_unary_operator(FlatMapZSet::new(output_factories, func), stream)
+        stream.circuit().add_unary_operator(
+            FlatMapZSet::new(output_factories, Location::caller(), func),
+            stream,
+        )
     }
 }
 
@@ -312,7 +332,7 @@ where
         filter_func: Box<dyn Fn(Self::DynItemRef<'_>) -> bool>,
     ) -> Stream<C, Self> {
         let filtered = stream.circuit().add_unary_operator(
-            FilterIndexedZSet::new(filter_func),
+            FilterIndexedZSet::new(Location::caller(), filter_func),
             &stream.try_sharded_version(),
         );
         filtered.mark_sharded_if(stream);
@@ -330,9 +350,10 @@ where
     where
         O: Batch<Time = (), R = Self::R>,
     {
-        stream
-            .circuit()
-            .add_unary_operator(MapIndexedZSet::new(output_factories, map_func), stream)
+        stream.circuit().add_unary_operator(
+            MapIndexedZSet::new(output_factories, Location::caller(), map_func),
+            stream,
+        )
     }
 
     fn dyn_flat_map_generic<C: Circuit, O>(
@@ -343,22 +364,25 @@ where
     where
         O: Batch<Time = (), R = Self::R>,
     {
-        stream
-            .circuit()
-            .add_unary_operator(FlatMapIndexedZSet::new(output_factories, func), stream)
+        stream.circuit().add_unary_operator(
+            FlatMapIndexedZSet::new(output_factories, Location::caller(), func),
+            stream,
+        )
     }
 }
 
 /// Internal implementation for filtering [`BatchReader`]s
 pub struct FilterZSet<B: Batch> {
     filter: Box<dyn Fn(&B::Key) -> bool>,
+    location: &'static Location<'static>,
     _type: PhantomData<*const B>,
 }
 
 impl<B: Batch> FilterZSet<B> {
-    pub fn new(filter: Box<dyn Fn(&B::Key) -> bool>) -> Self {
+    pub fn new(filter: Box<dyn Fn(&B::Key) -> bool>, location: &'static Location<'static>) -> Self {
         Self {
             filter,
+            location,
             _type: PhantomData,
         }
     }
@@ -399,6 +423,10 @@ impl<B: Batch> FilterZSet<B> {
 impl<B: Batch> Operator for FilterZSet<B> {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("FilterKeys")
+    }
+
+    fn location(&self) -> OperatorLocation {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -483,13 +511,18 @@ where
 
 /// Internal implementation for filtering [`BatchReader`]s
 pub struct FilterIndexedZSet<B: Batch> {
+    location: &'static Location<'static>,
     filter: Box<dyn for<'a> Fn((&'a B::Key, &'a B::Val)) -> bool>,
     _type: PhantomData<B>,
 }
 
 impl<B: Batch> FilterIndexedZSet<B> {
-    pub fn new(filter: Box<dyn for<'a> Fn((&'a B::Key, &'a B::Val)) -> bool>) -> Self {
+    pub fn new(
+        location: &'static Location<'static>,
+        filter: Box<dyn for<'a> Fn((&'a B::Key, &'a B::Val)) -> bool>,
+    ) -> Self {
         Self {
+            location,
             filter,
             _type: PhantomData,
         }
@@ -499,6 +532,10 @@ impl<B: Batch> FilterIndexedZSet<B> {
 impl<B: Batch> Operator for FilterIndexedZSet<B> {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("FilterVals")
+    }
+
+    fn location(&self) -> OperatorLocation {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -568,6 +605,7 @@ where
     CO: Batch,
 {
     output_factories: CO::Factories,
+    location: &'static Location<'static>,
     map: Box<dyn for<'a> Fn(&'a CI::Key, &mut DynPair<CO::Key, CO::Val>)>,
     _type: PhantomData<(CI, CO)>,
 }
@@ -579,10 +617,12 @@ where
 {
     pub fn new(
         output_factories: &CO::Factories,
+        location: &'static Location<'static>,
         map: Box<dyn for<'a> Fn(&'a CI::Key, &mut DynPair<CO::Key, CO::Val>)>,
     ) -> Self {
         Self {
             output_factories: output_factories.clone(),
+            location,
             map,
             _type: PhantomData,
         }
@@ -596,6 +636,10 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("Map")
+    }
+
+    fn location(&self) -> OperatorLocation {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -638,6 +682,7 @@ where
     CO: Batch,
 {
     output_factories: CO::Factories,
+    location: &'static Location<'static>,
     map: Box<dyn for<'a> Fn((&'a CI::Key, &'a CI::Val), &mut DynPair<CO::Key, CO::Val>)>,
     _type: PhantomData<(CI, CO)>,
 }
@@ -649,10 +694,12 @@ where
 {
     pub fn new(
         output_factories: &CO::Factories,
+        location: &'static Location<'static>,
         map: Box<dyn for<'a> Fn((&'a CI::Key, &'a CI::Val), &mut DynPair<CO::Key, CO::Val>)>,
     ) -> Self {
         Self {
             output_factories: output_factories.clone(),
+            location,
             map,
             _type: PhantomData,
         }
@@ -666,6 +713,10 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("Map")
+    }
+
+    fn location(&self) -> OperatorLocation {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -704,6 +755,7 @@ where
 
 pub struct FlatMapZSet<CI: BatchReader, CO: Batch> {
     output_factories: CO::Factories,
+    location: &'static Location<'static>,
     func: Box<dyn for<'a> FnMut(&'a CI::Key, &mut dyn FnMut(&mut CO::Key, &mut CO::Val))>,
     _type: PhantomData<(CI, CO)>,
 }
@@ -711,10 +763,12 @@ pub struct FlatMapZSet<CI: BatchReader, CO: Batch> {
 impl<CI: BatchReader, CO: Batch> FlatMapZSet<CI, CO> {
     pub fn new(
         output_factories: &CO::Factories,
+        location: &'static Location<'static>,
         func: Box<dyn for<'a> FnMut(&'a CI::Key, &mut dyn FnMut(&mut CO::Key, &mut CO::Val))>,
     ) -> Self {
         Self {
             output_factories: output_factories.clone(),
+            location,
             func,
             _type: PhantomData,
         }
@@ -728,6 +782,10 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("FlatMap")
+    }
+
+    fn location(&self) -> OperatorLocation {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -780,6 +838,7 @@ where
 
 pub struct FlatMapIndexedZSet<CI: BatchReader, CO: Batch> {
     output_factories: CO::Factories,
+    location: &'static Location<'static>,
     func: Box<
         dyn for<'a> FnMut((&'a CI::Key, &'a CI::Val), &mut dyn FnMut(&mut CO::Key, &mut CO::Val)),
     >,
@@ -789,6 +848,7 @@ pub struct FlatMapIndexedZSet<CI: BatchReader, CO: Batch> {
 impl<CI: BatchReader, CO: Batch> FlatMapIndexedZSet<CI, CO> {
     pub fn new(
         output_factories: &CO::Factories,
+        location: &'static Location<'static>,
         func: Box<
             dyn for<'a> FnMut(
                 (&'a CI::Key, &'a CI::Val),
@@ -798,6 +858,7 @@ impl<CI: BatchReader, CO: Batch> FlatMapIndexedZSet<CI, CO> {
     ) -> Self {
         Self {
             output_factories: output_factories.clone(),
+            location,
             func,
             _type: PhantomData,
         }
@@ -811,6 +872,10 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("FlatMap")
+    }
+
+    fn location(&self) -> OperatorLocation {
+        Some(self.location)
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
