@@ -1,7 +1,7 @@
 CREATE VIEW q17 AS
 SELECT
      auction,
-     format_date('yyyy-MM-dd', date_time) as 'day',
+     CAST(date_time AS DATE) as 'day',
      count(*) AS total_bids,
      count(*) filter (where price < 10000) AS rank1_bids,
      count(*) filter (where price >= 10000 and price < 1000000) AS rank2_bids,
@@ -11,4 +11,4 @@ SELECT
      avg(price) AS avg_price,
      sum(price) AS sum_price
 FROM bid
-GROUP BY auction, format_date('yyyy-MM-dd', date_time);
+GROUP BY auction, CAST(date_time AS DATE);

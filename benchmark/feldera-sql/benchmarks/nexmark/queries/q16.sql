@@ -1,7 +1,7 @@
 CREATE VIEW Q16 AS
 SELECT
     channel,
-    format_date('yyyy-MM-dd', date_time) as 'day',
+    CAST(date_time AS DATE) as 'day',
     max(format_date('HH:mm', date_time)) as 'minute',
     count(*) AS total_bids,
     count(*) filter (where price < 10000) AS rank1_bids,
@@ -16,4 +16,4 @@ SELECT
     count(distinct auction) filter (where price >= 10000 and price < 1000000) AS rank2_auctions,
     count(distinct auction) filter (where price >= 1000000) AS rank3_auctions
 FROM bid
-GROUP BY channel, format_date('yyyy-MM-dd', date_time);
+GROUP BY channel, CAST(date_time AS DATE);
