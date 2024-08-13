@@ -43,12 +43,7 @@ where
         Self {
             lower: spine.lower.clone(),
             upper: spine.upper.clone(),
-            batches: spine
-                .levels
-                .iter()
-                .flat_map(|inner| inner.values())
-                .flat_map(|batch| batch.0.iter().cloned())
-                .collect(),
+            batches: spine.batches.to_vec(),
             factories: spine.factories.clone(),
         }
     }
