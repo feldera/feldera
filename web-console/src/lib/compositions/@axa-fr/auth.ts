@@ -35,7 +35,7 @@ export const toAxaOidcConfig = (c: OidcConfig): OidcConfiguration => ({
   // service_worker_update_require_callback: undefined,
   // extras: undefined,
   // token_request_extras: undefined,
-  // storage: undefined,
+  storage: c.storage,
   // monitor_session: undefined,
   // token_renew_mode: undefined,
   logout_tokens_to_invalidate: []

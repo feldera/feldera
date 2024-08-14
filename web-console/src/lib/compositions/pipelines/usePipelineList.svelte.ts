@@ -8,7 +8,7 @@ const reload = async () => {
 
 export const useUpdatePipelineList = () => {
   return {
-    updatePipelines(updater: (ps: typeof pipelines) => typeof pipelines) {
+    updatePipelines(updater: (ps: PipelineThumb[]) => PipelineThumb[]) {
       pipelines = updater(pipelines)
     }
   }

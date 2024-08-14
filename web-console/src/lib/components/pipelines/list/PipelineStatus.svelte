@@ -7,10 +7,10 @@
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', () => 'preset-filled-success-400-600')
+      .with('Shutdown', () => 'preset-filled-secondary-400-600')
       .with('Starting up', () => 'preset-filled-tertiary-400-600')
       .with('Initializing', () => 'preset-filled-warning-400-600')
-      .with('Paused', () => 'preset-filled-success-400-600')
+      .with('Paused', () => 'preset-filled-warning-400-600')
       .with('Running', () => 'preset-filled-success-400-600')
       .with('ShuttingDown', () => 'preset-filled-tertiary-400-600')
       .with({ PipelineError: P.any }, () => 'preset-filled-error-400-600')

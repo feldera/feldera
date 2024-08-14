@@ -19,6 +19,7 @@ import { match, P } from 'ts-pattern'
 //   TokenEndpointHandler
 // } from '@auth/sveltekit/providers'
 import { base } from '$app/paths'
+import type { StringMap } from '@axa-fr/oidc-client'
 
 // type AuthDetails =
 //   | {
@@ -212,6 +213,7 @@ export type OidcConfig = {
   post_logout_redirect_uri: string
   client_authentication: 'client_secret_basic'
   loadUserInfo: true
+  storage: Storage
 }
 
 type AuthConfig = { oidc: OidcConfig; logoutExtras?: Record<string, string> }
@@ -228,6 +230,7 @@ export const loadAuthConfig = async () => {
         invariant(clientId, 'Cognito clientId is not valid')
         invariant(endpoint, 'Cognito endpoint is not valid')
         invariant(issuer, 'Cognito issuer is not valid')
+        const storage = sessionStorage
         return {
           oidc: {
             authority: endpoint,
@@ -245,14 +248,19 @@ export const loadAuthConfig = async () => {
             redirect_uri: `${window.location.origin}${base}/auth/callback/`,
             post_logout_redirect_uri: `${base}/`,
             client_authentication: 'client_secret_basic',
-            loadUserInfo: true
+            loadUserInfo: true,
+            storage
           },
           logoutExtras: {
-            client_id: clientId,
-            id_token_hint: undefined!,
-            redirect_uri: `${window.location.origin}${base}/auth/callback/`,
-            response_type: 'code'
-          }
+            ...{
+              client_id: clientId,
+              id_token_hint: undefined!,
+              redirect_uri: `${window.location.origin}${base}/auth/callback/`,
+              response_type: 'code',
+            },
+            // With AWS Cognito, when logging out and logging in via thrird party IDP (e.g. Google) - nonce is required
+            ...((nonce) => (nonce ? { nonce } : {}))(storage.getItem('oidc.nonce.default'))
+          } as StringMap
         }
       })
       .with({ GoogleIdentity: P.select() }, (config) => ({}) as any)
