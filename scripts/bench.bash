@@ -61,8 +61,10 @@ sql_benchmark() {
 
 DIR="benchmark/feldera-sql/benchmarks/"
 for test in $DIR/*; do
-  rpk topic -X brokers=$KAFKA_BROKER delete -r '.*'
-  source ${test}/generate.bash
+  if test -e ${test}/generate.bash; then
+      rpk topic -X brokers=$KAFKA_BROKER delete -r '.*'
+      source ${test}/generate.bash
+  fi
   name=$(basename $test)
   sql_benchmark "sql_${name}_results.csv" "sql_${name}_metrics.csv" --folder benchmarks/${name}
   sql_benchmark "sql_storage_${name}_results.csv" "sql_storage_${name}_metrics.csv" --storage --folder benchmarks/${name}
