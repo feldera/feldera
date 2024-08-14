@@ -18,10 +18,9 @@ use config::GeneratorOptions;
 use rand::{rngs::ThreadRng, Rng};
 use std::{
     collections::VecDeque,
-    ops::Range,
     sync::mpsc,
-    thread::{self, sleep},
-    time::{Duration, SystemTime},
+    thread::{self},
+    time::SystemTime,
 };
 
 pub mod config;
@@ -104,10 +103,6 @@ pub struct NexmarkSource {
 
     // Channel on which the source receives vectors of next events.
     next_events_rx: BatchedReceiver<NextEvent>,
-
-    /// An optional iterator that provides wallclock timestamps in tests.
-    /// This is set to None by default.
-    wallclock_iterator: Option<Range<u64>>,
 }
 
 // Creates and spawns the generators according to the nexmark config, returning
@@ -172,24 +167,11 @@ fn create_generators_for_config<R: Rng + Default>(
 
 impl NexmarkSource {
     pub fn from_next_events(next_events_rx: BatchedReceiver<NextEvent>) -> Self {
-        NexmarkSource {
-            next_events_rx,
-            wallclock_iterator: None,
-        }
+        NexmarkSource { next_events_rx }
     }
 
     pub fn new(options: GeneratorOptions) -> NexmarkSource {
         NexmarkSource::from_next_events(create_generators_for_config::<ThreadRng>(options))
-    }
-
-    fn wallclock_time(&mut self) -> u64 {
-        match &mut self.wallclock_iterator {
-            Some(i) => i.next().unwrap(),
-            None => SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64,
-        }
     }
 }
 
@@ -198,13 +180,6 @@ impl Iterator for NexmarkSource {
 
     fn next(&mut self) -> Option<Self::Item> {
         let next_event = self.next_events_rx.recv().ok()?;
-        // If the next event is still in the future then we're getting ahead of
-        // ourselves, so we sleep until we can emit it.
-        let wallclock_time_now = self.wallclock_time();
-        if next_event.wallclock_timestamp > wallclock_time_now {
-            let millis_to_sleep = next_event.wallclock_timestamp - wallclock_time_now;
-            sleep(Duration::from_millis(millis_to_sleep));
-        }
 
         Some(next_event.event)
     }
@@ -248,9 +223,7 @@ pub mod tests {
         next_event_tx.send(v).unwrap();
 
         // Create a source using the pre-generated next events.
-        let mut source = NexmarkSource::from_next_events(BatchedReceiver::new(next_event_rx));
-        source.wallclock_iterator = Some(times);
-        source
+        NexmarkSource::from_next_events(BatchedReceiver::new(next_event_rx))
     }
 
     pub fn generate_expected_zset_tuples(
