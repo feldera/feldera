@@ -56,12 +56,12 @@ public class StreamingTests extends StreamingTestBase {
                     id bigint NOT NULL,
                     unix_time BIGINT NOT NULL
                 );
-                        
+                
                 CREATE TABLE feedback (
                     id bigint,
                     unix_time bigint LATENESS 3600 * 24
                 );
-                        
+                
                 CREATE VIEW TRANSACTIONS AS
                 SELECT t.*
                 FROM transaction as t JOIN feedback as f

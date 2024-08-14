@@ -570,9 +570,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
     }
 
-    DBSPApplyOperator extractTimestamp(
-            CalciteObject node,
-            PartiallyMonotoneTuple sourceType, int tsIndex, DBSPOperator source) {
+    DBSPApplyOperator extractTimestamp(PartiallyMonotoneTuple sourceType, int tsIndex, DBSPOperator source) {
         // First index to apply to the limiter
         int outerIndex = sourceType.getField(0).mayBeMonotone() ? 1 : 0;
         PartiallyMonotoneTuple sourceTypeValue = sourceType.getField(1)
@@ -584,16 +582,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 innerIndex++;
         }
 
-        DBSPVariablePath var = source.outputType.ref().var();
+        DBSPVariablePath var = this.getLimiterDataOutputType(source).ref().var();
         DBSPClosureExpression tsFunction = var
                 .deref()
                 .field(outerIndex)
                 .field(innerIndex)
                 .closure(var.asParameter());
-        DBSPApplyOperator result = new DBSPApplyOperator(
-                node, tsFunction, tsFunction.body.getType(), source, null);
-        this.addOperator(result);
-        return result;
+        return this.createApply(source, tsFunction);
     }
 
     @Override
@@ -656,17 +651,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         // Extract the timestamps from the limiters
-        DBSPApplyOperator extractLeftTS = this.extractTimestamp(join.getNode(), leftMono, leftTSIndex, leftLimiter);
-        DBSPApplyOperator extractRightTS = this.extractTimestamp(join.getNode(), rightMono, rightTSIndex, rightLimiter);
+        DBSPApplyOperator extractLeftTS = this.extractTimestamp(leftMono, leftTSIndex, leftLimiter);
+        DBSPApplyOperator extractRightTS = this.extractTimestamp(rightMono, rightTSIndex, rightLimiter);
 
         // Compute the min of the timestamps
-        DBSPVariablePath leftVar = extractLeftTS.outputType.ref().var();
-        DBSPVariablePath rightVar = extractRightTS.outputType.ref().var();
+        DBSPVariablePath leftVar = this.getLimiterDataOutputType(extractLeftTS).ref().var();
+        DBSPVariablePath rightVar = this.getLimiterDataOutputType(extractRightTS).ref().var();
         DBSPExpression min = new DBSPTupleExpression(this.min(leftVar.deref(), rightVar.deref()));
-        DBSPApply2Operator minOperator = new DBSPApply2Operator(
-                join.getNode(), min.closure(leftVar.asParameter(), rightVar.asParameter()),
-                min.getType(), extractLeftTS, extractRightTS);
-        this.addOperator(minOperator);
+        DBSPApply2Operator minOperator = this.createApply2(extractLeftTS, extractRightTS,
+                min.closure(leftVar.asParameter(), rightVar.asParameter()));
 
         DBSPTypeTuple keyType = join.getKeyType().to(DBSPTypeTuple.class);
         PartiallyMonotoneTuple keyPart = PartiallyMonotoneTuple.noMonotoneFields(keyType);
