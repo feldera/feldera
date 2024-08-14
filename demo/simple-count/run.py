@@ -97,7 +97,7 @@ def main():
 
         if response.ok:
             pipeline = json.loads(response.content.decode("utf-8"))
-            print(json.dumps(pipeline, indent=4))
+            # print(json.dumps(pipeline, indent=4))
             print("Program status: %s" % pipeline["program_status"])
             if pipeline["program_status"] == "Success":
                 print("SUCCESS: pipeline program is compiled")
