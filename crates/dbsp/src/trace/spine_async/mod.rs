@@ -20,6 +20,7 @@ use crate::storage::backend::StorageError;
 use crate::storage::file::to_bytes;
 use crate::storage::{checkpoint_path, write_commit_metadata};
 use crate::trace::spine_async::merger::{BackgroundOperation, MergeResult};
+use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::spine_fueled::CommittedSpine;
 use crate::trace::Merger;
 use metrics::{counter, histogram};
@@ -40,6 +41,7 @@ use textwrap::indent;
 use uuid::Uuid;
 
 pub(crate) mod merger;
+mod snapshot;
 
 #[cfg(test)]
 mod tests;
@@ -1187,5 +1189,11 @@ where
             f(&mut b);
             batch.0.push(Arc::new(b));
         }
+    }
+
+    /// Returns a read-only, non-merging snapshot of the current trace
+    /// state.
+    pub fn ro_snapshot(&self) -> SpineSnapshot<B> {
+        self.into()
     }
 }

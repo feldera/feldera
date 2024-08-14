@@ -44,8 +44,10 @@ use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
 use anyhow::Error as AnyError;
+use datafusion::error::DataFusionError;
 use dbsp::{operator::sample::MAX_QUANTILES, DetailedError};
 use log::{error, log, warn, Level};
+use parquet::errors::ParquetError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::{
@@ -178,12 +180,35 @@ pub enum PipelineError {
     HeapProfilerError {
         error: String,
     },
+    AdHocQueryError {
+        error: String,
+        #[serde(skip)]
+        df: Option<DataFusionError>,
+    },
 }
 
 impl From<ControllerError> for PipelineError {
     fn from(error: ControllerError) -> Self {
         Self::ControllerError {
             error: Arc::new(error),
+        }
+    }
+}
+
+impl From<DataFusionError> for PipelineError {
+    fn from(error: DataFusionError) -> Self {
+        Self::AdHocQueryError {
+            error: error.to_string(),
+            df: Some(error),
+        }
+    }
+}
+
+impl From<ParquetError> for PipelineError {
+    fn from(error: ParquetError) -> Self {
+        Self::AdHocQueryError {
+            error: error.to_string(),
+            df: None,
         }
     }
 }
@@ -253,6 +278,9 @@ impl Display for PipelineError {
             Self::HeapProfilerError {error} => {
                 write!(f, "Heap profiler error: {error}.")
             }
+            Self::AdHocQueryError {error, df: _} => {
+                write!(f, "Error during query processing: {error}.")
+            }
         }
     }
 }
@@ -276,6 +304,7 @@ impl DetailedError for PipelineError {
             Self::ParseErrors { .. } => Cow::from("ParseErrors"),
             Self::ControllerError { error } => error.error_code(),
             Self::HeapProfilerError { .. } => Cow::from("HeapProfilerError"),
+            Self::AdHocQueryError { .. } => Cow::from("AdHocQueryError"),
         }
     }
 
@@ -331,6 +360,7 @@ impl ResponseError for PipelineError {
             Self::ParseErrors { .. } => StatusCode::BAD_REQUEST,
             Self::HeapProfilerError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::ControllerError { error } => error.status_code(),
+            Self::AdHocQueryError { .. } => StatusCode::BAD_REQUEST,
         }
     }
 

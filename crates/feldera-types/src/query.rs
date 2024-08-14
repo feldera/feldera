@@ -1,6 +1,48 @@
 use serde::{Deserialize, Serialize};
-use std::fmt::{Debug, Display};
+use std::fmt::{Debug, Display, Formatter, Result};
 use utoipa::ToSchema;
+
+/// URL-encoded `format` argument to the `/query` endpoint.
+#[derive(Debug, Deserialize, PartialEq, Clone, Copy, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AdHocQueryFormat {
+    /// Print results as a human-readable text table.
+    Text,
+    /// Print results as new-line delimited JSON records.
+    Json,
+    /// Downloads results in a parquet file.
+    Parquet,
+}
+
+impl Display for AdHocQueryFormat {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            AdHocQueryFormat::Text => write!(f, "text"),
+            AdHocQueryFormat::Json => write!(f, "json"),
+            AdHocQueryFormat::Parquet => write!(f, "parquet"),
+        }
+    }
+}
+
+impl Default for AdHocQueryFormat {
+    fn default() -> Self {
+        Self::Text
+    }
+}
+
+fn default_format() -> AdHocQueryFormat {
+    AdHocQueryFormat::default()
+}
+
+/// URL-encoded arguments to the `/query` endpoint.
+#[derive(Clone, Debug, PartialEq, Deserialize, ToSchema)]
+pub struct AdhocQueryArgs {
+    /// The SQL query to run.
+    pub sql: String,
+    /// In what format the data is sent to the client.
+    #[serde(default = "default_format")]
+    pub format: AdHocQueryFormat,
+}
 
 /// A query over an output stream.
 ///

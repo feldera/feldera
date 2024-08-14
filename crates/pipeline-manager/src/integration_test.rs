@@ -17,12 +17,7 @@
 //! the following command line:
 //!
 //! ```text
-//! RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager --features pg-embed -- --db-connection-string=postgres-embed \
-//!    --bind-address=0.0.0.0 \
-//!    --compiler-working-directory=$HOME/.dbsp \
-//!    --runner-working-directory=$HOME/.dbsp \
-//!    --sql-compiler-home=sql-to-dbsp-compiler \
-//!    --dbsp-override-path=.
+//! cargo run --bin=pipeline-manager --features pg-embed
 //! ```
 //!
 //! or as a container
@@ -205,6 +200,19 @@ impl TestConfig {
         self.maybe_attach_bearer_token(self.client.get(self.endpoint_url(endpoint)))
             .send()
             .await
+    }
+
+    async fn adhoc_query<S: AsRef<str>>(
+        &self,
+        endpoint: S,
+        query: S,
+        format: S,
+    ) -> ClientResponse<Decoder<Payload>> {
+        let r = self
+            .maybe_attach_bearer_token(self.client.get(self.endpoint_url(endpoint)))
+            .query(&[("sql", query.as_ref()), ("format", format.as_ref())])
+            .expect("query parameters are valid");
+        r.send().await.expect("request is successful")
     }
 
     // TODO: currently unused
@@ -1869,4 +1877,113 @@ async fn pipeline_name_invalid() {
     });
     let response = config.post("/v0/pipelines", &request_body).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[actix_web::test]
+#[serial]
+async fn pipeline_adhoc_query() {
+    const PROGRAM: &str = r#"
+CREATE TABLE t1 (
+    id INT NOT NULL,
+    dt DATE NOT NULL
+) with (
+  'materialized' = 'true',
+  'connectors' = '[{
+    "transport": {
+      "name": "datagen",
+      "config": {
+        "plan": [{
+            "limit": 5
+        }]
+      }
+    }
+  }]'
+);
+CREATE TABLE t2 (
+    id INT NOT NULL,
+    st VARCHAR NOT NULL
+) with (
+  'materialized' = 'true',
+  'connectors' = '[{
+    "transport": {
+      "name": "datagen",
+      "config": {
+        "plan": [{
+            "limit": 5
+        }]
+      }
+    }
+  }]'
+);
+CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2 WHERE t1.id = t2.id );
+"#;
+    const ADHOC_SQL_A: &str = "SELECT * FROM joined";
+    const ADHOC_SQL_B: &str = "SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2 WHERE t1.id = t2.id";
+
+    let config = setup().await;
+    create_and_deploy_test_pipeline(&config, PROGRAM).await;
+    let resp = config
+        .post_no_body(format!("/v0/pipelines/test/start"))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+    config
+        .wait_for_deployment_status(
+            "test",
+            PipelineStatus::Running,
+            Duration::from_millis(1_000),
+        )
+        .await;
+
+    for format in &["text", "json"] {
+        let mut r1 = config
+            .adhoc_query("/v0/pipelines/test/query", ADHOC_SQL_A, format)
+            .await;
+        assert_eq!(r1.status(), StatusCode::OK);
+        let b1_body = r1.body().await.unwrap();
+        let b1 = std::str::from_utf8(b1_body.as_ref()).unwrap();
+        let mut b1_sorted: Vec<String> = b1.split('\n').map(|s| s.to_string()).collect();
+        b1_sorted.sort();
+
+        let mut r2 = config
+            .adhoc_query("/v0/pipelines/test/query", ADHOC_SQL_B, format)
+            .await;
+        assert_eq!(r2.status(), StatusCode::OK);
+        let b2_body = r2.body().await.unwrap();
+        let b2 = std::str::from_utf8(b2_body.as_ref()).unwrap();
+        let mut b2_sorted: Vec<String> = b2.split('\n').map(|s| s.to_string()).collect();
+        b2_sorted.sort();
+        assert_eq!(b1_sorted, b2_sorted);
+    }
+
+    // Test parquet format, here we can't just sort it so we ensure that view and adhoc join have the same order
+    let q1 = format!("{} ORDER BY c1, c2", ADHOC_SQL_A);
+    let mut r1 = config
+        .adhoc_query("/v0/pipelines/test/query", q1.as_str(), "parquet")
+        .await;
+    assert_eq!(r1.status(), StatusCode::OK);
+    let b1_body = r1.body().await.unwrap();
+
+    let q2 = format!("{} ORDER BY c1, c2", ADHOC_SQL_B);
+    let mut r2 = config
+        .adhoc_query("/v0/pipelines/test/query", q2.as_str(), "parquet")
+        .await;
+    assert_eq!(r2.status(), StatusCode::OK);
+    let b2_body = r2.body().await.unwrap();
+    assert!(!b1_body.is_empty());
+    assert_eq!(b1_body, b2_body);
+
+    // Invalid SQL retruns 400
+    let r3 = config
+        .adhoc_query(
+            "/v0/pipelines/test/query",
+            "SELECT * FROM invalid_table",
+            "text",
+        )
+        .await;
+    assert_eq!(r3.status(), StatusCode::BAD_REQUEST);
+    let r3 = config
+        .adhoc_query("/v0/pipelines/test/query", "SELECT 1/0", "text")
+        .await;
+    assert_eq!(r3.status(), StatusCode::BAD_REQUEST);
 }

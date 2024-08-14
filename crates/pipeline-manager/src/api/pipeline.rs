@@ -523,6 +523,7 @@ pub(crate) async fn input_endpoint_action(
             &pipeline_name,
             Method::GET,
             &format!("input_endpoints/{endpoint_name}/{action}"),
+            "",
         )
         .await?;
 
@@ -566,7 +567,13 @@ pub(crate) async fn get_pipeline_stats(
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     state
         .runner
-        .forward_to_pipeline(*tenant_id, &pipeline_name, Method::GET, "stats")
+        .forward_to_pipeline(
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "stats",
+            request.query_string(),
+        )
         .await
 }
 
@@ -602,7 +609,13 @@ pub(crate) async fn get_pipeline_circuit_profile(
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     state
         .runner
-        .forward_to_pipeline(*tenant_id, &pipeline_name, Method::GET, "dump_profile")
+        .forward_to_pipeline(
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "dump_profile",
+            request.query_string(),
+        )
         .await
 }
 
@@ -638,6 +651,56 @@ pub(crate) async fn get_pipeline_heap_profile(
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     state
         .runner
-        .forward_to_pipeline(*tenant_id, &pipeline_name, Method::GET, "heap_profile")
+        .forward_to_pipeline(
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "heap_profile",
+            request.query_string(),
+        )
+        .await
+}
+
+/// Execute an ad-hoc query in a running or paused pipeline.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("sql" = String, Query, description = "The SQL query to execute."),
+        ("format" = AdHocQueryFormat, Query, description = "Input data format, e.g., 'text', 'json' or 'parquet'."),
+    ),
+    responses(
+        (status = OK
+        , description = "Executes an ad-hoc SQL query in a running or paused pipeline. The evaluation is not incremental."
+        , content_type = "text/plain"
+        , body = Vec<u8>),
+        (status = NOT_FOUND
+        , description = "Pipeline with that name does not exist"
+        , body = ErrorResponse
+        , example = json!(examples::error_unknown_pipeline())),
+        (status = BAD_REQUEST
+        , description = "Pipeline is shutdown or an invalid SQL query was supplied"
+        , body = ErrorResponse
+        , example = json!(examples::error_pipeline_not_running_or_paused()))
+    ),
+    tag = "Pipelines"
+)]
+#[get("/pipelines/{pipeline_name}/query")]
+pub(crate) async fn pipeline_adhoc_sql(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    state
+        .runner
+        .forward_to_pipeline(
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "query",
+            request.query_string(),
+        )
         .await
 }

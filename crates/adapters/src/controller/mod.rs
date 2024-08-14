@@ -45,10 +45,13 @@ use crate::{
 };
 use crate::{create_integrated_output_endpoint, DbspCircuitHandle};
 use anyhow::Error as AnyError;
+use arrow::datatypes::Schema;
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
 };
+use datafusion::datasource::TableType;
+use datafusion::prelude::*;
 use dbsp::circuit::{CircuitConfig, Layout};
 use dbsp::profile::GraphProfile;
 use feldera_types::query::OutputQuery;
@@ -75,12 +78,15 @@ use std::{
     thread::{spawn, JoinHandle},
     time::{Duration, Instant},
 };
+use tokio::sync::Mutex as TokioMutex;
 use uuid::Uuid;
 
 mod error;
 mod stats;
 
-use crate::catalog::{SerBatchReader, SerTrace};
+use crate::adhoc::table::AdHocTable;
+use crate::catalog::{SerBatchReader, SerTrace, SyncSerBatchReader};
+use crate::format::parquet::relation_to_arrow_fields;
 use crate::integrated::create_integrated_input_endpoint;
 pub use error::{ConfigError, ControllerError};
 use feldera_types::config::OutputBufferConfig;
@@ -255,6 +261,10 @@ impl Controller {
         debug!("Disconnecting input endpoint {endpoint_id}");
 
         self.inner.disconnect_input(endpoint_id)
+    }
+
+    pub fn session_context(&self) -> SessionContext {
+        self.inner.session_ctxt.clone()
     }
 
     /// Connect a previously instantiated input endpoint.
@@ -519,7 +529,7 @@ impl Controller {
             Ok((circuit, catalog)) => {
                 // Complete initialization before sending back the confirmation to
                 // prevent a race.
-                *controller.catalog.lock().unwrap() = catalog;
+                controller.set_catalog(catalog);
                 let _ = init_status_sender.send(Ok(()));
                 circuit
             }
@@ -631,6 +641,15 @@ impl Controller {
                         controller
                             .status
                             .set_num_total_processed_records(processed_records);
+
+                        // Update `trace_snapshot` to the latest traces
+                        let catalog = controller.catalog.lock().unwrap();
+                        let mut consistent_snapshot = controller.trace_snapshot.blocking_lock();
+                        for (name, clh) in catalog.output_iter() {
+                            if let Some(ih) = &clh.integrate_handle {
+                                consistent_snapshot.insert(name.to_string(), ih.take_from_all());
+                            }
+                        }
 
                         // Push output batches to output pipelines.
                         let outputs = controller.outputs.read().unwrap();
@@ -1022,6 +1041,8 @@ impl OutputBuffer {
     }
 }
 
+pub type ConsistentSnapshots = Arc<TokioMutex<BTreeMap<String, Vec<Arc<dyn SyncSerBatchReader>>>>>;
+
 /// Controller state sharable across threads.
 ///
 /// A reference to this struct is held by each input probe and by both
@@ -1031,6 +1052,8 @@ pub struct ControllerInner {
     num_api_connections: AtomicU64,
     profile_request: Sender<GraphProfileCallbackFn>,
     catalog: Arc<Mutex<Box<dyn CircuitCatalog>>>,
+    // Always lock this after the catalog is locked to avoid deadlocks
+    trace_snapshot: ConsistentSnapshots,
     inputs: Mutex<BTreeMap<EndpointId, InputEndpointDescr>>,
     outputs: ShardedLock<OutputEndpoints>,
     circuit_thread_unparker: Unparker,
@@ -1039,6 +1062,7 @@ pub struct ControllerInner {
     step: AtomicStep,
     metrics_snapshotter: Arc<Snapshotter>,
     prometheus_handle: PrometheusHandle,
+    session_ctxt: SessionContext,
 
     /// The lowest-numbered input step not known to have committed yet.
     ///
@@ -1071,6 +1095,7 @@ impl ControllerInner {
             num_api_connections: AtomicU64::new(0),
             profile_request,
             catalog: Arc::new(Mutex::new(Box::new(Catalog::new()))),
+            trace_snapshot: Arc::new(TokioMutex::new(BTreeMap::new())),
             inputs: Mutex::new(BTreeMap::new()),
             outputs: ShardedLock::new(OutputEndpoints::new()),
             circuit_thread_unparker,
@@ -1081,6 +1106,7 @@ impl ControllerInner {
             prometheus_handle,
             uncommitted_step: Mutex::new(0),
             step_committed: Condvar::new(),
+            session_ctxt: SessionContext::new(),
         }
     }
 
@@ -1097,6 +1123,40 @@ impl ControllerInner {
         }
 
         Err(ControllerError::unknown_input_endpoint(endpoint_name))
+    }
+
+    fn set_catalog(&self, catalog: Box<dyn CircuitCatalog>) {
+        // Sync feldera catalog with datafusion catalog
+        for (name, clh) in catalog.output_iter() {
+            if clh.integrate_handle.is_some() {
+                debug!("registering datafusion table: name={}", clh.schema.name());
+                let typ = if catalog
+                    .input_collection_handle(&clh.schema.name())
+                    .is_some()
+                {
+                    TableType::Base
+                } else {
+                    TableType::View
+                };
+
+                let arrow_fields = relation_to_arrow_fields(&clh.schema.fields, false);
+                let adhoc_tbl = Arc::new(AdHocTable::new(
+                    typ,
+                    clh.schema.name().to_string(),
+                    Arc::new(Schema::new(arrow_fields)),
+                    self.trace_snapshot.clone(),
+                ));
+
+                // This should never fail (we're not registering the same table twice).
+                let r = self
+                    .session_ctxt
+                    .register_table(clh.schema.name().to_string(), adhoc_tbl)
+                    .expect("table registration failed");
+                assert!(r.is_none(), "table {name} already registered");
+            }
+        }
+
+        *self.catalog.lock().unwrap() = catalog;
     }
 
     /// Sets the global metrics recorder and returns a `Snapshotter` and

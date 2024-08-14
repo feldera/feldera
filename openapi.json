@@ -1550,6 +1550,96 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/query": {
+      "get": {
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "Execute an ad-hoc query in a running or paused pipeline.",
+        "operationId": "pipeline_adhoc_sql",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sql",
+            "in": "query",
+            "description": "The SQL query to execute.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "Input data format, e.g., 'text', 'json' or 'parquet'.",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AdHocQueryFormat"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Executes an ad-hoc SQL query in a running or paused pipeline. The evaluation is not incremental.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pipeline is shutdown or an invalid SQL query was supplied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                  },
+                  "error_code": "PipelineNotRunningOrPaused",
+                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                  },
+                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/stats": {
       "get": {
         "tags": [
@@ -1732,6 +1822,31 @@
   },
   "components": {
     "schemas": {
+      "AdHocQueryFormat": {
+        "type": "string",
+        "description": "URL-encoded `format` argument to the `/query` endpoint.",
+        "enum": [
+          "text",
+          "json",
+          "parquet"
+        ]
+      },
+      "AdhocQueryArgs": {
+        "type": "object",
+        "description": "URL-encoded arguments to the `/query` endpoint.",
+        "required": [
+          "sql"
+        ],
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/AdHocQueryFormat"
+          },
+          "sql": {
+            "type": "string",
+            "description": "The SQL query to run."
+          }
+        }
+      },
       "ApiKeyDescr": {
         "type": "object",
         "description": "API key descriptor.",

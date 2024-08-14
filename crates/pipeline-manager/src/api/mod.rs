@@ -100,6 +100,7 @@ The program version is used internally by the compiler to know when to recompile
         pipeline::get_pipeline_stats,
         pipeline::get_pipeline_circuit_profile,
         pipeline::get_pipeline_heap_profile,
+        pipeline::pipeline_adhoc_sql,
 
         // HTTP input/output
         http_io::http_input,
@@ -192,6 +193,8 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::transport::http::EgressMode,
         feldera_types::query::OutputQuery,
         feldera_types::query::NeighborhoodQuery,
+        feldera_types::query::AdhocQueryArgs,
+        feldera_types::query::AdHocQueryFormat,
         feldera_types::format::json::JsonUpdateFormat,
         feldera_types::program_schema::ProgramSchema,
         feldera_types::program_schema::Relation,
@@ -251,6 +254,7 @@ fn api_scope() -> Scope {
         .service(pipeline::get_pipeline_stats)
         .service(pipeline::get_pipeline_circuit_profile)
         .service(pipeline::get_pipeline_heap_profile)
+        .service(pipeline::pipeline_adhoc_sql)
         // API keys endpoints
         .service(api_key::create_api_key)
         .service(api_key::list_api_keys)

@@ -83,6 +83,7 @@ async fn metrics(
                 Method::GET,
                 "metrics",
                 &rts.deployment_location.unwrap(),
+                "",
             ) // TODO: unwrap
             .await
             {

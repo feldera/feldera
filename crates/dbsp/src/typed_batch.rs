@@ -204,14 +204,6 @@ where
     }
 }
 
-// FIXME: this is needed so that batches can be wrapped in Arc and shared
-// between threads, e.g., in the `adapters` crate, which can send output batches
-// to multiple transport endpoints.  A proper solution is to add the `Sync`
-// bound to DBData and propagate it through all layers, so that `TypedBatch`
-// is truly `Sync`.
-unsafe impl<K, V, R, B> Sync for TypedBatch<K, V, R, B> where B: DynBatch {}
-unsafe impl<K, V, R, B> Send for TypedBatch<K, V, R, B> where B: DynBatch {}
-
 impl<K, V, R, B> Default for TypedBatch<K, V, R, B>
 where
     B: DynBatch,
