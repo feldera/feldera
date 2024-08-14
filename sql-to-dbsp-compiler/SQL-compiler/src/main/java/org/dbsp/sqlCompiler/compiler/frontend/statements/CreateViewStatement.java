@@ -30,7 +30,7 @@ import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.sql.SqlNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -41,15 +41,15 @@ public class CreateViewStatement extends CreateRelationStatement {
     /** Compiled and optimized query. */
     private final RelRoot compiled;
     public final SqlNode query;
-    public final SqlCreateLocalView.ViewKind kind;
+    public final SqlCreateView.ViewKind viewKind;
 
-    public CreateViewStatement(SqlCreateLocalView node, String statement, String tableName,
+    public CreateViewStatement(SqlCreateView node, String statement, String tableName,
                                boolean nameIsQuoted,
                                List<RelColumnMetadata> columns, SqlNode query,
                                RelRoot compiled,
                                @Nullable PropertyList properties) {
         super(node, statement, tableName, nameIsQuoted, columns, properties);
-        this.kind = node.kind;
+        this.viewKind = node.viewKind;
         this.query = query;
         this.compiled = compiled;
     }
@@ -66,7 +66,7 @@ public class CreateViewStatement extends CreateRelationStatement {
     public JsonNode asJson() {
         JsonNode node = super.asJson();
         ObjectNode object = (ObjectNode) node;
-        object.put("materialized", kind == SqlCreateLocalView.ViewKind.MATERIALIZED);
+        object.put("materialized", viewKind == SqlCreateView.ViewKind.MATERIALIZED);
         return object;
     }
 }

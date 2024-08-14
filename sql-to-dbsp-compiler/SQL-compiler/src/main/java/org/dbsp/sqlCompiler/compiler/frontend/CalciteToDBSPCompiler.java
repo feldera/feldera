@@ -108,7 +108,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
@@ -2177,8 +2177,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
 
-        ViewMetadata meta = new ViewMetadata(additionalMetadata, view.kind);
-        if (this.generateOutputForNextView && view.kind != SqlCreateLocalView.ViewKind.LOCAL) {
+        ViewMetadata meta = new ViewMetadata(additionalMetadata, view.viewKind);
+        if (this.generateOutputForNextView && view.viewKind != SqlCreateView.ViewKind.LOCAL) {
             this.metadata.addView(view);
             // Create two operators chained, a ViewOperator and a SinkOperator.
             DBSPViewOperator vo = new DBSPViewOperator(

@@ -1,15 +1,15 @@
 package org.dbsp.sqlCompiler.compiler;
 
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.util.Linq;
 
 import java.util.List;
 
 public class ViewMetadata {
     public final List<ViewColumnMetadata> columns;
-    public final SqlCreateLocalView.ViewKind viewKind;
+    public final SqlCreateView.ViewKind viewKind;
 
-    public ViewMetadata(List<ViewColumnMetadata> columns, SqlCreateLocalView.ViewKind viewKind) {
+    public ViewMetadata(List<ViewColumnMetadata> columns, SqlCreateView.ViewKind viewKind) {
         this.columns = columns;
         this.viewKind = viewKind;
     }

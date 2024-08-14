@@ -55,7 +55,7 @@ public class CreateTableStatement extends CreateRelationStatement {
     }
 
     public boolean isAppendOnly() {
-        String mat = this.getPropertyValue("appendOnly");
+        String mat = this.getPropertyValue("append_only");
         if (mat == null)
             return false;
         return mat.equalsIgnoreCase("true");

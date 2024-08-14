@@ -93,7 +93,6 @@ import org.apache.calcite.sql.util.SqlShuttle;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
-import org.apache.calcite.sql2rel.RelDecorrelator;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.sql2rel.StandardConvertletTable;
 import org.apache.calcite.tools.RelBuilder;
@@ -109,10 +108,11 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentCharacterString;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
@@ -479,16 +479,8 @@ public class CalciteCompiler implements IWritesLogs {
 
         RelBuilder relBuilder = this.converterConfig.getRelBuilderFactory().create(
                 cluster, null);
-        // This converts (some) correlated sub-queries into standard joins.
-        rel = RelDecorrelator.decorrelateQuery(rel, relBuilder);
-        Logger.INSTANCE.belowLevel(this, level)
-                .append("After decorrelator")
-                .increase()
-                .append(getPlan(rel))
-                .decrease()
-                .newline();
-
-        CalciteOptimizer optimizer = new CalciteOptimizer(this.options.languageOptions.optimizationLevel);
+        CalciteOptimizer optimizer = new CalciteOptimizer(
+                this.options.languageOptions.optimizationLevel, relBuilder);
         rel = optimizer.apply(rel);
         Logger.INSTANCE.belowLevel(this, level)
                 .append("After optimizer ")
@@ -1009,7 +1001,7 @@ public class CalciteCompiler implements IWritesLogs {
             }
             case CREATE_VIEW: {
                 SqlToRelConverter converter = this.getConverter();
-                SqlCreateLocalView cv = (SqlCreateLocalView) node;
+                SqlCreateView cv = (SqlCreateView) node;
                 SqlNode query = cv.query;
                 if (cv.getReplace())
                     throw new UnsupportedException("OR REPLACE not supported", object);
@@ -1020,8 +1012,16 @@ public class CalciteCompiler implements IWritesLogs {
                 List<RelColumnMetadata> columns = this.createColumnsMetadata(CalciteObject.create(node),
                         cv.name, true, relRoot, cv.columnList);
                 @Nullable PropertyList connectorProperties = this.createConnectorProperties(cv.connectorProperties);
-                if (connectorProperties != null)
+                if (connectorProperties != null) {
                     connectorProperties.checkDuplicates(this.errorReporter);
+                    SqlFragment materialized = connectorProperties.getPropertyValue("materialized");
+                    if (materialized != null) {
+                        this.errorReporter.reportWarning(materialized.getSourcePosition(),
+                                "Materialized property not used",
+                                "The 'materialized' property for views is not used, " +
+                                        "please use 'CREATE MATERIALIZED VIEW' instead");
+                    }
+                }
                 RelNode optimized = this.optimize(relRoot.rel);
                 relRoot = relRoot.withRel(optimized);
                 String viewName = cv.name.getSimple();

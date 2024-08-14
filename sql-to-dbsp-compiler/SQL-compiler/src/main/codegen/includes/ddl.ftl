@@ -301,17 +301,17 @@ SqlCreate SqlCreateView(Span s, boolean replace) :
     final SqlIdentifier id;
     SqlNodeList columnList = null;
     final SqlNode query;
-    SqlCreateLocalView.ViewKind kind = SqlCreateLocalView.ViewKind.STANDARD;
+    SqlCreateView.ViewKind kind = SqlCreateView.ViewKind.STANDARD;
     SqlNodeList connector = null;
 }
 {
-    [ <LOCAL> { kind = SqlCreateLocalView.ViewKind.LOCAL; }
-    | <MATERIALIZED> { kind = SqlCreateLocalView.ViewKind.MATERIALIZED; } ]
+    [ <LOCAL> { kind = SqlCreateView.ViewKind.LOCAL; }
+    | <MATERIALIZED> { kind = SqlCreateView.ViewKind.MATERIALIZED; } ]
     <VIEW> id = CompoundIdentifier()
     [ columnList = ParenthesizedSimpleIdentifierList() ]
     [ <WITH> connector = KeyValueList() ]
     <AS> query = OrderedQueryOrExpr(ExprContext.ACCEPT_QUERY) {
-        return new SqlCreateLocalView(s.end(this), replace, kind, id, columnList, connector, query);
+        return new SqlCreateView(s.end(this), replace, kind, id, columnList, connector, query);
     }
 }
 

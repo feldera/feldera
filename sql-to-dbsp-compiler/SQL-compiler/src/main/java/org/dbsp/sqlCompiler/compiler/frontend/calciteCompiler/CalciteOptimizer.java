@@ -10,6 +10,8 @@ import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
+import org.apache.calcite.sql2rel.RelDecorrelator;
+import org.apache.calcite.tools.RelBuilder;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
@@ -18,31 +20,32 @@ import java.util.List;
 
 /** Optimizer using the Calcite program rewrite rules */
 public class CalciteOptimizer implements IWritesLogs {
-    public abstract class CalciteOptimizerStep {
+    final List<CalciteOptimizerStep> steps;
+    final int level;
+    final RelBuilder builder;
+
+    public interface CalciteOptimizerStep {
         /** Name of the optimizer step */
         abstract String getName();
+        /** Optimize the program for the specified optimization level */
+        RelNode optimize(RelNode rel, int level);
+    }
+
+    /** Base class for optimizations that use a Hep optimizer */
+    public abstract class HepOptimizerStep implements CalciteOptimizerStep {
         /** The program that performs the optimization for the specified optimization level */
         abstract HepProgram getProgram(RelNode node, int level);
 
-        RelNode optimize(RelNode rel, int level) {
+        @Override
+        public RelNode optimize(RelNode rel, int level) {
             HepProgram program = this.getProgram(rel, level);
             HepPlanner planner = new HepPlanner(program);
             planner.setRoot(rel);
-            RelNode result = planner.findBestExp();
-            if (rel != result) {
-                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
-                        .append("After ")
-                        .append(this.getName())
-                        .increase()
-                        .append(CalciteCompiler.getPlan(result))
-                        .decrease()
-                        .newline();
-            }
-            return result;
+            return planner.findBestExp();
         }
     }
 
-    public class BaseOptimizerStep extends CalciteOptimizerStep {
+    public class BaseOptimizerStep extends HepOptimizerStep {
         final int level;
         final String name;
         final HepProgramBuilder builder;
@@ -54,7 +57,7 @@ public class CalciteOptimizer implements IWritesLogs {
         }
 
         @Override
-        String getName() {
+        public String getName() {
             return this.name;
         }
 
@@ -87,10 +90,8 @@ public class CalciteOptimizer implements IWritesLogs {
         }
     }
 
-    final List<CalciteOptimizerStep> steps;
-    final int level;
-
-    public CalciteOptimizer(int level) {
+    public CalciteOptimizer(int level, RelBuilder builder) {
+        this.builder = builder;
         this.steps = new ArrayList<>();
         this.level = level;
         this.createOptimizer(level);
@@ -98,7 +99,17 @@ public class CalciteOptimizer implements IWritesLogs {
 
     RelNode apply(RelNode rel) {
         for (CalciteOptimizerStep step: this.steps) {
-            rel = step.optimize(rel, this.level);
+            RelNode optimized = step.optimize(rel, this.level);
+            if (rel != optimized) {
+                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
+                        .append("After ")
+                        .append(step.getName())
+                        .increase()
+                        .append(CalciteCompiler.getPlan(optimized))
+                        .decrease()
+                        .newline();
+            };
+            rel = optimized;
         }
         return rel;
     }
@@ -150,6 +161,30 @@ public class CalciteOptimizer implements IWritesLogs {
                 PruneEmptyRules.JOIN_RIGHT_INSTANCE,
                 PruneEmptyRules.SORT_FETCH_ZERO_INSTANCE
         ));
+
+        /*
+        this.addStep(new SimpleOptimizerStep("Convert to correlates", 1,
+                CoreRules.FILTER_SUB_QUERY_TO_CORRELATE,
+                CoreRules.JOIN_SUB_QUERY_TO_CORRELATE,
+                CoreRules.PROJECT_SUB_QUERY_TO_CORRELATE,
+                CoreRules.FILTER_CORRELATE,
+                CoreRules.PROJECT_CORRELATE_TRANSPOSE,
+                CoreRules.JOIN_TO_CORRELATE
+        ));
+         */
+
+        this.addStep(new CalciteOptimizerStep() {
+            @Override
+            public String getName() {
+                return "Decorrelate";
+            }
+
+            @Override
+            public RelNode optimize(RelNode rel, int level) {
+                return RelDecorrelator.decorrelateQuery(rel, CalciteOptimizer.this.builder);
+            }
+        });
+
         this.addStep(new SimpleOptimizerStep("Expand windows", 0,
                 CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
         ));
@@ -157,13 +192,13 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN,
                 // Rule is unsound https://issues.apache.org/jira/browse/CALCITE-6403
                 CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES));
-
         this.addStep(new BaseOptimizerStep("Join order", level) {
             @Override
             HepProgram getProgram(RelNode node, int level) {
                 this.addRules(level,
                         CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
+                        CoreRules.JOIN_PUSH_TRANSITIVE_PREDICATES,
                         // TODO: Rule is unsound
                         // https://github.com/feldera/feldera/issues/1702
                         CoreRules.FILTER_INTO_JOIN
@@ -178,6 +213,13 @@ public class CalciteOptimizer implements IWritesLogs {
                             CoreRules.JOIN_TO_MULTI_JOIN,
                             CoreRules.PROJECT_MULTI_JOIN_MERGE,
                             CoreRules.MULTI_JOIN_OPTIMIZE_BUSHY
+                            /*
+                            CoreRules.FILTER_MULTI_JOIN_MERGE,
+                            CoreRules.MULTI_JOIN_BOTH_PROJECT,
+                            CoreRules.MULTI_JOIN_LEFT_PROJECT,
+                            CoreRules.MULTI_JOIN_RIGHT_PROJECT,
+                            CoreRules.MULTI_JOIN_OPTIMIZE
+                             */
                     );
                 }
                 this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
