@@ -81,12 +81,12 @@ public class DBSPTypeISize extends DBSPTypeBaseType implements IsNumericType {
     }
 
     @Override
-    public DBSPLiteral getMaxValue() {
+    public DBSPExpression getMaxValue() {
         throw new UnsupportedException(this.getNode());
     }
 
     @Override
-    public DBSPLiteral getMinValue() {
+    public DBSPExpression getMinValue() {
         throw new UnsupportedException(this.getNode());
     }
 

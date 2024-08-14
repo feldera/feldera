@@ -12,7 +12,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -47,6 +46,32 @@ public class StreamingTests extends StreamingTestBase {
                 FROM bid
                 GROUP BY channel, CAST(date_time AS DATE);""";
         this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue2228() throws SQLException, IOException, InterruptedException {
+        String sql = """
+        CREATE TABLE transaction (
+            id bigint NOT NULL,
+            unix_time BIGINT NOT NULL
+        );
+        
+        CREATE TABLE feedback (
+            id bigint,
+            unix_time bigint LATENESS 3600 * 24
+        );
+        
+        CREATE VIEW TRANSACTIONS AS
+        SELECT t.*
+        FROM transaction as t JOIN feedback as f
+        ON t.id = f.id
+        WHERE t.unix_time >= f.unix_time - 3600 * 24 * 7 ;
+        """;
+
+        String main = this.createMain("""
+                let _ = circuit.step().expect("could not run circuit");
+                """);
+        this.measure(sql, main);
     }
 
     @Test

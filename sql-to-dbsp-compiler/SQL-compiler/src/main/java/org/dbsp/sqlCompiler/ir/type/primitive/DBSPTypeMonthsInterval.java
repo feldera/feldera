@@ -55,12 +55,12 @@ public class DBSPTypeMonthsInterval
     }
 
     @Override
-    public DBSPLiteral getMinValue() {
+    public DBSPExpression getMinValue() {
         return new DBSPIntervalMonthsLiteral(Integer.MIN_VALUE, this.mayBeNull);
     }
 
     @Override
-    public DBSPLiteral getMaxValue() {
+    public DBSPExpression getMaxValue() {
         return new DBSPIntervalMonthsLiteral(Integer.MAX_VALUE, this.mayBeNull);
     }
 

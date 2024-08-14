@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
@@ -23,7 +24,8 @@ import java.util.List;
  * Optimizes patterns containing Map operators.
  * - Merge Maps operations into the previous operation (Map, Join) if possible.
  * - Swap Maps with operations such as Distinct, Integral, Differential, etc.
- * - Marge Maps with subsequent MapIndex operators
+ * - Merge Maps with subsequent MapIndex operators
+ * - Merge consecutive apply operators
  */
 public class OptimizeMaps extends CircuitCloneVisitor {
     final CircuitGraph graph;
@@ -43,6 +45,23 @@ public class OptimizeMaps extends CircuitCloneVisitor {
                     .applyAfter(this.errorReporter, expression);
             DBSPOperator result = new DBSPMapIndexOperator(
                     operator.getNode(), newFunction, operator.getOutputIndexedZSetType(), source.inputs.get(0));
+            this.map(operator, result);
+            return;
+        }
+        super.postorder(operator);
+    }
+
+    public void postorder(DBSPApplyOperator operator) {
+        DBSPOperator source = this.mapped(operator.input());
+        int inputFanout = this.graph.getFanout(operator.input());
+        if (source.is(DBSPApplyOperator.class) && inputFanout == 1) {
+            // apply(apply) = apply
+            DBSPClosureExpression expression = source.getClosureFunction();
+            DBSPClosureExpression newFunction = operator.getClosureFunction()
+                    .applyAfter(this.errorReporter, expression);
+            DBSPOperator result = new DBSPApplyOperator(
+                    operator.getNode(), newFunction, operator.outputType,
+                    source.inputs.get(0), source.comment);
             this.map(operator, result);
             return;
         }

@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
 import javax.annotation.Nullable;
@@ -27,6 +28,10 @@ public final class DBSPIntegrateTraceRetainValuesOperator extends DBSPBinaryOper
     public static DBSPIntegrateTraceRetainValuesOperator create(
             CalciteObject node, DBSPOperator data, IMaybeMonotoneType dataProjection, DBSPOperator control) {
         DBSPType controlType = control.getType();
+        assert controlType.is(DBSPTypeTupleBase.class) : "Control type is not a tuple: " + controlType;
+        DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
+        assert controlTuple.size() == 2;
+
         DBSPVariablePath controlArg = controlType.ref().var();
         assert data.outputType.is(DBSPTypeIndexedZSet.class);
         DBSPType valueType = data.getOutputIndexedZSetType().elementType;
@@ -37,7 +42,7 @@ public final class DBSPIntegrateTraceRetainValuesOperator extends DBSPBinaryOper
                 .getField(1)
                 .projectExpression(dataArg);
         DBSPExpression compare = DBSPControlledFilterOperator.generateTupleCompare(
-                project, controlArg.deref());
+                project, controlArg.deref().field(1));
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());
         return new DBSPIntegrateTraceRetainValuesOperator(node, closure, data, control);
     }

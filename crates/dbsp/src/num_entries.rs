@@ -93,6 +93,7 @@ macro_rules! num_entries_scalar_test {
 }
 
 num_entries_scalar! {
+    bool,
     u8,
     u16,
     u32,
@@ -123,6 +124,7 @@ num_entries_scalar! {
 }
 
 num_entries_scalar_test! {
+    bool,
     u8,
     u16,
     u32,

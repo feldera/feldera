@@ -46,6 +46,10 @@ public final class DBSPDelayOperator extends DBSPUnaryOperator {
         super(node, initial == null ? "delay" : "delay_with_initial_value",
                 initial, source.outputType, source.isMultiset, source);
         this.output = output;
+        if (initial != null) {
+            assert initial.getType().sameType(source.outputType) :
+                    "Delay input has type " + source.outputType + " but initial value has type " + initial.getType();
+        }
     }
 
     public DBSPDelayOperator(CalciteObject node, @Nullable DBSPExpression initial, DBSPOperator source) {

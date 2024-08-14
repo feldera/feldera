@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasLateness;
 import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -52,13 +53,16 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementExpansi
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.ir.annotation.NoIntegrator;
+import org.dbsp.sqlCompiler.ir.annotation.Waterline;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
@@ -80,16 +84,21 @@ import java.util.Map;
 import java.util.Objects;
 
 /** As a result of the Monotonicity analysis, this pass inserts new operators:
- * - ControlledFilter operators to throw away tuples that are not "useful"
  * - apply operators that compute the bounds that drive the controlled filters
- * - waterline operators near sources with lateness information
- * - DBSPIntegrateTraceRetainKeysOperator to prune data from integral operators
- * - DBSPPartitionedRollingAggregateWithWaterline operators
+ * - {@link DBSPControlledFilterOperator} operators to throw away tuples that are not "useful"
+ * - {@link DBSPWaterlineOperator} operators near sources with lateness information
+ * - {@link DBSPIntegrateTraceRetainKeysOperator} to prune data from integral operators
+ * - {@link DBSPPartitionedRollingAggregateWithWaterlineOperator} operators
+ * - {@link DBSPIntegrateTraceRetainValuesOperator} to prune data from integral operators
  *
  * <P>This visitor is tricky because it operates on a circuit, but takes the information
  * required to rewrite the graph from a different circuit, the expandedCircuit and
  * the expandedInto map.  Moreover, the current circuit is being rewritten by the
  * visitor while it is being processed.
+ *
+ * <p>Each apply operator has the signature (bool, arg) -> (bool, result), where the
+ * boolean field indicates whether this is the first step.  In the first step the
+ * apply operators do not compute, since the inputs may cause exceptions.
  **/
 public class InsertLimiters extends CircuitCloneVisitor {
     /** For each operator in the expansion of the operators of this circuit
@@ -129,6 +138,69 @@ public class InsertLimiters extends CircuitCloneVisitor {
         Utilities.putNew(this.bound, operator, bound);
     }
 
+    /** Given a function for an apply operator, synthesizes an operator that performs
+     * the following computation:
+     * <p>
+     * |param| if param.0 {
+     *    (param.0, function(param.1))
+     * } else {
+     *    (param.0, min)
+     * }
+     * where 'min' is the minimum constant value with the appropriate type.
+     * Inserts the operator in the circuit.
+     *
+     * @param source   Input operator.
+     * @param function Function to apply to the data.
+     */
+    DBSPApplyOperator createApply(DBSPOperator source, DBSPClosureExpression function) {
+        DBSPVariablePath var = source.outputType.ref().var();
+        DBSPExpression v0 = var.deref().field(0);
+        DBSPExpression v1 = var.deref().field(1);
+        DBSPExpression min = this.minimumValue(function.getResultType());
+        DBSPExpression call = function.call(v1.borrow()).reduce(this.errorReporter);
+        DBSPExpression cond = new DBSPTupleExpression(v0,
+                new DBSPIfExpression(source.getNode(), v0, call, min));
+        DBSPApplyOperator result = new DBSPApplyOperator(source.getNode(), cond.closure(var.asParameter()),
+                source, "(" + source.getDerivedFrom() + ")");
+        this.addOperator(result);
+        result.addAnnotation(new Waterline());
+        return result;
+    }
+
+    /** Given a function for an apply2 operator, synthesizes an operator that performs
+     * the following computation:
+     * <p>
+     * |param0, param1| if param0.0 {
+     *    (param0.0, function(param0.1, param1.1))
+     * } else {
+     *    (param0.0, min)
+     * }
+     * where 'min' is the minimum constant value with the appropriate type.
+     * (The invariant param0.0 == param1.0 should always hold).
+     * Inserts the operator in the circuit.
+     *
+     * @param left     Left input operator.
+     * @param right    Right input operator
+     * @param function Function to apply to the data.
+     */
+    DBSPApply2Operator createApply2(DBSPOperator left, DBSPOperator right, DBSPClosureExpression function) {
+        DBSPVariablePath leftVar = left.outputType.ref().var();
+        DBSPVariablePath rightVar = right.outputType.ref().var();
+        DBSPExpression v0 = leftVar.deref().field(0);
+        DBSPExpression v01 = leftVar.deref().field(1);
+        DBSPExpression v11 = rightVar.deref().field(1);
+        DBSPExpression min = this.minimumValue(function.getResultType());
+        DBSPExpression cond = new DBSPTupleExpression(v0,
+                new DBSPIfExpression(left.getNode(), v0,
+                        function.call(v01.borrow(), v11.borrow()), min));
+        DBSPApply2Operator result = new DBSPApply2Operator(
+                left.getNode(), cond.closure(leftVar.asParameter(), rightVar.asParameter()),
+                left, right);
+        result.addAnnotation(new Waterline());
+        this.addOperator(result);
+        return result;
+    }
+
     /**
      * @param operatorFromExpansion Operator produced as the expansion of
      *                              another operator.
@@ -147,10 +219,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPOperator source = operatorFromExpansion.inputs.get(input);  // Even for binary operators
         DBSPOperator boundSource = Utilities.getExists(this.bound, source);
         DBSPClosureExpression function = monotone.getReducedExpression().to(DBSPClosureExpression.class);
-        DBSPApplyOperator bound = new DBSPApplyOperator(operatorFromExpansion.getNode(), function,
-                function.getFunctionType().resultType, boundSource,
-                "(" + operatorFromExpansion.getDerivedFrom() + ")");
-        this.addOperator(bound);  // insert directly into circuit
+
+        DBSPApplyOperator bound = this.createApply(boundSource, function);
         this.markBound(operatorFromExpansion, bound);
         return bound;
     }
@@ -333,10 +403,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         Objects.requireNonNull(monotone);
 
         DBSPClosureExpression function = monotone.getReducedExpression().to(DBSPClosureExpression.class);
-        DBSPOperator waterline = new DBSPApplyOperator(operator.getNode(), function,
-                function.getFunctionType().resultType, boundSource,
-                "(" + operator.getDerivedFrom() + ")");
-        this.addOperator(waterline);
+        DBSPOperator waterline = this.createApply(boundSource, function);
         Logger.INSTANCE.belowLevel(this, 2)
                 .append("WATERLINE FUNCTION: ")
                 .append(function)
@@ -356,17 +423,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 .append(function)
                 .newline();
 
-        DBSPOperator bound = new DBSPApplyOperator(operator.getNode(), function,
-                function.getFunctionType().resultType, boundSource,
-                "(" + operator.getDerivedFrom() + ")");
-        this.addOperator(bound);
+        DBSPOperator bound = this.createApply(boundSource, function);
         this.markBound(expanded.replacement, bound);
+
+        // Drop the boolean flag from the waterline
+        DBSPVariablePath tmp = waterline.outputType.ref().var();
+        DBSPClosureExpression drop = tmp.deref().field(1).applyCloneIfNeeded().closure(tmp.asParameter());
+        DBSPApplyOperator dropApply = new DBSPApplyOperator(operator.getNode(), drop, waterline, null);
+        this.addOperator(dropApply);
 
         DBSPPartitionedRollingAggregateWithWaterlineOperator replacement =
                 new DBSPPartitionedRollingAggregateWithWaterlineOperator(operator.getNode(),
                         operator.partitioningFunction, operator.function, operator.aggregate,
                         operator.lower, operator.upper, operator.getOutputIndexedZSetType(),
-                        this.mapped(operator.input()), waterline);
+                        this.mapped(operator.input()), dropApply);
         this.map(operator, replacement);
     }
 
@@ -573,9 +643,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 }
 
                 DBSPExpression func = new DBSPTupleExpression(monotoneFields, false);
-                DBSPApplyOperator extractLeft = new DBSPApplyOperator(
-                        join.getNode(), func.closure(var.asParameter()), func.getType(), leftLimiter, null);
-                this.addOperator(extractLeft);
+                DBSPApplyOperator extractLeft = this.createApply(
+                        leftLimiter, func.closure(var.asParameter()));
 
                 DBSPIntegrateTraceRetainValuesOperator l = DBSPIntegrateTraceRetainValuesOperator.create(
                         join.getNode(), this.mapped(join.left()), together, extractLeft);
@@ -617,9 +686,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 }
 
                 DBSPExpression func = new DBSPTupleExpression(monotoneFields, false);
-                DBSPApplyOperator extractRight = new DBSPApplyOperator(
-                        join.getNode(), func.closure(var.asParameter()), func.getType(), rightLimiter, null);
-                this.addOperator(extractRight);
+                DBSPApplyOperator extractRight = this.createApply(rightLimiter, func.closure(var.asParameter()));
 
                 DBSPIntegrateTraceRetainValuesOperator r = DBSPIntegrateTraceRetainValuesOperator.create(
                         join.getNode(), this.mapped(join.right()), together, extractRight);
@@ -682,10 +749,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
         throw new UnimplementedException(left.getNode());
     }
 
+    /** Utility function for Apply operators that are introduced by the {@link InsertLimiters}
+     * pass, converting their output type into a tuple.
+     * This tuple always has a boolean on the first position. */
+    DBSPTypeTupleBase getLimiterOutputType(DBSPOperator operator) {
+        return operator.outputType.to(DBSPTypeTupleBase.class);
+    }
+
+    DBSPType getLimiterDataOutputType(DBSPOperator operator) {
+        return this.getLimiterOutputType(operator).tupFields[1];
+    }
+
     void processStreamJoin(@Nullable DBSPStreamJoinOperator expanded) {
         if (expanded == null)
             return;
-        String comment = "(" + expanded.getDerivedFrom() + ")";
         MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(expanded);
         if (monotoneValue == null || !monotoneValue.mayBeMonotone()) {
             this.nonMonotone(expanded);
@@ -717,8 +794,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             // (kl, l), (kr, r) -> (union(kl, kr), l, r)
             assert leftMono != null;
             assert rightMono != null;
-            DBSPVariablePath l = new DBSPVariablePath(leftLimiter.outputType.ref());
-            DBSPVariablePath r = new DBSPVariablePath(rightLimiter.outputType.ref());
+            DBSPVariablePath l = new DBSPVariablePath(this.getLimiterDataOutputType(leftLimiter).ref());
+            DBSPVariablePath r = new DBSPVariablePath(this.getLimiterDataOutputType(rightLimiter).ref());
             DBSPExpression[] fields = new DBSPExpression[3];
             int leftIndex = 0;
             int rightIndex = 0;
@@ -756,12 +833,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPClosureExpression closure =
                     new DBSPRawTupleExpression(fields)
                             .closure(l.asParameter(), r.asParameter());
-            merger = new DBSPApply2Operator(expanded.getNode(), closure,
-                    closure.getResultType(), leftLimiter, rightLimiter);
+            merger = this.createApply2(leftLimiter, rightLimiter, closure);
         } else if (leftLimiter != null) {
             // (k, l) -> (k, l, Tup0<>)
             assert leftMono != null;
-            DBSPVariablePath var = new DBSPVariablePath(leftLimiter.outputType.ref());
+            DBSPVariablePath var = new DBSPVariablePath(this.getLimiterDataOutputType(leftLimiter).ref());
             DBSPExpression k = new DBSPTupleExpression();
             int currentField = 0;
             if (leftMono.getField(0).mayBeMonotone()) {
@@ -776,12 +852,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             l,
                             new DBSPTupleExpression())
                             .closure(var.asParameter());
-            merger = new DBSPApplyOperator(
-                    expanded.getNode(), closure, closure.getResultType(), leftLimiter, comment);
+            merger = this.createApply(leftLimiter, closure);
         } else {
             // (k, r) -> (k, Tup0<>, r)
             assert rightMono != null;
-            DBSPVariablePath var = new DBSPVariablePath(rightLimiter.outputType.ref());
+            DBSPVariablePath var = new DBSPVariablePath(this.getLimiterDataOutputType(rightLimiter).ref());
             DBSPExpression k = new DBSPTupleExpression();
             DBSPExpression r = new DBSPTupleExpression();
             int currentField = 0;
@@ -796,15 +871,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             new DBSPTupleExpression(),
                             r)
                             .closure(var.asParameter());
-            merger = new DBSPApplyOperator(
-                    expanded.getNode(), closure, closure.getResultType(), rightLimiter, comment);
+            merger = this.createApply(rightLimiter, closure);
         }
 
-        this.addOperator(merger);
         DBSPClosureExpression clo = monotoneValue.getReducedExpression().to(DBSPClosureExpression.class);
-        DBSPOperator limiter = new DBSPApplyOperator(expanded.getNode(), clo,
-                    outputType, merger, comment);
-        this.addOperator(limiter);
+        DBSPOperator limiter = this.createApply(merger, clo);
         this.markBound(expanded, limiter);
     }
 
@@ -823,6 +894,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
         return max.closure(left.asParameter(), right.asParameter());
     }
 
+    /** An expression containing the minimum value of the given type */
+    DBSPExpression minimumValue(DBSPType type) {
+        if (type.is(DBSPTypeTupleBase.class)) {
+            DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
+            DBSPExpression[] mins = Linq.map(tuple.tupFields, this::minimumValue, DBSPExpression.class);
+            return tuple.makeTuple(mins);
+        } else if (type.is(IsBoundedType.class)) {
+            return type.to(IsBoundedType.class).getMinValue();
+        } else {
+            throw new UnsupportedException("Type has no minimum value", type.getNode());
+        }
+    }
+
     /** Process LATENESS annotations.
      * @return Return the original operator if there aren't any annotations, or
      * the operator that produces the result of the input filtered otherwise. */
@@ -833,23 +917,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return operator;
         }
         List<DBSPExpression> timestamps = new ArrayList<>();
-        List<DBSPExpression> minimums = new ArrayList<>();
         int index = 0;
         DBSPVariablePath t = operator.getOutputZSetType().elementType.ref().var();
         for (IHasLateness column: operator.to(IHasColumnsMetadata.class).getLateness()) {
             DBSPExpression lateness = column.getLateness();
             if (lateness != null) {
                 DBSPExpression field = t.deref().field(index);
-                DBSPType type = field.getType();
                 field = ExpressionCompiler.makeBinaryExpression(operator.getNode(), field.getType(),
                         DBSPOpcode.SUB, field, lateness);
                 timestamps.add(field);
-                DBSPExpression min = type.to(IsBoundedType.class).getMinValue();
-                minimums.add(min);
             }
             index++;
         }
-        if (minimums.isEmpty()) {
+
+        if (timestamps.isEmpty()) {
             this.nonMonotone(expansion);
             return operator;
         }
@@ -862,9 +943,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // The waterline operator will compute the *minimum legal value* of all the
         // inputs that have a lateness attached.  The output signature contains only
         // the columns that have lateness.
-        DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
         DBSPTupleExpression timestamp = new DBSPTupleExpression(timestamps, false);
-        DBSPClosureExpression max = this.timestampMax(operator.getNode(), min.getTupleType());
+        DBSPExpression min = this.minimumValue(timestamp.getType());
+        DBSPClosureExpression max = this.timestampMax(operator.getNode(), min.getType().to(DBSPTypeTupleBase.class));
 
         DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                 operator.getNode(), min.closure(),
@@ -873,8 +954,17 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 max, replacement);
         this.addOperator(waterline);
 
+        // An apply operator to add an "uninitialized" bit to the waterline
+        DBSPVariablePath var = timestamp.getType().ref().var();
+        DBSPApplyOperator extend = new DBSPApplyOperator(operator.getNode(),
+                new DBSPTupleExpression(new DBSPBoolLiteral(true),
+                        var.deref().applyClone()).closure(var.asParameter()),
+                waterline, null);
+        this.addOperator(extend);
+
         // Waterline fed through a delay
-        DBSPDelayOperator delay = new DBSPDelayOperator(operator.getNode(), min, waterline);
+        DBSPDelayOperator delay = new DBSPDelayOperator(
+                operator.getNode(), new DBSPTupleExpression(new DBSPBoolLiteral(false), min), extend);
         this.addOperator(delay);
         this.markBound(replacement, delay);
         if (operator != replacement)
@@ -944,7 +1034,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     this.wrapTypedBox(minimums.get(0), false),
                     this.wrapTypedBox(var.deref().field(0), false));
             DBSPApplyOperator apply = new DBSPApplyOperator(
-                    operator.getNode(), makePair.closure(var.asParameter()), makePair.getType(), waterline,
+                    operator.getNode(), makePair.closure(var.asParameter()), waterline,
                     "(" + operator.getDerivedFrom() + ")");
             this.addOperator(apply);
 
@@ -1035,31 +1125,25 @@ public class InsertLimiters extends CircuitCloneVisitor {
         throw new UnimplementedException(left.getNode());
     }
 
-    /** Create and insert an operator which projects the output of limit.
-     * @param node         Original program node.
-     * @param limit        The output of this operator is being projected.
-     * @param source       Monotonicity information about the output of limit.
-     * @param destination  Monotonicity information for the desired output.
-     * @param comment      Comment to insert in new operator.
-     * @return             The operator performing the projection.
-     *                     The operator is inserted in the graph.
+    /**
+     * Create and insert an operator which projects the output of limit.
+     *
+     * @param limit       The output of this operator is being projected.
+     * @param source      Monotonicity information about the output of limit.
+     * @param destination Monotonicity information for the desired output.
+     * @return The operator performing the projection.
+     * The operator is inserted in the graph.
      */
     DBSPApplyOperator project(
-            CalciteObject node,
             DBSPOperator limit, IMaybeMonotoneType source,
-            IMaybeMonotoneType destination, String comment) {
-        DBSPVariablePath var = limit.outputType.ref().var();
+            IMaybeMonotoneType destination) {
+        DBSPVariablePath var = this.getLimiterDataOutputType(limit).ref().var();
         DBSPExpression proj = this.project(var.deref(), source, destination);
-        DBSPApplyOperator result = new DBSPApplyOperator(node,
-                proj.closure(var.asParameter()), Objects.requireNonNull(destination.getProjectedType()),
-                limit, comment);
-        this.addOperator(result);
-        return result;
+        return this.createApply(limit, proj.closure(var.asParameter()));
     }
 
     @Nullable
     DBSPOperator processSum(DBSPSumOperator expanded) {
-        String comment = "(" + expanded.getDerivedFrom() + ")";
         MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(expanded);
         if (monotoneValue == null || !monotoneValue.mayBeMonotone()) {
             this.nonMonotone(expanded);
@@ -1092,15 +1176,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 .closure(l.asParameter(), r.asParameter());
 
         // expand into a binary unbalanced tree
-        DBSPOperator current = this.project(expanded.getNode(), limiters.get(0), mono.get(0), out, comment);
+        DBSPOperator current = this.project(limiters.get(0), mono.get(0), out);
         for (int i = 1; i < expanded.inputs.size(); i++) {
-            DBSPOperator next = this.project(expanded.getNode(), limiters.get(i), mono.get(i), out, comment);
-            current = new DBSPApply2Operator(
-                    expanded.getNode(),
-                    min,
-                    outputType,
-                    current, next);
-            this.addOperator(current);
+            DBSPOperator next = this.project(limiters.get(i), mono.get(i), out);
+            current = this.createApply2(current, next, min);
         }
 
         this.markBound(expanded, current);
