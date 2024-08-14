@@ -56,12 +56,12 @@ public class DBSPTypeMillisInterval
     }
 
     @Override
-    public DBSPLiteral getMinValue() {
+    public DBSPExpression getMinValue() {
         return new DBSPIntervalMillisLiteral(Long.MIN_VALUE, this.mayBeNull);
     }
 
     @Override
-    public DBSPLiteral getMaxValue() {
+    public DBSPExpression getMaxValue() {
         return new DBSPIntervalMillisLiteral(Long.MAX_VALUE, this.mayBeNull);
     }
 

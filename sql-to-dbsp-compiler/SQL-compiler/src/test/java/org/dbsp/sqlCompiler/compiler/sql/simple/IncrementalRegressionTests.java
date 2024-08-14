@@ -67,6 +67,26 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2242() {
+        String sql = """
+                create table TRANSACTION (
+                    cc_num bigint,
+                    unix_time timestamp,
+                    id bigint
+                );
+                
+                CREATE VIEW TRANSACTION_MONTHLY_AGGREGATE AS
+                select cc_num, window_start as month_start, COUNT(*) num_transactions from TABLE(
+                  TUMBLE(
+                    TABLE transaction,
+                    DESCRIPTOR(unix_time),
+                    INTERVAL 1 MONTH))
+                GROUP BY cc_num, window_start;
+                """;
+        this.statementsFailingInCompilation(sql, "Tumbling window intervals must be 'short'");
+    }
+
+    @Test
     public void issue2039() {
         String sql = """
                 CREATE TABLE transactions (

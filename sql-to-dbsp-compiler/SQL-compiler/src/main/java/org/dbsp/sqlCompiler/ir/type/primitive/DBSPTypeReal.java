@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.ir.type.primitive;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -72,12 +73,12 @@ public class DBSPTypeReal extends DBSPTypeFP implements IsNumericType {
     }
 
     @Override
-    public DBSPLiteral getMaxValue() {
+    public DBSPExpression getMaxValue() {
         return new DBSPRealLiteral(Float.MAX_VALUE, this.mayBeNull);
     }
 
     @Override
-    public DBSPLiteral getMinValue() {
+    public DBSPExpression getMinValue() {
         return new DBSPRealLiteral(Float.MIN_VALUE, this.mayBeNull);
     }
 

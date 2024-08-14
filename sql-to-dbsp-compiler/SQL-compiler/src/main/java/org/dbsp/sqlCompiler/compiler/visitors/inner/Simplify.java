@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
@@ -76,16 +77,7 @@ import java.time.format.ResolverStyle;
 import java.util.Locale;
 import java.util.Objects;
 
-/**
- * Visitor which does some Rust-level expression simplifications.
- * - is_null() called on non-nullable values is simplified to 'false'
- * - Boolean && and || with constant arguments are simplified
- * - 'if' expressions with constant arguments are simplified to the corresponding branch
- * - cast(NULL, T) is converted to a NULL value of type T
- * - 1 * x = x * 1 = x
- * - 0 + x = x + 0 = x
- * - 0 * x = x * 0 = 0
- */
+/** Visitor which does some Rust-level expression simplifications. */
 public class Simplify extends InnerRewriteVisitor {
     // You would think that Calcite has done these optimizations, but apparently not.
 
@@ -338,6 +330,14 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPExpression result = source.field(expression.fieldNo);
         if (source.is(DBSPBaseTupleExpression.class)) {
             result = source.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
+        } if (source.is(DBSPBlockExpression.class)) {
+            DBSPBlockExpression block = source.to(DBSPBlockExpression.class);
+            assert block.lastExpression != null;
+            result = new DBSPBlockExpression(block.contents, block.lastExpression.field(expression.fieldNo));
+        } else if (source.is(DBSPIfExpression.class)) {
+            DBSPIfExpression conditional = source.to(DBSPIfExpression.class);
+            result = new DBSPIfExpression(source.getNode(), conditional.condition,
+                    conditional.positive.field(expression.fieldNo), conditional.negative.field(expression.fieldNo));
         }
         this.map(expression, result);
         return VisitDecision.STOP;

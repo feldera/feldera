@@ -29,7 +29,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
 
@@ -66,12 +65,12 @@ public class DBSPTypeDate extends DBSPTypeBaseType implements IsDateType {
     }
 
     @Override
-    public DBSPLiteral getMaxValue() {
+    public DBSPExpression getMaxValue() {
         return new DBSPDateLiteral(this.getNode(), this, new DateString("9999-12-12"));
     }
 
     @Override
-    public DBSPLiteral getMinValue() {
+    public DBSPExpression getMinValue() {
         return new DBSPDateLiteral(this.getNode(), this, new DateString("0001-01-01"));
     }
 

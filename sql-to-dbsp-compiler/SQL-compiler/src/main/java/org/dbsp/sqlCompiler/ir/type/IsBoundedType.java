@@ -1,9 +1,9 @@
 package org.dbsp.sqlCompiler.ir.type;
 
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 
 /** A type which has minimum and maximum values */
 public interface IsBoundedType {
-    DBSPLiteral getMaxValue();
-    DBSPLiteral getMinValue();
+    DBSPExpression getMaxValue();
+    DBSPExpression getMinValue();
 }

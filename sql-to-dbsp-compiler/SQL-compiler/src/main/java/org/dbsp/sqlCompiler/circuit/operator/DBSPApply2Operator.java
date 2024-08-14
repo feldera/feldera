@@ -16,8 +16,8 @@ import java.util.Objects;
  * The inputs and outputs do not have to be Z-sets or indexed Z-sets. */
 public final class DBSPApply2Operator extends DBSPBinaryOperator {
     public DBSPApply2Operator(CalciteObject node, DBSPClosureExpression function,
-                              DBSPType outputType, DBSPOperator left, DBSPOperator right) {
-        super(node, "apply2", function, outputType, false, left, right);
+                              DBSPOperator left, DBSPOperator right) {
+        super(node, "apply2", function, function.getResultType(), false, left, right);
         assert function.parameters.length == 2: "Expected 2 parameters for function " + function;
         DBSPType param0Type = function.parameters[0].getType().deref();
         assert left.outputType.sameType(param0Type):
@@ -31,7 +31,7 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPApply2Operator(
                 this.getNode(), Objects.requireNonNull(expression).to(DBSPClosureExpression.class),
-                outputType, this.left(), this.right())
+                this.left(), this.right())
                 .copyAnnotations(this);
     }
 
@@ -41,7 +41,7 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApply2Operator(
                     this.getNode(), this.getClosureFunction(),
-                    this.getType(), newInputs.get(0), newInputs.get(1))
+                    newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         }
         return this;
