@@ -1,7 +1,8 @@
-use anyhow::Error as AnyError;
-use log::{error, warn, Level};
+use actix_web::http::StatusCode;
+use actix_web::ResponseError;
+use log::{error, info};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 use std::{borrow::Cow, error::Error as StdError};
 use utoipa::ToSchema;
 pub const MAX_REPORTED_PARSE_ERRORS: usize = 1_000;
@@ -21,50 +22,76 @@ pub struct ErrorResponse {
     pub details: JsonValue,
 }
 
+/// Error trait which internal errors must implement such that it
+/// can be transformed to a complete JSON error response.
+pub trait DetailedError: StdError + ResponseError + Serialize {
+    /// HTTP status code.
+    fn error_code(&self) -> Cow<'static, str>;
+}
+
 impl<E> From<&E> for ErrorResponse
 where
     E: DetailedError,
 {
+    /// Transform the detailed error to a complete JSON error response.
+    /// - The message is retrieved using `to_string()` (available due to trait `StdError`)
+    /// - The status code determines the level of the log statement during this function
+    ///   (available due to trait `ResponseError`)
+    /// - The details are retrieved by serializing to JSON (available due to trait `Serialize`)
     fn from(error: &E) -> ErrorResponse {
         Self::from_error(error)
     }
 }
 
 impl ErrorResponse {
-    pub fn from_anyerror(error: &AnyError) -> Self {
-        let message = error.to_string();
-        let error_code = Cow::from("UnknownError");
-
-        error!("[HTTP error response] {error_code}: {message}");
-        warn!("Backtrace: {:#?}", error.backtrace());
-
-        Self {
-            message,
-            error_code,
-            details: json!(null),
-        }
-    }
-
     pub fn from_error<E>(error: &E) -> Self
     where
         E: DetailedError,
     {
-        let result = Self::from_error_nolog(error);
+        // Transform the error into a response
+        let response = Self::from_error_nolog(error);
 
-        log::log!(
-            error.log_level(),
-            "[HTTP error response] {}: {}",
-            result.error_code,
-            result.message
-        );
-        // Uncomment this when all pipeline manager errors implement `ResponseError`
-        // if error.status_code() == StatusCode::INTERNAL_SERVER_ERROR {
-        if let Some(backtrace) = result.details.get("backtrace").and_then(JsonValue::as_str) {
-            error!("Error backtrace:\n{backtrace}");
+        // Log based on the status code
+        if error.status_code().is_success() {
+            // The status code should not be successful for an error response
+            error!(
+                "[HTTP error (caused by implementation)] expected error but got success status code {} {}: {}",
+                error.status_code(),
+                response.error_code,
+                response.message
+            );
+        } else if error.status_code().is_client_error() {
+            // Client-caused error responses
+            info!(
+                "[HTTP error (caused by client)] {} {}: {}",
+                error.status_code(),
+                response.error_code,
+                response.message
+            );
+        } else {
+            // All other status responses should not occur in the implementation,
+            // and thus are logged as errors. Many of the implementation errors are
+            // represented as Internal Server Errors (500).
+            error!(
+                "[HTTP error (caused by implementation)] {} {}: {}",
+                error.status_code(),
+                response.error_code,
+                response.message
+            );
         }
-        // }
 
-        result
+        // Print error backtrace if available for an internal server error
+        if error.status_code() == StatusCode::INTERNAL_SERVER_ERROR {
+            if let Some(backtrace) = response
+                .details
+                .get("backtrace")
+                .and_then(JsonValue::as_str)
+            {
+                error!("Error backtrace:\n{backtrace}");
+            }
+        }
+
+        response
     }
 
     pub fn from_error_nolog<E>(error: &E) -> Self
@@ -90,12 +117,5 @@ impl ErrorResponse {
 
     pub fn to_yaml(&self) -> String {
         serde_yaml::to_string(self).unwrap()
-    }
-}
-
-pub trait DetailedError: StdError + Serialize {
-    fn error_code(&self) -> Cow<'static, str>;
-    fn log_level(&self) -> Level {
-        Level::Error
     }
 }

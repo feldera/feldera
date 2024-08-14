@@ -6,7 +6,6 @@ use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
 use deadpool_postgres::PoolError;
-use log::Level;
 use pipeline_types::error::DetailedError;
 use pipeline_types::error::ErrorResponse;
 use refinery::Error as RefineryError;
@@ -463,13 +462,6 @@ impl DetailedError for DBError {
             Self::IllegalPipelineStateTransition { .. } => {
                 Cow::from("IllegalPipelineStateTransition")
             }
-        }
-    }
-
-    fn log_level(&self) -> Level {
-        match self {
-            Self::UnknownPipeline { .. } => Level::Info,
-            _ => Level::Error,
         }
     }
 }

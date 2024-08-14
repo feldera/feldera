@@ -155,7 +155,7 @@ pub(crate) async fn delete_api_key(
         .delete_api_key(*tenant_id, &name)
         .await
         .map(|_| HttpResponse::Ok().finish())?;
-    info!("Deleted API key {name} (tenant:{})", *tenant_id);
+    info!("Deleted API key {name} (tenant: {})", *tenant_id);
     Ok(resp)
 }
 
@@ -193,7 +193,7 @@ async fn create_api_key(
         )
         .await
         .map(|_| {
-            info!("Created new API key {} (tenant:{})", &req.name, *tenant_id);
+            info!("Created API key {} (tenant: {})", &req.name, *tenant_id);
             HttpResponse::Created()
                 .insert_header(CacheControl(vec![CacheDirective::NoCache]))
                 .json(&NewApiKeyResponse {
