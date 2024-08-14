@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
@@ -478,7 +479,7 @@ public class Monotonicity extends CircuitVisitor {
             public final int columnIndex;
             /** Expression that is compared with column; column >= expression */
             public final DBSPExpression comparedTo;
-            /** Parameter that represents the row */
+            /** Parameter that represents the row.  Only used for debugging. */
             final DBSPParameter parameter;
 
             Comparison(int columnIndex, DBSPExpression comparedTo, DBSPParameter parameter) {
@@ -531,13 +532,53 @@ public class Monotonicity extends CircuitVisitor {
             return -1;
         }
 
-        /** If `larger` is a column reference, create a new comparison and add it to the list */
-        void addIfIsColumn(DBSPExpression smaller, DBSPExpression larger, DBSPParameter param) {
+        /** If `larger` is a column reference, create a new comparison and add it to the list
+         * @return True if the expression is a comparison that has been added. */
+        boolean addIfIsColumn(DBSPExpression smaller, DBSPExpression larger, DBSPParameter param) {
             int index = isColumn(larger, param);
             if (index < 0)
-                return;
+                return false;
             Comparison comp = new Comparison(index, smaller, param);
             this.comparisons.add(comp);
+            return true;
+        }
+
+        /** If 'larger' is an expression that adds or subtracts a constant from a column, create a
+         * new comparison and add it to the list.
+         * @return True if the expression is a comparison that has been added. */
+        boolean addIfOffsetOfColumn(DBSPExpression smaller, DBSPExpression larger, DBSPParameter param) {
+            DBSPBinaryExpression binary = larger.as(DBSPBinaryExpression.class);
+            if (binary == null)
+                return false;
+            if (binary.operation != DBSPOpcode.ADD && binary.operation != DBSPOpcode.SUB)
+                return false;
+            DBSPOpcode inverse = binary.operation == DBSPOpcode.ADD ? DBSPOpcode.SUB : DBSPOpcode.ADD;
+            int column = isColumn(binary.left, param);
+            if (column >= 0 && binary.right.is(DBSPLiteral.class)) {
+                // col + constant, col - constant
+                DBSPExpression newSmaller =
+                        ExpressionCompiler.makeBinaryExpression(larger.getNode(), larger.getType(),
+                        inverse, smaller, binary.right);
+                Comparison comp = new Comparison(column, newSmaller, param);
+                this.comparisons.add(comp);
+                return true;
+            }
+
+            if (binary.operation != DBSPOpcode.ADD)
+                return false;
+
+            // constant + col
+            column = isColumn(binary.right, param);
+            if (column >= 0 && binary.left.is(DBSPLiteral.class)) {
+                DBSPExpression newSmaller =
+                        ExpressionCompiler.makeBinaryExpression(larger.getNode(), larger.getType(),
+                                inverse, smaller, binary.left);
+                Comparison comp = new Comparison(column, newSmaller, param);
+                this.comparisons.add(comp);
+                return true;
+            }
+
+            return false;
         }
 
         /** Check if `expression` is a comparison and if so add it to the list */
@@ -548,17 +589,27 @@ public class Monotonicity extends CircuitVisitor {
             switch (binary.operation) {
                 case LTE:
                 case LT:
-                    this.addIfIsColumn(binary.left, binary.right, param);
+                    if (!this.addIfIsColumn(binary.left, binary.right, param)) {
+                        this.addIfOffsetOfColumn(binary.left, binary.right, param);
+                    }
                     break;
                 case GTE:
                 case GT:
-                    this.addIfIsColumn(binary.right, binary.left, param);
+                    if (!this.addIfIsColumn(binary.right, binary.left, param)) {
+                        this.addIfOffsetOfColumn(binary.right, binary.left, param);
+                    }
                     break;
-                case EQ:
+                case EQ: {
                     // add both ways
-                    this.addIfIsColumn(binary.left, binary.right, param);
-                    this.addIfIsColumn(binary.right, binary.left, param);
+                    boolean added = this.addIfIsColumn(binary.left, binary.right, param);
+                    added = added || this.addIfIsColumn(binary.right, binary.left, param);
+                    if (!added) {
+                        added = this.addIfOffsetOfColumn(binary.left, binary.right, param);
+                        if (added)
+                            this.addIfOffsetOfColumn(binary.right, binary.left, param);
+                    }
                     break;
+                }
             }
         }
 
