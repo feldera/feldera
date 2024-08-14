@@ -1,7 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
@@ -16,6 +20,50 @@ public class IncrementalRegressionTests extends SqlIoTest {
         // Without the following ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
         return new DBSPCompiler(options);
+    }
+
+    @Test
+    public void issue2243() {
+        String sql = """
+                CREATE TABLE CUSTOMER (cc_num bigint not null, ts timestamp not null lateness interval 0 day);
+                CREATE TABLE TRANSACTION (cc_num bigint not null, ts timestamp not null lateness interval 0 day);
+                
+                CREATE VIEW V AS
+                SELECT t.*
+                FROM
+                transaction as t JOIN customer as c
+                ON
+                    t.cc_num = c.cc_num
+                WHERE
+                    t.ts <= c.ts and t.ts + INTERVAL 7 DAY >= c.ts;
+                
+                create view V2 as
+                select SUM(5) from v group by ts;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        this.addRustTestCase("issue2243", ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int integrate_trace_keys = 0;
+            int integrate_trace_values = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace_keys++;
+            }
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) {
+                this.integrate_trace_values++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(2, this.integrate_trace_keys);
+                Assert.assertEquals(2, this.integrate_trace_values);
+            }
+        };
+        visitor.apply(ccs.circuit);
     }
 
     @Test
