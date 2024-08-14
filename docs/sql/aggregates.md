@@ -294,27 +294,6 @@ year | desks | tables | chairs
 (3 rows)
 ```
 
-## Streaming window functions
-
-Grouped window functions occur in the `GROUP BY` clause and define a
-key value that represents a window containing several rows.
-
-| Operator syntax      | Description |
-|:-------------------- |:------------|
-| TUMBLE(datetime, interval [, time ]) | Indicates a tumbling window of *interval* for *datetime*, optionally aligned at *time* |
-
-Here is an example query using a tumbling window:
-
-```sql
-CREATE TABLE series (
-   distance DOUBLE,
-   pickup TIMESTAMP NOT NULL
-)
-SELECT AVG(distance), TUMBLE_START(pickup, INTERVAL '1' DAY)
-FROM series
-GROUP BY TUMBLE(pickup, INTERVAL '1' DAY)
-```
-
 ### Grouped auxiliary functions
 
 Grouped auxiliary functions allow you to access properties of a window

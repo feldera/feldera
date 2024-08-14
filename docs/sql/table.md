@@ -30,6 +30,11 @@ absolute time), and that’s why tumbling sometimes is named as “fixed
 windowing”. The first parameter of the `TUMBLE` table function is a
 table parameter.
 
+The `timecol` must have a `TIMESTAMP` type.  The `size` must be a
+"short" SQL interval type (e.g., `DAYS` or shorter), because "long"
+SQL interval values are not constant values (e.g., the duration of a
+month is not a constant).
+
 #### Syntax:
 
 ```
@@ -79,7 +84,9 @@ Indicates a hopping window for `timecol`, covering rows within the
 interval of `size`, shifting every `slide` and optionally aligned at
 `offset`.  The type of the `timecol` has to be `TIMESTAMP`.  The
 intervals must be compile-time constants, and be expressed as a
-"short" interval (i.e., days or smaller time units).
+"short" interval (i.e., days or smaller time units), because "long"
+SQL interval values are not constant values (e.g., the duration of a
+month is not a constant).
 
 Here is an example:
 

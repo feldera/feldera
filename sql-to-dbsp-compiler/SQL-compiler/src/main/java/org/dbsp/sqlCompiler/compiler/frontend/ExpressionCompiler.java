@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -1166,9 +1167,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case TRIM: {
                 return compileKeywordFunction(call, node, null, type, ops, 0, 3);
             }
-            case TUMBLE:
+            case TUMBLE: {
+                if (ops.size() >= 2) {
+                    DBSPExpression op = ops.get(1);
+                    if (op.getType().is(DBSPTypeMonthsInterval.class)) {
+                        throw new UnsupportedException(
+                                "Tumbling window intervals must be 'short' SQL intervals (days and lower)",
+                                op.getNode());
+                    }
+                }
                 return compilePolymorphicFunction(
                         "tumble", node, type, ops, 2, 3);
+            }
             case ARRAY_LENGTH:
             case ARRAY_SIZE: {
                 if (call.operands.size() != 1)
