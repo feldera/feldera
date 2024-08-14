@@ -2,12 +2,16 @@ package org.dbsp.sqlCompiler.ir.type.user;
 
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TYPEDBOX;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
-public class DBSPTypeTypedBox extends DBSPTypeUser {
+public class DBSPTypeTypedBox extends DBSPTypeUser implements IsBoundedType {
     static DBSPType[] makeTypeArgs(DBSPType arg, boolean typed) {
         DBSPType[] result = new DBSPType[2];
         result[0] = arg;
@@ -40,6 +44,18 @@ public class DBSPTypeTypedBox extends DBSPTypeUser {
     @Override
     public boolean hasCopy() {
         return false;
+    }
+
+    @Override
+    public DBSPExpression getMaxValue() {
+        DBSPExpression max = this.typeArgs[0].to(IsBoundedType.class).getMaxValue();
+        return new DBSPUnaryExpression(this.getNode(), this, DBSPOpcode.TYPEDBOX, max);
+    }
+
+    @Override
+    public DBSPExpression getMinValue() {
+        DBSPExpression min = this.typeArgs[0].to(IsBoundedType.class).getMinValue();
+        return new DBSPUnaryExpression(this.getNode(), this, DBSPOpcode.TYPEDBOX, min);
     }
 
     // sameType and hashCode inherited from TypeUser.

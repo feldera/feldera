@@ -132,7 +132,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     }
 
     @Override
-    public DBSPLiteral getMaxValue() {
+    public DBSPExpression getMaxValue() {
         if (this.signed) {
             switch (this.width) {
                 case 8: return new DBSPI8Literal(Byte.MAX_VALUE, this.mayBeNull);
@@ -156,7 +156,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     }
 
     @Override
-    public DBSPLiteral getMinValue() {
+    public DBSPExpression getMinValue() {
         if (this.signed) {
             switch (this.width) {
                 case 8: return new DBSPI8Literal(Byte.MIN_VALUE, this.mayBeNull);

@@ -76,12 +76,12 @@ public class DBSPTypeUSize extends DBSPTypeBaseType
     }
 
     @Override
-    public DBSPLiteral getMaxValue() {
+    public DBSPExpression getMaxValue() {
         throw new UnsupportedException(this.getNode());
     }
 
     @Override
-    public DBSPLiteral getMinValue() {
+    public DBSPExpression getMinValue() {
         throw new UnsupportedException(this.getNode());
     }
 

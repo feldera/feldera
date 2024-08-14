@@ -62,6 +62,7 @@ import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * Applies a function (this.transform) to every function within an operator,
@@ -69,13 +70,30 @@ import java.util.List;
  */
 public class CircuitRewriter extends CircuitCloneVisitor {
     public final IRTransform transform;
+    /** Only optimize functions for nodes where this predicate returns 'true'.
+     * By default optimize all nodes. */
+    Predicate<DBSPOperator> toOptimize = o -> true;
 
     public CircuitRewriter(IErrorReporter reporter, IRTransform transform) {
         super(reporter, false);
         this.transform = transform;
     }
 
+    /** Create a CircuitRewriter.
+     *
+     * @param reporter    Error reporter.
+     * @param transform   Function to apply to optimize each node's functions.
+     * @param toOptimize  Predicate which returns 'true' for the nodes to optimize. */
+    public CircuitRewriter(IErrorReporter reporter, IRTransform transform, Predicate<DBSPOperator> toOptimize) {
+        super(reporter, false);
+        this.transform = transform;
+        this.toOptimize = toOptimize;
+    }
+
     public DBSPExpression transform(DBSPExpression expression) {
+        if (!this.toOptimize.test(this.getCurrent().to(DBSPOperator.class))) {
+            return expression;
+        }
         IDBSPInnerNode result = this.transform.apply(expression);
         return result.to(DBSPExpression.class);
     }
@@ -106,6 +124,10 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     // - DBSPApply2Operator
     @Override
     public void replace(DBSPOperator operator) {
+        if (!this.toOptimize.test(operator)) {
+            super.replace(operator);
+            return;
+        }
         DBSPExpression function = null;
         if (operator.function != null)
             function = this.transform(operator.function);
@@ -153,6 +175,10 @@ public class CircuitRewriter extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPSinkOperator operator) {
+        if (!this.toOptimize.test(operator)) {
+            super.replace(operator);
+            return;
+        }
         DBSPOperator input = this.mapped(operator.input());
         DBSPTypeStruct originalRowType = this.transform(operator.originalRowType).to(DBSPTypeStruct.class);
         DBSPType outputType = this.transform(operator.outputType);
@@ -169,6 +195,10 @@ public class CircuitRewriter extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPViewOperator operator) {
+        if (!this.toOptimize.test(operator)) {
+            super.replace(operator);
+            return;
+        }
         DBSPOperator input = this.mapped(operator.input());
         DBSPTypeStruct originalRowType = this.transform(operator.originalRowType).to(DBSPTypeStruct.class);
         DBSPType outputType = this.transform(operator.outputType);

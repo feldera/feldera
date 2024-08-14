@@ -26,6 +26,11 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
                 "Function return type " + function.getResultType() + " does not match output type " + outputType;
     }
 
+    public DBSPApplyOperator(CalciteObject node, DBSPClosureExpression function,
+                             DBSPOperator input, @Nullable String comment) {
+        this(node, function, function.getResultType(), input, comment);
+    }
+
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         return new DBSPApplyOperator(
@@ -40,7 +45,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
         if (force || this.inputsDiffer(newInputs)) {
             return new DBSPApplyOperator(
                     this.getNode(), this.getClosureFunction(),
-                    this.getType(), newInputs.get(0), this.comment)
+                    newInputs.get(0), this.comment)
                     .copyAnnotations(this);
         }
         return this;
