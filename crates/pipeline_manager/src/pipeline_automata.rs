@@ -536,6 +536,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Err(e) => {
                 // Cannot reach the pipeline.
                 if pipeline.deployment_status != PipelineStatus::Failed {
+                    error!("Failed to probe deployed pipeline {} which thus will transition to Failed status", pipeline.id);
                     Ok(State::Transition(
                         PipelineStatus::Failed,
                         Some(e.into()),

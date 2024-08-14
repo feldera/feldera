@@ -7053,6 +7053,7 @@ dependencies = [
 name = "pipeline_types"
 version = "0.1.0"
 dependencies = [
+ "actix-web",
  "anyhow",
  "csv",
  "lazy_static",

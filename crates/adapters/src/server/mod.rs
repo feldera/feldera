@@ -8,11 +8,12 @@ use crate::{
     InputEndpointConfig, InputFormat, OutputEndpoint, OutputEndpointConfig, OutputFormat,
     PipelineConfig, TransportInputEndpoint,
 };
+use actix_web::body::MessageBody;
+use actix_web::dev::Service;
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
     get,
     http::header,
-    middleware::Logger,
     post, rt,
     web::{self, Data as WebData, Json, Payload, Query},
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
@@ -22,7 +23,8 @@ use colored::Colorize;
 use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
-use log::{debug, error, info, warn};
+use futures_util::FutureExt;
+use log::{debug, error, info, log, warn, Level};
 use minitrace::collector::Config;
 use pipeline_types::{format::json::JsonFlavor, transport::http::EgressMode};
 use pipeline_types::{query::OutputQuery, transport::http::SERVER_PORT_FILE};
@@ -219,7 +221,36 @@ where
 
     let server = HttpServer::new(move || {
         let state = state.clone();
-        build_app(App::new().wrap(Logger::default()), state)
+        build_app(
+            App::new().wrap_fn(|req, srv| {
+                debug!("Request: {} {}", req.method(), req.path());
+                srv.call(req).map(|res| {
+                    match &res {
+                        Ok(response) => {
+                            let level = if response.status().is_success() {
+                                Level::Debug
+                            } else {
+                                Level::Error
+                            };
+                            let req = response.request();
+                            log!(
+                                level,
+                                "Response: {} (size: {:?}) to request {} {}",
+                                response.status(),
+                                response.response().body().size(),
+                                req.method(),
+                                req.path()
+                            );
+                        }
+                        Err(e) => {
+                            error!("Service response error: {e}");
+                        }
+                    }
+                    res
+                })
+            }),
+            state,
+        )
     })
     // Set timeout for graceful shutdown of workers.
     // The default in actix is 30s. We may consider making this configurable.

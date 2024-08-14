@@ -28,11 +28,13 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::error::ManagerError;
 use crate::probe::Probe;
 use crate::runner::RunnerApi;
-use actix_web::dev::Service;
+use actix_http::body::BoxBody;
+use actix_http::StatusCode;
+use actix_web::body::MessageBody;
+use actix_web::dev::{Service, ServiceResponse};
 use actix_web::Scope;
 use actix_web::{
     get,
-    middleware::Logger,
     web::Data as WebData,
     web::{self},
     App, HttpRequest, HttpResponse, HttpServer,
@@ -40,7 +42,8 @@ use actix_web::{
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
-use log::info;
+use futures_util::FutureExt;
+use log::{debug, error, info, log, Level};
 use std::{env, net::TcpListener, sync::Arc};
 use tokio::sync::Mutex;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
@@ -334,6 +337,38 @@ fn create_listener(api_config: &ApiServerConfig) -> AnyResult<TcpListener> {
     Ok(listener)
 }
 
+/// Logs the responses of the web server.
+pub fn log_response(
+    res: Result<ServiceResponse<BoxBody>, actix_web::Error>,
+) -> Result<ServiceResponse<BoxBody>, actix_web::Error> {
+    match &res {
+        Ok(response) => {
+            let level = if response.status().is_success()
+                || response.status() == StatusCode::NOT_MODIFIED
+            {
+                Level::Debug
+            } else if response.status().is_client_error() {
+                Level::Info
+            } else {
+                Level::Error
+            };
+            let req = response.request();
+            log!(
+                level,
+                "Response: {} (size: {:?}) to request {} {}",
+                response.status(),
+                response.response().body().size(),
+                req.method(),
+                req.path()
+            );
+        }
+        Err(e) => {
+            error!("Service response error: {e}");
+        }
+    }
+    res
+}
+
 pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -> AnyResult<()> {
     let listener = create_listener(&api_config)?;
     let state = WebData::new(ServerState::new(api_config.clone(), db).await?);
@@ -356,7 +391,10 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
                     .app_data(state.clone())
                     .app_data(auth_configuration.clone())
                     .app_data(client)
-                    .wrap(Logger::default().exclude("/healthz"))
+                    .wrap_fn(|req, srv| {
+                        debug!("Request: {} {}", req.method(), req.path());
+                        srv.call(req).map(log_response)
+                    })
                     .wrap(api_config.cors())
                     .service(api_scope().wrap(auth_middleware))
                     .service(public_scope())
@@ -369,7 +407,10 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
                 App::new()
                     .app_data(state.clone())
                     .app_data(client)
-                    .wrap(Logger::default().exclude("/healthz"))
+                    .wrap_fn(|req, srv| {
+                        debug!("Request: {} {}", req.method(), req.path());
+                        srv.call(req).map(log_response)
+                    })
                     .wrap(api_config.cors())
                     .service(api_scope().wrap_fn(|req, srv| {
                         let req = crate::auth::tag_with_default_tenant_id(req);

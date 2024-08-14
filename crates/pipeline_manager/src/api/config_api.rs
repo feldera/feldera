@@ -1,7 +1,6 @@
 // Configuration API to retrieve the current authentication configuration and list of demos
 use crate::demo::{read_demos_from_directory, Demo};
 use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
-use log::debug;
 use serde::Serialize;
 use std::path::Path;
 use utoipa::ToSchema;
@@ -28,7 +27,6 @@ async fn get_config_authentication(
     state: WebData<ServerState>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    debug!("Received {req:?}");
     if state._config.auth_provider == crate::config::AuthProviderType::None {
         return Ok(HttpResponse::Ok().json(EmptyResponse {}));
     }

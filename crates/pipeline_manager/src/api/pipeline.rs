@@ -18,7 +18,7 @@ use actix_web::{
     HttpRequest, HttpResponse,
 };
 use chrono::{DateTime, Utc};
-use log::{debug, info};
+use log::info;
 use pipeline_types::config::{PipelineConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
 use serde::{Deserialize, Serialize};
@@ -131,10 +131,6 @@ pub(crate) async fn list_pipelines(
     tenant_id: ReqData<TenantId>,
     query: web::Query<ListPipelinesQueryParameters>,
 ) -> Result<HttpResponse, DBError> {
-    debug!(
-        "API: tenant {} requests to GET list of pipelines",
-        *tenant_id
-    );
     let pipelines = state.db.lock().await.list_pipelines(*tenant_id).await?;
     let pipelines: Vec<ExtendedPipelineDescrOptionalCode> = pipelines
         .iter()
@@ -171,10 +167,6 @@ pub(crate) async fn get_pipeline(
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = parse_string_param(&req, "pipeline_name")?;
-    debug!(
-        "API: tenant {} requests to GET pipeline {pipeline_name}",
-        *tenant_id
-    );
     let pipeline = state
         .db
         .lock()
@@ -211,10 +203,6 @@ pub(crate) async fn post_pipeline(
     tenant_id: ReqData<TenantId>,
     body: web::Json<PipelineDescr>,
 ) -> Result<HttpResponse, ManagerError> {
-    debug!(
-        "API: tenant {} requests to POST pipeline {body:?}",
-        *tenant_id
-    );
     let pipeline = state
         .db
         .lock()
@@ -265,10 +253,6 @@ async fn put_pipeline(
     request: HttpRequest,
     body: web::Json<PipelineDescr>,
 ) -> Result<HttpResponse, ManagerError> {
-    debug!(
-        "API: tenant {} requests to PUT pipeline {request:?} {body:?}",
-        *tenant_id
-    );
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     let (is_new, pipeline) = state
         .db
@@ -334,10 +318,6 @@ pub(crate) async fn patch_pipeline(
     request: HttpRequest,
     body: web::Json<PatchPipeline>,
 ) -> Result<HttpResponse, ManagerError> {
-    debug!(
-        "API: tenant {} requests to PATCH pipeline {request:?} {body:?}",
-        *tenant_id
-    );
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     let pipeline = state
         .db
@@ -390,10 +370,6 @@ pub(crate) async fn delete_pipeline(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    debug!(
-        "API: tenant {} requests to DELETE pipeline {request:?}",
-        *tenant_id
-    );
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     let pipeline_id = state
         .db
@@ -463,10 +439,6 @@ pub(crate) async fn post_pipeline_action(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    debug!(
-        "API: tenant {} requests to POST pipeline action {request:?}",
-        *tenant_id
-    );
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     let action = parse_pipeline_action(&request)?;
     match action {
@@ -590,10 +562,6 @@ pub(crate) async fn get_pipeline_stats(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    debug!(
-        "API: tenant {} requests to GET pipeline statistics {request:?}",
-        *tenant_id
-    );
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     state
         .runner
@@ -630,10 +598,6 @@ pub(crate) async fn get_pipeline_circuit_profile(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    debug!(
-        "API: tenant {} requests to GET circuit profile {request:?}",
-        *tenant_id
-    );
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     state
         .runner
@@ -670,10 +634,6 @@ pub(crate) async fn get_pipeline_heap_profile(
     tenant_id: ReqData<TenantId>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    debug!(
-        "API: tenant {} requests to GET heap profile {request:?}",
-        *tenant_id
-    );
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     state
         .runner

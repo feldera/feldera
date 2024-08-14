@@ -455,7 +455,7 @@ inherits = "release"
                                         .await
                                     {
                                         if !is_used {
-                                            warn!("About to remove binary file '{:?}' that is no longer in use by any program", path.file_name());
+                                            info!("About to remove binary file '{:?}' that is no longer in use by any program", path.file_name());
                                             let r = fs::remove_file(path.path()).await;
                                             if let Err(e) = r {
                                                 error!(
