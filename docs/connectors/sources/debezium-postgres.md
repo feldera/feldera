@@ -83,22 +83,16 @@ for a complete list of available configuration options.
 
 ## Step 3: Feldera input connector
 
-Finally, you must create an input connector for each table:
+Finally, you must create an input connector for each table in the SQL
+table declaration.  For Feldera a Debezium connector uses the Kafka
+transport, so the configuration is similar to the one for [Kafka input
+connectors](kafka.md).
 
-```bash
-curl -i -X PUT http://localhost:8080/v0/connectors/my_connector \
--H "Authorization: Bearer <API-KEY>" \
--H 'Content-Type: application/json' \
--d '{
-  "description": "Debezium connector for a Postgres table",
-  "config": {
-      "format": {
-          "name": "json",
-          "config": {
-              "update_format": "debezium",
-              "json_flavor": "debezium_postgres"
-          }
-      },
+```sql
+CREATE TABLE INPUT (
+   ... -- columns omitted
+) WITH (
+  'connectors' = '[{
       "transport": {
           "name": "kafka_input",
           "config": {
@@ -106,9 +100,14 @@ curl -i -X PUT http://localhost:8080/v0/connectors/my_connector \
               "auto.offset.reset": "earliest",
               "topics": [KAFKA TOPIC NAME]
           }
+      },
+      "format": {
+          "name": "json",
+          "config": {
+              "update_format": "debezium",
+              "json_flavor": "debezium_postgres"
+          }
       }
-  }
-}'
+  }]'
+)
 ```
-
-You can now attach this connector to the corresponding table in your Feldera pipeline.

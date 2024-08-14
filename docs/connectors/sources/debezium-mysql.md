@@ -128,7 +128,7 @@ We will now connect the MySQL database with Kafka Connect.
 Finally, you must create an input connector for each table in the SQL
 table declaration.  For Feldera a Debezium connector uses the Kafka
 transport, so the configuration is similar to the one for [Kafka input
-connectors](kafka.md).  The `group.id` property should be left empty.
+connectors](kafka.md).
 
 
 ```sql
@@ -138,18 +138,19 @@ CREATE TABLE INPUT (
   'connectors' = '[
     {
       "transport": {
-          "name": "debezium_input",
+          "name": "kafka_input",
           "config": {
               "bootstrap.servers": "KAFKA HOSTNAME:PORT",
-              "auto.offset.reset": "Earliest",
-              "group.id": "",
-              "topics": ["UNIQUE_DATABASE_SERVER_NAME.DATABASE.TABLE"]
+              "auto.offset.reset": "earliest",
+              "topics": ["UNIQUE DATABASE SERVER NAME.DATABASE.TABLE"]
           }
       },
-      "security": "plaintext",
       "format": {
           "name": "json",
-          "source database": "MySQL"
+          "config": {
+              "update_format": "debezium",
+              "json_flavor": "debezium_mysql"
+          }
       }
   }]'
 )
