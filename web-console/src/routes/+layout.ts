@@ -6,6 +6,7 @@ import { client } from '@hey-api/client-fetch'
 import { base } from '$app/paths'
 import { authRequestMiddleware, authResponseMiddleware } from '$lib/services/auth'
 import type { AuthDetails } from '$lib/types/auth'
+import { goto } from '$app/navigation'
 const { OidcClient, OidcLocation } = AxaOidc
 
 export const ssr = false
@@ -24,10 +25,30 @@ export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
     }
   }
   const axaOidcConfig = toAxaOidcConfig(authConfig.oidc)
-  const oidcClient = OidcClient.getOrCreate(() => fetch, new OidcLocation())(axaOidcConfig)
-  const href = url.href
+  return axaOidcAuth({
+    oidcConfig: axaOidcConfig,
+    logoutExtras: authConfig.logoutExtras,
+    onBeforeLogin: () => window.sessionStorage.setItem('redirect_to', window.location.href),
+    onAfterLogin: () => {
+      const redirectTo = window.sessionStorage.getItem('redirect_to')
+      if (!redirectTo) {
+        return
+      }
+      window.sessionStorage.removeItem('redirect_to')
+      goto(redirectTo)
+    }
+  })
+}
+
+const axaOidcAuth = async (params: {
+  oidcConfig: AxaOidc.OidcConfiguration,
+  logoutExtras?: AxaOidc.StringMap,
+  onBeforeLogin?: () => void,
+  onAfterLogin?: () => void}) => {
+  const oidcClient = OidcClient.getOrCreate(() => fetch, new OidcLocation())(params.oidcConfig)
+  const href = window.location.href
   const result: AuthDetails = await oidcClient.tryKeepExistingSessionAsync().then(async () => {
-    if (href.includes(axaOidcConfig.redirect_uri)) {
+    if (href.includes(params.oidcConfig.redirect_uri)) {
       oidcClient.loginCallbackAsync().then(() => {
         window.location.href = `${base}/`
       })
@@ -39,28 +60,21 @@ export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
     if (!tokens) {
       return {
         login: async () => {
+          params.onBeforeLogin?.()
           await oidcClient.loginAsync('/')
         }
       }
     }
 
+    params.onAfterLogin?.()
     const userInfo = await oidcClient.userInfoAsync()
 
     client.interceptors.request.use(authRequestMiddleware)
     client.interceptors.response.use(authResponseMiddleware)
-    const nonce:
-      | {
-          nonce: string
-        }
-      | {} = ((nonce) => (nonce ? { nonce } : {}))(
-      (axaOidcConfig.storage ?? sessionStorage).getItem('oidc.nonce.default')
-    )
+
     return {
       logout: ({ callbackUrl }) =>
-        oidcClient.logoutAsync(callbackUrl, {
-          ...authConfig.logoutExtras,
-          ...nonce // With AWS Cognito, when logging out and logging in via thrird party IDP (e.g. Google) - nonce is required
-        }),
+        oidcClient.logoutAsync(callbackUrl, params.logoutExtras),
       userInfo,
       profile: fromAxaUserInfo(userInfo),
       accessToken: tokens.accessToken // Only used in HTTP requests that cannot be handled with the global HTTP client instance from @hey-api/client-fetch
