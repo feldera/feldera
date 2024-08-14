@@ -30,6 +30,9 @@ absolute time), and that’s why tumbling sometimes is named as “fixed
 windowing”. The first parameter of the `TUMBLE` table function is a
 table parameter.
 
+The `timecol` must have a `TIMESTAMP` type.  The `size` must be a
+"short" SQL interval type (e.g., `DAYS` or shorter).
+
 #### Syntax:
 
 ```

@@ -169,6 +169,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
@@ -424,6 +425,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         assert call.operandCount() == 2 || call.operandCount() == 3;
         int timestampIndex = this.getDescriptor(operands.get(0));
         DBSPExpression interval = expressionCompiler.compile(operands.get(1));
+        if (interval.getType().is(DBSPTypeMonthsInterval.class)) {
+            throw new UnsupportedException(
+                    "Tumbling window intervals must be 'short' SQL intervals (days and lower)",
+                    interval.getNode());
+        }
         DBSPExpression start = null;
         if (call.operandCount() == 3)
             start = expressionCompiler.compile(operands.get(2));
