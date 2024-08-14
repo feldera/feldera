@@ -144,7 +144,7 @@ pub trait BatchReaderFactories<
     V: DataTrait + ?Sized,
     T,
     R: WeightTrait + ?Sized,
->: Clone + Send
+>: Clone + Send + Sync
 {
     // type BatchItemVTable: BatchItemTypeDescr<Key = K, Val = V, Item = I, R = R>;
     fn new<KType, VType, RType>() -> Self
@@ -310,7 +310,7 @@ where
     type R: WeightTrait + ?Sized;
 
     /// The type used to enumerate the batch's contents.
-    type Cursor<'s>: Cursor<Self::Key, Self::Val, Self::Time, Self::R> + Clone
+    type Cursor<'s>: Cursor<Self::Key, Self::Val, Self::Time, Self::R> + Clone + Send
     where
         Self: 's;
 

@@ -206,6 +206,7 @@ impl RunnerApi {
         pipeline_name: &str,
         method: Method,
         endpoint: &str,
+        query_string: &str,
     ) -> Result<HttpResponse, ManagerError> {
         let pipeline = self
             .db
@@ -225,6 +226,7 @@ impl RunnerApi {
             method,
             endpoint,
             &pipeline.deployment_location.unwrap(),
+            query_string,
         )
         .await // TODO: unwrap
     }
@@ -237,8 +239,11 @@ impl RunnerApi {
         method: Method,
         endpoint: &str,
         location: &str,
+        query_string: &str,
     ) -> Result<HttpResponse, ManagerError> {
-        let response = Self::pipeline_http_request(pipeline_id, method, endpoint, location).await?;
+        let response =
+            Self::pipeline_http_request(pipeline_id, method, endpoint, location, query_string)
+                .await?;
         let status = response.status();
 
         let mut response_builder = HttpResponse::build(status);
@@ -269,10 +274,14 @@ impl RunnerApi {
         method: Method,
         endpoint: &str,
         location: &str,
+        query_string: &str,
     ) -> Result<reqwest::Response, RunnerError> {
         let client = reqwest::Client::new();
         client
-            .request(method, &format!("http://{location}/{endpoint}",))
+            .request(
+                method,
+                &format!("http://{location}/{endpoint}?{}", query_string),
+            )
             .timeout(Self::PIPELINE_HTTP_REQUEST_TIMEOUT)
             .send()
             .await

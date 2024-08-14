@@ -320,7 +320,7 @@ where
     V: ?Sized,
     R: ?Sized,
 {
-    fn clone_boxed(&self) -> Box<dyn ClonableCursor<'s, K, V, T, R> + 's>;
+    fn clone_boxed(&self) -> Box<dyn ClonableCursor<'s, K, V, T, R> + Send + 's>;
 }
 
 impl<'s, K, V, T, R, C> ClonableCursor<'s, K, V, T, R> for C
@@ -328,16 +328,18 @@ where
     K: ?Sized,
     V: ?Sized,
     R: ?Sized,
-    C: Cursor<K, V, T, R> + Debug + Clone + 's,
+    C: Cursor<K, V, T, R> + Debug + Clone + Send + 's,
 {
-    fn clone_boxed(&self) -> Box<dyn ClonableCursor<'s, K, V, T, R> + 's> {
+    fn clone_boxed(&self) -> Box<dyn ClonableCursor<'s, K, V, T, R> + Send + 's> {
         Box::new(self.clone())
     }
 }
 
 /// A wrapper around a `dyn Cursor` to allow choice of implementations at runtime.
 #[derive(Debug, SizeOf)]
-pub struct DelegatingCursor<'s, K, V, T, R>(pub Box<dyn ClonableCursor<'s, K, V, T, R> + 's>)
+pub struct DelegatingCursor<'s, K, V, T, R>(
+    pub Box<dyn ClonableCursor<'s, K, V, T, R> + Send + 's>,
+)
 where
     K: ?Sized,
     V: ?Sized,

@@ -1,4 +1,4 @@
-use crate::catalog::{SerBatchReader, SerTrace};
+use crate::catalog::{SerBatchReader, SerBatchReaderHandle, SerTrace, SyncSerBatchReader};
 #[cfg(feature = "with-avro")]
 use crate::format::avro::serializer::{
     avro_serde_config, AvroSchemaSerializer, AvroSerializerError,
@@ -270,13 +270,46 @@ impl<B, KD, VD> SerCollectionHandleImpl<B, KD, VD> {
     }
 }
 
+impl<B, KD, VD> SerBatchReaderHandle for SerCollectionHandleImpl<B, KD, VD>
+where
+    B: BatchReader<Time = ()> + Send + Sync + Clone,
+    B::Inner: Send,
+    B::R: Into<i64>,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+{
+    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SyncSerBatchReader>> {
+        self.handle.take_from_worker(worker).map(|batch| {
+            Box::new(<SerBatchImpl<B, KD, VD>>::new(batch)) as Box<dyn SyncSerBatchReader>
+        })
+    }
+
+    fn num_nonempty_mailboxes(&self) -> usize {
+        self.handle.num_nonempty_mailboxes()
+    }
+
+    fn take_from_all(&self) -> Vec<Arc<dyn SyncSerBatchReader>> {
+        self.handle
+            .take_from_all()
+            .into_iter()
+            .map(|batch| {
+                Arc::new(<SerBatchImpl<B, KD, VD>>::new(batch)) as Arc<dyn SyncSerBatchReader>
+            })
+            .collect()
+    }
+
+    fn fork(&self) -> Box<dyn SerBatchReaderHandle> {
+        Box::new(self.clone())
+    }
+}
+
 impl<B, KD, VD> SerCollectionHandle for SerCollectionHandleImpl<B, KD, VD>
 where
     B: Batch<Time = ()> + Send + Sync + Clone,
     B::InnerBatch: Send,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
 {
     fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatch>> {
         self.handle
@@ -343,8 +376,8 @@ impl<B, KD, VD> SerBatchReader for SerBatchImpl<B, KD, VD>
 where
     B: BatchReader<Time = ()>,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
 {
     fn key_count(&self) -> usize {
         self.batch.inner().key_count()
@@ -357,7 +390,7 @@ where
     fn cursor<'a>(
         &'a self,
         record_format: RecordFormat,
-    ) -> Result<Box<dyn SerCursor + 'a>, ControllerError> {
+    ) -> Result<Box<dyn SerCursor + Send + 'a>, ControllerError> {
         Ok(match record_format {
             RecordFormat::Csv => {
                 Box::new(<SerCursorImpl<'a, CsvSerializer<_>, B, KD, VD, _>>::new(
@@ -409,12 +442,21 @@ where
     }
 }
 
+impl<B, KD, VD> SyncSerBatchReader for SerBatchImpl<B, KD, VD>
+where
+    B: BatchReader<Time = ()> + Send + Sync,
+    B::R: Into<i64>,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+{
+}
+
 impl<B, KD, VD> SerBatch for SerBatchImpl<B, KD, VD>
 where
     B: Batch<Time = ()> + Send + Sync,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
 {
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Sync + Send> {
         self
@@ -457,8 +499,8 @@ where
     T: Trace<Time = ()>,
     //TypedBatch<T::Key, T::Val, T::R, <T::InnerTrace as DynTrace>::Batch>: Send + Sync,
     T::R: Into<i64>,
-    KD: From<T::Key> + SerializeWithContext<SqlSerdeConfig> + 'static,
-    VD: From<T::Val> + SerializeWithContext<SqlSerdeConfig> + 'static,
+    KD: From<T::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
+    VD: From<T::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send,
 {
     fn insert(&mut self, batch: Arc<dyn SerBatch>) {
         let batch = Arc::unwrap_or_clone(
@@ -496,8 +538,8 @@ where
     Ser: BytesSerializer<C>,
     B: BatchReader<Time = ()>,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<C>,
-    VD: From<B::Val> + SerializeWithContext<C>,
+    KD: From<B::Key> + SerializeWithContext<C> + Send,
+    VD: From<B::Val> + SerializeWithContext<C> + Send,
 {
     pub fn new(batch: &'a B, serializer: Ser) -> Self {
         let cursor = batch.inner().cursor();
@@ -562,8 +604,9 @@ where
     Ser: BytesSerializer<C>,
     B: BatchReader<Time = ()>,
     B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<C>,
-    VD: From<B::Val> + SerializeWithContext<C>,
+    KD: From<B::Key> + SerializeWithContext<C> + Send,
+    VD: From<B::Val> + SerializeWithContext<C> + Send,
+    <B::Inner as DynBatchReader>::Cursor<'a>: Send,
 {
     fn key_valid(&self) -> bool {
         self.cursor.key_valid()

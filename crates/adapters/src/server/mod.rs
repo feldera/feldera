@@ -19,16 +19,24 @@ use actix_web::{
     web::{self, Data as WebData, Json, Payload, Query},
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
 };
+use arrow::array::RecordBatch;
+use arrow_json::LineDelimitedWriter;
 use clap::Parser;
 use colored::Colorize;
+use datafusion::error::DataFusionError;
 use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
 use feldera_types::{format::json::JsonFlavor, transport::http::EgressMode};
-use feldera_types::{query::OutputQuery, transport::http::SERVER_PORT_FILE};
+use feldera_types::{
+    query::{AdHocQueryFormat, AdhocQueryArgs, OutputQuery},
+    transport::http::SERVER_PORT_FILE,
+};
 use futures_util::FutureExt;
 use log::{debug, error, info, log, trace, warn, Level};
 use minitrace::collector::Config;
+use parquet::arrow::ArrowWriter;
+use parquet::file::properties::WriterProperties;
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::io::Write;
@@ -498,6 +506,7 @@ where
         .service(start)
         .service(pause)
         .service(shutdown)
+        .service(query)
         .service(stats)
         .service(metrics)
         .service(metadata)
@@ -526,6 +535,65 @@ async fn pause(state: WebData<ServerState>) -> impl Responder {
         Some(controller) => {
             controller.pause();
             Ok(HttpResponse::Ok().json("Pipeline paused"))
+        }
+        None => Err(missing_controller_error(&state)),
+    }
+}
+
+#[get("/query")]
+async fn query(state: WebData<ServerState>, args: Query<AdhocQueryArgs>) -> impl Responder {
+    let session_ctxt = {
+        let controller = state.controller.lock().unwrap();
+        controller.as_ref().map(|c| c.session_context())
+    };
+
+    match session_ctxt {
+        Some(session) => {
+            let df = session.sql(&args.sql).await?;
+            let response = df.collect().await?;
+
+            match args.format {
+                AdHocQueryFormat::Text => {
+                    let pretty_results = arrow::util::pretty::pretty_format_batches(&response)
+                        .map_err(DataFusionError::from)?
+                        .to_string();
+                    Ok(HttpResponse::Ok()
+                        .content_type(mime::TEXT_PLAIN)
+                        .body(pretty_results))
+                }
+                AdHocQueryFormat::Json => {
+                    let mut buf = Vec::with_capacity(1024);
+                    let mut writer = LineDelimitedWriter::new(&mut buf);
+                    writer
+                        .write_batches(response.iter().collect::<Vec<&RecordBatch>>().as_slice())
+                        .map_err(DataFusionError::from)?;
+                    writer.finish().map_err(DataFusionError::from)?;
+
+                    Ok(HttpResponse::Ok()
+                        .content_type(mime::APPLICATION_JSON)
+                        .body(buf))
+                }
+                AdHocQueryFormat::Parquet => {
+                    let mut buf = Vec::with_capacity(4096);
+                    let writer_properties = WriterProperties::builder().build();
+                    let schema = response[0].schema();
+                    let mut writer =
+                        ArrowWriter::try_new(&mut buf, schema.clone(), Some(writer_properties))
+                            .map_err(PipelineError::from)?;
+                    for batch in response {
+                        writer.write(&batch)?;
+                    }
+                    let file_name = format!(
+                        "results_{}.parquet",
+                        chrono::Utc::now().format("%Y%m%d_%H%M%S")
+                    );
+                    writer.close().expect("closing writer");
+                    Ok(HttpResponse::Ok()
+                        .insert_header(header::ContentDisposition::attachment(file_name))
+                        .content_type(mime::APPLICATION_OCTET_STREAM)
+                        .body(buf))
+                }
+            }
         }
         None => Err(missing_controller_error(&state)),
     }
@@ -646,8 +714,6 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
 
 #[derive(Debug, Deserialize)]
 struct IngressArgs {
-    // #[serde(default = "HttpInputTransport::default_mode")]
-    // mode: HttpIngressMode,
     #[serde(default = "HttpInputTransport::default_format")]
     format: String,
     /// Push data to the pipeline even if the pipeline is in a paused state.

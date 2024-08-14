@@ -150,6 +150,7 @@ use num_derive::FromPrimitive;
 use rustls::crypto::CryptoProvider;
 use serde::Serialize;
 
+pub(crate) mod adhoc;
 mod catalog;
 mod circuit_handle;
 mod controller;

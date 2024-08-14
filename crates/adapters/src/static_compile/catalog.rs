@@ -1,9 +1,11 @@
-use crate::catalog::InputCollectionHandle;
+use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
+use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
 use crate::{
     catalog::{NeighborhoodEntry, OutputCollectionHandles, SerCollectionHandle},
     static_compile::{DeScalarHandle, DeScalarHandleImpl},
     Catalog, ControllerError,
 };
+use dbsp::typed_batch::TypedBatch;
 use dbsp::{
     operator::{
         DelayedFeedback, MapHandle, NeighborhoodDescr, NeighborhoodDescrBox,
@@ -11,7 +13,7 @@ use dbsp::{
     },
     typed_batch::TypedBox,
     utils::Tup2,
-    DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet,
+    DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
 };
 use feldera_types::deserialize_struct;
 use feldera_types::program_schema::Relation;
@@ -20,8 +22,7 @@ use feldera_types::serde_with_context::{
 };
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-
-use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
+use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, Debug, Default, PartialEq, Eq, Clone)]
 pub struct NeighborhoodQuery<K> {
@@ -305,7 +306,7 @@ impl Catalog {
             schema,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
-
+            integrate_handle: None,
             neighborhood_descr_handle: None,
             neighborhood_handle: None,
             neighborhood_snapshot_handle: None,
@@ -395,9 +396,16 @@ impl Catalog {
             .stream_key_quantiles(&num_quantiles_stream);
         let quantiles_handle = quantiles_stream
             .output_guarded(&num_quantiles_stream.apply(|num_quantiles| *num_quantiles > 0));
+        let integrate_handle = stream
+            .integrate_trace()
+            .apply(|t| TypedBatch::<Z::Key, (), ZWeight, _>::new(t.ro_snapshot()))
+            .output();
 
         let handles = OutputCollectionHandles {
             schema,
+            integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, D, ()>>::new(
+                integrate_handle,
+            )) as Arc<dyn SerBatchReaderHandle>),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
 
@@ -463,7 +471,7 @@ impl Catalog {
             schema,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
-
+            integrate_handle: None,
             neighborhood_descr_handle: None,
             neighborhood_handle: None,
             neighborhood_snapshot_handle: None,
@@ -564,12 +572,19 @@ impl Catalog {
         let quantiles_handle = quantiles_stream
             .map(|Tup2(_k, v)| v.clone())
             .output_guarded(&num_quantiles_stream.apply(|num_quantiles| *num_quantiles > 0));
+        let integrate_handle = stream
+            .map(|(_k, v)| v.clone())
+            .integrate_trace()
+            .apply(|s| TypedBatch::<V, (), ZWeight, _>::new(s.ro_snapshot()))
+            .output();
 
         let handles = OutputCollectionHandles {
             schema,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
-
+            integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, VD, ()>>::new(
+                integrate_handle,
+            )) as Arc<dyn SerBatchReaderHandle>),
             neighborhood_descr_handle: Some(Box::new(DeScalarHandleImpl::new(
                 neighborhood_descr_handle,
                 |x| x,

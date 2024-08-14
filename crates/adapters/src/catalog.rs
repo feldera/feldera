@@ -196,7 +196,7 @@ pub trait SerBatchReader: 'static {
     fn cursor<'a>(
         &'a self,
         record_format: RecordFormat,
-    ) -> Result<Box<dyn SerCursor + 'a>, ControllerError>;
+    ) -> Result<Box<dyn SerCursor + Send + 'a>, ControllerError>;
 }
 
 impl Debug for dyn SerBatchReader {
@@ -242,8 +242,10 @@ impl Debug for dyn SerBatch {
     }
 }
 
+pub trait SyncSerBatchReader: SerBatchReader + Send + Sync {}
+
 /// A type-erased `Batch`.
-pub trait SerBatch: SerBatchReader + Send + Sync {
+pub trait SerBatch: SyncSerBatchReader {
     /// Convert to `Arc<Any>`, which can then be downcast to a reference
     /// to a concrete batch type.
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Sync + Send>;
@@ -269,7 +271,7 @@ pub trait SerTrace: SerBatchReader {
 ///
 /// This is a wrapper around the DBSP `Cursor` trait that yields keys and values
 /// of the underlying batch as `erased_serde::Serialize` trait objects.
-pub trait SerCursor {
+pub trait SerCursor: Send {
     /// Indicates if the current key is valid.
     ///
     /// A value of `false` indicates that the cursor has exhausted all keys.
@@ -325,6 +327,28 @@ pub trait SerCursor {
 
     /// Rewinds the cursor to the first value for current key.
     fn rewind_vals(&mut self);
+}
+
+/// A handle to an output stream of a circuit that yields type-erased
+/// read-only batches.
+///
+/// A trait for a type that wraps around an
+/// [`OutputHandle`](`dbsp::OutputHandle`) and yields output batches produced by
+/// the circuit as [`SerBatchReader`]s.
+pub trait SerBatchReaderHandle: Send + Sync {
+    /// See [`OutputHandle::num_nonempty_mailboxes`](`dbsp::OutputHandle::num_nonempty_mailboxes`)
+    fn num_nonempty_mailboxes(&self) -> usize;
+
+    /// Like [`OutputHandle::take_from_worker`](`dbsp::OutputHandle::take_from_worker`),
+    /// but returns output batch as a [`SyncSerBatchReader`] trait object.
+    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SyncSerBatchReader>>;
+
+    /// Like [`OutputHandle::take_from_all`](`dbsp::OutputHandle::take_from_all`),
+    /// but returns output batches as [`SyncSerBatchReader`] trait objects.
+    fn take_from_all(&self) -> Vec<Arc<dyn SyncSerBatchReader>>;
+
+    /// Returns an alias to `self`.
+    fn fork(&self) -> Box<dyn SerBatchReaderHandle>;
 }
 
 /// A handle to an output stream of a circuit that yields type-erased
@@ -474,6 +498,8 @@ pub trait CircuitCatalog: Send {
     /// Look up an input stream handle by name.
     fn input_collection_handle(&self, name: &str) -> Option<&InputCollectionHandle>;
 
+    fn output_iter(&self) -> Box<dyn Iterator<Item = (&String, &OutputCollectionHandles)> + '_>;
+
     /// Look up output stream handles by name.
     fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles>;
 
@@ -566,6 +592,10 @@ impl CircuitCatalog for Catalog {
     fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles> {
         self.output_batch_handles.get(&canonical_identifier(name))
     }
+
+    fn output_iter(&self) -> Box<dyn Iterator<Item = (&String, &OutputCollectionHandles)> + '_> {
+        Box::new(self.output_batch_handles.iter())
+    }
 }
 
 pub struct InputCollectionHandle {
@@ -588,6 +618,9 @@ impl InputCollectionHandle {
 /// A set of stream handles associated with each output collection.
 pub struct OutputCollectionHandles {
     pub schema: Relation,
+
+    /// A handle to a snapshot of a materialized table/view.
+    pub integrate_handle: Option<Arc<dyn SerBatchReaderHandle>>,
 
     /// A stream of changes to the collection.
     pub delta_handle: Box<dyn SerCollectionHandle>,
