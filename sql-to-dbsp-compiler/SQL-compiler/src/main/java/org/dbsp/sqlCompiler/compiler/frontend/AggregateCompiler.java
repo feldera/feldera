@@ -591,7 +591,7 @@ public class AggregateCompiler implements ICompilerComponent {
         // We need to call sqrt, which only works for doubles.
         DBSPType sqrtType = new DBSPTypeDouble(node, this.resultType.mayBeNull);
         DBSPExpression div = ExpressionCompiler.makeBinaryExpression(
-                node, this.resultType, DBSPOpcode.DIV_NULL,
+                node, this.nullableResultType, DBSPOpcode.DIV_NULL,
                 sub, denom).cast(sqrtType);
         // Prevent sqrt from negative values if computations are unstable
         DBSPExpression max = ExpressionCompiler.makeBinaryExpression(
@@ -599,7 +599,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 div, sqrtType.to(IsNumericType.class).getZero());
         DBSPExpression sqrt = ExpressionCompiler.compilePolymorphicFunction(
                 "sqrt", node, sqrtType, Linq.list(max), 1);
-        sqrt = sqrt.cast(this.resultType);
+        sqrt = sqrt.cast(this.nullableResultType);
         DBSPClosureExpression post = new DBSPClosureExpression(node, sqrt, a.asParameter());
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
         DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "TripleSemigroup", false,
@@ -628,7 +628,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 this.process(this.aggFunction, SqlMinMaxAggFunction.class, this::processMinMax) ||
                 this.process(this.aggFunction, SqlSumAggFunction.class, this::processSum) ||
                 this.process(this.aggFunction, SqlSumEmptyIsZeroAggFunction.class, this::processSumZero) ||
-                this.process(this.aggFunction, SqlAvgAggFunction.class, this::processAvg) ||
+                this.process(this.aggFunction, SqlAvgAggFunction.class, this::processAvg) || // handles stddev too
                 this.process(this.aggFunction, SqlBitOpAggFunction.class, this::processBitOp) ||
                 this.process(this.aggFunction, SqlSingleValueAggFunction.class, this::processSingle) ||
                 this.process(this.aggFunction, SqlAbstractGroupFunction.class, this::processGrouping);

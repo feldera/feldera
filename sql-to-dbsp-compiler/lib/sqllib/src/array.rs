@@ -76,7 +76,7 @@ where
     }
 }
 
-pub fn index___N<T>(value: Vec<T>, index: Option<isize>) -> Option<T>
+pub fn index__N<T>(value: Vec<T>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -84,7 +84,7 @@ where
     index___(value, index)
 }
 
-pub fn index__N_<T>(value: Vec<Option<T>>, index: isize) -> Option<T>
+pub fn index_N_<T>(value: Vec<Option<T>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -99,7 +99,7 @@ where
     }
 }
 
-pub fn index__N_N<T>(value: Vec<Option<T>>, index: Option<isize>) -> Option<T>
+pub fn index_NN<T>(value: Vec<Option<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -115,7 +115,7 @@ where
     }
 }
 
-pub fn index_N__<T>(value: Option<Vec<T>>, index: isize) -> Option<T>
+pub fn indexN__<T>(value: Option<Vec<T>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
@@ -125,7 +125,7 @@ where
     }
 }
 
-pub fn index_N__N<T>(value: Option<Vec<T>>, index: Option<isize>) -> Option<T>
+pub fn indexN_N<T>(value: Option<Vec<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
@@ -136,24 +136,24 @@ where
     }
 }
 
-pub fn index_N_N_<T>(value: Option<Vec<Option<T>>>, index: isize) -> Option<T>
+pub fn indexNN_<T>(value: Option<Vec<Option<T>>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
     match value {
         None => None,
-        Some(value) => index__N_(value, index),
+        Some(value) => index_N_(value, index),
     }
 }
 
-pub fn index_N_N_N<T>(value: Option<Vec<Option<T>>>, index: Option<isize>) -> Option<T>
+pub fn indexNNN<T>(value: Option<Vec<Option<T>>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
     let index = index?;
     match value {
         None => None,
-        Some(value) => index__N_(value, index),
+        Some(value) => index_N_(value, index),
     }
 }
 
@@ -525,7 +525,7 @@ where
     value.get(&map_index).cloned()
 }
 
-pub fn map_index___N<I, T>(value: BTreeMap<I, T>, map_index: Option<I>) -> Option<T>
+pub fn map_index__N<I, T>(value: BTreeMap<I, T>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -534,7 +534,7 @@ where
     map_index___(value, map_index)
 }
 
-pub fn map_index__N_<I, T>(value: BTreeMap<I, Option<T>>, map_index: I) -> Option<T>
+pub fn map_index_N_<I, T>(value: BTreeMap<I, Option<T>>, map_index: I) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -545,16 +545,16 @@ where
     }
 }
 
-pub fn map_index__N_N<I, T>(value: BTreeMap<I, Option<T>>, map_index: Option<I>) -> Option<T>
+pub fn map_index_NN<I, T>(value: BTreeMap<I, Option<T>>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
     T: Clone,
 {
     let map_index = map_index?;
-    map_index__N_(value, map_index)
+    map_index_N_(value, map_index)
 }
 
-pub fn map_index_N__<I, T>(value: Option<BTreeMap<I, T>>, map_index: I) -> Option<T>
+pub fn map_indexN__<I, T>(value: Option<BTreeMap<I, T>>, map_index: I) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -565,7 +565,7 @@ where
     }
 }
 
-pub fn map_index_N__N<I, T>(value: Option<BTreeMap<I, T>>, map_index: Option<I>) -> Option<T>
+pub fn map_indexN_N<I, T>(value: Option<BTreeMap<I, T>>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
     T: Clone,
@@ -577,18 +577,18 @@ where
     }
 }
 
-pub fn map_index_N_N_<I, T>(value: Option<BTreeMap<I, Option<T>>>, map_index: I) -> Option<T>
+pub fn map_indexNN_<I, T>(value: Option<BTreeMap<I, Option<T>>>, map_index: I) -> Option<T>
 where
     I: Ord,
     T: Clone,
 {
     match value {
         None => None,
-        Some(value) => map_index__N_(value, map_index),
+        Some(value) => map_index_N_(value, map_index),
     }
 }
 
-pub fn map_index_N_N_N<I, T>(
+pub fn map_indexNNN<I, T>(
     value: Option<BTreeMap<I, Option<T>>>,
     map_index: Option<I>,
 ) -> Option<T>
@@ -599,6 +599,6 @@ where
     let map_index = map_index?;
     match value {
         None => None,
-        Some(value) => map_index__N_(value, map_index),
+        Some(value) => map_index_N_(value, map_index),
     }
 }

@@ -85,7 +85,7 @@ pub fn input_transport_config_to_endpoint(
             Some(_) => Ok(Some(Box::new(KafkaFtInputEndpoint::new(config)?))),
         },
         #[cfg(not(feature = "with-kafka"))]
-        TransportConfig::KafkaInput(config) => Ok(None),
+        TransportConfig::KafkaInput(_) => Ok(None),
         TransportConfig::UrlInput(config) => Ok(Some(Box::new(UrlInputEndpoint::new(config)))),
         TransportConfig::S3Input(config) => Ok(Some(Box::new(S3InputEndpoint::new(config)))),
         TransportConfig::Datagen(config) => {
@@ -96,7 +96,7 @@ pub fn input_transport_config_to_endpoint(
             Ok(Some(Box::new(NexmarkEndpoint::new(config.clone()))))
         }
         #[cfg(not(feature = "with-nexmark"))]
-        TransportConfig::Nexmark(config) => Ok(None),
+        TransportConfig::Nexmark(_) => Ok(None),
         TransportConfig::FileOutput(_)
         | TransportConfig::KafkaOutput(_)
         | TransportConfig::DeltaTableInput(_)
