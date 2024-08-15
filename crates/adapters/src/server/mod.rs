@@ -24,7 +24,7 @@ use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
 use futures_util::FutureExt;
-use log::{debug, error, info, log, warn, Level};
+use log::{debug, error, info, log, trace, warn, Level};
 use minitrace::collector::Config;
 use pipeline_types::{format::json::JsonFlavor, transport::http::EgressMode};
 use pipeline_types::{query::OutputQuery, transport::http::SERVER_PORT_FILE};
@@ -223,7 +223,7 @@ where
         let state = state.clone();
         build_app(
             App::new().wrap_fn(|req, srv| {
-                debug!("Request: {} {}", req.method(), req.path());
+                trace!("Request: {} {}", req.method(), req.path());
                 srv.call(req).map(|res| {
                     match &res {
                         Ok(response) => {
@@ -396,22 +396,32 @@ where
 
     // Create env logger.
     let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
-    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
-        .format(move |buf, record| {
-            let t = chrono::Utc::now();
-            let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
-            writeln!(
-                buf,
-                "{t} {} {pipeline_name} {}",
-                buf.default_styled_level(record.level()),
-                record.args()
-            )
-        })
-        .try_init()
-        .unwrap_or_else(|e| {
-            // This happens in unit tests when another test has initialized logging.
-            eprintln!("Failed to initialize logging: {e}.")
-        });
+    // By default, logging is set to INFO level for the Feldera crates:
+    // - "project" for the generated project<uuid> crate
+    // - "dbsp" for the dbsp crate
+    // - "dbsp_adapters" for the adapters crate which is renamed
+    // - "dbsp_nexmark" for the nexmark crate which is renamed
+    // - "pipeline_types" for the pipeline-types crate
+    // For all others, the WARN level is used.
+    // Note that this can be overridden by setting the RUST_LOG environment variable.
+    env_logger::Builder::from_env(Env::default().default_filter_or(
+        "warn,project=info,dbsp=info,dbsp_adapters=info,dbsp_nexmark=info,pipeline_types=info",
+    ))
+    .format(move |buf, record| {
+        let t = chrono::Utc::now();
+        let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
+        writeln!(
+            buf,
+            "{t} {} {pipeline_name} {}",
+            buf.default_styled_level(record.level()),
+            record.args()
+        )
+    })
+    .try_init()
+    .unwrap_or_else(|e| {
+        // This happens in unit tests when another test has initialized logging.
+        eprintln!("Failed to initialize logging: {e}.")
+    });
     let _ = loginit_sender.send(());
 
     if config.global.tracing {
@@ -464,7 +474,7 @@ where
     );
     *state.controller.lock().unwrap() = Some(controller);
 
-    info!("Pipeline initialization complete.");
+    info!("Pipeline initialization complete");
     *state.phase.write().unwrap() = PipelinePhase::InitializationComplete;
 
     Ok(())

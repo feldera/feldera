@@ -43,7 +43,7 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use futures_util::FutureExt;
-use log::{debug, error, info, log, Level};
+use log::{error, info, log, trace, Level};
 use std::{env, net::TcpListener, sync::Arc};
 use tokio::sync::Mutex;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
@@ -395,7 +395,7 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
                     .app_data(auth_configuration.clone())
                     .app_data(client)
                     .wrap_fn(|req, srv| {
-                        debug!("Request: {} {}", req.method(), req.path());
+                        trace!("Request: {} {}", req.method(), req.path());
                         srv.call(req).map(log_response)
                     })
                     .wrap(api_config.cors())
@@ -411,7 +411,7 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
                     .app_data(state.clone())
                     .app_data(client)
                     .wrap_fn(|req, srv| {
-                        debug!("Request: {} {}", req.method(), req.path());
+                        trace!("Request: {} {}", req.method(), req.path());
                         srv.call(req).map(log_response)
                     })
                     .wrap(api_config.cors())
@@ -437,7 +437,7 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
 ██      ██      ██      ██   ██ ██      ██  ██  ██   ██
 ██      ███████ ███████ ██████  ███████ ██   ██ ██   ██
 
-Web UI URL: {}
+Web console URL: {}
 API server URL: {}
 Documentation: https://www.feldera.com/docs/
 Version: {}
