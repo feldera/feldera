@@ -23,7 +23,7 @@ use rdkafka::{
 use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{channel, Sender};
-use std::thread::{available_parallelism, JoinHandle};
+use std::thread::{self, available_parallelism, JoinHandle};
 use std::{
     collections::HashSet,
     sync::{atomic::Ordering, Arc, Mutex, Weak},
@@ -31,7 +31,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-const POLL_TIMEOUT: Duration = Duration::from_millis(100);
+/// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
+const POLL_TIMEOUT: Duration = Duration::from_millis(5);
 
 // Size of the circular buffer used to pass errors from ClientContext
 // to the worker thread.
@@ -50,7 +51,7 @@ impl KafkaInputEndpoint {
     }
 }
 
-struct KafkaInputReader(Arc<KafkaInputReaderInner>);
+struct KafkaInputReader(Arc<KafkaInputReaderInner>, JoinHandle<()>);
 
 /// Client context used to intercept rebalancing events.
 ///
@@ -307,8 +308,8 @@ impl KafkaInputReader {
         }
 
         let endpoint_clone = inner.clone();
-        spawn(move || KafkaInputReader::poller_thread(endpoint_clone, consumer));
-        Ok(KafkaInputReader(inner))
+        let poller = spawn(move || KafkaInputReader::poller_thread(endpoint_clone, consumer));
+        Ok(KafkaInputReader(inner, poller))
     }
 
     /// The main poller thread for a Kafka input. Polls `endpoint` as long as
@@ -327,37 +328,57 @@ impl KafkaInputReader {
         let mut partition_eofs = HashSet::new();
         let (feedback_sender, feedback_receiver) = channel();
         let should_exit = Arc::new(AtomicBool::new(false));
-        let mut threads = Vec::with_capacity(n_threads - 1);
+        let mut threads: Vec<HelperThread> = Vec::with_capacity(n_threads - 1);
+
+        // Create the rest of threads (start from 1 instead of 0
+        // because we're one of the threads).
+        for _ in 1..n_threads {
+            threads.push(HelperThread::new(
+                Arc::clone(&endpoint),
+                consumer.fork(),
+                Arc::clone(&should_exit),
+                feedback_sender.clone(),
+            ));
+        }
+
         loop {
             match endpoint.state() {
                 PipelineState::Paused if actual_state != PipelineState::Paused => {
-                    actual_state = PipelineState::Paused;
-                    if let Err(e) = endpoint.pause_partitions() {
-                        let (_fatal, e) = endpoint.refine_error(e);
-                        consumer.error(true, e);
-                        return;
+                    // Pausing partitions is a relatively expensive operation, since it discards internal
+                    // rdkafka buffers.  We have to do it, since rdkafka requires us to continue polling
+                    // in order to process control traffic.  We avoid pausing partitions when the connector
+                    // is getting paused for less than 3s.  It should be ok not to poll for this long.
+                    let start = Instant::now();
+                    while endpoint.state() == PipelineState::Paused
+                        && start.elapsed() < Duration::from_millis(3000)
+                    {
+                        thread::park_timeout(Duration::from_millis(10));
                     }
-                    threads.clear();
+                    if endpoint.state() == PipelineState::Paused {
+                        if let Err(e) = endpoint.pause_partitions() {
+                            let (_fatal, e) = endpoint.refine_error(e);
+                            consumer.error(true, e);
+                            return;
+                        }
+                        actual_state = PipelineState::Paused;
+                    } else {
+                        for thread in threads.iter() {
+                            thread.unpark();
+                        }
+                    }
                 }
                 PipelineState::Running if actual_state != PipelineState::Running => {
                     actual_state = PipelineState::Running;
+
+                    for thread in threads.iter() {
+                        thread.unpark();
+                    }
+
                     if let Err(e) = endpoint.resume_partitions() {
                         let (_fatal, e) = endpoint.refine_error(e);
                         consumer.error(true, e);
                         return;
                     };
-
-                    // Create the rest of threads (start from 1 instead of 0
-                    // because we're one of the threads).
-                    should_exit.store(false, Ordering::Release);
-                    for _ in 1..n_threads {
-                        threads.push(HelperThread::new(
-                            Arc::clone(&endpoint),
-                            consumer.fork(),
-                            Arc::clone(&should_exit),
-                            feedback_sender.clone(),
-                        ));
-                    }
                 }
                 PipelineState::Terminated => return,
                 _ => {}
@@ -426,10 +447,20 @@ impl HelperThread {
             join_handle: {
                 Some(spawn(move || {
                     while !should_exit.load(Ordering::Acquire) {
-                        endpoint.poll(&mut consumer, &feedback_sender);
+                        if endpoint.state() == PipelineState::Running {
+                            endpoint.poll(&mut consumer, &feedback_sender);
+                        } else {
+                            thread::park();
+                        }
                     }
                 }))
             },
+        }
+    }
+
+    fn unpark(&self) {
+        if let Some(h) = &self.join_handle {
+            h.thread().unpark()
         }
     }
 }
@@ -444,7 +475,11 @@ impl Drop for HelperThread {
     /// that long once.
     fn drop(&mut self) {
         self.should_exit.store(true, Ordering::Release);
-        let _ = self.join_handle.take().map(|handle| handle.join());
+
+        let _ = self.join_handle.take().map(|handle| {
+            handle.thread().unpark();
+            handle.join()
+        });
     }
 }
 
@@ -483,11 +518,13 @@ impl InputReader for KafkaInputReader {
 
     fn start(&self, _step: Step) -> AnyResult<()> {
         self.0.set_state(PipelineState::Running);
+        self.1.thread().unpark();
         Ok(())
     }
 
     fn disconnect(&self) {
         self.0.set_state(PipelineState::Terminated);
+        self.1.thread().unpark();
     }
 }
 
