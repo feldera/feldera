@@ -512,16 +512,22 @@ where
         Self::Merger::new_merger(self, other, dst_hint)
     }
 
-    /// Merges `self` with `other` by running merger to completion.
+    /// Merges `self` with `other` by running merger to completion, applying
+    /// `key_filter` and `value_filter`.
     ///
     /// We keep the merge output in memory on the assumption that it's primarily
     /// spine merges that should be kept on storage, under the theory that other
     /// merges are likely to be large if large batches are passing through the
     /// pipeline.
-    fn merge(&self, other: &Self) -> Self {
+    fn merge(
+        &self,
+        other: &Self,
+        key_filter: &Option<Filter<Self::Key>>,
+        value_filter: &Option<Filter<Self::Val>>,
+    ) -> Self {
         let mut fuel = isize::MAX;
         let mut merger = Self::Merger::new_merger(self, other, Some(BatchLocation::Memory));
-        merger.work(self, other, &None, &None, &mut fuel);
+        merger.work(self, other, key_filter, value_filter, &mut fuel);
         merger.done()
     }
 
@@ -710,8 +716,19 @@ where
     fn done(self) -> Output;
 }
 
-/// Merges all of the batches in `batches` and returns the merged result.
-pub fn merge_batches<B, T>(factories: &B::Factories, batches: T) -> B
+/// Merges all of the batches in `batches`, applying `key_filter` and
+/// `value_filter`, and returns the merged result.
+///
+/// The filters won't be applied to batches that don't get merged at all, that
+/// is, if `batches` contains only one non-empty batch, or if it contains two
+/// small batches that merge to become an empty batch alongside a third larger
+/// batch, etc.
+pub fn merge_batches<B, T>(
+    factories: &B::Factories,
+    batches: T,
+    key_filter: &Option<Filter<B::Key>>,
+    value_filter: &Option<Filter<B::Val>>,
+) -> B
 where
     T: IntoIterator<Item = B>,
     B: Batch,
@@ -726,7 +743,7 @@ where
     while batches.len() > 1 {
         let a = batches.pop().unwrap();
         let b = batches.pop().unwrap();
-        let new = a.merge(&b);
+        let new = a.merge(&b, key_filter, value_filter);
         if !new.is_empty() {
             let new_len = new.len();
             let position = batches

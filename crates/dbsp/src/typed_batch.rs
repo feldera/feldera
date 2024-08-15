@@ -345,7 +345,7 @@ where
 
     /// Merge `self` with `other`.
     pub fn merge(&self, other: &Self) -> Self {
-        Self::new(self.inner.merge(&other.inner))
+        Self::new(self.inner.merge(&other.inner, &None, &None))
     }
 }
 

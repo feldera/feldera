@@ -814,7 +814,7 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
-    result: TestBatch<K, V, T, R>,
+    data: Vec<((Box<K>, Box<V>, T), Box<R>)>,
 }
 
 impl<K, V, T, R> Merger<K, V, T, R, TestBatch<K, V, T, R>> for TestBatchMerger<K, V, T, R>
@@ -825,38 +825,46 @@ where
     T: Timestamp,
 {
     fn new_merger(
-        source1: &TestBatch<K, V, T, R>,
-        source2: &TestBatch<K, V, T, R>,
+        _source1: &TestBatch<K, V, T, R>,
+        _source2: &TestBatch<K, V, T, R>,
         _dst_hint: Option<BatchLocation>,
     ) -> Self {
-        let data = source1
+        Self { data: Vec::new() }
+    }
+
+    fn work(
+        &mut self,
+        source1: &TestBatch<K, V, T, R>,
+        source2: &TestBatch<K, V, T, R>,
+        key_filter: &Option<Filter<K>>,
+        value_filter: &Option<Filter<V>>,
+        _fuel: &mut isize,
+    ) {
+        self.data = source1
             .data
             .iter()
             .chain(source2.data.iter())
+            .filter(|((k, v, _t), _r)| {
+                fn include<K: ?Sized>(x: &Box<K>, filter: &Option<Filter<K>>) -> bool {
+                    match filter {
+                        Some(filter) => filter(x),
+                        None => true,
+                    }
+                }
+
+                include(k, key_filter) && include(v, value_filter)
+            })
             .map(|((k, v, t), r)| {
                 (
                     (clone_box(k.as_ref()), clone_box(v.as_ref()), t.clone()),
                     clone_box(r.as_ref()),
                 )
             })
-            .collect::<Vec<_>>();
-        let result = TestBatch::from_data(&data);
-
-        Self { result }
-    }
-
-    fn work(
-        &mut self,
-        _source1: &TestBatch<K, V, T, R>,
-        _source2: &TestBatch<K, V, T, R>,
-        _key_filter: &Option<Filter<K>>,
-        _value_filter: &Option<Filter<V>>,
-        _fuel: &mut isize,
-    ) {
+            .collect();
     }
 
     fn done(self) -> TestBatch<K, V, T, R> {
-        self.result
+        TestBatch::from_data(&self.data)
     }
 }
 
@@ -1278,14 +1286,9 @@ where
         if let Some(bound) = &self.lower_key_bound {
             batch.truncate_keys_below(bound.as_ref());
         }
-        if let Some(filter) = &self.value_filter {
-            batch.retain_values(filter.clone());
-        }
-        if let Some(filter) = &self.key_filter {
-            batch.retain_keys(filter.clone());
-        }
-
-        self.data = self.merge(&batch).data;
+        self.data = self
+            .merge(&batch, &self.key_filter, &self.value_filter)
+            .data;
     }
 
     fn clear_dirty_flag(&mut self) {}
