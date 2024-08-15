@@ -15,7 +15,7 @@ use crate::db::types::tenant::TenantId;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
-use log::{debug, info};
+use log::{debug, info, log, Level};
 use pipeline_types::config::{PipelineConfig, RuntimeConfig};
 use pipeline_types::error::ErrorResponse;
 use tokio_postgres::NoTls;
@@ -769,11 +769,20 @@ impl StoragePostgres {
 
     /// Run database migrations
     pub async fn run_migrations(&self) -> Result<(), DBError> {
-        info!("Running DB migrations");
+        debug!("Applying database migrations if needed...");
         let mut client = self.pool.get().await?;
-        embedded::migrations::runner()
+        let report = embedded::migrations::runner()
             .run_async(&mut **client)
             .await?;
+        log!(
+            if report.applied_migrations().is_empty() {
+                Level::Debug
+            } else {
+                Level::Info
+            },
+            "Database migrations finished: {} migrations were applied",
+            report.applied_migrations().len()
+        );
         let default_tenant = TenantRecord::default();
         self.get_or_create_tenant_id(
             default_tenant.id.0,

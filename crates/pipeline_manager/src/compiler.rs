@@ -510,7 +510,7 @@ inherits = "release"
         config: &CompilerConfig,
         db: &Arc<Mutex<StoragePostgres>>,
     ) -> Result<(), DBError> {
-        info!("Reconciling local state with API state");
+        debug!("Reconciling local compiler state with API state...");
         let mut map: HashSet<(Uuid, i64)> = HashSet::new();
         let read_dir = fs::read_dir(config.binaries_dir()).await;
         match read_dir {
@@ -598,6 +598,7 @@ inherits = "release"
                 .await?;
             }
         }
+        debug!("Local compiler state has been reconciled with API state");
         Ok(())
     }
 

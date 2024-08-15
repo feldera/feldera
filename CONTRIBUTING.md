@@ -230,6 +230,17 @@ Here are some guidelines when contributing code that affects this database's sch
 * Do not modify an existing migration file. If you want to evolve the schema, add a new SQL or rust file to the migrations folder following [refinery's versioning and naming scheme](https://docs.rs/refinery/latest/refinery/#usage). The migration script should update an existing schema as opposed to assuming a clean slate. For example, use `ALTER TABLE` to add a new column to an existing table and fill that column for existing rows with the appropriate defaults.
 * If you add a new migration script `V{i}`, add tests for migrations from `V{i-1}` to `V{i}`. For example, add tests that invoke the pipeline manager APIs before and after the migration.
 
+## Logging
+
+By default, the pipeline-manager and pipelines create an `env_logger` which logs
+the Feldera crates at INFO level and all other crates at WARN level.
+This can be overridden by setting the `RUST_LOG` environment variable.
+For example, the following would be the same as the default with additionally
+backtrace enabled:
+
+```bash
+RUST_BACKTRACE=1 RUST_LOG=warn,pipeline_manager=info,pipeline_types=info,project=info,dbsp=info,dbsp_adapters=info,dbsp_nexmark=info cargo run --package=pipeline-manager --features pg-embed --bin pipeline-manager -- --dev-mode
+```
 
 ## Release process
 
