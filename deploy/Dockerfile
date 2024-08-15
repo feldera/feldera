@@ -122,6 +122,7 @@ COPY --chown=feldera Cargo.lock .feldera/cargo_workspace/Cargo.lock
 COPY crates/dbsp lib/crates/dbsp
 COPY crates/pipeline-types lib/crates/pipeline-types
 COPY crates/adapters lib/crates/adapters
+COPY crates/nexmark lib/crates/nexmark
 # Storage crate got folded into the dbsp crate for now. Revert if this changes.
 # COPY crates/feldera-storage lib/crates/feldera-storage
 COPY README.md lib/README.md
