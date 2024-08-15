@@ -15,11 +15,10 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** Parse tree for {@code CREATE VIEW} statement. */
-// Ideally we would inherit org.apache.calcite.sql.ddl.SqlCreateView,
-// but the constructor isn't public.
-// We just need an extra 'local' field.
-public class SqlCreateLocalView extends SqlCreate {
+/** Parse tree for {@code CREATE VIEW} statement.
+    Ideally we would inherit {@link org.apache.calcite.sql.ddl.SqlCreateView}
+    but the constructor isn't public. */
+public class SqlCreateView extends SqlCreate {
     public enum ViewKind {
         /** For materialized views the DBSP program will keep the full contents */
         MATERIALIZED,
@@ -30,7 +29,7 @@ public class SqlCreateLocalView extends SqlCreate {
     }
 
     public final SqlIdentifier name;
-    public final ViewKind kind;
+    public final ViewKind viewKind;
     public final @Nullable SqlNodeList columnList;
     public final SqlNode query;
     @Nullable public final SqlNodeList connectorProperties;
@@ -38,14 +37,14 @@ public class SqlCreateLocalView extends SqlCreate {
     private static final SqlOperator OPERATOR =
             new SqlSpecialOperator("CREATE VIEW", SqlKind.CREATE_VIEW);
 
-    public SqlCreateLocalView(SqlParserPos pos, boolean replace, ViewKind kind, SqlIdentifier name,
-                              @Nullable SqlNodeList columnList, @Nullable SqlNodeList connectorProperties,
-                              SqlNode query) {
+    public SqlCreateView(SqlParserPos pos, boolean replace, ViewKind viewKind, SqlIdentifier name,
+                         @Nullable SqlNodeList columnList, @Nullable SqlNodeList connectorProperties,
+                         SqlNode query) {
         super(OPERATOR, pos, replace, false);
         this.name = Objects.requireNonNull(name, "name");
         this.columnList = columnList; // may be null
         this.query = Objects.requireNonNull(query, "query");
-        this.kind = kind;
+        this.viewKind = viewKind;
         this.connectorProperties = connectorProperties;
     }
 
@@ -60,7 +59,7 @@ public class SqlCreateLocalView extends SqlCreate {
         } else {
             writer.keyword("CREATE");
         }
-        switch (this.kind) {
+        switch (this.viewKind) {
             case LOCAL:
                 writer.keyword("LOCAL");
                 break;

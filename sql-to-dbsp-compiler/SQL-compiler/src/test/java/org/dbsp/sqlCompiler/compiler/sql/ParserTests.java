@@ -31,8 +31,8 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateLocalView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
 import org.junit.Assert;
@@ -68,19 +68,19 @@ public class ParserTests {
 
         node = calcite.parse(ddl1);
         Assert.assertNotNull(node);
-        Assert.assertTrue(node instanceof SqlCreateLocalView);
-        SqlCreateLocalView clv = (SqlCreateLocalView) node;
+        Assert.assertTrue(node instanceof SqlCreateView);
+        SqlCreateView clv = (SqlCreateView) node;
         Assert.assertNull(clv.connectorProperties);
 
         node = calcite.parse(ddl2);
         Assert.assertNotNull(node);
-        Assert.assertTrue(node instanceof SqlCreateLocalView);
-        Assert.assertSame(SqlCreateLocalView.ViewKind.LOCAL, ((SqlCreateLocalView) node).kind);
+        Assert.assertTrue(node instanceof SqlCreateView);
+        Assert.assertSame(SqlCreateView.ViewKind.LOCAL, ((SqlCreateView) node).viewKind);
 
         node = calcite.parse(ddl3);
         Assert.assertNotNull(node);
-        Assert.assertTrue(node instanceof SqlCreateLocalView);
-        Assert.assertSame(SqlCreateLocalView.ViewKind.MATERIALIZED, ((SqlCreateLocalView) node).kind);
+        Assert.assertTrue(node instanceof SqlCreateView);
+        Assert.assertSame(SqlCreateView.ViewKind.MATERIALIZED, ((SqlCreateView) node).viewKind);
     }
 
     @Test
@@ -113,8 +113,8 @@ public class ParserTests {
 
         node = calcite.parse(view);
         Assert.assertNotNull(node);
-        Assert.assertTrue(node instanceof SqlCreateLocalView);
-        SqlCreateLocalView v = (SqlCreateLocalView) node;
+        Assert.assertTrue(node instanceof SqlCreateView);
+        SqlCreateView v = (SqlCreateView) node;
         Assert.assertNotNull(v.connectorProperties);
         Assert.assertEquals(6, v.connectorProperties.size());
     }

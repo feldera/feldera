@@ -153,6 +153,15 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void materializedProperty() {
+        String ddl = "CREATE VIEW V WITH ('materialized' = 'true') AS SELECT 5;";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;
+        compiler.compileStatements(ddl);
+        TestUtil.assertMessagesContain(compiler, "please use 'CREATE MATERIALIZED VIEW' instead");
+    }
+
+    @Test
     public void nullKey() {
         String ddl = """
                CREATE TABLE T (

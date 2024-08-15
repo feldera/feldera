@@ -1,13 +1,22 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
+import com.google.common.collect.ImmutableList;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.schema.ScannableTable;
+import org.apache.calcite.schema.Statistic;
 import org.apache.calcite.schema.impl.AbstractTable;
+import org.apache.calcite.util.ImmutableBitSet;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /** A description of a table wrapping the attributes that Calcite needs
  * to compile SQL programs that refer to this table. */
@@ -16,6 +25,43 @@ public class CalciteTableDescription extends AbstractTable implements ScannableT
 
     public CalciteTableDescription(IHasSchema schema) {
         this.schema = schema;
+    }
+
+    @Override
+    public Statistic getStatistic() {
+        Statistic result = new Statistic() {
+            @Override
+            public @Nullable Double getRowCount() {
+                PropertyList properties = CalciteTableDescription.this.schema.getProperties();
+                if (properties == null)
+                    return null;
+                SqlFragment expectedSize = properties.getPropertyValue("expected_size");
+                if (expectedSize == null)
+                    return null;
+                try {
+                    long size = Long.parseLong(expectedSize.getString());
+                    return (double) size;
+                } catch (NumberFormatException ex) {
+                    return null;
+                }
+            }
+
+            @Override
+            public @Nullable List<ImmutableBitSet> getKeys() {
+                List<Integer> indexes = new ArrayList<>();
+                int index = 0;
+                for (RelColumnMetadata colum : CalciteTableDescription.this.schema.getColumns()) {
+                    if (colum.isPrimaryKey)
+                        indexes.add(index);
+                    index++;
+                }
+                if (indexes.isEmpty())
+                    return null;
+                ImmutableBitSet keys = ImmutableBitSet.of(indexes);
+                return ImmutableList.of(keys);
+            }
+        };
+        return result;
     }
 
     @Override

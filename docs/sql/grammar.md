@@ -131,8 +131,17 @@ See [Materialized Tables and Views](materialized.md) for more details.
 
 #### Append-only tables
 
+The `append_only` Boolean property describes tables that only support
+insertions.  Updates or deletes are not allowed in such tables.
+
 See [Streaming SQL Extensions, append-only
 tables](streaming.md#append-only-tables)
+
+#### Size hints
+
+The property `expected_size` can be used to pass information to the
+SQL compiler about the expected size of a table in steady state
+operation.  The value of this property should be an integer value.
 
 ### LATENESS
 

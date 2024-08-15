@@ -5,7 +5,7 @@ engines, we offer a few extensions to standard SQL.
 
 ## Append-only tables
 
-By specifying the property `'appendOnly' = 'true'` a user instructs
+By specifying the property `'append_only' = 'true'` a user instructs
 Feldera that a table will only receive `INSERT` updates (no deletions
 or updates).  This type of table is frequently used in streaming
 programs.  This usage pattern enables the compiler to apply additional
@@ -17,7 +17,7 @@ Example
 CREATE TABLE T (
    ...
 ) WITH (
-   'appendOnly' = 'true'
+   'append_only' = 'true'
 );
 ```
 
