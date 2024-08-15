@@ -528,12 +528,20 @@ flink-benchmark:
     RUN apt-get -y install maven bc
     RUN benchmark/flink/setup-flink.sh
 
-    RUN echo "when,runner,mode,language,name,num_cores,num_events,elapsed,peak_memory_kb,cpu_secs" >> flink_results.csv
-
+    # Run with rocksdb
+    COPY benchmark/flink/flink-conf-rocksdb.yaml benchmark/flink/flink-conf.yaml
     WITH DOCKER
         RUN cd benchmark && ./run-nexmark.sh -r flink --query all --events 100M && mv nexmark.csv flink_results.csv
     END
-    SAVE ARTIFACT benchmark/flink_results.csv AS LOCAL .
+    RUN cat benchmark/flink/flink-conf.yaml
+    SAVE ARTIFACT benchmark/flink_results.csv AS LOCAL flink_results_rocksdb.csv
+
+    # Run with hashmap
+    COPY benchmark/flink/flink-conf-hashmap.yaml benchmark/flink/flink-conf.yaml
+    WITH DOCKER
+        RUN cd benchmark && ./run-nexmark.sh -r flink --query all --events 100M && mv nexmark.csv flink_results.csv
+    END
+    SAVE ARTIFACT benchmark/flink_results.csv AS LOCAL flink_results_hashmap.csv
 
 all-tests:
     BUILD +formatting-check
