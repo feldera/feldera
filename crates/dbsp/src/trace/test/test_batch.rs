@@ -5,7 +5,7 @@
 
 use crate::{
     dynamic::{
-        pair::DynPair, DataTrait, DowncastTrait, DynVec, DynWeightedPairs, Erase, Factory,
+        pair::DynPair, DataTrait, DowncastTrait, DynVec, DynWeightedPairs, Erase, Factory, Vector,
         WeightTrait,
     },
     time::AntichainRef,
@@ -153,6 +153,24 @@ where
             )
         })
         .collect::<Vec<_>>()
+}
+
+pub fn filter<T>(
+    mut tuples: Vec<((Box<T::Key>, Box<T::Val>, T::Time), Box<T::R>)>,
+    trace: &T,
+) -> Vec<((Box<T::Key>, Box<T::Val>, T::Time), Box<T::R>)>
+where
+    T: Trace,
+{
+    if let Some(filter) = trace.value_filter() {
+        tuples.retain(|((_k, v, _t), _r)| filter(v.as_ref()));
+    }
+
+    if let Some(filter) = trace.key_filter() {
+        tuples.retain(|((k, _v, _t), _r)| filter(k.as_ref()));
+    }
+
+    tuples
 }
 
 /// Convert any batch into a vector of tuples.
@@ -326,30 +344,25 @@ where
     T1: Trace,
     T2: Trace<Key = T1::Key, Val = T1::Val, Time = T1::Time, R = T1::R>,
 {
-    let mut tuples1 = batch_to_tuples(trace1);
-    assert_eq!(tuples1, batch_to_tuples_reverse_vals(trace1));
-    assert_eq!(tuples1, batch_to_tuples_reverse_keys(trace1));
-    assert_eq!(tuples1, batch_to_tuples_reverse_keys_vals(trace1));
+    let tuples1 = filter(batch_to_tuples(trace1), trace1);
+    assert_eq!(
+        tuples1,
+        filter(batch_to_tuples_reverse_vals(trace1), trace1)
+    );
+    assert_eq!(
+        tuples1,
+        filter(batch_to_tuples_reverse_keys(trace1), trace1)
+    );
+    assert_eq!(
+        tuples1,
+        filter(batch_to_tuples_reverse_keys_vals(trace1), trace1)
+    );
 
-    if let Some(filter) = trace1.value_filter() {
-        tuples1.retain(|((_k, v, _t), _r)| filter(v.as_ref()));
-    }
-
-    if let Some(filter) = trace1.key_filter() {
-        tuples1.retain(|((k, _v, _t), _r)| filter(k.as_ref()));
-    }
-
-    let mut tuples2 = batch_to_tuples(trace2);
-    assert_eq!(tuples2, batch_to_tuples_reverse_vals(trace2));
-
-    if let Some(filter) = trace2.value_filter() {
-        tuples2.retain(|((_k, v, _t), _r)| filter(v.as_ref()));
-    }
-
-    if let Some(filter) = trace2.key_filter() {
-        tuples2.retain(|((k, _v, _t), _r)| filter(k.as_ref()));
-    }
-
+    let tuples2 = filter(batch_to_tuples(trace2), trace2);
+    assert_eq!(
+        tuples2,
+        filter(batch_to_tuples_reverse_vals(trace2), trace2)
+    );
     assert_eq!(tuples1, tuples2);
 }
 
@@ -1365,6 +1378,35 @@ where
     sample.clear();
 }
 
+fn collect_keys<T>(trace: &T) -> Box<dyn Vector<T::Key>>
+where
+    T: Trace<Time = ()>,
+{
+    let mut keys = trace.factories().keys_factory().default_box();
+    let batch = TestBatch::<T::Key, T::Val, T::Time, T::R>::from_data(&batch_to_tuples(trace));
+    let mut cursor = batch.cursor();
+    while cursor.key_valid() {
+        keys.push_ref(cursor.key());
+        cursor.step_key();
+    }
+    keys
+}
+
+fn retry_until_stable<T, F, R>(trace: &T, mut f: F) -> (Box<dyn Vector<T::Key>>, R)
+where
+    T: Trace<Time = ()>,
+    F: FnMut() -> R,
+{
+    loop {
+        let before = collect_keys(trace);
+        let retval = f();
+        let after = collect_keys(trace);
+        if before == after {
+            return (before, retval);
+        }
+    }
+}
+
 /// Test random sampling methods.
 ///
 /// Similar to `test_batch_sampling`, but allows the sample
@@ -1372,44 +1414,42 @@ where
 /// can get canceled out).
 pub fn test_trace_sampling<T: Trace<Time = ()>>(trace: &T) {
     let mut sample = trace.factories().keys_factory().default_box();
-
-    let batch = TestBatch::<T::Key, T::Val, T::Time, T::R>::from_data(&batch_to_tuples(trace));
-
-    let mut all_keys = trace.factories().keys_factory().default_box();
-
-    let mut cursor = batch.cursor();
-    while cursor.key_valid() {
-        all_keys.push_ref(cursor.key());
-        cursor.step_key();
-    }
-    let all_keys_set = all_keys.dyn_iter().map(clone_box).collect::<BTreeSet<_>>();
-
     // Sample size 0 - return empty sample.
     trace.sample_keys(&mut thread_rng(), 0, sample.as_mut());
     assert!(sample.is_empty());
     sample.clear();
 
     // Sample size == size - must return all keys in the batch.
-    trace.sample_keys(&mut thread_rng(), trace.key_count(), sample.as_mut());
+    let (all_keys, sample) = retry_until_stable(trace, || {
+        let mut sample = trace.factories().keys_factory().default_box();
+        trace.sample_keys(&mut thread_rng(), trace.key_count(), sample.as_mut());
+        sample
+    });
     assert_eq!(&sample, &all_keys);
-    sample.clear();
 
     // Sample size > trace size - must return all keys in the trace.
-    trace.sample_keys(&mut thread_rng(), trace.key_count() << 1, sample.as_mut());
+    let (all_keys, sample) = retry_until_stable(trace, || {
+        let mut sample = trace.factories().keys_factory().default_box();
+        trace.sample_keys(&mut thread_rng(), trace.key_count() << 1, sample.as_mut());
+        sample
+    });
     assert_eq!(&sample, &all_keys);
-    sample.clear();
 
     // Sample size < trace size - return at most the number of keys requested,
     // no duplicates, all returned keys must belong to the trace.
-    let sample_size = trace.key_count() >> 1;
-    trace.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
-    assert!(sample.len() <= sample_size);
-    assert!(sample.is_sorted_by(&|k1, k2| k1.cmp(k2)));
+    let (all_keys, sample) = retry_until_stable(trace, || {
+        let sample_size = trace.key_count() >> 1;
+        let mut sample = trace.factories().keys_factory().default_box();
+        trace.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
+        assert!(sample.len() <= sample_size);
+        assert!(sample.is_sorted_by(&|k1, k2| k1.cmp(k2)));
+        sample
+    });
     let sample_set = sample.dyn_iter().map(clone_box).collect::<BTreeSet<_>>();
     assert_eq!(sample_set.len(), sample.len());
 
+    let all_keys_set = all_keys.dyn_iter().map(clone_box).collect::<BTreeSet<_>>();
     for key in sample.dyn_iter() {
         assert!(all_keys_set.contains(key));
     }
-    sample.clear();
 }

@@ -775,7 +775,7 @@ where
         2 => {
             // Presumably the specialized merge implementation for the batch
             // type can do better than our general algorithm.
-            merge_batches(factories, batches)
+            merge_batches(factories, batches, &None, &None)
         }
         _ => B::from_cursor(
             CursorList::new(

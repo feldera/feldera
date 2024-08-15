@@ -23,6 +23,7 @@ use crate::storage::{checkpoint_path, write_commit_metadata};
 use crate::trace::spine_async::snapshot::SpineSnapshot;
 use crate::trace::spine_fueled::CommittedSpine;
 use crate::trace::Merger;
+use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
@@ -48,25 +49,12 @@ mod thread;
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;
 
-impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
-    fn from(value: &Spine<B>) -> Self {
-        let mut batches = vec![];
-        for b in &value.batches {
-            if b.persistent_id().is_none() {
-                eprintln!("Batch is missing a persistent id has len: {:?}", b.len());
-            }
-            batches.push(
-                b.persistent_id()
-                    .expect("Persistent spine needs an identifier")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-        }
-
+impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine<B> {
+    fn from((batches, spine): (Vec<String>, &Spine<B>)) -> Self {
         // Transform the lower key bound into a serialized form and store it as a byte vector.
         // This is necessary because the key type is not sized.
         use crate::dynamic::rkyv::SerializeDyn;
-        let lower_key_bound_ser = value.lower_key_bound.as_ref().map(|b| {
+        let lower_key_bound_ser = spine.lower_key_bound.as_ref().map(|b| {
             let mut s: crate::trace::Serializer = crate::trace::Serializer::default();
             b.serialize(&mut s).unwrap();
             s.into_serializer().into_inner().to_vec()
@@ -75,10 +63,10 @@ impl<B: Batch + Send + Sync> From<&Spine<B>> for CommittedSpine<B> {
         CommittedSpine {
             batches,
             merged: Vec::new(),
-            lower: value.lower.clone().into(),
-            upper: value.upper.clone().into(),
+            lower: spine.lower.clone().into(),
+            upper: spine.upper.clone().into(),
             effort: 0,
-            dirty: value.dirty,
+            dirty: spine.dirty,
             lower_key_bound: lower_key_bound_ser,
         }
     }
@@ -189,11 +177,10 @@ where
 
     /// Add `batches` as an (initially) loose batch, which will be merged when
     /// the merger thread has a chance (although it might not be awake).
-    ///
-    /// Returns a copy of all of the batches (whether loose or being merged).
-    fn add_batch_and_get_batches(&mut self, batch: Arc<B>) -> Vec<Arc<B>> {
-        self.add_batches([batch]);
-        self.get_batches()
+    fn add_batch(&mut self, batch: Arc<B>) {
+        debug_assert!(!batch.is_empty());
+        let level = Spine::<B>::size_to_level(batch.len());
+        self.slots[level].loose_batches.push(batch);
     }
 
     fn get_filters(&self) -> (Option<Filter<B::Key>>, Option<Filter<B::Val>>) {
@@ -347,11 +334,10 @@ where
     }
 
     /// Adds `batch` to the shared merging state and wakes up the merger.
-    /// Returns the new complete set of batches to include in the spine.
-    fn add_batch(&self, batch: Arc<B>) -> Vec<Arc<B>> {
-        let batches = self.state.lock().unwrap().add_batch_and_get_batches(batch);
+    fn add_batch(&self, batch: Arc<B>) {
+        debug_assert!(!batch.is_empty());
+        self.state.lock().unwrap().add_batch(batch);
         BackgroundThread::wake();
-        batches
     }
 
     /// Adds `batches` to the shared merging state and wakes up the merger.
@@ -382,7 +368,7 @@ where
 
     /// Starts merging again with `batches`, which are presumably what
     /// [Self::pause] returned.
-    fn resume(&self, batches: impl IntoIterator<Item = Arc<B>>) {
+    fn resume(&self, batches: Vec<Arc<B>>) {
         debug_assert!(self.is_empty());
         self.add_batches(batches);
     }
@@ -543,11 +529,6 @@ where
     #[size_of(skip)]
     factories: B::Factories,
 
-    /// All the batches in the spine, in no particular order.
-    ///
-    /// Each batch must be non-empty.
-    batches: Vec<Arc<B>>,
-
     lower: Antichain<B::Time>,
     upper: Antichain<B::Time>,
     #[size_of(skip)]
@@ -569,7 +550,7 @@ where
     B: Batch + Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for batch in &self.batches {
+        for batch in self.merger.get_batches() {
             writeln!(f, "batch:\n{}", indent(&batch.to_string(), "    "))?
         }
         Ok(())
@@ -642,7 +623,11 @@ where
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
     fn num_entries_shallow(&self) -> usize {
-        self.batches.iter().map(|batch| batch.len()).sum()
+        self.merger
+            .get_batches()
+            .iter()
+            .map(|batch| batch.len())
+            .sum()
     }
 
     fn num_entries_deep(&self) -> usize {
@@ -660,7 +645,7 @@ where
     type R = B::R;
     type Factories = B::Factories;
 
-    type Cursor<'s> = SpineCursor<'s, B>;
+    type Cursor<'s> = SpineCursor<B>;
     // type Consumer = SpineConsumer<B>;
 
     fn factories(&self) -> Self::Factories {
@@ -668,15 +653,24 @@ where
     }
 
     fn key_count(&self) -> usize {
-        self.batches.iter().map(|batch| batch.key_count()).sum()
+        self.merger
+            .get_batches()
+            .iter()
+            .map(|batch| batch.key_count())
+            .sum()
     }
 
     fn len(&self) -> usize {
-        self.batches.iter().map(|batch| batch.len()).sum()
+        self.merger
+            .get_batches()
+            .iter()
+            .map(|batch| batch.len())
+            .sum()
     }
 
     fn approximate_byte_size(&self) -> usize {
-        self.batches
+        self.merger
+            .get_batches()
             .iter()
             .map(|batch| batch.approximate_byte_size())
             .sum()
@@ -691,19 +685,10 @@ where
     }
 
     fn cursor(&self) -> Self::Cursor<'_> {
-        SpineCursor::new(
-            &self.factories,
-            self.batches
-                .iter()
-                .filter(|batch| !batch.is_empty())
-                .map(|batch| batch.cursor())
-                .collect(),
-        )
+        SpineCursor::new_cursor(&self.factories, self.merger.get_batches())
     }
 
     fn truncate_keys_below(&mut self, lower_bound: &Self::Key) {
-        self.pause();
-
         if let Some(bound) = &mut self.lower_key_bound {
             if bound.as_ref() < lower_bound {
                 lower_bound.clone_to(&mut *bound);
@@ -716,9 +701,10 @@ where
         let mut bound = self.factories.key_factory().default_box();
         self.lower_key_bound.as_ref().unwrap().clone_to(&mut *bound);
 
-        self.batches = self
-            .batches
-            .drain(..)
+        let batches = self
+            .merger
+            .pause()
+            .into_iter()
             .map(|batch| {
                 let mut batch = Arc::into_inner(batch).unwrap();
                 batch.truncate_keys_below(&bound);
@@ -726,7 +712,7 @@ where
             })
             .collect();
 
-        self.resume();
+        self.merger.resume(batches);
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -734,7 +720,8 @@ where
         Self::Time: PartialEq<()>,
         RG: Rng,
     {
-        let total_keys = self.key_count();
+        let batches = self.merger.get_batches();
+        let total_keys = batches.iter().map(|batch| batch.key_count()).sum::<usize>();
 
         if sample_size == 0 || total_keys == 0 {
             // Avoid division by zero.
@@ -746,7 +733,7 @@ where
         let mut intermediate = self.factories.keys_factory().default_box();
         intermediate.reserve(sample_size);
 
-        for batch in self.batches.iter() {
+        for batch in &batches {
             batch.sample_keys(
                 rng,
                 ((batch.key_count() as u128) * (sample_size as u128) / (total_keys as u128))
@@ -760,7 +747,7 @@ where
         intermediate.deref_mut().sort_unstable();
         intermediate.dedup();
 
-        let mut cursor = self.cursor();
+        let mut cursor = SpineCursor::new_cursor(&self.factories, batches);
         for key in intermediate.dyn_iter_mut() {
             cursor.seek_key(key);
             if let Some(current_key) = cursor.get_key() {
@@ -806,28 +793,47 @@ where
     }
 }
 
-pub struct SpineCursor<'s, B: Batch + 's> {
-    #[allow(clippy::type_complexity)]
-    cursor: CursorList<B::Key, B::Val, B::Time, B::R, B::Cursor<'s>>,
+#[self_referencing]
+pub struct SpineCursor<B: Batch> {
+    batches: Vec<Arc<B>>,
+    #[borrows(batches)]
+    #[not_covariant]
+    cursor: CursorList<B::Key, B::Val, B::Time, B::R, B::Cursor<'this>>,
 }
 
-impl<'s, B: Batch + 's> Clone for SpineCursor<'s, B> {
+impl<B: Batch> Clone for SpineCursor<B> {
     fn clone(&self) -> Self {
-        Self {
-            cursor: self.cursor.clone(),
+        let batches = self.borrow_batches().clone();
+        let weight_factory = self.with_cursor(|cursor| cursor.weight_factory());
+        SpineCursorBuilder {
+            batches,
+            cursor_builder: |batches| {
+                CursorList::new(
+                    weight_factory,
+                    batches.iter().map(|batch| batch.cursor()).collect(),
+                )
+            },
         }
+        .build()
     }
 }
 
-impl<'s, B: Batch> SpineCursor<'s, B> {
-    fn new(factories: &B::Factories, cursors: Vec<B::Cursor<'s>>) -> Self {
-        Self {
-            cursor: CursorList::new(factories.weight_factory(), cursors),
+impl<B: Batch> SpineCursor<B> {
+    fn new_cursor(factories: &B::Factories, batches: Vec<Arc<B>>) -> Self {
+        SpineCursorBuilder {
+            batches,
+            cursor_builder: |batches| {
+                CursorList::new(
+                    factories.weight_factory(),
+                    batches.iter().map(|batch| batch.cursor()).collect(),
+                )
+            },
         }
+        .build()
     }
 }
 
-impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<'s, B> {
+impl<B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<B> {
     // fn key_vtable(&self) -> &'static VTable<B::Key> {
     //     self.cursor.key_vtable()
     // }
@@ -837,109 +843,109 @@ impl<'s, B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<'s, B> 
     // }
 
     fn weight_factory(&self) -> &'static dyn Factory<B::R> {
-        self.cursor.weight_factory()
+        self.with_cursor(|cursor| cursor.weight_factory())
     }
 
     fn key_valid(&self) -> bool {
-        self.cursor.key_valid()
+        self.with_cursor(|cursor| cursor.key_valid())
     }
 
     fn val_valid(&self) -> bool {
-        self.cursor.val_valid()
+        self.with_cursor(|cursor| cursor.val_valid())
     }
 
     fn key(&self) -> &B::Key {
-        self.cursor.key()
+        self.with_cursor(|cursor| cursor.key())
     }
 
     fn val(&self) -> &B::Val {
-        self.cursor.val()
+        self.with_cursor(|cursor| cursor.val())
     }
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&B::Time, &B::R)) {
-        self.cursor.map_times(logic);
+        self.with_cursor_mut(|cursor| cursor.map_times(logic));
     }
 
     fn map_times_through(&mut self, upper: &B::Time, logic: &mut dyn FnMut(&B::Time, &B::R)) {
-        self.cursor.map_times_through(upper, logic);
+        self.with_cursor_mut(|cursor| cursor.map_times_through(upper, logic));
     }
 
     fn weight(&mut self) -> &B::R
     where
         B::Time: PartialEq<()>,
     {
-        self.cursor.weight()
+        self.with_cursor_mut(|cursor| cursor.weight())
     }
 
     fn map_values(&mut self, logic: &mut dyn FnMut(&B::Val, &B::R))
     where
         B::Time: PartialEq<()>,
     {
-        self.cursor.map_values(logic)
+        self.with_cursor_mut(|cursor| cursor.map_values(logic))
     }
 
     fn step_key(&mut self) {
-        self.cursor.step_key();
+        self.with_cursor_mut(|cursor| cursor.step_key());
     }
 
     fn step_key_reverse(&mut self) {
-        self.cursor.step_key_reverse();
+        self.with_cursor_mut(|cursor| cursor.step_key_reverse());
     }
 
     fn seek_key(&mut self, key: &B::Key) {
-        self.cursor.seek_key(key);
+        self.with_cursor_mut(|cursor| cursor.seek_key(key));
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&B::Key) -> bool) {
-        self.cursor.seek_key_with(predicate);
+        self.with_cursor_mut(|cursor| cursor.seek_key_with(predicate));
     }
 
     fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&B::Key) -> bool) {
-        self.cursor.seek_key_with_reverse(predicate);
+        self.with_cursor_mut(|cursor| cursor.seek_key_with_reverse(predicate));
     }
 
     fn seek_key_reverse(&mut self, key: &B::Key) {
-        self.cursor.seek_key_reverse(key);
+        self.with_cursor_mut(|cursor| cursor.seek_key_reverse(key));
     }
 
     fn step_val(&mut self) {
-        self.cursor.step_val();
+        self.with_cursor_mut(|cursor| cursor.step_val());
     }
 
     fn seek_val(&mut self, val: &B::Val) {
-        self.cursor.seek_val(val);
+        self.with_cursor_mut(|cursor| cursor.seek_val(val));
     }
 
     fn seek_val_with(&mut self, predicate: &dyn Fn(&B::Val) -> bool) {
-        self.cursor.seek_val_with(predicate);
+        self.with_cursor_mut(|cursor| cursor.seek_val_with(predicate));
     }
 
     fn rewind_keys(&mut self) {
-        self.cursor.rewind_keys();
+        self.with_cursor_mut(|cursor| cursor.rewind_keys());
     }
 
     fn fast_forward_keys(&mut self) {
-        self.cursor.fast_forward_keys();
+        self.with_cursor_mut(|cursor| cursor.fast_forward_keys());
     }
 
     fn rewind_vals(&mut self) {
-        self.cursor.rewind_vals();
+        self.with_cursor_mut(|cursor| cursor.rewind_vals());
     }
 
     fn step_val_reverse(&mut self) {
-        self.cursor.step_val_reverse();
+        self.with_cursor_mut(|cursor| cursor.step_val_reverse());
     }
 
     fn seek_val_reverse(&mut self, val: &B::Val) {
-        self.cursor.seek_val_reverse(val);
+        self.with_cursor_mut(|cursor| cursor.seek_val_reverse(val));
     }
 
     fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&B::Val) -> bool) {
-        self.cursor.seek_val_with_reverse(predicate);
+        self.with_cursor_mut(|cursor| cursor.seek_val_with_reverse(predicate));
     }
 
     fn fast_forward_vals(&mut self) {
-        self.cursor.fast_forward_vals();
+        self.with_cursor_mut(|cursor| cursor.fast_forward_vals());
     }
 }
 
@@ -954,32 +960,30 @@ where
     }
 
     fn recede_to(&mut self, frontier: &B::Time) {
-        // Complete all in-progress merges, as we don't have an easy way to update
-        // timestamps in an ongoing merge.
-        self.pause();
-
-        self.batches = self
-            .batches
-            .drain(..)
+        let batches = self
+            .merger
+            .pause()
+            .into_iter()
             .map(|batch| {
                 let mut batch = Arc::into_inner(batch).unwrap();
                 batch.recede_to(frontier);
                 Arc::new(batch)
             })
             .collect();
-
-        self.resume();
+        self.merger.resume(batches);
     }
 
     fn exert(&mut self, _effort: &mut isize) {}
 
-    fn consolidate(mut self) -> Option<B> {
-        self.pause();
+    fn consolidate(self) -> Option<B> {
+        let batches = self
+            .merger
+            .pause()
+            .into_iter()
+            .map(|batch| Arc::into_inner(batch).unwrap());
         let result = merge_batches(
             &self.factories,
-            self.batches
-                .drain(..)
-                .map(|batch| Arc::into_inner(batch).unwrap()),
+            batches,
             &self.key_filter,
             &self.value_filter,
         );
@@ -996,24 +1000,11 @@ where
             batch.truncate_keys_below(bound);
         }
 
-        if batch.is_empty() {
-            // Refresh the set of batches from the merger, in case some merges
-            // completed.
-            self.batches = self.merger.get_batches();
-        } else {
-            // XXX This always inserts the new batch asynchronously. This is
-            // usually what we want to do, but it means that in theory we could
-            // continue building up batches until we run out of memory (or disk
-            // space), if merging is slow. Thus, we should figure out at what
-            // point it makes sense to wait until the backlog is reduced. We
-            // wouldn't have to just block; instead, we could grab some of the
-            // loose batches and do some merging ourselves while we wait,
-            // thereby actually speeding up the merges by devoting two threads
-            // instead of just one.
+        if !batch.is_empty() {
             self.dirty = true;
             self.lower = self.lower.as_ref().meet(batch.lower());
             self.upper = self.upper.as_ref().join(batch.upper());
-            self.batches = self.merger.add_batch(Arc::new(batch));
+            self.merger.add_batch(Arc::new(batch));
         }
     }
 
@@ -1045,13 +1036,31 @@ where
 
     fn commit<P: AsRef<str>>(&mut self, cid: Uuid, persistent_id: P) -> Result<(), Error> {
         // Persist all the batches.
-        for batch in self.batches.iter_mut() {
-            if let Some(persisted) = batch.persisted() {
-                *batch = Arc::new(persisted);
-            }
-        }
+        let batches = self
+            .merger
+            .pause()
+            .into_iter()
+            .map(|batch| {
+                if let Some(persisted) = batch.persisted() {
+                    Arc::new(persisted)
+                } else {
+                    batch
+                }
+            })
+            .collect::<Vec<_>>();
+        let ids = batches
+            .iter()
+            .map(|batch| {
+                batch
+                    .persistent_id()
+                    .expect("The batch should have been persisted")
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        self.merger.resume(batches);
 
-        let committed: CommittedSpine<B> = (self as &Self).into();
+        let committed: CommittedSpine<B> = (ids, self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
         write_commit_metadata(
             Self::checkpoint_file(cid, &persistent_id),
@@ -1136,7 +1145,6 @@ where
             factories: factories.clone(),
             lower: Antichain::from_elem(B::Time::minimum()),
             upper: Antichain::new(),
-            batches: Vec::new(),
             dirty: false,
             lower_key_bound: None,
             key_filter: None,
@@ -1146,16 +1154,14 @@ where
     }
 
     pub fn complete_merges(&mut self) {
-        self.pause();
-        self.resume();
-    }
-
-    fn pause(&mut self) {
-        self.batches = self.merger.pause();
-    }
-
-    fn resume(&mut self) {
-        self.merger.resume(self.batches.iter().map(Arc::clone));
+        let batches = self.merger.pause();
+        let batch = merge_batches(
+            &self.factories,
+            batches.into_iter().map(|b| Arc::unwrap_or_clone(b)),
+            &self.key_filter,
+            &self.value_filter,
+        );
+        self.merger.resume(vec![Arc::new(batch)]);
     }
 
     /// Returns a read-only, non-merging snapshot of the current trace
