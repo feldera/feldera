@@ -61,7 +61,7 @@ def parse_queries(all_queries, arg):
     return queries
 
 def make_connector(topic, suffix):
-    name = "nexmark"
+    name = "kafka_input"
     config = {
         "topics": [topic + suffix],
         "enable.partition.eof": "true",
