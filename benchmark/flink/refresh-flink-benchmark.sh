@@ -8,4 +8,4 @@ mkdir $flink_dir
 cd ../..	
 earthly --verbose -P +flink-benchmark
 cd benchmark/flink
-mv ../../flink_results.csv $flink_dir
+mv ../../flink_results_*.csv $flink_dir

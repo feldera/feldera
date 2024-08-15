@@ -1,0 +1,61 @@
+################################################################################
+#  Licensed to the Apache Software Foundation (ASF) under one
+#  or more contributor license agreements.  See the NOTICE file
+#  distributed with this work for additional information
+#  regarding copyright ownership.  The ASF licenses this file
+#  to you under the Apache License, Version 2.0 (the
+#  "License"); you may not use this file except in compliance
+#  with the License.  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+# limitations under the License.
+################################################################################
+
+taskmanager.memory.process.size: 8G
+jobmanager.rpc.address: nexmark-jobmanager-1
+jobmanager.rpc.port: 6123
+jobmanager.memory.process.size: 8G
+taskmanager.numberOfTaskSlots: 1
+parallelism.default: 8
+io.tmp.dirs: /tmp
+
+#==============================================================================
+# JVM
+#==============================================================================
+
+# JVM options for GC
+env.java.opts: -verbose:gc -XX:NewRatio=3 -XX:+PrintGCDetails -XX:ParallelGCThreads=4
+env.java.opts.jobmanager: -Xloggc:/opt/flink/log/jobmanager-gc.log
+env.java.opts.taskmanager: -Xloggc:/opt/flink/log/taskmanager-gc.log
+
+#==============================================================================
+# State & Checkpoint
+#==============================================================================
+
+state.backend: hashmap
+# for example, hdfs://benchmark01/checkpoint
+state.checkpoints.dir: file:///tmp/checkpoints
+state.backend.rocksdb.localdir: /tmp/rocksdb
+state.backend.incremental: true
+execution.checkpointing.interval: 180000
+execution.checkpointing.mode: EXACTLY_ONCE
+state.backend.local-recovery: true
+
+#==============================================================================
+# Runtime Others
+#==============================================================================
+
+# configuration options for adjusting and tuning table programs.
+table.exec.mini-batch.enabled: true
+table.exec.mini-batch.allow-latency: 2s
+table.exec.mini-batch.size: 50000
+table.optimizer.distinct-agg.split.enabled: true
+
+# disable final checkpoint to avoid test waiting for the last checkpoint complete
+execution.checkpointing.checkpoints-after-tasks-finish.enabled: false
+## EOF ##
