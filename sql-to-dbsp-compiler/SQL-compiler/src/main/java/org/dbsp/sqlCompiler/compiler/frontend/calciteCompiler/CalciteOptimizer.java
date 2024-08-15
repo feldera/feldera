@@ -198,7 +198,9 @@ public class CalciteOptimizer implements IWritesLogs {
                 this.addRules(level,
                         CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
-                        CoreRules.JOIN_PUSH_TRANSITIVE_PREDICATES,
+                        // Below rule crashes with test NaiveIncrementalTests.inTest
+                        // CoreRules.JOIN_PUSH_TRANSITIVE_PREDICATES,
+                        // https://issues.apache.org/jira/browse/CALCITE-5387
                         // TODO: Rule is unsound
                         // https://github.com/feldera/feldera/issues/1702
                         CoreRules.FILTER_INTO_JOIN
