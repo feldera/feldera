@@ -588,10 +588,7 @@ where
     }
 }
 
-pub fn map_indexNNN<I, T>(
-    value: Option<BTreeMap<I, Option<T>>>,
-    map_index: Option<I>,
-) -> Option<T>
+pub fn map_indexNNN<I, T>(value: Option<BTreeMap<I, Option<T>>>, map_index: Option<I>) -> Option<T>
 where
     I: Ord,
     T: Clone,
