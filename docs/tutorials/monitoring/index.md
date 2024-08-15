@@ -62,18 +62,21 @@ step.
 3. **Tracing a Feldera pipeline**
     - Enable/disable tracing and specify the Jaeger endpoint in the pipeline `runtime_config`:
    ```bash
-   curl -i -X PUT http://localhost:8080/v0/pipelines/tracing-pipeline \
+   curl -i -X PATCH http://localhost:8080/v0/pipelines/tracing-pipeline \
    -H 'Content-Type: application/json' \
    -d '{
-     "name": "Traced-Pipeline",
-     "description": "",
-     "program_code": "",
-     "program_config": {},
-     "runtime_config": {"tracing": true, "tracing_endpoint_jaeger": "host.docker.internal:6831"}
+     "runtime_config": {"tracing": true, "tracing_endpoint_jaeger": "host.docker.internal:6831", <other config settings> }
    }'
    ```
     - Use `host.docker.internal:6831` if you are running Feldera in docker or
-      `localhost:6831` if you run Feldera directly.
+      `127.0.0.1:6831` if you run Feldera directly.
+    - Make sure to specify other settings you changed from non-default values in the `runtime_config` as well.
+      `runtime_config` can be retrieved with:
+   ```bash
+   curl -X 'GET' \
+   'http://127.0.0.1:8080/v0/pipelines/tracing-pipeline' \
+   -H 'accept: application/json'
+   ```
 
 ## DBSP Profiles
 
