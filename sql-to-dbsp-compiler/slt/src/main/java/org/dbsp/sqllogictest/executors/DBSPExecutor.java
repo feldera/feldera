@@ -283,12 +283,11 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             dbspQuery = "CREATE VIEW V" + suffix + " AS (" + origQuery + ")";
         this.options.message("Query " + suffix + ":\n"
                         + dbspQuery + "\n", 2);
-        compiler.generateOutputForNextView(false);
         for (SltSqlStatement view: viewPreparation.definitions()) {
-            compiler.compileStatement(view.statement);
+            compiler.compileStatement(view.statement
+                    .replaceAll("(?i)create\\s+view", "create local view"));
             compiler.throwIfErrorsOccurred();
         }
-        compiler.generateOutputForNextView(true);
         compiler.compileStatement(dbspQuery);
         compiler.throwIfErrorsOccurred();
         DBSPCircuit dbsp = compiler.getFinalCircuit("gen" + suffix);

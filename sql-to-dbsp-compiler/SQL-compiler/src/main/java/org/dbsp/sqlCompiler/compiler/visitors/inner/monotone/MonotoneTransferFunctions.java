@@ -20,6 +20,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
@@ -549,6 +550,19 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             this.constantExpressions.add(expression);
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.copyMonotonicity(expression.getType()), reduced);
+        this.set(expression, result);
+    }
+
+    @Override
+    public void postorder(DBSPCustomOrdExpression expression) {
+        MonotoneExpression source = this.get(expression.source);
+        DBSPExpression reduced = source.getReducedExpression();
+        if (this.positiveExpressions.contains(expression.source))
+            this.positiveExpressions.add(expression);
+        if (this.constantExpressions.contains(expression.source))
+            this.constantExpressions.add(expression);
+        MonotoneExpression result = new MonotoneExpression(
+                expression, new WrapperMonotoneType(source.getMonotoneType(), expression.getType()), reduced);
         this.set(expression, result);
     }
 

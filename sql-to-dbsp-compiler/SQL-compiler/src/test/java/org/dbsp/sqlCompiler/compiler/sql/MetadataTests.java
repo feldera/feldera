@@ -504,40 +504,6 @@ public class MetadataTests extends BaseSQLTests {
                 }""", jsonContents);
     }
 
-    @Test @Ignore("Only run if we want to preserve casing for names")
-    public void testCaseSensitive() throws IOException, SQLException {
-        String[] statements = new String[]{
-                """
-                CREATE TABLE MYTABLE (
-                COL1 INT NOT NULL
-                , COL2 DOUBLE NOT NULL
-                )""",
-                "CREATE VIEW V AS SELECT COL1 FROM MYTABLE",
-                """
-                CREATE TABLE yourtable (
-                  column1 INT NOT NULL
-                , column2 DOUBLE NOT NULL
-                )""",
-                "CREATE VIEW V2 AS SELECT column2 FROM yourtable"
-        };
-        File file = createInputScript(statements);
-        File json = File.createTempFile("out", ".json", new File("."));
-        json.deleteOnExit();
-        File tmp = File.createTempFile("out", ".rs", new File("."));
-        tmp.deleteOnExit();
-        CompilerMessages message = CompilerMain.execute(
-                "-js", json.getPath(), "-o", tmp.getPath(), file.getPath());
-        Assert.assertEquals(message.exitCode, 0);
-        ObjectMapper mapper = Utilities.deterministicObjectMapper();
-        JsonNode parsed = mapper.readTree(json);
-        Assert.assertNotNull(parsed);
-        String jsonContents  = Utilities.readFile(json.toPath());
-        Assert.assertTrue(jsonContents.contains("MYTABLE"));  // checks case sensitivity
-        Assert.assertTrue(jsonContents.contains("COL1"));
-        Assert.assertTrue(jsonContents.contains("yourtable"));
-        Assert.assertTrue(jsonContents.contains("column1"));
-    }
-
     @Test
     public void jsonErrorTest() throws IOException, SQLException {
         String[] statements = new String[] {

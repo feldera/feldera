@@ -1,14 +1,16 @@
 #!/bin/bash
 
+set -e
+
 # This script builds the SQL compiler
 # it has an optional argument which specifies whether to build
 # using the current version of Calcite or the next unreleased version
 
-# Default is to use the current version
-NEXT='n'
+# Default is to use the next version
+NEXT='y'
 
 CALCITE_NEXT="1.38.0"
-CALCITE_NEXT_COMMIT="7fa73c0079b03b8cd9657df0058a5743b80c1be9"
+CALCITE_NEXT_COMMIT="b60598b47e86b2b21639d193b374f1d6d4dcd139"
 CALCITE_CURRENT="1.37.0"
 
 usage() {
@@ -40,8 +42,8 @@ done
 if [ ${NEXT} = 'y' ]; then
     update_pom ${CALCITE_NEXT}
     echo "Building calcite"
-    pushd /tmp
-    git clone git@github.com:apache/calcite.git
+    pushd /tmp >/dev/null
+    git clone --quiet https://github.com/apache/calcite.git
     cd calcite
     git reset --hard ${CALCITE_NEXT_COMMIT}
 
@@ -52,15 +54,12 @@ if [ ${NEXT} = 'y' ]; then
     for DIR in core babel server linq4j
     do
         ARTIFACT=calcite-${DIR}
-        mvn install:install-file -Dfile=${DIR}/build/libs/${ARTIFACT}-${VERSION}-SNAPSHOT.jar -DgroupId=${GROUP} -DartifactId=${ARTIFACT} -Dversion=${VERSION} -Dpackaging=jar -DgeneratePom=true
+        mvn install:install-file -Dfile=${DIR}/build/libs/${ARTIFACT}-${VERSION}-SNAPSHOT.jar -DgroupId=${GROUP} -DartifactId=${ARTIFACT} -Dversion=${VERSION} -Dpackaging=jar -DgeneratePom=true -q -B
     done
-    popd
+    popd >/dev/null
     rm -rf /tmp/calcite
 else
     update_pom ${CALCITE_CURRENT}
 fi
 
 mvn package -DskipTests --no-transfer-progress -q -B
-
-
-

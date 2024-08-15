@@ -49,7 +49,7 @@ public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     }
 
     @Override
-    public DBSPType tupleType() {
+    public DBSPType comparedValueType() {
         return this.tupleType;
     }
 

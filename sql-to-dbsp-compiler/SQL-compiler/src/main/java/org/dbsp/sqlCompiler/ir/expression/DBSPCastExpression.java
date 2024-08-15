@@ -90,7 +90,7 @@ public final class DBSPCastExpression extends DBSPExpression {
         DBSPCastExpression otherExpression = other.as(DBSPCastExpression.class);
         if (otherExpression == null)
             return false;
-        return this.source == otherExpression.source &&
+        return context.equivalent(this.source, otherExpression.source) &&
                 this.hasSameType(other);
     }
 }

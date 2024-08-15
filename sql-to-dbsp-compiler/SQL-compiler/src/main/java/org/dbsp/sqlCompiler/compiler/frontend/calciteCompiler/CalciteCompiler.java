@@ -884,14 +884,8 @@ public class CalciteCompiler implements IWritesLogs {
             builder.append("CREATE VIEW TMP0 AS SELECT\n");
             newLineNumber = builder.toString().split("\n").length + 1;
 
-            if (false) {
-                // Switch to this when https://issues.apache.org/jira/browse/CALCITE-6502
-                // is fixed.  This is https://github.com/feldera/feldera/issues/2097
-                String bodyExpression = sources.getFragment(new SourcePositionRange(body.getParserPosition()), false);
-                builder.append(bodyExpression);
-            } else {
-                body.unparse(writer, 0, 0);
-            }
+            String bodyExpression = sources.getFragment(new SourcePositionRange(body.getParserPosition()), false);
+            builder.append(bodyExpression);
             builder.append("\nFROM TMP;");
 
             String sql = builder.toString();

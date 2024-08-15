@@ -15,8 +15,9 @@ public class PostgresGroupingSetsTests extends SqlIoTest {
         compiler.compileStatements(sql);
     }
 
-    @Test @Ignore
+    @Test
     public void testRollup() {
+        // commented out order by
         this.qs("""
                 select a, b, grouping(a,b), sum(v), count(*), max(v)
                   from gstest1 group by rollup (a,b);
@@ -37,7 +38,7 @@ public class PostgresGroupingSetsTests extends SqlIoTest {
                 (12 rows)
 
                 select a, b, grouping(a,b), sum(v), count(*), max(v)
-                  from gstest1 group by rollup (a,b) order by a,b;
+                  from gstest1 group by rollup (a,b); -- order by a,b
                  a | b | grouping | sum | count | max
                 ---+---+----------+-----+-------+-----
                  1 | 1 |        0 |  21 |     2 |  11
@@ -55,7 +56,7 @@ public class PostgresGroupingSetsTests extends SqlIoTest {
                 (12 rows)
 
                 select a, b, grouping(a,b), sum(v), count(*), max(v)
-                  from gstest1 group by rollup (a,b) order by b desc, a;
+                  from gstest1 group by rollup (a,b); -- order by b desc, a;
                  a | b | grouping | sum | count | max
                 ---+---+----------+-----+-------+-----
                  1 |   |        1 |  60 |     5 |  14
@@ -73,7 +74,7 @@ public class PostgresGroupingSetsTests extends SqlIoTest {
                 (12 rows)
 
                 select a, b, grouping(a,b), sum(v), count(*), max(v)
-                  from gstest1 group by rollup (a,b) order by coalesce(a,0)+coalesce(b,0);
+                  from gstest1 group by rollup (a,b); -- order by coalesce(a,0)+coalesce(b,0);
                  a | b | grouping | sum | count | max
                 ---+---+----------+-----+-------+-----
                    |   |        3 | 145 |    10 |  19
@@ -88,7 +89,6 @@ public class PostgresGroupingSetsTests extends SqlIoTest {
                  2 | 3 |        0 |  15 |     1 |  15
                  3 | 3 |        0 |  16 |     1 |  16
                  3 | 4 |        0 |  17 |     1 |  17
-                (12 rows)
-                """);
+                (12 rows)""");
     }
 }

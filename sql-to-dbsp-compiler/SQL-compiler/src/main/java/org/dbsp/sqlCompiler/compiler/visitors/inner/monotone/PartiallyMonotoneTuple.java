@@ -38,6 +38,15 @@ public class PartiallyMonotoneTuple
         }
     }
 
+    /** Create a partially monotone tuple where no field is monotone */
+    public static PartiallyMonotoneTuple noMonotoneFields(DBSPTypeTupleBase tuple) {
+        int keySize = tuple.size();
+        List<IMaybeMonotoneType> parts = new ArrayList<>();
+        for (int i = 0; i < keySize; i++)
+            parts.add(NonMonotoneType.nonMonotone(tuple.getFieldType(i)));
+        return new PartiallyMonotoneTuple(parts, tuple.isRaw(), tuple.mayBeNull);
+    }
+
     /** Number of fields in the tuple */
     public int size() {
         return this.fields.size();

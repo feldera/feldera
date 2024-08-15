@@ -6,6 +6,25 @@ import org.junit.Test;
 // https://github.com/apache/calcite/blob/main/core/src/test/resources/sql/agg.iq
 public class AggTests extends PostBaseTests {
     @Test
+    public void calciteIssue6520() {
+        this.qs("""
+                SELECT ENAME, ENAME in ('Adam', 'Alice', 'Eve') FROM EMP;
+                 ename | expr
+                --------------
+                 Adam| true
+                 Alice| true
+                 Bob| false
+                 Eric| false
+                 Eve| true
+                 Grace| false
+                 Jane| false
+                 Susan| false
+                 Wilma| false
+                ---------------
+                (9 rows)""");
+    }
+
+    @Test
     public void testCompositeCount() {
         this.qs("""
                 -- composite count

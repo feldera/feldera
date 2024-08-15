@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
@@ -51,27 +52,68 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void issue2228() throws SQLException, IOException, InterruptedException {
         String sql = """
-        CREATE TABLE transaction (
-            id bigint NOT NULL,
-            unix_time BIGINT NOT NULL
-        );
-        
-        CREATE TABLE feedback (
-            id bigint,
-            unix_time bigint LATENESS 3600 * 24
-        );
-        
-        CREATE VIEW TRANSACTIONS AS
-        SELECT t.*
-        FROM transaction as t JOIN feedback as f
-        ON t.id = f.id
-        WHERE t.unix_time >= f.unix_time - 3600 * 24 * 7 ;
-        """;
+                CREATE TABLE transaction (
+                    id bigint NOT NULL,
+                    unix_time BIGINT NOT NULL
+                );
+                
+                CREATE TABLE feedback (
+                    id bigint,
+                    unix_time bigint LATENESS 3600 * 24
+                );
+                
+                CREATE VIEW TRANSACTIONS AS
+                SELECT t.*
+                FROM transaction as t JOIN feedback as f
+                ON t.id = f.id
+                WHERE t.unix_time >= f.unix_time - 3600 * 24 * 7 ;
+                """;
 
         String main = this.createMain("""
                 let _ = circuit.step().expect("could not run circuit");
                 """);
         this.measure(sql, main);
+    }
+
+    @Test
+    public void testAsof() {
+        String sql = """
+                create table TRANSACTION (
+                    id bigint NOT NULL,
+                    unix_time BIGINT LATENESS 100
+                );
+                
+                create table FEEDBACK (
+                    id bigint,
+                    status int,
+                    unix_time bigint NOT NULL LATENESS 100
+                );
+            
+                CREATE VIEW TRANSACT AS
+                    SELECT transaction.*, feedback.status
+                    FROM
+                    feedback LEFT ASOF JOIN transaction
+                    MATCH_CONDITION(transaction.unix_time <= feedback.unix_time)
+                    ON transaction.id = feedback.id;
+                """;
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int integrate_trace = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.integrate_trace);
+            }
+        };
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        visitor.apply(ccs.circuit);
+        this.addRustTestCase("testAsof", ccs);
     }
 
     @Test

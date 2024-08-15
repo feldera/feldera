@@ -56,8 +56,8 @@ public final class DBSPFieldComparatorExpression extends DBSPComparatorExpressio
         visitor.postorder(this);
     }
 
-    public DBSPType tupleType() {
-        return this.source.tupleType();
+    public DBSPType comparedValueType() {
+        return this.source.comparedValueType();
     }
 
     @Override
@@ -83,9 +83,8 @@ public final class DBSPFieldComparatorExpression extends DBSPComparatorExpressio
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPFieldComparatorExpression(
-                this.getNode(), this.source.deepCopy().to(DBSPComparatorExpression.class),
-                this.fieldNo, this.ascending);
+        return this.source.deepCopy().to(DBSPComparatorExpression.class)
+                .field(this.fieldNo, this.ascending);
     }
 
     @Override

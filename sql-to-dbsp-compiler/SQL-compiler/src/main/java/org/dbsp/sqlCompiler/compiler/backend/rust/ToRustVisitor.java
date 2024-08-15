@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledFilterOperator;
@@ -56,12 +57,15 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
@@ -774,6 +778,15 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPOperator operator) {
+        FindComparators finder = new FindComparators(this.errorReporter);
+        if (operator.function != null) {
+            finder.apply(operator.getFunction());
+        }
+
+        for (DBSPComparatorExpression comparator: finder.found) {
+            this.generateCmpFunc(comparator);
+        }
+
         DBSPType streamType = new DBSPTypeStream(operator.outputType);
         this.writeComments(operator)
                 .append("let ")
@@ -820,6 +833,18 @@ public class ToRustVisitor extends CircuitVisitor {
                 .newline();
     }
 
+    /** Helper function for generateComparator and generateCmpFunc.
+     * @param ascending Comparison direction. */
+    void emitCompare(boolean ascending) {
+        this.builder.append("let ord = left.cmp(&right);")
+                .newline()
+                .append("if ord != Ordering::Equal { return ord");
+        if (!ascending)
+            this.builder.append(".reverse()");
+        this.builder.append(" };")
+                .newline();
+    }
+
     /**
      * Helper function for generateCmpFunc.
      * This could be part of an inner visitor too.
@@ -833,15 +858,22 @@ public class ToRustVisitor extends CircuitVisitor {
         // This could be done with a visitor... but there are only two cases
         if (comparator.is(DBSPNoComparatorExpression.class))
             return;
-        DBSPFieldComparatorExpression fieldComparator = comparator.to(DBSPFieldComparatorExpression.class);
-        this.generateComparator(fieldComparator.source, fieldsCompared);
-        if (fieldsCompared.contains(fieldComparator.fieldNo))
-            throw new InternalCompilerError("Field " + fieldComparator.fieldNo + " used twice in sorting");
-        fieldsCompared.add(fieldComparator.fieldNo);
-        this.emitCompareField(fieldComparator.fieldNo, fieldComparator.ascending);
+        if (comparator.is(DBSPFieldComparatorExpression.class)) {
+            DBSPFieldComparatorExpression fieldComparator = comparator.to(DBSPFieldComparatorExpression.class);
+            this.generateComparator(fieldComparator.source, fieldsCompared);
+            if (fieldsCompared.contains(fieldComparator.fieldNo))
+                throw new InternalCompilerError("Field " + fieldComparator.fieldNo + " used twice in sorting");
+            fieldsCompared.add(fieldComparator.fieldNo);
+            this.emitCompareField(fieldComparator.fieldNo, fieldComparator.ascending);
+        } else {
+            DBSPDirectComparatorExpression direct = comparator.to(DBSPDirectComparatorExpression.class);
+            this.generateComparator(direct.source, fieldsCompared);
+            this.emitCompare(direct.ascending);
+        }
     }
 
-    void generateCmpFunc(DBSPComparatorExpression comparator, String structName) {
+    /** Generate a comparator */
+    void generateCmpFunc(DBSPComparatorExpression comparator) {
         //    impl CmpFunc<(String, i32, i32)> for AscDesc {
         //        fn cmp(left: &(String, i32, i32), right: &(String, i32, i32)) -> std::cmp::Ordering {
         //            let ord = left.1.cmp(&right.1);
@@ -853,7 +885,13 @@ public class ToRustVisitor extends CircuitVisitor {
         //            return Ordering::Equal;
         //        }
         //    }
-        DBSPType type = comparator.tupleType();
+        String structName = comparator.getComparatorStructName();
+        this.builder.append("struct ")
+                .append(structName)
+                .append(";")
+                .newline();
+
+        DBSPType type = comparator.comparedValueType();
         this.builder.append("impl CmpFunc<");
         type.accept(this.innerVisitor);
         this.builder.append("> for ")
@@ -873,9 +911,11 @@ public class ToRustVisitor extends CircuitVisitor {
         this.generateComparator(comparator, fieldsCompared);
         // Now compare on the fields that we didn't compare on.
         // The order doesn't really matter.
-        for (int i = 0; i < type.to(DBSPTypeTuple.class).size(); i++) {
-            if (fieldsCompared.contains(i)) continue;
-            this.emitCompareField(i, true);
+        if (type.is(DBSPTypeTuple.class)) {
+            for (int i = 0; i < type.to(DBSPTypeTuple.class).size(); i++) {
+                if (fieldsCompared.contains(i)) continue;
+                this.emitCompareField(i, true);
+            }
         }
         this.builder.append("return Ordering::Equal;")
                 .newline();
@@ -892,7 +932,7 @@ public class ToRustVisitor extends CircuitVisitor {
         CalciteObject node = comparator.getNode();
         DBSPExpression result = new DBSPBoolLiteral(true);
         DBSPComparatorExpression comp = comparator.to(DBSPComparatorExpression.class);
-        DBSPType type = comp.tupleType().ref();
+        DBSPType type = comp.comparedValueType().ref();
         DBSPVariablePath left = type.var();
         DBSPVariablePath right = type.var();
         while (comparator.is(DBSPFieldComparatorExpression.class)) {
@@ -907,14 +947,8 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIndexedTopKOperator operator) {
-        String structName = "Cmp" + operator.getOutputName();
-        this.builder.append("struct ")
-                .append(structName)
-                .append(";")
-                .newline();
-        // Generate a CmpFunc impl for the new struct.
-        this.generateCmpFunc(operator.getFunction().to(DBSPComparatorExpression.class), structName);
-
+        DBSPComparatorExpression comparator = operator.getFunction().to(DBSPComparatorExpression.class);
+        this.generateCmpFunc(comparator);
         String streamOperation = "topk_custom_order";
         if (operator.outputProducer != null) {
             streamOperation = switch (operator.numbering) {
@@ -935,7 +969,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(".")
                 .append(streamOperation)
                 .append("::<")
-                .append(structName);
+                .append(comparator.getComparatorStructName());
                 if (operator.outputProducer != null) {
                     this.builder.append(", _, _");
                     if (operator.numbering != DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER)
@@ -960,15 +994,33 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPLagOperator operator) {
-        String structName = "Cmp" + operator.getOutputName();
-        this.builder.append("struct ")
-                .append(structName)
-                .append(";")
+    public VisitDecision preorder(DBSPAsofJoinOperator operator) {
+        DBSPType streamType = new DBSPTypeStream(operator.outputType);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getOutputName())
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
+                .append(operator.left().getOutputName())
+                .append(".")
+                .append(operator.operation)
+                .append("(&")
+                .append(operator.right().getOutputName())
+                .append(", ")
                 .newline();
-        // Generate a CmpFunc impl for the new struct.
-        this.generateCmpFunc(operator.comparator, structName);
+        operator.getFunction().accept(this.innerVisitor);
+        builder.append(", ");
+        operator.leftTimestamp.accept(this.innerVisitor);
+        builder.append(", ");
+        operator.rightTimestamp.accept(this.innerVisitor);
+        builder.append(");");
+        return VisitDecision.STOP;
+    }
 
+    @Override
+    public VisitDecision preorder(DBSPLagOperator operator) {
+        this.generateCmpFunc(operator.comparator);
         DBSPType streamType = new DBSPTypeStream(operator.outputType);
         this.writeComments(operator)
                 .append("let ")
@@ -980,7 +1032,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(".")
                 .append(operator.operation)
                 .append("::<_, _, _, ")
-                .append(structName)
+                .append(operator.comparator.getComparatorStructName())
                 .append(", _>")
                 .append("(");
         DBSPISizeLiteral offset = new DBSPISizeLiteral(operator.offset);
@@ -1126,6 +1178,19 @@ public class ToRustVisitor extends CircuitVisitor {
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(");");
         return VisitDecision.STOP;
+    }
+
+    /** Collects all comparators that appear in a DBSPCustomOrderExpression */
+    static class FindComparators extends InnerVisitor {
+        List<DBSPComparatorExpression> found = new ArrayList<>();
+
+        public FindComparators(IErrorReporter reporter) {
+            super(reporter);
+        }
+
+        public void postorder(DBSPCustomOrdExpression expression) {
+            this.found.add(expression.comparator);
+        }
     }
 
     @Override

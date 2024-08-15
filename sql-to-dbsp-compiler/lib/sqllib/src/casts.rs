@@ -9,7 +9,7 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
 use num_traits::cast::NumCast;
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 
 const FLOAT_DISPLAY_PRECISION: usize = 6;
 const DOUBLE_DISPLAY_PRECISION: usize = 15;
@@ -227,9 +227,8 @@ pub fn cast_to_decimal_decimal(value: Decimal, precision: u32, scale: u32) -> De
 
     // '1234.5678' -> DECIMAL(6, 2) is fine as the integer part fits in 4 digits
     // but to DECIMAL(6, 3) would error as we can't fit '1234' in 3 digits
-
-    let mut result = value;
-    result.rescale(scale);
+    // This is the rounding strategy used in Calcite
+    let result = value.round_dp_with_strategy(scale, RoundingStrategy::ToZero);
 
     let int_part_precision = result
         .trunc()

@@ -46,7 +46,10 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
@@ -66,6 +69,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
@@ -154,6 +158,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.IWritesLogs;
@@ -436,6 +441,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
         return this.preorder(node.to(DBSPTypeUser.class));
     }
 
+    public VisitDecision preorder(DBSPTypeWithCustomOrd node) {
+        return this.preorder(node.to(DBSPTypeUser.class));
+    }
+
     public VisitDecision preorder(DBSPTypeResult node) {
         return this.preorder(node.to(DBSPTypeUser.class));
     }
@@ -484,6 +493,18 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
         return this.preorder((DBSPComparatorExpression) node);
     }
 
+    public VisitDecision preorder(DBSPDirectComparatorExpression node) {
+        return this.preorder((DBSPComparatorExpression) node);
+    }
+
+    public VisitDecision preorder(DBSPCustomOrdExpression node) {
+        return this.preorder((DBSPExpression) node);
+    }
+
+    public VisitDecision preorder(DBSPUnwrapCustomOrdExpression node) {
+        return this.preorder((DBSPExpression) node);
+    }
+
     public VisitDecision preorder(DBSPConstructorExpression node) {
         return this.preorder(node.to(DBSPExpression.class));
     }
@@ -529,6 +550,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     }
 
     public VisitDecision preorder(DBSPDerefExpression node) {
+        return this.preorder(node.to(DBSPExpression.class));
+    }
+
+    public VisitDecision preorder(DBSPCustomOrdField node) {
         return this.preorder(node.to(DBSPExpression.class));
     }
 
@@ -954,6 +979,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
         this.postorder(node.to(DBSPTypeUser.class));
     }
 
+    public void postorder(DBSPTypeWithCustomOrd node) {
+        this.postorder(node.to(DBSPTypeUser.class));
+    }
+
     public void postorder(DBSPTypeResult node) {
         this.postorder(node.to(DBSPTypeUser.class));
     }
@@ -1002,6 +1031,18 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
         this.postorder((DBSPComparatorExpression) node);
     }
 
+    public void postorder(DBSPDirectComparatorExpression node) {
+        this.postorder((DBSPComparatorExpression) node);
+    }
+
+    public void postorder(DBSPCustomOrdExpression node) {
+        this.postorder((DBSPExpression) node);
+    }
+
+    public void postorder(DBSPUnwrapCustomOrdExpression node) {
+        this.postorder((DBSPExpression) node);
+    }
+
     public void postorder(DBSPConstructorExpression node) {
         this.postorder(node.to(DBSPExpression.class));
     }
@@ -1047,6 +1088,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     }
 
     public void postorder(DBSPDerefExpression node) {
+        this.postorder(node.to(DBSPExpression.class));
+    }
+
+    public void postorder(DBSPCustomOrdField node) {
         this.postorder(node.to(DBSPExpression.class));
     }
 

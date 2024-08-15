@@ -164,6 +164,10 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
 
     /** Returns a lambda which casts the current type to the specified type. */
     public DBSPExpression caster(DBSPType to) {
+        if (this.sameType(to)) {
+            DBSPVariablePath var = this.ref().var();
+            return var.deref().applyCloneIfNeeded().closure(var.asParameter());
+        }
         throw new UnimplementedException("Casting from " + this + " to " + to, to);
     }
 
@@ -175,4 +179,11 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
 
     /** Used for implementing some aggregates */
     public abstract DBSPExpression defaultValue();
+
+    public boolean sameTypeIgnoringNullability(DBSPType type) {
+        if (this.mayBeNull == type.mayBeNull)
+            // This prevents us from trying to make something nullable that can't be
+            return this.sameType(type);
+        return this.setMayBeNull(true).sameType(type.setMayBeNull(true));
+    }
 }

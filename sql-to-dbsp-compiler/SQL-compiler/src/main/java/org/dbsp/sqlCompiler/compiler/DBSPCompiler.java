@@ -214,15 +214,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
     }
 
-    /**
-     * @param generate If 'false' the next "create view" statements will not generate
-     * an output for the circuit
-     */
-    public void generateOutputForNextView(boolean generate) {
-        this.midend.generateOutputForNextView(generate);
-    }
-
-   void setSource(InputSource source) {
+    void setSource(InputSource source) {
         if (this.inputSources != InputSource.None &&
                 this.inputSources != source)
             throw new UnsupportedException("Input data already received from " + this.inputSources,
@@ -243,7 +235,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
      * @param statements Statements to compile.
      * @param many       Is this one or many statements?
      * @param appendToSource  If true this is part of the source supplied by the user.
-     *                        Otherwise it's a "preamble" generated internally.
+     *                        Otherwise, it's a "preamble" generated internally.
      */
     private void compileInternal(String statements, boolean many, boolean appendToSource) {
         if (this.inputSources != InputSource.File) {
