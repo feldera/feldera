@@ -43,7 +43,7 @@ if [ ${NEXT} = 'y' ]; then
     update_pom ${CALCITE_NEXT}
     echo "Building calcite"
     pushd /tmp >/dev/null
-    git clone --quiet git@github.com:apache/calcite.git
+    git clone --quiet https://github.com/apache/calcite.git
     cd calcite
     git reset --hard ${CALCITE_NEXT_COMMIT}
 
