@@ -659,7 +659,7 @@ async fn save_api_key() {
 //         connector_name: "a".to_string(),
 //         relation_name: "".to_string(),
 //     };
-//     let rc = RuntimeConfig::from_json5("");
+//     let rc = RuntimeConfig::from_json("");
 //     let _ = handle
 //         .db
 //         .new_pipeline(
@@ -811,7 +811,7 @@ async fn save_api_key() {
 //         connector_name: "a".to_string(),
 //         relation_name: "".to_string(),
 //     };
-//     let rc = RuntimeConfig::from_json5("");
+//     let rc = RuntimeConfig::from_json("");
 //     let _ = handle
 //         .db
 //         .new_pipeline(
@@ -850,7 +850,7 @@ async fn save_api_key() {
 //         connector_name: "a".to_string(),
 //         relation_name: "".to_string(),
 //     };
-//     let rc = RuntimeConfig::from_json5("");
+//     let rc = RuntimeConfig::from_json("");
 //     handle
 //         .db
 //         .new_pipeline(
@@ -949,7 +949,7 @@ async fn save_api_key() {
 //         .set_program_status_guarded(tenant_id, program_id, Version(1), ProgramStatus::Success)
 //         .await
 //         .unwrap();
-//     let rc = RuntimeConfig::from_json5("");
+//     let rc = RuntimeConfig::from_json("");
 //     let (pipeline_id, _version) = handle
 //         .db
 //         .new_pipeline(
@@ -1044,7 +1044,7 @@ async fn save_api_key() {
 //         connector_name: "d".to_string(),
 //         relation_name: "v1".to_string(),
 //     };
-//     let rc = RuntimeConfig::from_json5("");
+//     let rc = RuntimeConfig::from_json("");
 //     let (pipeline_id, _version) = handle
 //         .db
 //         .new_pipeline(

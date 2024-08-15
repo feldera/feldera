@@ -2,8 +2,8 @@
 //!
 //! This module defines the controller configuration structure.  The leaves of
 //! this structure are individual transport-specific and data-format-specific
-//! endpoint configs.  We represent these configs as opaque json5 values, so
-//! that the entire configuration tree can be deserialized from a JSON5 file.
+//! endpoint configs.  We represent these configs as opaque json values, so
+//! that the entire configuration tree can be deserialized from a json file.
 
 use crate::query::OutputQuery;
 use crate::transport::datagen::DatagenInputConfig;
@@ -72,12 +72,12 @@ pub struct PipelineConfig {
 }
 
 impl PipelineConfig {
-    pub fn from_json5(s: &str) -> Self {
-        json5::from_str(s).unwrap()
+    pub fn from_json(s: &str) -> Self {
+        serde_json::from_str(s).unwrap()
     }
 
-    pub fn to_json5(&self) -> String {
-        json5::to_string(self).unwrap()
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap()
     }
 }
 
@@ -203,12 +203,12 @@ pub struct RuntimeConfig {
 }
 
 impl RuntimeConfig {
-    pub fn from_json5(s: &str) -> Self {
-        json5::from_str(s).unwrap()
+    pub fn from_json(s: &str) -> Self {
+        serde_json::from_str(s).unwrap()
     }
 
-    pub fn to_json5(&self) -> String {
-        json5::to_string(self).unwrap()
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap()
     }
 }
 

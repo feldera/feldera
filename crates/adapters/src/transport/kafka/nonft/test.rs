@@ -114,7 +114,7 @@ fn test_kafka_output_errors() {
     info!("test_kafka_output_errors: Creating circuit");
 
     info!("test_kafka_output_errors: Starting controller");
-    let config: PipelineConfig = json5::from_str(config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_str(config_str).unwrap();
 
     match Controller::with_config(
         |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
@@ -194,7 +194,7 @@ fn kafka_end_to_end_test(
     info!("{test_name}: Creating circuit. Config {config_str}");
 
     info!("{test_name}: Starting controller");
-    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_str(&config_str).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
@@ -265,7 +265,7 @@ fn test_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str, poll
     );
 
     match mock_input_pipeline::<TestStruct, TestStruct>(
-        json5::from_str(&config_str).unwrap(),
+        serde_json::from_str(&config_str).unwrap(),
         Relation::empty(),
     ) {
         Ok(_) => panic!("expected an error"),
@@ -292,7 +292,7 @@ fn test_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str, poll
 "#;
 
     match mock_input_pipeline::<TestStruct, TestStruct>(
-        json5::from_str(config_str).unwrap(),
+        serde_json::from_str(config_str).unwrap(),
         Relation::empty(),
     ) {
         Ok(_) => panic!("expected an error"),
@@ -326,7 +326,7 @@ fn test_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str, poll
     info!("proptest_kafka_input: Building input pipeline");
 
     let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-        json5::from_str(&config_str).unwrap(),
+        serde_json::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
     .unwrap();
@@ -490,7 +490,7 @@ fn buffer_test() {
     info!("buffer_test: Creating circuit. Config {config_str}");
 
     info!("buffer_test: Starting controller");
-    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_str(&config_str).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();

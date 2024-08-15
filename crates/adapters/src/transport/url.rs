@@ -379,7 +379,7 @@ mod test {
         );
 
         mock_input_pipeline::<TestStruct, TestStruct>(
-            json5::from_str(&config_str).unwrap(),
+            serde_json::from_str(&config_str).unwrap(),
             Relation::empty(),
         )
         .unwrap()

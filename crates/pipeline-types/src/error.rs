@@ -111,11 +111,11 @@ impl ErrorResponse {
         }
     }
 
-    pub fn from_json5(s: &str) -> Self {
-        json5::from_str(s).unwrap()
+    pub fn from_json(s: &str) -> Self {
+        serde_json::from_str(s).unwrap()
     }
 
-    pub fn to_json5(&self) -> String {
-        json5::to_string(self).unwrap()
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap()
     }
 }

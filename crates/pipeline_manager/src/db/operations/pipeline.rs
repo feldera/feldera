@@ -30,19 +30,19 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         description: row.get(3),
         created_at: row.get(4),
         version: Version(row.get(5)),
-        runtime_config: RuntimeConfig::from_json5(row.get(6)),
+        runtime_config: RuntimeConfig::from_json(row.get(6)),
         program_code: row.get(7),
-        program_config: ProgramConfig::from_json5(row.get(8)),
+        program_config: ProgramConfig::from_json(row.get(8)),
         program_version: Version(row.get(9)),
         program_status: ProgramStatus::from_columns(row.get(10), row.get(12))?,
         program_status_since: row.get(11),
-        program_info: program_info_str.map(|s| ProgramInfo::from_json5(&s)),
+        program_info: program_info_str.map(|s| ProgramInfo::from_json(&s)),
         program_binary_url: row.get(14),
         deployment_status: row.get::<_, String>(15).try_into()?,
         deployment_status_since: row.get(16),
         deployment_desired_status: row.get::<_, String>(17).try_into()?,
-        deployment_error: deployment_error_str.map(|s| ErrorResponse::from_json5(&s)),
-        deployment_config: deployment_config_str.map(|s| PipelineConfig::from_json5(&s)),
+        deployment_error: deployment_error_str.map(|s| ErrorResponse::from_json(&s)),
+        deployment_config: deployment_config_str.map(|s| PipelineConfig::from_json(&s)),
         deployment_location: row.get(20),
     })
 }
@@ -151,9 +151,9 @@ pub(crate) async fn new_pipeline(
             &pipeline.name,                         // $3: name
             &pipeline.description,                  // $4: description
             &Version(1).0,                          // $5: version
-            &pipeline.runtime_config.to_json5(),    // $6: runtime_config
+            &pipeline.runtime_config.to_json(),     // $6: runtime_config
             &pipeline.program_code,                 // $7: program_code
-            &pipeline.program_config.to_json5(),    // $8: program_config
+            &pipeline.program_config.to_json(),     // $8: program_config
             &Version(1).0,                          // $9: program_version
             &ProgramStatus::Pending.to_columns().0, // $10: program_status
             &PipelineStatus::Shutdown.to_string(),  // $11: deployment_status
@@ -231,9 +231,9 @@ pub(crate) async fn update_pipeline(
             &[
                 &name,
                 &description,
-                &runtime_config.as_ref().map(|v| v.to_json5()),
+                &runtime_config.as_ref().map(|v| v.to_json()),
                 &program_code,
-                &program_config.as_ref().map(|v| v.to_json5()),
+                &program_config.as_ref().map(|v| v.to_json()),
                 &tenant_id.0,
                 &original_name,
             ],
@@ -372,7 +372,7 @@ pub(crate) async fn set_program_status(
             &[
                 &new_program_status_columns.0,
                 &new_program_status_columns.1,
-                &final_program_info.as_ref().map(|v| v.to_json5()),
+                &final_program_info.as_ref().map(|v| v.to_json()),
                 &final_program_binary_url,
                 &tenant_id.0,
                 &pipeline_id.0,
@@ -541,8 +541,8 @@ pub(crate) async fn set_deployment_status(
             &stmt,
             &[
                 &deployment_status.to_string(),
-                &final_deployment_error.map(|v| v.to_json5()),
-                &final_deployment_config.map(|v| v.to_json5()),
+                &final_deployment_error.map(|v| v.to_json()),
+                &final_deployment_config.map(|v| v.to_json()),
                 &final_deployment_location,
                 &tenant_id.0,
                 &pipeline_id.0,

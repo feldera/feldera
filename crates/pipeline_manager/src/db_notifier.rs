@@ -235,7 +235,7 @@ mod test {
                     PipelineDescr {
                         name: format!("example{i}"),
                         description: "Description of example".to_string(),
-                        runtime_config: RuntimeConfig::from_json5(""),
+                        runtime_config: RuntimeConfig::from_json(""),
                         program_code: "CREATE TABLE example ( col1 INT );".to_string(),
                         program_config: ProgramConfig {
                             profile: Some(CompilationProfile::Unoptimized),
@@ -308,7 +308,7 @@ mod test {
                 PipelineDescr {
                     name: "example1".to_string(),
                     description: "Description of example1".to_string(),
-                    runtime_config: RuntimeConfig::from_json5(""),
+                    runtime_config: RuntimeConfig::from_json(""),
                     program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
                     program_config: ProgramConfig {
                         profile: Some(CompilationProfile::Unoptimized),

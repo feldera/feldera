@@ -87,7 +87,7 @@ format: {{
 
     // Send the data through the mock pipeline
     let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct2, TestStruct2>(
-        json5::from_str(&config_str).unwrap(),
+        serde_json::from_str(&config_str).unwrap(),
         Relation::new("test", false, TestStruct2::schema(), false, BTreeMap::new()),
     )
     .unwrap();

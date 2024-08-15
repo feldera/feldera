@@ -1290,7 +1290,7 @@ mod test {
     {
         let relation = Relation::new("test_input", false, fields, true, BTreeMap::new());
         let (endpoint, consumer, zset) =
-            mock_input_pipeline::<T, U>(json5::from_str(config_str).unwrap(), relation)?;
+            mock_input_pipeline::<T, U>(serde_json::from_str(config_str).unwrap(), relation)?;
         endpoint.start(0)?;
         Ok((endpoint, consumer, zset))
     }
@@ -1462,7 +1462,7 @@ mod test {
   }
 }
 "#;
-        let cfg: InputEndpointConfig = json5::from_str(config_str).unwrap();
+        let cfg: InputEndpointConfig = serde_json::from_str(config_str).unwrap();
 
         if let TransportConfig::Datagen(dtg) = cfg.connector_config.transport {
             assert_eq!(dtg.plan.len(), 1);

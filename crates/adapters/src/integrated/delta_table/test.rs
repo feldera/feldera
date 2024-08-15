@@ -237,7 +237,7 @@ where
         storage_options,
     );
 
-    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_str(&config_str).unwrap();
 
     Controller::with_config(
         |workers| Ok(test_circuit::<T>(workers, &TestStruct2::schema())),
@@ -312,7 +312,7 @@ where
         input_storage_options, output_storage_options,
     );
 
-    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_str(&config_str).unwrap();
 
     Controller::with_config(
         |workers| Ok(test_circuit::<T>(workers, &TestStruct2::schema())),
@@ -412,7 +412,7 @@ fn delta_table_output_test(
         data.len(),
         input_file.path().display(),
     );
-    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_str(&config_str).unwrap();
 
     let controller = Controller::with_config(
         |workers| Ok(test_circuit::<TestStruct2>(workers, &TestStruct2::schema())),

@@ -181,7 +181,7 @@ impl InputFormat for JsonInputFormat {
             ControllerError::parser_config_parse_error(
                 endpoint_name,
                 &e,
-                &json5::to_string(config).unwrap_or_default(),
+                &serde_json::to_string(config).unwrap_or_default(),
             )
         })?;
         validate_parser_config(&config, endpoint_name)?;

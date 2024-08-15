@@ -117,7 +117,7 @@ fn test_kafka_output_errors() {
     info!("test_kafka_output_errors: Creating circuit");
 
     info!("test_kafka_output_errors: Starting controller");
-    let config: PipelineConfig = json5::from_str(config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_str(config_str).unwrap();
 
     match Controller::with_config(
         |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
@@ -196,7 +196,7 @@ fn ft_kafka_end_to_end_test(
     info!("{test_name}: Creating circuit. Config {config_str}");
 
     info!("{test_name}: Starting controller");
-    let config: PipelineConfig = json5::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_str(&config_str).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
@@ -265,7 +265,7 @@ fn test_empty_input() {
 "#
     );
 
-    let endpoint = input_transport_config_to_endpoint(json5::from_str(&config_str).unwrap())
+    let endpoint = input_transport_config_to_endpoint(serde_json::from_str(&config_str).unwrap())
         .unwrap()
         .unwrap();
     assert!(endpoint.is_fault_tolerant());
@@ -345,7 +345,7 @@ fn test_input() {
 "#
     );
 
-    let endpoint = input_transport_config_to_endpoint(json5::from_str(&config_str).unwrap())
+    let endpoint = input_transport_config_to_endpoint(serde_json::from_str(&config_str).unwrap())
         .unwrap()
         .unwrap();
     assert!(endpoint.is_fault_tolerant());
@@ -599,9 +599,10 @@ fn kafka_output_test(
 }}
 "#
     );
-    let mut endpoint = output_transport_config_to_endpoint(json5::from_str(&config_str).unwrap())
-        .unwrap()
-        .unwrap();
+    let mut endpoint =
+        output_transport_config_to_endpoint(serde_json::from_str(&config_str).unwrap())
+            .unwrap()
+            .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))
@@ -626,9 +627,10 @@ fn _test() {
 }
 "#;
 
-    let mut endpoint = output_transport_config_to_endpoint(json5::from_str(&config_str).unwrap())
-        .unwrap()
-        .unwrap();
+    let mut endpoint =
+        output_transport_config_to_endpoint(serde_json::from_str(&config_str).unwrap())
+            .unwrap()
+            .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))
@@ -679,7 +681,7 @@ fn test_ft_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
     );
 
     let (reader, consumer, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
-        json5::from_str(&config_str).unwrap(),
+        serde_json::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
     .unwrap();
@@ -711,7 +713,7 @@ fn test_ft_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
 "#;
 
     let (reader, consumer, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
-        json5::from_str(config_str).unwrap(),
+        serde_json::from_str(config_str).unwrap(),
         Relation::empty(),
     )
     .unwrap();
@@ -745,7 +747,7 @@ fn test_ft_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
     info!("proptest_kafka_input: Building input pipeline");
 
     let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-        json5::from_str(&config_str).unwrap(),
+        serde_json::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
     .unwrap();

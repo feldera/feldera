@@ -375,7 +375,7 @@ mod test {
         MockInputConsumer,
         MockDeZSet<TestStruct, TestStruct>,
     ) {
-        let config: InputEndpointConfig = json5::from_str(&config_str).unwrap();
+        let config: InputEndpointConfig = serde_json::from_str(&config_str).unwrap();
         let transport_config = config.connector_config.transport.clone();
         let transport_config: Arc<S3InputConfig> = match transport_config {
             TransportConfig::S3Input(config) => Arc::new(config),

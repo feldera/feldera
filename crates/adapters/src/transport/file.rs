@@ -261,7 +261,7 @@ mod test {
         writer.flush().unwrap();
 
         let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-            json5::from_str(&config_str).unwrap(),
+            serde_json::from_str(&config_str).unwrap(),
             Relation::empty(),
         )
         .unwrap();
@@ -320,7 +320,7 @@ mod test {
             .from_writer(temp_file.as_file());
 
         let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-            json5::from_str(&config_str).unwrap(),
+            serde_json::from_str(&config_str).unwrap(),
             Relation::empty(),
         )
         .unwrap();

@@ -65,7 +65,7 @@ impl OutputFormat for AvroOutputFormat {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &e,
-                &json5::to_string(config).unwrap_or_default(),
+                &serde_json::to_string(config).unwrap_or_default(),
             )
         })?;
 
@@ -105,14 +105,14 @@ impl AvroEncoder {
                     "'schema' string '{}' is not a valid JSON document: {e}",
                     &config.schema
                 ),
-                &json5::to_string(&config).unwrap_or_default(),
+                &serde_json::to_string(&config).unwrap_or_default(),
             )
         })?;
         let schema = AvroSchema::parse(&schema_json).map_err(|e| {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &format!("invalid Avro schema: {e}"),
-                &json5::to_string(&config).unwrap_or_default(),
+                &serde_json::to_string(&config).unwrap_or_default(),
             )
         })?;
 

@@ -212,7 +212,7 @@ impl OutputFormat for ParquetOutputFormat {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &e,
-                &json5::to_string(&config).unwrap_or_default(),
+                &serde_json::to_string(&config).unwrap_or_default(),
             )
         })?;
         Ok(Box::new(ParquetEncoder::new(
