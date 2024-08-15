@@ -482,6 +482,8 @@ where
         Arc::new(Self::new(B::from_inner(merge_batches(
             &B::factories(),
             typed,
+            &None,
+            &None,
         ))))
     }
 

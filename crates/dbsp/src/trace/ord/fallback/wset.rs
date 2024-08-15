@@ -269,7 +269,7 @@ where
     #[inline]
     fn add_assign_by_ref(&mut self, rhs: &Self) {
         if !rhs.is_empty() {
-            *self = self.merge(rhs);
+            *self = self.merge(rhs, &None, &None);
         }
     }
 }
@@ -281,7 +281,7 @@ where
 {
     #[inline]
     fn add_by_ref(&self, rhs: &Self) -> Self {
-        self.merge(rhs)
+        self.merge(rhs, &None, &None)
     }
 }
 

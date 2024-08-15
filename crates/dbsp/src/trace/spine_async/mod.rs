@@ -980,6 +980,8 @@ where
             self.batches
                 .drain(..)
                 .map(|batch| Arc::into_inner(batch).unwrap()),
+            &self.key_filter,
+            &self.value_filter,
         );
         if result.is_empty() {
             None
