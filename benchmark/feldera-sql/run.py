@@ -137,6 +137,7 @@ def main():
     group.add_argument('--csv-metrics', help='File to write pipeline metrics (memory, disk) in .csv format')
     group.add_argument('--metrics-interval', help='How often metrics should be sampled, in seconds (default: 1)')
     group.add_argument('--include-disabled', action=argparse.BooleanOptionalAction, help='Include queries from the disabled-queries/ directory.')
+    group.add_argument('--circuit-profile', action=argparse.BooleanOptionalAction, help='If set to true, will save a circuit profile (default: --no-circuit-profile)')
 
     group = parser.add_argument_group("Options for Nexmark benchmark only")
     group.add_argument('--lateness', action=argparse.BooleanOptionalAction, help='whether to use lateness for GC to save memory (default: --lateness)')
@@ -148,6 +149,7 @@ def main():
     group.add_argument("--poller-threads", required=False, type=int, help="Override number of poller threads to use")
     group.add_argument('--input-topic-suffix', help='suffix to apply to input topic names (by default, "")')
     parser.set_defaults(lateness=True, storage=False, cores=16, metrics_interval=1, folder='benchmarks/nexmark', events=100000)
+
     
     global api_url, kafka_options, headers
     api_url = parser.parse_args().api_url
@@ -168,6 +170,7 @@ def main():
     disabled_folder = os.path.join(FILE_DIR, folder + '/disabled-queries/')
     if include_disabled and os.path.exists(disabled_folder):
         all_queries |= load_queries(disabled_folder)
+    profile = parser.parse_args().circuit_profile
 
     queries = sort_queries(parse_queries(all_queries, parser.parse_args().query))
     storage = parser.parse_args().storage
@@ -291,7 +294,16 @@ def main():
 
         results += [[when, "feldera", "stream", "sql", pipeline_name, cores, last_processed, elapsed, peak_memory, cpu_msecs]]
 
-        # Start pipeline
+        if profile:
+            response = requests.get(f"{api_url}/v0/pipelines/{full_name}/circuit_profile", headers=headers)
+            profile_file_name = full_name + ".zip"
+            print("\nWriting circuit profile stats to " + profile_file_name + "...")
+            with open(profile_file_name, 'wb') as f:
+                for chunk in response.iter_content(1024):
+                    f.write(chunk)
+            break
+
+        # Stop pipeline
         elapsed = stop_pipeline(full_name, True)
         print(f"Stopped pipeline {full_name} in {elapsed:.1f} s")
     
