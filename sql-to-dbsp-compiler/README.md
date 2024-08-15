@@ -25,7 +25,7 @@ to also install graphviz as described here <https://graphviz.org/download/>.
 
 To build the compiler run:
 ```
-mvn -DskipTests package
+./build.sh
 ```
 
 ## Rust compilation errors
@@ -141,12 +141,6 @@ One of the means of testing the compiler is using sqllogictests:
 The sqllogictests includes more than 5 million tests.  It takes weeks
 to run all of them.  Most of the time is spent compiling Rust.
 We hope to speed that up at some point.
-
-To start running these tests:
-
-```
-$ ./run-tests.sh
-```
 
 We have implemented a [general-purpose testing
 framework](https://github.com/hydromatic/sql-logic-test) in Java for

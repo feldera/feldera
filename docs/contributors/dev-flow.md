@@ -14,7 +14,9 @@ sudo chown -R user /workspaces/feldera
 Build the SQL Compiler:
 
 ```bash
-mvn -f ./sql-to-dbsp-compiler/SQL-compiler -DskipTests package
+cd ./sql-to-dbsp-compiler
+./build.sh
+cd. ..
 ```
 
 Build and start the Pipeline Manager (that also serves the Feldera Web Console):

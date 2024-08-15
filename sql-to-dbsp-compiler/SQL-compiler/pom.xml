@@ -169,6 +169,7 @@
                             </includes>
                             <lookAhead>2</lookAhead>
                             <outputDirectory>${project.build.directory}/generated-sources/</outputDirectory>
+                            <sanityCheck>false</sanityCheck>
                         </configuration>
                     </execution>
                 </executions>
