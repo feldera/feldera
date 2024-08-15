@@ -13,7 +13,7 @@ fi
 #    exit 1
 # fi
 
-cd "${SQL_COMPILER_DIR}/SQL-compiler" && mvn -DskipTests package
+cd "${SQL_COMPILER_DIR}" && ./build.sh
 
 WORKING_DIR="${1:-${HOME}/.dbsp}"
 

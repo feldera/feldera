@@ -160,10 +160,10 @@ You can build the rust sources by runnning the following at the top level of thi
 cargo build
 ```
 
-To build the SQL to DBSP compiler, run the following from `sql-to-dbsp-compiler/SQL-compiler`:
+To build the SQL to DBSP compiler, run the following from `sql-to-dbsp-compiler`:
 
 ```
-mvn package
+./build.sh
 ```
 
 If you want to develop Feldera without installing the required toolchains

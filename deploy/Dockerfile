@@ -101,7 +101,7 @@ RUN apt install maven -y
 RUN mkdir sql
 COPY sql-to-dbsp-compiler /sql/sql-to-dbsp-compiler
 RUN --mount=type=cache,target=/root/.m2 \
-    cd /sql/sql-to-dbsp-compiler/SQL-compiler && mvn -ntp -DskipTests package
+    cd /sql/sql-to-dbsp-compiler && ./build.sh
 
 # Minimal image for running the pipeline manager
 FROM base AS release
