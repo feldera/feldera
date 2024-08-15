@@ -43,7 +43,7 @@ where
         Self {
             lower: spine.lower.clone(),
             upper: spine.upper.clone(),
-            batches: spine.batches.to_vec(),
+            batches: spine.merger.get_batches(),
             factories: spine.factories.clone(),
         }
     }
@@ -74,20 +74,14 @@ where
     type Time = B::Time;
     type R = B::R;
 
-    type Cursor<'s> = SpineCursor<'s, B>;
+    type Cursor<'s> = SpineCursor<B>;
 
     fn factories(&self) -> Self::Factories {
         self.factories.clone()
     }
 
     fn cursor(&self) -> Self::Cursor<'_> {
-        let mut cursors = Vec::with_capacity(self.batches.len());
-        for batch in self.batches.iter().rev() {
-            if !batch.is_empty() {
-                cursors.push(batch.cursor());
-            }
-        }
-        SpineCursor::new(&self.factories, cursors)
+        SpineCursor::new_cursor(&self.factories, self.batches.clone())
     }
 
     fn key_count(&self) -> usize {

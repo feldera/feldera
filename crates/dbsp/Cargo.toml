@@ -74,6 +74,7 @@ lazy_static = "1.4.0"
 dashmap = "5"
 zip = "0.6.2"
 minitrace = "0.6"
+ouroboros = "0.18.4"
 
 [dependencies.time]
 version = "0.3.20"
