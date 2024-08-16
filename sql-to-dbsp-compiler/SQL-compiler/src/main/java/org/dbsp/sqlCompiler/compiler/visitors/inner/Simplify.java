@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
@@ -111,6 +112,19 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPExpression result = source.is_null();
         if (!source.getType().mayBeNull)
             result = new DBSPBoolLiteral(false);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPCloneExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.expression);
+        this.pop(expression);
+        DBSPExpression result = source.applyClone();
+        if (source.is(DBSPCloneExpression.class)) {
+            result = source;
+        }
         this.map(expression, result);
         return VisitDecision.STOP;
     }

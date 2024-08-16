@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 
@@ -134,12 +135,23 @@ public abstract class DBSPExpression
         return new DBSPApplyExpression(this, arguments);
     }
 
-    public DBSPExpression cast(DBSPType to) {
+    public DBSPExpression cast(DBSPType to, boolean force) {
         DBSPType fromType = this.getType();
-        if (fromType.sameType(to)) {
+        // Still, do not insert a cast if the source is a cast to the exact same type
+        if (this.is(DBSPCastExpression.class)
+                && this.to(DBSPCastExpression.class).type.sameType(to))
+            force = false;
+        if (fromType.sameType(to) && !force) {
             return this;
         }
         return new DBSPCastExpression(this.getNode(), this, to);
+    }
+
+    public DBSPExpression cast(DBSPType to) {
+        boolean force = type.is(DBSPTypeDecimal.class);
+        // Computations on decimal values in Rust do not produce the correct result type,
+        // so they must be always cast
+        return this.cast(to, force);
     }
 
     public DBSPExpression applyCloneIfNeeded() {

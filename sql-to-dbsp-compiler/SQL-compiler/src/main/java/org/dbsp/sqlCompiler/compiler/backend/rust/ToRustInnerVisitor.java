@@ -685,10 +685,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
          * the function called will be cast_to_b_i16N. */
         DBSPType destType = expression.getType();
         DBSPType sourceType = expression.source.getType();
-        if (destType.sameType(sourceType)) {
-            expression.source.accept(this);
-            return VisitDecision.STOP;
-        }
 
         // Handle cast Vec<i> to Vec<i>?
         if (sourceType.is(DBSPTypeVec.class)) {

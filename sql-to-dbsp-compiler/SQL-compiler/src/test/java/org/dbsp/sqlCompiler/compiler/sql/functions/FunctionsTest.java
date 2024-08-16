@@ -50,6 +50,35 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void issue1520() {
+        this.qs("""
+                select 3.456::decimal(25, 3) + 1.123::decimal(4, 0);
+                 ?column?
+                ----------
+                 4.456
+                (1 row)
+                
+                select 3.456::decimal(25, 3) - 1.123::decimal(4, 0);
+                 ?column?
+                ----------
+                 2.456
+                (1 row)
+                
+                select 3.456::decimal(25, 3) * 1.123::decimal(4, 0);
+                 ?column?
+                ----------
+                 3.456
+                (1 row)
+                
+                select 3.456::decimal(25, 3) / 1.234::decimal(4, 1);
+                 ?column?
+                ----------
+                 2.88
+                (1 row)"""
+        );
+    }
+
+    @Test
     public void testUnnest() {
         this.q("""
                 select * from arr_table;
