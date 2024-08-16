@@ -51,6 +51,7 @@ sql_benchmark() {
     local csv=$1 metrics=$2; shift; shift
     python3 benchmark/feldera-sql/run.py \
 	    --api-url $FELDERA_API \
+	    --events $MAX_EVENTS \
 	    -O bootstrap.servers=$KAFKA_BROKER \
 	    --csv "$RESULTS_DIR/$name/$csv" \
 	    --csv-metrics "$RESULTS_DIR/$name/$metrics" \
