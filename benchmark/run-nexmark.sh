@@ -424,7 +424,7 @@ else
     reference=
 fi
 when=$(LC_ALL=C date -u '+%+4Y-%m-%d %H:%M:%S' $reference)
-csv_heading=when,runner,mode,language,name,num_cores,num_events,elapsed,peak_memory_bytes,cpu_seconds
+csv_heading=when,runner,mode,language,name,num_cores,num_events,elapsed,peak_memory_bytes,cpu_msecs
 parse() {
     csv_common=$when,$runner,$mode,$language
     case $runner in
