@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2024-08-15
+
 - [SQL] Added compiler options and table properties for streaming programs
   ([#2179](https://github.com/feldera/feldera/pull/2088))
 - [SQL] Added support for SQL functions `DATE_TRUNC`, `TIME_TRUNC`, and
