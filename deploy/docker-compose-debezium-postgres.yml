@@ -21,7 +21,7 @@ services:
         condition: service_healthy
       postgres:
         condition: service_started
-    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.23.0}
+    image: ghcr.io/feldera/demo-container:${FELDERA_VERSION:-0.24.0}
     environment:
       RUST_BACKTRACE: "1"
       REDPANDA_BROKERS: "redpanda:9092"
