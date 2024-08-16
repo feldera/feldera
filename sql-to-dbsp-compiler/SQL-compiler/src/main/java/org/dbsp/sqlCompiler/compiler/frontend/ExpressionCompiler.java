@@ -374,6 +374,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPType leftType = left.getType();
         DBSPType rightType = right.getType();
 
+        assert opcode != DBSPOpcode.DIV_NULL || type.mayBeNull : "DIV_NULL should produce a nullable result";
         if (needCommonType(opcode, type, leftType, rightType)) {
             DBSPType commonBase = reduceType(leftType, rightType);
             if (opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.SUB ||

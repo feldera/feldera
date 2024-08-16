@@ -209,7 +209,7 @@ public class RustSqlRuntimeLibrary {
                 opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT ||
                 opcode == DBSPOpcode.AGG_LTE || opcode == DBSPOpcode.AGG_GTE)
             returnType = new DBSPTypeBool(CalciteObject.EMPTY, false);
-        if (opcode == DBSPOpcode.CONCAT)
+        if (opcode == DBSPOpcode.CONCAT || opcode == DBSPOpcode.DIV_NULL)
             returnType = expectedReturnType;
         String suffixl = ltype.nullableSuffix();
         String suffixr = rtype == null ? "" : rtype.nullableSuffix();

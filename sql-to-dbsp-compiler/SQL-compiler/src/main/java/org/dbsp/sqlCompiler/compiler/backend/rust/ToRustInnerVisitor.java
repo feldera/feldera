@@ -767,12 +767,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             DBSPType indexType = expression.right.getType();
             DBSPTypeVec vec = collectionType.to(DBSPTypeVec.class);
             this.builder.append("index")
-                    .append("_")
-                    .append(expression.left.getType().nullableSuffix())
-                    .append("_")
-                    .append(vec.getElementType().nullableSuffix())
-                    .append("_")
-                    .append(indexType.nullableSuffix())
+                    .append(expression.left.getType().nullableUnderlineSuffix())
+                    .append(vec.getElementType().nullableUnderlineSuffix())
+                    .append(indexType.nullableUnderlineSuffix())
                     .append("(");
             expression.left.accept(this);
             this.builder.append(", ");
@@ -787,12 +784,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             DBSPType collectionType = expression.left.getType();
             DBSPTypeMap vec = collectionType.to(DBSPTypeMap.class);
             this.builder.append("map_index")
-                    .append("_")
-                    .append(expression.left.getType().nullableSuffix())
-                    .append("_")
-                    .append(vec.getKeyType().nullableSuffix())
-                    .append("_")
-                    .append(expression.right.getType().nullableSuffix())
+                    .append(expression.left.getType().nullableUnderlineSuffix())
+                    .append(vec.getKeyType().nullableUnderlineSuffix())
+                    .append(expression.right.getType().nullableUnderlineSuffix())
                     .append("(");
             expression.left.accept(this);
             this.builder.append(", ");
@@ -801,8 +795,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return VisitDecision.STOP;
         } else if (expression.operation == DBSPOpcode.DIV_NULL) {
             this.builder.append("div_null")
-                    .append(expression.left.getType().nullableSuffix())
-                    .append(expression.right.getType().nullableSuffix())
+                    .append(expression.left.getType().nullableUnderlineSuffix())
+                    .append(expression.right.getType().nullableUnderlineSuffix())
                     .append("(");
             expression.left.accept(this);
             this.builder.append(", ");

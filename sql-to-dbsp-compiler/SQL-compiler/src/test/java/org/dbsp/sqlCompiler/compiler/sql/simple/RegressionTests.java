@@ -15,6 +15,17 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
+    public void issue2261() {
+        String sql = """
+                CREATE TABLE stddev_groupby(id INT, c2 TINYINT NOT NULL);
+                CREATE VIEW stddev_view AS SELECT
+                STDDEV_SAMP(c2) AS c2
+                FROM stddev_groupby
+                GROUP BY id;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void issue2090() {
         String sql = """
                 CREATE TABLE example (
