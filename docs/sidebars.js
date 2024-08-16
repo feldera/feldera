@@ -233,6 +233,7 @@ const sidebars = {
                 'sql/datetime',
                 'sql/materialized',
                 'sql/streaming',
+                'sql/table',
                 'sql/udf'
               ]
             },
