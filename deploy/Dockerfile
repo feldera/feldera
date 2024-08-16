@@ -97,7 +97,7 @@ RUN /root/.cargo/bin/cargo build --release --bin=pipeline-manager --features=pg-
 
 # Java build can be performed in parallel
 FROM base AS javabuild
-RUN apt install maven -y
+RUN apt install maven git -y
 RUN mkdir sql
 COPY sql-to-dbsp-compiler /sql/sql-to-dbsp-compiler
 RUN --mount=type=cache,target=/root/.m2 \
