@@ -27,9 +27,12 @@ use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::{
+    collections::VecDeque,
+    path::{Path, PathBuf},
+};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     fs,
@@ -86,7 +89,7 @@ where
     /// Zero or more batches not currently being merged.
     ///
     /// Invariant: the batches must be non-empty.
-    loose_batches: Vec<Arc<B>>,
+    loose_batches: VecDeque<Arc<B>>,
 }
 
 impl<B> Default for Slot<B>
@@ -96,7 +99,7 @@ where
     fn default() -> Self {
         Self {
             merging_batches: None,
-            loose_batches: Vec::new(),
+            loose_batches: VecDeque::new(),
         }
     }
 }
@@ -109,10 +112,24 @@ where
     /// at least two loose batches, picks two of the loose batches and makes
     /// them into merging batches, and returns those batches. Otherwise, returns
     /// `None` without changing anything.
+    ///
+    /// We merge the least recently added batch (ensuring that batches
+    /// eventually get merged) with the one closest in size (ensuring that the
+    /// merge is as efficient as it can be).
     fn try_start_merge(&mut self) -> Option<[Arc<B>; 2]> {
         if self.merging_batches.is_none() && self.loose_batches.len() >= 2 {
-            let a = self.loose_batches.pop().unwrap();
-            let b = self.loose_batches.pop().unwrap();
+            let a = self.loose_batches.pop_front().unwrap();
+            let a_len = a.len();
+            let mut best_idx = 0;
+            let mut best_distance = self.loose_batches[0].len().abs_diff(a_len);
+            for idx in 1..self.loose_batches.len() {
+                let distance = self.loose_batches[idx].len().abs_diff(a_len);
+                if distance < best_distance {
+                    best_idx = idx;
+                    best_distance = distance;
+                }
+            }
+            let b = self.loose_batches.remove(best_idx).unwrap();
             self.merging_batches = Some([Arc::clone(&a), Arc::clone(&b)]);
             Some([a, b])
         } else {
@@ -170,7 +187,7 @@ where
             if !batch.is_empty() {
                 self.slots[Spine::<B>::size_to_level(batch.len())]
                     .loose_batches
-                    .push(batch);
+                    .push_back(batch);
             }
         }
     }
@@ -180,7 +197,7 @@ where
     fn add_batch(&mut self, batch: Arc<B>) {
         debug_assert!(!batch.is_empty());
         let level = Spine::<B>::size_to_level(batch.len());
-        self.slots[level].loose_batches.push(batch);
+        self.slots[level].loose_batches.push_back(batch);
     }
 
     fn get_filters(&self) -> (Option<Filter<B::Key>>, Option<Filter<B::Val>>) {
@@ -202,7 +219,7 @@ where
         let mut loose_batches =
             Vec::with_capacity(self.slots.iter().map(|slot| slot.loose_batches.len()).sum());
         for slot in &mut self.slots {
-            loose_batches.append(&mut slot.loose_batches);
+            loose_batches.extend(slot.loose_batches.drain(..));
         }
         loose_batches
     }
@@ -297,9 +314,12 @@ where
 ///
 /// The design of this merger does both. We divide batches into categories based
 /// on their "level", which is roughly the base-10 log of their size (see
-/// [Spine::size_to_level]). When a level contains multiple batches, we merge
-/// them without consideration for size. The result of a merge might be in the
-/// next higher level, ensuring that larger merges eventually happen.
+/// [Spine::size_to_level]). We run one merge per level at a time, only merging
+/// batches in the same level with each.  When a level contains more than two
+/// batches, we merge the least recently added batch (ensuring that batches
+/// eventually get merged) with the one closest in size (ensuring that the merge
+/// is as efficient as it can be). The result of a merge might be in the next
+/// higher level, ensuring that larger merges eventually happen.
 struct AsyncMerger<B>
 where
     B: Batch,
