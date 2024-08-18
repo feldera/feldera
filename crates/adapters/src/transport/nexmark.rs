@@ -218,7 +218,7 @@ impl Inner {
             .then(|| Arc::new(Barrier::new(options.threads)));
         let generators = (0..options.threads)
             .map(|index| {
-                let consumers = EnumMap::from_fn(|table| consumers[table].fork());
+                let consumers = EnumMap::from_fn(|table| consumers[table].clone());
                 let barrier = barrier.clone();
                 let inner = Arc::clone(&self);
                 thread::Builder::new()

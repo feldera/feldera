@@ -7,12 +7,15 @@ use crate::{
     ControllerError, DeCollectionHandle,
 };
 use anyhow::Result as AnyResult;
+use dbsp::DBData;
 use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use std::{
     fmt::Debug,
     mem::take,
     sync::{Arc, Mutex, MutexGuard},
 };
+
+use super::{wait, DEFAULT_TIMEOUT_MS};
 
 #[derive(Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum MockUpdate<T, U> {
@@ -232,4 +235,68 @@ where
     fn fork(&self) -> Box<dyn DeCollectionStream> {
         Box::new(Self::new(self.handle.clone(), self.config.clone()))
     }
+}
+
+/// Wait to receive all records in `data` in the same order.
+pub fn wait_for_output_ordered<T>(zset: &MockDeZSet<T, T>, data: &[Vec<T>])
+where
+    T: DBData,
+{
+    let num_records: usize = data.iter().map(Vec::len).sum();
+
+    wait(
+        || zset.state().flushed.len() == num_records,
+        DEFAULT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    let expected = zset
+        .state()
+        .flushed
+        .iter()
+        .map(|u| u.unwrap_insert())
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let flattened = data
+        .iter()
+        .flat_map(|data| data.iter())
+        .cloned()
+        .collect::<Vec<_>>();
+
+    assert_eq!(&expected, &flattened);
+
+    // for (i, val) in data.iter().flat_map(|data| data.iter()).enumerate() {
+    //     assert_eq!(zset.state().flushed[i].unwrap_insert(), val);
+    // }
+}
+
+/// Wait to receive all records in `data` in some order.
+pub fn wait_for_output_unordered<T>(zset: &MockDeZSet<T, T>, data: &[Vec<T>])
+where
+    T: DBData,
+{
+    let num_records: usize = data.iter().map(Vec::len).sum();
+
+    wait(
+        || zset.state().flushed.len() == num_records,
+        DEFAULT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    let mut data_sorted = data
+        .iter()
+        .flat_map(|data| data.clone().into_iter())
+        .collect::<Vec<_>>();
+    data_sorted.sort();
+
+    let mut zset_sorted = zset
+        .state()
+        .flushed
+        .iter()
+        .map(|upd| upd.unwrap_insert().clone())
+        .collect::<Vec<_>>();
+    zset_sorted.sort();
+
+    assert_eq!(zset_sorted, data_sorted);
 }

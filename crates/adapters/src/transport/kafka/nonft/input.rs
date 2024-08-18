@@ -335,7 +335,7 @@ impl KafkaInputReader {
         for _ in 1..n_threads {
             threads.push(HelperThread::new(
                 Arc::clone(&endpoint),
-                consumer.fork(),
+                consumer.clone(),
                 Arc::clone(&should_exit),
                 feedback_sender.clone(),
             ));

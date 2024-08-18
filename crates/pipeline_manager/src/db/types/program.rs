@@ -489,6 +489,7 @@ pub fn generate_program_info_from_schema(
             match connector.config.transport {
                 TransportConfig::FileInput(_)
                 | TransportConfig::KafkaInput(_)
+                | TransportConfig::PubSubInput(_)
                 | TransportConfig::UrlInput(_)
                 | TransportConfig::S3Input(_)
                 | TransportConfig::DeltaTableInput(_)

@@ -970,3 +970,9 @@ impl ControllerError {
         Self::ControllerPanic
     }
 }
+
+impl From<ConfigError> for ControllerError {
+    fn from(config_error: ConfigError) -> Self {
+        Self::Config { config_error }
+    }
+}

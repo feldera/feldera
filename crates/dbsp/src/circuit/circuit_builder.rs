@@ -460,7 +460,7 @@ impl<D> StreamValue<D> {
 ///     object.
 ///
 ///     [`Stream::dyn_average`] calculates the average over the values for each
-/// key.
+///     key.
 ///
 ///   * [`Stream::dyn_stream_aggregate`] aggregates data streams.  Each batch
 ///     from the input is separately aggregated and written to the output

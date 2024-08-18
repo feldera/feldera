@@ -3330,6 +3330,70 @@
           }
         }
       },
+      "PubSubInputConfig": {
+        "type": "object",
+        "description": "Google Pub/Sub input connector configuration.",
+        "required": [
+          "subscription"
+        ],
+        "properties": {
+          "connect_timeout_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "description": "gRPC connection timeout.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "credentials": {
+            "type": "string",
+            "description": "The content of a Google Cloud credentials JSON file.\n\nWhen this option is specified, the connector will use the provided credentials for\nauthentication.  Otherwise, it will use Application Default Credentials (ADC) configured\nin the environment where the Feldera service is running.  See\n[Google Cloud documentation](https://cloud.google.com/docs/authentication/provide-credentials-adc)\nfor information on configuring application default credentials.\n\nWhen running Feldera in an environment where ADC are not configured,\ne.g., a Docker container, use this option to ship Google Cloud credentials from another environment.\nFor example, if you use the\n[`gcloud auth application-default login`](https://cloud.google.com/pubsub/docs/authentication#client-libs)\ncommand for authentication in your local development environment, ADC are stored in the\n`.config/gcloud/application_default_credentials.json` file in your home directory.",
+            "nullable": true
+          },
+          "emulator": {
+            "type": "string",
+            "description": "Set in order to use a Pub/Sub [emulator](https://cloud.google.com/pubsub/docs/emulator)\ninstead of the production service, e.g., 'localhost:8681'.",
+            "nullable": true
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "Override the default service endpoint 'pubsub.googleapis.com'",
+            "nullable": true
+          },
+          "pool_size": {
+            "type": "integer",
+            "format": "int32",
+            "description": "gRPC channel pool size.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Google Cloud project_id.\n\nWhen not specified, the connector will use the project id associated\nwith the authenticated account.",
+            "nullable": true
+          },
+          "snapshot": {
+            "type": "string",
+            "description": "Reset subscription's backlog to a given snapshot on startup,\nusing the Pub/Sub `Seek` API.\n\nThis option is mutually exclusive with the `timestamp` option.",
+            "nullable": true
+          },
+          "subscription": {
+            "type": "string",
+            "description": "Subscription name."
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "description": "gRPC request timeout.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "Reset subscription's backlog to a given timestamp on startup,\nusing the Pub/Sub `Seek` API.\n\nThe value of this option is an ISO 8601-encoded UTC time, e.g., \"2024-08-17T16:39:57-08:00\".\n\nThis option is mutually exclusive with the `snapshot` option.",
+            "nullable": true
+          }
+        }
+      },
       "ReadStrategy": {
         "oneOf": [
           {
@@ -3919,6 +3983,24 @@
                 "type": "string",
                 "enum": [
                   "kafka_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/PubSubInputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "pub_sub_input"
                 ]
               }
             }

@@ -252,10 +252,8 @@ pub struct CompilerConfig {
     ///
     /// Available choices are:
     /// * 'dev', for development.
-    /// * 'unoptimized', for faster compilation times
-    /// at the cost of lower runtime performance.
-    /// * 'optimized', for faster runtime performance
-    /// at the cost of slower compilation times.
+    /// * 'unoptimized', for faster compilation times at the cost of lower runtime performance.
+    /// * 'optimized', for faster runtime performance at the cost of slower compilation times.
     #[serde(default = "default_compilation_profile")]
     #[arg(long, default_value_t = default_compilation_profile())]
     pub compilation_profile: CompilationProfile,

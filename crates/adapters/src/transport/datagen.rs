@@ -111,7 +111,7 @@ impl InputGenerator {
             let generated = generated.clone();
             let schema = schema.clone();
             let notifier = notifier.clone();
-            let consumer = consumer.fork();
+            let consumer = consumer.clone();
             let shared_state = shared_state.clone();
 
             if needs_blocking_tasks {
@@ -1252,7 +1252,7 @@ impl RecordGenerator {
     /// Generates a JSON record based on the schema and configuration.
     ///
     /// - `idx` is the index of the record to generate, it should be global
-    ///  across all threads.
+    ///   across all threads.
     fn make_json_record(&mut self, idx: usize) -> AnyResult<&Value> {
         let mut rng = self.rng.take().unwrap();
         let mut obj = self.json_obj.take().unwrap();

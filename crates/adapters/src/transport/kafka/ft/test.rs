@@ -495,6 +495,7 @@ impl DummyInputReceiver {
     }
 }
 
+#[derive(Clone)]
 struct DummyInputConsumer(Arc<DummyInputReceiverInner>);
 
 impl DummyInputConsumer {
@@ -528,9 +529,6 @@ impl InputConsumer for DummyInputConsumer {
     fn eoi(&mut self) -> Vec<ParseError> {
         self.called(ConsumerCall::Eoi);
         vec![]
-    }
-    fn fork(&self) -> Box<dyn InputConsumer> {
-        unreachable!()
     }
     fn committed(&mut self, step: Step) {
         info!("step {step} committed");

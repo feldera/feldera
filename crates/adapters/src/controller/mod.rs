@@ -1697,6 +1697,17 @@ struct InputProbe {
     controller: Arc<ControllerInner>,
 }
 
+impl Clone for InputProbe {
+    fn clone(&self) -> Self {
+        Self::new(
+            self.endpoint_id,
+            &self.endpoint_name,
+            self.parser.fork(),
+            self.controller.clone(),
+        )
+    }
+}
+
 impl InputProbe {
     fn new(
         endpoint_id: EndpointId,
@@ -1759,15 +1770,6 @@ impl InputConsumer for InputProbe {
     fn error(&mut self, fatal: bool, error: AnyError) {
         self.controller
             .input_transport_error(self.endpoint_id, &self.endpoint_name, fatal, error);
-    }
-
-    fn fork(&self) -> Box<dyn InputConsumer> {
-        Box::new(Self::new(
-            self.endpoint_id,
-            &self.endpoint_name,
-            self.parser.fork(),
-            self.controller.clone(),
-        ))
     }
 
     fn start_step(&mut self, step: Step) {

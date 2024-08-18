@@ -1,21 +1,18 @@
 use super::{InputConsumer, InputEndpoint, InputReader, Step, TransportInputEndpoint};
-use crate::PipelineState;
+use crate::{ensure_default_crypto_provider, PipelineState};
 use actix::System;
 use actix_web::http::header::{ByteRangeSpec, ContentRangeSpec, Range, CONTENT_RANGE};
 use anyhow::{anyhow, Result as AnyResult};
 use awc::{Client, Connector};
 use futures::StreamExt;
-use lazy_static::lazy_static;
 use pipeline_types::program_schema::Relation;
 use pipeline_types::transport::url::UrlInputConfig;
-use rustls::{ClientConfig, OwnedTrustAnchor, RootCertStore};
 use std::{cmp::Ordering, str::FromStr, sync::Arc, thread::spawn, time::Duration};
 use tokio::{
     select,
     sync::watch::{channel, Receiver, Sender},
     time::{sleep_until, Instant},
 };
-use webpki_roots::TLS_SERVER_ROOTS;
 
 pub(crate) struct UrlInputEndpoint {
     config: Arc<UrlInputConfig>,
@@ -74,9 +71,9 @@ impl UrlInputReader {
         consumer: &mut Box<dyn InputConsumer>,
         mut receiver: Receiver<PipelineState>,
     ) -> AnyResult<()> {
-        let client = Client::builder()
-            .connector(Connector::new().rustls(rustls_config()))
-            .finish();
+        ensure_default_crypto_provider();
+
+        let client = Client::builder().connector(Connector::new()).finish();
 
         // Number of bytes of URL content that we've delivered to `consumer`.
         let mut consumed_bytes = 0;
@@ -257,30 +254,6 @@ impl Drop for UrlInputReader {
     fn drop(&mut self) {
         self.disconnect();
     }
-}
-
-fn rustls_config() -> Arc<ClientConfig> {
-    lazy_static! {
-        static ref ROOT_STORE: Arc<ClientConfig> = {
-            let mut root_store = RootCertStore::empty();
-            root_store.add_server_trust_anchors(TLS_SERVER_ROOTS.iter().map(|ta| {
-                OwnedTrustAnchor::from_subject_spki_name_constraints(
-                    ta.subject,
-                    ta.spki,
-                    ta.name_constraints,
-                )
-            }));
-
-            Arc::new(
-                ClientConfig::builder()
-                    .with_safe_defaults()
-                    .with_root_certificates(root_store)
-                    .with_no_client_auth(),
-            )
-        };
-    }
-
-    ROOT_STORE.clone()
 }
 
 #[cfg(test)]

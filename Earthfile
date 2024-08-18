@@ -44,6 +44,14 @@ install-deps:
             && rpk version \
             && rm rpk-linux-$arch.zip
 
+    # Install Google Cloud CLI.
+    RUN curl -LO https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
+        && tar -zxf google-cloud-cli-linux-x86_64.tar.gz \
+        && rm google-cloud-cli-linux-x86_64.tar.gz \
+        && google-cloud-sdk/install.sh --quiet \
+        && google-cloud-sdk/bin/gcloud components install beta pubsub-emulator --quiet \
+        && google-cloud-sdk/bin/gcloud components list
+
 install-rust:
     FROM +install-deps
     RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
@@ -206,8 +214,9 @@ test-adapters:
     WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3
         RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
             redpanda start --smp 2  && \
+            (google-cloud-sdk/bin/gcloud beta emulators pubsub start --project=feldera-test --host-port=127.0.0.1:8685 &) && \
             sleep 5 && \
-            RUST_BACKTRACE=1 cargo test --package dbsp_adapters --package sqllib
+            RUST_BACKTRACE=1 cargo test --package dbsp_adapters --features "pubsub-emulator-test" --package sqllib
     END
 
 test-manager:

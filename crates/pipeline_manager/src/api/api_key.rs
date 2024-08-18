@@ -81,7 +81,7 @@ pub(crate) async fn list_api_keys(
         let api_key = state.db.lock().await.get_api_key(*tenant_id, name).await?;
         Ok(HttpResponse::Ok()
             .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(&vec![api_key]))
+            .json(vec![api_key]))
     } else {
         let api_keys = state.db.lock().await.list_api_keys(*tenant_id).await?;
         Ok(HttpResponse::Ok()

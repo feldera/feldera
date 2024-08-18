@@ -1,6 +1,7 @@
 use crate::{
     catalog::RecordFormat,
     controller::ConnectorConfig,
+    ensure_default_crypto_provider,
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
@@ -160,8 +161,7 @@ pub struct ServerArgs {
 /// # Arguments
 ///
 /// * `circuit_factory` - a function that creates a circuit and builds an
-///   input/output stream
-/// catalog.
+///   input/output stream catalog.
 pub fn server_main<F>(circuit_factory: F) -> Result<(), ControllerError>
 where
     F: FnOnce(
@@ -188,6 +188,8 @@ where
         + Send
         + 'static,
 {
+    ensure_default_crypto_provider();
+
     let bind_address = args.bind_address.clone();
     let port = args.default_port.unwrap_or(0);
     let listener = TcpListener::bind((bind_address, port))
@@ -1052,6 +1054,7 @@ mod test_with_kafka {
     use super::{bootstrap, build_app, ServerArgs, ServerState};
     use crate::{
         controller::MAX_API_CONNECTIONS,
+        ensure_default_crypto_provider,
         test::{
             generate_test_batches,
             http::{TestHttpReceiver, TestHttpSender},
@@ -1081,6 +1084,8 @@ mod test_with_kafka {
 
     #[actix_web::test]
     async fn test_server() {
+        ensure_default_crypto_provider();
+
         // We cannot use proptest macros in `async` context, so generate
         // some random data manually.
         let mut runner = TestRunner::default();

@@ -153,6 +153,11 @@ const sidebars = {
                           label: 'Kafka'
                       },
                       {
+                        type: 'doc',
+                        id: 'connectors/sources/pubsub',
+                        label: 'Google Pub/Sub'
+                      },
+                      {
                           type: 'doc',
                           id: 'connectors/sources/debezium-mysql',
                           label: 'Debezium-MySQL'
