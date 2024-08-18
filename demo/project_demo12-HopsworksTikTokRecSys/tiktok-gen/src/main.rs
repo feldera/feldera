@@ -39,7 +39,7 @@ struct Options {
     historical: bool,
 
     /// Set a Kafka client option, e.g. `-O key=value`.
-    #[clap(short = 'O')]
+    #[clap(short = 'O', long)]
     kafka_options: Vec<String>,
 
     /// Specify a prefix to add to each of the topic names.
@@ -57,6 +57,10 @@ struct Options {
     /// Set `True` to delete the topic if it already exists.
     #[clap(long, default_value = "false")]
     delete_topic_if_exists: bool,
+
+    /// The Kafka bootstrap.servers.
+    #[clap(short = 'B', long, default_value = "localhost:9092")]
+    bootstrap_servers: String,
 
     /// Kafka broker message size.  Messages will ordinarily be `SIZE` bytes or
     /// less, but if `SIZE` is less than the length of an individual record,
@@ -95,7 +99,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("generating events took: {}s", took.as_secs());
 
     let mut client_config = ClientConfig::new();
-    client_config.set("bootstrap.servers", "localhost:9092");
+    client_config.set("bootstrap.servers", &options.bootstrap_servers);
     for option in &options.kafka_options {
         let (key, value) = option
             .split_once('=')
