@@ -171,6 +171,7 @@ The program version is used internally by the compiler to know when to recompile
         pipeline_types::transport::kafka::KafkaOutputConfig,
         pipeline_types::transport::kafka::KafkaInputFtConfig,
         pipeline_types::transport::kafka::KafkaOutputFtConfig,
+        pipeline_types::transport::pubsub::PubSubInputConfig,
         pipeline_types::transport::s3::ConsumeStrategy,
         pipeline_types::transport::s3::ReadStrategy,
         pipeline_types::transport::s3::AwsCredentials,

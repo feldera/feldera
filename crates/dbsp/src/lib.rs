@@ -22,21 +22,20 @@
 //!   2023, Vancouver, Canada](https://www.feldera.com/vldb23.pdf)
 //!
 //! - Here is [a presentation about DBSP](https://www.youtube.com/watch?v=iT4k5DCnvPU)
-//!   at the 2023
-//! Apache Calcite Meetup.
+//!   at the 2023 Apache Calcite Meetup.
 //!
 //! The model provides two things:
 //!
 //! 1. **Semantics.** DBSP defines a formal language of streaming operators and
-//! queries built out of these operators, and precisely specifies how these
-//! queries must transform input streams to output streams.
+//!    queries built out of these operators, and precisely specifies how these
+//!    queries must transform input streams to output streams.
 //!
 //! 2. **Algorithm.** DBSP also gives an algorithm that takes an arbitrary query
-//! and generates an incremental dataflow program that implements this query
-//! correctly (in accordance with its formal semantics) and efficiently.
-//! Efficiency here means, in a nutshell, that the cost of processing a set of
-//! input events is proportional to the size of the input rather than the entire
-//! state of the database.
+//!    and generates an incremental dataflow program that implements this query
+//!    correctly (in accordance with its formal semantics) and efficiently. Efficiency
+//!    here means, in a nutshell, that the cost of processing a set of
+//!    input events is proportional to the size of the input rather than the entire
+//!    state of the database.
 //!
 //! # Crate overview
 //!

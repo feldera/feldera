@@ -163,8 +163,9 @@ impl SqlRow {
     /// in SqlLogicTest.
     /// # Arguments
     /// - 'format': a string with characters I, R, or T, standing
-    /// respectively for integers, real, or text.
+    ///   respectively for integers, real, or text.
     /// # Panics
+    ///
     /// if format.let() != self.values.len()
     pub fn to_slt_strings(self, format: &str) -> Vec<String> {
         if self.values.len() != format.len() {

@@ -6,6 +6,7 @@ use crate::{
 };
 use anyhow::Result as AnyResult;
 use dbsp::{DBData, OrdZSet, Runtime};
+use env_logger::Env;
 use log::{Log, Metadata, Record};
 use pipeline_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -17,6 +18,7 @@ use std::fs::{read_dir, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{
+    io::Write,
     thread::sleep,
     time::{Duration, Instant},
 };
@@ -40,7 +42,7 @@ pub use data::{
 };
 use dbsp::circuit::CircuitConfig;
 use dbsp::utils::Tup2;
-pub use mock_dezset::{MockDeZSet, MockUpdate};
+pub use mock_dezset::{wait_for_output_ordered, wait_for_output_unordered, MockDeZSet, MockUpdate};
 pub use mock_input_consumer::MockInputConsumer;
 pub use mock_output_consumer::MockOutputConsumer;
 use pipeline_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -256,4 +258,20 @@ where
             })
             .collect::<Vec<_>>(),
     )
+}
+
+pub(crate) fn init_test_logger() {
+    let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+        .is_test(true)
+        .format(move |buf, record| {
+            let t = chrono::Utc::now();
+            let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
+            writeln!(
+                buf,
+                "{t} {} {}",
+                buf.default_styled_level(record.level()),
+                record.args()
+            )
+        })
+        .try_init();
 }

@@ -146,10 +146,6 @@ impl InputConsumer for MockInputConsumer {
         errors
     }
 
-    fn fork(&self) -> Box<dyn InputConsumer> {
-        Box::new(self.clone())
-    }
-
     fn start_step(&mut self, _step: Step) {}
 
     fn committed(&mut self, _step: Step) {}

@@ -20,24 +20,20 @@
 //! ## Design
 //!
 //! * We define [`trait DeserializeWithContext`], which has the same signature
-//!   as
-//! `Deserialize` with the extra context argument.
+//!   as `Deserialize` with the extra context argument.
 //!
 //! * [`deserialize_without_context`](`crate::deserialize_without_context`)
-//!   macro
-//! is used to implement [`DeserializeWithContext`] for types that implement
-//! `serde::Deserialize` and don't support configurable deserialization.
+//!   macro is used to implement [`DeserializeWithContext`] for types that implement
+//!   `serde::Deserialize` and don't support configurable deserialization.
 //!
 //! * We implement [`DeserializeWithContext`] for vectors, tuples, and options
-//! by passing the context to each element.
+//!   by passing the context to each element.
 //!
-//! * The [`deserialize_struct`](`crate::deserialize_struct`) macro is used to
-//! implement [`DeserializeWithContext`] for structs.
+//! * The [`deserialize_struct`](`crate::deserialize_struct`) macro is used to implement [`DeserializeWithContext`] for structs.
 //!
-//! * The [`deserialize_table_record`](`crate::deserialize_table_record`) macro
-//! implements [`DeserializeWithContext`] for SQL table records.  It's similar
-//! to [`deserialize_struct`](`crate::deserialize_struct`), but additionally
-//! handles case-(in)sensitive SQL columns.
+//! * The [`deserialize_table_record`](`crate::deserialize_table_record`) macro implements [`DeserializeWithContext`] for SQL table records.  It's similar
+//!   to [`deserialize_struct`](`crate::deserialize_struct`), but additionally
+//!   handles case-(in)sensitive SQL columns.
 
 // TODOs:
 // This could benefit from using procedural macros to auto-derive
@@ -386,8 +382,7 @@ pub struct FieldParseError {
 /// * `$num_fields` - the number of struct fields.
 /// * `$field_name` - field name.
 /// * `$type` - field type.
-/// * `$default` - `None`, or `Some(value)` for fields that have a default
-/// value.
+/// * `$default` - `None`, or `Some(value)` for fields that have a default value.
 // TODO: This should be a procedural macro, but I don't have experience with those
 // and it would take me too long to write one.  It should be possible to steal code
 // from `serde_derive`.

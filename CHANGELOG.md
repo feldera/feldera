@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 - [WebConsole] Add Throughput and Memory graphs, nicer formatting to Performance tab
 
+- [adapters] Google Pub/Sub input connector
+  ([#2312](https://github.com/feldera/feldera/pull/2312))
+
 ## [0.24.0] - 2024-08-15
 
 - [SQL] Added compiler options and table properties for streaming programs

@@ -11,6 +11,7 @@ use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConf
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
 use crate::transport::nexmark::NexmarkInputConfig;
+use crate::transport::pubsub::PubSubInputConfig;
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
 use serde::{Deserialize, Serialize};
@@ -371,6 +372,7 @@ pub enum TransportConfig {
     FileOutput(FileOutputConfig),
     KafkaInput(KafkaInputConfig),
     KafkaOutput(KafkaOutputConfig),
+    PubSubInput(PubSubInputConfig),
     UrlInput(UrlInputConfig),
     S3Input(S3InputConfig),
     DeltaTableInput(DeltaTableReaderConfig),
@@ -390,6 +392,7 @@ impl TransportConfig {
             TransportConfig::FileOutput(_) => "file_output".to_string(),
             TransportConfig::KafkaInput(_) => "kafka_input".to_string(),
             TransportConfig::KafkaOutput(_) => "kafka_output".to_string(),
+            TransportConfig::PubSubInput(_) => "pub_sub_input".to_string(),
             TransportConfig::UrlInput(_) => "url_input".to_string(),
             TransportConfig::S3Input(_) => "s3_input".to_string(),
             TransportConfig::DeltaTableInput(_) => "delta_table_input".to_string(),

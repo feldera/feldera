@@ -1,12 +1,12 @@
 use crate::{
     test::{
-        generate_test_batches,
+        generate_test_batches, init_test_logger,
         kafka::{BufferConsumer, KafkaResources, TestProducer},
-        mock_input_pipeline, test_circuit, wait, MockDeZSet, TestStruct, DEFAULT_TIMEOUT_MS,
+        mock_input_pipeline, test_circuit, wait_for_output_ordered, wait_for_output_unordered,
+        TestStruct,
     },
     Controller, PipelineConfig,
 };
-use env_logger::Env;
 use log::info;
 use parquet::data_type::AsBytes;
 use pipeline_types::program_schema::Relation;
@@ -14,7 +14,6 @@ use proptest::prelude::*;
 use rdkafka::message::{BorrowedMessage, Header, Headers};
 use rdkafka::Message;
 use std::{
-    io::Write,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -22,64 +21,6 @@ use std::{
     thread::sleep,
     time::Duration,
 };
-
-/// Wait to receive all records in `data` in the same order.
-fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[Vec<TestStruct>]) {
-    let num_records: usize = data.iter().map(Vec::len).sum();
-
-    wait(
-        || zset.state().flushed.len() == num_records,
-        DEFAULT_TIMEOUT_MS,
-    )
-    .unwrap();
-
-    for (i, val) in data.iter().flat_map(|data| data.iter()).enumerate() {
-        assert_eq!(zset.state().flushed[i].unwrap_insert(), val);
-    }
-}
-
-/// Wait to receive all records in `data` in some order.
-fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[Vec<TestStruct>]) {
-    let num_records: usize = data.iter().map(Vec::len).sum();
-
-    wait(
-        || zset.state().flushed.len() == num_records,
-        DEFAULT_TIMEOUT_MS,
-    )
-    .unwrap();
-
-    let mut data_sorted = data
-        .iter()
-        .flat_map(|data| data.clone().into_iter())
-        .collect::<Vec<_>>();
-    data_sorted.sort();
-
-    let mut zset_sorted = zset
-        .state()
-        .flushed
-        .iter()
-        .map(|upd| upd.unwrap_insert().clone())
-        .collect::<Vec<_>>();
-    zset_sorted.sort();
-
-    assert_eq!(zset_sorted, data_sorted);
-}
-
-fn init_test_logger() {
-    let _ = env_logger::Builder::from_env(Env::default().default_filter_or("info"))
-        .is_test(true)
-        .format(move |buf, record| {
-            let t = chrono::Utc::now();
-            let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
-            writeln!(
-                buf,
-                "{t} {} {}",
-                buf.default_styled_level(record.level()),
-                record.args()
-            )
-        })
-        .try_init();
-}
 
 #[test]
 fn test_kafka_output_errors() {

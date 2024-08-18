@@ -273,7 +273,7 @@ impl Compiler {
         let profile = Compiler::pick_compilation_profile(config, program_profile);
         info!("Compiling Rust for program {pipeline_id} with profile {profile}");
         command
-            .current_dir(&config.workspace_dir())
+            .current_dir(config.workspace_dir())
             .arg("build")
             .arg("--workspace")
             .arg("--profile")

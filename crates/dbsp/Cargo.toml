@@ -52,7 +52,7 @@ futures = "0.3"
 tokio = { version = "1.25.0", features = ["macros", "rt", "rt-multi-thread"] }
 paste = "1"
 derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
-dyn-clone = "1.0.16"
+dyn-clone = "1.0.17"
 rand_chacha = "0.3.1"
 tempfile = "3.10.0"
 binrw = "0.13.3"

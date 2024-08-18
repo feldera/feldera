@@ -4,7 +4,7 @@
 //mod tests;
 
 use rand::Rng;
-use rkyv::{Archive, Deserialize, Serialize};
+use rkyv::{Archive, Serialize};
 
 use crate::{
     algebra::{AddAssignByRef, AddByRef, NegByRef},
@@ -56,7 +56,7 @@ impl<K: DataTrait + ?Sized, C: Clone> Clone for LayerFactories<K, C> {
 /// In this representation, the values for `keys[i]` are found at `vals[offs[i]
 /// .. offs[i+1]]`.
 // False positive from clippy
-#[derive(SizeOf, Archive, Serialize, Deserialize)]
+#[derive(SizeOf, Archive, Serialize)]
 pub struct Layer<K, L, O = usize>
 where
     K: DataTrait + ?Sized,

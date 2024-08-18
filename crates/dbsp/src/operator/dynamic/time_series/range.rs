@@ -21,8 +21,7 @@ use crate::{
 /// `RelOffset::Before(0)` and `RelOffset::After(0)` both represent the same
 /// relative time.  This is also true for `RelOffset::Before(1)` and
 /// `RelOffset::After(-1)`, but the former is preferred.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum RelOffset<TS> {
     Before(TS),
     After(TS),
@@ -85,8 +84,7 @@ where
 /// `RelRange::new(RelOffset::Before(0), RelOffset::Before(0))` spans 1 unit of
 /// time; `RelRange::new(RelOffset::Before(2), RelOffset::Before(0))` spans 3
 /// units:
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct RelRange<TS> {
     pub from: RelOffset<TS>,
     pub to: RelOffset<TS>,

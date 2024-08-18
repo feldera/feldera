@@ -22,6 +22,8 @@
 //! ```
 use crate::format::ParseError;
 use anyhow::{Error as AnyError, Result as AnyResult};
+use dyn_clone::DynClone;
+use pubsub::PubSubInputEndpoint;
 use std::ops::Range;
 use std::sync::atomic::AtomicU64;
 
@@ -40,6 +42,9 @@ pub(crate) mod kafka;
 
 #[cfg(feature = "with-nexmark")]
 mod nexmark;
+
+#[cfg(feature = "with-pubsub")]
+mod pubsub;
 
 use crate::catalog::InputCollectionHandle;
 use pipeline_types::config::TransportConfig;
@@ -86,6 +91,12 @@ pub fn input_transport_config_to_endpoint(
         },
         #[cfg(not(feature = "with-kafka"))]
         TransportConfig::KafkaInput(_) => Ok(None),
+        #[cfg(feature = "with-pubsub")]
+        TransportConfig::PubSubInput(config) => {
+            Ok(Some(Box::new(PubSubInputEndpoint::new(config.clone())?)))
+        }
+        #[cfg(not(feature = "with-pubsub"))]
+        TransportConfig::PubSubInput(_) => Ok(None),
         TransportConfig::UrlInput(config) => Ok(Some(Box::new(UrlInputEndpoint::new(config)))),
         TransportConfig::S3Input(config) => Ok(Some(Box::new(S3InputEndpoint::new(config)))),
         TransportConfig::Datagen(config) => {
@@ -247,7 +258,7 @@ pub trait InputReader: Send {
 ///     completed step that has been written to stable storage.  The reader
 ///     indicates that `step`, and all prior steps, have committed by calling
 ///     `InputConsumer::committed(step)`.
-pub trait InputConsumer: Send {
+pub trait InputConsumer: Send + DynClone {
     /// Indicates that upcoming calls are for `step`.
     fn start_step(&mut self, step: Step);
 
@@ -287,13 +298,9 @@ pub trait InputConsumer: Send {
     ///
     /// No more data will be received from the endpoint.
     fn eoi(&mut self) -> Vec<ParseError>;
-
-    /// Create a new consumer instance.
-    ///
-    /// Used by multithreaded transport endpoints to create multiple parallel
-    /// input pipelines.
-    fn fork(&self) -> Box<dyn InputConsumer>;
 }
+
+dyn_clone::clone_trait_object!(InputConsumer);
 
 pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError) + Send + Sync>;
 
