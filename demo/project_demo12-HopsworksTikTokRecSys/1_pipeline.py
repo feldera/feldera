@@ -4,8 +4,28 @@ import config
 from sql_program import generate_program
 import time
 
-
 client = FelderaClient("http://localhost:8080")
+
+print("kafka_server:", config.KAFKA_SERVER)
+print("pipeline to kafka: ", config.KAFKA_SERVER_FROM_PIPELINE)
+
+
+json = {
+    "name": "json",
+    "config": {
+        "update_format": "raw",
+        "array": False
+    }
+}
+
+csv = {
+    "name": "csv",
+    "config": {}
+}
+
+
+data_fmt = csv if config.DATA_FMT == "csv" else json
+
 
 code = generate_program(
     {
@@ -17,13 +37,7 @@ code = generate_program(
             "poller_threads": 12,
         },
     },
-    {
-        "name": "json",
-        "config": {
-            "update_format": "raw",
-            "array": False
-        }
-    }
+    data_fmt
 )
 
 runtime_config = RuntimeConfig(storage=False, workers=10)
