@@ -5,7 +5,8 @@
   import type { XgressRecord } from '$lib/types/pipelineManager'
   import JSONbig from 'true-json-bigint'
 
-  import { VList } from 'virtua/svelte'
+  import { VirtualList, type AfterScrollEvent } from 'svelte-virtuallists'
+  import { useResizeObserver } from 'runed'
 
   let {
     changes
@@ -13,62 +14,71 @@
     changes: ({ relationName: string } & ({ insert: XgressRecord } | { delete: XgressRecord }))[]
   } = $props()
 
-  let ref: VList<any>
   let len = $derived(changes.length)
-  let lastScrollOffset = $state(0) // NOTE: Part of a workaround, see below
-  {
-    // Keep scroll position at the bottom of the list when its length increases if it's there already
-    let lastScrollSize = $state(0)
-    $effect(() => {
-      len
-      if (!ref) {
-        return
-      }
-      if (lastScrollSize === ref.getScrollSize()) {
-        return
-      }
-      const curScroll = ref.getScrollOffset() + ref.getViewportSize()
-
-      if (Math.round(curScroll - lastScrollSize) === 0) {
-        ref.scrollTo(ref.getScrollSize())
-        lastScrollOffset = ref.getScrollOffset()
-      } else if (lastScrollSize > curScroll && lastScrollOffset === 0) {
-        // NOTE: There is a bug with incorrectly reporting scroll position in a virtual list.
-        // When the virtual list is scrolled all the way to the bottom,
-        // the first time list length is increased after the list is already longer than the visible height,
-        // the following does not hold (but it should):
-        // Math.round(ref.getScrollOffset()) + Math.round(ref.getViewportSize()) === lastScrollSize
-        // We need this special case and to update `lastScrollOffset` as a hack to fix this behavior
-        ref.scrollTo(ref.getScrollSize())
-        lastScrollOffset = ref.getScrollOffset()
-      }
-      lastScrollSize = ref.getScrollSize()
-    })
+  let lastLen = $state(changes.length)
+  let scrollOffset = $state(0)
+  let lastScrollOffset = $state(0)
+  const itemSize = 24
+  let ref = $state<HTMLElement>()
+  let height = $state(0)
+  let didFirstScroll = $state(false)
+  const onAfterScroll = (e: AfterScrollEvent) => {
+    lastScrollOffset = Number(e.offset)
   }
+  useResizeObserver(
+    () => ref,
+    (entries) => {
+      const entry = entries[0]
+      if (!entry) {
+        return
+      }
+      height = entry.contentRect.height
+    }
+  )
   $effect(() => {
-    if (!ref) {
+    if (height === 0) {
       return
     }
-    // Make sure to scroll to beginning when jumping from list with some items to none
-    if (len === 0) {
-      ref.scrollTo(0)
+    if (lastLen === len && didFirstScroll) {
+      return
     }
+    stickToBottom(lastLen, len)
+    lastLen = len
   })
+  const stickToBottom = (lastLen: number, len: number) => {
+    if (lastScrollOffset !== 0 && Math.round(lastScrollOffset + height) >= lastLen * itemSize) {
+      // Scroll to the new bottom of the list if scroll was at the bottom previously
+      lastScrollOffset = scrollOffset = len * itemSize
+    } else if (!didFirstScroll && len > height / itemSize) {
+      // Scroll to the bottom of the list the first time it became longer than the viewport
+      lastScrollOffset = scrollOffset = len * itemSize
+      didFirstScroll = true
+    }
+  }
 </script>
 
-<div class="flex-1">
-  <VList data={changes} let:item getKey={(d, i) => i} bind:this={ref}>
-    <div
-      class={`whitespace-nowrap pl-2 before:inline-block before:w-2 even:!bg-opacity-30 even:bg-surface-100-900 ` +
-        ('insert' in item
-          ? "shadow-[inset_26px_0px_0px_0px_rgba(0,255,0,0.3)] before:content-['+']"
-          : 'delete' in item
-            ? "shadow-[inset_26px_0px_0px_0px_rgba(255,0,0,0.3)] before:pl-[1px] before:content-['-']"
-            : '')}
-    >
-      <span class="inline-block w-64 overflow-clip overflow-ellipsis pl-4">{item.relationName}</span
-      >
-      <span class="">{JSONbig.stringify((item as any).insert ?? (item as any).delete)}</span>
-    </div>
-  </VList>
+<div class="flex-1" bind:this={ref}>
+  <VirtualList
+    width="100%"
+    {height}
+    model={changes}
+    {scrollOffset}
+    modelCount={changes.length}
+    {itemSize}
+    {onAfterScroll}>
+    {#snippet slot({ item, style })}
+      <div
+        {style}
+        class={`row even:bg-surface-100-900 whitespace-nowrap pl-2 before:inline-block before:w-2 even:!bg-opacity-30 ` +
+          ('insert' in item
+            ? "shadow-[inset_26px_0px_0px_0px_rgba(0,255,0,0.3)] before:content-['+']"
+            : 'delete' in item
+              ? "shadow-[inset_26px_0px_0px_0px_rgba(255,0,0,0.3)] before:pl-[1px] before:content-['-']"
+              : '')}>
+        <span class="inline-block w-64 overflow-clip overflow-ellipsis pl-4"
+          >{item.relationName}</span>
+        <span class="">{JSONbig.stringify((item as any).insert ?? (item as any).delete)}</span>
+      </div>
+    {/snippet}
+  </VirtualList>
 </div>
