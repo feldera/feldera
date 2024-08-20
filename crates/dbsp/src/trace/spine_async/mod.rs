@@ -76,6 +76,7 @@ impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine<B
 }
 
 /// A group of batches with similar sizes (as determined by [size_from_level]).
+#[derive(SizeOf)]
 struct Slot<B>
 where
     B: Batch,
@@ -155,14 +156,19 @@ where
 ///
 /// This shared state is accessed through a `Mutex`, which we try to hold for as
 /// short a time as possible.
+#[derive(SizeOf)]
 struct SharedState<B>
 where
     B: Batch,
 {
+    #[size_of(skip)]
     key_filter: Option<Filter<B::Key>>,
+    #[size_of(skip)]
     value_filter: Option<Filter<B::Val>>,
     slots: [Slot<B>; MAX_LEVELS],
+    #[size_of(skip)]
     request_exit: bool,
+    #[size_of(skip)]
     merge_stats: MergeStats,
 }
 
@@ -421,7 +427,7 @@ where
 
         meta.extend(metadata! {
             // Number of batches currently in the spine.
-            "batches" => n_batches,
+            "batches" => MetaItem::Count(n_batches),
 
             // The amount of data in the spine currently stored on disk (not
             // including any in-progress merges).
@@ -430,7 +436,7 @@ where
             // The number of batches currently being merged (currently this
             // is always an even number because batches are merged in
             // pairs).
-            "merging batches" => n_merging,
+            "merging batches" => MetaItem::Count(n_merging),
 
             // The number of bytes of batches being merged.
             "merging size" => MetaItem::bytes(merging_size),
@@ -438,7 +444,7 @@ where
             // For merges already completed, the percentage of the updates input
             // to merges that merging eliminated, whether by weights adding to
             // zero or through key or value filters.
-            "merge reduction" => MetaItem::Percent(merge_stats.reduction_percent())
+            "merge reduction" => merge_stats.merge_reduction()
         });
     }
     fn run(
@@ -520,13 +526,10 @@ impl MergeStats {
 
     /// Reports the percentage (in range `0..=100`) of updates that merging
     /// eliminated.
-    fn reduction_percent(&self) -> f64 {
-        if self.pre_len > self.post_len {
-            let pre = self.pre_len as f64;
-            let post = self.post_len as f64;
-            (pre - post) / pre * 100.0
-        } else {
-            0.0
+    fn merge_reduction(&self) -> MetaItem {
+        MetaItem::Percent {
+            numerator: self.pre_len - self.post_len,
+            denominator: self.pre_len,
         }
     }
 }

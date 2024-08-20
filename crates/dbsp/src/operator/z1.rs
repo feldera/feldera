@@ -265,10 +265,10 @@ where
     fn metadata(&self, meta: &mut OperatorMeta) {
         let bytes = self.values.size_of();
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => self.values.num_entries_deep(),
+            NUM_ENTRIES_LABEL => MetaItem::Count(self.values.num_entries_deep()),
             ALLOCATED_BYTES_LABEL => MetaItem::bytes(bytes.total_bytes()),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => bytes.distinct_allocations(),
+            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
         });
     }
@@ -452,11 +452,11 @@ where
         };
 
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => total_size,
+            NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
             "batch sizes" => MetaItem::Array(batch_sizes),
             ALLOCATED_BYTES_LABEL => MetaItem::bytes(total_bytes.total_bytes()),
             USED_BYTES_LABEL => MetaItem::bytes(total_bytes.used_bytes()),
-            "allocations" => total_bytes.distinct_allocations(),
+            "allocations" => MetaItem::Count(total_bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(total_bytes.shared_bytes()),
         });
     }

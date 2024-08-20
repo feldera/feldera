@@ -60,6 +60,27 @@ impl OperatorMeta {
             .find(|(label, _item)| label == attribute)
             .map(|(_label, item)| item.clone())
     }
+
+    pub fn merge(&mut self, other: &Self) {
+        for (label, src) in &other.entries {
+            if src.is_mergeable() {
+                if let Some(dst_index) = self
+                    .entries
+                    .iter_mut()
+                    .position(|(label2, _item)| label == label2)
+                {
+                    let (_label, ref mut dst) = &mut self.entries[dst_index];
+                    if let Some(merged) = src.merge(dst) {
+                        *dst = merged;
+                    } else {
+                        self.entries.remove(dst_index);
+                    }
+                } else {
+                    self.entries.push((label.clone(), src.clone()));
+                }
+            }
+        }
+    }
 }
 
 impl Deref for OperatorMeta {
@@ -110,8 +131,22 @@ impl From<Vec<(MetaLabel, MetaItem)>> for OperatorMeta {
 /// An operator metadata entry
 #[derive(Debug, Clone, PartialEq)]
 pub enum MetaItem {
+    /// An integer with no particular semantics.
     Int(usize),
-    Percent(f64),
+
+    /// An integer count of something.
+    ///
+    /// This should be used for kinds of things that make sense to summarize by
+    /// adding, e.g. counts of allocations or stored batches.
+    Count(usize),
+
+    /// A percentage in terms of a numerator and denominator. Separating these
+    /// makes it possible to aggregate them.
+    Percent {
+        numerator: u64,
+        denominator: u64,
+    },
+
     String(String),
     Array(Vec<Self>),
     Map(OperatorMeta),
@@ -126,8 +161,18 @@ impl MetaItem {
 
     pub fn format(&self, output: &mut dyn Write) -> fmt::Result {
         match self {
-            Self::Int(int) => write!(output, "{int}"),
-            Self::Percent(percent) => write!(output, "{percent:.02}%"),
+            Self::Int(int) | Self::Count(int) => write!(output, "{int}"),
+            Self::Percent {
+                numerator,
+                denominator,
+            } => {
+                let percent = (*numerator as f64) / (*denominator as f64) * 100.0;
+                if !percent.is_nan() && !percent.is_infinite() {
+                    write!(output, "{percent:.02}%")
+                } else {
+                    write!(output, "(undefined)")
+                }
+            }
             Self::String(string) => output.write_str(string),
             Self::Bytes(bytes) => write!(output, "{bytes}"),
             Self::Duration(duration) => write!(output, "{duration:#?}"),
@@ -156,6 +201,40 @@ impl MetaItem {
                 }
                 output.write_char('}')
             }
+        }
+    }
+
+    pub fn is_mergeable(&self) -> bool {
+        matches!(
+            self,
+            MetaItem::Count(_)
+                | MetaItem::Bytes(_)
+                | MetaItem::Duration(_)
+                | MetaItem::Percent { .. }
+        )
+    }
+
+    pub fn merge(&self, other: &Self) -> Option<Self> {
+        match (self, other) {
+            (Self::Count(a), Self::Count(b)) => Some(Self::Count(a + b)),
+            (
+                Self::Percent {
+                    numerator: an,
+                    denominator: ad,
+                },
+                Self::Percent {
+                    numerator: bn,
+                    denominator: bd,
+                },
+            ) => Some(Self::Percent {
+                numerator: an + bn,
+                denominator: ad + bd,
+            }),
+            (Self::Bytes(a), Self::Bytes(b)) => Some(Self::Bytes(HumanBytes {
+                bytes: a.bytes + b.bytes,
+            })),
+            (Self::Duration(a), Self::Duration(b)) => Some(Self::Duration(a.saturating_add(*b))),
+            _ => None,
         }
     }
 }
@@ -203,7 +282,7 @@ impl From<TotalSize> for MetaItem {
             metadata! {
                 "allocated bytes" => Self::bytes(size.total_bytes()),
                 "used bytes" => Self::bytes(size.used_bytes()),
-                "allocations" => size.distinct_allocations(),
+                "allocations" => Self::Count(size.distinct_allocations()),
                 "shared bytes" => Self::bytes(size.shared_bytes()),
             }
             .into(),

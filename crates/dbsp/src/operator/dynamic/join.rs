@@ -1051,27 +1051,22 @@ where
         };
 
         // Find the percentage of consolidated outputs
-        let mut output_redundancy = ((self.stats.output_tuples as f64
-            - self.stats.produced_tuples as f64)
-            / self.stats.output_tuples as f64)
-            * 100.0;
-        if output_redundancy.is_nan() {
-            output_redundancy = 0.0;
-        } else if output_redundancy.is_infinite() {
-            output_redundancy = 100.0;
-        }
+        let output_redundancy = MetaItem::Percent {
+            numerator: (self.stats.output_tuples - self.stats.produced_tuples) as u64,
+            denominator: self.stats.output_tuples as u64,
+        };
 
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => total_size,
+            NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
             "batch sizes" => batch_sizes,
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => bytes.distinct_allocations(),
+            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
             "left inputs" => self.stats.lhs_tuples,
             "right inputs" => self.stats.rhs_tuples,
             "computed outputs" => self.stats.output_tuples,
             "produced outputs" => self.stats.produced_tuples,
-            "output redundancy" => MetaItem::Percent(output_redundancy),
+            "output redundancy" => output_redundancy,
         });
     }
 
