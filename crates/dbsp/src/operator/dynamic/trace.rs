@@ -828,10 +828,10 @@ where
             .unwrap_or_default();
 
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => total_size,
+            NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
             ALLOCATED_BYTES_LABEL => MetaItem::bytes(bytes.total_bytes()),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => bytes.distinct_allocations(),
+            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
         });
 

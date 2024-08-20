@@ -174,6 +174,14 @@ impl WorkerProfile {
     pub fn total_shared_bytes(&self) -> Result<HumanBytes, MetaItem> {
         self.attribute_total_as_bytes(SHARED_BYTES_LABEL)
     }
+
+    pub fn merge(&mut self, other: &Self) {
+        for (id, dst) in self.metadata.iter_mut() {
+            if let Some(src) = other.metadata.get(id) {
+                dst.merge(src);
+            }
+        }
+    }
 }
 
 /// Profile in graphviz format collected from all DBSP worker threads.
@@ -415,9 +423,6 @@ impl Profiler {
     pub fn profile(&self) -> WorkerProfile {
         let mut metadata = HashMap::<GlobalNodeId, OperatorMeta>::new();
 
-        // Make sure we add metadata for the root node.
-        metadata.insert(GlobalNodeId::root(), OperatorMeta::new());
-
         // Collect node metadata.
         self.circuit.map_nodes_recursive(&mut |node: &dyn Node| {
             let mut meta = OperatorMeta::new();
@@ -433,6 +438,14 @@ impl Profiler {
             }
         }
 
+        let root_meta = metadata
+            .values_mut()
+            .fold(OperatorMeta::new(), |mut acc, meta| {
+                acc.merge(meta);
+                acc
+            });
+        metadata.insert(GlobalNodeId::root(), root_meta);
+
         // Add CPU profiling info.
         for (node_id, meta) in metadata.iter_mut() {
             if let Some(profile) = self.cpu_profiler.operator_profile(node_id) {
@@ -447,9 +460,10 @@ impl Profiler {
                     ),
                     (
                         Cow::Borrowed("time%"),
-                        MetaItem::Percent(
-                            profile.total_time().as_secs_f64() / total_time.as_secs_f64() * 100.0,
-                        ),
+                        MetaItem::Percent {
+                            numerator: profile.total_time().as_micros() as u64,
+                            denominator: total_time.as_micros() as u64,
+                        },
                     ),
                 ];
 
@@ -497,8 +511,14 @@ impl Profiler {
                 write!(output, "{label}: ").unwrap();
                 item.format(&mut output).unwrap();
                 if label == "time%" {
-                    if let MetaItem::Percent(value) = item {
-                        importance = *value
+                    if let MetaItem::Percent {
+                        numerator,
+                        denominator,
+                    } = item
+                    {
+                        if *denominator != 0 {
+                            importance = *numerator as f64 / *denominator as f64;
+                        }
                     };
                 }
                 output.push_str("\\l");

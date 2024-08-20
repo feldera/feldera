@@ -605,7 +605,7 @@ where
         meta.extend(metadata! {
             "total updates" => MetaItem::bytes(size),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => bytes.distinct_allocations(),
+            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
         });
     }
