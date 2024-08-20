@@ -74,3 +74,8 @@ CREATE TABLE bid (
         }}
     }}
 ]');
+CREATE TABLE side_input (
+  date_time TIMESTAMP,
+  key BIGINT,
+  value VARCHAR
+);

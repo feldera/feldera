@@ -69,6 +69,11 @@ CREATE TABLE bid (
     url  VARCHAR,
     date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
     extra  VARCHAR
+);
+CREATE TABLE side_input (
+  date_time TIMESTAMP,
+  key BIGINT,
+  value VARCHAR
 );""";
 
     static final String[] queries = {
@@ -355,9 +360,10 @@ SELECT
     B.price,
     B.date_time,
     S.value
-FROM (SELECT *, date_time as p_time FROM bid) B
-ASOF JOIN side_input MATCH_CONDITION B.p_time <= side_input.time AS S
-ON mod(B.auction, 10000) = S.key;""",
+FROM (SELECT *, date_time as p_time, mod(auction, 10000) as mod FROM bid) B
+LEFT ASOF JOIN side_input AS S
+MATCH_CONDITION B.p_time >= S.date_time
+ON B.mod = S.key;""",
 
             """
 -- -------------------------------------------------------------------------------------------------
@@ -843,6 +849,14 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
     }
 
     @Test
+    public void q13test() {
+        this.createTest(13, "",
+                """
+ auction | bidder | price | date_time | value
+----------------------------------------------""");
+    }
+
+    @Test
     public void q15test() {
         // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         this.createTest(15, "",
@@ -907,7 +921,6 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
         Set<Integer> unsupported = new HashSet<>() {{
             add(6);  // over with rows
             add(11); // session
-            add(13); // asof join
             add(21); // regexp_extract
         }};
 
