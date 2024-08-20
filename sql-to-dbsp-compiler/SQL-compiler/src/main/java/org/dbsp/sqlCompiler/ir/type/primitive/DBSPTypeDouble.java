@@ -73,6 +73,11 @@ public class DBSPTypeDouble extends DBSPTypeFP implements IsNumericType {
     }
 
     @Override
+    public int getPrecision() {
+        return 15;
+    }
+
+    @Override
     public DBSPExpression getMaxValue() {
         return new DBSPDoubleLiteral(Double.MAX_VALUE, this.mayBeNull);
     }

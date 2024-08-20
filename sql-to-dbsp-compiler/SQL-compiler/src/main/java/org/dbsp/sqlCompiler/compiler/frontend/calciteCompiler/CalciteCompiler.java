@@ -1022,7 +1022,7 @@ public class CalciteCompiler implements IWritesLogs {
                 CreateViewStatement view = new CreateViewStatement(
                         cv, sqlStatement,
                         cv.name.getSimple(), Utilities.identifierIsQuoted(cv.name),
-                        columns, cv.query, relRoot, connectorProperties);
+                        columns, cv, relRoot, connectorProperties);
                 // From Calcite's point of view we treat this view just as another table.
                 boolean success = this.calciteCatalog.addTable(viewName, view.getEmulatedTable(), this.errorReporter, view);
                 if (!success)

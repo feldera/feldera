@@ -675,21 +675,6 @@ public class PostgresNumericTests extends SqlIoTest {
         this.testTwoViews(intermediate, last);
     }
 
-    @Test @Ignore("This test fails because Postgres has higher precision than we support")
-    public void power10Test() {
-        String intermediate = "CREATE LOCAL VIEW num_result AS SELECT id AS ID1, 0, " +
-                "CAST(POWER(10, LN(ABS(round(val,200)))) AS NUMERIC(" +
-                WIDTH + ", 10)) AS results\n" +
-                "    FROM num_data\n" +
-                "    WHERE val != '0.0'";
-        String last = """
-                CREATE VIEW E AS SELECT t1.id1, t1.results, t2.expected
-                    FROM num_result t1, num_exp_power_10_ln t2
-                    WHERE t1.id1 = t2.id
-                    AND t1.results != t2.expected""";
-        this.testTwoViews(intermediate, last);
-    }
-
     @Test
     public void testCast() {
         this.q("""

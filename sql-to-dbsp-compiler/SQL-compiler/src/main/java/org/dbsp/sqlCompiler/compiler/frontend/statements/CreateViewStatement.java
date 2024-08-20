@@ -40,17 +40,17 @@ import java.util.Objects;
 public class CreateViewStatement extends CreateRelationStatement {
     /** Compiled and optimized query. */
     private final RelRoot compiled;
-    public final SqlNode query;
+    public final SqlCreateView createView;
     public final SqlCreateView.ViewKind viewKind;
 
     public CreateViewStatement(SqlCreateView node, String statement, String tableName,
                                boolean nameIsQuoted,
-                               List<RelColumnMetadata> columns, SqlNode query,
+                               List<RelColumnMetadata> columns, SqlCreateView createView,
                                RelRoot compiled,
                                @Nullable PropertyList properties) {
         super(node, statement, tableName, nameIsQuoted, columns, properties);
         this.viewKind = node.viewKind;
-        this.query = query;
+        this.createView = createView;
         this.compiled = compiled;
     }
 

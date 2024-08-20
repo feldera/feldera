@@ -340,7 +340,17 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
     }
 
+    void printMessages(@Nullable CreateViewStatement statement) {
+        System.err.println(this.messages);
+        if (statement != null) {
+            System.err.println("While compiling");
+            System.err.println(this.sources.getFragment(
+                    new SourcePositionRange(statement.createView.getParserPosition()), true));
+        }
+    }
+
     void runAllCompilerStages() {
+        CreateViewStatement currentView = null;
         try {
             // Parse using Calcite
             SqlNodeList parsed = new SqlNodeList(SqlParserPos.ZERO);
@@ -432,12 +442,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     continue;
                 if (fe.is(CreateViewStatement.class)) {
                     CreateViewStatement cv = fe.to(CreateViewStatement.class);
+                    currentView = cv;
                     this.views.put(cv.getName(), cv);
                 } else if (fe.is(CreateTableStatement.class)) {
                     CreateTableStatement ct = fe.to(CreateTableStatement.class);
                     foreignKeys.addAll(ct.foreignKeys);
                 }
                 this.midend.compile(fe);
+                currentView = null;
             }
 
             this.circuit = this.midend.getFinalCircuit().seal("parsed");
@@ -453,25 +465,25 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 this.messages.reportError(e);
             }
             if (this.options.languageOptions.throwOnError) {
-                System.err.println(this.messages);
+                this.printMessages(currentView);
                 throw new RuntimeException(e);
             }
         } catch (CalciteContextException e) {
             this.messages.reportError(e);
             if (this.options.languageOptions.throwOnError) {
-                System.err.println(this.messages);
+                this.printMessages(currentView);
                 throw new RuntimeException(e);
             }
         } catch (BaseCompilerException e) {
             this.messages.reportError(e);
             if (this.options.languageOptions.throwOnError) {
-                System.err.println(this.messages);
+                this.printMessages(currentView);
                 throw e;
             }
         } catch (Throwable e) {
             this.messages.reportError(e);
             if (this.options.languageOptions.throwOnError) {
-                System.err.println(this.messages);
+                this.printMessages(currentView);
                 throw e;
             }
         }

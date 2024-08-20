@@ -35,7 +35,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.ir.annotation.AlwaysMonotone;
+import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;

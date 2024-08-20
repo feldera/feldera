@@ -73,6 +73,11 @@ public class DBSPTypeReal extends DBSPTypeFP implements IsNumericType {
     }
 
     @Override
+    public int getPrecision() {
+        return 7;
+    }
+
+    @Override
     public DBSPExpression getMaxValue() {
         return new DBSPRealLiteral(Float.MAX_VALUE, this.mayBeNull);
     }

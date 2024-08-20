@@ -36,21 +36,24 @@ public class RustFileWriter {
      * Various visitors gather here information about the program prior to generating code.
      */
     static class StructuresUsed {
-        /**
-         * The set of all tuple sizes used in the program.
-         */
+        /** The set of all tuple sizes used in the program. */
         final Set<Integer> tupleSizesUsed = new HashSet<>();
-        /**
-         * The set of all semigroup sizes used.
-         */
+        /** The set of all semigroup sizes used. */
         final Set<Integer> semigroupSizesUsed = new HashSet<>();
+
+        int getMaxTupleSize() {
+            int max = 0;
+            for (int s: this.tupleSizesUsed)
+                if (s > max)
+                    max = s;
+            return max;
+        }
     }
     final StructuresUsed used = new StructuresUsed();
 
     /**
      * Visitor which discovers some data structures used.
-     * Stores the result in the "used" structure.
-     */
+     * Stores the result in the "used" structure. */
     class FindResources extends InnerVisitor {
         public FindResources(IErrorReporter reporter) {
             super(reporter);
@@ -87,14 +90,10 @@ public class RustFileWriter {
             #![allow(unconditional_panic)]
 
             #![allow(non_camel_case_types)]
-
-            #[cfg(test)]
-            use hashing::*;
-            """;  // comparison functions
+            """;
 
     /**
-     * Preamble used when generating Rust code.
-     */
+     * Preamble used when generating Rust code. */
     @SuppressWarnings("SpellCheckingInspection")
     static final String rustPreamble = """
                     use dbsp::{
@@ -323,6 +322,18 @@ public class RustFileWriter {
     String generatePreamble(DBSPCompiler compiler, StructuresUsed used) {
         IndentStream stream = new IndentStream(new StringBuilder());
         stream.append(commonPreamble);
+        long max = this.used.getMaxTupleSize();
+        if (max > 120) {
+            // this is just a guess
+            stream.append("#![recursion_limit = \"")
+                    .append(max * 2)
+                    .append("\"]")
+                    .newline();
+        }
+
+        stream.append("""
+            #[cfg(test)]
+            use hashing::*;""");
         stream.append(rustPreamble)
                 .newline();
         this.generateStructures(used, stream);

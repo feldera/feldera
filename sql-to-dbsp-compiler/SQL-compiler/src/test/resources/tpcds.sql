@@ -1224,7 +1224,7 @@ with year_total as (
  limit 100
 ;
 
-/* sql_12.sql */
+/* sql_12.sql
 CREATE VIEW sql_12 AS
 select i_item_id
       ,i_item_desc
@@ -1258,6 +1258,7 @@ order by
         ,revenueratio
 limit 100
 ;
+*/
 
 /* sql_13.sql */
 CREATE VIEW sql_13 AS
@@ -1417,7 +1418,7 @@ with  cross_items as
  ;
 
 /* sql_14_2.sql */
-CREATE VIEW sql_14 AS
+CREATE VIEW sql_14_2 AS
 
 with  cross_items as
  (select i_item_sk ss_item_sk
@@ -1675,7 +1676,7 @@ select i_brand_id brand_id, i_brand brand, i_manufact_id, i_manufact,
  limit 100
  ;
 
-/* sql_20.sql */
+/* sql_20.sql
 CREATE VIEW sql_20 AS
 select i_item_id
        ,i_item_desc
@@ -1705,6 +1706,7 @@ select i_item_id
          ,revenueratio
  limit 100
 ;
+*/
 
 /* sql_21.sql */
 CREATE VIEW sql_21 AS
@@ -2077,7 +2079,7 @@ with customer_total_return as
          ,ca_state)
   select c_customer_id,c_salutation,c_first_name,c_last_name,c_preferred_cust_flag
        ,c_birth_day,c_birth_month,c_birth_year,c_birth_country,c_login,c_email_address
-       ,c_last_review_date_sk,ctr_total_return
+       ,c_last_review_date,ctr_total_return
  from customer_total_return ctr1
      ,customer_address
      ,customer
@@ -2089,7 +2091,7 @@ with customer_total_return as
        and ctr1.ctr_customer_sk = c_customer_sk
  order by c_customer_id,c_salutation,c_first_name,c_last_name,c_preferred_cust_flag
                   ,c_birth_day,c_birth_month,c_birth_year,c_birth_country,c_login,c_email_address
-                  ,c_last_review_date_sk,ctr_total_return
+                  ,c_last_review_date,ctr_total_return
  limit 100
 ;
 
@@ -2339,7 +2341,7 @@ select
  limit 100
  ;
 
-/* sql_36.sql */
+/* sql_36.sql
 CREATE VIEW sql_36 AS
 select
     sum(ss_net_profit)/sum(ss_ext_sales_price) as gross_margin
@@ -2369,6 +2371,7 @@ select
   ,rank_within_parent
  limit 100
   ;
+*/
 
 /* sql_37.sql */
 CREATE VIEW sql_37 AS
@@ -2657,7 +2660,7 @@ select c_last_name
   limit 100
   ;
 
-/* sql_47.sql */
+/* sql_47.sql
 CREATE VIEW sql_47 AS
 with v1 as(
  select i_category, i_brand,
@@ -2708,6 +2711,7 @@ with v1 as(
  order by sum_sales - avg_monthly_sales, 3
  limit 100
  ;
+ */
 
 /* sql_48.sql */
 CREATE VIEW sql_48 AS
@@ -2776,7 +2780,7 @@ select sum (ss_quantity)
  )
 ;
 
-/* sql_49.sql */
+/* sql_49.sql
 CREATE VIEW sql_49 AS
 select channel, item, return_ratio, return_rank, currency_rank from
  (select
@@ -2905,6 +2909,7 @@ select channel, item, return_ratio, return_rank, currency_rank from
  order by 1,4,5,2
  limit 100
  ;
+ */
 
 /* sql_50.sql */
 CREATE VIEW sql_50 AS
@@ -2966,7 +2971,7 @@ order by s_store_name
  limit 100
 ;
 
-/* sql_51.sql */
+/* sql_51.sql
 CREATE VIEW sql_51 AS
 WITH web_v1 as (
 select
@@ -3011,6 +3016,7 @@ order by item_sk
         ,d_date
 limit 100
 ;
+*/
 
 /* sql_52.sql */
 CREATE VIEW sql_52 AS
@@ -3035,7 +3041,7 @@ select dt.d_year
  limit 100
  ;
 
-/* sql_53.sql */
+/* sql_53.sql
 CREATE VIEW sql_53 AS
 select * from
 (select i_manufact_id,
@@ -3063,6 +3069,7 @@ order by avg_quarterly_sales,
 	 i_manufact_id
 limit 100
 ;
+*/
 
 /* sql_54.sql */
 CREATE VIEW sql_54 AS
@@ -3206,7 +3213,7 @@ where i_color in ('puff','slate','ivory'))
  limit 100
  ;
 
-/* sql_57.sql */
+/* sql_57.sql
 CREATE VIEW sql_57 AS
 with v1 as(
  select i_category, i_brand,
@@ -3254,6 +3261,7 @@ with v1 as(
  order by sum_sales - avg_monthly_sales, 3
  limit 100
  ;
+ */
 
 /* sql_58.sql */
 CREATE VIEW sql_58 AS
@@ -3525,7 +3533,7 @@ order by substring(w_warehouse_name,1,20)
 limit 100
 ;
 
-/* sql_63.sql */
+/* sql_63.sql
 CREATE VIEW sql_63 AS
 select *
 from (select i_manager_id
@@ -3554,6 +3562,7 @@ order by i_manager_id
         ,sum_sales
 limit 100
 ;
+*/
 
 /* sql_64.sql */
 CREATE VIEW sql_64 AS
@@ -4063,7 +4072,7 @@ select
  limit 100
  ;
 
-/* sql_70.sql */
+/* sql_70.sql
 CREATE VIEW sql_70 AS
 select
     sum(ss_net_profit) as total_sum
@@ -4101,6 +4110,7 @@ select
   ,rank_within_parent
  limit 100
  ;
+ */
 
 /* sql_71.sql */
 CREATE VIEW sql_71 AS
@@ -4870,7 +4880,7 @@ order by substr(r_reason_desc,1,20)
 limit 100
 ;
 
-/* sql_86.sql */
+/* sql_86.sql
 CREATE VIEW sql_86 AS
 select
     sum(ws_net_paid) as total_sum
@@ -4896,6 +4906,7 @@ select
    rank_within_parent
  limit 100
  ;
+ */
 
 /* sql_87.sql */
 CREATE VIEW sql_87 AS
@@ -5014,7 +5025,7 @@ from
      and store.s_store_name = 'ese') s8
 ;
 
-/* sql_89.sql */
+/* sql_89.sql
 CREATE VIEW sql_89 AS
 select *
 from(
@@ -5042,6 +5053,7 @@ where case when (avg_monthly_sales <> 0) then (abs(sum_sales - avg_monthly_sales
 order by sum_sales - avg_monthly_sales, s_store_name
 limit 100
 ;
+*/
 
 /* sql_90.sql */
 CREATE VIEW sql_90 AS
@@ -5220,7 +5232,7 @@ from ssci full outer join csci on (ssci.customer_sk=csci.customer_sk
                                and ssci.item_sk = csci.item_sk)
 ;
 
-/* sql_98.sql */
+/* sql_98.sql
 CREATE VIEW sql_98 AS
 select i_item_id
       ,i_item_desc
@@ -5252,6 +5264,7 @@ order by
         ,i_item_id
         ,i_item_desc
         ,revenueratio;
+*/
 
 /* sql_99.sql */
 CREATE VIEW sql_99 AS

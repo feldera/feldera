@@ -70,7 +70,7 @@ public class UnimplementedException
     }
 
     public UnimplementedException(String message, CalciteObject node) {
-        this(message + " " + node,
+        this(message + ":" + node,
                 null, node);
     }
 

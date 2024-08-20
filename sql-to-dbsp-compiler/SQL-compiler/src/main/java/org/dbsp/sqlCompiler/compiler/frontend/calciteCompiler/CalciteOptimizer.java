@@ -215,13 +215,11 @@ public class CalciteOptimizer implements IWritesLogs {
                             CoreRules.JOIN_TO_MULTI_JOIN,
                             CoreRules.PROJECT_MULTI_JOIN_MERGE,
                             CoreRules.MULTI_JOIN_OPTIMIZE_BUSHY
-                            /*
-                            CoreRules.FILTER_MULTI_JOIN_MERGE,
-                            CoreRules.MULTI_JOIN_BOTH_PROJECT,
-                            CoreRules.MULTI_JOIN_LEFT_PROJECT,
-                            CoreRules.MULTI_JOIN_RIGHT_PROJECT,
-                            CoreRules.MULTI_JOIN_OPTIMIZE
-                             */
+                            //CoreRules.FILTER_MULTI_JOIN_MERGE,
+                            //CoreRules.MULTI_JOIN_BOTH_PROJECT,
+                            //CoreRules.MULTI_JOIN_LEFT_PROJECT,
+                            //CoreRules.MULTI_JOIN_RIGHT_PROJECT,
+                            //CoreRules.MULTI_JOIN_OPTIMIZE
                     );
                 }
                 this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);

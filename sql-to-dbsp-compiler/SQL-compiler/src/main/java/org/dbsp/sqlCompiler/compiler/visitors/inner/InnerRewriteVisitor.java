@@ -778,7 +778,6 @@ public abstract class InnerRewriteVisitor
         return VisitDecision.STOP;
     }
 
-
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
         this.push(expression);

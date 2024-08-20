@@ -948,7 +948,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple leftElementType = left.getType().to(DBSPTypeZSet.class).elementType
                 .to(DBSPTypeTuple.class);
 
-        JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(node,
+        JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(
                 leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
         JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join.getCondition());
         // If any key field is nullable we need to filter the inputs; this will make key columns non-nullable
@@ -1161,7 +1161,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 .to(DBSPTypeTuple.class);
         int leftSize = leftElementType.size();
 
-        JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(node,
+        JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(
                 leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
         JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join.getCondition());
         @Nullable
@@ -1817,9 +1817,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // the "lastOperator".  The "lastOperator" is initially the input node itself.
             List<RelFieldCollation> orderKeys = this.group.orderKeys.getFieldCollations();
             List<Integer> partitionKeys = this.group.keys.toList();
-            if (orderKeys.size() != 1)
+            if (orderKeys.isEmpty())
                 // TODO: this is only true if we have window bounds
-                throw new UnimplementedException("ORDER BY should be on exactly one column", node);
+                throw new UnimplementedException("Missing ORDER BY in OVER", node);
+            if (orderKeys.size() > 1)
+                throw new UnimplementedException("ORDER BY in OVER requires exactly 1 column", node);
+
             RelFieldCollation collation = orderKeys.get(0);
             int orderColumnIndex = collation.getFieldIndex();
             DBSPType sortType;

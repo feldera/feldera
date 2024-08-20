@@ -81,6 +81,11 @@ public class DBSPTypeISize extends DBSPTypeBaseType implements IsNumericType {
     }
 
     @Override
+    public int getPrecision() {
+        return 19;
+    }
+
+    @Override
     public DBSPExpression getMaxValue() {
         throw new UnsupportedException(this.getNode());
     }

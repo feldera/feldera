@@ -1,4 +1,3 @@
-
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;

@@ -38,9 +38,7 @@ public abstract class DBSPTypeFP extends DBSPTypeBaseType implements IsNumericTy
         super(node, code, mayBeNull);
     }
 
-    /**
-     * Width in bits.
-     */
+    /** Width in bits. */
     public abstract int getWidth();
 
     @Override

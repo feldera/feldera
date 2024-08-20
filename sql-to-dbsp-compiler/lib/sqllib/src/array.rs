@@ -184,7 +184,7 @@ pub fn array_appendN<T>(vector: Option<Vec<T>>, value: T) -> Option<Vec<T>> {
     Some(array_append(vector?, value))
 }
 
-pub fn array_repeat<T>(element: T, count: i32) -> Vec<T>
+pub fn array_repeat__<T>(element: T, count: i32) -> Vec<T>
 where
     T: Clone,
 {
@@ -193,11 +193,25 @@ where
         .collect()
 }
 
-pub fn array_repeatN<T>(element: T, count: Option<i32>) -> Option<Vec<T>>
+pub fn array_repeatN_<T>(element: Option<T>, count: i32) -> Option<Vec<Option<T>>>
 where
     T: Clone,
 {
-    Some(array_repeat(element, count?))
+    Some(array_repeat__(element, count))
+}
+
+pub fn array_repeat_N<T>(element: T, count: Option<i32>) -> Option<Vec<T>>
+where
+    T: Clone,
+{
+    Some(array_repeat__(element, count?))
+}
+
+pub fn array_repeatNN<T>(element: Option<T>, count: Option<i32>) -> Option<Vec<Option<T>>>
+where
+    T: Clone,
+{
+    Some(array_repeat__(element, count?))
 }
 
 pub fn array_remove__<T>(mut vector: Vec<T>, element: T) -> Vec<T>

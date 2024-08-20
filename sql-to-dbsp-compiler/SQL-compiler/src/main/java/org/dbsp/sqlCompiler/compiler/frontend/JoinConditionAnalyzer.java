@@ -40,15 +40,13 @@ public class JoinConditionAnalyzer implements IWritesLogs {
     private final int leftTableColumnCount;
     private final TypeCompiler typeCompiler;
 
-    public JoinConditionAnalyzer(CalciteObject object, int leftTableColumnCount, TypeCompiler typeCompiler) {
+    public JoinConditionAnalyzer(int leftTableColumnCount, TypeCompiler typeCompiler) {
         this.leftTableColumnCount = leftTableColumnCount;
         this.typeCompiler = typeCompiler;
     }
 
-    /**
-     * Represents an equality test in a join
-     * between two columns in the two tables.
-     */
+    /** Represents an equality test in a join
+     * between two columns in the two tables. */
     static class EqualityTest {
         public final int leftColumn;
         public final int rightColumn;
@@ -70,8 +68,7 @@ public class JoinConditionAnalyzer implements IWritesLogs {
 
     /**
      * A join condition is decomposed into a list of equality comparisons
-     * and another general-purpose boolean expression.
-     */
+     * and another general-purpose boolean expression. */
     class ConditionDecomposition {
         final CalciteObject object;
         public final List<EqualityTest> comparisons;
