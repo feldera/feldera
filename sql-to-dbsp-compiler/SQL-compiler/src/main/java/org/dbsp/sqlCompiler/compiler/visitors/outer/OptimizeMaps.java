@@ -29,6 +29,7 @@ import java.util.List;
  */
 public class OptimizeMaps extends CircuitCloneVisitor {
     final CircuitGraph graph;
+    public static boolean testIssue2228 = false;
 
     public OptimizeMaps(IErrorReporter reporter, CircuitGraph graph) {
         super(reporter, false);
@@ -52,6 +53,10 @@ public class OptimizeMaps extends CircuitCloneVisitor {
     }
 
     public void postorder(DBSPApplyOperator operator) {
+        if (testIssue2228) {
+            super.postorder(operator);
+            return;
+        }
         DBSPOperator source = this.mapped(operator.input());
         int inputFanout = this.graph.getFanout(operator.input());
         if (source.is(DBSPApplyOperator.class) && inputFanout == 1) {
