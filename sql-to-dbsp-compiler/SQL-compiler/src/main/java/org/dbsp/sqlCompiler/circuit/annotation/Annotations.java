@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.ir.annotation;
+package org.dbsp.sqlCompiler.circuit.annotation;
 
 import org.dbsp.util.Linq;
 

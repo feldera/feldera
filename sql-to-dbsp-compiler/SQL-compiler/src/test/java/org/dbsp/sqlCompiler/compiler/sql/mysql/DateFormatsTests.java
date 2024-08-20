@@ -56,25 +56,30 @@ public class DateFormatsTests extends SqlIoTest {
                  Thursday (Thu),  1 January (Jan) 2004""");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6252")
+    @Test @Ignore("https://github.com/feldera/feldera/issues/2275")
     public void testCorners() {
+        // This test is broken because it returns different results
+        // with and without optimizations, due to https://github.com/feldera/feldera/issues/2275
         // Year 0 is not legal, replaced with year 1
         // %Y in MySql is %y
-        this.q("""
+        this.qs("""
                 SELECT format_date('%A %d %B %Y', '0001-01-01') as valid_date;
                 valid_date
                 ------------
-                 Monday 01 January 1""");
-        this.q("""
+                 Monday 01 January 1
+                (1 row)
+                
                 SELECT format_date('%A %d %B %Y', '0001-02-28') as valid_date;
                 valid_date
                 ------------
-                 Wednesday 28 February 1""");
-        this.q("""
+                 Wednesday 28 February 1
+                (1 row)
+                
                 SELECT format_date('%A %d %B %Y', '2009-01-01') as valid_date;
                 valid_date
                 -------------
-                 Thursday 01 January 2009""");
+                 Thursday 01 January 2009
+                (1 row)""", false);
     }
 
     @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6253")

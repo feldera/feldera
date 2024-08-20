@@ -71,7 +71,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1473")
+    @Test
     public void testArrayRepeat2() {
         this.qs("""
                 SELECT array_repeat(123, null);

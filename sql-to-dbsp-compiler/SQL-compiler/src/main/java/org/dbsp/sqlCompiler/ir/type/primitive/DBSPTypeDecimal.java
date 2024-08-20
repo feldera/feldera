@@ -80,6 +80,11 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
     }
 
     @Override
+    public int getPrecision() {
+        return this.precision;
+    }
+
+    @Override
     public DBSPExpression getMaxValue() {
         throw new UnsupportedException(this.getNode());
     }

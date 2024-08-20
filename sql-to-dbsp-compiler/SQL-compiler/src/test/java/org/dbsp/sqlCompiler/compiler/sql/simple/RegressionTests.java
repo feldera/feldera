@@ -37,7 +37,7 @@ public class RegressionTests extends SqlIoTest {
         this.statementsFailingInCompilation(sql, "Expected a simple string");
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/2201")
+    @Test
     public void issue2201() {
         String sql = """
                 create table customer_address(
@@ -413,6 +413,22 @@ public class RegressionTests extends SqlIoTest {
                 create table TRANSACTION (unix_time BIGINT LATENESS 0);
                 """;
         this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void testDiv() {
+        this.qs("""
+            SELEct 95.0/100;
+             r
+            ----
+             0.95
+            (1 row)
+            
+            SELEct 95/100.0;
+             r
+            ----
+             0.95
+            (1 row)""");
     }
 
     @Test @Ignore("Calcite decorrelator fails")

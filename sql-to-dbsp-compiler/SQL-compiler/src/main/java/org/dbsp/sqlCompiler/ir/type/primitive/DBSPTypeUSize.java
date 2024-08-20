@@ -59,6 +59,11 @@ public class DBSPTypeUSize extends DBSPTypeBaseType
     }
 
     @Override
+    public int getPrecision() {
+        return 19;
+    }
+
+    @Override
     public boolean sameType(DBSPType type) {
         if (!super.sameNullability(type))
             return false;

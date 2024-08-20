@@ -355,7 +355,7 @@ SELECT
     B.price,
     B.date_time,
     S.value
-FROM (SELECT *, NOW() as p_time FROM bid) B
+FROM (SELECT *, date_time as p_time FROM bid) B
 ASOF JOIN side_input MATCH_CONDITION B.p_time <= side_input.time AS S
 ON mod(B.auction, 10000) = S.key;""",
 

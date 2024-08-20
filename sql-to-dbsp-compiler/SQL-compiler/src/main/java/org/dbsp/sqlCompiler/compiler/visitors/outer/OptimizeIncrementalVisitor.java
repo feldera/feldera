@@ -25,7 +25,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.ir.annotation.NoInc;
+import org.dbsp.sqlCompiler.circuit.annotation.NoInc;
 import org.dbsp.util.Linq;
 
 import java.util.List;

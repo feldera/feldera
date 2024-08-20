@@ -872,7 +872,7 @@ public class AggScottTests extends ScottBaseTests {
                 (1 row)""", false);
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/1507")
+    @Test
     public void testAvg() {
         this.qs("""
                 select avg(comm) as a, count(comm) as c from

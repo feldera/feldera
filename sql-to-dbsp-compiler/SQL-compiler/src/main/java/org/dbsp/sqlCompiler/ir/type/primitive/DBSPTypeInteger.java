@@ -190,6 +190,18 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
         return this.width;
     }
 
+    /** Expressed in decimal digits */
+    public int getPrecision() {
+        return switch (this.width) {
+            case 8 -> 3;
+            case 16 -> 5;
+            case 32 -> 10;
+            case 64 -> 19;
+            case 128 -> 38;
+            default -> throw new UnsupportedException(this.getNode());
+        };
+    }
+
     @Override
     public boolean sameType(DBSPType type) {
         if (!super.sameNullability(type))

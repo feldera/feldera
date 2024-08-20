@@ -261,7 +261,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     /**
      * Given operands for "operation" with left and right types,
      * compute the type that both operands must be cast to.
-     * Note: this ignores nullability of types.
+     * Note: this ignores nullability of types, result is always non-nullable.
      * @param left       Left operand type.
      * @param right      Right operand type.
      * @return           Common type operands must be cast to.
@@ -280,33 +280,62 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPTypeInteger ri = right.as(DBSPTypeInteger.class);
         DBSPTypeDecimal ld = left.as(DBSPTypeDecimal.class);
         DBSPTypeDecimal rd = right.as(DBSPTypeDecimal.class);
+        IsNumericType ln = left.to(IsNumericType.class);
+        IsNumericType rn = right.to(IsNumericType.class);
         DBSPTypeFP lf = left.as(DBSPTypeFP.class);
         DBSPTypeFP rf = right.as(DBSPTypeFP.class);
         if (li != null) {
             if (ri != null) {
+                // INT op INT, choose the wider int type
                 int width = Math.max(li.getWidth(), ri.getWidth());
                 return new DBSPTypeInteger(left.getNode(), width, true, false);
             }
-            if (rf != null || rd != null)
-                return right.setMayBeNull(false);
+            if (rf != null) {
+                // INT op FLOAT, choose float or double depending on width of INT
+                if (ln.getPrecision() <= rn.getPrecision())
+                    return right.setMayBeNull(false);
+                // Use double
+                return new DBSPTypeDouble(left.getNode(), false);
+            }
+            if (rd != null) {
+                // INT op DECIMAL
+                // widen the DECIMAL type enough to hold the left type
+                return new DBSPTypeDecimal(rd.getNode(),
+                        Math.max(ln.getPrecision(), rn.getPrecision()), rd.scale, false);
+            }
         }
         if (lf != null) {
-            if (ri != null || rd != null)
-                return left.setMayBeNull(false);
+            if (ri != null) {
+                // FLOAT op INT, use FLOAT if large enough, DOUBLE otherwise
+                if (ln.getPrecision() < rn.getPrecision())
+                    return new DBSPTypeDouble(left.getNode(), false);
+                return lf.setMayBeNull(false);
+            }
             if (rf != null) {
-                if (lf.getWidth() < rf.getWidth())
+                // FLOAT op FLOAT, choose widest
+                if (ln.getPrecision() < rn.getPrecision())
                     return right.setMayBeNull(false);
                 else
                     return left.setMayBeNull(false);
             }
+            if (rd != null) {
+                // FLOAT op DECIMAL, convert to decimal large enough
+                return new DBSPTypeDecimal(rd.getNode(),
+                        Math.max(ln.getPrecision(), rn.getPrecision()), rd.scale, false);
+            }
         }
         if (ld != null) {
-            if (ri != null)
-                return left.setMayBeNull(false);
-            if (rf != null)
-                return right.setMayBeNull(false);
-            if (rd != null)
-                return left.setMayBeNull(false);
+            if (ri != null) {
+                // DECIMAL op INTEGER, make a decimal wide enough to hold result
+                return new DBSPTypeDecimal(right.getNode(),
+                        Math.max(ln.getPrecision(), rn.getPrecision()), ld.scale, false);
+            }
+            if (rf != null) {
+                // DECIMAL op FLOAT, convert to decimal large enough
+                return new DBSPTypeDecimal(right.getNode(),
+                        Math.max(ln.getPrecision(), rn.getPrecision()), ld.scale, false);
+            }
+            // DECIMAL op DECIMAL does not convert to a common type.
         }
         throw new UnimplementedException("Cast from " + right + " to " + left);
     }
@@ -327,6 +356,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         // Dates can be mixed with other types in a binary operation
         if (left.is(IsDateType.class)) return false;
         if (right.is(IsDateType.class)) return false;
+        // Allow arithmetic on different DECIMAL types
+        if (left.is(DBSPTypeDecimal.class) && right.is(DBSPTypeDecimal.class))
+            return false;
         // Allow mixing different string types in an operation
         return !left.is(DBSPTypeString.class) || !right.is(DBSPTypeString.class);
     }
@@ -378,9 +410,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (needCommonType(opcode, type, leftType, rightType)) {
             DBSPType commonBase = reduceType(leftType, rightType);
             if (opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.SUB ||
-                    opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.DIV ||
-                    // not MOD, Calcite is too smart and it uses the right type for mod
-                    opcode == DBSPOpcode.BW_AND ||
+                    opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.BW_AND ||
+                    // The result type for DIV may not be wide enough to hold either operand.
+                    // Don't do anything for MOD, Calcite is too smart and it uses the right type for mod
                     opcode == DBSPOpcode.BW_OR || opcode == DBSPOpcode.XOR ||
                     opcode == DBSPOpcode.MAX || opcode == DBSPOpcode.MIN) {
                 // Use the inferred Calcite type for the output
@@ -590,7 +622,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     String getArrayCallName(RexCall call, DBSPExpression... ops) {
         String method = getCallName(call);
         StringBuilder stringBuilder = new StringBuilder(method);
-
         for (DBSPExpression op : ops)
             stringBuilder.append(op.getType().nullableUnderlineSuffix());
         return stringBuilder.toString();
@@ -827,6 +858,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         DBSPType leftType = left.getType();
                         DBSPType rightType = right.getType();
 
+                        if (leftType.is(DBSPTypeInteger.class)) {
+                            this.compiler.reportWarning(node.getPositionRange(),
+                                    "Useless operation",
+                                    Utilities.singleQuote(opName) + " applied to intger value does nothing");
+                            return left;
+                        }
+
                         if (rightType.is(DBSPTypeNull.class) ||
                                 (right.is(DBSPLiteral.class) && right.to(DBSPLiteral.class).isNull)) {
                             this.compiler.reportWarning(node.getPositionRange(),
@@ -835,7 +873,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         }
 
                         if (!rightType.is(DBSPTypeInteger.class))
-                            throw new UnimplementedException("ROUND expects a constant second argument", node);
+                            throw new UnimplementedException(Utilities.singleQuote(opName) +
+                                    " expects a constant second argument", node);
 
                         // convert to int32
                         DBSPTypeInteger rightInt = rightType.to(DBSPTypeInteger.class);
@@ -1332,10 +1371,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case ARRAY_REPEAT: {
                 if (call.operands.size() != 2)
                     throw new UnimplementedException(node);
-                String method = getArrayCallName(call);
-                // Calcite thinks this is nullable, but it probably shouldn't be
-                DBSPType nonNull = type.setMayBeNull(false);
-                return new DBSPApplyExpression(node, method, nonNull, ops.get(0), ops.get(1)).cast(type);
+                DBSPExpression op1 = ops.get(1)
+                        .cast(new DBSPTypeInteger(node, 32, true, ops.get(1).getType().mayBeNull));
+                String method = getArrayCallName(call, ops.get(0), op1);
+                return new DBSPApplyExpression(node, method, type, ops.get(0), op1).cast(type);
             }
             case HOP: {
                 throw new UnimplementedException("Please use the TABLE function HOP", node);

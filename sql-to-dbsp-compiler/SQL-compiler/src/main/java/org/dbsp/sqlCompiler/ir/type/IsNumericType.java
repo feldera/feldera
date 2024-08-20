@@ -31,4 +31,6 @@ public interface IsNumericType extends IHasZero, IsBoundedType {
     default boolean isOne(DBSPLiteral literal) {
         return this.getOne().sameValue(literal);
     }
+    /** Expressed in decimal digits */
+    int getPrecision();
 }

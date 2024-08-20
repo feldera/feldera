@@ -54,9 +54,9 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinFilterMapExpan
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementExpansion;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
-import org.dbsp.sqlCompiler.ir.annotation.AlwaysMonotone;
-import org.dbsp.sqlCompiler.ir.annotation.NoIntegrator;
-import org.dbsp.sqlCompiler.ir.annotation.Waterline;
+import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
+import org.dbsp.sqlCompiler.circuit.annotation.NoIntegrator;
+import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;

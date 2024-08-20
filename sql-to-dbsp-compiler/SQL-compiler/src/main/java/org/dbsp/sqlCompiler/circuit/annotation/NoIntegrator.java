@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.ir.annotation;
+package org.dbsp.sqlCompiler.circuit.annotation;
 
 /** Annotation used on a join to indicate that it doesn't need
  * an integrator on one or both sides. */

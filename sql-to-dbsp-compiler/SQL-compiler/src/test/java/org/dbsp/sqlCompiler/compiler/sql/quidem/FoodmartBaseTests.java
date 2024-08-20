@@ -192,7 +192,7 @@ public class FoodmartBaseTests extends SqlIoTest {
                 """);
     }
 
-    @Test @Ignore("LIMIT not yet implemented")
+    @Test @Ignore("Cannot be decorrelated (generates LATERAL)")
     public void limitTests() {
         this.qs("""
                 select deptno, (select sum(empno) from emp where deptno = dept.deptno limit 1) as x from dept;

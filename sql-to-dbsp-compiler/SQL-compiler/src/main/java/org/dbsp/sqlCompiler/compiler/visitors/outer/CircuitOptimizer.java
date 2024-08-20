@@ -32,7 +32,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
-import org.dbsp.sqlCompiler.ir.annotation.Waterline;
+import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 
 import java.util.ArrayList;
 import java.util.List;
