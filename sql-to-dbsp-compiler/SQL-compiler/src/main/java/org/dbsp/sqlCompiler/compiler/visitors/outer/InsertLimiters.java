@@ -72,6 +72,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
@@ -86,6 +87,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import static org.dbsp.sqlCompiler.ir.expression.DBSPOpcode.AND;
 
 /** As a result of the Monotonicity analysis, this pass inserts new operators:
  * - apply operators that compute the bounds that drive the controlled filters
@@ -145,13 +148,16 @@ public class InsertLimiters extends CircuitCloneVisitor {
     /** Given a function for an apply operator, synthesizes an operator that performs
      * the following computation:
      * <p>
-     * |param| if param.0 {
-     *    (param.0, function(param.1))
-     * } else {
-     *    (param.0, min)
-     * }
+     * |param| (
+     *    param.0,
+     *    if param.0 {
+     *       function(param.1)
+     *    } else {
+     *       min
+     *    })
      * where 'min' is the minimum constant value with the appropriate type.
-     * Inserts the operator in the circuit.
+     * Inserts the operator in the circuit.  'param.0' is true when param.1 is
+     * not the minimum legal value - i.e., the waterline has seen some data.
      *
      * @param source   Input operator.
      * @param function Function to apply to the data.
@@ -174,14 +180,17 @@ public class InsertLimiters extends CircuitCloneVisitor {
     /** Given a function for an apply2 operator, synthesizes an operator that performs
      * the following computation:
      * <p>
-     * |param0, param1| if param0.0 {
-     *    (param0.0, function(param0.1, param1.1))
-     * } else {
-     *    (param0.0, min)
-     * }
+     * |param0, param1|
+     *    (param0.0 && param1.0,
+     *     if param0.0 && param1.0 {
+     *       function(param0.1, param1.1)
+     *     } else {
+     *       min
+     *     })
      * where 'min' is the minimum constant value with the appropriate type.
-     * (The invariant param0.0 == param1.0 should always hold).
-     * Inserts the operator in the circuit.
+     * Inserts the operator in the circuit.  'param0.0' is true when param0.1 is
+     * not the minimum legal value - i.e., the waterline has seen some data
+     * (same on the other side).
      *
      * @param left     Left input operator.
      * @param right    Right input operator
@@ -191,11 +200,14 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPVariablePath leftVar = left.outputType.ref().var();
         DBSPVariablePath rightVar = right.outputType.ref().var();
         DBSPExpression v0 = leftVar.deref().field(0);
+        DBSPExpression v1 = rightVar.deref().field(0);
         DBSPExpression v01 = leftVar.deref().field(1);
         DBSPExpression v11 = rightVar.deref().field(1);
+        DBSPExpression and = ExpressionCompiler.makeBinaryExpression(left.getNode(),
+                v0.getType(), AND, v0, v1);
         DBSPExpression min = this.minimumValue(function.getResultType());
-        DBSPExpression cond = new DBSPTupleExpression(v0,
-                new DBSPIfExpression(left.getNode(), v0,
+        DBSPExpression cond = new DBSPTupleExpression(and,
+                new DBSPIfExpression(left.getNode(), and,
                         function.call(v01.borrow(), v11.borrow()), min));
         DBSPApply2Operator result = new DBSPApply2Operator(
                 left.getNode(), cond.closure(leftVar.asParameter(), rightVar.asParameter()),
@@ -1022,6 +1034,26 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
     }
 
+    /** Generate an expression that compares two other expressions for equality */
+    DBSPExpression eq(DBSPExpression left, DBSPExpression right) {
+        DBSPType type = left.getType();
+        if (type.is(DBSPTypeBaseType.class)) {
+            return ExpressionCompiler.makeBinaryExpression(left.getNode(),
+                    DBSPTypeBool.create(false), DBSPOpcode.EQ, left, right);
+        } else if (type.is(DBSPTypeTupleBase.class)) {
+            DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
+            DBSPExpression result = new DBSPBoolLiteral(true);
+            for (int i = 0; i < tuple.size(); i++) {
+                DBSPExpression compare = eq(left.field(i).simplify(), right.field(i).simplify());
+                result = ExpressionCompiler.makeBinaryExpression(left.getNode(),
+                        DBSPTypeBool.create(false), AND, result, compare);
+            }
+            return result;
+        } else {
+            throw new UnimplementedException(type);
+        }
+    }
+
     /** Process LATENESS annotations.
      * @return Return the original operator if there aren't any annotations, or
      * the operator that produces the result of the input filtered otherwise. */
@@ -1069,23 +1101,30 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 max, replacement);
         this.addOperator(waterline);
 
-        // An apply operator to add an "uninitialized" bit to the waterline
-        DBSPVariablePath var = timestamp.getType().ref().var();
-        DBSPApplyOperator extend = new DBSPApplyOperator(operator.getNode(),
-                new DBSPTupleExpression(new DBSPBoolLiteral(true),
-                        var.deref().applyClone()).closure(var.asParameter()),
-                waterline, null);
-        this.addOperator(extend);
-
         // Waterline fed through a delay
         DBSPDelayOperator delay = new DBSPDelayOperator(
-                operator.getNode(), new DBSPTupleExpression(new DBSPBoolLiteral(false), min), extend);
+                operator.getNode(), min, waterline);
         this.addOperator(delay);
-        this.markBound(replacement, delay);
+
+        // An apply operator to add a Boolean bit to the waterline.
+        // This bit is 'true' when the waterline produces a value
+        // that is not 'minimum'.
+        DBSPVariablePath var = timestamp.getType().ref().var();
+        DBSPExpression eq = eq(min, var.deref());
+        DBSPOperator extend = new DBSPApplyOperator(operator.getNode(),
+                new DBSPTupleExpression(
+                        new DBSPUnaryExpression(operator.getNode(),
+                                eq.getType(), DBSPOpcode.NOT, eq),
+                        var.deref().applyClone()).closure(var.asParameter()),
+                delay, null);
+        extend.addAnnotation(new Waterline());
+        this.addOperator(extend);
+
+        this.markBound(replacement, extend);
         if (operator != replacement)
-            this.markBound(operator, delay);
+            this.markBound(operator, extend);
         if (operator != expansion)
-            this.markBound(expansion, delay);
+            this.markBound(expansion, extend);
         return DBSPControlledFilterOperator.create(
                 operator.getNode(), replacement, Monotonicity.getBodyType(expression), delay);
     }

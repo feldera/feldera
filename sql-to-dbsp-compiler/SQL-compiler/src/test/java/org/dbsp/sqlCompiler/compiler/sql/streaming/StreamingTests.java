@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeMaps;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -51,6 +52,7 @@ public class StreamingTests extends StreamingTestBase {
 
     @Test
     public void issue2228() throws SQLException, IOException, InterruptedException {
+        OptimizeMaps.testIssue2228 = true;
         String sql = """
                 CREATE TABLE transaction (
                     id bigint NOT NULL,
@@ -70,6 +72,7 @@ public class StreamingTests extends StreamingTestBase {
                 """;
 
         String main = this.createMain("""
+                let _ = circuit.step().expect("could not run circuit");
                 let _ = circuit.step().expect("could not run circuit");
                 """);
         this.measure(sql, main);

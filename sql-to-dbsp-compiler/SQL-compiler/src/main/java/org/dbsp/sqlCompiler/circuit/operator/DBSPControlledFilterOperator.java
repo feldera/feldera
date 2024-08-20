@@ -80,12 +80,9 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
     public static DBSPControlledFilterOperator create(
             CalciteObject node, DBSPOperator data, IMaybeMonotoneType monotoneType, DBSPOperator control) {
         DBSPType controlType = control.getType();
-        assert controlType.is(DBSPTypeTupleBase.class) : "Control type is not a tuple: " + controlType;
-        DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
-        assert controlTuple.size() == 2;
 
         DBSPType leftSliceType = Objects.requireNonNull(monotoneType.getProjectedType());
-        assert leftSliceType.sameType(controlTuple.getFieldType(1)):
+        assert leftSliceType.sameType(controlType):
                 "Projection type does not match control type " + leftSliceType + "/" + controlType;
 
         DBSPType rowType = data.getOutputRowType();
@@ -102,7 +99,7 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
 
         DBSPVariablePath controlArg = new DBSPVariablePath(controlType.ref());
         DBSPExpression compare = DBSPControlledFilterOperator.generateTupleCompare(
-                projection, controlArg.deref().field(1));
+                projection, controlArg.deref());
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());
         return new DBSPControlledFilterOperator(node, closure, data, control);
     }
