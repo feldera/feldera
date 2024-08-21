@@ -41,14 +41,28 @@
       )
       getRows = () => rows
     }
+  const pushChange =
+    (pipelineName: string, relationName: string) =>
+    (change: Record<'insert' | 'delete', XgressRecord>) => {
+      rows[pipelineName].push({ ...change, relationName })
+    }
+  const commit = (pipelineName: string) => (batchSize: number) => {
+    // console.log('commit', rows[pipelineName].length)
+    rows[pipelineName].splice(0, Math.max(rows[pipelineName].length - bufferSize, 0))
+    // console.log('commit2', rows[pipelineName].length)
+    getRows = () => rows
+  }
   const startReadingStream = (pipelineName: string, relationName: string) => {
     const handle = relationEggressStream(pipelineName, relationName).then((stream) => {
-      if (!stream) {
+      if ('message' in stream) {
         return undefined
       }
-      const reader = stream.getReader()
-      accumulateChanges(reader, pushChanges(pipelineName, relationName))
-      return () => reader.cancel('not_needed')
+      const cancel = accumulateChangesSingular(
+        stream,
+        pushChange(pipelineName, relationName),
+        commit(pipelineName)
+      )
+      return () => cancel('not_needed')
     })
     return () => {
       handle.then((cancel) => cancel?.())
@@ -91,7 +105,7 @@
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type { Relation } from '$lib/services/manager'
-  import { accumulateChanges } from '$lib/functions/pipelines/changeStream'
+  import { accumulateChangesSingular } from '$lib/functions/pipelines/changeStream'
 
   let { pipeline }: { pipeline: { current: Pipeline } } = $props()
 
@@ -143,6 +157,17 @@
         ...value
       }))
   )
+
+  // Update visible list of changes at a constant time period
+  // $effect(() => {
+  //   const update = () => (getRows = () => rows)
+  //   const handle = setInterval(update, 200)
+  //   update()
+  //   return () => {
+  //     console.log('clearInterval')
+  //     clearInterval(handle)
+  //   }
+  // })
 </script>
 
 <div class="flex h-full flex-row">

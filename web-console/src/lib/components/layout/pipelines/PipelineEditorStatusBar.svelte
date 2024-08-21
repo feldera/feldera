@@ -45,6 +45,7 @@
         .with(
           'Success',
           'CompilingRust',
+          { RustError: P.any },
           () => 'bx bx-check -mr-1 -mt-1 h-6 text-[32px] text-success-500'
         )
         .with(
@@ -53,7 +54,6 @@
           undefined,
           () => 'bx bx-loader-alt animate-spin text-[24px]'
         )
-        .with({ RustError: P.any }, () => '')
         .with(P.shape({}), () => 'bx bx-x-circle text-[24px] text-error-500')
         .exhaustive()}
     >

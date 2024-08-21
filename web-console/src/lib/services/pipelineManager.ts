@@ -326,7 +326,7 @@ export const relationEggressStream = async (pipelineName: string, relationName: 
       method: 'POST'
     }
   )
-  return result.body
+  return result.status === 200 && result.body ? result.body : (result.json() as Promise<Error>)
 }
 
 export const getDemos = handled(getConfigDemos)
