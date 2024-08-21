@@ -1004,10 +1004,11 @@ public class StreamingTests extends StreamingTestBase {
         try (PrintWriter mainFile = new PrintWriter(file, StandardCharsets.UTF_8)) {
             mainFile.print(main);
         }
-        file.deleteOnExit();
+        //file.deleteOnExit();
         Utilities.compileAndTestRust(rustDirectory, true, "--release");
         File mainFile = new File(mainFilePath);
-        boolean deleted = mainFile.delete();
+        boolean deleted;
+        deleted = mainFile.delete();
         Assert.assertTrue(deleted);
 
         // After executing this Rust program the output is in file "mem.txt"
@@ -1090,6 +1091,8 @@ public class StreamingTests extends StreamingTestBase {
                              min_storage_bytes: usize::MAX,
                              init_checkpoint: Uuid::nil(),
                          }).expect("could not build circuit");
+                    // uncomment if you want a CPU profile
+                    // let _ = circuit.enable_cpu_profiler();
                     let start = SystemTime::now();
                 """;
         String postamble = """
@@ -1101,6 +1104,7 @@ public class StreamingTests extends StreamingTestBase {
                     let end = SystemTime::now();
                     let duration = end.duration_since(start).expect("could not get time");
 
+                    // println!("{:?}", profile);
                     let mut data = String::new();
                     data.push_str(&format!("{},{},{}\\n",
                                            duration.as_millis(),

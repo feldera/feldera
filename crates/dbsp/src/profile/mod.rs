@@ -196,9 +196,9 @@ all: $(FORMATS)
 define format_template
 $(1): $(DOTS:.dot=.$(1))
 %.$(1): %.dot
-	dot -T$(1) $$< -o$$@
+        dot -T$(1) $$< -o$$@
 clean:
-	rm -f $(DOTS:.dot=.$$(1))
+        rm -f $(DOTS:.dot=.$$(1))
 endef
 
 $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
@@ -241,6 +241,7 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
 }
 
 /// Runtime profiles collected from all DBSP worker threads.
+#[derive(Debug)]
 pub struct DbspProfile {
     pub worker_profiles: Vec<WorkerProfile>,
 }
@@ -424,6 +425,14 @@ impl Profiler {
             metadata.insert(node.global_id().clone(), meta);
         });
 
+        // Compute total time
+        let mut total_time: Duration = Duration::default();
+        for (node_id, _) in metadata.iter_mut() {
+            if let Some(profile) = self.cpu_profiler.operator_profile(node_id) {
+                total_time += profile.total_time();
+            }
+        }
+
         // Add CPU profiling info.
         for (node_id, meta) in metadata.iter_mut() {
             if let Some(profile) = self.cpu_profiler.operator_profile(node_id) {
@@ -435,6 +444,11 @@ impl Profiler {
                     (
                         Cow::Borrowed("time"),
                         MetaItem::Duration(profile.total_time()),
+                    ),
+                    (
+                        Cow::Borrowed("time%"),
+                        MetaItem::Percent(
+                            profile.total_time().as_secs_f64() / total_time.as_secs_f64()),
                     ),
                 ];
 
@@ -477,13 +491,20 @@ impl Profiler {
             let mut output = String::with_capacity(1024);
             let meta = profile.metadata.get(node_id).cloned().unwrap_or_default();
 
+            let mut importance = 0f64;
             for (label, item) in meta.iter() {
                 write!(output, "{label}: ").unwrap();
                 item.format(&mut output).unwrap();
+                if label == "time%" {
+                    match item {
+                        MetaItem::Percent(value) => importance = *value,
+                        _ => (),
+                    }
+                }
                 output.push_str("\\l");
             }
 
-            output
+            (output, importance)
         })
     }
 }

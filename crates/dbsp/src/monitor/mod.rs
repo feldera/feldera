@@ -165,12 +165,12 @@ impl TraceMonitor {
     }
 
     pub fn visualize_circuit(&self) -> VisGraph {
-        self.visualize_circuit_annotate(|_| "".to_string())
+        self.visualize_circuit_annotate(|_| ("".to_string(), 0f64))
     }
 
     pub fn visualize_circuit_annotate<F>(&self, annotate: F) -> VisGraph
     where
-        F: Fn(&GlobalNodeId) -> String,
+        F: Fn(&GlobalNodeId) -> (String, f64),
     {
         self.0.borrow().circuit.visualize(&annotate)
     }

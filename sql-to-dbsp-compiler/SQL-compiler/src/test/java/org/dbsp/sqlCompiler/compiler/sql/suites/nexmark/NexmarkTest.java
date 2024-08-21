@@ -804,7 +804,7 @@ INSERT INTO auction VALUES(99, 'item-name', 'description', 5, 10, '2020-01-01 00
                  1 | James Potter| 2020-01-01 00:00:10 | 1
                  2 | Lili Potter|  2020-01-01 00:00:10 | 1""",
                 """
-INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 00:00:42', '2020-01-01 00:00:02', 1, 1, '');                        
+INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 00:00:42', '2020-01-01 00:00:02', 1, 1, '');
 """,
                 """
                  id | name | starttime | weight
