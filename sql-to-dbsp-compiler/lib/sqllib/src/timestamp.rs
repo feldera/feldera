@@ -225,6 +225,10 @@ impl Timestamp {
     }
 }
 
+pub fn now() -> Timestamp {
+    Timestamp::from_dateTime(Utc::now())
+}
+
 impl<T> From<T> for Timestamp
 where
     i64: From<T>,

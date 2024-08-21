@@ -297,25 +297,9 @@ computation on whole days.
 
 ## Non-deterministic functions
 
-Since DBSP is a *deterministic* query engine, it supports real-time
-based functions in way which is different from other SQL engines.
-Currently the only such function supported is `NOW`.  This function
-returns a `TIMESTAMP` value.
-
-When a program uses the `NOW` function, the following input table is
-automatically injected by the compiler:
-
-```sql
-CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
-```
-
-All invocations of the `NOW()` function within the program
-will produce the last value inserted in this table.
-
-This table does not currently get populated automatically.  Instead,
-the user is responsible for supplying the data to this table.  In
-every step of the circuit the user has to insert a new value in this
-table, which should be larger than the previous value.
+| Operation     | Description         | Example                        |
+|---------------|---------------------|--------------------------------|
+| `NOW`         | Returns a timestamp | `NOW()` => 2024-07-10 00:00:00 |
 
 :::warning
 
@@ -324,10 +308,6 @@ program such as `SELECT * FROM T WHERE T.x > NOW()` has to scan the
 entire table T at every step.  Use this function judiciously.
 
 :::
-
-| Operation     | Description         | Example                        |
-|---------------|---------------------|--------------------------------|
-| `NOW`         | Returns a timestamp | `NOW()` => 2024-07-10 00:00:00 |
 
 ## Date formatting
 

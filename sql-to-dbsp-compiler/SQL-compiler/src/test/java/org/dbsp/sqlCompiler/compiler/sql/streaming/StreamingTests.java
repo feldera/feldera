@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -29,6 +30,13 @@ import java.util.List;
 
 /** Tests that exercise streaming features. */
 public class StreamingTests extends StreamingTestBase {
+    @Override
+    public CompilerOptions testOptions(boolean incremental, boolean optimize) {
+        CompilerOptions options = super.testOptions(incremental, optimize);
+        options.ioOptions.internalNow = false;
+        return options;
+    }
+
     @Test
     public void q16() {
         String sql = """

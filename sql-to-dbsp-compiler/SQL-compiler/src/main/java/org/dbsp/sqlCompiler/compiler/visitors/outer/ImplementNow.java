@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
@@ -213,13 +214,10 @@ public class ImplementNow extends Passes {
             DBSPExpression joinFunction = new DBSPTupleExpression(fields, false)
                     .closure(key.asParameter(), left.asParameter(), right.asParameter());
             assert nowIndexed != null;
-            DBSPDifferentiateOperator dNow = new DBSPDifferentiateOperator(operator.getNode(), nowIndexed);
-            dNow.annotations.add(new NoInc());
-            this.addOperator(dNow);
-            DBSPStreamJoinOperator join = new DBSPStreamJoinOperator(operator.getNode(), joinType,
-                    joinFunction, operator.isMultiset, index, dNow);
-            this.addOperator(join);
-            return join;
+            DBSPOperator result = new DBSPStreamJoinOperator(operator.getNode(), joinType,
+                        joinFunction, operator.isMultiset, index, nowIndexed);
+            this.addOperator(result);
+            return result;
         }
 
         @Override
@@ -268,14 +266,28 @@ public class ImplementNow extends Passes {
             DBSPType timestamp = ContainsNow.timestampType();
             CalciteObject node = circuit.getNode();
 
-            String tableName = this.compiler.compiler().toCase("NOW");
-            DBSPOperator now = circuit.to(DBSPCircuit.class).circuit.getInput(tableName);
-            if (now == null) {
-                throw new CompilationError("Declaration for table 'NOW' not found in program");
-            }
             // We are doing this in startVisitor because we want now to be first in topological order,
-            // otherwise it may be traversed too late, after nodes that will depend on it.
-            this.visited.add(now);
+            // otherwise it may be traversed too late, after nodes that should depend on it
+            // (but don't yet, because they think they are calling a function).
+            DBSPOperator now;
+            boolean useSource = this.compiler.compiler().options.ioOptions.internalNow;
+            if (useSource) {
+                now = new DBSPNowOperator(circuit.getNode());
+            } else {
+                // A table followed by a differentiator.
+                String tableName = this.compiler.compiler().toCase("NOW");
+                now = circuit.to(DBSPCircuit.class).circuit.getInput(tableName);
+                if (now == null) {
+                    throw new CompilationError("Declaration for table 'NOW' not found in program");
+                }
+                // Prevent processing it again by this visitor
+                this.visited.add(now);
+                this.addOperator(now);
+
+                DBSPDifferentiateOperator dNow = new DBSPDifferentiateOperator(circuit.getNode(), now);
+                now = dNow;
+                dNow.annotations.add(new NoInc());
+            }
             this.addOperator(now);
             this.map(now, now, false);
 
@@ -293,12 +305,13 @@ public class ImplementNow extends Passes {
 
     public ImplementNow(IErrorReporter reporter, ICompilerComponent compiler) {
         super(reporter);
+        boolean removeTable = compiler.compiler().options.ioOptions.internalNow;
         ContainsNow cn = new ContainsNow(reporter);
         CircuitRewriter find = cn.getCircuitVisitor();
         RewriteNow rewriteNow = new RewriteNow(reporter, compiler);
         this.passes.add(find);
         this.passes.add(new Conditional(reporter, rewriteNow, cn::found));
-        this.passes.add(new Conditional(reporter, new RemoveNow(reporter, compiler), () -> !cn.found()));
+        this.passes.add(new Conditional(reporter, new RemoveNow(reporter, compiler), () -> !cn.found() || removeTable));
         ContainsNow cn0 = new ContainsNow(reporter);
         this.passes.add(new Conditional(reporter,
                 new Fail(reporter, "Instances of 'now' have not been replaced"), cn0::found));

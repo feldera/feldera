@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperato
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
@@ -1193,8 +1194,7 @@ public class ToRustVisitor extends CircuitVisitor {
         }
     }
 
-    @Override
-    public VisitDecision preorder(DBSPConstantOperator operator) {
+    VisitDecision constantLike(DBSPOperator operator) {
         assert operator.function != null;
         builder.append("let ")
                 .append(operator.getOutputName())
@@ -1208,6 +1208,16 @@ public class ToRustVisitor extends CircuitVisitor {
         empty.accept(this.innerVisitor);
         this.builder.append("}));");
         return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPConstantOperator operator) {
+        return this.constantLike(operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPNowOperator operator) {
+        return this.constantLike(operator);
     }
 
     public static String toRustString(IErrorReporter reporter, DBSPCircuit node, CompilerOptions options) {

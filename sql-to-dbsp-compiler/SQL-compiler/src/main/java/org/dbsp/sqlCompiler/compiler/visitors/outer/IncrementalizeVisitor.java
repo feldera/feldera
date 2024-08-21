@@ -35,7 +35,7 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
         super(reporter, false);
     }
 
-    public void input(DBSPSourceBaseOperator operator) {
+    public void input(DBSPOperator operator) {
         if (this.visited.contains(operator))
             return;
         this.addOperator(operator);
@@ -50,6 +50,12 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPSourceMultisetOperator operator) {
+        this.input(operator);
+    }
+
+    @Override
+    public void postorder(DBSPNowOperator operator) {
+        // Treat as a source
         this.input(operator);
     }
 

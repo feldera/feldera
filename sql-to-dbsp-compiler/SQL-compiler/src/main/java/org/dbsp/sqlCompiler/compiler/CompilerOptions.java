@@ -154,7 +154,8 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public Map<String, String> loggingLevel = new HashMap<>();
         @Parameter(names="-o", description = "Output file; stdout if null")
         public String outputFile = "";
-        @Parameter(names = "--udf", description = "Specify a Rust file containing implementations of user-defined functions")
+        @Parameter(names = "--udf",
+                description = "Specify a Rust file containing implementations of user-defined functions")
         public String udfs = "";
         @Parameter(names = "-jpg", description = "Emit a jpg image of the circuit instead of Rust")
         public boolean emitJpeg = false;
@@ -162,7 +163,8 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public boolean emitPng = false;
         @Parameter(names = "-je", description = "Emit error messages as a JSON array to stderr")
         public boolean emitJsonErrors = false;
-        @Parameter(names = "-js", description = "Emit a JSON file containing the schema of all views and tables involved")
+        @Parameter(names = "-js",
+                description = "Emit a JSON file containing the schema of all views and tables involved")
         @Nullable
         public String emitJsonSchema = null;
         @Parameter(names = "-q", description = "Quiet: do not print warnings")
@@ -174,10 +176,15 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public String functionName = "circuit";
         @Parameter(names = "-v", description = "Output verbosity")
         public int verbosity = 0;
-        @Parameter(names = "--handles", description = "Use handles (true) or Catalog (false) in the emitted Rust code")
+        @Parameter(names = "--handles",
+                description = "Use handles (true) or Catalog (false) in the emitted Rust code")
         public boolean emitHandles = false;
-        @Parameter(names = "--jdbcSource", description = "Connection string to a database that contains table metadata")
+        @Parameter(names = "--jdbcSource",
+                description = "Connection string to a database that contains table metadata")
         public String metadataSource = "";
+        @Parameter(names = "--nowstream",
+                description = "Implement NOW as a stream (true) or as an internal operator (false)")
+        public boolean internalNow = true;
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {

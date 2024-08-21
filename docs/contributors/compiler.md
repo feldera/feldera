@@ -59,6 +59,9 @@ Usage: sql-to-dbsp [options] Input file to compile
       Lenient SQL validation.  If true it allows duplicate column names in a
       view
       Default: false
+    --nowstream
+      Implement NOW as a stream (true) or as an internal operator (false)
+      Default: true
     --outputsAreSets
       Ensure that outputs never contain duplicates
       Default: false
@@ -160,6 +163,24 @@ Here is a description of the non-obvious command-line options:
 
 --streaming: Equivalent to adding the following property to all program tables:
      `'appendOnly' = 'true'`.
+
+--internalNow: If this property is set to 'false' it implements the NOW() function
+     in a special way, as an input table, which allows deterministic testing.
+
+     When a program uses the `NOW` function, the following input table is
+     automatically injected by the compiler:
+
+     ```sql
+     CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
+     ```
+
+     All invocations of the `NOW()` function within the program
+     will produce the last value inserted in this table.
+
+     This table does not currently get populated automatically.  Instead,
+     the user is responsible for supplying the data to this table.  In
+     every step of the circuit the user has to insert a new value in this
+     table, which should be larger than the previous value.
 
 ### Example: Compiling a SQL program to Rust
 

@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
@@ -283,6 +284,11 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPNowOperator operator) {
+        this.map(operator, operator);
     }
 
     @Override
