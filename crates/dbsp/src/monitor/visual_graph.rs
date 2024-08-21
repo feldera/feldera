@@ -57,10 +57,13 @@ impl SimpleNode {
     }
 
     fn to_dot(&self, output: &mut dyn Write) -> fmt::Result {
-        writeln!(output, "{}[label=\"{}\" fillcolor=#{:02x}0000]",
-                 self.id,
-                 self.label,
-                 ((1f64 - self.color) * 255.0) as u8
+        let r = 1.0 - self.color;
+        let gb = (r * r * r * 255.0) as u8;
+
+        writeln!(
+            output,
+            "{}[label=\"{}\" fillcolor=\"#ff{gb:02x}{gb:02x}\" style=filled]",
+            self.id, self.label,
         )
     }
 }

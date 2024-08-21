@@ -448,7 +448,8 @@ impl Profiler {
                     (
                         Cow::Borrowed("time%"),
                         MetaItem::Percent(
-                            profile.total_time().as_secs_f64() / total_time.as_secs_f64()),
+                            profile.total_time().as_secs_f64() / total_time.as_secs_f64(),
+                        ),
                     ),
                 ];
 
@@ -496,10 +497,9 @@ impl Profiler {
                 write!(output, "{label}: ").unwrap();
                 item.format(&mut output).unwrap();
                 if label == "time%" {
-                    match item {
-                        MetaItem::Percent(value) => importance = *value,
-                        _ => (),
-                    }
+                    if let MetaItem::Percent(value) = item {
+                        importance = *value
+                    };
                 }
                 output.push_str("\\l");
             }
