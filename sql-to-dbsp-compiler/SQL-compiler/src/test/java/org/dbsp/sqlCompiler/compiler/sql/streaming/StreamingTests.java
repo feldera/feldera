@@ -33,7 +33,7 @@ public class StreamingTests extends StreamingTestBase {
     @Override
     public CompilerOptions testOptions(boolean incremental, boolean optimize) {
         CompilerOptions options = super.testOptions(incremental, optimize);
-        options.ioOptions.internalNow = false;
+        options.ioOptions.nowStream = true;
         return options;
     }
 

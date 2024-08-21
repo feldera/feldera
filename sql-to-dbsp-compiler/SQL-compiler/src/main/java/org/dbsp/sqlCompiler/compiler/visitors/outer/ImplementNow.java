@@ -270,7 +270,7 @@ public class ImplementNow extends Passes {
             // otherwise it may be traversed too late, after nodes that should depend on it
             // (but don't yet, because they think they are calling a function).
             DBSPOperator now;
-            boolean useSource = this.compiler.compiler().options.ioOptions.internalNow;
+            boolean useSource = !this.compiler.compiler().options.ioOptions.nowStream;
             if (useSource) {
                 now = new DBSPNowOperator(circuit.getNode());
             } else {
@@ -305,7 +305,7 @@ public class ImplementNow extends Passes {
 
     public ImplementNow(IErrorReporter reporter, ICompilerComponent compiler) {
         super(reporter);
-        boolean removeTable = compiler.compiler().options.ioOptions.internalNow;
+        boolean removeTable = !compiler.compiler().options.ioOptions.nowStream;
         ContainsNow cn = new ContainsNow(reporter);
         CircuitRewriter find = cn.getCircuitVisitor();
         RewriteNow rewriteNow = new RewriteNow(reporter, compiler);
