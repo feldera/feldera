@@ -34,7 +34,7 @@ const reconcileHistoricData = (
     if (!nonNull(keepMs)) {
       return -oldData.length
     }
-    const isOverwritingTimestamp = !!oldData.find(m => m.timeMs >= newData.timeMs)
+    const isOverwritingTimestamp = !!oldData.find((m) => m.timeMs >= newData.timeMs)
     if (isOverwritingTimestamp) {
       // clear metrics history if we get a timestamp that overwrites existing data point
       return oldData.length
@@ -45,57 +45,59 @@ const reconcileHistoricData = (
   return [...oldData.slice(sliceAt), newData]
 }
 
-export const accumulatePipelineMetrics = (refetchMs: number, keepMs?: number) => (oldData: any, x: any) => {
-  const { status: newData } = x
-  invariant(((v: any): v is PipelineMetrics | undefined => true)(oldData))
-  invariant(((v: any): v is ControllerStatus | null => true)(newData))
-  if (!newData) {
-    return {
-      ...emptyPipelineMetrics,
-      lastTimestamp: undefined
+export const accumulatePipelineMetrics =
+  (refetchMs: number, keepMs?: number) => (oldData: any, x: any) => {
+    const { status: newData } = x
+    invariant(((v: any): v is PipelineMetrics | undefined => true)(oldData))
+    invariant(((v: any): v is ControllerStatus | null => true)(newData))
+    if (!newData) {
+      return {
+        ...emptyPipelineMetrics,
+        lastTimestamp: undefined
+      }
     }
-  }
-  const newTimestamp = Date.now()
-  const globalWithTimestamp = {
-    ...newData.global_metrics,
-    timeMs: newTimestamp
-  }
-  return {
-    lastTimestamp: oldData?.lastTimestamp,
-    input: new Map(
-      groupBy(newData.inputs, i => normalizeCaseIndependentName({ name: i.config.stream })).map(
-        ([relationName, metrics]) =>
-          tuple(
-            relationName,
-            metrics.reduce(
-              (acc: InputEndpointMetrics, cur) => {
-                const metrics = cur.metrics
-                return {
-                  total_bytes: acc.total_bytes + metrics.total_bytes,
-                  total_records: acc.total_records + metrics.total_records,
-                  buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes,
-                  buffered_records: acc.buffered_records + metrics.buffered_records,
-                  num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
-                  num_parse_errors: acc.num_parse_errors + metrics.num_parse_errors,
-                  end_of_input: acc.end_of_input || metrics.end_of_input
+    const newTimestamp = Date.now()
+    const globalWithTimestamp = {
+      ...newData.global_metrics,
+      timeMs: newTimestamp
+    }
+    return {
+      lastTimestamp: oldData?.lastTimestamp,
+      input: new Map(
+        groupBy(newData.inputs, (i) => normalizeCaseIndependentName({ name: i.config.stream })).map(
+          ([relationName, metrics]) =>
+            tuple(
+              relationName,
+              metrics.reduce(
+                (acc: InputEndpointMetrics, cur) => {
+                  const metrics = cur.metrics
+                  return {
+                    total_bytes: acc.total_bytes + metrics.total_bytes,
+                    total_records: acc.total_records + metrics.total_records,
+                    buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes,
+                    buffered_records: acc.buffered_records + metrics.buffered_records,
+                    num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
+                    num_parse_errors: acc.num_parse_errors + metrics.num_parse_errors,
+                    end_of_input: acc.end_of_input || metrics.end_of_input
+                  }
+                },
+                {
+                  total_bytes: 0,
+                  total_records: 0,
+                  buffered_bytes: 0,
+                  buffered_records: 0,
+                  num_transport_errors: 0,
+                  num_parse_errors: 0,
+                  end_of_input: false
                 }
-              },
-              {
-                total_bytes: 0,
-                total_records: 0,
-                buffered_bytes: 0,
-                buffered_records: 0,
-                num_transport_errors: 0,
-                num_parse_errors: 0,
-                end_of_input: false
-              }
+              )
             )
-          )
-      )
-    ),
-    output: new Map(
-      groupBy(newData.outputs, i => normalizeCaseIndependentName({ name: i.config.stream })).map(
-        ([relationName, metrics]) =>
+        )
+      ),
+      output: new Map(
+        groupBy(newData.outputs, (i) =>
+          normalizeCaseIndependentName({ name: i.config.stream })
+        ).map(([relationName, metrics]) =>
           tuple(
             relationName,
             metrics.reduce(
@@ -123,11 +125,12 @@ export const accumulatePipelineMetrics = (refetchMs: number, keepMs?: number) =>
               }
             )
           )
-      )
-    ),
-    global: reconcileHistoricData(oldData?.global ?? [], globalWithTimestamp, refetchMs, keepMs)
-  } as any
-}
+        )
+      ),
+      global: reconcileHistoricData(oldData?.global ?? [], globalWithTimestamp, refetchMs, keepMs)
+    } as any
+  }
+
 
 export const calcPipelineThroughput = (metrics: { global: (GlobalMetrics & { timeMs: number })[] }) => {
   const totalProcessed = metrics.global.map(m => tuple(m.timeMs, m.total_processed_records))

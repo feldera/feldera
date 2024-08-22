@@ -39,7 +39,7 @@
           // record: change.insert ?? change.delete
         }))
       )
-      getRows = () => rows
+      // getRows = () => rows
     }
   const pushChange =
     (pipelineName: string, relationName: string) =>
@@ -160,15 +160,15 @@
   )
 
   // Update visible list of changes at a constant time period
-  // $effect(() => {
-  //   const update = () => (getRows = () => rows)
-  //   const handle = setInterval(update, 200)
-  //   update()
-  //   return () => {
-  //     console.log('clearInterval')
-  //     clearInterval(handle)
-  //   }
-  // })
+  $effect(() => {
+    const update = () => (getRows = () => rows)
+    const handle = setInterval(update, 100)
+    update()
+    return () => {
+      console.log('clearInterval')
+      clearInterval(handle)
+    }
+  })
 </script>
 
 <div class="flex h-full flex-row">

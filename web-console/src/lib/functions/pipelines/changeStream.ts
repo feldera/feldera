@@ -77,7 +77,7 @@ export const accumulateChangesSingular = (
   // pushChange: (change: Record<'insert' | 'delete', XgressRecord>) => void,
   // commit: (batchSize: number) => void
 ) => {
-  const reader = chunkStreamByNewline(stream).getReader()
+  const reader = stream.pipeThrough(splitByNewlineTransformStream()).getReader() // chunkStreamByNewline(stream).getReader()
   let count = 0
   let resultBuffer = new Array()
 
@@ -87,155 +87,115 @@ export const accumulateChangesSingular = (
     ++count
   }
 
-  const mkParser = (): { write: JSONParser['write'], end: JSONParser['end'] } => {
+  const mkParser = (): { write: JSONParser['write']; end: JSONParser['end'] } => {
     // const parser = new JSONParser({ paths: ['$.json_data.*'] })
     // parser.onValue = onValue
     // return parser
     const tokenizer = new BigNumberTokenizer()
     const tokenParser = new TokenParser({ paths: ['$.json_data.*'] })
-    tokenizer.onToken = tokenParser.write.bind(tokenParser);
+    tokenizer.onToken = tokenParser.write.bind(tokenParser)
     tokenParser.onValue = onValue
     return tokenizer
   }
 
   let parser = mkParser()
 
-  const startInterruptableParse = (value: Uint8Array) => {
-    // let shouldStop = false
+  const chunksToParse = [] as Uint8Array[]
+
+  const startInterruptableParse = () => {
+    let end = false
     let done = true
-    return new Promise<Disposable>(async (resolve) => {
-      const dispose = async () => {
+    return new Promise<{interrupt: () => void, stop: () => void}>(async (resolve) => {
+      const interrupt = async () => {
         try {
           parser.end()
+          // console.log('ended json')
         } catch {
           // We ignore the error because we just want to interrupt parsing and production of values
-          console.log('interrupted')
+          // console.log('interrupted')
         }
+        chunksToParse.length = 0
         while (!done) {
+          // Release thread to parse JSON
           await new Promise((resolve) => setTimeout(resolve))
         }
         parser = mkParser()
       }
-      resolve({
-        [Symbol.dispose]: dispose
-      })
-      console.log('startInterruptableParse')
+      resolve({interrupt, stop () { end = true; interrupt() }})
 
-      const positions = generateArray(0, value.length, 200000)
-      const pairs = discreteDerivative(positions, tuple)
-      for (const [n1, n0] of pairs) {
-        count = 0
+      while (!end) {
+        const value = chunksToParse.shift()
         if (!value) {
-          break
+          await new Promise((resolve) => setTimeout(resolve))
+          continue
         }
-        done = false
-        try {
-          // const a = Date.now()
-          parser.write(value.slice(n0, n1))
-          console.log('batch ok')
-          // console.log('took ms', Date.now() - a)
-        } catch (e) {
-          // error = true
-          // console.log('parse error!', e, new TextDecoder().decode(value.slice(0, n1)))
-          break
+        const positions = generateArray(0, value.length, 200000)
+        const pairs = discreteDerivative(positions, tuple)
+        for (const [n1, n0] of pairs) {
+          count = 0
+          done = false
+          try {
+            parser.write(value.slice(n0, n1))
+          } catch (e) {
+            console.log('parse error!', e)
+            done = true
+            break
+          }
+
+          pushChanges(resultBuffer.slice(0, count))
+          done = true
+          await new Promise((resolve) => setTimeout(resolve))
         }
-        pushChanges(resultBuffer.slice(0, count))
-        done = true
-        await new Promise((resolve) => setTimeout(resolve))
+        // commit(count)
       }
-      // commit(count)
-      done = true
+
     })
   }
 
-  let handle = {
-    [Symbol.dispose]() {}
-  }
-
   setTimeout(async () => {
+    const {interrupt, stop} = await startInterruptableParse()
     while (true) {
       const { done, value } = await reader.read()
-      // console.log('cycle!', new TextDecoder().decode(value))
-      handle[Symbol.dispose]()
-      // console.log('disposed!')
       if (done || !value) {
-        //console.log('stream end')
+        stop()
         break
       }
-      // console.log('received', new TextDecoder().decode(value).slice(0, 20))
-      handle = await startInterruptableParse(value)
-      // await startInterruptableParse(value)
+      // console.log('cycle!', value.length)
+      if (value.length === 0) {
+        interrupt()
+        continue
+      }
+      chunksToParse.push(value)
+      // Release thread to process UI
+      await new Promise((resolve) => setTimeout(resolve))
     }
   })
   return () => reader.cancel()
 }
 
-async function* transformStream(
-  reader: ReadableStreamDefaultReader<Uint8Array>
-): AsyncGenerator<Uint8Array> {
-  let buffer = new Uint8Array(0)
+function splitByNewlineTransformStream(): TransformStream<Uint8Array, Uint8Array> {
+  return new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+          let start = 0;
+          console.log('upstream')
 
-  try {
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) {
-        if (buffer.length > 0) {
-          yield buffer
-        }
-        break
-      }
+          while (start < chunk.length) {
+              const newlineIndex = chunk.indexOf(10, start);
+              const end = (newlineIndex === -1) ? chunk.length : newlineIndex
 
-      let start = 0
-      for (let i = 0; i < value.length; i++) {
-        if (value[i] === 10) {
-          // Newline character
-          const chunk = value.subarray(start, i)
-          if (buffer.length > 0) {
-            const combined = new Uint8Array(buffer.length + chunk.length)
-            combined.set(buffer)
-            combined.set(chunk, buffer.length)
-            yield combined
-            buffer = new Uint8Array(0)
-          } else {
-            yield chunk
+              // Enqueue the subarray, including the newline character if found
+              controller.enqueue(chunk.subarray(start, end))
+              if (end !== chunk.length) {
+                console.log('yield end', end, chunk.length)
+                controller.enqueue(new Uint8Array())
+              }
+
+              // Move start to after the newline character
+              start = end + 1
           }
-          start = i + 1
-        }
+      },
+      flush(controller) {
+        controller.enqueue(new Uint8Array())
       }
-
-      if (start < value.length) {
-        const remaining = value.subarray(start)
-        const newBuffer = new Uint8Array(buffer.length + remaining.length)
-        newBuffer.set(buffer)
-        newBuffer.set(remaining, buffer.length)
-        buffer = newBuffer
-      }
-    }
-  } finally {
-    reader.releaseLock()
-  }
-}
-
-function chunkStreamByNewline(stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
-  let reader: ReadableStreamDefaultReader<Uint8Array>
-
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      reader = stream.getReader()
-
-      ;(async () => {
-        try {
-          for await (const chunk of transformStream(reader)) {
-            controller.enqueue(chunk)
-          }
-          controller.close()
-        } catch (err) {
-          controller.error(err)
-        }
-      })()
-    },
-    cancel(reason) {
-      reader.cancel(reason) // Cancel the upstream stream
-    }
-  })
+  });
 }

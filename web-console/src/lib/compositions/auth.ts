@@ -256,7 +256,7 @@ export const loadAuthConfig = async () => {
               client_id: clientId,
               id_token_hint: undefined!,
               redirect_uri: `${window.location.origin}${base}/auth/callback/`,
-              response_type: 'code',
+              response_type: 'code'
             },
             // With AWS Cognito, when logging out and logging in via thrird party IDP (e.g. Google) - nonce is required
             ...((nonce) => (nonce ? { nonce } : {}))(storage.getItem('oidc.nonce.default'))
