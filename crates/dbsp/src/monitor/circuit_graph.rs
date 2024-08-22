@@ -83,11 +83,12 @@ impl Region {
     ///
     /// * `annotation` - annotation to attach to the region.
     /// * `annotate` - function used to annotate nodes inside the region.
+    ///                Returns a label and an "importance" (between 0 and 1) for the node
     fn visualize(
         &self,
         scope: &Node,
         annotation: &str,
-        annotate: &dyn Fn(&GlobalNodeId) -> String,
+        annotate: &dyn Fn(&GlobalNodeId) -> (String, f64),
     ) -> ClusterNode {
         let mut nodes = Vec::new();
         for nodeid in self.nodes.iter() {
@@ -299,8 +300,8 @@ impl Node {
     }
 
     /// Output circuit node as a node in a visual graph.
-    fn visualize(&self, annotate: &dyn Fn(&GlobalNodeId) -> String) -> Option<VisNode> {
-        let annotation = annotate(&self.id);
+    fn visualize(&self, annotate: &dyn Fn(&GlobalNodeId) -> (String, f64)) -> Option<VisNode> {
+        let (annotation, importance) = annotate(&self.id);
 
         match &self.kind {
             NodeKind::Operator => Some(VisNode::Simple(SimpleNode::new(
@@ -311,6 +312,7 @@ impl Node {
                     if annotation.is_empty() { "" } else { "\\l" },
                     annotation
                 ),
+                importance,
             ))),
 
             NodeKind::Circuit { region, .. } => Some(VisNode::Cluster(region.visualize(
@@ -327,6 +329,7 @@ impl Node {
                     if annotation.is_empty() { "" } else { "\\l" },
                     annotation
                 ),
+                importance,
             ))),
             NodeKind::StrictOutput => None,
         }
@@ -382,7 +385,7 @@ impl CircuitGraph {
     }
 
     /// Output circuit graph as visual graph.
-    pub(super) fn visualize(&self, annotate: &dyn Fn(&GlobalNodeId) -> String) -> VisGraph {
+    pub(super) fn visualize(&self, annotate: &dyn Fn(&GlobalNodeId) -> (String, f64)) -> VisGraph {
         let cluster = self.nodes.visualize(annotate).unwrap().cluster().unwrap();
 
         let mut edges = Vec::new();

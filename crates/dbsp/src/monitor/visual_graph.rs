@@ -48,15 +48,23 @@ impl Graph {
 pub(super) struct SimpleNode {
     id: Id,
     label: String,
+    color: f64,
 }
 
 impl SimpleNode {
-    pub(super) fn new(id: Id, label: String) -> Self {
-        Self { id, label }
+    pub(super) fn new(id: Id, label: String, color: f64) -> Self {
+        Self { id, label, color }
     }
 
     fn to_dot(&self, output: &mut dyn Write) -> fmt::Result {
-        writeln!(output, "{}[label=\"{}\"]", self.id, self.label)
+        let r = 1.0 - self.color;
+        let gb = (r * r * r * 255.0) as u8;
+
+        writeln!(
+            output,
+            "{}[label=\"{}\" fillcolor=\"#ff{gb:02x}{gb:02x}\" style=filled]",
+            self.id, self.label,
+        )
     }
 }
 

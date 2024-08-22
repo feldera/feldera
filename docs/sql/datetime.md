@@ -323,6 +323,8 @@ Programs that use `NOW()` can be very inefficient.  For example, a
 program such as `SELECT * FROM T WHERE T.x > NOW()` has to scan the
 entire table T at every step.  Use this function judiciously.
 
+:::
+
 | Operation     | Description         | Example                        |
 |---------------|---------------------|--------------------------------|
 | `NOW`         | Returns a timestamp | `NOW()` => 2024-07-10 00:00:00 |
