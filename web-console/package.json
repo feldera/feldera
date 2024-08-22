@@ -46,6 +46,7 @@
     "autoprefixer": "^10.4.19",
     "bignumber.js": "^9.1.2",
     "boxicons": "^2.1.4",
+    "d3-format": "^3.1.0",
     "echarts": "^5.5.1",
     "eslint": "^9.7.0",
     "eslint-config-prettier": "^9.1.0",
@@ -81,7 +82,8 @@
     "typescript-eslint": "^8.0.0-alpha.51",
     "valibot": "^0.36.0",
     "virtua": "^0.33.4",
-    "vite": "^5.3.4"
+    "vite": "^5.3.4",
+    "worker-timers": "^8.0.4"
   },
   "type": "module",
   "trustedDependencies": [
