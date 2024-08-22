@@ -73,15 +73,17 @@ class BigNumberTokenizer extends Tokenizer {
 
 export const accumulateChangesSingular = (
   stream: ReadableStream<Uint8Array>,
-  pushChange: (change: Record<'insert' | 'delete', XgressRecord>) => void,
-  commit: (batchSize: number) => void
+  pushChanges: (changes: Record<'insert' | 'delete', XgressRecord>[]) => void
+  // pushChange: (change: Record<'insert' | 'delete', XgressRecord>) => void,
+  // commit: (batchSize: number) => void
 ) => {
   const reader = chunkStreamByNewline(stream).getReader()
   let count = 0
+  let resultBuffer = new Array()
 
   const onValue = ({ value }: ParsedElementInfo) => {
-    console.log('onValue')
-    pushChange(value as Record<'insert' | 'delete', XgressRecord>)
+    // console.log('onValue')
+    resultBuffer[count] = value
     ++count
   }
 
@@ -107,6 +109,7 @@ export const accumulateChangesSingular = (
           parser.end()
         } catch {
           // We ignore the error because we just want to interrupt parsing and production of values
+          console.log('interrupted')
         }
         while (!done) {
           await new Promise((resolve) => setTimeout(resolve))
@@ -117,11 +120,11 @@ export const accumulateChangesSingular = (
         [Symbol.dispose]: dispose
       })
       console.log('startInterruptableParse')
-      count = 0
 
-      const positions = generateArray(0, value.length, 20000)
+      const positions = generateArray(0, value.length, 200000)
       const pairs = discreteDerivative(positions, tuple)
       for (const [n1, n0] of pairs) {
+        count = 0
         if (!value) {
           break
         }
@@ -129,16 +132,18 @@ export const accumulateChangesSingular = (
         try {
           // const a = Date.now()
           parser.write(value.slice(n0, n1))
+          console.log('batch ok')
           // console.log('took ms', Date.now() - a)
         } catch (e) {
           // error = true
           // console.log('parse error!', e, new TextDecoder().decode(value.slice(0, n1)))
           break
         }
+        pushChanges(resultBuffer.slice(0, count))
         done = true
         await new Promise((resolve) => setTimeout(resolve))
       }
-      commit(count)
+      // commit(count)
       done = true
     })
   }

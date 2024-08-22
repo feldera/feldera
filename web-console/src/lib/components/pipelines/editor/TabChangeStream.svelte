@@ -50,7 +50,7 @@
     // console.log('commit', rows[pipelineName].length)
     rows[pipelineName].splice(0, Math.max(rows[pipelineName].length - bufferSize, 0))
     // console.log('commit2', rows[pipelineName].length)
-    getRows = () => rows
+    // getRows = () => rows
   }
   const startReadingStream = (pipelineName: string, relationName: string) => {
     const handle = relationEggressStream(pipelineName, relationName).then((stream) => {
@@ -59,8 +59,9 @@
       }
       const cancel = accumulateChangesSingular(
         stream,
-        pushChange(pipelineName, relationName),
-        commit(pipelineName)
+        pushChanges(pipelineName, relationName)
+        // pushChange(pipelineName, relationName),
+        // commit(pipelineName)
       )
       return () => cancel('not_needed')
     })
@@ -194,8 +195,7 @@
                     startReadingStream(pipelineName, relation.relationName)
                 }
               }}
-              value={relation}
-            />
+              value={relation} />
             {relation.relationName}
           </label>
         {/snippet}
@@ -216,13 +216,13 @@
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="w-2 bg-surface-100-900"></PaneResizer>
+    <PaneResizer class="bg-surface-100-900 w-2"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
       {#if getRows()[pipelineName]?.length}
         <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="px-4 text-surface-500">
+        <span class="text-surface-500 px-4">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}
