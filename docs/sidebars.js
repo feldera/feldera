@@ -204,10 +204,14 @@ const sidebars = {
             {
               type: 'category',
               label: 'Formats',
+              link: {
+                type: 'doc',
+                id: 'formats/index'
+              },
               items: [
-                'api/json',
-                'api/parquet',
-                'api/csv',
+                'formats/json',
+                'formats/parquet',
+                'formats/csv',
               ],
             },
             {

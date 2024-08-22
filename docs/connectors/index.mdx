@@ -1,3 +1,4 @@
+
 # Connectors: connect to data sources and sinks
 
 A Feldera pipeline can process data from multiple heterogeneous sources and
@@ -6,51 +7,93 @@ on a growing library of **[input](sources)** and **[output](sinks)** connectors.
 
 ## Basics
 
-A connector is a Feldera API object that describes an external data source or sink such as a database
-table or a Kafka topic. Connectors work together with other API objects, namely programs and pipelines,
-to build end-to-end streaming analytics pipelines.
+Users configure connectors using a JSON object, that describes an external source or sink such as a database
+table or a Kafka topic. A SQL table can have multiple source connectors attached to it, specified as a
+list of JSON connector objects under the `'connectors'` attribute in the `WITH` clause of the table.
+Similarly, a views can have multiple sink connectors attached to it.
 
-* A [program](/docs#programs) defines a set of SQL tables and views.
-* A [pipeline](/docs#pipelines) consists of a program with input and output connectors attached to it.
-* A connector must explicitly be attached to a table (for input)
-  or view (for output) of a pipeline.
-* A connector can be attached to the tables/views of one or more pipelines,
-  and can even be attached to multiple tables (for input) or views (for output)
-  within the same pipeline.
-* Connectors are managed through the API under the **/v0/connectors/...** endpoints.
-  They can be retrieved
-  [individually](https://www.feldera.com/api/fetch-a-connector-by-name) or
-  [as a list](https://www.feldera.com/api/fetch-connectors-optionally-filtered-by-name-or-id),
-  [created](https://www.feldera.com/api/create-a-new-connector),
-  [overwritten](https://www.feldera.com/api/create-or-replace-a-connector),
-  [modified](https://www.feldera.com/api/update-the-name-description-and-or-configuration-of-a-connector) and
-  [deleted](https://www.feldera.com/api/delete-an-existing-connector).
-* If changes are made to the connectors of a running pipeline, they will only be
-  applied when the pipeline is restarted.
+Here is an example, where the `VENDOR` table has one connector, configured to fetch and insert JSON data
+from an HTTP URL, and a `VENDOR_VIEW` which sends the changes of the view
+to a Kafka topic in a format that can be consumed by Debezium:
+
+```sql
+create table VENDOR (
+    id bigint not null primary key,
+    name varchar,
+    address varchar
+) WITH ('connectors' = '[{
+    "transport": {
+        "name": "url_input", "config": {"path": "https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json"}
+    },
+    "format": { "name": "json" }
+}]');
+
+create view VENDOR_VIEW
+WITH (
+    'connectors' = '[{
+        "max_queued_records": 1000,
+        "format": {
+            "name": "json",
+            "config": {
+                "update_format": "debezium"
+            }
+        },
+        "transport": {
+            "name": "kafka_output",
+            "config": {
+                "bootstrap.servers": "redpanda:9092",
+                "topic": "test_view"
+            }
+        }
+    }]'
+)
+as select * from VENDOR;
+```
+
+:::info
+
+The `WITH` clause for tables needs to be put at the end, after the column definitions, whereas for views it has to
+appear before the `AS` clause to resolve any parsing ambiguities.
+
+:::
 
 A connector specification consists of three parts:
 
-* Generic attributes common to all connectors, such as backpressure thresholds.
-* Transport specification, which defines the data transport to be used by the connector
-  (e.g.,
-  [Kafka](/docs/connectors/sources/kafka), 
-  [URL](/docs/connectors/sources/http-get), 
-  [Delta Lake](/docs/connectors/sources/delta), etc.) and its configuration.
-* Data format specification, which defines the data format for the connector
-  (e.g., 
-  [CSV](/docs/api/csv),
-  [JSON](/docs/api/json), 
-  [Parquet](/docs/api/parquet), or 
-  Avro), and its specific dialect.
+* [Generic attributes](#generic-attributes) common to all connectors, such as backpressure thresholds.
+* Transport specification (`transport`) for either [input](/docs/connectors/sources/) or [output](/docs/connectors/sinks/)
+  defines the data transport to be used by the connector.
+  Example transports include [Kafka](/docs/connectors/sources/kafka),
+  [URL](/docs/connectors/sources/http-get), [Delta Lake](/docs/connectors/sources/delta), etc.
+* [Data format specification](/docs/formats) (`format`), which defines the data format for the connector.
+  Example data formats include [CSV](/docs/formats/csv), [JSON](/docs/formats/json), [Parquet](/docs/formats/parquet), or
+  Avro).
+
+:::note
+
+Some transports, e.g., [Delta Lake](/docs/connectors/sinks/delta) and
+[datagen](/docs/connectors/sources/datagen), use fixed predefined data formats and do not require the
+format section in the connector specification.
+
+:::
 
 This architecture allows the user to combine different transports and data formats.
 
-> **Note:** these basics apply to all connectors **except** the
-  HTTP [input](/docs/connectors/sources/http) and [output](/docs/connectors/sinks/http) connectors
-  which are not managed by the user, as they directly feed/fetch data into/from a pipeline via
-  dedicated pipeline endpoints.
+These basics apply to all connectors **except** the HTTP [input](/docs/connectors/sources/http) and
+[output](/docs/connectors/sinks/http) connectors which are not managed by the user, as they directly feed/fetch data
+into/from a pipeline via dedicated pipeline endpoints and therefore do not need to be configured in the `WITH` clauses
+of tables and views.
 
-## Configuring the output buffer
+## Generic attributes
+
+The following attributes are common to all connectors:
+
+* `max_queued_records` - Backpressure threshold. Maximal number of records queued by the endpoint before the endpoint
+   is paused by the backpressure mechanism. By default this is set to 1 million.
+* `paused` - If set to to true the connector will not fetch or push data to the pipeline when started
+   unless [explicitly enabled through the API](/api/change-the-desired-state-of-an-input-endpoint).
+   By default this is set to false.
+
+### Configuring the output buffer
 
 By default a Feldera pipeline sends a batch of changes to the output transport
 for each batch of input updates it processes.  This can result in a stream of
@@ -79,7 +122,7 @@ output buffer:
    set the buffer will be flushed at most every
    `max_output_buffer_time_millis` milliseconds.
 
-   NOTE: this configuration option requires the `enable_output_buffer` flag
+   This configuration option requires the `enable_output_buffer` flag
    to be set.
 
 * `max_output_buffer_size_records` - Maximum number of updates to be kept in
@@ -93,7 +136,7 @@ output buffer:
    When not specified, the buffer can grow indefinitely until one of
    the other trigger conditions is satisfied.
 
-   NOTE: this configuration option requires the `enable_output_buffer` flag
+   This configuration option requires the `enable_output_buffer` flag
    to be set.
 
 :::note
@@ -107,134 +150,11 @@ specified.
 See [Delta Lake output connector documentation](/docs/connectors/sinks/delta#curl)
 for an example of configuring the output buffer.
 
-## Example usage
-
-### curl
-
-#### Retrieve individual connector
-
-Retrieve connector named `product-tools`.
-
-```bash
-curl -s -X GET http://localhost:8080/v0/connectors/product-tools | jq
-```
-
-#### Retrieve list of connectors
-```bash
-curl -s -X GET http://localhost:8080/v0/connectors | jq
-```
-
-#### Create connector
-
-Create HTTP GET connector named `product-tools`.
-
-```bash
-curl -i -X PUT http://localhost:8080/v0/connectors/product-tools \
--H 'Content-Type: application/json' \
--d '{
-  "description": "URL input connector for tools products",
-  "config": {
-      "transport": {
-          "name": "url_input",
-          "config": {
-              "path": "https://example.com/tools-data.json"
-          }
-      },
-      "format": {
-          "name": "json",
-          "config": {}
-      }
-  }
-}'
-```
-
-#### Edit connector description
-```bash
-curl -i -X PATCH http://localhost:8080/v0/connectors/product-tools \
--H 'Content-Type: application/json' \
--d '{
-  "description": "New description"
-}'
-```
-
-#### Overwrite the entire connector (description and configuration)
-```bash
-curl -i -X PUT http://localhost:8080/v0/connectors/product-tools \
--H 'Content-Type: application/json' \
--d '{
-  "description": "Another description",
-  "config": {
-      "transport": {
-          "name": "url_input",
-          "config": {
-              "path": "https://example.com/new-tools-data.json"
-          }
-      },
-      "format": {
-          "name": "json",
-          "config": {}
-      }
-  }
-}'
-```
-
-#### Delete connector
-
-Delete connector named `product-tools`.
-
-```bash
-curl -i -X DELETE http://localhost:8080/v0/connectors/product-tools
-```
-
-#### Attach input and output connector
-
-A Feldera pipeline consists of an SQL program with input and output connectors attached to it.
-The user lists connectors to be attached to the pipeline as part of the pipeline configuration.
-In this example, we create pipeline `supply-chain-pipeline` with program `supply-chain-program`.
-The pipeline attaches input connector `product-tools` to table `product`
-and output connector `kafka-average-price` to view `average_price`.
-
-```
-curl -i -X PUT http://localhost:8080/v0/pipelines/supply-chain-pipeline \
--H 'Content-Type: application/json' \
--d '{
-    "description": "Supply Chain pipeline",
-    "program_name": "supply-chain-program",
-    "config": {"workers": 4},
-    "connectors": [
-         {
-             "connector_name": "product-tools",
-             "is_input": true,
-             "name": "product-tools",
-             "relation_name": "product"
-         },
-         {
-             "connector_name": "kafka-average-price",
-             "is_input": false,
-             "name": "kafka-average-price",
-             "relation_name": "average_price"
-         }
-    ]
-}'
-```
-
-### Python (direct API calls)
-
-**Retrieve list of connectors while providing authorization:**
-```python
-import requests
-
-api_url = "http://localhost:8080"
-headers = { "authorization": f"Bearer <API-KEY>" }
-
-for connector in requests.get(f"{api_url}/v0/connectors", headers=headers).json():
-    print(connector)
-```
-
 ## Additional resources
 
 For more information, see:
 
-* [REST API curl tutorial](/docs/tutorials/rest_api)
-
-* [REST API documentation](https://www.feldera.com/api/create-a-new-connector) for connectors.
+* [Tutorial on using input and output connectors](/docs/tutorials/basics/part3)
+* [Tutorial on using HTTP-based Input and Output](/docs/tutorials/basics/part2)
+* [Supported source transports](/docs/connectors/sources)
+* [Supported sinks transports](/docs/connectors/sinks)
