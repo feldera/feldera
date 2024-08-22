@@ -463,13 +463,13 @@ class TestPipelineBuilder(unittest.TestCase):
                         "name": "avro",
                         "config": {{
                             "schema": {json.dumps(json.dumps({
-                                "type": "record",
-                                "name": "items",
-                                "fields": [
-                                    {"name": "id", "type": ["null", "int"]},
-                                    {"name": "name", "type": ["null", "string"]}
-                                ]
-                            }))}
+            "type": "record",
+            "name": "items",
+            "fields": [
+                {"name": "id", "type": ["null", "int"]},
+                {"name": "name", "type": ["null", "string"]}
+            ]
+        }))}
                         }}
                     }}
                 }}
@@ -538,7 +538,9 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW s AS SELECT * FROM items;
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT, name=name, sql=sql, runtime_config=RuntimeConfig(resources=resources, storage=False, workers=10)).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name=name, sql=sql,
+                                   runtime_config=RuntimeConfig(resources=resources, storage=False,
+                                                                workers=10)).create_or_replace()
 
         out = pipeline.listen("s")
 
@@ -646,6 +648,175 @@ class TestPipelineBuilder(unittest.TestCase):
         assert out_data == data
 
         pipeline.delete()
+
+    def test_issue2142(self):
+        sql = f"""
+        CREATE TABLE t0 (c1 INT);
+        CREATE VIEW v0 AS SELECT * FROM t0;
+        """
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_issue2142", sql=sql).create_or_replace()
+
+        data = [{"c1": None}, {"c1": 1}]
+
+        out = pipeline.listen("v0")
+
+        pipeline.start()
+        pipeline.input_json("t0", data=data)
+        pipeline.wait_for_completion(True)
+
+        out_data = out.to_dict()
+
+        for datum in data:
+            datum.update({"insert_delete": 1})
+
+        assert out_data == data
+
+        pipeline.delete()
+
+    def test_pandas_binary(self):
+        sql = f"""
+        CREATE TABLE t0 (c1 VARBINARY);
+        CREATE VIEW v0 AS SELECT SUBSTRING(c1 FROM 2) as c1 FROM t0;
+        """
+
+        data = [{"c1": [12, 34, 56]}]
+        expected_data = [{"c1": [34, 56], "insert_delete": 1}]
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_pandas_binary", sql=sql).create_or_replace()
+        out = pipeline.listen("v0")
+
+        pipeline.start()
+        pipeline.input_json("t0", data=data)
+        pipeline.wait_for_completion(True)
+
+        got = out.to_dict()
+
+        assert expected_data == got
+
+    def test_pandas_decimal(self):
+        from decimal import Decimal
+
+        sql = f"""
+        CREATE TABLE t0 (c1 DECIMAL(5, 2));
+        CREATE VIEW v0 AS SELECT c1 + 2.75::DECIMAL(5, 2) as c1 FROM t0;
+        """
+
+        data = [{"c1": 2.25}]
+        expected = [{"c1": Decimal('5.00'), "insert_delete": 1}]
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_pandas_decimal", sql=sql).create_or_replace()
+        out = pipeline.listen("v0")
+
+        pipeline.start()
+        pipeline.input_json("t0", data=data)
+        pipeline.wait_for_completion(True)
+
+        got = out.to_dict()
+
+        assert expected == got
+
+    def test_pandas_array(self):
+        sql = f"""
+        CREATE TABLE t0 (c1 INT ARRAY);
+        CREATE VIEW v0 AS SELECT c1 FROM t0;
+        """
+
+        data = [{"c1": [1, 2, 3]}]
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_pandas_array", sql=sql).create_or_replace()
+        out = pipeline.listen("v0")
+        pipeline.start()
+        pipeline.input_json("t0", data=data)
+        pipeline.wait_for_completion(True)
+
+        got = out.to_dict()
+
+        for datum in data:
+            datum.update({"insert_delete": 1})
+
+        assert got == data
+
+    def test_pandas_struct(self):
+        sql = f"""
+        CREATE TYPE s AS (
+            f1 INT,
+            f2 STRING
+        );
+        CREATE TABLE t0 (c1 s);
+        CREATE VIEW v0 AS SELECT c1 FROM t0;
+        """
+
+        data = [{"c1": {"f1": 1, "f2": "a"}}]
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_pandas_struct", sql=sql).create_or_replace()
+        out = pipeline.listen("v0")
+        pipeline.start()
+        pipeline.input_json("t0", data)
+        pipeline.wait_for_completion(True)
+        got = out.to_dict()
+
+        for datum in data:
+            datum.update({"insert_delete": 1})
+
+        assert data == got
+
+    def test_pandas_date_time_timestamp(self):
+        from pandas import Timestamp, Timedelta
+
+        sql = f"""
+        CREATE TABLE t0 (c1 DATE, c2 TIME, c3 TIMESTAMP);
+        CREATE VIEW v0 AS SELECT c1, c2, c3 FROM t0;
+        """
+
+        data = [{"c1": "2022-01-01", "c2": "12:00:00", "c3": "2022-01-01 12:00:00"}]
+        expected = [{"c1": Timestamp('2022-01-01 00:00:00'), "c2": Timedelta('0 days 12:00:00'), "c3": Timestamp('2022-01-01 12:00:00'), "insert_delete": 1}]
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_pandas_date_time_timestamp", sql=sql).create_or_replace()
+        out = pipeline.listen("v0")
+        pipeline.start()
+        pipeline.input_json("t0", data)
+        pipeline.wait_for_completion(True)
+        got = out.to_dict()
+
+        assert expected == got
+
+    def test_pandas_simple(self):
+        sql = f"""
+        CREATE TABLE t0 (c0 BOOLEAN, c1 TINYINT, c2 SMALLINT, c3 INT, c4 BIGINT, c5 REAL, c6 DOUBLE, c7 VARCHAR, c8 CHAR);
+        CREATE VIEW v0 AS SELECT * FROM t0;
+        """
+
+        data = [{"c0": True, "c1": 1, "c2": 2, "c3": 3, "c4": 4, "c5": 5.0, "c6": 6.0, "c7": "seven", "c8": "c"}]
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_pandas_simple", sql=sql).create_or_replace()
+        out = pipeline.listen("v0")
+        pipeline.start()
+        pipeline.input_json("t0", data)
+        pipeline.wait_for_completion(True)
+        got = out.to_dict()
+
+        for datum in data:
+            datum.update({"insert_delete": 1})
+
+        assert data == got
+
+    def test_pandas_map(self):
+        sql = f"""
+        CREATE TABLE t0 (c1 MAP<STRING, INT>);
+        CREATE VIEW v0 AS SELECT c1 FROM t0;
+        """
+
+        data = [{"c1": {"a": 1, "b": 2}}]
+        expected = [{"c1": {"a": 1, "b": 2}, "insert_delete": 1}]
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_pandas_map", sql=sql).create_or_replace()
+        out = pipeline.listen("v0")
+        pipeline.start()
+        pipeline.input_json("t0", data)
+        pipeline.wait_for_completion(True)
+        got = out.to_dict()
+
+        assert expected == got
 
 
 if __name__ == '__main__':
