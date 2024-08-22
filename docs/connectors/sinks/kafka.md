@@ -47,8 +47,8 @@ For more information, see:
 * [Tutorial section](/docs/tutorials/basics/part3#step-2-create-kafkaredpanda-connectors) which involves
   creating a Kafka output connector.
 
-* Data formats such as [JSON](https://www.feldera.com/docs/api/json) and
-  [CSV](https://www.feldera.com/docs/api/csv)
+* Data formats such as [JSON](https://www.feldera.com/docs/formats/json) and
+  [CSV](https://www.feldera.com/docs/formats/csv)
 
 * Overview of Kafka configuration options:
   [librdkafka options](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)

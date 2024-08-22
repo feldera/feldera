@@ -121,7 +121,7 @@ For more information, see:
 
 * [REST API documentation](https://www.feldera.com/api/push-data-to-a-sql-table) for the `/ingress` endpoint.
 
-* Data formats such as [JSON](https://www.feldera.com/docs/api/json) and
-  [CSV](https://www.feldera.com/docs/api/csv)
+* Data formats such as [JSON](https://www.feldera.com/docs/formats/json) and
+  [CSV](https://www.feldera.com/docs/formats/csv)
 
 * [Python API documentation](https://www.feldera.com/python/index.html)

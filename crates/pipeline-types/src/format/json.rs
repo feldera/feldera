@@ -126,7 +126,7 @@ impl Default for JsonUpdateFormat {
 #[derive(Clone, Default, Deserialize, Serialize, Debug, PartialEq, Eq, ToSchema)]
 pub enum JsonFlavor {
     /// Default encoding used by Feldera, documented
-    /// [here](https://www.feldera.com/docs/api/json#types).
+    /// [here](https://www.feldera.com/docs/formats/json#types).
     #[default]
     #[serde(rename = "default")]
     Default,
