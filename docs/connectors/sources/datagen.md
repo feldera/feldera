@@ -4,7 +4,7 @@ Datagen is a source connector that generates synthetic data for testing,
 prototyping and benchmarking purposes.
 
 For a tutorial on how to use the Datagen connector, see the
-[Random Data Generation](../../tutorials/basics/part4) tutorial.
+[Random Data Generation](/docs/tutorials/basics/part4) tutorial.
 
 ## Datagen input connector configuration
 
@@ -112,3 +112,76 @@ Address: `city_prefix`, `city_suffix`, `city_name`, `country_name`, `country_cod
 
 For some of these parameters (`words`, `sentences`, `paragraphs`) the length of the resulting string is controlled with
 the `range` parameter.
+
+## Examples
+
+* A table with no configuration generates incrementing values for all types:
+
+```sql
+CREATE TABLE Stocks (
+    symbol VARCHAR NOT NULL,
+    price_time BIGINT NOT NULL,  -- UNIX timestamp
+    price DOUBLE NOT NULL
+) with (
+  'connectors' = '[{
+    "transport": {
+      "name": "datagen",
+      "config": {}
+    }
+  }]'
+);
+```
+
+Will generate the following data:
+
+```
++--------+------------+------------------+
+| symbol | price_time | price            |
++--------+------------+------------------+
+| 0   | 0             | 0                |
+| 1   | 1             | 1                |
+| 2   | 2             | 2                |
+| 3   | 3             | 3                |
+| 4   | 4             | 4                |
+<skipped>
+```
+
+* A table with a single plan that generates 5 rows with a rate of 1 row per second:
+
+```sql
+CREATE TABLE Stocks (
+    symbol VARCHAR NOT NULL,
+    price_time BIGINT NOT NULL,  -- UNIX timestamp
+    price DOUBLE NOT NULL
+) with (
+  'connectors' = '[{
+    "transport": {
+      "name": "datagen",
+      "config": {
+        "plan": [{ 
+            "limit": 5,
+            "rate": 1,
+            "fields": {
+                "symbol": { "values": ["AAPL", "GOOGL", "SPY", "NVDA"] },
+                "price": { "strategy": "uniform", "range": [100, 10000] }
+            }
+        }]
+      }
+    }
+  }]'
+);
+```
+
+Will generate the following data:
+
+```text
++--------+------------+------------------+
+| symbol | price_time | price            |
++--------+------------+------------------+
+| AAPL   | 0          | 7872.823776513556|
+| GOOGL  | 1          | 4942.908519064813|
+| SPY    | 2          | 6120.359304755155|
+| NVDA   | 3          | 2985.127163635988|
+| AAPL   | 4          | 6762.121127526935|
++--------+------------+------------------+
+```
