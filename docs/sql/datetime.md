@@ -297,6 +297,11 @@ computation on whole days.
 
 ## Non-deterministic functions
 
+The `NOW()` function returns the current date and time as a
+`TIMESTAMP` value.  Note that the function is only evaluated when the
+computation of the query is triggered by new input, even if the input
+is empty.
+
 | Operation     | Description         | Example                        |
 |---------------|---------------------|--------------------------------|
 | `NOW`         | Returns a timestamp | `NOW()` => 2024-07-10 00:00:00 |
@@ -304,10 +309,24 @@ computation on whole days.
 :::warning
 
 Programs that use `NOW()` can be very inefficient.  For example, a
-program such as `SELECT * FROM T WHERE T.x > NOW()` has to scan the
+program such as `SELECT T.x + NOW() FROM T` has to scan the
 entire table T at every step.  Use this function judiciously.
 
 :::
+
+Note however that a specific class of `WHERE` and `HAVING` expressions
+that use `now()` can be implemented very efficiently.  These are the
+so-called "temporal filters".  Here is an example:
+
+```sql
+SELECT * FROM T WHERE T.ts >= now() - INTERVAL 1 DAYS;
+```
+
+In general, a temporal filter will involve inequality or equality
+comparisons between an expression and a monotone function of the NOW
+result.  A conjunction of such terms is also accepted if all terms
+involve the same expression (e.g.: `T.ts >= now() - INTERVAL 1 DAYS
+AND T.ts <= now() + INTERVAL 1 DAYS`).
 
 ## Date formatting
 

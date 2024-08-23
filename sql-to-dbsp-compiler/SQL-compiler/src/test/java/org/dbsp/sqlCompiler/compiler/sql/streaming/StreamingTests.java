@@ -5,6 +5,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperato
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -388,7 +390,7 @@ public class StreamingTests extends StreamingTestBase {
         String sql = """
                 CREATE TABLE transactions (
                   id INT NOT NULL PRIMARY KEY,
-                  ts TIMESTAMP,
+                  ts TIMESTAMP LATENESS INTERVAL 1 HOUR,
                   users INT,
                   AMOUNT DECIMAL
                 );
@@ -401,7 +403,165 @@ public class StreamingTests extends StreamingTestBase {
                 GROUP BY users""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
-        new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int window = 0;
+            int waterline = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void postorder(DBSPWaterlineOperator operator) {
+                this.waterline++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+                Assert.assertEquals(3, this.waterline);
+            }
+        };
+        visitor.apply(ccs.circuit);
+        this.addRustTestCase("testNow4", ccs);
+    }
+
+    @Test
+    public void testNow5() {
+        // now() used in WHERE
+        String sql = """
+                CREATE TABLE transactions (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW window_computation AS
+                SELECT *
+                FROM transactions
+                WHERE ts >= now() - INTERVAL 1 DAY AND ts <= now() + INTERVAL 1 DAY""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int window = 0;
+            int waterline = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void postorder(DBSPWaterlineOperator operator) {
+                this.waterline++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+                Assert.assertEquals(2, this.waterline);
+            }
+        };
+        visitor.apply(ccs.circuit);
+        ccs.step("""
+                 INSERT INTO transactions VALUES (1, '2024-01-01 00:00:10');
+                 INSERT INTO now VALUES ('2024-01-01 00:00:00');
+                 """,
+                """
+                  id | ts                   | weight
+                 ---------------------------------
+                  1  | 2024-01-01 00:00:10  | 1""");
+        ccs.step("""
+                 INSERT INTO now VALUES ('2024-01-01 00:01:20');
+                 """,
+                """
+                value | weight
+                ----------------""");
+        ccs.step("""
+                 INSERT INTO transactions VALUES (2, NULL);
+                 INSERT INTO now VALUES ('2024-01-01 00:02:00');
+                 """, """
+                  value | weight
+                 ----------------""");
+        this.addRustTestCase("testNow5", ccs);
+    }
+
+    @Test
+    public void testNow6() {
+        // now() used in WHERE with complex monotone function
+        String sql = """
+                CREATE TABLE transactions (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts INT
+                );
+                CREATE VIEW window_computation AS
+                SELECT *
+                FROM transactions
+                WHERE ts >= year(now()) + 10""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int window = 0;
+            int waterline = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void postorder(DBSPWaterlineOperator operator) {
+                this.waterline++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+                Assert.assertEquals(2, this.waterline);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
+    public void testNow7() {
+        // now() used in WHERE with complex monotone function
+        String sql = """
+                CREATE TABLE transactions (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts INT
+                );
+                CREATE VIEW window_computation AS
+                SELECT *
+                FROM transactions
+                WHERE id + ts/2 - SIN(id) >= year(now()) + 10 AND
+                      id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int window = 0;
+            int waterline = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void postorder(DBSPWaterlineOperator operator) {
+                this.waterline++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+                Assert.assertEquals(2, this.waterline);
+            }
+        };
+        visitor.apply(ccs.circuit);
     }
 
     @Test

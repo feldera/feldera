@@ -28,10 +28,8 @@ package org.dbsp.sqlCompiler.compiler.errors;
 import org.dbsp.sqlCompiler.compiler.IHasCalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 
-/**
- * Exception thrown when an unsupported construct is compiled.
- * This signals a bug in the user input.
- */
+/** Exception thrown when an unsupported construct is compiled.
+ * This signals a bug in the user input. */
 public class UnsupportedException extends BaseCompilerException {
     public static final String KIND = "Not supported";
 

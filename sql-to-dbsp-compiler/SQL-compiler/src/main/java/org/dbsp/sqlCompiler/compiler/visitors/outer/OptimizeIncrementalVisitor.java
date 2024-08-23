@@ -176,10 +176,18 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPConstantOperator operator) {
-        this.addOperator(operator);
-        DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(operator.getNode(), operator);
-        this.addOperator(diff);
-        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), diff);
+        DBSPOperator replacement;
+        if (true) {
+            this.addOperator(operator);
+            replacement = new DBSPDifferentiateOperator(operator.getNode(), operator);
+            this.addOperator(replacement);
+        } else {
+            // Switch to this implementation: https://github.com/feldera/feldera/issues/2302
+            assert !operator.incremental;
+            replacement = new DBSPConstantOperator(operator.getNode(),
+                    operator.function, true, operator.isMultiset);
+        }
+        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), replacement);
         this.map(operator, integral);
     }
 }

@@ -174,7 +174,7 @@ import java.util.List;
 public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     final long id;
     static long crtId = 0;
-    protected final IErrorReporter errorReporter;
+    public final IErrorReporter errorReporter;
     protected final List<IDBSPInnerNode> context;
 
     public InnerVisitor(IErrorReporter reporter) {

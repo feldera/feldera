@@ -34,10 +34,15 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DBSPConstantOperator extends DBSPOperator {
-    public DBSPConstantOperator(CalciteObject node, DBSPExpression value, boolean isMultiset) {
+    /** If true generate the constant only on the first step, then generate 0 */
+    public final boolean incremental;
+
+    public DBSPConstantOperator(CalciteObject node, DBSPExpression value,
+                                boolean incremental, boolean isMultiset) {
         // Notice that we use the 'this.function' field to represent
         // the constant value.  Constants are not ClosureExpressions.
         super(node, "", value, value.getType(), isMultiset);
+        this.incremental = incremental;
     }
 
     @Override
@@ -51,14 +56,16 @@ public final class DBSPConstantOperator extends DBSPOperator {
 
     @Override
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
-        return new DBSPConstantOperator(this.getNode(), Objects.requireNonNull(expression), this.isMultiset)
+        return new DBSPConstantOperator(this.getNode(), Objects.requireNonNull(expression),
+                this.incremental, this.isMultiset)
                 .copyAnnotations(this);
     }
 
     @Override
     public DBSPOperator withInputs(List<DBSPOperator> newInputs, boolean force) {
         if (force || this.inputsDiffer(newInputs))
-            return new DBSPConstantOperator(this.getNode(), this.getFunction(), this.isMultiset)
+            return new DBSPConstantOperator(this.getNode(), this.getFunction(),
+                    this.incremental, this.isMultiset)
                     .copyAnnotations(this);
         return this;
     }

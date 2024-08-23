@@ -97,7 +97,7 @@ public final class DBSPApplyExpression extends DBSPApplyBaseExpression {
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        DBSPApplyMethodExpression otherExpression = other.as(DBSPApplyMethodExpression.class);
+        DBSPApplyExpression otherExpression = other.as(DBSPApplyExpression.class);
         if (otherExpression == null)
             return false;
         return context.equivalent(this.function, otherExpression.function) &&

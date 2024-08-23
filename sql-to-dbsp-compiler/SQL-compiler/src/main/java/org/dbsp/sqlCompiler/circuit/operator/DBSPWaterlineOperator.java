@@ -11,7 +11,9 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 
-/** Given a stream, it computes max(function(stream), delay(this)). */
+/** Given a stream, it computes max(function(stream), delay(this)).
+ * This operator is special: the output is replicated for all workers.
+ * See the comments for {@link DBSPApplyOperator}. */
 public final class DBSPWaterlineOperator extends DBSPUnaryOperator {
     /** Initial value of waterline */
     public final DBSPClosureExpression init;

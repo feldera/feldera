@@ -697,7 +697,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPOperator neg = new DBSPNegateOperator(node, map1);
         this.circuit.addOperator(neg);
         DBSPOperator constant = new DBSPConstantOperator(
-                node, new DBSPZSetLiteral(fold.defaultZero()), false);
+                node, new DBSPZSetLiteral(fold.defaultZero()), false, false);
         this.circuit.addOperator(constant);
         DBSPOperator sum = new DBSPSumOperator(node, Linq.list(constant, neg, map));
         this.circuit.addOperator(sum);
@@ -1373,7 +1373,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (this.modifyTableTranslation != null) {
             this.modifyTableTranslation.setResult(result);
         } else {
-            DBSPOperator constant = new DBSPConstantOperator(node, result, false);
+            DBSPOperator constant = new DBSPConstantOperator(node, result, false, false);
             this.assignOperator(values, constant);
         }
     }
