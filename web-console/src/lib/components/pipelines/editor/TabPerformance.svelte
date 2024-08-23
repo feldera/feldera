@@ -55,7 +55,7 @@
     </div>
     <div class="grid max-w-[800px] grid-cols-5">
       <span class="text-surface-600-400 border-b-2 text-center">Table</span>
-      <span class="text-surface-600-400 border-b-2 text-center">Ingested rec-s</span>
+      <span class="text-surface-600-400 border-b-2 text-center">Ingested records</span>
       <span class="text-surface-600-400 border-b-2 text-center">Ingested bytes</span>
       <span class="text-surface-600-400 border-b-2 text-center">Parse errors</span>
       <span class="text-surface-600-400 border-b-2 text-center">Transport errors</span>
@@ -76,9 +76,9 @@
     {#if metrics.current.output.size}
       <div class="grid max-w-[960px] grid-cols-6">
         <span class="text-surface-600-400 border-b-2 text-center">View</span>
-        <span class="text-surface-600-400 border-b-2 text-center">Transmitted rec-s</span>
+        <span class="text-surface-600-400 border-b-2 text-center">Transmitted records</span>
         <span class="text-surface-600-400 border-b-2 text-center">Transmitted bytes</span>
-        <span class="text-surface-600-400 border-b-2 text-center">Processed rec-s</span>
+        <span class="text-surface-600-400 border-b-2 text-center">Processed records</span>
         <span class="text-surface-600-400 border-b-2 text-center">Encode errors</span>
         <span class="text-surface-600-400 border-b-2 text-center">Transport errors</span>
         {#each metrics.current.output.entries() as [relation, stats]}

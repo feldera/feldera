@@ -16,6 +16,7 @@
   import type { EChartsOption } from 'echarts'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { ECMouseEvent } from 'svelte-echarts'
+  import { format } from 'd3-format'
 
   let {
     pipeline,
@@ -51,16 +52,6 @@
     animationDuration: 0,
     animationDurationUpdate: refetchMs * 1.5,
     animationEasingUpdate: 'linear',
-    title: {
-      text: 'Used memory',
-      top: 10,
-      left: 60,
-      textStyle: {
-        fontSize: 36,
-        opacity: 0.3
-      },
-      zlevel: -1
-    },
     grid: {
       top: 10,
       left: 64,
@@ -71,7 +62,10 @@
       type: 'time' as const,
       min: Date.now() - keepMs,
       minInterval: 20000,
-      maxInterval: 20000
+      maxInterval: 20000,
+      axisLabel: {
+        formatter: (ms: number) => new Date(ms).toLocaleTimeString()
+      }
     },
     yAxis: {
       type: 'value' as const,
@@ -139,7 +133,7 @@
 </script>
 
 <span class="pl-16">
-  Current: {humanSize(metrics.global.at(-1)?.rss_bytes ?? 0)}
+  Used memory: {humanSize(metrics.global.at(-1)?.rss_bytes ?? 0)}
 </span>
 <div class="absolute h-full w-full">
   <Chart {init} {options} />

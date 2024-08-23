@@ -6,8 +6,6 @@
   import { LineChart } from 'echarts/charts'
   import { GridComponent, TitleComponent, TooltipComponent } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
-  import { tuple } from '$lib/functions/common/tuple'
-  import { humanSize } from '$lib/functions/common/string'
   import { format } from 'd3-format'
   import type { EChartsOption } from 'echarts'
 
@@ -27,16 +25,6 @@
     animationDurationUpdate: refetchMs * 1.5,
     animationEasingUpdate: 'linear',
     dataLabels: { enabled: false },
-    title: {
-      text: 'Throughput',
-      top: 10,
-      left: 60,
-      textStyle: {
-        fontSize: 36,
-        opacity: 0.3
-      },
-      zlevel: -1
-    },
     grid: {
       top: 10,
       left: 64,
@@ -47,7 +35,10 @@
       type: 'time',
       min: Date.now() - keepMs,
       minInterval: 20000,
-      maxInterval: 20000
+      maxInterval: 20000,
+      axisLabel: {
+        formatter: (ms: number) => new Date(ms).toLocaleTimeString()
+      }
     },
     yAxis: {
       type: 'value' as const,
@@ -81,7 +72,7 @@
 </script>
 
 <span class="absolute whitespace-nowrap pl-16">
-  Average: {formatQty(throughput.average)} rec-s/s, current: {formatQty(throughput.current)}
+  Throughput: {formatQty(throughput.current)} records/s
 </span>
 <div class="absolute mt-6 h-full w-full">
   <Chart {init} {options} />
