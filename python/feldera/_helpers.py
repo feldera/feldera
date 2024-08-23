@@ -78,10 +78,12 @@ def dataframe_from_response(buffer: list[list[dict]], schema: dict):
         for sublist in buffer for item in sublist
     ]
 
-    for datum in data:
-        for col in decimal_col:
-            if datum[col] is not None:
-                datum[col] = Decimal(datum[col])
+    if len(decimal_col) != 0:
+        for datum in data:
+            for col in decimal_col:
+                if datum[col] is not None:
+                    datum[col] = Decimal(datum[col])
+
 
     df = pd.DataFrame(data)
     df = df.astype(pd_schema)

@@ -11,6 +11,7 @@ Welcome to feldera's documentation!
    :caption: Contents:
 
    introduction
+   pandas
    examples
 
 .. toctree::

@@ -463,13 +463,13 @@ class TestPipelineBuilder(unittest.TestCase):
                         "name": "avro",
                         "config": {{
                             "schema": {json.dumps(json.dumps({
-            "type": "record",
-            "name": "items",
-            "fields": [
-                {"name": "id", "type": ["null", "int"]},
-                {"name": "name", "type": ["null", "string"]}
-            ]
-        }))}
+                                "type": "record",
+                                "name": "items",
+                                "fields": [
+                                    {"name": "id", "type": ["null", "int"]},
+                                    {"name": "name", "type": ["null", "string"]}
+                                ]
+                            }))}
                         }}
                     }}
                 }}
@@ -538,9 +538,15 @@ class TestPipelineBuilder(unittest.TestCase):
         CREATE VIEW s AS SELECT * FROM items;
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT, name=name, sql=sql,
-                                   runtime_config=RuntimeConfig(resources=resources, storage=False,
-                                                                workers=10)).create_or_replace()
+        pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            name=name,
+            sql=sql,
+            runtime_config=RuntimeConfig(
+                resources=resources,
+                storage=False,
+                workers=10)
+        ).create_or_replace()
 
         out = pipeline.listen("s")
 
