@@ -537,7 +537,7 @@ public class StreamingTests extends StreamingTestBase {
                 SELECT *
                 FROM transactions
                 WHERE id + ts/2 - SIN(id) >= year(now()) + 10 AND
-                      id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20""";
+                      id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20;""";
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);

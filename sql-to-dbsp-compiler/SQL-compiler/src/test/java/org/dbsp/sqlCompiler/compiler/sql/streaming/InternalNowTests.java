@@ -1,7 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.junit.Assert;
 import org.junit.Test;
 
 /** Tests that exercise the internal implementation of NOW as a source operator */
@@ -19,5 +24,47 @@ public class InternalNowTests extends StreamingTestBase {
                         ----------------------
                          1 | true    | 1""");
         this.addRustTestCase("testNow", ccs);
+    }
+
+    @Test
+    public void testNow8() {
+        // now() used in WHERE with complex monotone function
+        String sql = """
+                CREATE TABLE transactions (
+                    usr  VARCHAR,
+                    tim  TIMESTAMP
+                );
+                
+                CREATE VIEW window_computation AS
+                SELECT
+                  usr,
+                  COUNT(*) AS transaction_count_by_user
+                FROM transactions
+                WHERE tim >= (now() - INTERVAL 1 DAY)
+                GROUP BY usr;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int window = 0;
+            int waterline = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void postorder(DBSPWaterlineOperator operator) {
+                this.waterline++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+                Assert.assertEquals(1, this.waterline);
+            }
+        };
+        visitor.apply(ccs.circuit);
     }
 }
