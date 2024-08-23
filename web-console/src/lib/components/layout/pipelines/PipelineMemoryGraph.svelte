@@ -44,9 +44,6 @@
   const yMax = $derived(valueMax !== 0 ? yMaxStep : 1024 * 2048)
   const yMin = 0
   const maxMemoryMb = $derived(pipeline.current.runtimeConfig.resources?.memory_mb_max ?? undefined)
-  $effect(() => {
-    console.log('maxMemoryMb', (maxMemoryMb ?? 0) * 1000 * 1000, yMax)
-  })
 
   let options = $derived({
     animationDuration: 0,
@@ -61,8 +58,8 @@
     xAxis: {
       type: 'time' as const,
       min: Date.now() - keepMs,
-      minInterval: 20000,
-      maxInterval: 20000,
+      minInterval: 25000,
+      maxInterval: 25000,
       axisLabel: {
         formatter: (ms: number) => new Date(ms).toLocaleTimeString()
       }

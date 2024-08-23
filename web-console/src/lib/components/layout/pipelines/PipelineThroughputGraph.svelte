@@ -34,8 +34,8 @@
     xAxis: {
       type: 'time',
       min: Date.now() - keepMs,
-      minInterval: 20000,
-      maxInterval: 20000,
+      minInterval: 25000,
+      maxInterval: 25000,
       axisLabel: {
         formatter: (ms: number) => new Date(ms).toLocaleTimeString()
       }
