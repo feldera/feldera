@@ -11,62 +11,78 @@
   import { format } from 'd3-format'
   import type { EChartsOption } from 'echarts'
 
-  let { metrics }: { metrics: PipelineMetrics } = $props()
+  const formatQty = (v: number) => format(v >= 1000 ? '.3s' : '.0f')(v)
+
+  let {
+    metrics,
+    refetchMs,
+    keepMs
+  }: { metrics: PipelineMetrics; refetchMs: number; keepMs: number } = $props()
   use([LineChart, GridComponent, CanvasRenderer, TitleComponent, TooltipComponent])
 
-  const series = $derived(calcPipelineThroughput(metrics))
+  const throughput = $derived(calcPipelineThroughput(metrics))
 
   const options = $derived({
-    animationDurationUpdate: 1000,
+    animationDuration: 0,
+    animationDurationUpdate: refetchMs * 1.5,
     animationEasingUpdate: 'linear',
-    tooltip: {},
     dataLabels: { enabled: false },
-    stroke: {
-      width: 3,
-      curve: 'smooth',
-      lineCap: 'round'
+    title: {
+      text: 'Throughput',
+      top: 10,
+      left: 60,
+      textStyle: {
+        fontSize: 36,
+        opacity: 0.3
+      },
+      zlevel: -1
     },
     grid: {
       top: 10,
-      left: 70
+      left: 64,
+      right: 20,
+      bottom: 48
     },
     xAxis: {
       type: 'time',
-      min: Date.now() - 60 * 1000,
+      min: Date.now() - keepMs,
       minInterval: 20000,
-      maxInterval: 20000,
-      animationDurationUpdate: 1000,
-      animationEasingUpdate: 'linear'
+      maxInterval: 20000
     },
     yAxis: {
       type: 'value' as const,
-      interval: (series.yMax - series.yMin) / 2,
-      min: series.yMin,
-      max: series.yMax,
+      interval: (throughput.yMax - throughput.yMin) / 2,
+      min: throughput.yMin,
+      max: throughput.yMax,
       axisLabel: {
         formatter(val: number) {
-          return format(val >= 1000 ? '.3s' : '.0f')(val)
+          return formatQty(val)
         }
       }
-      // labels: {
-      //   formatter(val: number) {
-      //     return format(val >= 1000 ? '.3s' : '.0f')(val)
-      //   }
-      // }
+    },
+    tooltip: {
+      show: true,
+      position: 'top',
+      formatter: (x: any) => {
+        return formatQty(x.value[1])
+      }
     },
     series: [
       {
         type: 'line' as const,
-        symbol: 'none',
-        data: series.throughput
+        // symbol: 'none',
+        itemStyle: {
+          opacity: 0
+        },
+        data: throughput.series
       }
     ]
   } satisfies EChartsOption)
 </script>
 
-<span class="pl-20">
-  Pipeline Throughput: {((v) => format(v >= 1000 ? '.3s' : '.0f')(v))(series.current)} rows/s
+<span class="absolute whitespace-nowrap pl-16">
+  Average: {formatQty(throughput.average)} rec-s/s, current: {formatQty(throughput.current)}
 </span>
-<div class="absolute h-full w-full">
+<div class="absolute mt-6 h-full w-full">
   <Chart {init} {options} />
 </div>

@@ -131,14 +131,15 @@ export const accumulatePipelineMetrics = (refetchMs: number, keepMs?: number) =>
 
 export const calcPipelineThroughput = (metrics: { global: (GlobalMetrics & { timeMs: number })[] }) => {
   const totalProcessed = metrics.global.map(m => tuple(m.timeMs, m.total_processed_records))
-  const throughput = discreteDerivative(totalProcessed, (n1, n0) =>
+  const series = discreteDerivative(totalProcessed, (n1, n0) =>
     ({ name: n1[0].toString(), value: tuple(n1[0], ((n1[1] - n0[1]) * 1000) / (n1[0] - n0[0]))})
   )
 
-  const valueMax = throughput.length ? Math.max(...throughput.map(v => v.value[1])) : 0
+  const valueMax = series.length ? Math.max(...series.map(v => v.value[1])) : 0
   const yMaxStep = Math.pow(10, Math.ceil(Math.log10(valueMax))) / 5
   const yMax = valueMax !== 0 ? Math.ceil((valueMax * 1.25) / yMaxStep) * yMaxStep : 100
   const yMin = 0
-  const current = throughput.at(-1)?.value?.[1] ?? 0
-  return { throughput, current, yMin, yMax }
+  const current = series.at(-1)?.value?.[1] ?? 0
+  const average = series.length ? series.reduce((acc, cur) => cur.value[1] + acc, 0) / series.length : 0
+  return { series, current, average, yMin, yMax }
 }

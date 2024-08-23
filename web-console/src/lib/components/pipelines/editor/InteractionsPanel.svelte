@@ -9,8 +9,12 @@
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
   import type { ExtendedPipeline, Pipeline } from '$lib/services/pipelineManager'
   import { listPipelineErrors } from '$lib/compositions/health/systemErrors.svelte'
+  import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
 
-  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
+  let {
+    pipeline,
+    metrics
+  }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
   const pipelineName = $derived(pipeline)
   let currentTab = $derived(
     useLocalStorage('pipelines/' + pipelineName + '/currentInteractionTab', 'errors')
@@ -30,7 +34,7 @@
   )}
   Errors
   {#if errorCount !== 0}
-    <span class="rounded-full px-2 pt-0.5 text-sm font-medium preset-filled-error-500">
+    <span class="preset-filled-error-500 rounded-full px-2 pt-0.5 text-sm font-medium">
       {errorCount}
     </span>
   {/if}
@@ -41,8 +45,7 @@
     <Tabs.Control
       bind:group={currentTab.value}
       name={tabName}
-      contentClasses="group-hover:preset-tonal-surface"
-    >
+      contentClasses="group-hover:preset-tonal-surface">
       {#if tabControl}
         {@render tabControl(pipeline.current)}
       {:else}
@@ -57,10 +60,9 @@
     <Tabs.Panel
       bind:group={currentTab.value}
       value={tabName}
-      classes="h-full overflow-y-auto relative"
-    >
+      classes="h-full overflow-y-auto relative">
       <div class="ggg absolute h-full w-full p-4 pt-0">
-        <TabComponent {pipeline}></TabComponent>
+        <TabComponent {pipeline} {metrics}></TabComponent>
       </div>
     </Tabs.Panel>
   {/each}

@@ -1,19 +1,25 @@
 import { clearInterval, setInterval } from 'worker-timers'
 
-import { getPipelineStats } from '$lib/services/pipelineManager'
+import { getPipelineStats, type ExtendedPipeline } from '$lib/services/pipelineManager'
 import {
   accumulatePipelineMetrics,
   emptyPipelineMetrics,
 } from '$lib/functions/pipelineMetrics'
+import { isMetricsAvailable } from '$lib/functions/pipelines/status'
 
 export const useAggregatePipelineStats = (
-  pipelineName: string,
+  pipeline: {current: ExtendedPipeline},
   refetchMs: number,
   keepMs?: number
 ) => {
   let metrics = $state(emptyPipelineMetrics)
 
+  let pipelineStatus = $derived(pipeline.current.status)
   const doFetch = (pipelineName: string) => {
+    if (!isMetricsAvailable(pipelineStatus)) {
+      metrics = emptyPipelineMetrics
+      return
+    }
     getPipelineStats(pipelineName).then((stats) => {
       metrics = accumulatePipelineMetrics(refetchMs, keepMs)(
         metrics,
@@ -23,6 +29,7 @@ export const useAggregatePipelineStats = (
 
   }
 
+  let pipelineName = $derived(pipeline.current.name)
   $effect(() => {
     metrics = emptyPipelineMetrics
     const interval = setInterval(() => doFetch(pipelineName), refetchMs)
@@ -32,7 +39,7 @@ export const useAggregatePipelineStats = (
     }
   })
   return {
-    get metrics() {
+    get current() {
       return metrics
     }
   }

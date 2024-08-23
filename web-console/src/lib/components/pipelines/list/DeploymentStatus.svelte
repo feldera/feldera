@@ -12,6 +12,8 @@
       .with('Initializing', () => 'preset-tonal-warning')
       .with('Paused', () => 'preset-tonal-success')
       .with('Running', () => 'preset-tonal-success')
+      .with('Pausing', () => 'preset-tonal-tertiary')
+      .with('Resuming', () => 'preset-tonal-tertiary')
       .with('ShuttingDown', () => 'preset-tonal-tertiary')
       .with({ PipelineError: P.any }, () => '')
       .with('Compiling sql', () => '')
@@ -26,7 +28,6 @@
   class={'w-30 chip pointer-events-none h-6 flex-none text-[0.66rem] uppercase ' +
     chipClass +
     ' ' +
-    _class}
->
+    _class}>
   {getDeploymentStatusLabel(status)}
 </div>
