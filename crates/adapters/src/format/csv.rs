@@ -1,12 +1,11 @@
 use crate::{
     catalog::{CursorWithPolarity, DeCollectionStream, RecordFormat, SerCursor},
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
-    util::{split_on_newline, truncate_ellipse},
+    util::truncate_ellipse,
     ControllerError, OutputConsumer,
 };
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
-use csv_core::{ReadRecordResult, Reader as CsvReader};
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::{
     config::ConnectorConfig,
@@ -63,9 +62,7 @@ struct CsvParser {
     /// Input handle to push parsed data to.
     input_stream: Box<dyn DeCollectionStream>,
 
-    /// Since we cannot assume that the input buffer ends on line end,
-    /// we save the "leftover" part of the buffer after the last new-line
-    /// character and prepend it to the next input buffer.
+    /// Any bytes that haven't been found to be part of a full CSV record yet.
     leftover: Vec<u8>,
 
     last_event_number: u64,
@@ -80,129 +77,85 @@ impl CsvParser {
         }
     }
 
-    fn parse_from_buffer(&mut self, mut buffer: &[u8]) -> (usize, Vec<ParseError>) {
-        let mut errors = Vec::new();
-        let mut num_records = 0;
-
-        let mut csv_reader = CsvReader::new();
-
-        // println!("parse_from_buffer:{}", std::str::from_utf8(buffer).unwrap());
-
-        let mut output = vec![0u8; 1024];
-        let mut ends = [0usize; 128];
-
-        let mut total_bytes_read = 0;
-        let mut record_buffer = buffer;
-        loop {
-            let (result, mut bytes_read, _, _) =
-                csv_reader.read_record(buffer, &mut output, &mut ends);
-            total_bytes_read += bytes_read;
-            match result {
-                ReadRecordResult::End => break,
-                // `InputEmpty` status can be returned when there is no newline character in
-                // the end of the last input record, which isn't really an error.  So we treat
-                // it as success and leave it to the actual record parser to deal with possible
-                // invalid CSV (our job here is simply to establish record boundaries).
-                ReadRecordResult::Record | ReadRecordResult::InputEmpty => {
-                    /*println!(
-                        "result: {result:?}, record: '{}', bytes: {:?}",
-                        std::str::from_utf8(&record_buffer[0..total_bytes_read])
-                            .unwrap_or("invalid utf-8"),
-                        &record_buffer[0..total_bytes_read],
-                    );*/
-                    match self
-                        .input_stream
-                        .insert(&record_buffer[0..total_bytes_read])
-                    {
-                        Err(e) => {
-                            errors.push(ParseError::text_event_error(
-                                "failed to deserialize CSV record",
-                                e,
-                                self.last_event_number + 1,
-                                Some(
-                                    &std::str::from_utf8(&record_buffer[0..total_bytes_read])
-                                        .map(|s| s.to_string())
-                                        .unwrap_or_else(|_| {
-                                            format!("{:?}", &record_buffer[0..total_bytes_read])
-                                        })
-                                        .to_string(),
-                                ),
-                                None,
-                            ));
-                        }
-                        Ok(()) => {
-                            num_records += 1;
-                        }
-                    }
-                    // Lines ending in "\r\n" get broken up after `\r` by the parser.
-                    // Consume the remaining `\n`; otherwise it gets prepended to the
-                    // next buffer.
-                    if buffer.len() > bytes_read && buffer[bytes_read] == b'\n' {
-                        bytes_read += 1;
-                    }
-                    record_buffer = &buffer[bytes_read..];
-                    self.last_event_number += 1;
-                    total_bytes_read = 0;
-                    if result == ReadRecordResult::InputEmpty {
-                        break;
-                    }
-                }
-                ReadRecordResult::OutputFull | ReadRecordResult::OutputEndsFull => {}
-            }
-
-            buffer = &buffer[bytes_read..];
+    fn parse_record(&mut self, record: &[u8], res: &mut (usize, Vec<ParseError>)) {
+        match self.input_stream.insert(record).map_err(|e| {
+            ParseError::text_event_error(
+                "failed to deserialize CSV record",
+                e,
+                self.last_event_number + 1,
+                Some(
+                    &std::str::from_utf8(record)
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|_| format!("{:?}", record))
+                        .to_string(),
+                ),
+                None,
+            )
+        }) {
+            Ok(()) => res.0 += 1,
+            Err(error) => res.1.push(error),
         }
+    }
 
+    /// Tries to split `buffer` into a CSV record followed by any remaining text.
+    ///
+    /// A CSV record is usually one line that ends in a new-line, but it can
+    /// span multiple lines if new-lines are enclosed in double quotes.
+    fn split_record<'a>(&mut self, buffer: &'a [u8]) -> Option<(&'a [u8], &'a [u8])> {
+        let mut quoted = false;
+        for (offset, c) in buffer.iter().enumerate() {
+            match c {
+                b'"' => quoted = !quoted,
+                b'\n' if !quoted => {
+                    return Some(buffer.split_at(offset + 1));
+                }
+                _ => (),
+            }
+        }
+        None
+    }
+
+    /// Parses `buffer` into a series of zero or more CSV records followed by
+    /// any remaining text.  Returns the remainder and the results of parsing
+    /// the records.
+    fn parse_from_buffer<'a>(
+        &mut self,
+        mut buffer: &'a [u8],
+    ) -> (&'a [u8], (usize, Vec<ParseError>)) {
+        let mut res = (0, Vec::new());
+        while let Some((record, rest)) = self.split_record(buffer) {
+            self.parse_record(record, &mut res);
+            self.last_event_number += 1;
+            buffer = rest;
+        }
         self.input_stream.flush();
-        (num_records, errors)
+        (buffer, res)
     }
 }
 
 impl Parser for CsvParser {
     fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
-        /*println!(
-            "input bytes:{} data:\n{}",
-            data.len(),
-            std::str::from_utf8(data)
-                .map(|s| s.to_string())
-                .unwrap_or_else(|e| format!("invalid csv: {e}"))
-        );*/
-
-        let leftover = split_on_newline(data);
-
-        // println!("leftover: {leftover}");
-
-        if leftover == 0 {
-            // `data` doesn't contain a new-line character; append it to
-            // the `leftover` buffer so it gets processed with the next input
-            // buffer.
-            self.leftover.extend_from_slice(data);
-            (0, Vec::new())
+        if self.leftover.is_empty() {
+            let (rest, res) = self.parse_from_buffer(data);
+            self.leftover.extend(rest);
+            res
         } else {
-            let mut leftover_buf = take(&mut self.leftover);
-            leftover_buf.extend_from_slice(&data[0..leftover]);
-
-            let res = self.parse_from_buffer(leftover_buf.as_slice());
-            // println!("parse returned: {res:?}");
-
-            leftover_buf.clear();
-            leftover_buf.extend_from_slice(&data[leftover..]);
-            self.leftover = leftover_buf;
-
+            self.leftover.extend_from_slice(data);
+            let mut buffer = take(&mut self.leftover);
+            let (rest, res) = self.parse_from_buffer(&buffer);
+            buffer.drain(..buffer.len() - rest.len());
+            self.leftover = buffer;
             res
         }
     }
 
     fn eoi(&mut self) -> (usize, Vec<ParseError>) {
-        if self.leftover.is_empty() {
-            return (0, Vec::new());
+        let mut res = (0, Vec::new());
+        let leftover = take(&mut self.leftover);
+        if !leftover.is_empty() {
+            self.parse_record(leftover.as_slice(), &mut res);
         }
-
-        // Try to interpret the leftover chunk as a complete CSV line.
-        let mut leftover_buf = take(&mut self.leftover);
-        let res = self.parse_from_buffer(leftover_buf.as_slice());
-        leftover_buf.clear();
-        self.leftover = leftover_buf;
+        self.input_stream.flush();
         res
     }
 
