@@ -356,7 +356,7 @@ difference between this circuit and the previous one is as follows:
 
 - For the incremental circuit, the `PERSONS` table is initially empty.
   Every time we supply an input it is *added* to the table.  (Input
-  encoding formats such as [`JSON`](../api/json) can also specify
+  encoding formats such as [`JSON`](../formats/json) can also specify
   *deletions* from the table.)  The `circuit.step()` function computes
   the *changes* to the output view `ADULTS`.  Reading the output
   handle gives us the latest *changes* to the contents of this view.
