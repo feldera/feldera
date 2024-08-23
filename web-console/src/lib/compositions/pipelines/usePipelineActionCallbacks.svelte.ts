@@ -4,12 +4,13 @@ type Cb = () => Promise<void>
 
 const callbacks: Record<string, Partial<Record<PipelineAction, Cb[]>>> = $state({})
 
+const pop = (pipelineName: string, action: PipelineAction) => {
+  callbacks[pipelineName] ??= {}
+  callbacks[pipelineName][action] ??= []
+  return callbacks[pipelineName][action].pop()
+}
+
 export function usePipelineActionCallbacks() {
-  const pop = (pipelineName: string, action: PipelineAction) => {
-    callbacks[pipelineName] ??= {}
-    callbacks[pipelineName][action] ??= []
-    return callbacks[pipelineName][action].pop()
-  }
   return {
     add(pipelineName: string, action: PipelineAction, callback: Cb) {
       callbacks[pipelineName] ??= {}

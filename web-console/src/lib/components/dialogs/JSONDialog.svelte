@@ -22,6 +22,7 @@
   $effect(() => {
     value = json
   })
+  const apply = (value: string) => onApply(value).then(onClose)
 </script>
 
 <div class="flex flex-col gap-4 p-4">
@@ -29,6 +30,14 @@
   <div class="h-96">
     <MonacoEditor
       bind:value
+      on:ready={(x) => {
+        x.detail.onKeyDown((e) => {
+          if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
+            apply(value)
+            e.preventDefault()
+          }
+        })
+      }}
       options={{
         theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
         automaticLayout: true,
@@ -42,21 +51,16 @@
         },
         language: 'json',
         ...isMonacoEditorDisabled(disabled)
-      }}
-    />
+      }} />
   </div>
   <div class="flex w-full justify-end">
     <div>
-      <button
-        {disabled}
-        onclick={() => onApply(value).then(onClose)}
-        class="btn preset-filled-primary-500"
-      >
+      <button {disabled} onclick={() => apply(value)} class="btn preset-filled-primary-500">
         APPLY
       </button>
     </div>
     {#if disabled}
-      <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="top">
+      <Tooltip class="text-surface-950-50 bg-white dark:bg-black" placement="top">
         Stop the pipeline to edit configuration
       </Tooltip>
     {/if}

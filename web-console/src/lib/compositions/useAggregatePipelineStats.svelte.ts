@@ -1,19 +1,25 @@
-import type { PipelineStatus } from '$lib/services/pipelineManager'
-import { getPipelineStats } from '$lib/services/pipelineManager'
+import { clearInterval, setInterval } from 'worker-timers'
+
+import { getPipelineStats, type ExtendedPipeline } from '$lib/services/pipelineManager'
 import {
   accumulatePipelineMetrics,
   emptyPipelineMetrics,
-  type PipelineMetrics
 } from '$lib/functions/pipelineMetrics'
+import { isMetricsAvailable } from '$lib/functions/pipelines/status'
 
 export const useAggregatePipelineStats = (
-  pipelineName: string,
+  pipeline: {current: ExtendedPipeline},
   refetchMs: number,
   keepMs?: number
 ) => {
   let metrics = $state(emptyPipelineMetrics)
 
-  const doFetch = (pipelineName: string) =>
+  let pipelineStatus = $derived(pipeline.current.status)
+  const doFetch = (pipelineName: string) => {
+    if (!isMetricsAvailable(pipelineStatus)) {
+      metrics = emptyPipelineMetrics
+      return
+    }
     getPipelineStats(pipelineName).then((stats) => {
       metrics = accumulatePipelineMetrics(refetchMs, keepMs)(
         metrics,
@@ -21,20 +27,19 @@ export const useAggregatePipelineStats = (
       )
     })
 
+  }
+
+  let pipelineName = $derived(pipeline.current.name)
   $effect(() => {
-    // if (metrics.global.length) {
     metrics = emptyPipelineMetrics
-    // }
-    const timeout = setInterval(() => doFetch(pipelineName), refetchMs)
-    // setTimeout(() => doFetch(pipelineName), 10)
-    // setTimeout(() => doFetch(pipelineName), 10)
+    const interval = setInterval(() => doFetch(pipelineName), refetchMs)
     doFetch(pipelineName)
     return () => {
-      clearInterval(timeout)
+      clearInterval(interval)
     }
   })
   return {
-    get metrics() {
+    get current() {
       return metrics
     }
   }

@@ -1,17 +1,24 @@
+<script lang="ts" context="module">
+  const pipelineActionCallbacks = usePipelineActionCallbacks()
+</script>
+
 <script lang="ts">
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import PanelChangeStream from '$lib/components/pipelines/editor/TabChangeStream.svelte'
-  import TabQueryData from '$lib/components/pipelines/editor/TabQueryData.svelte'
   import PanelPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
-  import TabDBSPGraph from '$lib/components/pipelines/editor/TabDBSPGraph.svelte'
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
   import type { ExtendedPipeline, Pipeline } from '$lib/services/pipelineManager'
   import { listPipelineErrors } from '$lib/compositions/health/systemErrors.svelte'
+  import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
+  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
-  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
-  const pipelineName = $derived(pipeline)
+  let {
+    pipeline,
+    metrics
+  }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
+  const pipelineName = $derived(pipeline.current.name)
   let currentTab = $derived(
     useLocalStorage('pipelines/' + pipelineName + '/currentInteractionTab', 'errors')
   )
@@ -22,6 +29,18 @@
     // tuple('query plan', TabDBSPGraph),
     tuple('Changes stream', undefined, PanelChangeStream)
   ]
+
+  const switchTo = async () => {
+    if (currentTab.value === 'Errors') {
+      currentTab.value = 'Performance'
+    }
+  }
+  $effect(() => {
+    setTimeout(() => pipelineActionCallbacks.add(pipelineName, 'start_paused', switchTo))
+    return () => {
+      pipelineActionCallbacks.remove(pipelineName, 'start_paused', switchTo)
+    }
+  })
 </script>
 
 {#snippet TabPipelineErrors(pipeline: ExtendedPipeline)}
@@ -30,7 +49,7 @@
   )}
   Errors
   {#if errorCount !== 0}
-    <span class="rounded-full px-2 pt-0.5 text-sm font-medium preset-filled-error-500">
+    <span class="preset-filled-error-500 rounded-full px-2 pt-0.5 text-sm font-medium">
       {errorCount}
     </span>
   {/if}
@@ -41,8 +60,7 @@
     <Tabs.Control
       bind:group={currentTab.value}
       name={tabName}
-      contentClasses="group-hover:preset-tonal-surface"
-    >
+      contentClasses="group-hover:preset-tonal-surface">
       {#if tabControl}
         {@render tabControl(pipeline.current)}
       {:else}
@@ -57,10 +75,9 @@
     <Tabs.Panel
       bind:group={currentTab.value}
       value={tabName}
-      classes="h-full overflow-y-auto relative"
-    >
+      classes="h-full overflow-y-auto relative">
       <div class="ggg absolute h-full w-full p-4 pt-0">
-        <TabComponent {pipeline}></TabComponent>
+        <TabComponent {pipeline} {metrics}></TabComponent>
       </div>
     </Tabs.Panel>
   {/each}

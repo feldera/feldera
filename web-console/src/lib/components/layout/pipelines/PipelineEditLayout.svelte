@@ -28,6 +28,7 @@
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { useDecoupledState } from '$lib/compositions/decoupledState.svelte'
+  import { useAggregatePipelineStats } from '$lib/compositions/useAggregatePipelineStats.svelte'
 
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
@@ -136,6 +137,8 @@
   $effect(() => {
     markers = programErrors ? { sql: extractSQLCompilerErrorMarkers(programErrors) } : undefined
   })
+
+  let metrics = useAggregatePipelineStats(pipeline, 500, 61000)
 </script>
 
 <div class="h-full w-full">
@@ -145,13 +148,11 @@
         <PipelineEditorStatusBar
           downstreamChanged={decoupledCode.downstreamChanged}
           saveCode={decoupledCode.push}
-          programStatus={pipeline.current.programStatus}
-        ></PipelineEditorStatusBar>
+          programStatus={pipeline.current.programStatus}></PipelineEditorStatusBar>
         {#if pipeline.current.status}
           <DeploymentStatus
             class="ml-auto h-full w-40 text-[1rem] "
-            status={pipeline.current.status}
-          ></DeploymentStatus>
+            status={pipeline.current.status}></DeploymentStatus>
           <PipelineActions
             {pipeline}
             onDeletePipeline={(pipelineName) =>
@@ -188,15 +189,14 @@
                 vertical: 'visible'
               },
               language: 'sql'
-            }}
-          />
+            }} />
         </div>
       </div>
     </Pane>
-    <PaneResizer class="h-2 bg-surface-100-900" />
+    <PaneResizer class="bg-surface-100-900 h-2" />
     <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
       {#if pipeline.current.name}
-        <InteractionsPanel {pipeline}></InteractionsPanel>
+        <InteractionsPanel {pipeline} {metrics}></InteractionsPanel>
       {/if}
     </Pane>
   </PaneGroup>
