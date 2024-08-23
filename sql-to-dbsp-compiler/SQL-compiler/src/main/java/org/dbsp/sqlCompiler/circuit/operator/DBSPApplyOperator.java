@@ -6,6 +6,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -13,8 +15,20 @@ import java.util.Objects;
 
 /** Equivalent to the apply operator from DBSP
  * which applies an arbitrary function to its input.
- * The inputs and outputs do not have to be Z-sets or indexed Z-sets. */
+ * The inputs and outputs do not have to be Z-sets or indexed Z-sets.
+ *
+ * <p>Note: apply operators in DBSP behave differently: they are replicated in all workers,
+ * and each worker performs the same computation on its local data.  The way we use apply operators
+ * in the compiler, they are always fed directly or indirectly through a chain of apply operators
+ * from a {@link DBSPWaterlineOperator}, which replicates its output to all workers.
+ * So it's never OK to have an apply operator process inputs from standard operators.
+ * In the type system such inputs would show up as ZSets or IndexedZSets. */
 public final class DBSPApplyOperator extends DBSPUnaryOperator {
+    public static void noZsets(DBSPType type) {
+        assert !type.is(DBSPTypeZSet.class);
+        assert !type.is(DBSPTypeIndexedZSet.class);
+    }
+
     public DBSPApplyOperator(CalciteObject node, DBSPClosureExpression function,
                              DBSPType outputType, DBSPOperator input, @Nullable String comment) {
         super(node, "apply", function, outputType, false, input, comment);
@@ -22,6 +36,8 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator {
         DBSPType paramType = function.parameters[0].getType().deref();
         assert input.outputType.sameType(paramType) :
                 "Parameter type " + paramType + " does not match input type " + input.outputType;
+        noZsets(input.outputType);
+        noZsets(this.outputType);
         assert function.getResultType().sameType(outputType) :
                 "Function return type " + function.getResultType() + " does not match output type " + outputType;
     }

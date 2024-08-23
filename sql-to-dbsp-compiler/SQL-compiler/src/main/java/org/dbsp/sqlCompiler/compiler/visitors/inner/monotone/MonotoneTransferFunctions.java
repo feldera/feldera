@@ -617,7 +617,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         name.startsWith("to_bound_") ||
                         name.startsWith("date_trunc_") ||
                         name.startsWith("time_trunc_") ||
-                        name.startsWith("timestamp_trunc_")
+                        name.startsWith("timestamp_trunc_") ||
+                        name.equals("now") // Only when called from ImplementNow
                 ) {
                     resultType = new MonotoneType(expression.getType());
                     reduced = expression.replaceArguments(reducedArgs);

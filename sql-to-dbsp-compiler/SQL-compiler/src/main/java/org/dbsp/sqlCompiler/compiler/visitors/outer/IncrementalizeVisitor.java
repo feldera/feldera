@@ -55,8 +55,12 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPNowOperator operator) {
-        // Treat as a source
-        this.input(operator);
+        // Treat like a constant
+        this.addOperator(operator);
+        DBSPOperator replacement = new DBSPDifferentiateOperator(operator.getNode(), operator);
+        this.addOperator(replacement);
+        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), replacement);
+        this.map(operator, integral);
     }
 
     @Override
@@ -67,5 +71,23 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
                 operator.query, operator.originalRowType, operator.metadata, diff);
         this.addOperator(diff);
         this.map(operator, sink);
+    }
+
+
+    @Override
+    public void postorder(DBSPConstantOperator operator) {
+        DBSPOperator replacement;
+        if (true) {
+            this.addOperator(operator);
+            replacement = new DBSPDifferentiateOperator(operator.getNode(), operator);
+            this.addOperator(replacement);
+        } else {
+            // Switch to this implementation: https://github.com/feldera/feldera/issues/2302
+            assert !operator.incremental;
+            replacement = new DBSPConstantOperator(operator.getNode(),
+                    operator.function, true, operator.isMultiset);
+        }
+        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getNode(), replacement);
+        this.map(operator, integral);
     }
 }

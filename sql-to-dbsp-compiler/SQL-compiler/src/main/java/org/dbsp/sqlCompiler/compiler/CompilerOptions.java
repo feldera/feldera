@@ -184,7 +184,7 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public String metadataSource = "";
         @Parameter(names = "--nowstream",
                 description = "Implement NOW as a stream (true) or as an internal operator (false)")
-        public boolean nowStream = true;
+        public boolean nowStream = false;
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {

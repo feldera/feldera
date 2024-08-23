@@ -1212,6 +1212,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPConstantOperator operator) {
+        assert !operator.incremental; // TODO
         return this.constantLike(operator);
     }
 

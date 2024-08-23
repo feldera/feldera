@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
@@ -301,6 +302,44 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         new DBSPDoubleLiteral(128.0),
                         new DBSPDoubleLiteral(128.0),
                         new DBSPI32Literal(0, true)
+                ))
+        };
+        InputOutputChange ip = new InputOutputChange(new Change(inputs), new Change());
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.addChange(ip);
+        this.addRustTestCase("ComplexQueriesTest.demographicsTest", ccs);
+    }
+
+    @Test
+    public void calcite6020issueTest() {
+        String script =
+                """
+            CREATE TABLE transactions (
+                cc_num BIGINT NOT NULL,
+                amt FLOAT64,
+                unix_time INTEGER NOT NULL
+            );
+
+            CREATE VIEW features as
+                SELECT
+                    AVG(amt) OVER(
+                        PARTITION BY cc_num
+                        ORDER BY unix_time
+                        RANGE BETWEEN 2592000 PRECEDING AND 1 PRECEDING) AS
+                    avg_spend_pm,
+                    COUNT(*) OVER(
+                        PARTITION BY cc_num
+                        ORDER BY unix_time
+                        RANGE BETWEEN 86400  PRECEDING AND 1 PRECEDING ) AS
+                    trans_freq_24
+                FROM transactions AS t1;""";
+        DBSPCompiler compiler = testCompiler();
+        compiler.compileStatements(script);
+        DBSPZSetLiteral[] inputs = new DBSPZSetLiteral[] {
+                new DBSPZSetLiteral(new DBSPTupleExpression(
+                        new DBSPI64Literal(0, false),
+                        new DBSPDoubleLiteral(10.0, true),
+                        new DBSPI32Literal(1000)
                 ))
         };
         InputOutputChange ip = new InputOutputChange(new Change(inputs), new Change());

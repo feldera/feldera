@@ -111,10 +111,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         return compiler;
     }
 
-    @Test
     // This is also testing the deterministic node numbering
     // The numbering of the nodes will change when the optimizations are changed.
-    public void toStringTest() {
+    @Test public void toStringTest() {
         this.testIntCastWarning();
 
         NameGen.reset();
@@ -136,7 +135,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let stream205: stream<WSet<Tup1<b>>> = stream81;
+                    let stream206: stream<WSet<Tup1<b>>> = stream81;
                 }
                 """;
         Assert.assertEquals(expected, str);

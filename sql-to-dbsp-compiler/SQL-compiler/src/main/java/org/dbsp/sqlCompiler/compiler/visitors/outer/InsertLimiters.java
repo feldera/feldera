@@ -290,6 +290,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPWindowOperator operator) {
+        // Treat as an identity function for the left input
+        ReplacementExpansion expanded = this.getReplacement(operator);
+        if (expanded != null) {
+            DBSPOperator bound = this.addBounds(expanded.replacement, 0);
+            if (operator != expanded.replacement && bound != null)
+                this.markBound(operator, bound);
+        } else {
+            this.nonMonotone(operator);
+        }
+        super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPFilterOperator operator) {
         ReplacementExpansion expanded = this.getReplacement(operator);
         if (expanded != null) {
@@ -411,7 +425,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         final DBSPVariablePath var = varType.var();
         DBSPExpression body = var.field(0).deref();
-        body = this.wrapTypedBox(body, true);
+        body = DBSPTypeTypedBox.wrapTypedBox(body, true);
         DBSPClosureExpression closure = body.closure(var.asParameter());
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.errorReporter, operator, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
@@ -1007,7 +1021,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     /** Generates a closure that computes the max of two tuple timestamps fieldwise */
-    DBSPClosureExpression timestampMax(CalciteObject node, DBSPTypeTupleBase type) {
+    static DBSPClosureExpression timestampMax(CalciteObject node, DBSPTypeTupleBase type) {
         // Generate the max function for the timestamp tuple
         DBSPVariablePath left = type.ref().var();
         DBSPVariablePath right = type.ref().var();
@@ -1092,7 +1106,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // the columns that have lateness.
         DBSPTupleExpression timestamp = new DBSPTupleExpression(timestamps, false);
         DBSPExpression min = this.minimumValue(timestamp.getType());
-        DBSPClosureExpression max = this.timestampMax(operator.getNode(), min.getType().to(DBSPTypeTupleBase.class));
+        DBSPClosureExpression max = timestampMax(operator.getNode(), min.getType().to(DBSPTypeTupleBase.class));
 
         DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                 operator.getNode(), min.closure(),
@@ -1127,11 +1141,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.markBound(expansion, extend);
         return DBSPControlledFilterOperator.create(
                 operator.getNode(), replacement, Monotonicity.getBodyType(expression), delay);
-    }
-
-    DBSPExpression wrapTypedBox(DBSPExpression expression, boolean typed) {
-        DBSPType type = new DBSPTypeTypedBox(expression.getType(), typed);
-        return new DBSPUnaryExpression(expression.getNode(), type, DBSPOpcode.TYPEDBOX, expression);
     }
 
     @Override
@@ -1175,7 +1184,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
             DBSPTupleExpression timestamp = new DBSPTupleExpression(timestamps, false);
             DBSPParameter parameter = t.asParameter();
-            DBSPClosureExpression max = this.timestampMax(operator.getNode(), min.getTupleType());
+            DBSPClosureExpression max = timestampMax(operator.getNode(), min.getTupleType());
             DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                     operator.getNode(), min.closure(),
                     // Second parameter unused for timestamp
@@ -1185,8 +1194,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
             DBSPVariablePath var = timestamp.getType().ref().var();
             DBSPExpression makePair = new DBSPRawTupleExpression(
-                    this.wrapTypedBox(minimums.get(0), false),
-                    this.wrapTypedBox(var.deref().field(0), false));
+                    DBSPTypeTypedBox.wrapTypedBox(minimums.get(0), false),
+                    DBSPTypeTypedBox.wrapTypedBox(var.deref().field(0), false));
             DBSPApplyOperator apply = new DBSPApplyOperator(
                     operator.getNode(), makePair.closure(var.asParameter()), waterline,
                     "(" + operator.getDerivedFrom() + ")");

@@ -13,7 +13,8 @@ import java.util.Objects;
 
 /** Equivalent to the apply2 operator from DBSP
  * which applies an arbitrary function to its 2 inputs.
- * The inputs and outputs do not have to be Z-sets or indexed Z-sets. */
+ * The inputs and outputs cannot be Z-sets or indexed Z-sets.
+ * The comments from {@link DBSPApplyOperator} apply to this operator as well. */
 public final class DBSPApply2Operator extends DBSPBinaryOperator {
     public DBSPApply2Operator(CalciteObject node, DBSPClosureExpression function,
                               DBSPOperator left, DBSPOperator right) {
@@ -25,6 +26,9 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator {
         DBSPType param1Type = function.parameters[1].getType().deref();
         assert right.outputType.sameType(param1Type):
                 "Parameter type " + param1Type + " does not match input type " + right.outputType;
+        DBSPApplyOperator.noZsets(left.outputType);
+        DBSPApplyOperator.noZsets(right.outputType);
+        DBSPApplyOperator.noZsets(this.outputType);
     }
 
     @Override

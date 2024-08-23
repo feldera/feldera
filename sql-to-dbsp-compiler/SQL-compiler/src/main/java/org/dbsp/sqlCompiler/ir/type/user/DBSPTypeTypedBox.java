@@ -58,5 +58,10 @@ public class DBSPTypeTypedBox extends DBSPTypeUser implements IsBoundedType {
         return new DBSPUnaryExpression(this.getNode(), this, DBSPOpcode.TYPEDBOX, min);
     }
 
+    public static DBSPExpression wrapTypedBox(DBSPExpression expression, boolean typed) {
+        DBSPType type = new DBSPTypeTypedBox(expression.getType(), typed);
+        return new DBSPUnaryExpression(expression.getNode(), type, DBSPOpcode.TYPEDBOX, expression);
+    }
+
     // sameType and hashCode inherited from TypeUser.
 }

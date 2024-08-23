@@ -1573,6 +1573,7 @@ where
         let weight = *cursor.weight().deref();
         let item = unsafe { cursor.key().downcast::<D>() };
         if comparator(item, value) {
+            // println!("controlled_filter accepts={:?}", item);
             builder.push_refs(item.erase(), ().erase(), weight.erase());
         } else {
             late();

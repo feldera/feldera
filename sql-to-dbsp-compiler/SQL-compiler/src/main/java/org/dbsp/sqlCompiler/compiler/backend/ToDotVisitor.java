@@ -219,7 +219,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                  "delay_trace", "delay", "differentiate",
                  // group operators
                  "topK", "lag_custom_order", "upsert",
-                 "integrate" -> " style=filled fillcolor=red";
+                 "integrate" -> " style=filled fillcolor=orangered";
             default -> "";
         };
     }

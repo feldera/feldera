@@ -32,7 +32,7 @@ public class CalciteOptimizer implements IWritesLogs {
     }
 
     /** Base class for optimizations that use a Hep optimizer */
-    public abstract class HepOptimizerStep implements CalciteOptimizerStep {
+    public static abstract class HepOptimizerStep implements CalciteOptimizerStep {
         /** The program that performs the optimization for the specified optimization level */
         abstract HepProgram getProgram(RelNode node, int level);
 
@@ -186,6 +186,11 @@ public class CalciteOptimizer implements IWritesLogs {
         });
 
         this.addStep(new SimpleOptimizerStep("Expand windows", 0,
+                CoreRules.PROJECT_OVER_SUM_TO_SUM0_RULE,
+                // I suspect that in the absence of the above rule
+                // there is a bug in Calcite in RexOVer which causes
+                // the following rule to crash the ComplexQueriesTest.calcite6020issueTest().
+                // See discussion in https://issues.apache.org/jira/browse/CALCITE-6020
                 CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
         ));
         this.addStep(new SimpleOptimizerStep("Isolate DISTINCT aggregates", 0,
