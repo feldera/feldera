@@ -155,11 +155,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.start();
     }
 
+    // Steps executed before the actual compilation.
     void start() {
-        // Steps executed before the actual compilation.
         // Declare the "NOW" table
         this.compileInternal(
-                "CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS)", false, false);
+                "CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS)",
+                false, false);
     }
 
     public boolean hasWarnings() {
