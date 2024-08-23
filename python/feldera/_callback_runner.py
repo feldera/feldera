@@ -49,7 +49,7 @@ class CallbackRunner(Thread):
                     break
 
         if self.schema is None:
-            raise ValueError(f"Unexpected error: Table or View {self.view_name} not found in the pipeline schema.")
+            raise ValueError(f"Table or View {self.view_name} not found in the pipeline schema.")
 
         # by default, we assume that the pipeline has been started
         ack: _CallbackRunnerInstruction = _CallbackRunnerInstruction.PipelineStarted
