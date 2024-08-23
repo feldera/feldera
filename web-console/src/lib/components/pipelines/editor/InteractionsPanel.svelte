@@ -1,21 +1,24 @@
+<script lang="ts" context="module">
+  const pipelineActionCallbacks = usePipelineActionCallbacks()
+</script>
+
 <script lang="ts">
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import PanelChangeStream from '$lib/components/pipelines/editor/TabChangeStream.svelte'
-  import TabQueryData from '$lib/components/pipelines/editor/TabQueryData.svelte'
   import PanelPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
-  import TabDBSPGraph from '$lib/components/pipelines/editor/TabDBSPGraph.svelte'
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
   import type { ExtendedPipeline, Pipeline } from '$lib/services/pipelineManager'
   import { listPipelineErrors } from '$lib/compositions/health/systemErrors.svelte'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
+  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
   let {
     pipeline,
     metrics
   }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
-  const pipelineName = $derived(pipeline)
+  const pipelineName = $derived(pipeline.current.name)
   let currentTab = $derived(
     useLocalStorage('pipelines/' + pipelineName + '/currentInteractionTab', 'errors')
   )
@@ -26,6 +29,18 @@
     // tuple('query plan', TabDBSPGraph),
     tuple('Changes stream', undefined, PanelChangeStream)
   ]
+
+  const switchTo = async () => {
+    if (currentTab.value === 'Errors') {
+      currentTab.value = 'Performance'
+    }
+  }
+  $effect(() => {
+    setTimeout(() => pipelineActionCallbacks.add(pipelineName, 'start_paused', switchTo))
+    return () => {
+      pipelineActionCallbacks.remove(pipelineName, 'start_paused', switchTo)
+    }
+  })
 </script>
 
 {#snippet TabPipelineErrors(pipeline: ExtendedPipeline)}
