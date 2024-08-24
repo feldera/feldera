@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
+use std::fmt::Display;
 use utoipa::ToSchema;
 
 /// A set of updates to a SQL table or view.
@@ -50,6 +51,15 @@ impl Default for EgressMode {
     /// If `mode` is not specified, default to `Watch`.
     fn default() -> Self {
         Self::Watch
+    }
+}
+
+impl Display for EgressMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EgressMode::Watch => write!(f, "watch"),
+            EgressMode::Snapshot => write!(f, "snapshot"),
+        }
     }
 }
 

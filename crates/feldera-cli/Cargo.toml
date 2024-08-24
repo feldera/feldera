@@ -1,0 +1,30 @@
+[package]
+name = "fda"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4"
+clap = { version = "4.5.16", features = ["derive", "env", "color"] }
+clap_complete = "4.5.23"
+progenitor-client = { version = "0.7.0" }
+reqwest = { version = "0.11", features = ["json", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["serde", "v7"] }
+tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros", "io-std"] }
+pipeline_types = { path = "../pipeline-types" }
+env_logger = "0.11.5"
+tabled = { version = "0.16.0", features = ["macros", "ansi"] }
+
+[build-dependencies]
+prettyplease = "0.2.21"
+progenitor = { version = "0.7.0" }
+serde_json = "1.0"
+syn = "2.0.76"
+reqwest = { version = "0.11", features = ["json", "stream"] }
+quote = "1.0"
+
+[package.metadata.cargo-machete]
+ignored = ["progenitor-client", "chrono", "prettytable-rs", "serde", "serde_json", "uuid"]

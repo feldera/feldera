@@ -139,7 +139,7 @@ fn default_cpu_profiler() -> bool {
 
 /// Global pipeline configuration settings. This is the publicly
 /// exposed type for users to configure pipelines.
-#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
     #[serde(default = "default_workers")]
@@ -201,6 +201,22 @@ pub struct RuntimeConfig {
     /// values provide a threshold.  `usize::MAX` would effectively disable
     /// storage.
     pub min_storage_bytes: Option<usize>,
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            workers: default_workers(),
+            storage: false,
+            cpu_profiler: default_cpu_profiler(),
+            tracing: default_tracing(),
+            tracing_endpoint_jaeger: default_tracing_endpoint(),
+            min_batch_size_records: 0,
+            max_buffering_delay_usecs: 0,
+            resources: ResourceConfig::default(),
+            min_storage_bytes: None,
+        }
+    }
 }
 
 impl RuntimeConfig {

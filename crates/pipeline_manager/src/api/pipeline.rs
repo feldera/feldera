@@ -121,7 +121,8 @@ pub struct PatchPipeline {
         (status = OK
             , description = "List of pipelines retrieved successfully"
             , body = [ExtendedPipelineDescrOptionalCode]
-            , example = json!(examples::list_extended_pipeline_optional_code()))
+            , example = json!(examples::list_extended_pipeline_optional_code())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipelines"
 )]
@@ -190,10 +191,10 @@ pub(crate) async fn get_pipeline(
             , description = "Pipeline successfully created"
             , body = ExtendedPipelineDescr
             , example = json!(examples::extended_pipeline_1())),
-        (status = NOT_FOUND
-            , description = "Pipeline with that name does not exist"
+        (status = CONFLICT
+            , description = "Cannot create pipeline as the name already exists"
             , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline()))
+            , example = json!(examples::error_duplicate_name()))
     ),
     tag = "Pipelines"
 )]

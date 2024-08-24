@@ -1,4 +1,5 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::fmt::{Debug, Display};
 use utoipa::ToSchema;
 
 /// A query over an output stream.
@@ -24,15 +25,31 @@ impl Default for OutputQuery {
     }
 }
 
+impl Display for OutputQuery {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputQuery::Table => write!(f, "table"),
+            OutputQuery::Neighborhood => write!(f, "neighborhood"),
+            OutputQuery::Quantiles => write!(f, "quantiles"),
+        }
+    }
+}
+
 // This is only here so we can derive `ToSchema` for it without adding
 // a `utoipa` dependency to the `dbsp` crate to derive ToSchema for
 // `NeighborhoodDescr`.
 /// A request to output a specific neighborhood of a table or view.
 /// The neighborhood is defined in terms of its central point (`anchor`)
 /// and the number of rows preceding and following the anchor to output.
-#[derive(Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct NeighborhoodQuery {
     pub anchor: Option<utoipa::openapi::Object>,
     pub before: u32,
     pub after: u32,
+}
+
+impl Debug for NeighborhoodQuery {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NeighborhoodQuery")
+    }
 }
