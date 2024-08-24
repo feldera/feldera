@@ -75,7 +75,7 @@ pub fn q7(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q7Stream {
     });
 
     // Only consider bids within the current window.
-    let windowed_bids = bids_by_time.window(&window_bounds);
+    let windowed_bids = bids_by_time.window((true, false), &window_bounds);
     let bids_by_price =
         windowed_bids.map_index(|(date_time, Tup4(auction, bidder, price, extra))| {
             (

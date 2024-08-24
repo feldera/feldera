@@ -6,7 +6,10 @@ use crate::{
         operator_traits::{Operator, TernaryOperator},
         Circuit, OwnershipPreference, Scope, Stream,
     },
-    dynamic::{rkyv::DeserializableDyn, rkyv::SerializeDyn, ClonableTrait},
+    dynamic::{
+        rkyv::{DeserializableDyn, SerializeDyn},
+        ClonableTrait, DataTrait, WeightTrait,
+    },
     operator::dynamic::trace::TraceBound,
     storage::{checkpoint_path, file::to_bytes, write_commit_metadata},
     trace::{BatchFactories, BatchReader, BatchReaderFactories, Cursor, Serializer, Spine},
@@ -14,7 +17,7 @@ use crate::{
 };
 use minitrace::trace;
 use rkyv::Deserialize;
-use std::{borrow::Cow, cmp::max, fs, marker::PhantomData, path::PathBuf};
+use std::{borrow::Cow, fs, marker::PhantomData, path::PathBuf};
 use uuid::Uuid;
 
 impl<C, B> Stream<C, B>
@@ -27,6 +30,7 @@ where
     pub fn dyn_window(
         &self,
         factories: &B::Factories,
+        inclusive: (bool, bool),
         bounds: &Stream<C, (Box<B::Key>, Box<B::Key>)>,
     ) -> Stream<C, B> {
         let bound = TraceBound::new();
@@ -37,8 +41,12 @@ where
         let trace = self
             .dyn_integrate_trace_with_bound(factories, bound, TraceBound::new())
             .delay_trace();
-        self.circuit()
-            .add_ternary_operator(<Window<B>>::new(factories), &trace, self, bounds)
+        self.circuit().add_ternary_operator(
+            <Window<B>>::new(factories, inclusive),
+            &trace,
+            self,
+            bounds,
+        )
     }
 }
 
@@ -72,6 +80,8 @@ where
     B: IndexedZSet,
 {
     factories: B::Factories,
+    left_inclusive: bool,
+    right_inclusive: bool,
     // `None` means we're at the start of a clock epoch, no inputs
     // have been received yet, and window boundaries haven't been set.
     window: Option<(Box<B::Key>, Box<B::Key>)>,
@@ -82,9 +92,11 @@ impl<B> Window<B>
 where
     B: IndexedZSet,
 {
-    pub fn new(factories: &B::Factories) -> Self {
+    pub fn new(factories: &B::Factories, (left_inclusive, right_inclusive): (bool, bool)) -> Self {
         Self {
             factories: factories.clone(),
+            left_inclusive,
+            right_inclusive,
             window: None,
             _phantom: PhantomData,
         }
@@ -151,6 +163,66 @@ where
     }
 }
 
+/// `true` if cursor points to a key to the left of the interval.
+fn before_start<K, V, T, R, C>(cursor: &C, start: &K, inclusive: bool) -> bool
+where
+    C: Cursor<K, V, T, R>,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    if inclusive {
+        cursor.key() < start
+    } else {
+        cursor.key() <= start
+    }
+}
+
+/// `true` if cursor points to a key _not_ to the right of the interval.
+fn before_end<K, V, T, R, C>(cursor: &C, end: &K, inclusive: bool) -> bool
+where
+    C: Cursor<K, V, T, R>,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    if inclusive {
+        cursor.key() <= end
+    } else {
+        cursor.key() < end
+    }
+}
+
+/// Seek to the first location after the end of the interval.
+fn seek_after_end<K, V, T, R, C>(cursor: &mut C, end: &K, inclusive: bool)
+where
+    C: Cursor<K, V, T, R>,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    if inclusive {
+        cursor.seek_key_with(&|key| key > end)
+    } else {
+        cursor.seek_key(end)
+    }
+}
+
+/// Seek to the first location within the interval.
+fn seek_start<K, V, T, R, C>(cursor: &mut C, start: &K, inclusive: bool)
+where
+    C: Cursor<K, V, T, R>,
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    if inclusive {
+        cursor.seek_key(start)
+    } else {
+        cursor.seek_key_with(&|key| key > start)
+    }
+}
+
 impl<B> TernaryOperator<Spine<B>, B, (Box<B::Key>, Box<B::Key>), B> for Window<B>
 where
     B: IndexedZSet,
@@ -199,10 +271,10 @@ where
 
         if let Some((start0, end0)) = &self.window {
             // Retract tuples in `trace` that slid out of the window (region 1).
-            trace_cursor.seek_key(start0);
+            seek_start(&mut trace_cursor, start0, self.left_inclusive);
             while trace_cursor.key_valid()
-                && trace_cursor.key() < &start1
-                && trace_cursor.key() < end0
+                && before_start(&trace_cursor, &start1, self.left_inclusive)
+                && before_end(&trace_cursor, end0, self.right_inclusive)
             {
                 trace_cursor.key().clone_to(&mut *key);
                 trace_cursor.map_values(&mut |val, weight| {
@@ -219,8 +291,11 @@ where
             // If the window shrunk, retract values that dropped off the right end of the
             // window.
             if &end1 < end0 {
-                trace_cursor.seek_key(&end1);
-                while trace_cursor.key_valid() && trace_cursor.key() < end0 {
+                seek_after_end(&mut trace_cursor, &end1, self.right_inclusive);
+
+                while trace_cursor.key_valid()
+                    && before_end(&trace_cursor, end0, self.right_inclusive)
+                {
                     trace_cursor.key().clone_to(&mut key);
                     trace_cursor.map_values(&mut |val, weight| {
                         let (kv, w) = tuple.split_mut();
@@ -236,8 +311,13 @@ where
             }
 
             // Add tuples in `trace` that slid into the window (region 3).
-            trace_cursor.seek_key(max(end0, &start1));
-            while trace_cursor.key_valid() && trace_cursor.key() < &end1 {
+            seek_after_end(&mut trace_cursor, end0, self.right_inclusive);
+
+            // In case start1 > end0
+            seek_start(&mut trace_cursor, &start1, self.left_inclusive);
+            // trace_cursor.seek_key(max(end0, &start1));
+            while trace_cursor.key_valid() && before_end(&trace_cursor, &end1, self.right_inclusive)
+            {
                 trace_cursor.key().clone_to(&mut key);
                 trace_cursor.map_values(&mut |val, weight| {
                     let (kv, w) = tuple.split_mut();
@@ -253,8 +333,9 @@ where
         };
 
         // Insert tuples in `batch` that fall within the new window.
-        batch_cursor.seek_key(&start1);
-        while batch_cursor.key_valid() && batch_cursor.key() < &end1 {
+        seek_start(&mut batch_cursor, &start1, self.left_inclusive);
+        // batch_cursor.seek_key(&start1);
+        while batch_cursor.key_valid() && before_end(&batch_cursor, &end1, self.right_inclusive) {
             batch_cursor.key().clone_to(&mut key);
             batch_cursor.map_values(&mut |val, weight| {
                 let (kv, w) = tuple.split_mut();
@@ -295,16 +376,84 @@ mod test {
         operator::{dynamic::trace::TraceBound, Generator},
         typed_batch::{OrdIndexedZSet, TypedBox},
         utils::{Tup2, Tup3},
-        zset, Circuit, OrdZSet, RootCircuit, Runtime, Stream,
+        zset, Circuit, IndexedZSet, OrdZSet, RootCircuit, Runtime, Stream,
     };
     use size_of::SizeOf;
     use std::vec;
 
+    type Time = u64;
+
+    // A simple, but ineffient implementation of `window` for testing.
+    // (it's inefficient even for a non-incremental implementation).
+    impl<C, B> Stream<C, B>
+    where
+        C: Circuit,
+        B: IndexedZSet,
+        Box<B::DynK>: Clone,
+    {
+        pub fn window_non_incremental(
+            &self,
+            (left_inclusive, right_inclusive): (bool, bool),
+            bounds: &Stream<C, (TypedBox<B::Key, B::DynK>, TypedBox<B::Key, B::DynK>)>,
+        ) -> Stream<C, B> {
+            self.apply2(&bounds, move |batch, (start, end)| {
+                batch.filter(|k, _v| {
+                    let left = if left_inclusive {
+                        k >= start
+                    } else {
+                        k > start
+                    };
+                    let right = if right_inclusive { k <= end } else { k < end };
+
+                    left && right
+                })
+            })
+        }
+    }
+
+    // Test all combinations of open and closed intervals against reference implementation.
+    fn compare_with_reference(
+        stream: &Stream<RootCircuit, OrdIndexedZSet<u64, String>>,
+        bounds: &Stream<RootCircuit, (TypedBox<Time, DynData>, TypedBox<Time, DynData>)>,
+    ) {
+        let closed_closed = stream.window((true, true), bounds).integrate();
+        let closed_open = stream.window((true, false), bounds).integrate();
+        let open_closed = stream.window((false, true), bounds).integrate();
+        let open_open = stream.window((false, false), bounds).integrate();
+
+        let closed_closed_expected = stream
+            .integrate()
+            .window_non_incremental((true, true), &bounds);
+        let closed_open_expected = stream
+            .integrate()
+            .window_non_incremental((true, false), &bounds);
+        let open_closed_expected = stream
+            .integrate()
+            .window_non_incremental((false, true), &bounds);
+        let open_open_expected = stream
+            .integrate()
+            .window_non_incremental((false, false), &bounds);
+
+        closed_closed.apply2(&closed_closed_expected, |actual, expected| {
+            assert_eq!(actual, expected)
+        });
+
+        closed_open.apply2(&closed_open_expected, |actual, expected| {
+            assert_eq!(actual, expected)
+        });
+
+        open_closed.apply2(&open_closed_expected, |actual, expected| {
+            assert_eq!(actual, expected)
+        });
+
+        open_open.apply2(&open_open_expected, |actual, expected| {
+            assert_eq!(actual, expected)
+        });
+    }
+
     #[test]
     fn sliding() {
         let circuit = RootCircuit::build(move |circuit| {
-            type Time = u64;
-
             let mut input = vec![
                 zset! {
                     // old value before the first window, should never appear in the output.
@@ -352,8 +501,11 @@ mod test {
                 .add_source(Generator::new(move || input.next().unwrap()))
                 .map_index(|Tup2(k, v)| (*k, v.clone()));
             index1
-                .window(&bounds)
+                .window((true, false), &bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
+
+            compare_with_reference(&index1, &bounds);
+
             Ok(())
         })
         .unwrap()
@@ -367,8 +519,6 @@ mod test {
     #[test]
     fn tumbling() {
         let circuit = RootCircuit::build(move |circuit| {
-            type Time = u64;
-
             let mut input = vec![
                 // window: 995..1000
                 zset! { Tup2(700, "700".to_string()) => 1 , Tup2(995, "995".to_string()) => 1 , Tup2(996, "996".to_string()) => 1 , Tup2(999, "999".to_string()) => 1 , Tup2(1000, "1000".to_string()) => 1 },
@@ -416,8 +566,11 @@ mod test {
                 .add_source(Generator::new(move || input.next().unwrap()))
                 .map_index(|Tup2(k, v)| (*k, v.clone()));
             index1
-                .window(&bounds)
+                .window((true, false), &bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
+
+            compare_with_reference(&index1, &bounds);
+
             Ok(())
         })
         .unwrap().0;
@@ -430,8 +583,6 @@ mod test {
     #[test]
     fn shrinking() {
         let circuit = RootCircuit::build(move |circuit| {
-            type Time = u64;
-
             let mut input= vec![
                 zset! {
                     Tup2(800u64, "800".to_string()) => 1,
@@ -461,6 +612,7 @@ mod test {
                 zset! {},
                 zset! {},
                 zset! {},
+                zset! {}
             ]
             .into_iter();
 
@@ -471,6 +623,7 @@ mod test {
                 indexed_zset! { 1000 => {"1000".to_string() => 2}, 1001 => {"1001".to_string() => 1}, 1002 => {"1002".to_string() => 1}, 1003 => {"1003".to_string() => 1}, 1004 => {"1004".to_string() => 1}, 1010 => {"1010".to_string() => 1}, 1020 => {"1020".to_string() => 1}, 1039 => {"1039".to_string() => 1}, 985 => {"985".to_string() => 1}, 990 => {"990".to_string() => 1}, 999 => {"999".to_string() => 2} },
                 indexed_zset! { 1039 => {"1039".to_string() => -1}, 940 => {"940".to_string() => -1} },
                 indexed_zset! { 1020 => {"1020".to_string() => -1}, 950 => {"950".to_string() => -1} },
+                indexed_zset! {}
             ]
             .into_iter();
 
@@ -483,6 +636,9 @@ mod test {
                 (940, 1040),
                 (950, 1030),
                 (960, 1020),
+                // Empty interval
+                (1020,1020)
+
             ]
             .into_iter();
 
@@ -496,8 +652,11 @@ mod test {
                 .add_source(Generator::new(move || input.next().unwrap()))
                 .map_index(|Tup2(k, v)| (*k, v.clone()));
             index1
-                .window(&bounds)
+                .window((true, false), &bounds)
                 .inspect(move |batch| assert_eq!(batch, &output.next().unwrap()));
+
+            compare_with_reference(&index1, &bounds);
+
             Ok(())
         })
         .unwrap().0;
@@ -524,7 +683,7 @@ mod test {
             let bound = TraceBound::new();
             bound.set(Box::new(i64::max_value()).erase_box());
 
-            input.window(&bounds);
+            input.window((true, false), &bounds);
 
             input
                 .integrate_trace_with_bound(bound, TraceBound::new())
@@ -572,7 +731,7 @@ mod test {
             let bounds = now.apply(|ts: &Clock| (TypedBox::new(*ts - 1000), TypedBox::new(*ts)));
 
             let counts = data_by_time
-                .window(&bounds)
+                .window((true, false), &bounds)
                 .map_index(|(_ts, x)| (x.1.clone(), x.clone()))
                 .weighted_count();
 

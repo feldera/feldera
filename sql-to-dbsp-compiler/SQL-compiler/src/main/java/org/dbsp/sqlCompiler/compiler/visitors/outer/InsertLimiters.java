@@ -1207,7 +1207,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     new DBSPTypeIndexedZSet(operator.getNode(),
                             fields.get(0).getType(), dataType), true, expansion);
             this.addOperator(ix);
-            DBSPWindowOperator window = new DBSPWindowOperator(operator.getNode(), ix, apply);
+            DBSPWindowOperator window = new DBSPWindowOperator(
+                    operator.getNode(), true, true, ix, apply);
             this.addOperator(window);
             expansion = new DBSPDeindexOperator(operator.getNode(), window);
         }

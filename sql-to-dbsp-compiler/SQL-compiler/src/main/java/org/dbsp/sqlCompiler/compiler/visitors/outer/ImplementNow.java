@@ -588,7 +588,10 @@ public class ImplementNow extends Passes {
                 // Apply window function.  Operator is incremental, so add D & I around it
                 DBSPDifferentiateOperator diffIndex = new DBSPDifferentiateOperator(operator.getNode(), index);
                 this.addOperator(diffIndex);
-                DBSPOperator window = new DBSPWindowOperator(operator.getNode(), diffIndex, windowBounds);
+                boolean lowerInclusive = bounds.lower == null || bounds.lower.inclusive;
+                boolean upperInclusive = bounds.upper == null || bounds.upper.inclusive;
+                DBSPOperator window = new DBSPWindowOperator(
+                        operator.getNode(), lowerInclusive, upperInclusive, diffIndex, windowBounds);
                 this.addOperator(window);
                 DBSPOperator winInt = new DBSPIntegrateOperator(operator.getNode(), window);
                 this.addOperator(winInt);
@@ -671,3 +674,4 @@ public class ImplementNow extends Passes {
                 new Fail(reporter, "Instances of 'now' have not been replaced"), cn0::found));
     }
 }
+

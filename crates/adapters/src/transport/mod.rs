@@ -23,6 +23,7 @@
 use crate::format::ParseError;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use dyn_clone::DynClone;
+#[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
 use std::ops::Range;
 use std::sync::atomic::AtomicU64;

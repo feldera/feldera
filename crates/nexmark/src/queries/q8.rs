@@ -80,8 +80,8 @@ pub fn q8(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q8Stream {
     // reads as though it calculates all the windows, but as per the comment in
     // q5.rs, based on the Flink docs, it is aggregated within each window
     // exactly once as we do here.
-    let windowed_people = people_by_time.window(&window_bounds);
-    let windowed_auctions = auctions_by_time.window(&window_bounds);
+    let windowed_people = people_by_time.window((true, false), &window_bounds);
+    let windowed_auctions = auctions_by_time.window((true, false), &window_bounds);
 
     let people_by_id = windowed_people
         .map_index(|(date_time, Tup2(id, name))| (*id, Tup2(name.clone(), *date_time)));
