@@ -74,3 +74,23 @@ CREATE TABLE bid (
         }}
     }}
 ]');
+CREATE TABLE side_input (
+  date_time TIMESTAMP,
+  key BIGINT,
+  value VARCHAR
+) WITH ('connectors' = '[{{
+  "transport": {{
+      "name": "datagen",
+      "config": {{
+        "plan": [
+          {{
+            "limit": 100,
+            "fields": {{
+              "date_time": {{ "range": [1724444408000, 4102444800000] }},
+              "key": {{ "range": [0, 100] }}
+            }}
+          }}
+        ]
+      }}
+    }}
+}}]');;
