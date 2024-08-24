@@ -105,6 +105,17 @@ pub trait BatchReader: 'static {
 /// A statically typed wrapper around [`DynBatch`].
 pub trait Batch: BatchReader<Inner = Self::InnerBatch> + Clone {
     type InnerBatch: DynBatch<Time = Self::Time, Key = Self::DynK, Val = Self::DynV, R = Self::DynR>;
+
+    fn filter<F>(&self, predicate: F) -> Self
+    where
+        F: Fn(&Self::Key, &Self::Val) -> bool,
+        Self::Time: PartialEq<()> + From<()>,
+    {
+        Self::from_inner(
+            self.inner()
+                .filter(&|k, v| unsafe { predicate(k.downcast(), v.downcast()) }),
+        )
+    }
 }
 
 impl<B> Batch for B

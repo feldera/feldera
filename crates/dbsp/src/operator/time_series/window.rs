@@ -67,11 +67,14 @@ where
     /// ```
     pub fn window(
         &self,
+        inclusive: (bool, bool),
         bounds: &Stream<C, (TypedBox<B::Key, B::DynK>, TypedBox<B::Key, B::DynK>)>,
     ) -> Stream<C, B> {
         let input_factories = BatchReaderFactories::new::<B::Key, B::Val, ZWeight>();
 
         let bounds = unsafe { bounds.transmute_payload::<(Box<B::DynK>, Box<B::DynK>)>() };
-        self.inner().dyn_window(&input_factories, &bounds).typed()
+        self.inner()
+            .dyn_window(&input_factories, inclusive, &bounds)
+            .typed()
     }
 }

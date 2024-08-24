@@ -489,6 +489,30 @@ where
     /// [`Batch::recede_to`].
     fn recede_to(&mut self, frontier: &Self::Time);
 
+    /// Returns elements from `self` that satisfy a predicate.
+    fn filter(&self, predicate: &dyn Fn(&Self::Key, &Self::Val) -> bool) -> Self
+    where
+        Self::Time: PartialEq<()> + From<()>,
+    {
+        let factories = self.factories();
+        let mut builder = Self::Builder::new_builder(&factories, Self::Time::from(()));
+        let mut cursor = self.cursor();
+        let mut w = factories.weight_factory().default_box();
+
+        while cursor.key_valid() {
+            while cursor.val_valid() {
+                if predicate(cursor.key(), cursor.val()) {
+                    cursor.weight().clone_to(&mut w);
+                    builder.push_refs(cursor.key(), cursor.val(), &w);
+                }
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+
+        builder.done()
+    }
+
     /// If this batch is not on storage, but supports writing itself to storage,
     /// this method writes it to storage and returns the stored version.
     fn persisted(&self) -> Option<Self> {

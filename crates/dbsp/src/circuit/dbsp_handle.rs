@@ -1459,7 +1459,7 @@ mod tests {
                     .add_source(Generator::new(move || input[step_idx].clone()))
                     .map_index(|Tup2(k, v)| (*k, v.clone()));
                 index1
-                    .window(&bounds)
+                    .window((true, false), &bounds)
                     .inspect(move |batch| assert_eq!(batch, &output[step_idx]));
                 Ok(())
             })

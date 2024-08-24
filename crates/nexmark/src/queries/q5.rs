@@ -102,7 +102,7 @@ pub fn q5(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q5Stream {
 
     // Only consider bids within the current window.
     let windowed_bids = bids_by_time
-        .window(&window_bounds)
+        .window((true, false), &window_bounds)
         .map(|(_time, auction)| *auction);
 
     // Count the number of bids per auction.
