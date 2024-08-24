@@ -4,34 +4,38 @@ import { getPipelineStats, type ExtendedPipeline } from '$lib/services/pipelineM
 import {
   accumulatePipelineMetrics,
   emptyPipelineMetrics,
+  type PipelineMetrics,
 } from '$lib/functions/pipelineMetrics'
 import { isMetricsAvailable } from '$lib/functions/pipelines/status'
+
+let metrics: Record<string, PipelineMetrics> = {} // Disable reactivity for metrics data for better performance
+let getMetrics = $state<() => typeof metrics>(() => metrics)
 
 export const useAggregatePipelineStats = (
   pipeline: {current: ExtendedPipeline},
   refetchMs: number,
   keepMs?: number
 ) => {
-  let metrics = $state(emptyPipelineMetrics)
 
   let pipelineStatus = $derived(pipeline.current.status)
   const doFetch = (pipelineName: string) => {
     if (!isMetricsAvailable(pipelineStatus)) {
-      metrics = emptyPipelineMetrics
+      metrics[pipelineName] = emptyPipelineMetrics
+      getMetrics = () => metrics
       return
     }
     getPipelineStats(pipelineName).then((stats) => {
-      metrics = accumulatePipelineMetrics(refetchMs, keepMs)(
-        metrics,
+      metrics[pipelineName] = accumulatePipelineMetrics(refetchMs, keepMs)(
+        metrics[pipelineName],
         stats.status === 'not running' ? { status: null } : stats
       )
+      getMetrics = () => metrics
     })
 
   }
 
   let pipelineName = $derived(pipeline.current.name)
   $effect(() => {
-    metrics = emptyPipelineMetrics
     const interval = setInterval(() => doFetch(pipelineName), refetchMs)
     doFetch(pipelineName)
     return () => {
@@ -40,7 +44,7 @@ export const useAggregatePipelineStats = (
   })
   return {
     get current() {
-      return metrics
+      return getMetrics()[pipelineName] ?? emptyPipelineMetrics
     }
   }
 }
