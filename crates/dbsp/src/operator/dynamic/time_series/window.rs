@@ -293,7 +293,6 @@ where
             if &end1 < end0 {
                 seek_after_end(&mut trace_cursor, &end1, self.right_inclusive);
 
-                //trace_cursor.seek_key(&end1);
                 while trace_cursor.key_valid()
                     && before_end(&trace_cursor, end0, self.right_inclusive)
                 {

@@ -26,6 +26,30 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2315() {
+        String sql = """
+                CREATE TABLE T(
+                    id INT, c1 TINYINT, c2 TINYINT NOT NULL, c3 INT2, c4 INT2 NOT NULL,
+                    c5 INT, c6 INT NOT NULL,c7 BIGINT,c8 BIGINT NOT NULL);
+                
+                CREATE VIEW stddev_view AS
+                SELECT id, STDDEV_SAMP(c1) AS c1, STDDEV_SAMP(c2) AS c2, STDDEV_SAMP(c3) AS c3,
+                       STDDEV_SAMP(c4) AS c4, STDDEV_SAMP(c5) AS c5, STDDEV_SAMP(c6) AS c6,
+                       STDDEV_SAMP(c7) AS c7, STDDEV_SAMP(c8) AS c8
+                FROM T
+                GROUP BY id;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.step("""
+                        INSERT INTO T VALUES(null, 5, 2, null, 4, 5, 6, null, 8);
+                        INSERT INTO T VALUES(null, 4, 3, 4,    6, 2, 3, 4,    2);""",
+                """
+                        id | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | weight
+                       ---------------------------------------""");
+    }
+
+    @Test
     public void issue2090() {
         String sql = """
                 CREATE TABLE example (

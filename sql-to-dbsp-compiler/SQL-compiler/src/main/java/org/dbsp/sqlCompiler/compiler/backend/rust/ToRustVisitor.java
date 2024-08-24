@@ -709,7 +709,11 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.left().getOutputName())
                 .append(".")
                 .append(operator.operation)
-                .append("(&")
+                .append("((")
+                .append(operator.lowerInclusive)
+                .append(", ")
+                .append(operator.upperInclusive)
+                .append("), &")
                 .append(operator.right().getOutputName())
                 .append(");");
         return VisitDecision.STOP;

@@ -17,11 +17,18 @@ import java.util.List;
  * in the pair; when they fall between the two limits,
  * they are emitted to the output ZSet. */
 public final class DBSPWindowOperator extends DBSPBinaryOperator {
+    public final boolean lowerInclusive;
+    public final boolean upperInclusive;
+
     public DBSPWindowOperator(
-            CalciteObject node, DBSPOperator data, DBSPOperator control) {
-        super(node, "window", null, data.getType(), data.isMultiset, data, control);
+            CalciteObject node, boolean lowerInclusive, boolean upperInclusive,
+            DBSPOperator data, DBSPOperator control) {
+        super(node, "window", null, data.getType(), data.isMultiset,
+                data, control);
         // Check that the left input and output are indexed ZSets
         this.getOutputIndexedZSetType();
+        this.lowerInclusive = lowerInclusive;
+        this.upperInclusive = upperInclusive;
     }
 
     @Override
@@ -34,7 +41,8 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator {
         assert newInputs.size() == 2: "Expected 2 inputs, got " + newInputs.size();
         if (force || this.inputsDiffer(newInputs))
             return new DBSPWindowOperator(
-                    this.getNode(), newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
+                    this.getNode(), this.lowerInclusive, this.upperInclusive,
+                    newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         return this;
     }
 
