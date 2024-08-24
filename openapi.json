@@ -119,7 +119,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "API key created successfully.",
             "content": {
               "application/json": {
@@ -412,6 +412,16 @@
                 ]
               }
             }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -513,19 +523,17 @@
               }
             }
           },
-          "404": {
-            "description": "Pipeline with that name does not exist",
+          "409": {
+            "description": "Cannot create pipeline as the name already exists",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "example": {
-                  "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
-                  },
-                  "error_code": "UnknownPipeline",
-                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                  "details": null,
+                  "error_code": "DuplicateName",
+                  "message": "An entity with this name already exists"
                 }
               }
             }
@@ -1417,7 +1425,7 @@
         "requestBody": {
           "description": "Contains the new input data in CSV.",
           "content": {
-            "text/csv": {
+            "text/plain": {
               "schema": {
                 "type": "string"
               }

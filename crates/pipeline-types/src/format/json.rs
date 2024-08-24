@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use utoipa::ToSchema;
 
 /// JSON parser configuration.
@@ -119,6 +120,18 @@ pub enum JsonUpdateFormat {
 impl Default for JsonUpdateFormat {
     fn default() -> Self {
         Self::InsertDelete
+    }
+}
+
+impl Display for JsonUpdateFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JsonUpdateFormat::InsertDelete => write!(f, "insert_delete"),
+            JsonUpdateFormat::Weighted => write!(f, "weighted"),
+            JsonUpdateFormat::Debezium => write!(f, "debezium"),
+            JsonUpdateFormat::Snowflake => write!(f, "snowflake"),
+            JsonUpdateFormat::Raw => write!(f, "raw"),
+        }
     }
 }
 

@@ -84,6 +84,7 @@ rust-sources:
     FROM +install-rust
     COPY --keep-ts Cargo.toml Cargo.toml
     COPY --keep-ts Cargo.lock Cargo.lock
+    COPY --keep-ts openapi.json openapi.json
     COPY --keep-ts --dir crates crates
     COPY --keep-ts sql-to-dbsp-compiler/lib sql-to-dbsp-compiler/lib
     COPY --keep-ts README.md README.md
@@ -153,6 +154,7 @@ build-dbsp:
     DO rust+CARGO --args="build --package dbsp --benches"
     DO rust+CARGO --args="build --package pipeline_types"
     DO rust+CARGO --args="build --package dbsp_nexmark --benches"
+    DO rust+CARGO --args="build --package fda"
 
 build-sql:
     FROM +build-dbsp

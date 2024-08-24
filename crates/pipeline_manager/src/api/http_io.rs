@@ -72,7 +72,7 @@ use super::{ManagerError, ServerState};
     request_body(
         content = String,
         description = "Contains the new input data in CSV.",
-        content_type = "text/csv",
+        content_type = "text/plain",
     ),
 )]
 #[post("/pipelines/{pipeline_name}/ingress/{table_name}")]

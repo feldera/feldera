@@ -162,7 +162,7 @@ pub(crate) async fn delete_api_key(
 /// Create a new API key.
 #[utoipa::path(
     responses(
-        (status = OK, description = "API key created successfully.", body = NewApiKeyResponse),
+        (status = CREATED, description = "API key created successfully.", body = NewApiKeyResponse),
         (status = CONFLICT
             , description = "An API key with this name already exists."
             , body = ErrorResponse
