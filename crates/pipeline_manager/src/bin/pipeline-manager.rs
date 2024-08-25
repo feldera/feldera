@@ -9,14 +9,14 @@ use pipeline_manager::config::{
     ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig,
 };
 use pipeline_manager::db::storage_postgres::StoragePostgres;
-use pipeline_manager::local_runner;
+use pipeline_manager::{ensure_default_crypto_provider, local_runner};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use utoipa::OpenApi;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Stay in single-threaded mode (no tokio) until calling `daemonize`.
+    ensure_default_crypto_provider();
 
     // Create env logger.
     let name = "[manager]".cyan();

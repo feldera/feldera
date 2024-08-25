@@ -55,6 +55,9 @@ dirs = "5.0"
 thiserror = "1.0"
 metrics = "0.23"
 metrics-exporter-prometheus = "0.15.1"
+# Make sure this is the same rustls version used by other crated in the dependency tree.
+# See the `ensure_default_crypto_provider` function at the root of this crate.
+rustls = "0.23.12"
 
 [features]
 integration-test = []
