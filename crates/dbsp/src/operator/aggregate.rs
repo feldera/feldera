@@ -1,5 +1,7 @@
+use std::mem::take;
+
 use crate::{
-    algebra::{GroupValue, MulByRef},
+    algebra::MulByRef,
     circuit::WithClock,
     dynamic::{ClonableTrait, DowncastTrait, DynData, DynUnit, DynWeight, Erase},
     operator::dynamic::aggregate::{
@@ -224,29 +226,39 @@ where
             .typed()
     }
 
-    /// Like [`Self::aggregate_linear`], but can return any batch type.
-    pub fn aggregate_linear_generic<F, A, O>(&self, f: F) -> Stream<C, O>
+    /// Linear aggregation with a post-processing step.
+    ///
+    /// Equivalent to `self.aggregate_linear(f).map_index(|(k,v)|(k, of(v)))`,
+    /// but more efficient.
+    pub fn aggregate_linear_postprocess<F, A, OF, OV>(
+        &self,
+        f: F,
+        of: OF,
+    ) -> Stream<C, OrdIndexedZSet<Z::Key, OV>>
     where
-        Z: IndexedZSet,
-        O: IndexedZSet<Key = Z::Key, DynK = Z::DynK, Val = A, DynV = DynData>,
-        A: DBWeight
-            + MulByRef<ZWeight, Output = A>
-            + GroupValue
-            + Erase<O::DynV>
-            + Erase<DynWeight>,
+        Z: IndexedZSet<DynK = DynData>,
+        A: DBWeight + MulByRef<ZWeight, Output = A>,
+        OV: DBData,
         F: Fn(&Z::Val) -> A + Clone + 'static,
+        OF: Fn(A) -> OV + Clone + 'static,
         <Z::Key as Deserializable>::ArchivedDeser: Ord,
     {
-        let factories: IncAggregateLinearFactories<Z::Inner, DynWeight, O::Inner, C::Time> =
-            IncAggregateLinearFactories::new::<Z::Key, A, A>();
+        let factories: IncAggregateLinearFactories<
+            Z::Inner,
+            DynWeight,
+            DynOrdIndexedZSet<DynData, DynData>,
+            C::Time,
+        > = IncAggregateLinearFactories::new::<Z::Key, A, OV>();
 
         self.inner()
             .dyn_aggregate_linear_generic(
                 &factories,
                 Box::new(move |_k, v, r, acc| unsafe {
-                    *acc.downcast_mut() = f(v.downcast()).mul_by_ref(&**r)
+                    *acc.downcast_mut::<A>() = f(v.downcast::<Z::Val>()).mul_by_ref(&**r)
                 }),
-                Box::new(|w, out| w.as_data_mut().move_to(out)),
+                Box::new(move |w, out| unsafe {
+                    *out.downcast_mut::<OV>() = of(take(w.downcast_mut::<A>()))
+                }),
             )
             .typed()
     }
