@@ -205,7 +205,7 @@ as select * from test_table;
 def create_feldera_pipeline(api_url: str, pipeline_to_redpanda_server: str, start_pipeline: bool):
     client = FelderaClient(api_url)
     sql = build_sql(pipeline_to_redpanda_server)
-    pipeline = PipelineBuilder(client, name="Debezium JDBC sink connector demo", sql=sql).create_or_replace()
+    pipeline = PipelineBuilder(client, name=PIPELINE_NAME, sql=sql).create_or_replace()
 
     if start_pipeline:
         print("Starting the pipeline...")
