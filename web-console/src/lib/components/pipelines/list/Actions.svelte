@@ -88,7 +88,8 @@
       (name) => `${name} pipeline`,
       deletePipeline
     )(pipeline.current.name)}
-    onClose={() => (globalDialog.dialog = null)}></DeleteDialog>
+    onClose={() => (globalDialog.dialog = null)}
+  ></DeleteDialog>
 {/snippet}
 
 <div class={'flex flex-nowrap gap-2 ' + _class}>
@@ -100,7 +101,8 @@
 {#snippet _delete()}
   <button
     class={'bx bx-trash-alt  ' + buttonClass}
-    onclick={() => (globalDialog.dialog = deleteDialog)}>
+    onclick={() => (globalDialog.dialog = deleteDialog)}
+  >
   </button>
 {/snippet}
 {#snippet _start()}
@@ -113,11 +115,12 @@
         pipeline.optimisticUpdate({ status: 'Resuming' })
         await success()
         onActionSuccess?.('start')
-      }}>
+      }}
+    >
     </button>
   </div>
   {#if unsavedChanges}
-    <Tooltip class="text-surface-950-50 z-20 bg-white dark:bg-black" placement="top">
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Save the pipeline before running
     </Tooltip>
   {/if}
@@ -132,11 +135,12 @@
         pipeline.optimisticUpdate({ status: 'Starting up' })
         await success()
         onActionSuccess?.('start_paused')
-      }}>
+      }}
+    >
     </button>
   </div>
   {#if unsavedChanges}
-    <Tooltip class="text-surface-950-50 z-20 bg-white dark:bg-black" placement="top">
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Save the pipeline before running
     </Tooltip>
   {/if}
@@ -148,7 +152,7 @@
 {/snippet}
 {#snippet _start_error()}
   {@render _start_disabled()}
-  <Tooltip class="text-surface-950-50 z-20 bg-white dark:bg-black" placement="top">
+  <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
     Resolve errors before running
   </Tooltip>
 {/snippet}
@@ -165,7 +169,8 @@
       postPipelineAction(pipeline.current.name, 'pause').then(() => {
         onActionSuccess?.('pause')
         pipeline.optimisticUpdate({ status: 'Pausing' })
-      })}>
+      })}
+  >
   </button>
 {/snippet}
 {#snippet _shutdown()}
@@ -175,7 +180,8 @@
       postPipelineAction(pipeline.current.name, 'shutdown').then(() => {
         onActionSuccess?.('shutdown')
         pipeline.optimisticUpdate({ status: 'ShuttingDown' })
-      })}>
+      })}
+  >
   </button>
 {/snippet}
 {#snippet _configure()}
@@ -188,7 +194,8 @@
           runtimeConfig: JSONbig.parse(json)
         })
       }}
-      onClose={() => (globalDialog.dialog = null)}>
+      onClose={() => (globalDialog.dialog = null)}
+    >
       {#snippet title()}
         <div class="h5 text-center font-normal">
           {`Configure ${pipeline.current.name} runtime resources`}
@@ -198,10 +205,11 @@
   {/snippet}
   <button
     onclick={() => (globalDialog.dialog = pipelineResourcesDialog)}
-    class={'bx bx-cog ' + buttonClass}>
+    class={'bx bx-cog ' + buttonClass}
+  >
   </button>
   {#if pipelineBusy}
-    <Tooltip class="text-surface-950-50 z-20 bg-white dark:bg-black" placement="top">
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Stop the pipeline to edit configuration
     </Tooltip>
   {/if}

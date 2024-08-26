@@ -25,45 +25,25 @@
   const pushChanges =
     (pipelineName: string, relationName: string) =>
     (changes: Record<'insert' | 'delete', XgressRecord>[]) => {
-      rows[pipelineName].splice(
-        0,
-        // Math.max(Math.min(
-        rows[pipelineName].length + changes.length - bufferSize
-        //   , bufferSize), 0)
-      )
+      rows[pipelineName].splice(0, rows[pipelineName].length + changes.length - bufferSize)
       rows[pipelineName].push(
         ...changes.slice(-bufferSize).map((change) => ({
-          // type: 'insert' in change ? ('insert' as const) : ('delete' as const),
           ...change,
           relationName
-          // record: change.insert ?? change.delete
         }))
       )
-      // getRows = () => rows
     }
-  const pushChange =
-    (pipelineName: string, relationName: string) =>
-    (change: Record<'insert' | 'delete', XgressRecord>) => {
-      rows[pipelineName].push({ ...change, relationName })
-    }
-  const commit = (pipelineName: string) => (batchSize: number) => {
-    // console.log('commit', rows[pipelineName].length)
-    rows[pipelineName].splice(0, Math.max(rows[pipelineName].length - bufferSize, 0))
-    // console.log('commit2', rows[pipelineName].length)
-    // getRows = () => rows
-  }
   const startReadingStream = (pipelineName: string, relationName: string) => {
     const handle = relationEggressStream(pipelineName, relationName).then((stream) => {
       if ('message' in stream) {
         return undefined
       }
-      const cancel = accumulateChangesSingular(
-        stream,
-        pushChanges(pipelineName, relationName)
-        // pushChange(pipelineName, relationName),
-        // commit(pipelineName)
-      )
-      return () => cancel('not_needed')
+      const cancel = parseJSONInStream(stream, pushChanges(pipelineName, relationName), {
+        paths: ['$.json_data.*']
+      })
+      return () => {
+        cancel()
+      }
     })
     return () => {
       handle.then((cancel) => cancel?.())
@@ -106,7 +86,7 @@
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type { Relation } from '$lib/services/manager'
-  import { accumulateChangesSingular } from '$lib/functions/pipelines/changeStream'
+  import { parseJSONInStream } from '$lib/functions/pipelines/changeStream'
 
   let { pipeline }: { pipeline: { current: Pipeline } } = $props()
 
@@ -159,13 +139,13 @@
       }))
   )
 
+  const visualUpdateMs = 100
   // Update visible list of changes at a constant time period
   $effect(() => {
     const update = () => (getRows = () => rows)
-    const handle = setInterval(update, 100)
+    const handle = setInterval(update, visualUpdateMs)
     update()
     return () => {
-      console.log('clearInterval')
       clearInterval(handle)
     }
   })
@@ -195,7 +175,8 @@
                     startReadingStream(pipelineName, relation.relationName)
                 }
               }}
-              value={relation} />
+              value={relation}
+            />
             {relation.relationName}
           </label>
         {/snippet}
@@ -216,13 +197,13 @@
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="bg-surface-100-900 w-2"></PaneResizer>
+    <PaneResizer class="w-2 bg-surface-100-900"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
       {#if getRows()[pipelineName]?.length}
         <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="text-surface-500 px-4">
+        <span class="px-4 text-surface-500">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}

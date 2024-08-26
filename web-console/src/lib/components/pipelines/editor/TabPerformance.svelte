@@ -20,9 +20,10 @@
   <div class="flex flex-col gap-4">
     <div class="flex w-full flex-col-reverse gap-2 lg:flex-row">
       <div class="mb-auto flex flex-col">
-        <span class="text-surface-600-400 w-full border-b-2 text-center">Total records</span>
+        <span class="w-full border-b-2 text-center text-surface-600-400">Total records</span>
         <div
-          class=" grid max-w-64 grid-flow-col grid-rows-2 gap-x-4 lg:grid-flow-row lg:grid-cols-2">
+          class=" grid max-w-64 grid-flow-col grid-rows-2 gap-x-4 lg:grid-flow-row lg:grid-cols-2"
+        >
           <!-- <span class="col-span-2">Records</span> -->
           <span>Ingested:</span>
           <span class="text-end">
@@ -48,17 +49,17 @@
             metrics={metrics.current}
             refetchMs={500}
             keepMs={60 * 1000}
-            {pipeline}>
-          </PipelineMemoryGraph>
+            {pipeline}
+          ></PipelineMemoryGraph>
         </div>
       </div>
     </div>
     <div class="grid max-w-[800px] grid-cols-5">
-      <span class="text-surface-600-400 border-b-2 text-center">Table</span>
-      <span class="text-surface-600-400 border-b-2 text-center">Ingested records</span>
-      <span class="text-surface-600-400 border-b-2 text-center">Ingested bytes</span>
-      <span class="text-surface-600-400 border-b-2 text-center">Parse errors</span>
-      <span class="text-surface-600-400 border-b-2 text-center">Transport errors</span>
+      <span class="border-b-2 text-center text-surface-600-400">Table</span>
+      <span class="border-b-2 text-center text-surface-600-400">Ingested records</span>
+      <span class="border-b-2 text-center text-surface-600-400">Ingested bytes</span>
+      <span class="border-b-2 text-center text-surface-600-400">Parse errors</span>
+      <span class="border-b-2 text-center text-surface-600-400">Transport errors</span>
       {#each metrics.current.input.entries() as [relation, stats]}
         <span>
           {relation}
@@ -75,12 +76,12 @@
     </div>
     {#if metrics.current.output.size}
       <div class="grid max-w-[960px] grid-cols-6">
-        <span class="text-surface-600-400 border-b-2 text-center">View</span>
-        <span class="text-surface-600-400 border-b-2 text-center">Transmitted records</span>
-        <span class="text-surface-600-400 border-b-2 text-center">Transmitted bytes</span>
-        <span class="text-surface-600-400 border-b-2 text-center">Processed records</span>
-        <span class="text-surface-600-400 border-b-2 text-center">Encode errors</span>
-        <span class="text-surface-600-400 border-b-2 text-center">Transport errors</span>
+        <span class="border-b-2 text-center text-surface-600-400">View</span>
+        <span class="border-b-2 text-center text-surface-600-400">Transmitted records</span>
+        <span class="border-b-2 text-center text-surface-600-400">Transmitted bytes</span>
+        <span class="border-b-2 text-center text-surface-600-400">Processed records</span>
+        <span class="border-b-2 text-center text-surface-600-400">Encode errors</span>
+        <span class="border-b-2 text-center text-surface-600-400">Transport errors</span>
         {#each metrics.current.output.entries() as [relation, stats]}
           <span>
             {relation}

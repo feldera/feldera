@@ -4,7 +4,7 @@ import { getPipelineStats, type ExtendedPipeline } from '$lib/services/pipelineM
 import {
   accumulatePipelineMetrics,
   emptyPipelineMetrics,
-  type PipelineMetrics,
+  type PipelineMetrics
 } from '$lib/functions/pipelineMetrics'
 import { isMetricsAvailable } from '$lib/functions/pipelines/status'
 
@@ -12,11 +12,10 @@ let metrics: Record<string, PipelineMetrics> = {} // Disable reactivity for metr
 let getMetrics = $state<() => typeof metrics>(() => metrics)
 
 export const useAggregatePipelineStats = (
-  pipeline: {current: ExtendedPipeline},
+  pipeline: { current: ExtendedPipeline },
   refetchMs: number,
   keepMs?: number
 ) => {
-
   let pipelineStatus = $derived(pipeline.current.status)
   const doFetch = (pipelineName: string) => {
     if (!isMetricsAvailable(pipelineStatus)) {
@@ -31,7 +30,6 @@ export const useAggregatePipelineStats = (
       )
       getMetrics = () => metrics
     })
-
   }
 
   let pipelineName = $derived(pipeline.current.name)

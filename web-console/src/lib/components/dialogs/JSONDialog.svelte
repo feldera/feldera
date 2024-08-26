@@ -51,7 +51,8 @@
         },
         language: 'json',
         ...isMonacoEditorDisabled(disabled)
-      }} />
+      }}
+    />
   </div>
   <div class="flex w-full justify-end">
     <div>
@@ -60,7 +61,7 @@
       </button>
     </div>
     {#if disabled}
-      <Tooltip class="text-surface-950-50 bg-white dark:bg-black" placement="top">
+      <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="top">
         Stop the pipeline to edit configuration
       </Tooltip>
     {/if}

@@ -1,201 +1,172 @@
-import type { XgressRecord } from '$lib/types/pipelineManager'
 import BigNumber from 'bignumber.js'
-import { JSONParser, Tokenizer, TokenParser } from '@streamparser/json'
+import { JSONParser, Tokenizer, TokenParser, type TokenParserOptions } from '@streamparser/json'
 import type { ParsedElementInfo } from '@streamparser/json/utils/types/parsedElementInfo.js'
-import JSONbig from 'true-json-bigint'
-import { discreteDerivative } from '../common/math'
-import { tuple } from '../common/tuple'
-
-export const accumulateChangesBatch = async (
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  pushChanges: (changes: Record<'insert' | 'delete', XgressRecord>[]) => void
-) => {
-  const decoder = new TextDecoder()
-  let buffer = ''
-  /// ===
-  const busyMs = 5
-  let allowedUntilMs = 0
-  /// ===
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) {
-      break
-    }
-
-    /// ===
-    allowedUntilMs = Date.now() + busyMs
-    /// ===
-
-    buffer += decoder.decode(value, { stream: true })
-
-    let boundary = -1
-    while ((boundary = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, boundary).trim()
-      buffer = buffer.slice(boundary + 1)
-      if (line === '') {
-        continue
-      }
-      const obj: {
-        sequence_number: number
-        json_data?: Record<'insert' | 'delete', XgressRecord>[]
-      } = JSONbig.parse(line)
-      if (!obj.json_data) {
-        continue
-      }
-      pushChanges(obj.json_data)
-
-      /// ===
-      if (allowedUntilMs < Date.now()) {
-        const lastIdx = buffer.lastIndexOf('\n')
-        buffer = buffer.slice(lastIdx === -1 ? 0 : lastIdx)
-        break
-      }
-      /// ===
-    }
-  }
-}
-
-function generateArray(min: number, max: number, distance: number): number[] {
-  const result: number[] = []
-  // Start at min and go up to max, adding the distance each time
-  for (let i = min; i < max; i += distance) {
-    result.push(i)
-  }
-  result.push(max)
-  return result
-}
+import { discreteDerivative } from '$lib/functions/common/math'
+import { tuple } from '$lib/functions/common/tuple'
+import { chunkIndices } from '$lib/functions/common/array'
 
 class BigNumberTokenizer extends Tokenizer {
-  parseNumber(numberStr: string) {
-    return BigNumber(numberStr) as any
-  }
+  parseNumber = BigNumber as any
 }
 
-export const accumulateChangesSingular = (
+const mkParser = (
+  onValue: (parsedElementInfo: ParsedElementInfo) => void,
+  options?: TokenParserOptions
+): { write: JSONParser['write']; end: JSONParser['end']; isParserEnded: () => boolean } => {
+  const tokenizer = new BigNumberTokenizer()
+  const tokenParser = new TokenParser(options)
+  tokenizer.onToken = tokenParser.write.bind(tokenParser)
+  tokenParser.onValue = onValue
+  return Object.assign(tokenizer, {
+    isParserEnded() {
+      return tokenParser.isEnded
+    }
+  })
+}
+
+export const parseJSONInStream = <T>(
   stream: ReadableStream<Uint8Array>,
-  pushChanges: (changes: Record<'insert' | 'delete', XgressRecord>[]) => void
-  // pushChange: (change: Record<'insert' | 'delete', XgressRecord>) => void,
-  // commit: (batchSize: number) => void
+  pushChanges: (changes: T[]) => void,
+  options?: TokenParserOptions
 ) => {
-  const reader = stream.pipeThrough(splitByNewlineTransformStream()).getReader() // chunkStreamByNewline(stream).getReader()
+  const reader = stream.getReader()
   let count = 0
   let resultBuffer = new Array()
 
   const onValue = ({ value }: ParsedElementInfo) => {
-    // console.log('onValue')
     resultBuffer[count] = value
     ++count
   }
 
-  const mkParser = (): { write: JSONParser['write']; end: JSONParser['end'] } => {
-    // const parser = new JSONParser({ paths: ['$.json_data.*'] })
-    // parser.onValue = onValue
-    // return parser
-    const tokenizer = new BigNumberTokenizer()
-    const tokenParser = new TokenParser({ paths: ['$.json_data.*'] })
-    tokenizer.onToken = tokenParser.write.bind(tokenParser)
-    tokenParser.onValue = onValue
-    return tokenizer
-  }
-
-  let parser = mkParser()
-
   const chunksToParse = [] as Uint8Array[]
 
   const startInterruptableParse = () => {
-    let end = false
+    let parser = mkParser(onValue, options)
+    let isEnd = false
     let done = true
-    return new Promise<{interrupt: () => void, stop: () => void}>(async (resolve) => {
-      const interrupt = async () => {
-        try {
-          parser.end()
-          // console.log('ended json')
-        } catch {
-          // We ignore the error because we just want to interrupt parsing and production of values
-          // console.log('interrupted')
-        }
-        chunksToParse.length = 0
-        while (!done) {
-          // Release thread to parse JSON
-          await new Promise((resolve) => setTimeout(resolve))
-        }
-        parser = mkParser()
-      }
-      resolve({interrupt, stop () { end = true; interrupt() }})
 
-      while (!end) {
-        const value = chunksToParse.shift()
-        if (!value) {
-          await new Promise((resolve) => setTimeout(resolve))
-          continue
-        }
-        const positions = generateArray(0, value.length, 200000)
-        const pairs = discreteDerivative(positions, tuple)
-        for (const [n1, n0] of pairs) {
-          count = 0
-          done = false
-          try {
-            parser.write(value.slice(n0, n1))
-          } catch (e) {
-            console.log('parse error!', e)
-            done = true
-            break
+    const interrupt = async () => {
+      try {
+        parser.end()
+      } catch {
+        // We ignore the error because we just want to interrupt parsing and production of values
+      }
+      parser = mkParser(onValue, options)
+      chunksToParse.length = 0
+      while (!done) {
+        // Release thread to parse JSON
+        await new Promise((resolve) => setTimeout(resolve))
+      }
+    }
+
+    return {
+      start: async () => {
+        while (!isEnd) {
+          const value = chunksToParse.shift()
+          if (!value || value.length === 0) {
+            await new Promise((resolve) => setTimeout(resolve))
+            continue
           }
 
-          pushChanges(resultBuffer.slice(0, count))
-          done = true
-          await new Promise((resolve) => setTimeout(resolve))
-        }
-        // commit(count)
-      }
+          // Parse JSON in subchunks of up to 200000 bytes to keep UI freezes to a minimum
+          // because during parsing JavaScript cannot handle UI updates
+          const positions = chunkIndices(0, value.length, 200000)
+          const pairs = discreteDerivative(positions, tuple)
+          for (const [n1, n0] of pairs) {
+            if (isEnd) {
+              break
+            }
+            {
+              // In each iteration we check if an empty array has been added to the parse queue
+              // If so, we drop all chunks before the latest empty array
+              const emptyChunkIdx = chunksToParse.findLastIndex((chunk) => chunk.length === 0)
+              if (emptyChunkIdx !== -1) {
+                chunksToParse.splice(0, emptyChunkIdx + 1)
+                parser = mkParser(onValue, options)
+                break
+              }
+            }
 
-    })
+            count = 0
+            done = false
+            try {
+              parser.write(value.slice(n0, n1))
+            } catch (e) {
+              console.log('JSON parse error', e)
+              done = true
+              break
+            }
+
+            if (parser.isParserEnded()) {
+              parser = mkParser(onValue, options)
+            }
+
+            pushChanges(resultBuffer.slice(0, count))
+            done = true
+            await new Promise((resolve) => setTimeout(resolve))
+          }
+        }
+      },
+      stop() {
+        isEnd = true
+        interrupt()
+      }
+    }
   }
 
+  const { start, stop } = startInterruptableParse()
+
   setTimeout(async () => {
-    const {interrupt, stop} = await startInterruptableParse()
+    start()
     while (true) {
       const { done, value } = await reader.read()
       if (done || !value) {
         stop()
         break
       }
-      // console.log('cycle!', value.length)
-      if (value.length === 0) {
-        interrupt()
-        continue
-      }
-      chunksToParse.push(value)
+      splitByNewline(chunksToParse.push.bind(chunksToParse), value)
       // Release thread to process UI
       await new Promise((resolve) => setTimeout(resolve))
     }
   })
-  return () => reader.cancel()
+  return () => {
+    reader.cancel()
+    stop()
+  }
 }
 
-function splitByNewlineTransformStream(): TransformStream<Uint8Array, Uint8Array> {
+/**
+ * Split stream by newline character (LF, 0x0A), sending an empty chunk on each occurrence
+ * Empty chunk is also sent when the upstream has ended
+ */
+function splitByNewline(onChunk: (chunk: Uint8Array) => void, chunk: Uint8Array) {
+  let start = 0
+
+  while (start < chunk.length) {
+    const newlineIndex = chunk.indexOf(10, start)
+    const end = newlineIndex === -1 ? chunk.length : newlineIndex
+
+    onChunk(chunk.subarray(start, end))
+    if (end !== chunk.length) {
+      onChunk(new Uint8Array())
+    }
+
+    // Move start to after the newline character
+    start = end + 1
+  }
+}
+
+/**
+ * Split stream by newline character (LF, 0x0A), sending an empty chunk on each occurrence
+ * Empty chunk is also sent when the upstream has ended
+ */
+function splitStreamByNewline(): TransformStream<Uint8Array, Uint8Array> {
   return new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-          let start = 0;
-          console.log('upstream')
-
-          while (start < chunk.length) {
-              const newlineIndex = chunk.indexOf(10, start);
-              const end = (newlineIndex === -1) ? chunk.length : newlineIndex
-
-              // Enqueue the subarray, including the newline character if found
-              controller.enqueue(chunk.subarray(start, end))
-              if (end !== chunk.length) {
-                console.log('yield end', end, chunk.length)
-                controller.enqueue(new Uint8Array())
-              }
-
-              // Move start to after the newline character
-              start = end + 1
-          }
-      },
-      flush(controller) {
-        controller.enqueue(new Uint8Array())
-      }
-  });
+    transform(chunk, controller) {
+      splitByNewline(controller.enqueue.bind(controller), chunk)
+    },
+    flush(controller) {
+      controller.enqueue(new Uint8Array())
+    }
+  })
 }

@@ -28,6 +28,7 @@
   class={'w-30 chip pointer-events-none h-6 flex-none text-[0.66rem] uppercase ' +
     chipClass +
     ' ' +
-    _class}>
+    _class}
+>
   {getDeploymentStatusLabel(status)}
 </div>
