@@ -20,8 +20,8 @@ CREATE TABLE person (
                 "options": {{
                     "events": {events},
                     "threads": {cores},
-                    "batch_size": 10000,
-                    "synchronize_threads": true
+                    "batch_size": 16000,
+                    "max_step_size": 1000000
                 }}
             }}
         }}
@@ -93,4 +93,4 @@ CREATE TABLE side_input (
         ]
       }}
     }}
-}}]');;
+}}]');

@@ -161,6 +161,23 @@ export type Configuration = {
 export type ConnectorConfig = OutputBufferConfig & {
   format?: FormatConfig | null
   /**
+   * Maximum batch size, in records.
+   *
+   * This is the maximum number of records to process in one batch through
+   * the circuit.  The time and space cost of processing a batch is
+   * asymptotically superlinear in the size of the batch, but very small
+   * batches are less efficient due to constant factors.
+   *
+   * This should usually be less than `max_queued_records`, to give the
+   * connector a round-trip time to restart and refill the buffer while
+   * batches are being processed.
+   *
+   * Some input adapters might not honor this setting.
+   *
+   * The default is 10,000.
+   */
+  max_batch_size?: number
+  /**
    * Backpressure threshold.
    *
    * Maximal number of records queued by the endpoint before the endpoint
@@ -940,14 +957,13 @@ export type NexmarkInputOptions = {
    */
   events?: number
   /**
-   * Whether to synchronize event generator threads after submitting each
-   * batch.
+   * Maximum number of events to submit in a single step.  This should be a
+   * multiple of `batch_size`.
    *
-   * If true (which is the default), then the event generator threads will
-   * submit data in lockstep, clustering their event sequence numbers. If
-   * false, scheduling can cause some threads to get ahead of others.
+   * This stands in for `max_batch_size` from the connector configuration
+   * because it must be a constant across all three of the nexmark tables.
    */
-  synchronize_threads?: boolean
+  max_step_size?: number
   /**
    * Number of event generator threads.
    *

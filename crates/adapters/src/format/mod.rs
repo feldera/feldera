@@ -12,6 +12,8 @@ use feldera_types::serde_with_context::FieldParseError;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde_yaml::Value as YamlValue;
+use std::collections::VecDeque;
+use std::sync::Mutex;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
@@ -399,24 +401,95 @@ impl dyn InputFormat {
     }
 }
 
-/// Parser that converts a raw byte stream into a stream of database records.
+/// A collection of records associated with an input handle.
 ///
-/// Note that the implementation can assume that either `input_fragment` or
-/// `input_chunk` will be called, but not both.
-pub trait Parser: Send {
+/// A [Parser] holds and adds records to an [InputBuffer].  The client, which is
+/// typically an [InputReader](crate::transport::InputReader), gathers one or
+/// more [InputBuffer]s and pushes them to the circuit when the controller
+/// requests it.
+pub trait InputBuffer: Send {
+    /// Pushes the `n` earliest buffered records into the circuit input
+    /// handle. If fewer than `n` are available, pushes all of them.  Discards
+    /// the records that are sent.  Returns the number sent.
+    fn flush(&mut self, n: usize) -> usize;
+
+    fn flush_all(&mut self) -> usize {
+        self.flush(usize::MAX)
+    }
+
+    /// Returns the number of buffered records.
+    fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Removes all of the records from this input buffer and returns a new
+    /// [InputBuffer] that holds them. Returns `None` if this input buffer is
+    /// empty.
+    ///
+    /// This is useful for extracting the records from one of several parser
+    /// threads to send to a single common thread to be pushed later.
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>>;
+}
+
+/// An implementation of [InputBuffer::flush] for a common pattern where worker
+/// threads append [InputBuffer]s to a common queue.
+pub(crate) fn flush_vecdeque_queue(
+    queue: &Mutex<VecDeque<Box<dyn InputBuffer>>>,
+    n: usize,
+) -> usize {
+    let mut total = 0;
+    while total < n {
+        let Some(mut buffer) = queue.lock().unwrap().pop_front() else {
+            break;
+        };
+        total += buffer.flush(n - total);
+        if !buffer.is_empty() {
+            queue.lock().unwrap().push_front(buffer);
+            break;
+        }
+    }
+    total
+}
+
+/// An empty [InputBuffer].
+pub struct EmptyInputBuffer;
+
+impl InputBuffer for EmptyInputBuffer {
+    fn flush(&mut self, _n: usize) -> usize {
+        0
+    }
+
+    fn len(&self) -> usize {
+        0
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        None
+    }
+}
+
+/// Parses raw bytes into database records in an internal buffer.
+///
+/// The implementation can assume that either `input_fragment` or `input_chunk`
+/// will be called, but not both.
+///
+/// The [InputBuffer] supertrait allows the client to access the buffered
+/// records.
+pub trait Parser: Send + InputBuffer {
     /// Push a fragment of the input stream to the parser.
     ///
-    /// The parser breaks `data` up into records and pushes these records
-    /// to the circuit using the
-    /// [`DeCollectionHandle`](`crate::DeCollectionHandle`) API.
-    /// `data` is not guaranteed to start or end on a record boundary.
+    /// The parser breaks `data` up into records and add the records to its
+    /// buffers using the [`DeCollectionHandle`](`crate::DeCollectionHandle`)
+    /// API.  `data` is not guaranteed to start or end on a record boundary.
     /// The parser is responsible for identifying record boundaries and
-    /// buffering incomplete records to get prepended to the next
-    /// input fragment.
+    /// buffering incomplete records to get prepended to the next input
+    /// fragment.
     ///
-    /// The parser must not buffer any data, except for any incomplete records
-    /// that cannot be fully parsed until more data or an end-of-input
-    /// notification is received.
+    /// The parser must be able to maintain state for any incomplete records in
+    /// `data` that cannot be fully parsed until the next call to this method or
+    /// a call to [Self::end_of_fragments].
     ///
     /// This method is invoked by transport adapters, such as file, URL, and
     /// HTTP adapters (for some configurations of the adapter), where the
@@ -426,12 +499,25 @@ pub trait Parser: Send {
     /// if parsing fails.
     fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>);
 
+    /// Notifies the parser that the preceding fragment(s) are complete.
+    ///
+    /// The parser should complete or discard any incompletely parsed records.
+    /// Returns the number of additional records added to the buffer or an error
+    /// if parsing fails.
+    ///
+    /// This shouldn't have any work to do if the data was pushed via
+    /// [Self::input_chunk], since each chunk is complete and independent.
+    ///
+    /// Returns the number of records in the parsed representation or an error
+    /// if parsing fails.
+    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>);
+
     /// Push a chunk of data to the parser.
     ///
-    /// The parser breaks `data` up into records and pushes these records
-    /// to the circuit using the
-    /// [`DeCollectionHandle`](`crate::DeCollectionHandle`) API.
-    /// The chunk is expected to contain complete records only.
+    /// The parser breaks `data` up into records and adds the records to its
+    /// buffers using the [`DeCollectionHandle`](`crate::DeCollectionHandle`)
+    /// API.  The chunk is expected to contain complete records only, so the
+    /// parser need not maintain any state from `data` for the next call.
     ///
     /// Returns the number of records in the parsed representation and the list
     /// of errors encountered during parsing.
@@ -439,16 +525,8 @@ pub trait Parser: Send {
         self.input_fragment(data)
     }
 
-    /// End-of-input-stream notification.
-    ///
-    /// No more data will be received from the stream.  The parser uses this
-    /// notification to complete or discard any incompletely parsed records.
-    ///
-    /// Returns the number of additional records pushed to the circuit or an
-    /// error if parsing fails.
-    fn eoi(&mut self) -> (usize, Vec<ParseError>);
-
-    /// Create a new parser with the same configuration as `self`.
+    /// Create a new parser with the same configuration as `self`.  The new
+    /// parser will have an independent and initially empty buffer.
     ///
     /// Used by multithreaded transport endpoints to create multiple parallel
     /// input pipelines.

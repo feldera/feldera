@@ -1,8 +1,8 @@
-use crate::catalog::ArrowStream;
 #[cfg(feature = "with-avro")]
 use crate::catalog::AvroStream;
 #[cfg(feature = "with-avro")]
 use crate::format::avro::from_avro_value;
+use crate::{catalog::ArrowStream, format::InputBuffer};
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::byte_record_deserializer,
@@ -18,7 +18,7 @@ use dbsp::{
 };
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
-use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
+use std::{cmp::min, collections::VecDeque, marker::PhantomData, mem::take, ops::Neg};
 
 /// A deserializer that parses byte arrays into a strongly typed representation.
 pub trait DeserializerFromBytes<C> {
@@ -88,14 +88,6 @@ impl DeserializerFromBytes<SqlSerdeConfig> for JsonDeserializerFromBytes {
         .map_err(|e| anyhow!(e.to_string()))
     }
 }
-
-/// Maximal buffer size reused across buffer flushes.
-///
-/// Input handles in this module use an internal buffer for input records.
-/// We want to reuse the allocation across batches, but we
-/// limit the max amount of capacity we reuse so that a very large
-/// transaction does not leave a huge unused memory buffer.
-const MAX_REUSABLE_CAPACITY: usize = 100_000;
 
 /// An input handle that allows pushing serialized data to an
 /// [`InputHandle`].
@@ -347,6 +339,43 @@ where
     }
 }
 
+struct DeZSetStreamBuffer<K> {
+    updates: Vec<Tup2<K, ZWeight>>,
+    handle: ZSetHandle<K>,
+}
+
+impl<K> DeZSetStreamBuffer<K> {
+    fn new(handle: ZSetHandle<K>) -> Self {
+        Self {
+            updates: Vec::new(),
+            handle,
+        }
+    }
+}
+
+impl<K> InputBuffer for DeZSetStreamBuffer<K>
+where
+    K: DBData,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        let n = min(n, self.len());
+        let mut head = self.updates.drain(..n).collect();
+        self.handle.append(&mut head);
+        n
+    }
+
+    fn len(&self) -> usize {
+        self.updates.len()
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        Some(Box::new(Self {
+            updates: take(&mut self.updates),
+            handle: self.handle.clone(),
+        }))
+    }
+}
+
 /// An input handle that wraps a [`MapHandle<K, R>`](`MapHandle`)
 /// returned by
 /// [`RootCircuit::add_input_zset`](`dbsp::RootCircuit::add_input_zset`).
@@ -358,8 +387,7 @@ where
 /// The [`delete`](`Self::delete`) method of this handle buffers a `(k, -1)`
 /// update for the underlying `CollectionHandle`.
 pub struct DeZSetStream<De, K, D, C> {
-    updates: Vec<Tup2<K, ZWeight>>,
-    handle: ZSetHandle<K>,
+    buffer: DeZSetStreamBuffer<K>,
     deserializer: De,
     config: C,
     phantom: PhantomData<D>,
@@ -372,8 +400,7 @@ where
 {
     pub fn new(handle: ZSetHandle<K>, config: C) -> Self {
         Self {
-            updates: Vec::new(),
-            handle,
+            buffer: DeZSetStreamBuffer::new(handle),
             deserializer: De::create(config.clone()),
             config,
             phantom: PhantomData,
@@ -391,14 +418,14 @@ where
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.updates.push(Tup2(key, ZWeight::one()));
+        self.buffer.updates.push(Tup2(key, ZWeight::one()));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.updates.push(Tup2(key, ZWeight::one().neg()));
+        self.buffer.updates.push(Tup2(key, ZWeight::one().neg()));
         Ok(())
     }
 
@@ -407,26 +434,40 @@ where
     }
 
     fn reserve(&mut self, reservation: usize) {
-        self.updates.reserve(reservation);
-    }
-
-    fn flush(&mut self) {
-        self.handle.append(&mut self.updates);
-        self.updates.shrink_to(MAX_REUSABLE_CAPACITY);
-    }
-
-    fn clear_buffer(&mut self) {
-        self.updates.clear();
-        self.updates.shrink_to(MAX_REUSABLE_CAPACITY);
+        self.buffer.updates.reserve(reservation);
     }
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
-        Box::new(Self::new(self.handle.clone(), self.config.clone()))
+        Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
+    }
+
+    fn truncate(&mut self, len: usize) {
+        self.buffer.updates.truncate(len)
+    }
+}
+
+impl<De, K, D, C> InputBuffer for DeZSetStream<De, K, D, C>
+where
+    De: DeserializerFromBytes<C> + Send + 'static,
+    C: Clone + Send + 'static,
+    K: DBData + From<D>,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        self.buffer.flush(n)
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take()
     }
 }
 
 pub struct ArrowZSetStream<K, D, C> {
-    handle: ZSetHandle<K>,
+    buffer: DeZSetStreamBuffer<K>,
     config: C,
     phantom: PhantomData<D>,
 }
@@ -434,7 +475,7 @@ pub struct ArrowZSetStream<K, D, C> {
 impl<K, D, C> ArrowZSetStream<K, D, C> {
     pub fn new(handle: ZSetHandle<K>, config: C) -> Self {
         Self {
-            handle,
+            buffer: DeZSetStreamBuffer::new(handle),
             config,
             phantom: PhantomData,
         }
@@ -450,8 +491,9 @@ where
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
         let deserializer = ArrowDeserializer::from_record_batch(data)?;
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
-        self.handle
-            .append(&mut records.into_iter().map(|r| Tup2(K::from(r), 1)).collect());
+        self.buffer
+            .updates
+            .extend(records.into_iter().map(|r| Tup2(K::from(r), 1)));
 
         Ok(())
     }
@@ -459,14 +501,34 @@ where
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
         let deserializer = ArrowDeserializer::from_record_batch(data)?;
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
-        self.handle
-            .append(&mut records.into_iter().map(|r| Tup2(K::from(r), -1)).collect());
+        self.buffer
+            .updates
+            .extend(records.into_iter().map(|r| Tup2(K::from(r), -1)));
 
         Ok(())
     }
 
     fn fork(&self) -> Box<dyn ArrowStream> {
-        Box::new(Self::new(self.handle.clone(), self.config.clone()))
+        Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
+    }
+}
+
+impl<K, D, C> InputBuffer for ArrowZSetStream<K, D, C>
+where
+    K: DBData + From<D>,
+    D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    C: Clone + Send + 'static,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        self.buffer.flush(n)
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take()
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
     }
 }
 
@@ -474,17 +536,14 @@ where
 /// into a Z-set.
 #[cfg(feature = "with-avro")]
 pub struct AvroZSetStream<K, D> {
-    handle: ZSetHandle<K>,
+    buffer: DeZSetStreamBuffer<K>,
     phantom: PhantomData<D>,
 }
 
 #[cfg(feature = "with-avro")]
 impl<K, D> Clone for AvroZSetStream<K, D> {
     fn clone(&self) -> Self {
-        Self {
-            handle: self.handle.clone(),
-            phantom: PhantomData,
-        }
+        Self::new(self.buffer.handle.clone())
     }
 }
 
@@ -492,7 +551,7 @@ impl<K, D> Clone for AvroZSetStream<K, D> {
 impl<K, D> AvroZSetStream<K, D> {
     pub fn new(handle: ZSetHandle<K>) -> Self {
         Self {
-            handle,
+            buffer: DeZSetStreamBuffer::new(handle),
             phantom: PhantomData,
         }
     }
@@ -508,7 +567,7 @@ where
         let v: D =
             from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.handle.push(K::from(v), 1);
+        self.buffer.updates.push(Tup2(K::from(v), 1));
 
         Ok(())
     }
@@ -517,13 +576,32 @@ where
         let v: D =
             from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.handle.push(K::from(v), -1);
+        self.buffer.updates.push(Tup2(K::from(v), -1));
 
         Ok(())
     }
 
     fn fork(&self) -> Box<dyn AvroStream> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, D> InputBuffer for AvroZSetStream<K, D>
+where
+    K: DBData + From<D>,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        self.buffer.flush(n)
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take()
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
     }
 }
 
@@ -601,6 +679,47 @@ where
     }
 }
 
+struct DeSetStreamBuffer<K> {
+    updates: Vec<Tup2<K, bool>>,
+    handle: SetHandle<K>,
+}
+
+impl<K> DeSetStreamBuffer<K> {
+    fn new(handle: SetHandle<K>) -> Self {
+        Self {
+            updates: Vec::new(),
+            handle,
+        }
+    }
+}
+
+impl<K> InputBuffer for DeSetStreamBuffer<K>
+where
+    K: DBData,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        let n = min(n, self.len());
+        let mut head = self.updates.drain(..n).collect();
+        self.handle.append(&mut head);
+        n
+    }
+
+    fn len(&self) -> usize {
+        self.updates.len()
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        if !self.updates.is_empty() {
+            Some(Box::new(DeSetStreamBuffer {
+                updates: take(&mut self.updates),
+                handle: self.handle.clone(),
+            }))
+        } else {
+            None
+        }
+    }
+}
+
 /// An input handle that wraps a [`SetHandle<V>`](`SetHandle`)
 /// returned by
 /// [`RootCircuit::add_input_set`](`dbsp::RootCircuit::add_input_set`).
@@ -613,8 +732,7 @@ where
 /// `v` type `V` and buffers a `(v, false)` update for the underlying
 /// `SetHandle`.
 pub struct DeSetStream<De, K, D, C> {
-    updates: Vec<Tup2<K, bool>>,
-    handle: SetHandle<K>,
+    buffer: DeSetStreamBuffer<K>,
     deserializer: De,
     config: C,
     phantom: PhantomData<fn(D)>,
@@ -627,8 +745,7 @@ where
 {
     pub fn new(handle: SetHandle<K>, config: C) -> Self {
         Self {
-            updates: Vec::new(),
-            handle,
+            buffer: DeSetStreamBuffer::new(handle),
             deserializer: De::create(config.clone()),
             config,
             phantom: PhantomData,
@@ -646,14 +763,14 @@ where
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.updates.push(Tup2(key, true));
+        self.buffer.updates.push(Tup2(key, true));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
-        self.updates.push(Tup2(key, false));
+        self.buffer.updates.push(Tup2(key, false));
         Ok(())
     }
 
@@ -662,26 +779,40 @@ where
     }
 
     fn reserve(&mut self, reservation: usize) {
-        self.updates.reserve(reservation);
-    }
-
-    fn flush(&mut self) {
-        self.handle.append(&mut self.updates);
-        self.updates.shrink_to(MAX_REUSABLE_CAPACITY);
-    }
-
-    fn clear_buffer(&mut self) {
-        self.updates.clear();
-        self.updates.shrink_to(MAX_REUSABLE_CAPACITY);
+        self.buffer.updates.reserve(reservation);
     }
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
-        Box::new(Self::new(self.handle.clone(), self.config.clone()))
+        Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
+    }
+
+    fn truncate(&mut self, len: usize) {
+        self.buffer.updates.truncate(len)
+    }
+}
+
+impl<De, K, D, C> InputBuffer for DeSetStream<De, K, D, C>
+where
+    De: DeserializerFromBytes<C> + Send + 'static,
+    C: Clone + Send + 'static,
+    K: DBData + From<D>,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        self.buffer.flush(n)
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take()
     }
 }
 
 pub struct ArrowSetStream<K, D, C> {
-    handle: SetHandle<K>,
+    buffer: DeSetStreamBuffer<K>,
     config: C,
     phantom: PhantomData<D>,
 }
@@ -689,7 +820,7 @@ pub struct ArrowSetStream<K, D, C> {
 impl<K, D, C> ArrowSetStream<K, D, C> {
     pub fn new(handle: SetHandle<K>, config: C) -> Self {
         Self {
-            handle,
+            buffer: DeSetStreamBuffer::new(handle),
             config,
             phantom: PhantomData,
         }
@@ -705,12 +836,9 @@ where
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
         let deserializer = ArrowDeserializer::from_record_batch(data)?;
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
-        self.handle.append(
-            &mut records
-                .into_iter()
-                .map(|r| Tup2(K::from(r), true))
-                .collect(),
-        );
+        self.buffer
+            .updates
+            .extend(records.into_iter().map(|r| Tup2(K::from(r), true)));
 
         Ok(())
     }
@@ -718,18 +846,34 @@ where
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
         let deserializer = ArrowDeserializer::from_record_batch(data)?;
         let records = Vec::<D>::deserialize_with_context(deserializer, &self.config)?;
-        self.handle.append(
-            &mut records
-                .into_iter()
-                .map(|r| Tup2(K::from(r), false))
-                .collect(),
-        );
+        self.buffer
+            .updates
+            .extend(records.into_iter().map(|r| Tup2(K::from(r), false)));
 
         Ok(())
     }
 
     fn fork(&self) -> Box<dyn ArrowStream> {
-        Box::new(Self::new(self.handle.clone(), self.config.clone()))
+        Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
+    }
+}
+
+impl<K, D, C> InputBuffer for ArrowSetStream<K, D, C>
+where
+    K: DBData + From<D>,
+    D: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    C: Clone + Send + 'static,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        self.buffer.flush(n)
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take()
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
     }
 }
 
@@ -737,17 +881,14 @@ where
 /// into a set.
 #[cfg(feature = "with-avro")]
 pub struct AvroSetStream<K, D> {
-    handle: SetHandle<K>,
+    buffer: DeSetStreamBuffer<K>,
     phantom: PhantomData<D>,
 }
 
 #[cfg(feature = "with-avro")]
 impl<K, D> Clone for AvroSetStream<K, D> {
     fn clone(&self) -> Self {
-        Self {
-            handle: self.handle.clone(),
-            phantom: PhantomData,
-        }
+        Self::new(self.buffer.handle.clone())
     }
 }
 
@@ -755,7 +896,7 @@ impl<K, D> Clone for AvroSetStream<K, D> {
 impl<K, D> AvroSetStream<K, D> {
     pub fn new(handle: SetHandle<K>) -> Self {
         Self {
-            handle,
+            buffer: DeSetStreamBuffer::new(handle),
             phantom: PhantomData,
         }
     }
@@ -771,7 +912,7 @@ where
         let v: D =
             from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.handle.push(K::from(v), true);
+        self.buffer.updates.push(Tup2(K::from(v), true));
 
         Ok(())
     }
@@ -780,13 +921,32 @@ where
         let v: D =
             from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.handle.push(K::from(v), false);
+        self.buffer.updates.push(Tup2(K::from(v), false));
 
         Ok(())
     }
 
     fn fork(&self) -> Box<dyn AvroStream> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, D> InputBuffer for AvroSetStream<K, D>
+where
+    K: DBData + From<D>,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        self.buffer.flush(n)
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take()
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
     }
 }
 
@@ -918,6 +1078,59 @@ where
     }
 }
 
+struct DeMapStreamBuffer<K, V, U>
+where
+    K: DBData,
+    V: DBData,
+    U: DBData,
+{
+    updates: Vec<Tup2<K, Update<V, U>>>,
+    handle: MapHandle<K, V, U>,
+}
+
+impl<K, V, U> DeMapStreamBuffer<K, V, U>
+where
+    K: DBData,
+    V: DBData,
+    U: DBData,
+{
+    fn new(handle: MapHandle<K, V, U>) -> Self {
+        Self {
+            updates: Vec::new(),
+            handle,
+        }
+    }
+}
+
+impl<K, V, U> InputBuffer for DeMapStreamBuffer<K, V, U>
+where
+    K: DBData,
+    V: DBData,
+    U: DBData,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        let n = min(n, self.len());
+        let mut head = self.updates.drain(..n).collect();
+        self.handle.append(&mut head);
+        n
+    }
+
+    fn len(&self) -> usize {
+        self.updates.len()
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        if !self.updates.is_empty() {
+            Some(Box::new(DeMapStreamBuffer {
+                updates: take(&mut self.updates),
+                handle: self.handle.clone(),
+            }))
+        } else {
+            None
+        }
+    }
+}
+
 /// An input handle that wraps a [`MapHandle<K, V>`](`MapHandle`)
 /// returned by
 /// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`).
@@ -932,13 +1145,13 @@ where
 /// `MapHandle`.
 pub struct DeMapStream<De, K, KD, V, VD, U, UD, VF, UF, C>
 where
+    K: DBData,
     V: DBData,
     U: DBData,
 {
-    updates: Vec<Tup2<K, Update<V, U>>>,
+    buffer: DeMapStreamBuffer<K, V, U>,
     value_key_func: VF,
     update_key_func: UF,
-    handle: MapHandle<K, V, U>,
     config: C,
     deserializer: De,
     phantom: PhantomData<fn(KD, VD, UD)>,
@@ -946,6 +1159,7 @@ where
 
 impl<De, K, KD, V, VD, U, UD, VF, UF, C> DeMapStream<De, K, KD, V, VD, U, UD, VF, UF, C>
 where
+    K: DBData,
     V: DBData,
     U: DBData,
     De: DeserializerFromBytes<C>,
@@ -958,10 +1172,9 @@ where
         config: C,
     ) -> Self {
         Self {
-            updates: Vec::new(),
+            buffer: DeMapStreamBuffer::new(handle),
             value_key_func,
             update_key_func,
-            handle,
             deserializer: De::create(config.clone()),
             config,
             phantom: PhantomData,
@@ -987,14 +1200,14 @@ where
         let val = V::from(self.deserializer.deserialize::<VD>(data)?);
         let key = (self.value_key_func)(&val);
 
-        self.updates.push(Tup2(key, Update::Insert(val)));
+        self.buffer.updates.push(Tup2(key, Update::Insert(val)));
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = K::from(self.deserializer.deserialize::<KD>(data)?);
 
-        self.updates.push(Tup2(key, Update::Delete));
+        self.buffer.updates.push(Tup2(key, Update::Delete));
         Ok(())
     }
 
@@ -1002,55 +1215,78 @@ where
         let upd = U::from(self.deserializer.deserialize::<UD>(data)?);
         let key = (self.update_key_func)(&upd);
 
-        self.updates.push(Tup2(key, Update::Update(upd)));
+        self.buffer.updates.push(Tup2(key, Update::Update(upd)));
         Ok(())
     }
 
     fn reserve(&mut self, reservation: usize) {
-        self.updates.reserve(reservation);
-    }
-
-    fn flush(&mut self) {
-        self.handle.append(&mut self.updates);
-        self.updates.shrink_to(MAX_REUSABLE_CAPACITY);
-    }
-
-    fn clear_buffer(&mut self) {
-        self.updates.clear();
-        self.updates.shrink_to(MAX_REUSABLE_CAPACITY);
+        self.buffer.updates.reserve(reservation);
     }
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
         Box::new(Self::new(
-            self.handle.clone(),
+            self.buffer.handle.clone(),
             self.value_key_func.clone(),
             self.update_key_func.clone(),
             self.config.clone(),
         ))
     }
+
+    fn truncate(&mut self, len: usize) {
+        self.buffer.updates.truncate(len)
+    }
+}
+
+impl<De, K, KD, V, VD, U, UD, VF, UF, C> InputBuffer
+    for DeMapStream<De, K, KD, V, VD, U, UD, VF, UF, C>
+where
+    De: DeserializerFromBytes<C> + Send + 'static,
+    C: Clone + Send + 'static,
+    K: DBData + From<KD>,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    V: DBData + From<VD>,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    U: DBData + From<UD>,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    VF: Fn(&V) -> K + Clone + Send + 'static,
+    UF: Fn(&U) -> K + Clone + Send + 'static,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        self.buffer.flush(n)
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take()
+    }
 }
 
 pub struct ArrowMapStream<K, KD, V, VD, U, VF, C>
 where
+    K: DBData,
     V: DBData,
     U: DBData,
 {
+    buffer: DeMapStreamBuffer<K, V, U>,
     value_key_func: VF,
-    handle: MapHandle<K, V, U>,
     config: C,
     phantom: PhantomData<fn(KD, VD)>,
 }
 
 impl<K, KD, V, VD, U, VF, C> ArrowMapStream<K, KD, V, VD, U, VF, C>
 where
+    K: DBData,
     V: DBData,
     U: DBData,
     C: Clone,
 {
     pub fn new(handle: MapHandle<K, V, U>, value_key_func: VF, config: C) -> Self {
         Self {
+            buffer: DeMapStreamBuffer::new(handle),
             value_key_func,
-            handle,
             config,
             phantom: PhantomData,
         }
@@ -1070,15 +1306,10 @@ where
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
         let deserializer = ArrowDeserializer::from_record_batch(data)?;
         let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
-        self.handle.append(
-            &mut records
-                .into_iter()
-                .map(|r| {
-                    let v = V::from(r);
-                    Tup2((self.value_key_func)(&v), Update::Insert(v))
-                })
-                .collect(),
-        );
+        self.buffer.updates.extend(records.into_iter().map(|r| {
+            let v = V::from(r);
+            Tup2((self.value_key_func)(&v), Update::Insert(v))
+        }));
 
         Ok(())
     }
@@ -1086,57 +1317,84 @@ where
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()> {
         let deserializer = ArrowDeserializer::from_record_batch(data)?;
         let records = Vec::<VD>::deserialize_with_context(deserializer, &self.config)?;
-        self.handle.append(
-            &mut records
-                .into_iter()
-                .map(|r| {
-                    let v = V::from(r);
-                    Tup2((self.value_key_func)(&v), Update::Delete)
-                })
-                .collect(),
-        );
+        self.buffer.updates.extend(records.into_iter().map(|r| {
+            let v = V::from(r);
+            Tup2((self.value_key_func)(&v), Update::Delete)
+        }));
 
         Ok(())
     }
 
     fn fork(&self) -> Box<dyn ArrowStream> {
         Box::new(Self::new(
-            self.handle.clone(),
+            self.buffer.handle.clone(),
             self.value_key_func.clone(),
             self.config.clone(),
         ))
     }
 }
 
+impl<K, KD, V, VD, U, VF, C> InputBuffer for ArrowMapStream<K, KD, V, VD, U, VF, C>
+where
+    C: Clone + Send + 'static,
+    K: DBData + From<KD>,
+    KD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    V: DBData + From<VD>,
+    VD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    U: DBData,
+    VF: Fn(&V) -> K + Clone + Send + 'static,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        self.buffer.flush(n)
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take()
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
+    }
+}
+
 /// `AvroStream` implementation that collects deserialized records
 /// into a map.
 #[cfg(feature = "with-avro")]
-pub struct AvroMapStream<K, KD, V, VD, U, VF> {
+pub struct AvroMapStream<K, KD, V, VD, U, VF>
+where
+    K: DBData,
+    U: DBData,
+    V: DBData,
+{
+    buffer: DeMapStreamBuffer<K, V, U>,
     value_key_func: VF,
-    handle: MapHandle<K, V, U>,
     phantom: PhantomData<(KD, VD)>,
 }
 
 #[cfg(feature = "with-avro")]
 impl<K, KD, V, VD, U, VF> Clone for AvroMapStream<K, KD, V, VD, U, VF>
 where
+    K: DBData,
+    U: DBData,
+    V: DBData,
     VF: Clone,
 {
     fn clone(&self) -> Self {
-        Self {
-            value_key_func: self.value_key_func.clone(),
-            handle: self.handle.clone(),
-            phantom: PhantomData,
-        }
+        Self::new(self.buffer.handle.clone(), self.value_key_func.clone())
     }
 }
 
 #[cfg(feature = "with-avro")]
-impl<K, KD, V, VD, U, VF> AvroMapStream<K, KD, V, VD, U, VF> {
+impl<K, KD, V, VD, U, VF> AvroMapStream<K, KD, V, VD, U, VF>
+where
+    K: DBData,
+    U: DBData,
+    V: DBData,
+{
     pub fn new(handle: MapHandle<K, V, U>, value_key_func: VF) -> Self {
         Self {
+            buffer: DeMapStreamBuffer::new(handle),
             value_key_func,
-            handle,
             phantom: PhantomData,
         }
     }
@@ -1157,8 +1415,9 @@ where
             from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         let val = V::from(v);
-        self.handle
-            .push((self.value_key_func)(&val), Update::Insert(val));
+        self.buffer
+            .updates
+            .push(Tup2((self.value_key_func)(&val), Update::Insert(val)));
 
         Ok(())
     }
@@ -1168,14 +1427,38 @@ where
             from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         let val = V::from(v);
-        self.handle
-            .push((self.value_key_func)(&val), Update::Delete);
+        self.buffer
+            .updates
+            .push(Tup2((self.value_key_func)(&val), Update::Delete));
 
         Ok(())
     }
 
     fn fork(&self) -> Box<dyn AvroStream> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(feature = "with-avro")]
+impl<K, KD, V, VD, U, VF> InputBuffer for AvroMapStream<K, KD, V, VD, U, VF>
+where
+    K: DBData + From<KD>,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    V: DBData + From<VD>,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    U: DBData,
+    VF: Fn(&V) -> K + Clone + Send + 'static,
+{
+    fn flush(&mut self, n: usize) -> usize {
+        self.buffer.flush(n)
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.buffer.take()
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
     }
 }
 
@@ -1430,9 +1713,9 @@ mod test {
             }
         }
 
-        zset_stream.flush();
-        set_stream.flush();
-        map_stream.flush();
+        zset_stream.flush_all();
+        set_stream.flush_all();
+        map_stream.flush_all();
 
         dbsp.step().unwrap();
 
@@ -1485,14 +1768,14 @@ mod test {
             let input = to_json_string(input).unwrap();
 
             zset_input.delete(input.as_bytes()).unwrap();
-            zset_input.flush();
+            zset_input.flush_all();
 
             set_input.delete(input.as_bytes()).unwrap();
-            set_input.flush();
+            set_input.flush_all();
 
             let input_id = to_json_string(&id).unwrap();
             map_input.delete(input_id.as_bytes()).unwrap();
-            map_input.flush();
+            map_input.flush_all();
         }
 
         dbsp.step().unwrap();

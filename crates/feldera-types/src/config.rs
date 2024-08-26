@@ -20,10 +20,16 @@ use std::{borrow::Cow, collections::BTreeMap};
 use utoipa::ToSchema;
 
 /// Default value of `ConnectorConfig::max_queued_records`.
-/// It is declared as a function and not as a constant, so it can
-/// be used in `#[serde(default="default_max_queued_records")]`.
-pub(crate) const fn default_max_queued_records() -> u64 {
+pub const fn default_max_queued_records() -> u64 {
     1_000_000
+}
+
+/// Default maximum batch size for connectors, in records.
+///
+/// If you change this then update the comment on
+/// [ConnectorConfig::max_batch_size].
+pub const fn default_max_batch_size() -> u64 {
+    10_000
 }
 
 /// Default number of DBSP worker threads.
@@ -272,6 +278,23 @@ pub struct ConnectorConfig {
     /// Output buffer configuration.
     #[serde(flatten)]
     pub output_buffer_config: OutputBufferConfig,
+
+    /// Maximum batch size, in records.
+    ///
+    /// This is the maximum number of records to process in one batch through
+    /// the circuit.  The time and space cost of processing a batch is
+    /// asymptotically superlinear in the size of the batch, but very small
+    /// batches are less efficient due to constant factors.
+    ///
+    /// This should usually be less than `max_queued_records`, to give the
+    /// connector a round-trip time to restart and refill the buffer while
+    /// batches are being processed.
+    ///
+    /// Some input adapters might not honor this setting.
+    ///
+    /// The default is 10,000.
+    #[serde(default = "default_max_batch_size")]
+    pub max_batch_size: u64,
 
     /// Backpressure threshold.
     ///

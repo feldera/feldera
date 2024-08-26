@@ -2113,6 +2113,12 @@
                 ],
                 "nullable": true
               },
+              "max_batch_size": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Maximum batch size, in records.\n\nThis is the maximum number of records to process in one batch through\nthe circuit.  The time and space cost of processing a batch is\nasymptotically superlinear in the size of the batch, but very small\nbatches are less efficient due to constant factors.\n\nThis should usually be less than `max_queued_records`, to give the\nconnector a round-trip time to restart and refill the buffer while\nbatches are being processed.\n\nSome input adapters might not honor this setting.\n\nThe default is 10,000.",
+                "minimum": 0
+              },
               "max_queued_records": {
                 "type": "integer",
                 "format": "int64",
@@ -3056,7 +3062,7 @@
             "type": "integer",
             "format": "int64",
             "description": "Number of events to generate and submit together.",
-            "default": 40000,
+            "default": 4000,
             "minimum": 0
           },
           "events": {
@@ -3066,10 +3072,12 @@
             "default": 100000000,
             "minimum": 0
           },
-          "synchronize_threads": {
-            "type": "boolean",
-            "description": "Whether to synchronize event generator threads after submitting each\nbatch.\n\nIf true (which is the default), then the event generator threads will\nsubmit data in lockstep, clustering their event sequence numbers. If\nfalse, scheduling can cause some threads to get ahead of others.",
-            "default": true
+          "max_step_size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum number of events to submit in a single step.  This should be a\nmultiple of `batch_size`.\n\nThis stands in for `max_batch_size` from the connector configuration\nbecause it must be a constant across all three of the nexmark tables.",
+            "default": 4000000,
+            "minimum": 0
           },
           "threads": {
             "type": "integer",

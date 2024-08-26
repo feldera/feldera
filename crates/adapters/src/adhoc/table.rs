@@ -190,18 +190,18 @@ impl DataSink for AdHocTableSink {
             .configure_arrow_deserializer(SqlSerdeConfig::default())
             .map_err(|e| DataFusionError::External(e.into()))?;
 
-        let mut row_count = 0;
         while let Some(batch) = data.next().await.transpose()? {
             arrow_inserter
                 .insert(&batch)
                 .map_err(|e| DataFusionError::External(e.into()))?;
-            row_count += batch.num_rows();
         }
+        let row_count = arrow_inserter.len();
 
         // If we have a controller, we wait for the circuit to step.
         // This is necessary to ensure that the data is available for subsequent queries.
         if let Some(controller) = self.controller.upgrade() {
             controller.input_batch(None, row_count);
+            arrow_inserter.flush_all();
             controller.request_step();
             let total_input = controller.status.num_total_input_records();
 

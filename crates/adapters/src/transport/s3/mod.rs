@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
 use log::error;
@@ -7,7 +10,10 @@ use tokio::sync::{
     watch::{channel, Receiver, Sender},
 };
 
-use crate::{InputConsumer, InputReader, PipelineState, TransportInputEndpoint};
+use crate::{
+    format::{flush_vecdeque_queue, InputBuffer},
+    InputConsumer, InputReader, Parser, PipelineState, TransportInputEndpoint,
+};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::program_schema::Relation;
 #[cfg(test)]
@@ -38,10 +44,11 @@ impl TransportInputEndpoint for S3InputEndpoint {
     fn open(
         &self,
         consumer: Box<dyn crate::InputConsumer>,
+        parser: Box<dyn Parser>,
         _start_step: super::Step,
         _schema: Relation,
     ) -> anyhow::Result<Box<dyn crate::InputReader>> {
-        Ok(Box::new(S3InputReader::new(&self.config, consumer)))
+        Ok(Box::new(S3InputReader::new(&self.config, consumer, parser)))
     }
 }
 
@@ -117,6 +124,7 @@ trait S3Api: Send {
 
 struct S3InputReader {
     sender: Sender<PipelineState>,
+    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
 }
 
 impl InputReader for S3InputReader {
@@ -133,6 +141,10 @@ impl InputReader for S3InputReader {
     fn disconnect(&self) {
         self.sender.send_replace(PipelineState::Terminated);
     }
+
+    fn flush(&self, n: usize) -> usize {
+        flush_vecdeque_queue(&self.queue, n)
+    }
 }
 
 impl Drop for S3InputReader {
@@ -142,35 +154,53 @@ impl Drop for S3InputReader {
 }
 
 impl S3InputReader {
-    fn new(config: &Arc<S3InputConfig>, consumer: Box<dyn InputConsumer>) -> S3InputReader {
+    fn new(
+        config: &Arc<S3InputConfig>,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+    ) -> S3InputReader {
         let s3_config = to_s3_config(config);
         let client = Box::new(S3Client {
             inner: aws_sdk_s3::Client::from_conf(s3_config),
         }) as Box<dyn S3Api>;
-        Self::new_inner(config, consumer, client)
+        Self::new_inner(config, consumer, parser, client)
     }
 
     fn new_inner(
         config: &Arc<S3InputConfig>,
-        mut consumer: Box<dyn InputConsumer>,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
         s3_client: Box<dyn S3Api>,
     ) -> S3InputReader {
         let (sender, receiver) = channel(PipelineState::Paused);
         let config_clone = config.clone();
         let receiver_clone = receiver.clone();
-        std::thread::spawn(move || {
-            TOKIO.block_on(async {
-                let _ =
-                    Self::worker_task(s3_client, config_clone, &mut consumer, receiver_clone).await;
-            })
+        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        std::thread::spawn({
+            let queue = queue.clone();
+            move || {
+                TOKIO.block_on(async {
+                    let _ = Self::worker_task(
+                        s3_client,
+                        config_clone,
+                        consumer,
+                        parser,
+                        queue,
+                        receiver_clone,
+                    )
+                    .await;
+                })
+            }
         });
-        S3InputReader { sender }
+        S3InputReader { sender, queue }
     }
 
     async fn worker_task(
         client: Box<dyn S3Api>,
         config: Arc<S3InputConfig>,
-        consumer: &mut Box<dyn InputConsumer>,
+        mut consumer: Box<dyn InputConsumer>,
+        mut parser: Box<dyn Parser>,
+        queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
         mut receiver: Receiver<PipelineState>,
     ) -> anyhow::Result<()> {
         // The worker thread fetches objects in the background while already retrieved
@@ -228,7 +258,7 @@ impl S3InputReader {
                                     match consume_strategy {
                                         ConsumeStrategy::Fragment => match object.body.next().await {
                                             Some(Ok(bytes)) => {
-                                                consumer.input_fragment(&bytes);
+                                                parser.input_fragment(&bytes);
                                             }
                                             None => break,
                                             Some(Err(e)) => consumer.error(false, e.into())
@@ -236,10 +266,13 @@ impl S3InputReader {
                                         ConsumeStrategy::Object =>
                                             match object.body.collect().await.map(|c| c.into_bytes()) {
                                                 Ok(bytes) => {
-                                                    consumer.input_chunk(&bytes);
+                                                    parser.input_chunk(&bytes);
                                                 }
                                                 Err(e) => consumer.error(false, e.into())
                                         }
+                                    }
+                                    if let Some(buffer) = parser.take() {
+                                        queue.lock().unwrap().push_back(buffer);
                                     }
                                 }
                                 Some(Err(e)) => {
@@ -287,7 +320,7 @@ fn to_s3_config(config: &Arc<S3InputConfig>) -> aws_sdk_s3::Config {
 #[cfg(test)]
 mod test {
     use crate::{
-        test::{mock_parser_pipeline, wait, MockDeZSet, MockInputConsumer},
+        test::{mock_parser_pipeline, wait, MockDeZSet, MockInputConsumer, MockInputParser},
         transport::s3::{S3InputConfig, S3InputReader},
     };
     use aws_sdk_s3::{
@@ -359,6 +392,7 @@ format:
     ) -> (
         Box<dyn crate::InputReader>,
         MockInputConsumer,
+        MockInputParser,
         MockDeZSet<TestStruct, TestStruct>,
     ) {
         let config: InputEndpointConfig = serde_yaml::from_str(&config_str).unwrap();
@@ -369,7 +403,7 @@ format:
                 panic!("Expected S3Input transport configuration");
             }
         };
-        let (consumer, input_handle) = mock_parser_pipeline::<TestStruct, TestStruct>(
+        let (consumer, parser, input_handle) = mock_parser_pipeline::<TestStruct, TestStruct>(
             &Relation::empty(),
             &config.connector_config.format.unwrap(),
         )
@@ -378,22 +412,26 @@ format:
         let reader = Box::new(S3InputReader::new_inner(
             &transport_config,
             Box::new(consumer.clone()),
+            Box::new(parser.clone()),
             Box::new(mock),
         )) as Box<dyn crate::InputReader>;
-        (reader, consumer, input_handle)
+        (reader, consumer, parser, input_handle)
     }
 
     fn run_test(config_str: &str, mock: super::MockS3Client, test_data: Vec<TestStruct>) {
-        let (reader, consumer, input_handle) = test_setup(config_str, mock);
+        let (reader, consumer, parser, input_handle) = test_setup(config_str, mock);
         let _ = reader.pause();
         // No outputs should be produced at this point.
-        assert!(consumer.state().data.is_empty());
+        assert!(parser.state().data.is_empty());
         assert!(!consumer.state().eoi);
 
         // Unpause the endpoint, wait for the data to appear at the output.
         reader.start(0).unwrap();
         wait(
-            || input_handle.state().flushed.len() == test_data.len(),
+            || {
+                reader.flush_all();
+                input_handle.state().flushed.len() == test_data.len()
+            },
             10000,
         )
         .unwrap();
@@ -487,22 +525,34 @@ format:
             .with(eq("test-bucket"), eq(""), eq(&None))
             .return_once(|_, _, _| Ok((objs, None)));
         let test_data: Vec<TestStruct> = (0..1000).map(|i| TestStruct { i }).collect();
-        let (reader, _, input_handle) = test_setup(MULTI_KEY_CONFIG_STR, mock);
+        let (reader, _consumer, _parser, input_handle) = test_setup(MULTI_KEY_CONFIG_STR, mock);
         reader.start(0).unwrap();
         // Pause after 50 rows are recorded.
-        wait(|| input_handle.state().flushed.len() > 50, 10000).unwrap();
+        wait(
+            || {
+                reader.flush_all();
+                input_handle.state().flushed.len() > 50
+            },
+            10000,
+        )
+        .unwrap();
         let _ = reader.pause();
         // Wait a few milliseconds for the worker to pause and write any WIP object
         std::thread::sleep(Duration::from_millis(10));
+        reader.flush_all();
         let n = input_handle.state().flushed.len();
         // Wait a few more milliseconds and make sure no more entries were written
         std::thread::sleep(Duration::from_millis(100));
+        reader.flush_all();
         assert_eq!(n, input_handle.state().flushed.len());
         assert_ne!(input_handle.state().flushed.len(), test_data.len());
         // Resume to completion
         reader.start(0).unwrap();
         wait(
-            || input_handle.state().flushed.len() == test_data.len(),
+            || {
+                reader.flush_all();
+                input_handle.state().flushed.len() == test_data.len()
+            },
             10000,
         )
         .unwrap();
@@ -521,7 +571,7 @@ format:
             .return_once(|_, _, _| {
                 Err(ListObjectsV2Error::NoSuchBucket(NoSuchBucketBuilder::default().build()).into())
             });
-        let (reader, consumer, _) = test_setup(MULTI_KEY_CONFIG_STR, mock);
+        let (reader, consumer, _parser, _) = test_setup(MULTI_KEY_CONFIG_STR, mock);
         let (tx, rx) = std::sync::mpsc::channel();
         consumer.on_error(Some(Box::new(move |fatal, err| {
             tx.send((fatal, format!("{err}"))).unwrap()

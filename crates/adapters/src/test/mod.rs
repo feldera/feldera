@@ -45,7 +45,7 @@ use dbsp::utils::Tup2;
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{Field, Relation};
 pub use mock_dezset::{wait_for_output_ordered, wait_for_output_unordered, MockDeZSet, MockUpdate};
-pub use mock_input_consumer::MockInputConsumer;
+pub use mock_input_consumer::{MockInputConsumer, MockInputParser};
 pub use mock_output_consumer::MockOutputConsumer;
 
 pub struct TestLogger;
@@ -96,17 +96,18 @@ where
 pub fn mock_parser_pipeline<T, U>(
     schema: &Relation,
     config: &FormatConfig,
-) -> AnyResult<(MockInputConsumer, MockDeZSet<T, U>)>
+) -> AnyResult<(MockInputConsumer, MockInputParser, MockDeZSet<T, U>)>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     let input_handle = <MockDeZSet<T, U>>::new();
-    let consumer = MockInputConsumer::from_handle(
+    let consumer = MockInputConsumer::new();
+    let parser = MockInputParser::from_handle(
         &InputCollectionHandle::new(schema.clone(), input_handle.clone()),
         config,
     );
-    Ok((consumer, input_handle))
+    Ok((consumer, parser, input_handle))
 }
 
 /// Build an input pipeline that allows testing a transport endpoint and parser
@@ -124,7 +125,12 @@ where
 pub fn mock_input_pipeline<T, U>(
     config: InputEndpointConfig,
     relation: Relation,
-) -> AnyResult<(Box<dyn InputReader>, MockInputConsumer, MockDeZSet<T, U>)>
+) -> AnyResult<(
+    Box<dyn InputReader>,
+    MockInputConsumer,
+    MockInputParser,
+    MockDeZSet<T, U>,
+)>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
@@ -139,7 +145,7 @@ where
         .unwrap(),
     };
 
-    let (consumer, input_handle) = mock_parser_pipeline(
+    let (consumer, parser, input_handle) = mock_parser_pipeline(
         &relation,
         config
             .connector_config
@@ -151,9 +157,14 @@ where
     let endpoint =
         input_transport_config_to_endpoint(config.connector_config.transport.clone())?.unwrap();
 
-    let reader = endpoint.open(Box::new(consumer.clone()), 0, relation)?;
+    let reader = endpoint.open(
+        Box::new(consumer.clone()),
+        Box::new(parser.clone()),
+        0,
+        relation,
+    )?;
 
-    Ok((reader, consumer, input_handle))
+    Ok((reader, consumer, parser, input_handle))
 }
 
 /// Create a simple test circuit that passes the input stream right through to
@@ -240,6 +251,7 @@ where
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).unwrap();
     let (_, errors) = parser.input_chunk(&bytes);
+    parser.flush_all();
 
     // Use assert_eq, so errors are printed in case of a failure.
     assert_eq!(errors, vec![]);

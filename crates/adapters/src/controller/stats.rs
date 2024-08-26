@@ -138,9 +138,15 @@ impl GlobalControllerMetrics {
             .fetch_add(num_records, Ordering::AcqRel)
     }
 
-    fn consume_buffered_inputs(&self) {
-        self.buffered_input_records.store(0, Ordering::Release);
+    pub(crate) fn consume_buffered_inputs(&self, num_records: u64) {
+        self.buffered_input_records
+            .fetch_sub(num_records, Ordering::Release);
         self.step_requested.store(false, Ordering::Release);
+    }
+
+    pub(crate) fn processed_records(&self, num_records: u64) -> u64 {
+        self.total_processed_records
+            .fetch_add(num_records, Ordering::AcqRel)
     }
 
     fn num_buffered_input_records(&self) -> u64 {
@@ -153,11 +159,6 @@ impl GlobalControllerMetrics {
 
     fn num_total_processed_records(&self) -> u64 {
         self.total_processed_records.load(Ordering::Acquire)
-    }
-
-    fn set_num_total_processed_records(&self, total_processed_records: u64) {
-        self.total_processed_records
-            .store(total_processed_records, Ordering::Release);
     }
 
     fn step_requested(&self) -> bool {
@@ -209,7 +210,7 @@ pub struct ControllerStatus {
 
     /// Input endpoint configs and metrics.
     #[serde(serialize_with = "serialize_inputs")]
-    inputs: InputsStatus,
+    pub(crate) inputs: InputsStatus,
 
     /// Output endpoint configs and metrics.
     #[serde(serialize_with = "serialize_outputs")]
@@ -472,11 +473,6 @@ impl ControllerStatus {
         self.global_metrics.num_total_processed_records()
     }
 
-    pub fn set_num_total_processed_records(&self, total_processed_records: u64) {
-        self.global_metrics
-            .set_num_total_processed_records(total_processed_records);
-    }
-
     pub fn step_requested(&self) -> bool {
         self.global_metrics.step_requested()
     }
@@ -510,18 +506,6 @@ impl ControllerStatus {
                 .metrics
                 .buffered_records
                 .load(Ordering::Acquire),
-        }
-    }
-
-    /// Reset all buffered record and byte counters to zero.
-    ///
-    /// This method is invoked before `DBSPHandle::step` to indicate that all
-    /// buffered data is about to be consumed.  See module-level documentation
-    /// for details.
-    pub fn consume_buffered_inputs(&self) {
-        self.global_metrics.consume_buffered_inputs();
-        for endpoint_stats in self.inputs.read().unwrap().values() {
-            endpoint_stats.consume_buffered();
         }
     }
 
@@ -618,26 +602,8 @@ impl ControllerStatus {
     /// * `circuit_thread_unparker` - unparker used to wake up the circuit
     ///   thread if the total number of buffered records exceeds
     ///   `min_batch_size_records`.
-    pub fn eoi(
-        &self,
-        endpoint_id: EndpointId,
-        num_records: usize,
-        circuit_thread_unparker: &Unparker,
-    ) {
-        let num_records = num_records as u64;
-
-        // Increment `buffered_input_records` and `total_input_records`; unpark
-        // circuit thread if `min_batch_size_records` exceeded.
-        //
-        // Note: we increment `total_input_records` _before_ setting the `eoi` flag on
-        // the endpoint to guarantee that `total_input_records` reflects the
-        // final number of inputs records when all endpoints are marked as
-        // finished.
-        let old = self.global_metrics.input_batch(num_records);
-        if old == 0
-            || old <= self.pipeline_config.global.min_batch_size_records
-                && old + num_records > self.pipeline_config.global.min_batch_size_records
-        {
+    pub fn eoi(&self, endpoint_id: EndpointId, circuit_thread_unparker: &Unparker) {
+        if self.global_metrics.num_buffered_input_records() == 0 {
             circuit_thread_unparker.unpark();
         }
 
@@ -645,7 +611,7 @@ impl ControllerStatus {
         // won't see any more inputs from this endpoint.
         let inputs = self.inputs.read().unwrap();
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-            endpoint_stats.eoi(num_records);
+            endpoint_stats.eoi();
         };
     }
 
@@ -915,9 +881,11 @@ impl InputEndpointStatus {
         }
     }
 
-    fn consume_buffered(&self) {
+    pub(crate) fn consume_buffered(&self, num_records: u64) {
         self.metrics.buffered_bytes.store(0, Ordering::Release);
-        self.metrics.buffered_records.store(0, Ordering::Release);
+        self.metrics
+            .buffered_records
+            .fetch_sub(num_records, Ordering::Release);
     }
 
     /// Increment the number of buffered bytes and records; return
@@ -942,8 +910,7 @@ impl InputEndpointStatus {
             .fetch_add(num_records, Ordering::AcqRel)
     }
 
-    fn eoi(&self, num_records: u64) {
-        self.add_buffered(0, num_records);
+    fn eoi(&self) {
         self.metrics.end_of_input.store(true, Ordering::Release);
     }
 

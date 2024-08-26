@@ -1,3 +1,4 @@
+use crate::format::InputBuffer;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
     test::{
@@ -6,8 +7,9 @@ use crate::{
         mock_input_pipeline, test_circuit, wait, MockDeZSet, TestStruct, DEFAULT_TIMEOUT_MS,
     },
     transport::Step,
-    Controller, InputConsumer, ParseError, PipelineConfig,
+    Controller, InputConsumer, PipelineConfig,
 };
+use crate::{InputReader, ParseError, Parser};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use env_logger::Env;
@@ -27,11 +29,18 @@ use std::{
 use uuid::Uuid;
 
 /// Wait to receive all records in `data` in the same order.
-fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[Vec<TestStruct>]) {
+fn wait_for_output_ordered(
+    endpoint: &Box<dyn InputReader>,
+    zset: &MockDeZSet<TestStruct, TestStruct>,
+    data: &[Vec<TestStruct>],
+) {
     let num_records: usize = data.iter().map(Vec::len).sum();
 
     wait(
-        || zset.state().flushed.len() == num_records,
+        || {
+            endpoint.flush_all();
+            zset.state().flushed.len() == num_records
+        },
         DEFAULT_TIMEOUT_MS,
     )
     .unwrap();
@@ -42,11 +51,18 @@ fn wait_for_output_ordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[Ve
 }
 
 /// Wait to receive all records in `data` in some order.
-fn wait_for_output_unordered(zset: &MockDeZSet<TestStruct, TestStruct>, data: &[Vec<TestStruct>]) {
+fn wait_for_output_unordered(
+    endpoint: &Box<dyn InputReader>,
+    zset: &MockDeZSet<TestStruct, TestStruct>,
+    data: &[Vec<TestStruct>],
+) {
     let num_records: usize = data.iter().map(Vec::len).sum();
 
     wait(
-        || zset.state().flushed.len() == num_records,
+        || {
+            endpoint.flush_all();
+            zset.state().flushed.len() == num_records
+        },
         DEFAULT_TIMEOUT_MS,
     )
     .unwrap();
@@ -263,7 +279,7 @@ config:
     info!("trying to read read step 0 (should time out)");
     let receiver = DummyInputReceiver::new();
     let reader = endpoint
-        .open(receiver.consumer(), 0, Relation::empty())
+        .open(receiver.consumer(), receiver.parser(), 0, Relation::empty())
         .unwrap();
     reader.start(Step::MAX).unwrap();
     receiver.expect(vec![ConsumerCall::StartStep(0)]);
@@ -297,7 +313,12 @@ config:
     // available.
     let receiver2 = DummyInputReceiver::new();
     let reader2 = endpoint
-        .open(receiver2.consumer(), 0, Relation::empty())
+        .open(
+            receiver2.consumer(),
+            receiver2.parser(),
+            0,
+            Relation::empty(),
+        )
         .unwrap();
     reader2.start(step + 1).unwrap();
     for step in 0..=step {
@@ -339,7 +360,7 @@ config:
     info!("trying to read read step 0 (should time out)");
     let receiver = DummyInputReceiver::new();
     let reader = endpoint
-        .open(receiver.consumer(), 0, Relation::empty())
+        .open(receiver.consumer(), receiver.parser(), 0, Relation::empty())
         .unwrap();
     reader.start(0).unwrap();
     receiver.expect(vec![ConsumerCall::StartStep(0)]);
@@ -497,6 +518,10 @@ impl DummyInputReceiver {
     pub fn consumer(&self) -> Box<dyn InputConsumer> {
         Box::new(DummyInputConsumer(self.inner.clone()))
     }
+
+    pub fn parser(&self) -> Box<dyn Parser> {
+        Box::new(DummyInputConsumer(self.inner.clone()))
+    }
 }
 
 #[derive(Clone)]
@@ -514,25 +539,12 @@ impl InputConsumer for DummyInputConsumer {
     fn start_step(&mut self, step: Step) {
         self.called(ConsumerCall::StartStep(step));
     }
-    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.called(ConsumerCall::InputFragment(
-            String::from_utf8(data.into()).unwrap(),
-        ));
-        vec![]
-    }
-    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.called(ConsumerCall::InputChunk(
-            String::from_utf8(data.into()).unwrap(),
-        ));
-        vec![]
-    }
     fn error(&mut self, fatal: bool, error: AnyError) {
         info!("error: {error}");
         self.called(ConsumerCall::Error(fatal));
     }
-    fn eoi(&mut self) -> Vec<ParseError> {
+    fn eoi(&mut self) {
         self.called(ConsumerCall::Eoi);
-        vec![]
     }
     fn committed(&mut self, step: Step) {
         info!("step {step} committed");
@@ -542,6 +554,43 @@ impl InputConsumer for DummyInputConsumer {
         }
         *completed = Some(step);
         self.0.unparker.unpark();
+    }
+}
+
+impl Parser for DummyInputConsumer {
+    fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+        self.called(ConsumerCall::InputFragment(
+            String::from_utf8(data.into()).unwrap(),
+        ));
+        (0, vec![])
+    }
+    fn input_chunk(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+        self.called(ConsumerCall::InputChunk(
+            String::from_utf8(data.into()).unwrap(),
+        ));
+        (0, vec![])
+    }
+    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
+        self.called(ConsumerCall::Eoi);
+        (0, vec![])
+    }
+
+    fn fork(&self) -> Box<dyn Parser> {
+        todo!()
+    }
+}
+
+impl InputBuffer for DummyInputConsumer {
+    fn flush(&mut self, _n: usize) -> usize {
+        todo!()
+    }
+
+    fn len(&self) -> usize {
+        todo!()
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        None
     }
 }
 
@@ -652,7 +701,7 @@ format:
 "#
     );
 
-    let (reader, consumer, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
+    let (reader, consumer, _parser, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
@@ -679,7 +728,7 @@ format:
     name: csv
 "#;
 
-    let (reader, consumer, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
+    let (reader, consumer, _parser, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(config_str).unwrap(),
         Relation::empty(),
     )
@@ -708,7 +757,7 @@ format:
 
     info!("proptest_kafka_input: Building input pipeline");
 
-    let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
+    let (endpoint, _consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
@@ -732,7 +781,7 @@ format:
     // Make sure all records arrive in the original order.
     producer.send_to_topic(&data, topic1);
 
-    wait_for_output_ordered(&zset, &data);
+    wait_for_output_ordered(&endpoint, &zset, &data);
     zset.reset();
 
     info!("proptest_kafka_input: Test: Receive from a topic with multiple partitions");
@@ -742,7 +791,7 @@ format:
     // order.
     producer.send_to_topic(&data, topic2);
 
-    wait_for_output_unordered(&zset, &data);
+    wait_for_output_unordered(&endpoint, &zset, &data);
     zset.reset();
 
     info!("proptest_kafka_input: Test: pause/resume");
@@ -758,7 +807,7 @@ format:
 
     // Receive everything after unpause.
     endpoint.start(0).unwrap();
-    wait_for_output_unordered(&zset, &data);
+    wait_for_output_unordered(&endpoint, &zset, &data);
 
     zset.reset();
 
@@ -769,6 +818,7 @@ format:
 
     producer.send_to_topic(&data, topic1);
     sleep(Duration::from_millis(1000));
+    endpoint.flush_all();
     assert_eq!(zset.state().flushed.len(), 0);
 }
 

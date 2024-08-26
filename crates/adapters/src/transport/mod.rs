@@ -20,7 +20,7 @@
 //! let endpoint = input_transport_config_to_endpoint(config.clone());
 //! let reader = endpoint.open(consumer, 0);
 //! ```
-use crate::format::ParseError;
+use crate::Parser;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use dyn_clone::DynClone;
 #[cfg(feature = "with-pubsub")]
@@ -178,6 +178,7 @@ pub trait TransportInputEndpoint: InputEndpoint {
     fn open(
         &self,
         consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
         start_step: Step,
         schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>>;
@@ -199,24 +200,12 @@ pub trait IntegratedInputEndpoint: InputEndpoint {
 /// reading.
 pub trait InputReader: Send {
     /// Start or resume the endpoint.
-    ///
-    /// The endpoint must start receiving data and pushing it downstream to the
-    /// consumer passed to [`TransportInputEndpoint::open`].
-    ///
-    /// A fault-tolerant endpoint must not push data for a step greater than
-    /// `step`.  If `step` completes, then it must still report it by calling
-    /// `InputConsumer::start_step(step + 1)`, but it must not subsequently call
-    /// [`InputConsumer::input_fragment`] or [`InputConsumer::input_chunk`]
-    /// before the client calls [`InputReader::start(step + 1)`].
-    ///
-    /// A non-fault-tolerant endpoint may ignore `step`.
     fn start(&self, step: Step) -> AnyResult<()>;
 
-    /// Pause the endpoint.
+    /// Pause the endpoint.  The endpoint should stop reading additional data.
     ///
-    /// The endpoint must stop pushing data downstream.  This method may
-    /// return before the dataflow has been fully paused, i.e., few additional
-    /// data buffers may be pushed downstream before the endpoint goes quiet.
+    /// This allows the controller to manage memory consumption and respond to
+    /// user requests to pause the circuit or the endpoint.
     fn pause(&self) -> AnyResult<()>;
 
     /// Requests that the endpoint completes steps up to `_step`.  This is
@@ -226,6 +215,17 @@ pub trait InputReader: Send {
     /// might, for example, limit the size of a single step and therefore
     /// complete once a step fills up to the maximum size.
     fn complete(&self, _step: Step) {}
+
+    /// A reader reads records into an internal buffer.  This method requests
+    /// the reader to write the `n` oldest of those records to the input handle
+    /// (or as many as it has if that is less than `n`).  Some endpoints might
+    /// have to write records in groups, so that they actually write more than
+    /// `n`.  In any case, this method returns the number actually written.
+    fn flush(&self, n: usize) -> usize;
+
+    fn flush_all(&self) -> usize {
+        self.flush(usize::MAX)
+    }
 
     /// Disconnect the endpoint.
     ///
@@ -263,29 +263,6 @@ pub trait InputConsumer: Send + DynClone {
     /// Indicates that upcoming calls are for `step`.
     fn start_step(&mut self, step: Step);
 
-    /// Push a fragment of the input stream to the consumer.
-    ///
-    /// `data` is not guaranteed to start or end on a record boundary.
-    /// The parser is responsible for identifying record boundaries and
-    /// buffering incomplete records to get prepended to the next
-    /// input fragment.
-    ///
-    /// A fault-tolerant input transport keeps the order of fragments the same
-    /// for a given step from one read to the next.
-    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError>;
-
-    /// Push a chunk of data to the consumer.
-    ///
-    /// The chunk is expected to contain complete records only.
-    ///
-    /// Some data in a fault-tolerant input transport might not have an
-    /// inherently defined order within a step.  The input endpoint may shuffle
-    /// unordered chunks within a step from one read to the next.  For example,
-    /// the fault-tolerant Kafka reader will provide chunks from a given Kafka
-    /// partition in the same order on each read, but it might interleave chunks
-    /// from different partitions differently each time.
-    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError>;
-
     /// Steps numbered less than `step` been durably recorded.  (If recording a
     /// step fails, then [`InputConsumer::error`] is called instead.)
     fn committed(&mut self, step: Step);
@@ -298,7 +275,7 @@ pub trait InputConsumer: Send + DynClone {
     /// End-of-input-stream notification.
     ///
     /// No more data will be received from the endpoint.
-    fn eoi(&mut self) -> Vec<ParseError>;
+    fn eoi(&mut self);
 }
 
 dyn_clone::clone_trait_object!(InputConsumer);

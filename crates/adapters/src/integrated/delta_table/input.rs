@@ -1,5 +1,6 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::controller::{ControllerInner, EndpointId};
+use crate::format::{flush_vecdeque_queue, InputBuffer};
 use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
 use crate::transport::{InputEndpoint, IntegratedInputEndpoint, Step};
 use crate::{
@@ -34,10 +35,10 @@ use feldera_types::transport::s3::{ReadStrategy, S3InputConfig};
 use futures_util::StreamExt;
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::format;
 use std::str::FromStr;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 use tokio::select;
 use tokio::sync::mpsc;
@@ -97,6 +98,7 @@ impl IntegratedInputEndpoint for DeltaTableInputEndpoint {
 
 struct DeltaTableInputReader {
     sender: Sender<PipelineState>,
+    inner: Arc<DeltaTableInputEndpointInner>,
 }
 
 impl DeltaTableInputReader {
@@ -136,7 +138,10 @@ impl DeltaTableInputReader {
             )
         })??;
 
-        Ok(Self { sender })
+        Ok(Self {
+            sender,
+            inner: endpoint.clone(),
+        })
     }
 
     async fn worker_task(
@@ -245,7 +250,7 @@ impl DeltaTableInputReader {
                 }
             }
         } else if let Some(controller) = endpoint.controller.upgrade() {
-            controller.eoi(endpoint.endpoint_id, 0)
+            controller.eoi(endpoint.endpoint_id)
         }
     }
 }
@@ -264,6 +269,10 @@ impl InputReader for DeltaTableInputReader {
     fn disconnect(&self) {
         self.sender.send_replace(PipelineState::Terminated);
     }
+
+    fn flush(&self, n: usize) -> usize {
+        flush_vecdeque_queue(&self.inner.queue, n)
+    }
 }
 
 impl Drop for DeltaTableInputReader {
@@ -278,6 +287,7 @@ struct DeltaTableInputEndpointInner {
     config: DeltaTableReaderConfig,
     controller: Weak<ControllerInner>,
     datafusion: SessionContext,
+    queue: Mutex<VecDeque<Box<dyn InputBuffer>>>,
 }
 
 impl DeltaTableInputEndpointInner {
@@ -293,6 +303,7 @@ impl DeltaTableInputEndpointInner {
             config,
             controller,
             datafusion: SessionContext::new(),
+            queue: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -543,6 +554,9 @@ impl DeltaTableInputEndpointInner {
             } else {
                 input_stream.delete(&batch)
             };
+            if let Some(buffer) = input_stream.take() {
+                self.queue.lock().unwrap().push_back(buffer);
+            }
 
             match result {
                 Ok(()) => {

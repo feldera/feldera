@@ -2,6 +2,7 @@
 
 use super::{DebeziumUpdate, InsDelUpdate, WeightedUpdate};
 use crate::catalog::InputCollectionHandle;
+use crate::format::InputBuffer;
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::{InputFormat, ParseError, Parser},
@@ -246,14 +247,6 @@ impl JsonParser {
         }
     }
 
-    fn flush(&mut self) {
-        self.input_stream.flush();
-    }
-
-    fn clear(&mut self) {
-        self.input_stream.clear_buffer();
-    }
-
     fn delete(&mut self, val: &RawValue) -> Result<(), ParseError> {
         self.input_stream.delete(val.get().as_bytes()).map_err(|e| {
             ParseError::text_event_error(
@@ -307,6 +300,7 @@ impl JsonParser {
                 }
                 Ok(updates) => {
                     let mut error = false;
+                    let old_len = self.len();
                     for update in updates {
                         match update.apply(self) {
                             Err(e) => {
@@ -320,9 +314,7 @@ impl JsonParser {
                         self.last_event_number += 1;
                     }
                     if error {
-                        self.clear();
-                    } else {
-                        self.flush();
+                        self.input_stream.truncate(old_len);
                     }
                 }
             };
@@ -367,9 +359,6 @@ impl JsonParser {
                         &json_str,
                         None,
                     ));
-                    if !self.config.array {
-                        self.flush();
-                    }
                     return (num_updates, errors);
                 }
                 Ok(update) => update,
@@ -392,9 +381,6 @@ impl JsonParser {
             }
         }
 
-        if !self.config.array {
-            self.flush();
-        }
         (num_updates, errors)
     }
 }
@@ -425,7 +411,7 @@ impl Parser for JsonParser {
         self.input_from_slice(data)
     }
 
-    fn eoi(&mut self) -> (usize, Vec<ParseError>) {
+    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
         /*println!(
             "eoi: leftover: {}",
             std::str::from_utf8(&self.leftover).unwrap()
@@ -445,9 +431,24 @@ impl Parser for JsonParser {
     }
 }
 
+impl InputBuffer for JsonParser {
+    fn flush(&mut self, n: usize) -> usize {
+        self.input_stream.flush(n)
+    }
+
+    fn len(&self) -> usize {
+        self.input_stream.len()
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.input_stream.take()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
+        format::{InputBuffer, Parser},
         test::{init_test_logger, mock_parser_pipeline, MockUpdate},
         transport::InputConsumer,
         FormatConfig, ParseError,
@@ -543,19 +544,22 @@ mod test {
                 config: serde_yaml::to_value(test.config).unwrap(),
             };
 
-            let (mut consumer, outputs) =
+            let (mut consumer, mut parser, outputs) =
                 mock_parser_pipeline(&Relation::empty(), &format_config).unwrap();
             consumer.on_error(Some(Box::new(|_, _| {})));
+            parser.on_error(Some(Box::new(|_, _| {})));
             for (json, expected_result) in test.input_batches {
                 let res = if test.chunks {
-                    consumer.input_chunk(json.as_bytes())
+                    parser.input_chunk(json.as_bytes())
                 } else {
-                    consumer.input_fragment(json.as_bytes())
+                    parser.input_fragment(json.as_bytes())
                 };
-                assert_eq!(&res, &expected_result);
+                assert_eq!(&res.1, &expected_result);
             }
-            let res = consumer.eoi();
-            assert_eq!(&res, &test.final_result);
+            let res = parser.end_of_fragments();
+            assert_eq!(&res.1, &test.final_result);
+            consumer.eoi();
+            parser.flush_all();
             assert_eq!(&test.expected_output, &outputs.state().flushed);
         }
     }
