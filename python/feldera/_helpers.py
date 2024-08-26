@@ -1,4 +1,45 @@
 import pandas as pd
+from decimal import Decimal
+
+
+def sql_type_to_pandas_type(sql_type: str):
+    """
+    Converts a SQL type to a pandas type.
+    """
+
+    match sql_type.upper():
+        case 'BOOLEAN':
+            return 'boolean'
+        case 'TINYINT':
+            return 'Int8'
+        case 'SMALLINT':
+            return 'Int16'
+        case 'INTEGER':
+            return 'Int32'
+        case 'BIGINT':
+            return 'Int64'
+        case 'REAL':
+            return 'Float32'
+        case 'DOUBLE':
+            return 'Float64'
+        case 'DECIMAL':
+            return None
+        case 'CHAR':
+            return 'str'
+        case 'VARCHAR':
+            return 'str'
+        case 'DATE' | 'TIMESTAMP':
+            return 'datetime64[ns]'
+        case 'TIME' | 'INTERVAL':
+            return 'timedelta64[ns]'
+        case 'ARRAY':
+            return None
+        case 'NULL':
+            return None
+        case 'BINARY' | 'VARBINARY':
+            return None
+        case 'STRUCT' | 'MAP':
+            return None
 
 
 def ensure_dataframe_has_columns(df: pd.DataFrame):
@@ -15,14 +56,39 @@ def ensure_dataframe_has_columns(df: pd.DataFrame):
         )
 
 
-def dataframe_from_response(buffer: list[list[dict]]):
+def dataframe_from_response(buffer: list[list[dict]], schema: dict):
     """
     Converts the response from Feldera to a pandas DataFrame.
     """
-    return pd.DataFrame([
+
+    pd_schema = {}
+
+    decimal_col = []
+
+    for column in schema['fields']:
+        column_name = column['name']
+        column_type = column['columntype']['type']
+        if column_type == 'DECIMAL':
+            decimal_col.append(column_name)
+
+        pd_schema[column_name] = sql_type_to_pandas_type(column_type)
+
+    data = [
         {**item['insert'], 'insert_delete': 1} if 'insert' in item else {**item['delete'], 'insert_delete': -1}
         for sublist in buffer for item in sublist
-    ])
+    ]
+
+    if len(decimal_col) != 0:
+        for datum in data:
+            for col in decimal_col:
+                if datum[col] is not None:
+                    datum[col] = Decimal(datum[col])
+
+
+    df = pd.DataFrame(data)
+    df = df.astype(pd_schema)
+
+    return df
 
 
 def chunk_dataframe(df, chunk_size=1000):

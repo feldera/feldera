@@ -29,6 +29,7 @@ class CallbackRunner(Thread):
         self.view_name: str = view_name
         self.callback: Callable[[pd.DataFrame, int], None] = callback
         self.queue: Optional[Queue] = queue
+        self.schema: Optional[dict] = None
 
     def run(self):
         """
@@ -36,6 +37,19 @@ class CallbackRunner(Thread):
 
         :meta private:
         """
+
+        pipeline = self.client.get_pipeline(self.pipeline_name)
+        schema = pipeline.program_info["schema"]
+
+        if schema:
+            schemas = [relation for relation in schema["inputs"] + schema["outputs"]]
+            for schema in schemas:
+                if schema["name"] == self.view_name:
+                    self.schema = schema
+                    break
+
+        if self.schema is None:
+            raise ValueError(f"Table or View {self.view_name} not found in the pipeline schema.")
 
         # by default, we assume that the pipeline has been started
         ack: _CallbackRunnerInstruction = _CallbackRunnerInstruction.PipelineStarted
@@ -65,7 +79,7 @@ class CallbackRunner(Thread):
                     seq_no: int = chunk.get("sequence_number")
 
                     if data is not None:
-                        self.callback(dataframe_from_response([data]), seq_no)
+                        self.callback(dataframe_from_response([data], schema), seq_no)
 
                     if self.queue:
                         try:
