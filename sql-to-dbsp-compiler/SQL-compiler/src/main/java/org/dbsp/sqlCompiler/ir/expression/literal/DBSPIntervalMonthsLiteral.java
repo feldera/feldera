@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPIntervalMonthsLiteral
@@ -63,6 +64,13 @@ public final class DBSPIntervalMonthsLiteral
     public boolean gt0() {
         assert this.value != null;
         return this.value > 0;
+    }
+
+    @Override
+    public IsNumericLiteral negate() {
+        if (this.value == null)
+            return this;
+        return new DBSPIntervalMonthsLiteral(this.getNode(), this.type, Math.negateExact(this.value));
     }
 
     @Override
@@ -109,10 +117,13 @@ public final class DBSPIntervalMonthsLiteral
     }
 
     @Override
-    public IsIntervalLiteral multiply(long value) {
+    public IsIntervalLiteral multiply(@Nullable BigInteger value) {
         if (this.value == null)
             return this;
-        return new DBSPIntervalMonthsLiteral(Math.toIntExact(this.value * value));
+        if (value == null)
+            return new DBSPIntervalMonthsLiteral(this.getNode(), this.type, null);
+        BigInteger result = value.multiply(BigInteger.valueOf(this.value));
+        return new DBSPIntervalMonthsLiteral(result.intValueExact());
     }
 
     @Override

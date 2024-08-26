@@ -70,6 +70,13 @@ public final class DBSPRealLiteral extends DBSPFPLiteral implements IsNumericLit
         return this.value > 0;
     }
 
+    @Override
+    public IsNumericLiteral negate() {
+        if (this.value == null)
+            return this;
+        return new DBSPRealLiteral(this.getNode(), this.type, -this.value, false);
+    }
+
     public DBSPRealLiteral raw() {
         return new DBSPRealLiteral(this.value, this.getType().mayBeNull, true);
     }

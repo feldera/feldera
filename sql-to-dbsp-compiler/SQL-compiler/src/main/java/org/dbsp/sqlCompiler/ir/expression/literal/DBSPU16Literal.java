@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -35,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPU16Literal extends DBSPIntLiteral implements IsNumericLiteral {
@@ -60,6 +62,11 @@ public final class DBSPU16Literal extends DBSPIntLiteral implements IsNumericLit
     public boolean gt0() {
         assert this.value != null;
         return this.value > 0;
+    }
+
+    @Override
+    public IsNumericLiteral negate() {
+        throw new UnsupportedException("Negation of unsigned values", this.getNode());
     }
 
     public DBSPU16Literal(Integer value) {
@@ -111,5 +118,13 @@ public final class DBSPU16Literal extends DBSPIntLiteral implements IsNumericLit
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
+    }
+
+    @Nullable
+    @Override
+    public BigInteger getValue() {
+        if (this.value == null)
+            return null;
+        return BigInteger.valueOf(this.value);
     }
 }

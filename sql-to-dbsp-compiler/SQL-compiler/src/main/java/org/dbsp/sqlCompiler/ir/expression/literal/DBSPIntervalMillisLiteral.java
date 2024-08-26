@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPIntervalMillisLiteral
@@ -58,6 +59,13 @@ public final class DBSPIntervalMillisLiteral
     public boolean gt0() {
         assert this.value != null;
         return this.value > 0;
+    }
+
+    @Override
+    public IsNumericLiteral negate() {
+        if (this.value == null)
+            return this;
+        return new DBSPIntervalMillisLiteral(this.getNode(), this.type, Math.negateExact(this.value));
     }
 
     @Override
@@ -94,10 +102,13 @@ public final class DBSPIntervalMillisLiteral
     }
 
     @Override
-    public IsIntervalLiteral multiply(long value) {
+    public IsIntervalLiteral multiply(@Nullable BigInteger value) {
         if (this.value == null)
             return this;
-        return new DBSPIntervalMillisLiteral(Math.multiplyExact(this.value, value), this.isNull);
+        if (value == null)
+            return new DBSPIntervalMillisLiteral(this.getNode(), this.type, null);
+        BigInteger result = value.multiply(BigInteger.valueOf(this.value));
+        return new DBSPIntervalMillisLiteral(result.longValueExact(), this.isNull);
     }
 
     @Override

@@ -26,6 +26,15 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2333() {
+        this.q("""
+                SELECT TIMESTAMP '1970-01-01 00:00:00' - INTERVAL 1 HOURS;
+                 result
+                --------
+                 1969-12-31 23:00:00""");
+    }
+
+    @Test
     public void issue2315() {
         String sql = """
                 CREATE TABLE T(

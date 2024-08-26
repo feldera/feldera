@@ -67,6 +67,13 @@ public final class DBSPISizeLiteral extends DBSPLiteral implements IsNumericLite
     }
 
     @Override
+    public IsNumericLiteral negate() {
+        if (this.value == null)
+            return this;
+        return new DBSPISizeLiteral(this.getNode(), this.type, Math.negateExact(this.value));
+    }
+
+    @Override
     public DBSPExpression deepCopy() {
         return new DBSPISizeLiteral(this.getNode(), this.type, this.value);
     }

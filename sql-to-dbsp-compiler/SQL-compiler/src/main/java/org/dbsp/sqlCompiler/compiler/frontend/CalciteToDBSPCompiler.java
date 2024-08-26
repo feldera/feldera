@@ -420,9 +420,22 @@ public class CalciteToDBSPCompiler extends RelVisitor
         assert call.operandCount() == 2 || call.operandCount() == 3;
         int timestampIndex = this.getDescriptor(operands.get(0));
         DBSPExpression interval = expressionCompiler.compile(operands.get(1));
+        Simplify simplify = new Simplify(this.compiler.compiler());
+        interval = simplify.apply(interval).to(DBSPExpression.class);
         if (interval.getType().is(DBSPTypeMonthsInterval.class)) {
             throw new UnsupportedException(
                     "Tumbling window intervals must be 'short' SQL intervals (days and lower)",
+                    interval.getNode());
+        }
+        if (!interval.is(DBSPIntervalMillisLiteral.class)) {
+            throw new UnsupportedException(
+                    "Tumbling window interval must be a constant",
+                    interval.getNode());
+        }
+        DBSPIntervalMillisLiteral intValue = interval.to(DBSPIntervalMillisLiteral.class);
+        if (!intValue.gt0()) {
+            throw new UnsupportedException(
+                    "Tumbling window interval must be positive",
                     interval.getNode());
         }
         DBSPExpression start = null;

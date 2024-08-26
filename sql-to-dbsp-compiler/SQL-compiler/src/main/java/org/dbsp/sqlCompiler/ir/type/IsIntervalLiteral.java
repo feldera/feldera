@@ -1,5 +1,10 @@
 package org.dbsp.sqlCompiler.ir.type;
 
+import javax.annotation.Nullable;
+import java.math.BigInteger;
+
 public interface IsIntervalLiteral extends IsNumericLiteral {
-    IsIntervalLiteral multiply(long value);
+    /** Multiply an interval by an integer value.
+     * May throw ArithmeticException on overflow. */
+    IsIntervalLiteral multiply(@Nullable BigInteger value);
 }

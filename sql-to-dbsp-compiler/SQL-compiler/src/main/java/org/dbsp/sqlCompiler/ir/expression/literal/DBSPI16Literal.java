@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPI16Literal extends DBSPIntLiteral implements IsNumericLiteral {
@@ -48,6 +49,16 @@ public final class DBSPI16Literal extends DBSPIntLiteral implements IsNumericLit
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public IsNumericLiteral negate() {
+        if (this.value == null)
+            return this;
+        if (this.value == Short.MIN_VALUE) {
+            throw new ArithmeticException("Negate Short.MIN_VALUE");
+        }
+        return new DBSPI16Literal(this.getNode(), this.type, (short)-this.value);
     }
 
     @Override
@@ -89,5 +100,12 @@ public final class DBSPI16Literal extends DBSPIntLiteral implements IsNumericLit
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
+    }
+
+    @Override @Nullable
+    public BigInteger getValue() {
+        if (this.value == null)
+            return null;
+        return BigInteger.valueOf(this.value);
     }
 }

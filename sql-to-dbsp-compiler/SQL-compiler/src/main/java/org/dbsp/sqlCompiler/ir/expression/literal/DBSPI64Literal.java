@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPI64Literal extends DBSPIntLiteral implements IsNumericLiteral {
@@ -69,6 +70,13 @@ public final class DBSPI64Literal extends DBSPIntLiteral implements IsNumericLit
 
     public DBSPI64Literal(@Nullable Integer value, boolean nullable) {
         this(CalciteObject.EMPTY, value == null ? null : value.longValue(), nullable);
+    }
+
+    @Override
+    public IsNumericLiteral negate() {
+        if (this.value == null)
+            return this;
+        return new DBSPI64Literal(this.getNode(), this.type, Math.negateExact(this.value));
     }
 
     @Override
@@ -124,5 +132,12 @@ public final class DBSPI64Literal extends DBSPIntLiteral implements IsNumericLit
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
+    }
+
+    @Override @Nullable
+    public BigInteger getValue() {
+        if (this.value == null)
+            return null;
+        return BigInteger.valueOf(this.value);
     }
 }

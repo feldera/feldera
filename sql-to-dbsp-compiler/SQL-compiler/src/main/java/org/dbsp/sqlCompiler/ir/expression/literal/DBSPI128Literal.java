@@ -15,6 +15,9 @@ import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPI128Literal extends DBSPIntLiteral implements IsNumericLiteral {
+    static BigInteger min = BigInteger.ONE.shiftLeft(127).negate();
+    static BigInteger max = BigInteger.ONE.shiftLeft(127).subtract(BigInteger.ONE);
+
     @Nullable
     public final BigInteger value;
 
@@ -26,13 +29,13 @@ public final class DBSPI128Literal extends DBSPIntLiteral implements IsNumericLi
         this(value, false);
     }
 
-    public DBSPI128Literal(int value) {
-        this(BigInteger.valueOf(value), false);
-    }
-
     public DBSPI128Literal(CalciteObject node, DBSPType type , @Nullable BigInteger value) {
         super(node, type, value == null);
         this.value = value;
+        if (value != null) {
+            assert value.compareTo(max) <= 0;
+            assert value.compareTo(min) >= 0;
+        }
     }
 
     public DBSPI128Literal(CalciteObject node, @Nullable BigInteger value, boolean nullable) {
@@ -53,6 +56,15 @@ public final class DBSPI128Literal extends DBSPIntLiteral implements IsNumericLi
     public boolean gt0() {
         assert this.value != null;
         return this.value.compareTo(BigInteger.ZERO) > 0;
+    }
+
+    @Override
+    public IsNumericLiteral negate() {
+        if (this.value == null)
+            return this;
+        if (this.value.compareTo(min) == 0)
+            throw new ArithmeticException("Negate i128 overflow");
+        return new DBSPI128Literal(this.getNode(), this.type, this.value.negate());
     }
 
     @Override
@@ -102,5 +114,10 @@ public final class DBSPI128Literal extends DBSPIntLiteral implements IsNumericLi
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
+    }
+
+    @Override @Nullable
+    public BigInteger getValue() {
+        return this.value;
     }
 }
