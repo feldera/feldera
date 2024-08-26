@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 ROOT_DIR="${THIS_DIR}/.."
 SQL_COMPILER_DIR="${ROOT_DIR}/sql-to-dbsp-compiler"
