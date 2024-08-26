@@ -203,8 +203,8 @@ const sidebars = {
                           label: 'Snowflake (experimental)'
                       }
                   ]
-              }
-              ]
+              },
+              ],
             },
             {
               type: 'category',
@@ -246,7 +246,8 @@ const sidebars = {
                 'sql/udf'
               ]
             },
-            'api/rust']
+            'api/rust',
+            'api/cli']
     },
     {
       type: 'category',
