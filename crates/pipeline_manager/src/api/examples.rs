@@ -43,6 +43,7 @@ pub(crate) fn pipeline_1() -> PipelineDescr {
             max_buffering_delay_usecs: 0,
             resources: Default::default(),
             min_storage_bytes: None,
+            clock_resolution_usecs: Some(100_000),
         },
         program_code: "CREATE TABLE table1 ( col1 INT );".to_string(),
         program_config: ProgramConfig {
@@ -68,6 +69,7 @@ pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr {
             max_buffering_delay_usecs: 0,
             resources: Default::default(),
             min_storage_bytes: None,
+            clock_resolution_usecs: Some(100_000),
         },
         program_code: "CREATE TABLE table1 ( col1 INT );".to_string(),
         program_config: ProgramConfig {
@@ -111,6 +113,7 @@ pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr {
                 storage_class: None,
             },
             min_storage_bytes: None,
+            clock_resolution_usecs: Some(100_000),
         },
         program_code: "CREATE TABLE table2 ( col2 VARCHAR );".to_string(),
         program_config: ProgramConfig {

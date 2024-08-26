@@ -295,12 +295,21 @@ computation on whole days.
 
 `DATE`, `TIME` and `TIMESTAMP` have no time zone.
 
-## Non-deterministic functions
+## The `NOW` function
 
 The `NOW()` function returns the current date and time as a
-`TIMESTAMP` value.  Note that the function is only evaluated when the
-computation of the query is triggered by new input, even if the input
-is empty.
+`TIMESTAMP` value.  More precisely, it returns the date and time
+when the current **step** of the pipeline was triggered.  A step
+is triggered when the pipeline receives one or more new inputs or after a
+user-configurable period of time if no new inputs arrive.
+When executing a step, the pipeline incrementally updates all its views.
+In particular, views that depend on the value of `NOW()` are updated
+using the new current time.  The value of `NOW()` remains constant within a
+step.
+
+By default, in the absence of new inputs, a step is triggered every
+100 milliseconds.  This behavior is controlled by the
+`clock_resolution_usecs` pipeline configuration setting.
 
 | Operation     | Description         | Example                        |
 |---------------|---------------------|--------------------------------|
@@ -315,18 +324,18 @@ entire table T at every step.  Use this function judiciously.
 :::
 
 Note however that a specific class of `WHERE` and `HAVING` expressions
-that use `now()` can be implemented very efficiently.  These are the
+that use `NOW()` can be implemented very efficiently.  These are the
 so-called "temporal filters".  Here is an example:
 
 ```sql
-SELECT * FROM T WHERE T.ts >= now() - INTERVAL 1 DAYS;
+SELECT * FROM T WHERE T.ts >= NOW() - INTERVAL 1 DAYS;
 ```
 
 In general, a temporal filter will involve inequality or equality
 comparisons between an expression and a monotone function of the NOW
 result.  A conjunction of such terms is also accepted if all terms
-involve the same expression (e.g.: `T.ts >= now() - INTERVAL 1 DAYS
-AND T.ts <= now() + INTERVAL 1 DAYS`).
+involve the same expression (e.g.: `T.ts >= NOW() - INTERVAL 1 DAYS
+AND T.ts <= NOW() + INTERVAL 1 DAYS`).
 
 ## Date formatting
 

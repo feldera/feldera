@@ -137,6 +137,11 @@ fn default_cpu_profiler() -> bool {
     true
 }
 
+/// Update the clock every 100ms by default.
+fn default_clock_resolution_usecs() -> Option<u64> {
+    Some(100_000)
+}
+
 /// Global pipeline configuration settings. This is the publicly
 /// exposed type for users to configure pipelines.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -201,6 +206,19 @@ pub struct RuntimeConfig {
     /// values provide a threshold.  `usize::MAX` would effectively disable
     /// storage.
     pub min_storage_bytes: Option<usize>,
+
+    /// Real-time clock resolution in microseconds.
+    ///
+    /// This parameter controls the execution of queries that use the `NOW()` function.  The output of such
+    /// queries depends on the real-time clock and can change over time without any external
+    /// inputs.  The pipeline will update the clock value and trigger incremental recomputation
+    /// at most each `clock_resolution_usecs` microseconds.
+    ///
+    /// It is set to 100 milliseconds (100,000 microseconds) by default.
+    ///
+    /// Set to `null` to disable periodic clock updates.
+    #[serde(default = "default_clock_resolution_usecs")]
+    pub clock_resolution_usecs: Option<u64>,
 }
 
 impl Default for RuntimeConfig {
@@ -215,6 +233,7 @@ impl Default for RuntimeConfig {
             max_buffering_delay_usecs: 0,
             resources: ResourceConfig::default(),
             min_storage_bytes: None,
+            clock_resolution_usecs: default_clock_resolution_usecs(),
         }
     }
 }
