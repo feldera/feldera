@@ -138,7 +138,7 @@
     markers = programErrors ? { sql: extractSQLCompilerErrorMarkers(programErrors) } : undefined
   })
 
-  let metrics = useAggregatePipelineStats(pipeline, 500, 61000)
+  let metrics = useAggregatePipelineStats(pipeline, 1000, 61000)
 </script>
 
 <div class="h-full w-full">
@@ -148,11 +148,13 @@
         <PipelineEditorStatusBar
           downstreamChanged={decoupledCode.downstreamChanged}
           saveCode={decoupledCode.push}
-          programStatus={pipeline.current.programStatus}></PipelineEditorStatusBar>
+          programStatus={pipeline.current.programStatus}
+        ></PipelineEditorStatusBar>
         {#if pipeline.current.status}
           <DeploymentStatus
             class="ml-auto h-full w-40 text-[1rem] "
-            status={pipeline.current.status}></DeploymentStatus>
+            status={pipeline.current.status}
+          ></DeploymentStatus>
           <PipelineActions
             {pipeline}
             onDeletePipeline={(pipelineName) =>
@@ -189,11 +191,12 @@
                 vertical: 'visible'
               },
               language: 'sql'
-            }} />
+            }}
+          />
         </div>
       </div>
     </Pane>
-    <PaneResizer class="bg-surface-100-900 h-2" />
+    <PaneResizer class="h-2 bg-surface-100-900" />
     <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
       {#if pipeline.current.name}
         <InteractionsPanel {pipeline} {metrics}></InteractionsPanel>

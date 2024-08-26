@@ -177,3 +177,15 @@ export const intersect2 = <A, B, C, Key extends number | string>(
     return match === -1 ? [] : [zip(a, bs[match])]
   })
 }
+
+/**
+ * Produce a list of indices that would split a sequence in chunks of a maximum size
+ */
+export function chunkIndices(min: number, max: number, size: number): number[] {
+  const result: number[] = []
+  for (let i = min; i < max; i += size) {
+    result.push(i)
+  }
+  result.push(max)
+  return result
+}

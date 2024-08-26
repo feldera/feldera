@@ -25,30 +25,25 @@
   const pushChanges =
     (pipelineName: string, relationName: string) =>
     (changes: Record<'insert' | 'delete', XgressRecord>[]) => {
-      rows[pipelineName].splice(
-        0,
-        // Math.max(Math.min(
-        rows[pipelineName].length + changes.length - bufferSize
-        //   , bufferSize), 0)
-      )
+      rows[pipelineName].splice(0, rows[pipelineName].length + changes.length - bufferSize)
       rows[pipelineName].push(
         ...changes.slice(-bufferSize).map((change) => ({
-          // type: 'insert' in change ? ('insert' as const) : ('delete' as const),
           ...change,
           relationName
-          // record: change.insert ?? change.delete
         }))
       )
-      getRows = () => rows
     }
   const startReadingStream = (pipelineName: string, relationName: string) => {
     const handle = relationEggressStream(pipelineName, relationName).then((stream) => {
-      if (!stream) {
+      if ('message' in stream) {
         return undefined
       }
-      const reader = stream.getReader()
-      accumulateChanges(reader, pushChanges(pipelineName, relationName))
-      return () => reader.cancel('not_needed')
+      const cancel = parseJSONInStream(stream, pushChanges(pipelineName, relationName), {
+        paths: ['$.json_data.*']
+      })
+      return () => {
+        cancel()
+      }
     })
     return () => {
       handle.then((cancel) => cancel?.())
@@ -82,36 +77,32 @@
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
   import { getCaseIndependentName } from '$lib/functions/felderaRelation'
-  import {
-    getExtendedPipeline,
-    relationEggressStream,
-    type Pipeline
-  } from '$lib/services/pipelineManager'
+  import { relationEggressStream, type ExtendedPipeline } from '$lib/services/pipelineManager'
   import type { XgressRecord } from '$lib/types/pipelineManager'
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type { Relation } from '$lib/services/manager'
-  import { accumulateChanges } from '$lib/functions/pipelines/changeStream'
+  import { parseJSONInStream } from '$lib/functions/pipelines/changeStream'
 
-  let { pipeline }: { pipeline: { current: Pipeline } } = $props()
+  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
   let pipelineName = $derived(pipeline.current.name)
 
-  const reloadSchema = async (pipelineName: string) => {
-    registerPipelineName(pipelineName)
-    const schema = (await getExtendedPipeline(pipelineName)).programInfo?.schema
+  const reloadSchema = async (pipelineName: string, pipeline: ExtendedPipeline) => {
+    const schema = pipeline.programInfo?.schema
     if (!schema) {
       return
     }
+    registerPipelineName(pipelineName)
+    const oldSchema = pipelinesRelations[pipelineName]
+    pipelinesRelations[pipelineName] = {}
     const process = (type: 'tables' | 'views', newRelations: Relation[]) => {
       for (const newRelation of newRelations) {
         const newRelationName = getCaseIndependentName(newRelation)
-        const oldRelation = pipelinesRelations[pipelineName][newRelationName]
-        if (!oldRelation) {
-          pipelinesRelations[pipelineName][newRelationName] = {
-            selected: false,
-            type
-          }
+        const oldRelation = oldSchema[newRelationName]?.type === type && oldSchema[newRelationName]
+        pipelinesRelations[pipelineName][newRelationName] = oldRelation || {
+          type,
+          selected: false
         }
       }
     }
@@ -120,11 +111,8 @@
   }
 
   $effect(() => {
-    let interval = setInterval(() => reloadSchema(pipelineName), 2000)
-    reloadSchema(pipelineName)
-    return () => {
-      clearInterval(interval)
-    }
+    void pipeline.current
+    setTimeout(() => reloadSchema(pipelineName, pipeline.current))
   })
 
   let inputs = $derived(
@@ -143,6 +131,17 @@
         ...value
       }))
   )
+
+  const visualUpdateMs = 100
+  // Update visible list of changes at a constant time period
+  $effect(() => {
+    const update = () => (getRows = () => rows)
+    const handle = setInterval(update, visualUpdateMs)
+    update()
+    return () => {
+      clearInterval(handle)
+    }
+  })
 </script>
 
 <div class="flex h-full flex-row">

@@ -9,8 +9,8 @@
     match(status)
       .with('Shutdown', () => '')
       .with('Starting up', () => 'preset-tonal-tertiary')
-      .with('Initializing', () => 'preset-tonal-warning')
-      .with('Paused', () => 'preset-tonal-success')
+      .with('Initializing', () => 'preset-tonal-tertiary')
+      .with('Paused', () => 'preset-tonal-warning')
       .with('Running', () => 'preset-tonal-success')
       .with('Pausing', () => 'preset-tonal-tertiary')
       .with('Resuming', () => 'preset-tonal-tertiary')
@@ -28,6 +28,7 @@
   class={'w-30 chip pointer-events-none h-6 flex-none text-[0.66rem] uppercase ' +
     chipClass +
     ' ' +
-    _class}>
+    _class}
+>
   {getDeploymentStatusLabel(status)}
 </div>

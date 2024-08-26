@@ -19,16 +19,19 @@
     metrics
   }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
   const pipelineName = $derived(pipeline.current.name)
-  let currentTab = $derived(
-    useLocalStorage('pipelines/' + pipelineName + '/currentInteractionTab', 'errors')
-  )
   const tabs = [
-    tuple('Errors', TabPipelineErrors, PanelPipelineErrors),
+    tuple('Errors' as const, TabPipelineErrors, PanelPipelineErrors),
     // tuple('ad-hoc query', TabQueryData),
-    tuple('Performance', undefined, PanelPerformance),
+    tuple('Performance' as const, undefined, PanelPerformance),
     // tuple('query plan', TabDBSPGraph),
-    tuple('Changes stream', undefined, PanelChangeStream)
+    tuple('Changes stream' as const, undefined, PanelChangeStream)
   ]
+  let currentTab = $derived(
+    useLocalStorage<(typeof tabs)[number][0]>(
+      'pipelines/' + pipelineName + '/currentInteractionTab',
+      'Errors'
+    )
+  )
 
   const switchTo = async () => {
     if (currentTab.value === 'Errors') {
@@ -49,7 +52,7 @@
   )}
   Errors
   {#if errorCount !== 0}
-    <span class="preset-filled-error-500 rounded-full px-2 pt-0.5 text-sm font-medium">
+    <span class="rounded-full px-2 pt-0.5 text-sm font-medium preset-filled-error-500">
       {errorCount}
     </span>
   {/if}
@@ -60,7 +63,8 @@
     <Tabs.Control
       bind:group={currentTab.value}
       name={tabName}
-      contentClasses="group-hover:preset-tonal-surface">
+      contentClasses="group-hover:preset-tonal-surface"
+    >
       {#if tabControl}
         {@render tabControl(pipeline.current)}
       {:else}
@@ -75,7 +79,8 @@
     <Tabs.Panel
       bind:group={currentTab.value}
       value={tabName}
-      classes="h-full overflow-y-auto relative">
+      classes="h-full overflow-y-auto relative"
+    >
       <div class="ggg absolute h-full w-full p-4 pt-0">
         <TabComponent {pipeline} {metrics}></TabComponent>
       </div>

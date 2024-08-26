@@ -46,7 +46,7 @@
     _start,
     _start_paused,
     _start_error,
-    _start_disabled,
+    _start_pending,
     _pause,
     _shutdown,
     _delete,
@@ -59,7 +59,7 @@
     match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
       .with('Shutdown', () => ['_start_paused', '_configure', '_delete'])
-      .with('Queued', () => ['_start_disabled', '_configure', '_delete'])
+      .with('Queued', () => ['_start_pending', '_configure', '_delete'])
       .with('Starting up', () => ['_spinner', '_configure', '_spacer'])
       .with('Initializing', () => ['_spinner', '_configure', '_spacer'])
       .with('Running', () => ['_pause', '_configure', '_shutdown'])
@@ -68,8 +68,8 @@
       .with('Paused', () => ['_start', '_configure', '_shutdown'])
       .with('ShuttingDown', () => ['_spinner', '_configure', '_spacer'])
       .with({ PipelineError: P.any }, () => ['_spacer', '_configure', '_shutdown'])
-      .with('Compiling sql', () => ['_start_disabled', '_configure', '_delete'])
-      .with('Compiling bin', () => ['_start_disabled', '_configure', '_delete'])
+      .with('Compiling sql', () => ['_start_pending', '_configure', '_delete'])
+      .with('Compiling bin', () => ['_start_pending', '_configure', '_delete'])
       .with({ SqlError: P.any }, { RustError: P.any }, { SystemError: P.any }, () => [
         '_start_error',
         '_configure',
@@ -88,7 +88,8 @@
       (name) => `${name} pipeline`,
       deletePipeline
     )(pipeline.current.name)}
-    onClose={() => (globalDialog.dialog = null)}></DeleteDialog>
+    onClose={() => (globalDialog.dialog = null)}
+  ></DeleteDialog>
 {/snippet}
 
 <div class={'flex flex-nowrap gap-2 ' + _class}>
@@ -100,7 +101,8 @@
 {#snippet _delete()}
   <button
     class={'bx bx-trash-alt  ' + buttonClass}
-    onclick={() => (globalDialog.dialog = deleteDialog)}>
+    onclick={() => (globalDialog.dialog = deleteDialog)}
+  >
   </button>
 {/snippet}
 {#snippet _start()}
@@ -113,11 +115,12 @@
         pipeline.optimisticUpdate({ status: 'Resuming' })
         await success()
         onActionSuccess?.('start')
-      }}>
+      }}
+    >
     </button>
   </div>
   {#if unsavedChanges}
-    <Tooltip class="text-surface-950-50 z-20 bg-white dark:bg-black" placement="top">
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Save the pipeline before running
     </Tooltip>
   {/if}
@@ -132,11 +135,12 @@
         pipeline.optimisticUpdate({ status: 'Starting up' })
         await success()
         onActionSuccess?.('start_paused')
-      }}>
+      }}
+    >
     </button>
   </div>
   {#if unsavedChanges}
-    <Tooltip class="text-surface-950-50 z-20 bg-white dark:bg-black" placement="top">
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Save the pipeline before running
     </Tooltip>
   {/if}
@@ -148,8 +152,14 @@
 {/snippet}
 {#snippet _start_error()}
   {@render _start_disabled()}
-  <Tooltip class="text-surface-950-50 z-20 bg-white dark:bg-black" placement="top">
+  <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
     Resolve errors before running
+  </Tooltip>
+{/snippet}
+{#snippet _start_pending()}
+  {@render _start_disabled()}
+  <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+    Wait for compilation to complete
   </Tooltip>
 {/snippet}
 {#snippet _pause()}
@@ -159,7 +169,8 @@
       postPipelineAction(pipeline.current.name, 'pause').then(() => {
         onActionSuccess?.('pause')
         pipeline.optimisticUpdate({ status: 'Pausing' })
-      })}>
+      })}
+  >
   </button>
 {/snippet}
 {#snippet _shutdown()}
@@ -169,7 +180,8 @@
       postPipelineAction(pipeline.current.name, 'shutdown').then(() => {
         onActionSuccess?.('shutdown')
         pipeline.optimisticUpdate({ status: 'ShuttingDown' })
-      })}>
+      })}
+  >
   </button>
 {/snippet}
 {#snippet _configure()}
@@ -182,7 +194,8 @@
           runtimeConfig: JSONbig.parse(json)
         })
       }}
-      onClose={() => (globalDialog.dialog = null)}>
+      onClose={() => (globalDialog.dialog = null)}
+    >
       {#snippet title()}
         <div class="h5 text-center font-normal">
           {`Configure ${pipeline.current.name} runtime resources`}
@@ -192,10 +205,11 @@
   {/snippet}
   <button
     onclick={() => (globalDialog.dialog = pipelineResourcesDialog)}
-    class={'bx bx-cog ' + buttonClass}>
+    class={'bx bx-cog ' + buttonClass}
+  >
   </button>
   {#if pipelineBusy}
-    <Tooltip class="text-surface-950-50 z-20 bg-white dark:bg-black" placement="top">
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Stop the pipeline to edit configuration
     </Tooltip>
   {/if}
