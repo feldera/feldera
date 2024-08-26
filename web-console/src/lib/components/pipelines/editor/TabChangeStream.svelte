@@ -168,7 +168,8 @@
                     startReadingStream(pipelineName, relation.relationName)
                 }
               }}
-              value={relation} />
+              value={relation}
+            />
             {relation.relationName}
           </label>
         {/snippet}
@@ -189,13 +190,13 @@
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="bg-surface-100-900 w-2"></PaneResizer>
+    <PaneResizer class="w-2 bg-surface-100-900"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
       {#if getRows()[pipelineName]?.length}
         <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="text-surface-500 px-4">
+        <span class="px-4 text-surface-500">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}

@@ -7,6 +7,7 @@
 
   import { VirtualList, type AfterScrollEvent } from 'svelte-virtuallists'
   import { useResizeObserver } from 'runed'
+  import { scale } from 'svelte/transition'
 
   let {
     changes
@@ -57,7 +58,7 @@
   }
 </script>
 
-<div class="flex-1" bind:this={ref}>
+<div class="relative flex-1" bind:this={ref}>
   <VirtualList
     width="100%"
     {height}
@@ -84,4 +85,15 @@
       </div>
     {/snippet}
   </VirtualList>
+  {#if height !== 0 && Math.round(lastScrollOffset + height) < len * itemSize}
+    <button
+      transition:scale={{ duration: 200 }}
+      class="bx bx-chevrons-down absolute bottom-4 right-4 rounded-full p-2 text-[24px] preset-filled-primary-500"
+      onclick={() => {
+        // Force scroll to bottom
+        scrollOffset = undefined!
+        scrollOffset = len * itemSize
+      }}
+    ></button>
+  {/if}
 </div>
