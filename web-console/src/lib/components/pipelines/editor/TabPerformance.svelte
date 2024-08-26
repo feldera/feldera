@@ -41,7 +41,7 @@
       </div>
       <div class="flex w-full flex-col md:flex-row">
         <div class="relative h-44 w-full">
-          <PipelineThroughputGraph metrics={metrics.current} refetchMs={500} keepMs={60 * 1000}
+          <PipelineThroughputGraph metrics={metrics.current} refetchMs={1000} keepMs={60 * 1000}
           ></PipelineThroughputGraph>
         </div>
         <div class="relative h-44 w-full">

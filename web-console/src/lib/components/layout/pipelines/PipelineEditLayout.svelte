@@ -138,7 +138,7 @@
     markers = programErrors ? { sql: extractSQLCompilerErrorMarkers(programErrors) } : undefined
   })
 
-  let metrics = useAggregatePipelineStats(pipeline, 500, 61000)
+  let metrics = useAggregatePipelineStats(pipeline, 1000, 61000)
 </script>
 
 <div class="h-full w-full">
