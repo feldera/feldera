@@ -1,4 +1,6 @@
+use crate::format::{flush_vecdeque_queue, InputBuffer};
 use crate::transport::InputEndpoint;
+use crate::Parser;
 use crate::{
     transport::{
         kafka::{rdkafka_loglevel_from, refine_kafka_error, DeferredLogging},
@@ -20,6 +22,7 @@ use rdkafka::{
     error::{KafkaError, KafkaResult},
     ClientConfig, ClientContext, Message,
 };
+use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{channel, Sender};
@@ -115,6 +118,7 @@ struct KafkaInputReaderInner {
     state: Atomic<PipelineState>,
     kafka_consumer: BaseConsumer<KafkaInputContext>,
     errors: ArrayQueue<(KafkaError, String)>,
+    queue: Mutex<VecDeque<Box<dyn InputBuffer>>>,
 }
 
 impl KafkaInputReaderInner {
@@ -124,6 +128,7 @@ impl KafkaInputReaderInner {
     fn poll(
         self: &Arc<Self>,
         consumer: &mut Box<dyn InputConsumer>,
+        parser: &mut Box<dyn Parser>,
         feedback: &Sender<HelperFeedback>,
     ) {
         match self.kafka_consumer.poll(POLL_TIMEOUT) {
@@ -146,7 +151,10 @@ impl KafkaInputReaderInner {
                 if let Some(payload) = message.payload() {
                     // Leave it to the controller to handle errors.  There is noone we can
                     // forward the error to upstream.
-                    let _ = consumer.input_chunk(payload);
+                    let _ = parser.input_chunk(payload);
+                    if let Some(buffer) = parser.take() {
+                        self.queue.lock().unwrap().push_back(buffer);
+                    }
                 }
             }
         }
@@ -207,7 +215,8 @@ impl KafkaInputReaderInner {
 impl KafkaInputReader {
     fn new(
         config: &Arc<KafkaInputConfig>,
-        mut consumer: Box<dyn InputConsumer>,
+        consumer: Box<dyn InputConsumer>,
+        mut parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
         // Create Kafka consumer configuration.
         debug!("Starting Kafka input endpoint: {:?}", config);
@@ -241,6 +250,7 @@ impl KafkaInputReader {
             state: Atomic::new(PipelineState::Paused),
             kafka_consumer: BaseConsumer::from_config_and_context(&client_config, context)?,
             errors: ArrayQueue::new(ERROR_BUFFER_SIZE),
+            queue: Mutex::new(VecDeque::new()),
         });
 
         *inner.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&inner);
@@ -277,7 +287,10 @@ impl KafkaInputReader {
                     if let Some(payload) = message.payload() {
                         // Leave it to the controller to handle errors.  There is noone we can
                         // forward the error to upstream.
-                        let _ = consumer.input_chunk(payload);
+                        let _ = parser.input_chunk(payload);
+                        if let Some(buffer) = parser.take() {
+                            inner.queue.lock().unwrap().push_back(buffer);
+                        }
                     }
                 }
                 _ => (),
@@ -308,13 +321,18 @@ impl KafkaInputReader {
         }
 
         let endpoint_clone = inner.clone();
-        let poller = spawn(move || KafkaInputReader::poller_thread(endpoint_clone, consumer));
+        let poller =
+            spawn(move || KafkaInputReader::poller_thread(endpoint_clone, consumer, parser));
         Ok(KafkaInputReader(inner, poller))
     }
 
     /// The main poller thread for a Kafka input. Polls `endpoint` as long as
     /// the pipeline is running, and passes the data to `consumer`.
-    fn poller_thread(endpoint: Arc<KafkaInputReaderInner>, mut consumer: Box<dyn InputConsumer>) {
+    fn poller_thread(
+        endpoint: Arc<KafkaInputReaderInner>,
+        mut consumer: Box<dyn InputConsumer>,
+        mut parser: Box<dyn Parser>,
+    ) {
         // Figure out the number of threads based on configuration, defaults,
         // and system resources.
         let max_threads = available_parallelism().map_or(16, NonZeroUsize::get);
@@ -336,6 +354,7 @@ impl KafkaInputReader {
             threads.push(HelperThread::new(
                 Arc::clone(&endpoint),
                 consumer.clone(),
+                parser.fork(),
                 Arc::clone(&should_exit),
                 feedback_sender.clone(),
             ));
@@ -387,7 +406,7 @@ impl KafkaInputReader {
             // Keep polling even while the consumer is paused as `BaseConsumer`
             // processes control messages (including rebalancing and errors)
             // within the polling thread.
-            endpoint.poll(&mut consumer, &feedback_sender);
+            endpoint.poll(&mut consumer, &mut parser, &feedback_sender);
 
             for feedback in feedback_receiver.try_iter() {
                 match feedback {
@@ -439,6 +458,7 @@ impl HelperThread {
     fn new(
         endpoint: Arc<KafkaInputReaderInner>,
         mut consumer: Box<dyn InputConsumer>,
+        mut parser: Box<dyn Parser>,
         should_exit: Arc<AtomicBool>,
         feedback_sender: Sender<HelperFeedback>,
     ) -> Self {
@@ -448,7 +468,7 @@ impl HelperThread {
                 Some(spawn(move || {
                     while !should_exit.load(Ordering::Acquire) {
                         if endpoint.state() == PipelineState::Running {
-                            endpoint.poll(&mut consumer, &feedback_sender);
+                            endpoint.poll(&mut consumer, &mut parser, &feedback_sender);
                         } else {
                             thread::park();
                         }
@@ -501,10 +521,15 @@ impl TransportInputEndpoint for KafkaInputEndpoint {
     fn open(
         &self,
         consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
         _start_step: Step,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
-        Ok(Box::new(KafkaInputReader::new(&self.config, consumer)?))
+        Ok(Box::new(KafkaInputReader::new(
+            &self.config,
+            consumer,
+            parser,
+        )?))
     }
 }
 
@@ -525,6 +550,10 @@ impl InputReader for KafkaInputReader {
     fn disconnect(&self) {
         self.0.set_state(PipelineState::Terminated);
         self.1.thread().unpark();
+    }
+
+    fn flush(&self, n: usize) -> usize {
+        flush_vecdeque_queue(&self.0.queue, n)
     }
 }
 

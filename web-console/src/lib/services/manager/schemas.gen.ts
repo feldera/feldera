@@ -276,6 +276,25 @@ export const $ConnectorConfig = {
           ],
           nullable: true
         },
+        max_batch_size: {
+          type: 'integer',
+          format: 'int64',
+          description: `Maximum batch size, in records.
+
+This is the maximum number of records to process in one batch through
+the circuit.  The time and space cost of processing a batch is
+asymptotically superlinear in the size of the batch, but very small
+batches are less efficient due to constant factors.
+
+This should usually be less than \`max_queued_records\`, to give the
+connector a round-trip time to restart and refill the buffer while
+batches are being processed.
+
+Some input adapters might not honor this setting.
+
+The default is 10,000.`,
+          minimum: 0
+        },
         max_queued_records: {
           type: 'integer',
           format: 'int64',
@@ -1379,7 +1398,7 @@ export const $NexmarkInputOptions = {
       type: 'integer',
       format: 'int64',
       description: 'Number of events to generate and submit together.',
-      default: 40000,
+      default: 4000,
       minimum: 0
     },
     events: {
@@ -1389,15 +1408,16 @@ export const $NexmarkInputOptions = {
       default: 100000000,
       minimum: 0
     },
-    synchronize_threads: {
-      type: 'boolean',
-      description: `Whether to synchronize event generator threads after submitting each
-batch.
+    max_step_size: {
+      type: 'integer',
+      format: 'int64',
+      description: `Maximum number of events to submit in a single step.  This should be a
+multiple of \`batch_size\`.
 
-If true (which is the default), then the event generator threads will
-submit data in lockstep, clustering their event sequence numbers. If
-false, scheduling can cause some threads to get ahead of others.`,
-      default: true
+This stands in for \`max_batch_size\` from the connector configuration
+because it must be a constant across all three of the nexmark tables.`,
+      default: 4000000,
+      minimum: 0
     },
     threads: {
       type: 'integer',

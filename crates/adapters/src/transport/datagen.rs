@@ -1,15 +1,18 @@
 //! A datagen input adapter that generates random data based on a schema and config.
 
 use std::cmp::min;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Write;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration as StdDuration;
 
+use crate::format::{flush_vecdeque_queue, InputBuffer};
 use crate::transport::Step;
-use crate::{InputConsumer, InputEndpoint, InputReader, PipelineState, TransportInputEndpoint};
+use crate::{
+    InputConsumer, InputEndpoint, InputReader, Parser, PipelineState, TransportInputEndpoint,
+};
 use anyhow::{anyhow, Result as AnyResult};
 use atomic::Atomic;
 use chrono::format::{Item, StrftimeItems};
@@ -233,11 +236,13 @@ impl TransportInputEndpoint for GeneratorEndpoint {
     fn open(
         &self,
         consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
         _start_step: Step,
         schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(InputGenerator::new(
             consumer,
+            parser,
             self.config.clone(),
             schema,
         )?))
@@ -249,12 +254,14 @@ struct InputGenerator {
     config: DatagenInputConfig,
     /// Amount of records generated so far.
     generated: Arc<AtomicUsize>,
+    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
     notifier: Arc<Notify>,
 }
 
 impl InputGenerator {
     fn new(
         consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
         mut config: DatagenInputConfig,
         schema: Relation,
     ) -> AnyResult<Self> {
@@ -306,7 +313,7 @@ impl InputGenerator {
                 && p.limit.unwrap_or(usize::MAX) > 10_000_000
         });
 
-        //eprintln!("Starting {} workers", config.workers);
+        let queue = Arc::new(Mutex::new(VecDeque::new()));
         for worker in 0..config.workers {
             let config = config.clone();
             let status = status.clone();
@@ -314,6 +321,8 @@ impl InputGenerator {
             let schema = schema.clone();
             let notifier = notifier.clone();
             let consumer = consumer.clone();
+            let parser = parser.fork();
+            let queue = queue.clone();
             let shared_state = shared_state.clone();
 
             if needs_blocking_tasks {
@@ -324,6 +333,8 @@ impl InputGenerator {
                         shared_state,
                         schema,
                         consumer,
+                        parser,
+                        queue,
                         notifier,
                         status,
                         generated,
@@ -336,6 +347,8 @@ impl InputGenerator {
                     shared_state,
                     schema,
                     consumer,
+                    parser,
+                    queue,
                     notifier,
                     status,
                     generated,
@@ -347,6 +360,7 @@ impl InputGenerator {
             status,
             config,
             generated,
+            queue,
             notifier,
         })
     }
@@ -378,6 +392,8 @@ impl InputGenerator {
         >,
         schema: Relation,
         mut consumer: Box<dyn InputConsumer>,
+        mut parser: Box<dyn Parser>,
+        queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
         notifier: Arc<Notify>,
         status: Arc<Atomic<PipelineState>>,
         generated: Arc<AtomicUsize>,
@@ -436,7 +452,10 @@ impl InputGenerator {
 
                             if batch_idx % batch_size == 0 {
                                 buffer.extend(END_ARR);
-                                consumer.input_chunk(&buffer);
+                                parser.input_chunk(&buffer);
+                                if let Some(b) = parser.take() {
+                                    queue.lock().unwrap().push_back(b);
+                                }
                                 buffer.clear();
                                 buffer.extend(START_ARR);
                                 batch_idx = 0;
@@ -455,7 +474,10 @@ impl InputGenerator {
                 }
                 if !buffer.is_empty() {
                     buffer.extend(END_ARR);
-                    consumer.input_chunk(&buffer);
+                    parser.input_chunk(&buffer);
+                    if let Some(b) = parser.take() {
+                        queue.lock().unwrap().push_back(b);
+                    }
                 }
                 // Update global progress after we created all records for a batch
                 //eprintln!("adding {} to generated", generate_range.len());
@@ -488,6 +510,10 @@ impl InputReader for InputGenerator {
 
         // Wake up the worker if it's paused.
         self.unpark();
+    }
+
+    fn flush(&self, n: usize) -> usize {
+        flush_vecdeque_queue(&self.queue, n)
     }
 }
 
@@ -1555,7 +1581,7 @@ mod test {
         U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     {
         let relation = Relation::new("test_input".into(), fields, true, BTreeMap::new());
-        let (endpoint, consumer, zset) =
+        let (endpoint, consumer, _parser, zset) =
             mock_input_pipeline::<T, U>(serde_yaml::from_str(config_str).unwrap(), relation)?;
         endpoint.start(0)?;
         Ok((endpoint, consumer, zset))
@@ -1570,12 +1596,14 @@ transport:
     config:
         plan: [ { limit: 10, fields: {} } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
 
         while !consumer.state().eoi {
             thread::sleep(Duration::from_millis(20));
         }
+        thread::sleep(Duration::from_millis(20));
+        endpoint.flush_all();
 
         let zst = zset.state();
         let iter = zst.flushed.iter();
@@ -1939,12 +1967,14 @@ transport:
     config:
         plan: [ { limit: 2, fields: { "bs": { "range": [ 1, 5 ], values: [[1,2], [1,2,3]] } } } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<ByteStruct, ByteStruct>(config_str, ByteStruct::schema()).unwrap();
 
         while !consumer.state().eoi {
             thread::sleep(Duration::from_millis(20));
         }
+        thread::sleep(Duration::from_millis(20));
+        endpoint.flush_all();
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();
@@ -1966,12 +1996,14 @@ transport:
     config:
         plan: [ { limit: 2, fields: { "bs": { "range": [ 1, 2 ], value: { "range": [128, 255], "strategy": "uniform" } } } } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<ByteStruct, ByteStruct>(config_str, ByteStruct::schema()).unwrap();
 
         while !consumer.state().eoi {
             thread::sleep(Duration::from_millis(20));
         }
+        thread::sleep(Duration::from_millis(20));
+        endpoint.flush_all();
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();
@@ -2076,12 +2108,13 @@ transport:
     config:
         plan: [ { limit: 2, fields: {} } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
 
         while !consumer.state().eoi {
             thread::sleep(Duration::from_millis(20));
         }
+        endpoint.flush_all();
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();
@@ -2107,12 +2140,14 @@ transport:
     config:
         plan: [ { limit: 3, fields: { "ts": { "range": [1724803200000, 1724803200002] }, "dt": { "range": [19963, 19965] }, "t": { "range": [5, 7] } } } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
 
         while !consumer.state().eoi {
             thread::sleep(Duration::from_millis(20));
         }
+        thread::sleep(Duration::from_millis(20));
+        endpoint.flush_all();
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();
@@ -2145,12 +2180,14 @@ transport:
         plan: [ { limit: 3, fields: {  "ts": { "range": ["2024-08-28T00:00:00Z", "2024-08-28T00:00:02Z"], "scale": 1000 }, "dt": { "range": ["2024-08-28", "2024-08-30"] }, "t": { "range": ["00:00:05", "00:00:07"], "scale": 1000 } } } ]
 
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
 
         while !consumer.state().eoi {
             thread::sleep(Duration::from_millis(20));
         }
+        thread::sleep(Duration::from_millis(20));
+        endpoint.flush_all();
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();
@@ -2197,12 +2234,13 @@ transport:
     config:
         plan: [ { limit: 1, fields: { "TS": { "values": ["1970-01-01T00:00:00Z"] }, "dT": { "values": ["1970-01-02"] }, "t": { "values": ["00:00:01"] } } } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
 
         while !consumer.state().eoi {
             thread::sleep(Duration::from_millis(20));
         }
+        endpoint.flush_all();
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();

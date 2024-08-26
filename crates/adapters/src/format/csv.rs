@@ -22,6 +22,8 @@ pub use deserializer::string_record_deserializer;
 use feldera_types::program_schema::Relation;
 use serde_yaml::Value as YamlValue;
 
+use super::InputBuffer;
+
 /// When including a long CSV record in an error message,
 /// truncate it to `MAX_RECORD_LEN_IN_ERRMSG` bytes.
 static MAX_RECORD_LEN_IN_ERRMSG: usize = 4096;
@@ -128,7 +130,6 @@ impl CsvParser {
             self.last_event_number += 1;
             buffer = rest;
         }
-        self.input_stream.flush();
         (buffer, res)
     }
 }
@@ -149,18 +150,31 @@ impl Parser for CsvParser {
         }
     }
 
-    fn eoi(&mut self) -> (usize, Vec<ParseError>) {
+    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
         let mut res = (0, Vec::new());
         let leftover = take(&mut self.leftover);
         if !leftover.is_empty() {
             self.parse_record(leftover.as_slice(), &mut res);
         }
-        self.input_stream.flush();
         res
     }
 
     fn fork(&self) -> Box<dyn Parser> {
         Box::new(Self::new(self.input_stream.fork()))
+    }
+}
+
+impl InputBuffer for CsvParser {
+    fn flush(&mut self, n: usize) -> usize {
+        self.input_stream.flush(n)
+    }
+
+    fn len(&self) -> usize {
+        self.input_stream.len()
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.input_stream.take()
     }
 }
 

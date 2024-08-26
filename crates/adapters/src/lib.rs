@@ -97,8 +97,11 @@
 //!
 //! * [`InputFormat`] - a factory trait that creates [`Parser`] instances
 //!
-//! * [`Parser`] - a parser that consumes a raw binary stream and outputs a
-//!   stream of records.
+//! * [`Parser`] - a parser that consumes a raw binary stream and produces
+//!   records into an internal [`InputBuffer`].
+//!
+//! * [`InputBuffer`] - stores records temporarily before pushing them into a
+//!   circuit's input handle.
 //!
 //! * [`OutputFormat`] - a factory trait that creates [`Encoder`] instances
 //!
@@ -191,7 +194,9 @@ pub use catalog::{
     Catalog, CircuitCatalog, DeCollectionHandle, DeCollectionStream, OutputQueryHandles,
     RecordFormat, SerBatch, SerCollectionHandle, SerCursor,
 };
-pub use format::{Encoder, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser};
+pub use format::{
+    Encoder, InputBuffer, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser,
+};
 
 pub use controller::{
     ConfigError, ConnectorConfig, Controller, ControllerError, ControllerStatus, FormatConfig,

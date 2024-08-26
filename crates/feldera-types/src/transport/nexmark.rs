@@ -51,13 +51,12 @@ pub struct NexmarkInputOptions {
     /// Number of events to generate and submit together.
     pub batch_size: u64,
 
-    /// Whether to synchronize event generator threads after submitting each
-    /// batch.
+    /// Maximum number of events to submit in a single step.  This should be a
+    /// multiple of `batch_size`.
     ///
-    /// If true (which is the default), then the event generator threads will
-    /// submit data in lockstep, clustering their event sequence numbers. If
-    /// false, scheduling can cause some threads to get ahead of others.
-    pub synchronize_threads: bool,
+    /// This stands in for `max_batch_size` from the connector configuration
+    /// because it must be a constant across all three of the nexmark tables.
+    pub max_step_size: u64,
 }
 
 impl Default for NexmarkInputOptions {
@@ -65,8 +64,8 @@ impl Default for NexmarkInputOptions {
         Self {
             events: 100_000_000,
             threads: 4,
-            batch_size: 40_000,
-            synchronize_threads: true,
+            batch_size: 4_000,
+            max_step_size: 4_000_000,
         }
     }
 }

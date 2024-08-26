@@ -30,6 +30,8 @@ use feldera_types::format::json::JsonFlavor;
 use feldera_types::format::parquet::{ParquetEncoderConfig, ParquetParserConfig};
 use feldera_types::program_schema::{ColumnType, Field, IntervalUnit, Relation, SqlType};
 
+use super::InputBuffer;
+
 #[cfg(test)]
 pub mod test;
 
@@ -124,7 +126,6 @@ impl ParquetParser {
                             }
                             self.last_event_number += 1;
                         }
-                        self.input_stream.flush();
                         (cnt, errors)
                     }
                     Err(e) => (
@@ -152,7 +153,8 @@ impl ParquetParser {
 }
 
 impl Parser for ParquetParser {
-    /// In the fragment case, we will wait until eoi() is called to parse any data.
+    /// In the fragment case, we will wait until end_of_fragments() is called to
+    /// parse any data.
     ///
     /// Happens for example with the file connector.
     fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
@@ -166,12 +168,26 @@ impl Parser for ParquetParser {
         self.parse()
     }
 
-    fn eoi(&mut self) -> (usize, Vec<ParseError>) {
+    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
         self.parse()
     }
 
     fn fork(&self) -> Box<dyn Parser> {
         Box::new(Self::new(self.input_stream.fork()))
+    }
+}
+
+impl InputBuffer for ParquetParser {
+    fn flush(&mut self, n: usize) -> usize {
+        self.input_stream.flush(n)
+    }
+
+    fn len(&self) -> usize {
+        self.input_stream.len()
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.input_stream.take()
     }
 }
 

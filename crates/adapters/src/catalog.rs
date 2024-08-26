@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
 use std::{collections::BTreeMap, sync::Arc};
 
+use crate::format::InputBuffer;
 use crate::{static_compile::DeScalarHandle, ControllerError};
 use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
@@ -59,26 +60,25 @@ where
     }
 }
 
-/// An input handle that deserializes records before pushing them to a
-/// stream.
+/// An input handle that deserializes and buffers records.
 ///
-/// A trait for a type that wraps a
-/// [`ZSetHandle`](`dbsp::ZSetHandle`) or
-/// an [`MapHandle`](`dbsp::MapHandle`) and pushes serialized relational
-/// data to the associated input stream record-by-record.  The client passes a
-/// byte array with a serialized data record (e.g., in JSON or CSV format)
-/// to [`insert`](`Self::insert`), [`delete`](`Self::delete`), and
+/// A trait for a type that wraps a [`ZSetHandle`](`dbsp::ZSetHandle`) or an
+/// [`MapHandle`](`dbsp::MapHandle`) and collects serialized relational data for
+/// the associated input stream.  The client passes a byte array with a
+/// serialized data record (e.g., in JSON or CSV format) to
+/// [`insert`](`Self::insert`), [`delete`](`Self::delete`), and
 /// [`update`](`Self::update`) methods. The record gets deserialized into the
-/// strongly typed representation expected by the input stream and gets buffered
-/// inside the handle. The [`flush`](`Self::flush`) method pushes all buffered
-/// data to the underlying [`ZSetHandle`](`dbsp::ZSetHandle`) or
-/// [`MapHandle`](`dbsp::MapHandle`).
+/// strongly typed representation expected by the input stream.
 ///
 /// Instances of this trait are created by calling
 /// [`DeCollectionHandle::configure_deserializer`].
 /// The data format accepted by the handle is determined
 /// by the `record_format` argument passed to this method.
-pub trait DeCollectionStream: Send {
+///
+/// The input handle internally buffers the deserialized records. Use the
+/// `InputBuffer` supertrait to push them to the circuit or extract them for
+/// later use.
+pub trait DeCollectionStream: Send + InputBuffer {
     /// Buffer a new insert update.
     ///
     /// Returns an error if deserialization fails, i.e., the serialized
@@ -122,33 +122,18 @@ pub trait DeCollectionStream: Send {
     /// of inputs is known ahead of time to reduce reallocations.
     fn reserve(&mut self, reservation: usize);
 
-    /// Push all buffered updates to the underlying input stream handle.
-    ///
-    /// Flushed updates will be pushed to the stream during the next call
-    /// to [`DBSPHandle::step`](`dbsp::DBSPHandle::step`).  `flush` can
-    /// be called multiple times between two subsequent `step`s.  Every
-    /// `flush` call adds new updates to the previously flushed updates.
-    ///
-    /// Updates queued after the last `flush` remain buffered in the handle
-    /// until the next `flush` or `clear_buffer` call or until the handle
-    /// is destroyed.
-    fn flush(&mut self);
+    /// Removes any updates beyond the first `len`.
+    fn truncate(&mut self, len: usize);
 
-    /// Clear all buffered updates.
-    ///
-    /// Clears updates pushed to the handle after the last `flush`.
-    /// Flushed updates remain queued at the underlying input handle.
-    // TODO: add another method to invoke `CollectionHandle::clear_input`?
-    fn clear_buffer(&mut self);
-
-    /// Create a new deserializer with the same configuration connected to
-    /// the same input stream.
+    /// Create a new deserializer with the same configuration connected to the
+    /// same input stream. The new deserializer has an independent buffer that
+    /// is initially empty.
     fn fork(&self) -> Box<dyn DeCollectionStream>;
 }
 
 /// Like `DeCollectionStream`, but deserializes Arrow-encoded records before pushing them to a
 /// stream.
-pub trait ArrowStream: Send {
+pub trait ArrowStream: InputBuffer + Send {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()>;
 
     fn delete(&mut self, data: &RecordBatch) -> AnyResult<()>;
@@ -161,7 +146,7 @@ pub trait ArrowStream: Send {
 /// Like `DeCollectionStream`, but deserializes Avro-encoded records before pushing them to a
 /// stream.
 #[cfg(feature = "with-avro")]
-pub trait AvroStream: Send {
+pub trait AvroStream: InputBuffer + Send {
     fn insert(&mut self, data: &AvroValue) -> AnyResult<()>;
 
     fn delete(&mut self, data: &AvroValue) -> AnyResult<()>;

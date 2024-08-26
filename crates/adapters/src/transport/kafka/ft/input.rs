@@ -1,7 +1,8 @@
 use super::{count_partitions_in_topic, Ctp, DataConsumerContext, ErrorHandler, POLL_TIMEOUT};
+use crate::format::{flush_vecdeque_queue, InputBuffer};
 use crate::transport::kafka::ft::check_fatal_errors;
 use crate::transport::{InputEndpoint, InputReader, Step};
-use crate::{InputConsumer, TransportInputEndpoint};
+use crate::{InputConsumer, Parser, TransportInputEndpoint};
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
 use feldera_types::program_schema::Relation;
@@ -21,7 +22,7 @@ use serde::ser::SerializeTuple;
 use serde::{Deserialize, Serialize, Serializer};
 use std::cmp::{max, Ordering};
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::thread::{self};
@@ -135,6 +136,7 @@ struct Reader {
     complete_step: Arc<Mutex<Option<Step>>>,
     unparker: Unparker,
     join_handle: Option<JoinHandle<()>>,
+    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
 }
 
 impl Reader {
@@ -172,6 +174,10 @@ impl InputReader for Reader {
     fn disconnect(&self) {
         self.set_action(Err(ExitRequest));
     }
+
+    fn flush(&self, n: usize) -> usize {
+        flush_vecdeque_queue(&self.queue, n)
+    }
 }
 
 impl Drop for Reader {
@@ -189,24 +195,36 @@ impl Drop for Reader {
 }
 
 impl Reader {
-    fn new(config: &Arc<Config>, start_step: Step, consumer: Box<dyn InputConsumer>) -> Self {
+    fn new(
+        config: &Arc<Config>,
+        start_step: Step,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+    ) -> Self {
         let parker = Parker::new();
         let unparker = parker.unparker().clone();
         let action = Arc::new(Mutex::new(Ok(OkAction::Pause)));
         let complete_step = Arc::new(Mutex::new(None));
-        let join_handle = Some(WorkerThread::spawn(
-            &action,
-            &complete_step,
-            start_step,
-            parker,
-            config,
-            consumer,
-        ));
+        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let join_handle = {
+            let queue = queue.clone();
+            Some(WorkerThread::spawn(
+                &action,
+                &complete_step,
+                start_step,
+                parker,
+                config,
+                consumer,
+                parser,
+                queue,
+            ))
+        };
         Reader {
             action,
             complete_step,
             unparker,
             join_handle,
+            queue,
         }
     }
 }
@@ -281,9 +299,12 @@ struct WorkerThread {
     parker: Parker,
     config: Arc<Config>,
     receiver: Arc<Mutex<Box<dyn InputConsumer>>>,
+    parser: Box<dyn Parser>,
+    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
 }
 
 impl WorkerThread {
+    #[allow(clippy::too_many_arguments)]
     fn spawn(
         action: &Arc<Mutex<Action>>,
         complete_step: &Arc<Mutex<Option<Step>>>,
@@ -291,6 +312,8 @@ impl WorkerThread {
         parker: Parker,
         config: &Arc<Config>,
         receiver: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
     ) -> JoinHandle<()> {
         let receiver = Arc::new(Mutex::new(receiver));
         let worker_thread = Self {
@@ -300,6 +323,8 @@ impl WorkerThread {
             parker,
             config: config.clone(),
             receiver: receiver.clone(),
+            parser,
+            queue,
         };
         Builder::new()
             .name(format!(
@@ -345,7 +370,7 @@ impl WorkerThread {
         }
     }
 
-    fn run(self) -> AnyResult<()> {
+    fn run(mut self) -> AnyResult<()> {
         self.wait_for_pipeline_start(self.start_step)?;
 
         // Read the index for each partition.
@@ -510,7 +535,10 @@ impl WorkerThread {
                         continue;
                     }
                     if let Some(payload) = data_message.payload() {
-                        let _ = self.receiver.lock().unwrap().input_chunk(payload);
+                        let _ = self.parser.input_chunk(payload);
+                        if let Some(buffer) = self.parser.take() {
+                            self.queue.lock().unwrap().push_back(buffer);
+                        }
                     }
                     p.next_offset = data_message.offset() + 1;
                 }
@@ -559,7 +587,10 @@ impl WorkerThread {
                             // step).
 
                             if let Some(payload) = data_message.payload() {
-                                let _ = self.receiver.lock().unwrap().input_chunk(payload);
+                                let _ = self.parser.input_chunk(payload);
+                                if let Some(buffer) = self.parser.take() {
+                                    self.queue.lock().unwrap().push_back(buffer);
+                                }
                             }
                             n_messages += 1;
                             n_bytes += data_message.payload_len();
@@ -685,10 +716,11 @@ impl TransportInputEndpoint for Endpoint {
     fn open(
         &self,
         consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
         start_step: Step,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
-        Ok(Box::new(Reader::new(&self.0, start_step, consumer)))
+        Ok(Box::new(Reader::new(&self.0, start_step, consumer, parser)))
     }
 }
 

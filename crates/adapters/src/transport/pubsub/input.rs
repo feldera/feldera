@@ -1,6 +1,7 @@
 use crate::{
-    transport::Step, InputConsumer, InputEndpoint, InputReader, PipelineState,
-    TransportInputEndpoint,
+    format::{flush_vecdeque_queue, InputBuffer},
+    transport::Step,
+    InputConsumer, InputEndpoint, InputReader, Parser, PipelineState, TransportInputEndpoint,
 };
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use chrono::DateTime;
@@ -14,7 +15,8 @@ use google_cloud_pubsub::{
 };
 use log::{debug, warn};
 use std::{
-    sync::Arc,
+    collections::VecDeque,
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, SystemTime},
 };
@@ -50,34 +52,48 @@ impl TransportInputEndpoint for PubSubInputEndpoint {
     fn open(
         &self,
         consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
         _start_step: Step,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
-        Ok(Box::new(PubSubReader::new(self.config.clone(), consumer)?))
+        Ok(Box::new(PubSubReader::new(
+            self.config.clone(),
+            consumer,
+            parser,
+        )?))
     }
 }
 
 struct PubSubReader {
     state_sender: Sender<PipelineState>,
+    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
 }
 
 impl PubSubReader {
     fn new(
         config: Arc<PubSubInputConfig>,
         mut consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
         let (state_sender, state_receiver) = channel(PipelineState::Paused);
         let subscription = TOKIO.block_on(Self::subscribe(&config))?;
-        thread::spawn(move || {
-            let consumer_clone = consumer.clone();
-            TOKIO.block_on(async {
-                Self::worker_task(subscription, consumer_clone, state_receiver)
-                    .await
-                    .unwrap_or_else(|e| consumer.error(true, e));
-            })
+        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        thread::spawn({
+            let queue = queue.clone();
+            move || {
+                let consumer_clone = consumer.clone();
+                TOKIO.block_on(async {
+                    Self::worker_task(subscription, consumer_clone, parser, queue, state_receiver)
+                        .await
+                        .unwrap_or_else(|e| consumer.error(true, e));
+                })
+            }
         });
 
-        Ok(Self { state_sender })
+        Ok(Self {
+            state_sender,
+            queue,
+        })
     }
 
     async fn subscribe(config: &PubSubInputConfig) -> Result<Subscription, AnyError> {
@@ -117,6 +133,8 @@ impl PubSubReader {
     async fn worker_task(
         subscription: Subscription,
         consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
         mut state_receiver: Receiver<PipelineState>,
     ) -> Result<(), AnyError> {
         let mut state = PipelineState::Paused;
@@ -145,18 +163,25 @@ impl PubSubReader {
                         .await
                         .map_err(|e| anyhow!("error subscribing to messages: {e}"))?;
 
-                    let mut consumer_clone = consumer.clone();
+                    let mut consumer = consumer.clone();
+                    let mut parser = parser.fork();
                     let token = stream.cancellable();
-                    let handle = tokio::spawn(async move {
-                        // None if the stream is cancelled
-                        while let Some(message) = stream.next().await {
-                            consumer_clone.input_chunk(&message.message.data);
-                            message.ack().await.unwrap_or_else(|e| {
-                                consumer_clone.error(
-                                    false,
-                                    anyhow!("gRPC error acknowledging Pub/Sub message: {e}"),
-                                )
-                            });
+                    let handle = tokio::spawn({
+                        let queue = queue.clone();
+                        async move {
+                            // None if the stream is cancelled
+                            while let Some(message) = stream.next().await {
+                                parser.input_chunk(&message.message.data);
+                                if let Some(buffer) = parser.take() {
+                                    queue.lock().unwrap().push_back(buffer);
+                                }
+                                message.ack().await.unwrap_or_else(|e| {
+                                    consumer.error(
+                                        false,
+                                        anyhow!("gRPC error acknowledging Pub/Sub message: {e}"),
+                                    )
+                                });
+                            }
                         }
                     });
                     cancel = Some((token, handle));
@@ -186,6 +211,10 @@ impl InputReader for PubSubReader {
 
     fn disconnect(&self) {
         let _ = self.state_sender.send(PipelineState::Terminated);
+    }
+
+    fn flush(&self, n: usize) -> usize {
+        flush_vecdeque_queue(&self.queue, n)
     }
 }
 

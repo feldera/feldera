@@ -229,7 +229,7 @@ format:
 
     info!("proptest_kafka_input: Building input pipeline");
 
-    let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
+    let (endpoint, _consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
@@ -244,11 +244,14 @@ format:
     // Send data to a topic with a single partition;
     producer.send_to_topic(&data, topic1);
 
+    let flush = || {
+        endpoint.flush_all();
+    };
     if poller_threads == 1 {
         // Make sure all records arrive in the original order.
-        wait_for_output_ordered(&zset, &data);
+        wait_for_output_ordered(&zset, &data, flush);
     } else {
-        wait_for_output_unordered(&zset, &data);
+        wait_for_output_unordered(&zset, &data, flush);
     }
     zset.reset();
 
@@ -259,7 +262,7 @@ format:
     // order.
     producer.send_to_topic(&data, topic2);
 
-    wait_for_output_unordered(&zset, &data);
+    wait_for_output_unordered(&zset, &data, flush);
     zset.reset();
 
     info!("proptest_kafka_input: Test: pause/resume");
@@ -277,7 +280,7 @@ format:
 
     // Receive everything after unpause.
     endpoint.start(0).unwrap();
-    wait_for_output_unordered(&zset, &data);
+    wait_for_output_unordered(&zset, &data, flush);
 
     zset.reset();
 
@@ -285,9 +288,11 @@ format:
     // Disconnected endpoint should not receive any data.
     endpoint.disconnect();
     sleep(Duration::from_millis(1000));
+    flush();
 
     producer.send_to_topic(&data, topic2);
     sleep(Duration::from_millis(1000));
+    flush();
     assert_eq!(zset.state().flushed.len(), 0);
 }
 

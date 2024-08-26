@@ -19,11 +19,12 @@ use parquet::file::serialized_reader::SerializedFileReader;
 use pretty_assertions::assert_eq;
 use tempfile::NamedTempFile;
 
-use crate::catalog::SerBatchReader;
-use crate::format::parquet::ParquetEncoder;
-use crate::format::Encoder;
-use crate::static_compile::seroutput::SerBatchImpl;
-use crate::test::{mock_input_pipeline, wait, MockOutputConsumer, TestStruct2, DEFAULT_TIMEOUT_MS};
+use crate::{
+    catalog::SerBatchReader,
+    format::{parquet::ParquetEncoder, Encoder},
+    static_compile::seroutput::SerBatchImpl,
+    test::{mock_input_pipeline, wait, MockOutputConsumer, TestStruct2, DEFAULT_TIMEOUT_MS},
+};
 
 /// Parse Parquet file into an array of `T`.
 pub fn load_parquet_file<T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>>(
@@ -83,17 +84,20 @@ format:
     writer.close().expect("Closing the writer should succeed");
 
     // Send the data through the mock pipeline
-    let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct2, TestStruct2>(
+    let (endpoint, consumer, parser, zset) = mock_input_pipeline::<TestStruct2, TestStruct2>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::new("test".into(), TestStruct2::schema(), false, BTreeMap::new()),
     )
     .unwrap();
     sleep(Duration::from_millis(10));
-    assert!(consumer.state().data.is_empty());
+    assert!(parser.state().data.is_empty());
     assert!(!consumer.state().eoi);
     endpoint.start(0).unwrap();
     wait(
-        || zset.state().flushed.len() == test_data.len(),
+        || {
+            endpoint.flush_all();
+            zset.state().flushed.len() == test_data.len()
+        },
         DEFAULT_TIMEOUT_MS,
     )
     .unwrap();

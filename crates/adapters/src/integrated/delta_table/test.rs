@@ -41,6 +41,7 @@ use proptest::proptest;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
 use serde_arrow::schema::SerdeArrowSchema;
+use std::cmp::min;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
@@ -407,7 +408,15 @@ outputs:
 
         output_records.sort();
 
-        assert_eq!(output_records, data);
+        if output_records != data {
+            for i in 0..min(output_records.len(), data.len()) {
+                if output_records[i] != data[i] {
+                    println!("-{i}: {:?}", data[i]);
+                    println!("+{i}: {:?}", output_records[i]);
+                }
+            }
+            panic!("{} vs {}", output_records.len(), data.len());
+        }
     }
 
     controller.stop().unwrap();

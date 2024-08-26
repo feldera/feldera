@@ -300,6 +300,7 @@ impl BufferConsumer {
 
                             if let Some(payload) = message.payload() {
                                 parser.input_chunk(payload);
+                                parser.flush_all();
                             }
                         }
                     }

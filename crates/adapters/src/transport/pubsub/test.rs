@@ -4,7 +4,6 @@ use crate::test::{
     init_test_logger, mock_input_pipeline, wait_for_output_ordered, wait_for_output_unordered,
     TestStruct,
 };
-use anyhow::bail;
 use csv::WriterBuilder;
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::program_schema::Relation;
@@ -41,6 +40,7 @@ fn probe_port(address: &str) -> bool {
 
 #[cfg(feature = "pubsub-gcp-test")]
 async fn credentials_json_from_file() -> Result<Vec<u8>, anyhow::Error> {
+    use anyhow::bail;
     let path = match std::env::var("GOOGLE_APPLICATION_CREDENTIALS") {
         Ok(s) => Ok::<_, anyhow::Error>(std::path::Path::new(s.as_str()).to_path_buf()),
         Err(_e) => {
@@ -243,7 +243,7 @@ fn test_pubsub_input(
 
     info!("test_pubsub_input: Building input pipeline");
 
-    let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
+    let (endpoint, _consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
@@ -256,7 +256,9 @@ fn test_pubsub_input(
     // Send data to a topic with a single partition;
     publisher.send(&data, false, label_func);
 
-    wait_for_output_unordered(&zset, &data);
+    wait_for_output_unordered(&zset, &data, || {
+        endpoint.flush_all();
+    });
     zset.reset();
 
     info!("test_pubsub_input: Test: pause/resume");
@@ -273,7 +275,9 @@ fn test_pubsub_input(
 
     // Receive everything after unpause.
     endpoint.start(0).unwrap();
-    wait_for_output_ordered(&zset, &data);
+    wait_for_output_ordered(&zset, &data, || {
+        endpoint.flush_all();
+    });
     zset.reset();
 
     info!("test_pubsub_input: Test: Disconnect");
@@ -322,7 +326,7 @@ fn test_pubsub_multiple_subscribers(data: Vec<Vec<TestStruct>>, topic: &str) {
 
     info!("test_pubsub_multiple_subscribers: Creating subscribers");
 
-    let (endpoint1, _consumer, zset1) = mock_input_pipeline::<TestStruct, TestStruct>(
+    let (endpoint1, _consumer, _parser, zset1) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str1).unwrap(),
         Relation::empty(),
     )
@@ -330,7 +334,7 @@ fn test_pubsub_multiple_subscribers(data: Vec<Vec<TestStruct>>, topic: &str) {
 
     endpoint1.start(0).unwrap();
 
-    let (endpoint2, _consumer, zset2) = mock_input_pipeline::<TestStruct, TestStruct>(
+    let (endpoint2, _consumer, _parser, zset2) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str2).unwrap(),
         Relation::empty(),
     )
@@ -357,10 +361,16 @@ fn test_pubsub_multiple_subscribers(data: Vec<Vec<TestStruct>>, topic: &str) {
         .filter(|batch| !batch.is_empty() && !batch[0].b)
         .collect::<Vec<_>>();
 
-    wait_for_output_unordered(&zset1, &data1);
+    wait_for_output_unordered(&zset1, &data1, || {
+        endpoint1.flush_all();
+        endpoint2.flush_all();
+    });
     zset1.reset();
 
-    wait_for_output_unordered(&zset2, &data2);
+    wait_for_output_unordered(&zset2, &data2, || {
+        endpoint1.flush_all();
+        endpoint2.flush_all();
+    });
     zset2.reset();
 
     info!("test_pubsub_multiple_subscribers: Test: Disconnect");

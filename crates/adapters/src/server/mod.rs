@@ -26,7 +26,9 @@ use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
 use feldera_types::program_schema::SqlIdentifier;
-use feldera_types::{format::json::JsonFlavor, transport::http::EgressMode};
+use feldera_types::{
+    config::default_max_batch_size, format::json::JsonFlavor, transport::http::EgressMode,
+};
 use feldera_types::{
     query::{AdhocQueryArgs, OutputQuery},
     transport::http::SERVER_PORT_FILE,
@@ -699,6 +701,7 @@ async fn input_endpoint(
                 &req,
             )?),
             output_buffer_config: Default::default(),
+            max_batch_size: default_max_batch_size(),
             max_queued_records: HttpInputTransport::default_max_buffered_records(),
             paused: false,
         },
@@ -902,6 +905,7 @@ async fn output_endpoint(
                 &req,
             )?),
             output_buffer_config: Default::default(),
+            max_batch_size: default_max_batch_size(),
             max_queued_records: HttpOutputTransport::default_max_buffered_records(),
             paused: false,
         },
