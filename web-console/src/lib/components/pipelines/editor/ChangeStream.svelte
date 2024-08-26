@@ -92,7 +92,7 @@
       onclick={() => {
         // Force scroll to bottom
         scrollOffset = undefined!
-        scrollOffset = len * itemSize
+        setTimeout(() => (scrollOffset = len * itemSize))
       }}
     ></button>
   {/if}
