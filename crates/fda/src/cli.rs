@@ -81,7 +81,8 @@ pub enum ApiKeyActions {
         name: String,
     },
     /// Delete an existing API key
-    Del {
+    #[clap(aliases = &["del"])]
+    Delete {
         /// The name of the API key to delete
         name: String,
     },

@@ -125,7 +125,7 @@ async fn api_key_commands(action: ApiKeyActions, client: Client) {
                     },
                 );
         }
-        ApiKeyActions::Del { name } => {
+        ApiKeyActions::Delete { name } => {
             debug!("Deleting API key: {}", name);
             client
                 .delete_api_key()
