@@ -26,6 +26,17 @@ public class StreamTests extends SqlIoTest {
     }
 
     @Test
+    public void testNegativeTumble() {
+        this.statementsFailingInCompilation("""
+                CREATE VIEW V AS SELECT * FROM TABLE(
+                  TUMBLE(
+                    DATA => TABLE ORDERS,
+                    TIMECOL => DESCRIPTOR(ROWTIME),
+                    SIZE => INTERVAL -1 MINUTE))""",
+                "Tumbling window interval must be positive");
+    }
+
+    @Test
     public void testTumble() {
         this.qs("""
                 SELECT * FROM TABLE(

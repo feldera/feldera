@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -84,6 +85,13 @@ public final class DBSPDoubleLiteral extends DBSPFPLiteral implements IsNumericL
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
         return new DBSPDoubleLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull, this.raw);
+    }
+
+    @Override
+    public IsNumericLiteral negate() {
+        if (this.value == null)
+            return this;
+        return new DBSPDoubleLiteral(-this.value, this.mayBeNull());
     }
 
     @Override

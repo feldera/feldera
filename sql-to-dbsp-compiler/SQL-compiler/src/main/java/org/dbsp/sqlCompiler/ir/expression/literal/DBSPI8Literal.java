@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import java.math.BigInteger;
 import java.util.Objects;
 
 public final class DBSPI8Literal extends DBSPIntLiteral implements IsNumericLiteral {
@@ -48,6 +49,15 @@ public final class DBSPI8Literal extends DBSPIntLiteral implements IsNumericLite
         visitor.push(this);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public IsNumericLiteral negate() {
+        if (this.value == null)
+            return this;
+        if (this.value == Byte.MIN_VALUE)
+            throw new ArithmeticException("byte negation overflow");
+        return new DBSPI8Literal(this.getNode(), this.type, (byte)-this.value);
     }
 
     @Override
@@ -89,5 +99,12 @@ public final class DBSPI8Literal extends DBSPIntLiteral implements IsNumericLite
         if (this.value == null)
             return DBSPNullLiteral.NULL;
         return this.value.toString();
+    }
+
+    @Override @Nullable
+    public BigInteger getValue() {
+        if (this.value == null)
+            return null;
+        return BigInteger.valueOf(this.value);
     }
 }

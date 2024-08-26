@@ -68,6 +68,13 @@ public final class DBSPDecimalLiteral extends DBSPLiteral implements IsNumericLi
     }
 
     @Override
+    public IsNumericLiteral negate() {
+        if (this.value == null)
+            return this;
+        return new DBSPDecimalLiteral(this.getNode(), this.type, this.value.negate());
+    }
+
+    @Override
     public String toSqlString() {
         if (this.value == null)
             return DBSPNullLiteral.NULL;

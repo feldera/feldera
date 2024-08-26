@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -61,6 +62,11 @@ public final class DBSPU64Literal extends DBSPIntLiteral implements IsNumericLit
 
     public DBSPU64Literal(@Nullable BigInteger value, boolean nullable) {
         this(CalciteObject.EMPTY, value, nullable);
+    }
+
+    @Override
+    public IsNumericLiteral negate() {
+        throw new UnsupportedException("Negation of unsigned values", this.getNode());
     }
 
     @Override
@@ -114,5 +120,10 @@ public final class DBSPU64Literal extends DBSPIntLiteral implements IsNumericLit
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.value);
+    }
+
+    @Override @Nullable
+    public BigInteger getValue() {
+        return this.value;
     }
 }

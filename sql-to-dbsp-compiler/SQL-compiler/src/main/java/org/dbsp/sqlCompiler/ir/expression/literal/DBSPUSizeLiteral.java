@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
@@ -72,6 +73,11 @@ public final class DBSPUSizeLiteral extends DBSPLiteral implements IsNumericLite
             throw new InternalCompilerError("Null value with non-nullable type", this);
         if (value != null && value < 0)
             throw new InternalCompilerError("Negative usize value " + value, this);
+    }
+
+    @Override
+    public IsNumericLiteral negate() {
+        throw new UnsupportedException("Negation of unsigned values", this.getNode());
     }
 
     @Override

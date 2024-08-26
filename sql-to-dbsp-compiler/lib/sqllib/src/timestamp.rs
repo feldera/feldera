@@ -188,12 +188,9 @@ impl Timestamp {
     }
 
     pub fn to_dateTime(&self) -> DateTime<Utc> {
-        Utc.timestamp_opt(
-            self.milliseconds / 1000,
-            ((self.milliseconds % 1000i64) as u32) * 1_000_000,
-        )
-        .single()
-        .unwrap()
+        Utc.timestamp_millis_opt(self.milliseconds)
+            .single()
+            .unwrap_or_else(|| panic!("Could not convert timestamp {:?} to DateTime", self))
     }
 
     // Cannot make this into a From trait because Rust reserved it
@@ -342,12 +339,12 @@ pub fn plus_Date_LongInterval_Date(left: Date, right: LongInterval) -> Date {
     if right.months() < 0 {
         let result = date
             .checked_sub_months(Months::new(-right.months() as u32))
-            .unwrap();
+            .unwrap_or_else(|| panic!("Cannot add interval '{:?}' to date '{:?}'", right, date));
         Date::from_date(result)
     } else {
         let result = date
             .checked_add_months(Months::new(right.months() as u32))
-            .unwrap();
+            .unwrap_or_else(|| panic!("Cannot add interval '{:?}' to date '{:?}'", right, date));
         Date::from_date(result)
     }
 }
@@ -359,12 +356,22 @@ pub fn minus_Date_LongInterval_Date(left: Date, right: LongInterval) -> Date {
     if right.months() < 0 {
         let result = date
             .checked_add_months(Months::new(-right.months() as u32))
-            .unwrap();
+            .unwrap_or_else(|| {
+                panic!(
+                    "Cannot subtract interval '{:?}' from date '{:?}'",
+                    right, date
+                )
+            });
         Date::from_date(result)
     } else {
         let result = date
             .checked_sub_months(Months::new(right.months() as u32))
-            .unwrap();
+            .unwrap_or_else(|| {
+                panic!(
+                    "Cannot subtract interval '{:?}' from date '{:?}'",
+                    right, date
+                )
+            });
         Date::from_date(result)
     }
 }
@@ -549,13 +556,13 @@ pub fn floor_week_Timestamp(value: Timestamp) -> Timestamp {
     let ts = value.to_dateTime();
     let notime = ts
         .with_hour(0)
-        .unwrap()
+        .unwrap_or_else(|| panic!("Cannot clear hour of timestamp '{:?}'", value))
         .with_minute(0)
-        .unwrap()
+        .unwrap_or_else(|| panic!("Cannot clear minute of timestamp '{:?}'", value))
         .with_second(0)
-        .unwrap()
+        .unwrap_or_else(|| panic!("Cannot clear second of timestamp '{:?}'", value))
         .with_nanosecond(0)
-        .unwrap();
+        .unwrap_or_else(|| panic!("Cannot clear nanosecond of timestamp '{:?}'", value));
     let notimeTs = Timestamp::from_dateTime(notime);
     let interval = ShortInterval::new(wd * 86400 * 1000);
 

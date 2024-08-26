@@ -41,6 +41,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
@@ -49,6 +50,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
@@ -58,6 +60,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
+import org.dbsp.sqlCompiler.ir.type.IsIntervalLiteral;
+import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -410,6 +414,30 @@ public class Simplify extends InnerRewriteVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPUnaryExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.source);
+        DBSPType type = this.transform(expression.getType());
+        this.pop(expression);
+        DBSPExpression result = new DBSPUnaryExpression(
+                expression.getNode(), type, expression.operation, source);
+        if (expression.operation.equals(DBSPOpcode.NEG)) {
+            if (source.is(DBSPLiteral.class)) {
+                DBSPLiteral lit = source.to(DBSPLiteral.class);
+                if (lit.is(IsNumericLiteral.class)) {
+                    try {
+                        result = lit.to(IsNumericLiteral.class).negate().to(DBSPExpression.class);
+                    } catch (ArithmeticException ex) {
+                        // ignore
+                    }
+                }
+            }
+        }
+        this.map(expression, result.cast(expression.getType()));
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
         this.push(expression);
         DBSPExpression left = this.transform(expression.left);
@@ -422,118 +450,130 @@ public class Simplify extends InnerRewriteVisitor {
         boolean rightMayBeNull = rightType.mayBeNull;
         DBSPExpression result = new DBSPBinaryExpression(
                 expression.getNode(), type, expression.operation, left, right);
-        if (expression.operation.equals(DBSPOpcode.AND)) {
-            if (left.is(DBSPBoolLiteral.class)) {
-                DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
-                if (!bLeft.isNull) {
-                    if (Objects.requireNonNull(bLeft.value)) {
-                        result = right;
-                    } else {
-                        result = left;
+        try {
+            if (expression.operation.equals(DBSPOpcode.AND)) {
+                if (left.is(DBSPBoolLiteral.class)) {
+                    DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
+                    if (!bLeft.isNull) {
+                        if (Objects.requireNonNull(bLeft.value)) {
+                            result = right;
+                        } else {
+                            result = left;
+                        }
+                    }
+                } else if (right.is(DBSPBoolLiteral.class)) {
+                    DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
+                    if (!bRight.isNull) {
+                        if (Objects.requireNonNull(bRight.value)) {
+                            result = left;
+                        } else {
+                            result = right;
+                        }
                     }
                 }
-            } else if (right.is(DBSPBoolLiteral.class)) {
-                DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
-                if (!bRight.isNull) {
-                    if (Objects.requireNonNull(bRight.value)) {
-                        result = left;
-                    } else {
-                        result = right;
+            } else if (expression.operation.equals(DBSPOpcode.OR)) {
+                if (left.is(DBSPBoolLiteral.class)) {
+                    DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
+                    if (!bLeft.isNull) {
+                        if (Objects.requireNonNull(bLeft.value)) {
+                            result = left;
+                        } else {
+                            result = right;
+                        }
+                    }
+                } else if (right.is(DBSPBoolLiteral.class)) {
+                    DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
+                    if (!bRight.isNull) {
+                        if (Objects.requireNonNull(bRight.value)) {
+                            result = right;
+                        } else {
+                            result = left;
+                        }
                     }
                 }
-            }
-        } else if (expression.operation.equals(DBSPOpcode.OR)) {
-            if (left.is(DBSPBoolLiteral.class)) {
-                DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
-                if (!bLeft.isNull) {
-                    if (Objects.requireNonNull(bLeft.value)) {
-                        result = left;
-                    } else {
-                        result = right;
+            } else if (expression.operation.equals(DBSPOpcode.ADD)) {
+                if (left.is(DBSPLiteral.class)) {
+                    DBSPLiteral leftLit = left.to(DBSPLiteral.class);
+                    IHasZero iLeftType = leftType.as(IHasZero.class);
+                    if (iLeftType != null) {
+                        if (iLeftType.isZero(leftLit)) {
+                            result = right;
+                        } else if (leftLit.isNull) {
+                            // null + anything is null
+                            result = left;
+                        }
+                    }
+                } else if (right.is(DBSPLiteral.class)) {
+                    DBSPLiteral rightLit = right.to(DBSPLiteral.class);
+                    IHasZero iRightType = rightType.as(IHasZero.class);
+                    if (iRightType != null) {
+                        if (iRightType.isZero(rightLit)) {
+                            result = left;
+                        } else if (rightLit.isNull) {
+                            result = right;
+                        }
                     }
                 }
-            } else if (right.is(DBSPBoolLiteral.class)) {
-                DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
-                if (!bRight.isNull) {
-                    if (Objects.requireNonNull(bRight.value)) {
-                        result = right;
-                    } else {
+            } else if (expression.operation.equals(DBSPOpcode.MUL)) {
+                if (left.is(DBSPLiteral.class) && leftType.is(IsNumericType.class)) {
+                    DBSPLiteral leftLit = left.to(DBSPLiteral.class);
+                    IsNumericType iLeftType = leftType.to(IsNumericType.class);
+                    if (iLeftType.isOne(leftLit)) {
+                        // This works even for null
+                        result = right.cast(expression.getType());
+                    } else if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
+                        // This is not true for null values
                         result = left;
-                    }
-                }
-            }
-        } else if (expression.operation.equals(DBSPOpcode.ADD)) {
-            if (left.is(DBSPLiteral.class)) {
-                DBSPLiteral leftLit = left.to(DBSPLiteral.class);
-                IHasZero iLeftType = leftType.as(IHasZero.class);
-                if (iLeftType != null) {
-                    if (iLeftType.isZero(leftLit)) {
-                        result = right;
                     } else if (leftLit.isNull) {
-                        // null + anything is null
                         result = left;
+                    } else if (leftLit.is(DBSPIntLiteral.class) && right.is(IsIntervalLiteral.class)) {
+                        result = right.to(IsIntervalLiteral.class)
+                                .multiply(leftLit.to(DBSPIntLiteral.class).getValue())
+                                .to(DBSPExpression.class);
                     }
-                }
-            } else if (right.is(DBSPLiteral.class)) {
-                DBSPLiteral rightLit = right.to(DBSPLiteral.class);
-                IHasZero iRightType = rightType.as(IHasZero.class);
-                if (iRightType != null) {
-                    if (iRightType.isZero(rightLit)) {
+                } else if (right.is(DBSPLiteral.class) && rightType.is(IsNumericType.class)) {
+                    DBSPLiteral rightLit = right.to(DBSPLiteral.class);
+                    IsNumericType iRightType = rightType.to(IsNumericType.class);
+                    if (iRightType.isOne(rightLit)) {
                         result = left;
+                    } else if (iRightType.isZero(rightLit) && !leftMayBeNull) {
+                        // This is not true for null values
+                        result = right;
                     } else if (rightLit.isNull) {
                         result = right;
+                    } else if (rightLit.is(DBSPIntLiteral.class) && left.is(IsIntervalLiteral.class)) {
+                        result = left.to(IsIntervalLiteral.class)
+                                .multiply(rightLit.to(DBSPIntLiteral.class).getValue())
+                                .to(DBSPExpression.class);
+                    }
+                }
+            } else if (expression.operation.equals(DBSPOpcode.DIV)) {
+                if (right.is(DBSPLiteral.class)) {
+                    DBSPLiteral rightLit = right.to(DBSPLiteral.class);
+                    IsNumericType iRightType = rightType.to(IsNumericType.class);
+                    if (iRightType.isOne(rightLit)) {
+                        result = left;
+                    } else if (iRightType.isZero(rightLit)) {
+                        this.errorReporter.reportWarning(expression.getSourcePosition(), "Division by zero",
+                                " Division by constant zero value.");
+                    }
+                }
+            } else if (expression.operation.equals(DBSPOpcode.MOD)) {
+                if (right.is(DBSPLiteral.class)) {
+                    DBSPLiteral rightLit = right.to(DBSPLiteral.class);
+                    IsNumericType iRightType = rightType.to(IsNumericType.class);
+                    if (iRightType.isOne(rightLit)) {
+                        result = iRightType.getZero();
+                    } else if (iRightType.isZero(rightLit)) {
+                        this.errorReporter.reportWarning(expression.getSourcePosition(),
+                                "Division by zero",
+                                " Modulus by constant zero value as divisor."
+                        );
                     }
                 }
             }
-        } else if (expression.operation.equals(DBSPOpcode.MUL)) {
-            if (left.is(DBSPLiteral.class) && leftType.is(IsNumericType.class)) {
-                DBSPLiteral leftLit = left.to(DBSPLiteral.class);
-                IsNumericType iLeftType = leftType.to(IsNumericType.class);
-                if (iLeftType.isOne(leftLit)) {
-                    // This works even for null
-                    result = right.cast(expression.getType());
-                } else if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
-                    // This is not true for null values
-                    result = left;
-                } else if (leftLit.isNull) {
-                    result = left;
-                }
-            } else if (right.is(DBSPLiteral.class) && rightType.is(IsNumericType.class)) {
-                DBSPLiteral rightLit = right.to(DBSPLiteral.class);
-                IsNumericType iRightType = rightType.to(IsNumericType.class);
-                if (iRightType.isOne(rightLit)) {
-                    result = left;
-                } else if (iRightType.isZero(rightLit) && !leftMayBeNull) {
-                    // This is not true for null values
-                    result = right;
-                } else if (rightLit.isNull) {
-                    result = right;
-                }
-            }
-        } else if (expression.operation.equals(DBSPOpcode.DIV)) {
-            if (right.is(DBSPLiteral.class)) {
-                DBSPLiteral rightLit = right.to(DBSPLiteral.class);
-                IsNumericType iRightType = rightType.to(IsNumericType.class);
-                if (iRightType.isOne(rightLit)) {
-                    result = left;
-                } else if (iRightType.isZero(rightLit)) {
-                    this.errorReporter.reportWarning(expression.getSourcePosition(), "Division by zero",
-                            " Division by constant zero value.");
-                } 
-            }
-        } else if (expression.operation.equals(DBSPOpcode.MOD)) {
-            if (right.is(DBSPLiteral.class)) {
-                DBSPLiteral rightLit = right.to(DBSPLiteral.class);
-                IsNumericType iRightType = rightType.to(IsNumericType.class);
-                if (iRightType.isOne(rightLit)) {
-                    result = iRightType.getZero();
-                } else if (iRightType.isZero(rightLit)) {
-                    this.errorReporter.reportWarning(expression.getSourcePosition(),
-                        "Division by zero",
-                        " Modulus by constant zero value as divisor."
-                    );
-                }
-            }
+        } catch (ArithmeticException unused) {
+            // ignore, defer to runtime
         }
         this.map(expression, result.cast(expression.getType()));
         return VisitDecision.STOP;
