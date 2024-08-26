@@ -238,19 +238,12 @@ const consolidatePipelineStatus = (
     .with(['Paused', P.any, P.nullish, 'CompilingSql'], () => 'Compiling sql' as const)
     .with(['Paused', P.any, P.nullish, 'Pending'], () => 'Queued' as const)
     .with(['Paused', P.any, P.nullish, 'CompilingRust'], () => 'Compiling bin' as const)
-    .with(['Paused', 'Running', P.nullish, P._], () => 'Running' as const)
+    .with(['Paused', 'Running', P.nullish, P._], () => 'Resuming' as const)
     .with(['Paused', P.any, P.nullish, P._], () => 'Paused' as const)
+    .with(['Running', 'Paused', P.nullish, P._], () => 'Pausing' as const)
     .with(['Running', P.any, P.nullish, P._], () => 'Running' as const)
     .with(['ShuttingDown', P.any, P.nullish, P._], () => 'ShuttingDown' as const)
     .with(['Failed', P.any, P.select(P.nonNullable), P._], (PipelineError) => ({ PipelineError }))
-    .with(
-      P.when(() => false),
-      () => 'Pausing' as const
-    )
-    .with(
-      P.when(() => false),
-      () => 'Resuming' as const
-    )
     .otherwise(() => {
       throw new Error(
         `Unable to consolidatePipelineStatus: ${pipelineStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
