@@ -2,7 +2,7 @@
 members = [
   "crates/adapters",
   "crates/dbsp",
-  "crates/feldera-cli",
+  "crates/fda",
   "crates/nexmark",
   "crates/pipeline-types",
   "crates/pipeline_manager",

@@ -25,7 +25,7 @@ To install from the sources in your local feldera repository, you can install `f
 following commands:
 
 ```commandline
-cd crates/feldera-cli
+cd crates/fda
 cargo install --path .
 ```
 
