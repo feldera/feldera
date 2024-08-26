@@ -550,6 +550,17 @@ impl Controller {
 
         let mut step = 0;
 
+        let clock_resolution = controller
+            .status
+            .pipeline_config
+            .global
+            .clock_resolution_usecs
+            .map(Duration::from_micros);
+
+        // Time when the last step was started. Used to force the pipeline to make a step
+        // periodically to update the now() value.
+        let mut last_step: Option<Instant> = None;
+
         loop {
             for reply_cb in profile_request_receiver.try_iter() {
                 reply_cb(circuit.graph_profile());
@@ -567,16 +578,32 @@ impl Controller {
 
                     let buffered_records = controller.status.num_buffered_input_records();
 
+                    // Trigger a step if it's been longer than `clock_resolution` since the last step
+                    // and the pipeline isn't paused.
+                    let tick = if let Some(clock_resolution) = clock_resolution {
+                        (if let Some(last_step) = last_step {
+                            last_step.elapsed() > clock_resolution
+                        } else {
+                            true
+                        }) && (controller.state() == PipelineState::Running)
+                    } else {
+                        false
+                    };
+
                     // We have sufficient buffered inputs or the buffering delay has expired or
                     // the client explicitly requested the circuit to run -- kick the circuit to
                     // consume buffered data.
                     // Use strict inequality in case `min_batch_size_records` is 0.
                     if controller.status.step_requested()
+                        || tick
                         || buffered_records > min_batch_size_records
                         || start
                             .map(|start| start.elapsed() >= max_buffering_delay)
                             .unwrap_or(false)
                     {
+                        // Begin countdown from the start of the step.
+                        last_step = Some(Instant::now());
+
                         // Request all of the inputs to complete this step, and
                         // then wait for the completions.
                         for endpoint in controller.inputs.lock().unwrap().values() {
@@ -696,7 +723,22 @@ impl Controller {
                         parker.park_timeout(Duration::from_millis(1));
                     } else {
                         debug!("circuit thread: park: input buffers empty");
-                        parker.park();
+                        // If periodic clock tick is enabled, park at most till the next
+                        // clock tick is due.
+                        if controller.state() == PipelineState::Running
+                            && clock_resolution.is_some()
+                        {
+                            let sleep_for = if let Some(last_step) = last_step {
+                                clock_resolution
+                                    .unwrap()
+                                    .saturating_sub(last_step.elapsed())
+                            } else {
+                                clock_resolution.unwrap()
+                            };
+                            parker.park_timeout(sleep_for);
+                        } else {
+                            parker.park()
+                        }
                         debug!("circuit thread: unparked");
                     }
                 }

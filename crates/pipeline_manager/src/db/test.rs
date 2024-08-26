@@ -207,6 +207,7 @@ struct RuntimeConfigPropVal {
     val11: Option<u64>,
     val12: Option<String>,
     val13: Option<usize>,
+    val14: Option<u64>,
 }
 type ProgramConfigPropVal = (bool, bool);
 type ProgramInfoPropVal = ();
@@ -240,6 +241,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> RuntimeConfig
             storage_class: val.val12,
         },
         min_storage_bytes: val.val13,
+        clock_resolution_usecs: val.val14,
     }
 }
 
@@ -789,6 +791,7 @@ async fn pipeline_versioning() {
         max_buffering_delay_usecs: 0,
         resources: Default::default(),
         min_storage_bytes: None,
+        clock_resolution_usecs: Some(100_000),
     };
     handle
         .db

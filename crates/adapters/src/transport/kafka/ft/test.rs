@@ -145,10 +145,13 @@ fn ft_kafka_end_to_end_test(
 
     // Create controller.
 
+    // Set clock_resolution_usecs to null below, so that periodic clock ticks
+    // don't interfere with the test.
     let config_str = format!(
         r#"
 name: test
 workers: 4
+clock_resolution_usecs: null
 inputs:
     test_input1:
         stream: test_input1
