@@ -1844,14 +1844,28 @@ async fn upsert() {
 
 #[actix_web::test]
 #[serial]
-async fn empty_pipeline_name_not_allowed() {
+async fn pipeline_name_invalid() {
     let config = setup().await;
+    // Empty
     let request_body = json!({
         "name": "",
-        "description": "Description of the pipeline with an empty name",
-        "runtime_config": {},
-        "program_code": "",
-        "program_config": {}
+        "description": "", "runtime_config": {}, "program_code": "", "program_config": {}
+    });
+    let response = config.post("/v0/pipelines", &request_body).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // Too long
+    let request_body = json!({
+        "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "description": "", "runtime_config": {}, "program_code": "", "program_config": {}
+    });
+    let response = config.post("/v0/pipelines", &request_body).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // Invalid characters
+    let request_body = json!({
+        "name": "%abc",
+        "description": "", "runtime_config": {}, "program_code": "", "program_config": {}
     });
     let response = config.post("/v0/pipelines", &request_body).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);

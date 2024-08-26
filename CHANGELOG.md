@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [adapters] Google Pub/Sub input connector
   ([#2312](https://github.com/feldera/feldera/pull/2312))
+- [API] Name maximum length (100) and limited characters allowed (A-Za-z0-9_-)
+  ([#2331](https://github.com/feldera/feldera/pull/2331))
 
 ## [0.24.0] - 2024-08-15
 

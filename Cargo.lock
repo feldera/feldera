@@ -7072,6 +7072,7 @@ dependencies = [
  "proptest-derive 0.3.0",
  "rand 0.8.5",
  "refinery",
+ "regex",
  "reqwest 0.11.27",
  "rustls 0.23.12",
  "serde",
