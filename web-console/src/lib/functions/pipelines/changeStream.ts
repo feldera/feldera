@@ -142,12 +142,17 @@ export const parseJSONInStream = <T>(
 function splitByNewline(onChunk: (chunk: Uint8Array) => void, chunk: Uint8Array) {
   let start = 0
 
+  // TODO: currently splitting is stateless, so when chunk has a divider at its end empty chunk will not be injected.
+  // This may be suboptimal, as ideal behavior could be inserting empty chunk when the next upstream chunk arrives.
+  // This would require introducing state to splitting algorithm.
+
   while (start < chunk.length) {
     const newlineIndex = chunk.indexOf(10, start)
     const end = newlineIndex === -1 ? chunk.length : newlineIndex
 
     onChunk(chunk.subarray(start, end))
-    if (end !== chunk.length) {
+    if (end < chunk.length - 1) {
+      // If found newline not at the end of the chunk
       onChunk(new Uint8Array())
     }
 
