@@ -77,36 +77,32 @@
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
   import { getCaseIndependentName } from '$lib/functions/felderaRelation'
-  import {
-    getExtendedPipeline,
-    relationEggressStream,
-    type Pipeline
-  } from '$lib/services/pipelineManager'
+  import { relationEggressStream, type ExtendedPipeline } from '$lib/services/pipelineManager'
   import type { XgressRecord } from '$lib/types/pipelineManager'
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type { Relation } from '$lib/services/manager'
   import { parseJSONInStream } from '$lib/functions/pipelines/changeStream'
 
-  let { pipeline }: { pipeline: { current: Pipeline } } = $props()
+  let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
   let pipelineName = $derived(pipeline.current.name)
 
-  const reloadSchema = async (pipelineName: string) => {
-    registerPipelineName(pipelineName)
-    const schema = (await getExtendedPipeline(pipelineName)).programInfo?.schema
+  const reloadSchema = async (pipelineName: string, pipeline: ExtendedPipeline) => {
+    const schema = pipeline.programInfo?.schema
     if (!schema) {
       return
     }
+    registerPipelineName(pipelineName)
+    const oldSchema = pipelinesRelations[pipelineName]
+    pipelinesRelations[pipelineName] = {}
     const process = (type: 'tables' | 'views', newRelations: Relation[]) => {
       for (const newRelation of newRelations) {
         const newRelationName = getCaseIndependentName(newRelation)
-        const oldRelation = pipelinesRelations[pipelineName][newRelationName]
-        if (!oldRelation) {
-          pipelinesRelations[pipelineName][newRelationName] = {
-            selected: false,
-            type
-          }
+        const oldRelation = oldSchema[newRelationName]?.type === type && oldSchema[newRelationName]
+        pipelinesRelations[pipelineName][newRelationName] = oldRelation || {
+          type,
+          selected: false
         }
       }
     }
@@ -115,11 +111,8 @@
   }
 
   $effect(() => {
-    let interval = setInterval(() => reloadSchema(pipelineName), 2000)
-    reloadSchema(pipelineName)
-    return () => {
-      clearInterval(interval)
-    }
+    void pipeline.current
+    setTimeout(() => reloadSchema(pipelineName, pipeline.current))
   })
 
   let inputs = $derived(
@@ -175,8 +168,7 @@
                     startReadingStream(pipelineName, relation.relationName)
                 }
               }}
-              value={relation}
-            />
+              value={relation} />
             {relation.relationName}
           </label>
         {/snippet}
@@ -197,13 +189,13 @@
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="w-2 bg-surface-100-900"></PaneResizer>
+    <PaneResizer class="bg-surface-100-900 w-2"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
       {#if getRows()[pipelineName]?.length}
         <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="px-4 text-surface-500">
+        <span class="text-surface-500 px-4">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}

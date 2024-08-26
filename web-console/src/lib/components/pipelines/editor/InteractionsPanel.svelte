@@ -19,16 +19,19 @@
     metrics
   }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
   const pipelineName = $derived(pipeline.current.name)
-  let currentTab = $derived(
-    useLocalStorage('pipelines/' + pipelineName + '/currentInteractionTab', 'errors')
-  )
   const tabs = [
-    tuple('Errors', TabPipelineErrors, PanelPipelineErrors),
+    tuple('Errors' as const, TabPipelineErrors, PanelPipelineErrors),
     // tuple('ad-hoc query', TabQueryData),
-    tuple('Performance', undefined, PanelPerformance),
+    tuple('Performance' as const, undefined, PanelPerformance),
     // tuple('query plan', TabDBSPGraph),
-    tuple('Changes stream', undefined, PanelChangeStream)
+    tuple('Changes stream' as const, undefined, PanelChangeStream)
   ]
+  let currentTab = $derived(
+    useLocalStorage<(typeof tabs)[number][0]>(
+      'pipelines/' + pipelineName + '/currentInteractionTab',
+      'Errors'
+    )
+  )
 
   const switchTo = async () => {
     if (currentTab.value === 'Errors') {
