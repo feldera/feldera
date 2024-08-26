@@ -70,6 +70,14 @@ pub enum DBError {
     },
     DuplicateName, // When a database unique name constraint is violated
     EmptyName,
+    TooLongName {
+        name: String,
+        length: usize,
+        maximum: usize,
+    },
+    NameDoesNotMatchPattern {
+        name: String,
+    },
     // Tenant-related errors
     UnknownTenant {
         tenant_id: TenantId,
@@ -347,6 +355,19 @@ impl Display for DBError {
             DBError::EmptyName => {
                 write!(f, "Name cannot be be empty")
             }
+            DBError::TooLongName {
+                name,
+                length,
+                maximum,
+            } => {
+                write!(
+                    f,
+                    "Name '{name}' is longer ({length}) than maximum allowed ({maximum})"
+                )
+            }
+            DBError::NameDoesNotMatchPattern { name } => {
+                write!(f, "Name '{name}' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)")
+            }
             DBError::UnknownTenant { tenant_id } => {
                 write!(f, "Unknown tenant id '{tenant_id}'")
             }
@@ -435,6 +456,8 @@ impl DetailedError for DBError {
             Self::MissingMigrations { .. } => Cow::from("MissingMigrations"),
             Self::DuplicateName => Cow::from("DuplicateName"),
             Self::EmptyName => Cow::from("EmptyName"),
+            Self::TooLongName { .. } => Cow::from("TooLongName"),
+            Self::NameDoesNotMatchPattern { .. } => Cow::from("NameDoesNotMatchPattern"),
             Self::UnknownTenant { .. } => Cow::from("UnknownTenant"),
             Self::UnknownApiKey { .. } => Cow::from("UnknownApiKey"),
             Self::InvalidApiKey => Cow::from("InvalidApiKey"),
@@ -484,6 +507,8 @@ impl ResponseError for DBError {
             Self::MissingMigrations { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::DuplicateName => StatusCode::CONFLICT,
             Self::EmptyName => StatusCode::BAD_REQUEST,
+            Self::TooLongName { .. } => StatusCode::BAD_REQUEST,
+            Self::NameDoesNotMatchPattern { .. } => StatusCode::BAD_REQUEST,
             Self::UnknownTenant { .. } => StatusCode::UNAUTHORIZED, // TODO: should we report not found instead?
             Self::UnknownApiKey { .. } => StatusCode::NOT_FOUND,
             Self::InvalidApiKey => StatusCode::UNAUTHORIZED,
