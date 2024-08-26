@@ -9,8 +9,8 @@ use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{
-    validate_program_status_transition, CompilationProfile, ProgramConfig, ProgramInfo,
-    ProgramStatus, SqlCompilerMessage,
+    generate_pipeline_config, validate_program_status_transition, CompilationProfile,
+    ProgramConfig, ProgramInfo, ProgramStatus, SqlCompilerMessage,
 };
 use crate::db::types::tenant::TenantId;
 use async_trait::async_trait;
@@ -163,9 +163,9 @@ pub(crate) async fn setup_pg() -> (StoragePostgres, tokio_postgres::Config) {
 //////////////////////////////////////////////////////////////////////////////
 /////                        DATA GENERATORS                             /////
 
-/// Generate uuids but limits the the randomness to the first bits.
+/// Generate UUIDs but limits the the randomness to the first bits.
 ///
-/// This ensures that we have a good chance of generating a uuid that is already
+/// This ensures that we have a good chance of generating a UUID that is already
 /// in the database -- useful for testing error conditions.
 pub(crate) fn limited_uuid() -> impl Strategy<Value = Uuid> {
     vec![any::<u8>()].prop_map(|mut bytes| {
@@ -341,10 +341,11 @@ fn limited_error_response() -> impl Strategy<Value = ErrorResponse> {
 }
 
 //////////////////////////////////////////////////////////////////////////////
-/////                       HAND-WRITTEN TESTS                           /////
+/////                          MANUAL TESTS                              /////
 
+/// Creation and retrieval of tenants.
 #[tokio::test]
-async fn create_tenant() {
+async fn tenant_creation() {
     let handle = test_setup().await;
     let tenant_id_1 = handle
         .db
@@ -361,23 +362,39 @@ async fn create_tenant() {
         .get_or_create_tenant_id(Uuid::now_v7(), "x".to_string(), "y".to_string())
         .await
         .unwrap();
+    let tenant_id_4 = handle
+        .db
+        .get_or_create_tenant_id(Uuid::now_v7(), "z".to_string(), "y".to_string())
+        .await
+        .unwrap();
+    let tenant_id_5 = handle
+        .db
+        .get_or_create_tenant_id(Uuid::now_v7(), "x".to_string(), "z".to_string())
+        .await
+        .unwrap();
     assert_eq!(tenant_id_1, tenant_id_2);
     assert_eq!(tenant_id_2, tenant_id_3);
+    assert_ne!(tenant_id_3, tenant_id_4);
+    assert_ne!(tenant_id_4, tenant_id_5);
+    assert_ne!(tenant_id_3, tenant_id_5);
 }
 
+/// Creation, deletion and validation of API keys.
 #[tokio::test]
-async fn save_api_key() {
+async fn api_key_store_and_validation() {
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;
     // Attempt several key generations and validations
     for i in 1..10 {
+        // Create API key
         let api_key = generate_api_key();
+        let api_key_name = &format!("foo-{}", i);
         handle
             .db
             .store_api_key_hash(
                 tenant_id,
                 Uuid::now_v7(),
-                &format!("foo-{}", i),
+                api_key_name,
                 &api_key,
                 vec![ApiPermission::Read, ApiPermission::Write],
             )
@@ -388,875 +405,676 @@ async fn save_api_key() {
         assert_eq!(&ApiPermission::Read, scopes.1.get(0).unwrap());
         assert_eq!(&ApiPermission::Write, scopes.1.get(1).unwrap());
 
+        // Delete API key
+        handle
+            .db
+            .delete_api_key(tenant_id, api_key_name)
+            .await
+            .unwrap();
+
+        // Deleted API key is no longer valid
+        assert!(matches!(
+            handle.db.validate_api_key(&api_key).await.unwrap_err(),
+            DBError::InvalidApiKey
+        ));
+
+        // Deleting again results in an error
+        assert!(
+            matches!(handle.db.delete_api_key(tenant_id, api_key_name).await.unwrap_err(), DBError::UnknownApiKey { name } if &name == api_key_name)
+        );
+
+        // Non-existing API key
         let api_key_2 = generate_api_key();
         let err = handle.db.validate_api_key(&api_key_2).await.unwrap_err();
         assert!(matches!(err, DBError::InvalidApiKey));
     }
 }
 
-// #[tokio::test]
-// async fn program_creation() {
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//     let res = handle
-//         .db
-//         .new_program(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "test1",
-//             "program desc",
-//             "ignored",
-//             &ProgramConfig {
-//                 profile: Some(CompilationProfile::Unoptimized),
-//             },
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let rows = handle.db.list_programs(tenant_id, false).await.unwrap();
-//     let expected = ProgramDescr {
-//         program_id: res.0,
-//         name: "test1".to_string(),
-//         description: "program desc".to_string(),
-//         version: res.1,
-//         status: ProgramStatus::Pending,
-//         schema: None,
-//         code: None,
-//         config: ProgramConfig {
-//             profile: Some(CompilationProfile::Unoptimized),
-//         },
-//     };
-//     let actual = rows.get(0).unwrap();
-//     assert_eq!(1, rows.len());
-//     assert_eq!(&expected, actual);
-//
-//     let rows = handle.db.list_programs(tenant_id, true).await.unwrap();
-//     let expected = ProgramDescr {
-//         program_id: res.0,
-//         name: "test1".to_string(),
-//         description: "program desc".to_string(),
-//         version: res.1,
-//         status: ProgramStatus::Pending,
-//         schema: None,
-//         code: Some("ignored".to_string()),
-//         config: ProgramConfig {
-//             profile: Some(CompilationProfile::Unoptimized),
-//         },
-//     };
-//     let actual = rows.get(0).unwrap();
-//     assert_eq!(1, rows.len());
-//     assert_eq!(&expected, actual);
-//
-//     let rows = handle.db.all_programs().await.unwrap();
-//     let expected = ProgramDescr {
-//         program_id: res.0,
-//         name: "test1".to_string(),
-//         description: "program desc".to_string(),
-//         version: res.1,
-//         status: ProgramStatus::Pending,
-//         schema: None,
-//         code: None,
-//         config: ProgramConfig {
-//             profile: Some(CompilationProfile::Unoptimized),
-//         },
-//     };
-//     let (_, actual) = rows.get(0).unwrap();
-//     assert_eq!(1, rows.len());
-//     assert_eq!(&expected, actual);
-// }
-//
-// #[tokio::test]
-// async fn duplicate_program() {
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//     let _ = handle
-//         .db
-//         .new_program(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "test1",
-//             "program desc",
-//             "ignored",
-//             &ProgramConfig {
-//                 profile: Some(CompilationProfile::Unoptimized),
-//             },
-//             None,
-//         )
-//         .await;
-//     let res = handle
-//         .db
-//         .new_program(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "test1",
-//             "program desc",
-//             "ignored",
-//             &ProgramConfig {
-//                 profile: Some(CompilationProfile::Unoptimized),
-//             },
-//             None,
-//         )
-//         .await
-//         .expect_err("Expecting unique violation");
-//     let expected = DBError::DuplicateName;
-//     assert_eq!(format!("{}", res), format!("{}", expected));
-// }
-//
-// #[tokio::test]
-// async fn program_code() {
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//     let (program_id, _) = handle
-//         .db
-//         .new_program(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "test1",
-//             "program desc",
-//             "create table t1(c1 integer);",
-//             &ProgramConfig {
-//                 profile: Some(CompilationProfile::Unoptimized),
-//             },
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let result = handle
-//         .db
-//         .get_program_by_id(tenant_id, program_id, true)
-//         .await
-//         .unwrap();
-//     assert_eq!("test1", result.name);
-//     assert_eq!("program desc", result.description);
-//     assert_eq!(
-//         "create table t1(c1 integer);".to_owned(),
-//         result.code.unwrap()
-//     );
-// }
-//
-// #[tokio::test]
-// async fn update_program() {
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//     let (program_id, _) = handle
-//         .db
-//         .new_program(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "test1",
-//             "program desc",
-//             "create table t1(c1 integer);",
-//             &ProgramConfig {
-//                 profile: Some(CompilationProfile::Unoptimized),
-//             },
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let _ = handle
-//         .db
-//         .update_program(
-//             tenant_id,
-//             program_id,
-//             &Some("test2".to_string()),
-//             &Some("different desc".to_string()),
-//             &Some("create table t2(c2 integer);".to_string()),
-//             &None,
-//             &None,
-//             &None,
-//             None,
-//             None,
-//         )
-//         .await;
-//     let descr = handle
-//         .db
-//         .get_program_by_id(tenant_id, program_id, true)
-//         .await
-//         .unwrap();
-//     assert_eq!("test2", descr.name);
-//     assert_eq!("different desc", descr.description);
-//     assert_eq!("create table t2(c2 integer);", descr.code.unwrap());
-//
-//     let _ = handle
-//         .db
-//         .update_program(
-//             tenant_id,
-//             program_id,
-//             &Some("updated_test1".to_string()),
-//             &Some("some new description".to_string()),
-//             &None,
-//             &None,
-//             &None,
-//             &None,
-//             None,
-//             None,
-//         )
-//         .await;
-//     let results = handle.db.list_programs(tenant_id, false).await.unwrap();
-//     assert_eq!(1, results.len());
-//     let row = results.get(0).unwrap();
-//     assert_eq!("updated_test1", row.name);
-//     assert_eq!("some new description", row.description);
-// }
-//
-// #[tokio::test]
-// async fn program_queries() {
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//     let (program_id, _) = handle
-//         .db
-//         .new_program(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "test1",
-//             "program desc",
-//             "create table t1(c1 integer);",
-//             &ProgramConfig {
-//                 profile: Some(CompilationProfile::Unoptimized),
-//             },
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let desc = handle
-//         .db
-//         .get_program_by_id(tenant_id, program_id, false)
-//         .await
-//         .unwrap();
-//     assert_eq!("test1", desc.name);
-//     let desc = handle
-//         .db
-//         .get_program_by_name(tenant_id, "test1", false, None)
-//         .await
-//         .unwrap();
-//     assert_eq!("test1", desc.name);
-//     let desc = handle
-//         .db
-//         .get_program_by_name(tenant_id, "test2", false, None)
-//         .await;
-//     assert!(desc.is_err());
-// }
-//
-// #[tokio::test]
-// async fn pipeline_config() {
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//     handle
-//         .db
-//         .new_connector(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "a",
-//             "b",
-//             &test_connector_config(),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let ac = AttachedConnector {
-//         name: "foo".to_string(),
-//         is_input: true,
-//         connector_name: "a".to_string(),
-//         relation_name: "".to_string(),
-//     };
-//     let rc = RuntimeConfig::from_yaml("");
-//     let _ = handle
-//         .db
-//         .new_pipeline(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             &None,
-//             "1",
-//             "2",
-//             &rc,
-//             &Some(vec![ac.clone()]),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let res = handle.db.list_pipelines(tenant_id).await.unwrap();
-//     assert_eq!(1, res.len());
-//     let config = res.get(0).unwrap();
-//     assert_eq!("1", config.descriptor.name);
-//     assert_eq!("2", config.descriptor.description);
-//     assert_eq!(rc, config.descriptor.config);
-//     assert_eq!(None, config.descriptor.program_name);
-//     let connectors = &config.descriptor.attached_connectors;
-//     assert_eq!(1, connectors.len());
-//     let ac_ret = connectors.get(0).unwrap().clone();
-//     assert_eq!(ac, ac_ret);
-// }
-//
-// #[tokio::test]
-// async fn project_pending() {
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//     let (uid1, v1) = handle
-//         .db
-//         .new_program(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "test1",
-//             "project desc",
-//             "ignored",
-//             &ProgramConfig {
-//                 profile: Some(CompilationProfile::Unoptimized),
-//             },
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let (uid2, v2) = handle
-//         .db
-//         .new_program(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "test2",
-//             "project desc",
-//             "ignored",
-//             &ProgramConfig {
-//                 profile: Some(CompilationProfile::Unoptimized),
-//             },
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//
-//     handle
-//         .db
-//         .set_program_status_guarded(tenant_id, uid2, v2, ProgramStatus::Pending)
-//         .await
-//         .unwrap();
-//     handle
-//         .db
-//         .set_program_status_guarded(tenant_id, uid1, v1, ProgramStatus::Pending)
-//         .await
-//         .unwrap();
-//     let (_, id, _version) = handle.db.next_job().await.unwrap().unwrap();
-//     assert_eq!(id, uid2);
-//     let (_, id, _version) = handle.db.next_job().await.unwrap().unwrap();
-//     assert_eq!(id, uid2);
-//     // Maybe next job should set the status to something else
-//     // so it won't get picked up twice?
-// }
-//
-// #[tokio::test]
-// async fn update_status() {
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//     let (program_id, _) = handle
-//         .db
-//         .new_program(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "test1",
-//             "program desc",
-//             "create table t1(c1 integer);",
-//             &ProgramConfig {
-//                 profile: Some(CompilationProfile::Unoptimized),
-//             },
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let desc = handle
-//         .db
-//         .get_program_by_id(tenant_id, program_id, false)
-//         .await
-//         .unwrap();
-//     assert_eq!(ProgramStatus::Pending, desc.status);
-//     handle
-//         .db
-//         .set_program_status_guarded(
-//             tenant_id,
-//             program_id,
-//             desc.version,
-//             ProgramStatus::CompilingRust,
-//         )
-//         .await
-//         .unwrap();
-//     let desc = handle
-//         .db
-//         .get_program_by_id(tenant_id, program_id, false)
-//         .await
-//         .unwrap();
-//     assert_eq!(ProgramStatus::CompilingRust, desc.status);
-// }
-//
-// #[tokio::test]
-// async fn duplicate_attached_conn_name() {
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//     handle
-//         .db
-//         .new_connector(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "a",
-//             "b",
-//             &test_connector_config(),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let ac = AttachedConnector {
-//         name: "foo".to_string(),
-//         is_input: true,
-//         connector_name: "a".to_string(),
-//         relation_name: "".to_string(),
-//     };
-//     let ac2 = AttachedConnector {
-//         name: "foo".to_string(),
-//         is_input: true,
-//         connector_name: "a".to_string(),
-//         relation_name: "".to_string(),
-//     };
-//     let rc = RuntimeConfig::from_yaml("");
-//     let _ = handle
-//         .db
-//         .new_pipeline(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             &None,
-//             "1",
-//             "2",
-//             &rc,
-//             &Some(vec![ac, ac2]),
-//             None,
-//         )
-//         .await
-//         .expect_err("duplicate attached connector name");
-// }
-//
-// #[tokio::test]
-// async fn update_conn_name() {
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//     let connector_id = handle
-//         .db
-//         .new_connector(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "a",
-//             "b",
-//             &test_connector_config(),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let ac = AttachedConnector {
-//         name: "foo".to_string(),
-//         is_input: true,
-//         connector_name: "a".to_string(),
-//         relation_name: "".to_string(),
-//     };
-//     let rc = RuntimeConfig::from_yaml("");
-//     handle
-//         .db
-//         .new_pipeline(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             &None,
-//             "1",
-//             "2",
-//             &rc,
-//             &Some(vec![ac]),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     handle
-//         .db
-//         .update_connector(
-//             tenant_id,
-//             connector_id,
-//             &Some("not-a"),
-//             &Some("b"),
-//             &None,
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let pipeline = handle
-//         .db
-//         .get_pipeline_by_name(tenant_id, "1")
-//         .await
-//         .unwrap();
-//     assert_eq!(
-//         "not-a".to_string(),
-//         pipeline
-//             .descriptor
-//             .attached_connectors
-//             .get(0)
-//             .unwrap()
-//             .connector_name
-//     );
-// }
-//
-//
-// /// A Function that commits twice and checks the second time errors, returns
-// /// revision of first commit.
-// async fn commit_check(handle: &DbHandle, tenant_id: TenantId, pipeline_id: PipelineId) -> Revision {
-//     let new_revision_id = Uuid::now_v7();
-//     let r = handle
-//         .db
-//         .create_pipeline_deployment(new_revision_id, tenant_id, pipeline_id)
-//         .await
-//         .unwrap();
-//     assert_eq!(r.0, new_revision_id);
-//
-//     // We get an error the 2nd time since nothing changed
-//     let e = handle
-//         .db
-//         .create_pipeline_deployment(new_revision_id, tenant_id, pipeline_id)
-//         .await
-//         .unwrap_err();
-//     match e {
-//         DBError::RevisionNotChanged => r,
-//         e => {
-//             // We should get a RevisionNotChanged error here since we
-//             // didn't change anything inbetween
-//             panic!("unexpected error trying to create revision 2nd time: {}", e)
-//         }
-//     }
-// }
-//
-//
-// #[tokio::test]
-// async fn versioning_no_change_no_connectors() {
-//     let _r = env_logger::try_init();
-//
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//
-//     let (program_id, _) = handle
-//         .db
-//         .new_program(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "",
-//             "",
-//             "",
-//             &ProgramConfig {
-//                 profile: Some(CompilationProfile::Unoptimized),
-//             },
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     handle
-//         .db
-//         .set_program_status_guarded(tenant_id, program_id, Version(1), ProgramStatus::Success)
-//         .await
-//         .unwrap();
-//     let rc = RuntimeConfig::from_yaml("");
-//     let (pipeline_id, _version) = handle
-//         .db
-//         .new_pipeline(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             &Some("".to_string()),
-//             "",
-//             "",
-//             &rc,
-//             &None,
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let _r = handle
-//         .db
-//         .set_program_schema(
-//             tenant_id,
-//             program_id,
-//             ProgramSchema {
-//                 inputs: vec![],
-//                 outputs: vec![],
-//             },
-//         )
-//         .await
-//         .unwrap();
-//     let _r1: Revision = commit_check(&handle, tenant_id, pipeline_id).await;
-// }
-//
-// #[tokio::test]
-// async fn versioning() {
-//     let _r = env_logger::try_init();
-//
-//     let handle = test_setup().await;
-//     let tenant_id = TenantRecord::default().id;
-//
-//     let (program_id, _) = handle
-//         .db
-//         .new_program(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             "test1",
-//             "program desc",
-//             "only schema matters--this isn't compiled",
-//             &ProgramConfig {
-//                 profile: Some(CompilationProfile::Unoptimized),
-//             },
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     handle
-//         .db
-//         .set_program_status_guarded(tenant_id, program_id, Version(1), ProgramStatus::Success)
-//         .await
-//         .unwrap();
-//     handle
-//         .db
-//         .set_program_schema(
-//             tenant_id,
-//             program_id,
-//             ProgramSchema {
-//                 inputs: vec![Relation::new("t1", false, vec![], false)],
-//                 outputs: vec![Relation::new("v1", false, vec![], false)],
-//             },
-//         )
-//         .await
-//         .unwrap();
-//     let config1 = test_connector_config();
-//     let mut config2 = config1.clone();
-//     config2.max_queued_records = config1.max_queued_records + 5;
-//
-//     let connector_id1: ConnectorId = handle
-//         .db
-//         .new_connector(tenant_id, Uuid::now_v7(), "a", "b", &config1, None)
-//         .await
-//         .unwrap();
-//     let mut ac1 = AttachedConnector {
-//         name: "ac1".to_string(),
-//         is_input: true,
-//         connector_name: "a".to_string(),
-//         relation_name: "t1".to_string(),
-//     };
-//     handle
-//         .db
-//         .new_connector(tenant_id, Uuid::now_v7(), "d", "e", &config2, None)
-//         .await
-//         .unwrap();
-//     let mut ac2 = AttachedConnector {
-//         name: "ac2".to_string(),
-//         is_input: false,
-//         connector_name: "d".to_string(),
-//         relation_name: "v1".to_string(),
-//     };
-//     let rc = RuntimeConfig::from_yaml("");
-//     let (pipeline_id, _version) = handle
-//         .db
-//         .new_pipeline(
-//             tenant_id,
-//             Uuid::now_v7(),
-//             &Some("test1".to_string()),
-//             "1",
-//             "2",
-//             &rc,
-//             &Some(vec![ac1.clone(), ac2.clone()]),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let r1: Revision = commit_check(&handle, tenant_id, pipeline_id).await;
-//
-//     // If we change the program we need to adjust the connectors before we can
-//     // commit again:
-//     let new_version = handle
-//         .db
-//         .update_program(
-//             tenant_id,
-//             program_id,
-//             &None,
-//             &None,
-//             &Some("only schema matters--this isn't compiled2".to_string()),
-//             &None,
-//             &None,
-//             &None,
-//             None,
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     handle
-//         .db
-//         .set_program_status_guarded(tenant_id, program_id, Version(2), ProgramStatus::Success)
-//         .await
-//         .unwrap();
-//     handle
-//         .db
-//         .set_program_schema(
-//             tenant_id,
-//             program_id,
-//             ProgramSchema {
-//                 inputs: vec![
-//                     Relation::new("t1", false, vec![], false),
-//                     Relation::new("t2", false, vec![], false),
-//                 ],
-//                 outputs: vec![Relation::new("v1", false, vec![], false)],
-//             },
-//         )
-//         .await
-//         .unwrap();
-//     let r2: Revision = commit_check(&handle, tenant_id, pipeline_id).await;
-//     assert_ne!(r1, r2, "we got a new revision");
-//
-//     handle
-//         .db
-//         .set_program_status_guarded(tenant_id, program_id, new_version, ProgramStatus::Success)
-//         .await
-//         .unwrap();
-//     handle
-//         .db
-//         .set_program_schema(
-//             tenant_id,
-//             program_id,
-//             ProgramSchema {
-//                 inputs: vec![Relation::new("tnew1", false, vec![], false)],
-//                 outputs: vec![Relation::new("vnew1", false, vec![], false)],
-//             },
-//         )
-//         .await
-//         .unwrap();
-//     // This doesn't work because the connectors reference (now invalid) tables:
-//     assert!(handle
-//         .db
-//         .create_pipeline_deployment(Uuid::now_v7(), tenant_id, pipeline_id)
-//         .await
-//         .is_err());
-//     ac1.is_input = true;
-//     ac1.relation_name = "tnew1".into();
-//     let gp_config = RuntimeConfig {
-//         workers: 1,
-//         cpu_profiler: true,
-//         storage: false,
-//         tracing: false,
-//         tracing_endpoint_jaeger: "".to_string(),
-//         min_batch_size_records: 0,
-//         max_buffering_delay_usecs: 0,
-//         resources: ResourceConfig::default(),
-//         min_storage_bytes: None,
-//     };
-//     handle
-//         .db
-//         .update_pipeline(
-//             tenant_id,
-//             pipeline_id,
-//             &Some("test1".into()),
-//             "1",
-//             "2",
-//             &Some(gp_config.clone()),
-//             &Some(vec![ac1.clone(), ac2.clone()]),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     // This doesn't work because the ac2 still references a wrong table
-//     assert!(handle
-//         .db
-//         .create_pipeline_deployment(Uuid::now_v7(), tenant_id, pipeline_id)
-//         .await
-//         .is_err());
-//     // Let's fix ac2
-//     ac2.is_input = false;
-//     ac2.relation_name = "vnew1".into();
-//     handle
-//         .db
-//         .update_pipeline(
-//             tenant_id,
-//             pipeline_id,
-//             &Some("test1".into()),
-//             "1",
-//             "2",
-//             &Some(gp_config.clone()),
-//             &Some(vec![ac1.clone(), ac2.clone()]),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//
-//     // Now we can commit again
-//     let r3 = commit_check(&handle, tenant_id, pipeline_id).await;
-//     assert_ne!(r2, r3, "we got a new revision");
-//
-//     // If we change the connector we can commit again:
-//     let mut config3 = config2.clone();
-//     config3.max_queued_records += 5;
-//     handle
-//         .db
-//         .update_connector(
-//             tenant_id,
-//             connector_id1,
-//             &Some("a"),
-//             &Some("b"),
-//             &Some(config3),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let r4 = commit_check(&handle, tenant_id, pipeline_id).await;
-//     assert_ne!(r3, r4, "we got a new revision");
-//
-//     // If we change the attached connectors we can commit again:
-//     ac1.name = "xxx".into();
-//     handle
-//         .db
-//         .update_pipeline(
-//             tenant_id,
-//             pipeline_id,
-//             &Some("test1".into()),
-//             "1",
-//             "2",
-//             &Some(gp_config.clone()),
-//             &Some(vec![ac1.clone(), ac2.clone()]),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let r5: Revision = commit_check(&handle, tenant_id, pipeline_id).await;
-//     assert_ne!(r4, r5, "we got a new revision");
-//
-//     // If we remove an ac that's also a change:
-//     handle
-//         .db
-//         .update_pipeline(
-//             tenant_id,
-//             pipeline_id,
-//             &Some("test1".into()),
-//             "1",
-//             "2",
-//             &Some(gp_config.clone()),
-//             &Some(vec![ac1.clone()]),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let r6 = commit_check(&handle, tenant_id, pipeline_id).await;
-//     assert_ne!(r5, r6, "we got a new revision");
-//
-//     // And if we change the pipeline config itself that's a change:
-//     handle
-//         .db
-//         .update_pipeline(
-//             tenant_id,
-//             pipeline_id,
-//             &Some("test1".into()),
-//             "1",
-//             "2",
-//             &Some(RuntimeConfig {
-//                 workers: gp_config.workers + 1,
-//                 ..gp_config
-//             }),
-//             &Some(vec![ac1.clone()]),
-//             None,
-//         )
-//         .await
-//         .unwrap();
-//     let r6 = commit_check(&handle, tenant_id, pipeline_id).await;
-//     assert_ne!(r5, r6, "we got a new revision");
-// }
-//
+/// Creation of pipelines.
+#[tokio::test]
+async fn pipeline_creation() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let new_descriptor = PipelineDescr {
+        name: "test1".to_string(),
+        description: "Test description".to_string(),
+        runtime_config: Default::default(),
+        program_code: "".to_string(),
+        program_config: ProgramConfig {
+            profile: Some(CompilationProfile::Unoptimized),
+        },
+    };
+    let new_result = handle
+        .db
+        .new_pipeline(tenant_id, Uuid::now_v7(), new_descriptor.clone())
+        .await
+        .unwrap();
+    let rows = handle.db.list_pipelines(tenant_id).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    let actual = rows.get(0).unwrap();
+    assert_eq!(new_result, actual.clone());
+
+    // Core fields
+    assert_eq!(actual.name, new_descriptor.name);
+    assert_eq!(actual.description, new_descriptor.description);
+    assert_eq!(actual.runtime_config, new_descriptor.runtime_config);
+    assert_eq!(actual.program_code, new_descriptor.program_code);
+    assert_eq!(actual.program_config, new_descriptor.program_config);
+
+    // Core metadata fields
+    // actual.id
+    // actual.created_at
+    assert_eq!(actual.version, Version(1));
+
+    // System-decided program fields
+    assert_eq!(actual.program_version, Version(1));
+    assert_eq!(actual.program_status, ProgramStatus::Pending);
+    // actual.program_status_since
+    assert_eq!(actual.program_info, None);
+    assert_eq!(actual.program_binary_url, None);
+
+    // System-decided deployment fields
+    assert_eq!(actual.deployment_status, PipelineStatus::Shutdown);
+    // actual.deployment_status_since
+    assert_eq!(actual.deployment_desired_status, PipelineStatus::Shutdown);
+    assert_eq!(actual.deployment_error, None);
+    assert_eq!(actual.deployment_config, None);
+    assert_eq!(actual.deployment_location, None);
+}
+
+/// Retrieval of pipelines.
+#[tokio::test]
+async fn pipeline_retrieval() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+
+    // Initially empty list
+    let rows = handle.db.list_pipelines(tenant_id).await.unwrap();
+    assert_eq!(rows.len(), 0);
+    assert!(matches!(
+        handle
+            .db
+            .get_pipeline(tenant_id, "test1")
+            .await
+            .unwrap_err(),
+        DBError::UnknownPipelineName { pipeline_name } if pipeline_name == "test1"
+    ));
+    let non_existing_pipeline_id = PipelineId(Uuid::now_v7());
+    assert!(matches!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, non_existing_pipeline_id)
+            .await
+            .unwrap_err(),
+        DBError::UnknownPipeline { pipeline_id } if pipeline_id == non_existing_pipeline_id
+    ));
+
+    // Create one pipeline
+    let pipeline1 = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            PipelineDescr {
+                name: "test1".to_string(),
+                description: "d1".to_string(),
+                runtime_config: Default::default(),
+                program_code: "c1".to_string(),
+                program_config: ProgramConfig {
+                    profile: Some(CompilationProfile::Unoptimized),
+                },
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!("test1", pipeline1.name);
+
+    // Check pipeline1
+    let rows = handle.db.list_pipelines(tenant_id).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows.get(0).unwrap().name, "test1");
+    assert_eq!(
+        pipeline1,
+        handle.db.get_pipeline(tenant_id, "test1").await.unwrap()
+    );
+    assert_eq!(
+        pipeline1,
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+    );
+
+    // Create another pipeline
+    let pipeline2 = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            PipelineDescr {
+                name: "test2".to_string(),
+                description: "d2".to_string(),
+                runtime_config: Default::default(),
+                program_code: "c2".to_string(),
+                program_config: ProgramConfig {
+                    profile: Some(CompilationProfile::Unoptimized),
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+    // Check list of two
+    let rows = handle.db.list_pipelines(tenant_id).await.unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.get(0).unwrap().name, "test1");
+    assert_eq!(rows.get(1).unwrap().name, "test2");
+    assert_eq!(rows, vec![pipeline1.clone(), pipeline2.clone()]);
+    assert_eq!(
+        pipeline2.clone(),
+        handle.db.get_pipeline(tenant_id, "test2").await.unwrap()
+    );
+    assert_eq!(
+        pipeline2.clone(),
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline2.id)
+            .await
+            .unwrap()
+    );
+
+    // Delete pipeline1
+    handle.db.delete_pipeline(tenant_id, "test1").await.unwrap();
+    let rows = handle.db.list_pipelines(tenant_id).await.unwrap();
+    assert_eq!(rows, vec![pipeline2.clone()]);
+    assert!(matches!(
+        handle
+            .db
+            .get_pipeline(tenant_id, "test1")
+            .await
+            .unwrap_err(),
+        DBError::UnknownPipelineName { pipeline_name } if pipeline_name == "test1"
+    ));
+    assert!(matches!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap_err(),
+        DBError::UnknownPipeline { pipeline_id } if pipeline_id == pipeline1.id
+    ));
+
+    // Delete pipeline2
+    handle.db.delete_pipeline(tenant_id, "test2").await.unwrap();
+    let rows = handle.db.list_pipelines(tenant_id).await.unwrap();
+    assert!(matches!(
+        handle
+            .db
+            .get_pipeline(tenant_id, "test2")
+            .await
+            .unwrap_err(),
+        DBError::UnknownPipelineName { pipeline_name } if pipeline_name == "test2"
+    ));
+    assert!(matches!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline2.id)
+            .await
+            .unwrap_err(),
+        DBError::UnknownPipeline { pipeline_id } if pipeline_id == pipeline2.id
+    ));
+    assert_eq!(rows, vec![]);
+}
+
+/// Progression of both overall version and program version.
+#[tokio::test]
+async fn pipeline_versioning() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            PipelineDescr {
+                name: "example".to_string(),
+                description: "d1".to_string(),
+                runtime_config: Default::default(),
+                program_code: "c1".to_string(),
+                program_config: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+
+    // Initially, versions are 1
+    let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
+    assert_eq!(current.version, Version(1));
+    assert_eq!(current.program_version, Version(1));
+
+    // Edit without changes should not affect versions
+    handle
+        .db
+        .update_pipeline(tenant_id, "example", &None, &None, &None, &None, &None)
+        .await
+        .unwrap();
+    let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
+    assert_eq!(current.version, Version(1));
+    assert_eq!(current.program_version, Version(1));
+
+    // Edit program with the same content should have no effect
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            "example",
+            &None,
+            &None,
+            &None,
+            &Some("c1".to_string()),
+            &None,
+        )
+        .await
+        .unwrap();
+    let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
+    assert_eq!(current.version, Version(1));
+    assert_eq!(current.program_version, Version(1));
+
+    // Edit description with the same content should have no effect
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            "example",
+            &None,
+            &Some("d1".to_string()),
+            &None,
+            &None,
+            &None,
+        )
+        .await
+        .unwrap();
+    let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
+    assert_eq!(current.version, Version(1));
+    assert_eq!(current.program_version, Version(1));
+
+    // Edit program -> increment version and program version
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            "example",
+            &None,
+            &None,
+            &None,
+            &Some("c2".to_string()),
+            &None,
+        )
+        .await
+        .unwrap();
+    let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
+    assert_eq!(current.program_code, "c2".to_string());
+    assert_eq!(current.version, Version(2));
+    assert_eq!(current.program_version, Version(2));
+
+    // Edit description -> increment version
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            "example",
+            &None,
+            &Some("d2".to_string()),
+            &None,
+            &None,
+            &None,
+        )
+        .await
+        .unwrap();
+    let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
+    assert_eq!(current.description, "d2".to_string());
+    assert_eq!(current.version, Version(3));
+    assert_eq!(current.program_version, Version(2));
+
+    // Edit program configuration -> increment version and program version
+    let new_program_config = ProgramConfig {
+        profile: Some(CompilationProfile::Dev),
+    };
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            "example",
+            &None,
+            &None,
+            &None,
+            &None,
+            &Some(new_program_config.clone()),
+        )
+        .await
+        .unwrap();
+    let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
+    assert_eq!(current.program_config, new_program_config);
+    assert_eq!(current.version, Version(4));
+    assert_eq!(current.program_version, Version(3));
+
+    // Edit name -> increment version
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            "example",
+            &Some("example2".to_string()),
+            &None,
+            &None,
+            &None,
+            &None,
+        )
+        .await
+        .unwrap();
+    let current = handle.db.get_pipeline(tenant_id, "example2").await.unwrap();
+    assert_eq!(current.name, "example2".to_string());
+    assert_eq!(current.version, Version(5));
+    assert_eq!(current.program_version, Version(3));
+
+    // Edit runtime configuration -> increment version
+    let new_runtime_config = RuntimeConfig {
+        workers: 100,
+        storage: false,
+        cpu_profiler: false,
+        tracing: false,
+        tracing_endpoint_jaeger: "".to_string(),
+        min_batch_size_records: 0,
+        max_buffering_delay_usecs: 0,
+        resources: Default::default(),
+        min_storage_bytes: None,
+    };
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            "example2",
+            &None,
+            &None,
+            &Some(new_runtime_config.clone()),
+            &None,
+            &None,
+        )
+        .await
+        .unwrap();
+    let current = handle.db.get_pipeline(tenant_id, "example2").await.unwrap();
+    assert_eq!(current.runtime_config, new_runtime_config);
+    assert_eq!(current.version, Version(6));
+    assert_eq!(current.program_version, Version(3));
+}
+
+/// If the name of a pipeline already exists, it should return an error.
+#[tokio::test]
+async fn pipeline_duplicate() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            PipelineDescr {
+                name: "example".to_string(),
+                description: "d1".to_string(),
+                runtime_config: Default::default(),
+                program_code: "c1".to_string(),
+                program_config: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+
+    let error = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            PipelineDescr {
+                name: "example".to_string(),
+                description: "d2".to_string(),
+                runtime_config: Default::default(),
+                program_code: "c2".to_string(),
+                program_config: Default::default(),
+            },
+        )
+        .await
+        .expect_err("Expecting unique violation");
+    let expected = DBError::DuplicateName;
+    assert_eq!(format!("{}", error), format!("{}", expected));
+}
+
+/// Program compilation by picking up the next program and transitioning the program status.
+#[tokio::test]
+async fn pipeline_program_compilation() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+
+    // There is no program to compile
+    assert_eq!(
+        handle
+            .db
+            .get_next_pipeline_program_to_compile()
+            .await
+            .unwrap(),
+        None
+    );
+
+    // Create two pipelines
+    let pipeline1 = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            PipelineDescr {
+                name: "example1".to_string(),
+                description: "d1".to_string(),
+                runtime_config: Default::default(),
+                program_code: "c1".to_string(),
+                program_config: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+    let pipeline2 = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            PipelineDescr {
+                name: "example2".to_string(),
+                description: "d2".to_string(),
+                runtime_config: Default::default(),
+                program_code: "c2".to_string(),
+                program_config: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+
+    // Initially, the next program to compile is the one with program status being pending the longest
+    assert_eq!(
+        handle
+            .db
+            .get_next_pipeline_program_to_compile()
+            .await
+            .unwrap(),
+        Some((tenant_id, pipeline1.clone()))
+    );
+
+    // "Compile" the program of pipeline1
+    handle
+        .db
+        .transit_program_status_to_compiling_sql(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_compiling_rust(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            &ProgramInfo {
+                schema: ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+                input_connectors: Default::default(),
+                output_connectors: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_success(tenant_id, pipeline1.id, Version(1), "")
+        .await
+        .unwrap();
+
+    // Next up, it should be pipeline2
+    assert_eq!(
+        handle
+            .db
+            .get_next_pipeline_program_to_compile()
+            .await
+            .unwrap(),
+        Some((tenant_id, pipeline2.clone()))
+    );
+
+    // "Compile" the program of pipeline2, but end in error
+    handle
+        .db
+        .transit_program_status_to_system_error(
+            tenant_id,
+            pipeline2.id,
+            Version(1),
+            "Some system error",
+        )
+        .await
+        .unwrap();
+
+    // There should be nothing left to compile
+    assert_eq!(
+        handle
+            .db
+            .get_next_pipeline_program_to_compile()
+            .await
+            .unwrap(),
+        None
+    );
+}
+
+/// Deployment of a pipeline by starting it and progressing through various deployment statuses.
+#[tokio::test]
+async fn pipeline_deployment() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let pipeline1 = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            PipelineDescr {
+                name: "example1".to_string(),
+                description: "d1".to_string(),
+                runtime_config: Default::default(),
+                program_code: "c1".to_string(),
+                program_config: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+
+    // "Compile" the program of pipeline1
+    handle
+        .db
+        .transit_program_status_to_compiling_sql(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_compiling_rust(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            &ProgramInfo {
+                schema: ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+                input_connectors: Default::default(),
+                output_connectors: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_success(tenant_id, pipeline1.id, Version(1), "")
+        .await
+        .unwrap();
+
+    // "Deploy" pipeline1
+    handle
+        .db
+        .set_deployment_desired_status_paused(tenant_id, "example1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_provisioning(
+            tenant_id,
+            pipeline1.id,
+            generate_pipeline_config(
+                pipeline1.id,
+                &pipeline1.runtime_config,
+                &BTreeMap::default(),
+                &BTreeMap::default(),
+            ),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_initializing(tenant_id, pipeline1.id, "location1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_paused(tenant_id, pipeline1.id)
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_desired_status_running(tenant_id, "example1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_running(tenant_id, pipeline1.id)
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_desired_status_shutdown(tenant_id, "example1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_shutting_down(tenant_id, pipeline1.id)
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_shutdown(tenant_id, pipeline1.id)
+        .await
+        .unwrap();
+}
 
 //////////////////////////////////////////////////////////////////////////////
 /////                           PROP TESTS                               /////
