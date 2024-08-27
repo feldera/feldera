@@ -4,6 +4,7 @@ import type { ParsedElementInfo } from '@streamparser/json/utils/types/parsedEle
 import { discreteDerivative } from '$lib/functions/common/math'
 import { tuple } from '$lib/functions/common/tuple'
 import { chunkIndices } from '$lib/functions/common/array'
+import { humanSize } from '$lib/functions/common/string'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
@@ -110,6 +111,7 @@ export const parseJSONInStream = <T>(
                 chunksToParse.shift()
               }
               if (restart) {
+                console.log(`Skipped ${humanSize(previousBufferSize - bufferSize)} of change stream. New buffer size is ${humanSize(bufferSize)}`)
                 onBytesSkipped?.(previousBufferSize - bufferSize)
                 parser = mkParser(onValue, options)
                 break
