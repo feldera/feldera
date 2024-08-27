@@ -135,7 +135,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // CREATE VIEW `V` AS
                     // SELECT `T`.`COL3`
                     // FROM `T`
-                    let stream206: stream<WSet<Tup1<b>>> = stream81;
+                    let stream208: stream<WSet<Tup1<b>>> = stream81;
                 }
                 """;
         Assert.assertEquals(expected, str);

@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -23,6 +24,41 @@ public class RegressionTests extends SqlIoTest {
                 FROM stddev_groupby
                 GROUP BY id;""";
         this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void testLag() {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
+        String sql = """
+                CREATE TABLE foo (
+                    card_id INT,
+                    id INT NOT NULL PRIMARY KEY,
+                    ttime INT
+                );
+                
+                CREATE VIEW bar AS
+                select
+                    id,
+                    ttime,
+                    lag(ttime, 1) OVER (PARTITION BY card_id ORDER BY ttime) as lag1,
+                    lag(ttime, 2) OVER (PARTITION BY card_id ORDER BY ttime) as lag2
+                from foo;""";
+
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        ccs.step("""
+                INSERT INTO foo VALUES(2, 2, 10);
+                INSERT INTO foo VALUES(2, 2, 10);
+                INSERT INTO foo VALUES(30, 2, 12);
+                INSERT INTO foo VALUES(50, 2, 13);""",
+                """
+                 id | ttime | lag1 | lag2 | weight
+                ------------------------------------
+                 2  | 10   |      |        | 1
+                 2  | 10   | 10   |        | 1
+                 30 | 12   | 10   | 10     | 1
+                 50 | 13   | 12   | 10     | 1""");
     }
 
     @Test

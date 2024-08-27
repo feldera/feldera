@@ -62,9 +62,9 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
             passes.add(new OptimizeDistinctVisitor(reporter));
             if (options.languageOptions.incrementalize) {
                 passes.add(new IncrementalizeVisitor(reporter));
-                passes.add(new OptimizeIncrementalVisitor(reporter));
-                passes.add(new RemoveIAfterD(reporter));
             }
+            passes.add(new OptimizeIncrementalVisitor(reporter));
+            passes.add(new RemoveIAfterD(reporter));
             passes.add(new DeadCode(reporter, true, false));
             passes.add(new Simplify(reporter).circuitRewriter());
             passes.add(new OptimizeWithGraph(reporter, g -> new OptimizeProjectionVisitor(reporter, g)));
