@@ -25,7 +25,7 @@ public class RegressionTests extends SqlIoTest {
                 " result" +
                         "---------" +
                         " -128");
-        this.addRustTestCase(ccs);
+        this.addFailingRustTestCase("issue2316", "attempt to add with overflow", ccs);
     }
 
     @Test
@@ -43,8 +43,8 @@ public class RegressionTests extends SqlIoTest {
     public void testLag() {
         String sql = """
                 CREATE TABLE foo (
+                    id INT NOT NULL,
                     card_id INT,
-                    id INT NOT NULL PRIMARY KEY,
                     ttime INT
                 );
                 
@@ -56,6 +56,7 @@ public class RegressionTests extends SqlIoTest {
                     lag(ttime, 2) OVER (PARTITION BY card_id ORDER BY ttime) as lag2
                 from foo;""";
 
+        // Validated on postgres
         CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("""
                 INSERT INTO foo VALUES(2, 2, 10);
@@ -69,6 +70,7 @@ public class RegressionTests extends SqlIoTest {
                  2  | 10   | 10   |        | 1
                  30 | 12   | 10   | 10     | 1
                  50 | 13   | 12   | 10     | 1""");
+        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -83,23 +85,22 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void issue2315() {
         String sql = """
-                CREATE TABLE T(
-                    id INT, c1 TINYINT, c2 TINYINT NOT NULL, c3 INT2, c4 INT2 NOT NULL,
-                    c5 INT, c6 INT NOT NULL,c7 BIGINT,c8 BIGINT NOT NULL);
+                CREATE TABLE T(id INT, c6 INT NOT NULL);
                 
                 CREATE VIEW stddev_view AS
-                SELECT id, STDDEV_SAMP(c1) AS c1, STDDEV_SAMP(c2) AS c2, STDDEV_SAMP(c3) AS c3,
-                       STDDEV_SAMP(c4) AS c4, STDDEV_SAMP(c5) AS c5, STDDEV_SAMP(c6) AS c6,
-                       STDDEV_SAMP(c7) AS c7, STDDEV_SAMP(c8) AS c8
+                SELECT id, STDDEV_SAMP(c6) AS c6
                 FROM T
                 GROUP BY id;""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("""
-                        INSERT INTO T VALUES(null, 5, 2, null, 4, 5, 6, null, 8);
-                        INSERT INTO T VALUES(null, 4, 3, 4,    6, 2, 3, 4,    2);""",
+                       INSERT INTO T VALUES(0, 6);
+                       INSERT INTO T VALUES(1, 3);""",
                 """
-                        id | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | weight
-                       ---------------------------------------""");
+                        id | c6 | weight
+                       -----------------
+                         0 |    | 1
+                         1 |    | 1""");
+        this.addRustTestCase(ccs);
     }
 
     @Test

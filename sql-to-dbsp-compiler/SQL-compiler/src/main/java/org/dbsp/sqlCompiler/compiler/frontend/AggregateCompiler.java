@@ -575,21 +575,21 @@ public class AggregateCompiler implements ICompilerComponent {
 
         DBSPVariablePath a = tripleType.var();
         DBSPExpression sumSquared = ExpressionCompiler.makeBinaryExpression(
-                node, this.resultType, DBSPOpcode.MUL,
+                node, this.nullableResultType, DBSPOpcode.MUL,
                 a.field(sumIndex), a.field(sumIndex));
         DBSPExpression normalized = ExpressionCompiler.makeBinaryExpression(
-                node, this.resultType, DBSPOpcode.DIV,
+                node, this.nullableResultType, DBSPOpcode.DIV,
                 sumSquared, a.field(countIndex));
         DBSPExpression sub = ExpressionCompiler.makeBinaryExpression(
-                node, this.resultType, DBSPOpcode.SUB,
+                node, this.nullableResultType, DBSPOpcode.SUB,
                 a.field(sumSquaresIndex), normalized);
 
         DBSPExpression denom = isSamp ? ExpressionCompiler.makeBinaryExpression(
-                node, this.resultType, DBSPOpcode.SUB,
+                node, this.nullableResultType, DBSPOpcode.SUB,
                 a.field(countIndex), this.resultType.to(IsNumericType.class).getOne()) :
                 a.field(countIndex);
         // We need to call sqrt, which only works for doubles.
-        DBSPType sqrtType = new DBSPTypeDouble(node, this.resultType.mayBeNull);
+        DBSPType sqrtType = new DBSPTypeDouble(node, this.nullableResultType.mayBeNull);
         DBSPExpression div = ExpressionCompiler.makeBinaryExpression(
                 node, this.nullableResultType, DBSPOpcode.DIV_NULL,
                 sub, denom).cast(sqrtType);

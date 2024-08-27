@@ -87,7 +87,7 @@ public class TestCase {
             list.add(in);
 
             if (!useHandles)
-                throw new UnimplementedException();
+                throw new UnimplementedException("Testing for circuits with handles not yet implemented");
 
             for (int i = 0; i < inputs.getSetCount(); i++) {
                 String function;
