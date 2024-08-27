@@ -81,7 +81,7 @@ public class EndToEndTests extends BaseSQLTests {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, streams);
-        this.addRustTestCase(query, ccs);
+        this.addRustTestCase(ccs);
     }
 
     public void invokeTestQueryBase(String query, InputOutputChangeStream streams) {

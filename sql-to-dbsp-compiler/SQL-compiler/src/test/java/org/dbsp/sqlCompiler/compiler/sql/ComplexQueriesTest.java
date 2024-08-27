@@ -307,7 +307,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         InputOutputChange ip = new InputOutputChange(new Change(inputs), new Change());
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.addChange(ip);
-        this.addRustTestCase("ComplexQueriesTest.demographicsTest", ccs);
+        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -345,7 +345,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
         InputOutputChange ip = new InputOutputChange(new Change(inputs), new Change());
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.addChange(ip);
-        this.addRustTestCase("ComplexQueriesTest.demographicsTest", ccs);
+        this.addRustTestCase(ccs);
     }
 
     @Test

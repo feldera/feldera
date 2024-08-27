@@ -24,7 +24,6 @@ import org.dbsp.util.HSQDBManager;
 import org.dbsp.util.Utilities;
 import org.hsqldb.server.ServerAcl;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import javax.sql.DataSource;
@@ -253,7 +252,7 @@ public class MetadataTests extends BaseSQLTests {
         compiler.addSchemaSource("schema", hsql);
         compiler.compileStatement("CREATE VIEW V AS SELECT * FROM mytable");
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase("jdbc", ccs);
+        this.addRustTestCase(ccs);
         ObjectNode node = compiler.getIOMetadataAsJson();
         String json = node.toPrettyString();
         Assert.assertTrue(json.contains("MYTABLE"));

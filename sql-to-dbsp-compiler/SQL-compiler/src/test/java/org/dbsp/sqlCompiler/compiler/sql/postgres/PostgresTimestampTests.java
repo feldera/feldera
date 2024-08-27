@@ -147,7 +147,7 @@ public class PostgresTimestampTests extends SqlIoTest {
         DBSPZSetLiteral input = compiler.getTableContents().getTableContents("TIMESTAMP_TBL");
         InputOutputChange change = new InputOutputChange(new Change(input), expectedOutput);
         ccs.addChange(change);
-        this.addRustTestCase(query, ccs);
+        this.addRustTestCase(ccs);
     }
 
     @Test

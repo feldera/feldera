@@ -586,7 +586,7 @@ SELECT
             Logger.INSTANCE.setLoggingLevel(module, previous);
         for (int i = 0; i < scriptsAndTables.length; i += 2)
             ccs.step(scriptsAndTables[i], scriptsAndTables[i + 1]);
-        this.addRustTestCase("q" + query, ccs);
+        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -935,6 +935,6 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
         Assert.assertFalse(compiler.hasErrors());
         Assert.assertFalse(compiler.hasWarnings());
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase("NexmarkTest", ccs);
+        this.addRustTestCase(ccs);
     }
 }
