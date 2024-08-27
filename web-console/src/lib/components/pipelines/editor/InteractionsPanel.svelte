@@ -39,6 +39,7 @@
     }
   }
   $effect(() => {
+    pipelineName
     setTimeout(() => pipelineActionCallbacks.add(pipelineName, 'start_paused', switchTo))
     return () => {
       pipelineActionCallbacks.remove(pipelineName, 'start_paused', switchTo)

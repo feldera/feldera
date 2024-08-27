@@ -47,7 +47,7 @@
         <div class="relative h-44 w-full">
           <PipelineMemoryGraph
             metrics={metrics.current}
-            refetchMs={500}
+            refetchMs={1000}
             keepMs={60 * 1000}
             {pipeline}
           ></PipelineMemoryGraph>
