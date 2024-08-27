@@ -38,8 +38,9 @@
       if ('message' in stream) {
         return undefined
       }
-      const cancel = parseJSONInStream(stream, pushChanges(pipelineName, relationName), {
-        paths: ['$.json_data.*']
+      const cancel = parseJSONInStream(stream, pushChanges(pipelineName, relationName), undefined, {
+        paths: ['$.json_data.*'],
+        bufferSize: 10 * 1024 * 1024
       })
       return () => {
         cancel()
@@ -168,8 +169,7 @@
                     startReadingStream(pipelineName, relation.relationName)
                 }
               }}
-              value={relation}
-            />
+              value={relation} />
             {relation.relationName}
           </label>
         {/snippet}
@@ -196,7 +196,7 @@
       {#if getRows()[pipelineName]?.length}
         <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="p-2 text-surface-500">
+        <span class="text-surface-500 p-2">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}
