@@ -1642,7 +1642,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         @Override
-        DBSPOperator implement(DBSPOperator _ignore, DBSPOperator lastOperator) {
+        DBSPOperator implement(DBSPOperator firstInput, DBSPOperator lastOperator) {
             DBSPType inputRowType = lastOperator.getOutputZSetElementType();
             // All the aggregate calls have the same arguments by construction
             AggregateCall lastCall = Utilities.last(this.aggregateCalls);
@@ -1650,27 +1650,36 @@ public class CalciteToDBSPCompiler extends RelVisitor
             int offset = kind == org.apache.calcite.sql.SqlKind.LEAD ? -1 : +1;
             DBSPVariablePath inputRowRefVar = inputRowType.ref().var();
             ExpressionCompiler eComp = new ExpressionCompiler(inputRowRefVar, this.window.constants, this.compiler.compiler);
+            DBSPOperator inputIndexed;
 
-            // Partition by the specified fields
-            List<Integer> partitionKeys = this.group.keys.toList();
-            List<DBSPExpression> expressions = Linq.map(partitionKeys,
-                    f -> inputRowRefVar.deepCopy().deref().field(f).applyCloneIfNeeded());
-            DBSPTupleExpression partition = new DBSPTupleExpression(node, expressions);
+            if (lastOperator == firstInput) {
+                // Partition by the specified fields
+                List<Integer> partitionKeys = this.group.keys.toList();
+                List<DBSPExpression> expressions = Linq.map(partitionKeys,
+                        f -> inputRowRefVar.deepCopy().deref().field(f).applyCloneIfNeeded());
+                DBSPTupleExpression partition = new DBSPTupleExpression(node, expressions);
 
-            // Map each row to an expression of the form: |t| (partition, (*t).clone()))
-            DBSPExpression row = DBSPTupleExpression.flatten(
-                    inputRowRefVar.deepCopy().deref().applyClone());
-            DBSPExpression mapExpr = new DBSPRawTupleExpression(partition, row);
-            DBSPClosureExpression mapClo = mapExpr.closure(inputRowRefVar.asParameter());
-            DBSPOperator mapIndex = new DBSPMapIndexOperator(node, mapClo,
-                    CalciteToDBSPCompiler.makeIndexedZSet(partition.getType(), row.getType()), lastOperator);
-            this.compiler.circuit.addOperator(mapIndex);
+                // Map each row to an expression of the form: |t| (partition, (*t).clone()))
+                DBSPExpression row = DBSPTupleExpression.flatten(
+                        inputRowRefVar.deepCopy().deref().applyClone());
+                DBSPExpression mapExpr = new DBSPRawTupleExpression(partition, row);
+                DBSPClosureExpression mapClo = mapExpr.closure(inputRowRefVar.asParameter());
+                inputIndexed = new DBSPMapIndexOperator(node, mapClo,
+                        CalciteToDBSPCompiler.makeIndexedZSet(partition.getType(), row.getType()), lastOperator);
+                this.compiler.circuit.addOperator(inputIndexed);
+            } else {
+                // avoid a deindex->index chain which does nothing
+                assert lastOperator.is(DBSPDeindexOperator.class);
+                inputIndexed = lastOperator.inputs.get(0);
+            }
 
             // This operator is always incremental, so create the non-incremental version
             // of it by adding a D and an I around it.
-            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, mapIndex);
+            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, inputIndexed);
             this.compiler.circuit.addOperator(diff);
 
+            DBSPExpression row = DBSPTupleExpression.flatten(
+                    inputRowRefVar.deepCopy().deref().applyClone());
             DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, row.getType());
             comparator = CalciteToDBSPCompiler.generateComparator(group, comparator);
 
