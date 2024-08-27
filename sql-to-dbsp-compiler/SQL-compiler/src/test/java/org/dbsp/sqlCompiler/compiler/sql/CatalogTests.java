@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /** Tests that emit Rust code using the catalog. */
@@ -319,9 +320,7 @@ public class CatalogTests extends BaseSQLTests {
                 -- Number of vulnerabilities.
                 -- Most severe vulnerability.
                 -- create view k8scluster_vulnerability_stats ();""";
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(statements);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(statements);
         this.addRustTestCase(ccs);
     }
 
@@ -332,10 +331,8 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE TABLE t(v INT);
                 CREATE VIEW V (sum) AS SELECT SUM(v) FROM T;
                 """;
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(sql);
-        DBSPCircuit circuit = getCircuit(compiler);
-        String string = ToRustVisitor.toRustString(new StderrErrorReporter(), circuit, compiler.options);
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        String string = ToRustVisitor.toRustString(new StderrErrorReporter(), ccs.circuit, ccs.compiler.options);
         Assert.assertTrue(string.contains("serde(rename = \"SUM\")"));
     }
 
@@ -376,5 +373,19 @@ public class CatalogTests extends BaseSQLTests {
                 create materialized view V as SELECT * FROM T;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
+    }
+
+    @Test @Ignore("Cannot be run yet")
+    public void issue2316() {
+        String sql = """
+                CREATE TABLE sum(c1 TINYINT);
+                CREATE VIEW sum_view AS SELECT SUM(c1) AS c1 FROM sum;
+                """;
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO sum VALUES (127), (1);",
+                " result" +
+                        "---------" +
+                        " -128");
+        this.addFailingRustTestCase("issue2316", "attempt to add with overflow", ccs);
     }
 }
