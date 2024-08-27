@@ -9,7 +9,7 @@
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
-  import type { ExtendedPipeline, Pipeline } from '$lib/services/pipelineManager'
+  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import { listPipelineErrors } from '$lib/compositions/health/systemErrors.svelte'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -92,5 +92,5 @@
   list={tabList}
   panels={tabPanels}
   panelsClasses="flex-1"
-  classes="flex flex-col flex-1 space-y-0"
+  classes="flex flex-col flex-1 !space-y-0"
 ></Tabs>

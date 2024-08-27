@@ -8,11 +8,14 @@
   import { VirtualList, type AfterScrollEvent } from 'svelte-virtuallists'
   import { useResizeObserver } from 'runed'
   import { scale } from 'svelte/transition'
+  import { humanSize } from '$lib/functions/common/string'
 
+  type Payload = { insert: XgressRecord } | { delete: XgressRecord } | { skippedBytes: number }
+  type Row = { relationName: string } & Payload
   let {
     changes
   }: {
-    changes: ({ relationName: string } & ({ insert: XgressRecord } | { delete: XgressRecord }))[]
+    changes: Row[]
   } = $props()
 
   let len = $derived(changes.length)
@@ -68,7 +71,7 @@
     {itemSize}
     {onAfterScroll}
   >
-    {#snippet slot({ item, style })}
+    {#snippet slot({ item, style }: { item: Row; style: string })}
       <div
         {style}
         class={`row whitespace-nowrap pl-2 before:inline-block before:w-2 even:!bg-opacity-30 even:bg-surface-100-900 ` +
@@ -81,7 +84,13 @@
         <span class="inline-block w-64 overflow-clip overflow-ellipsis pl-4"
           >{item.relationName}</span
         >
-        <span class="">{JSONbig.stringify((item as any).insert ?? (item as any).delete)}</span>
+        <span class=""
+          >{'insert' in item
+            ? JSONbig.stringify(item.insert)
+            : 'delete' in item
+              ? JSONbig.stringify(item.delete)
+              : `Skipped ${humanSize(item.skippedBytes)} of changes stream`}</span
+        >
       </div>
     {/snippet}
   </VirtualList>

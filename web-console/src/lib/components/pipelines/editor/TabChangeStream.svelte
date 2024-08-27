@@ -8,40 +8,39 @@
     cancelStream?: () => void
   }
   let pipelinesRelations = $state<
-    Record<
-      string,
-      Record<string, ExtraType & { type: 'tables' | 'views' }> // Record<'tables' | 'views', Record<string, ExtraType & { type: 'tables' | 'views' }>>
-    >
+    Record<string, Record<string, ExtraType & { type: 'tables' | 'views' }>>
   >({})
   const pipelineActionCallbacks = usePipelineActionCallbacks()
-  let rows: Record<
-    string,
-    ({ relationName: string } & ({ insert: XgressRecord } | { delete: XgressRecord }))[]
-  > = {} // Initialize row array
+  type Payload = { insert: XgressRecord } | { delete: XgressRecord } | { skippedBytes: number }
+  type Row = { relationName: string } & Payload
+  let rows: Record<string, Row[]> = {} // Initialize row array
   // Separate getRows as a $state avoids burdening rows array itself with reactivity overhead
   let getRows = $state<() => typeof rows>(() => rows)
 
   const bufferSize = 10000
-  const pushChanges =
-    (pipelineName: string, relationName: string) =>
-    (changes: Record<'insert' | 'delete', XgressRecord>[]) => {
-      rows[pipelineName].splice(0, rows[pipelineName].length + changes.length - bufferSize)
-      rows[pipelineName].push(
-        ...changes.slice(-bufferSize).map((change) => ({
-          ...change,
-          relationName
-        }))
-      )
-    }
+  const pushChanges = (pipelineName: string, relationName: string) => (changes: Payload[]) => {
+    rows[pipelineName].splice(0, rows[pipelineName].length + changes.length - bufferSize)
+    rows[pipelineName].push(
+      ...changes.slice(-bufferSize).map((change) => ({
+        ...change,
+        relationName
+      }))
+    )
+  }
   const startReadingStream = (pipelineName: string, relationName: string) => {
     const handle = relationEggressStream(pipelineName, relationName).then((stream) => {
       if ('message' in stream) {
         return undefined
       }
-      const cancel = parseJSONInStream(stream, pushChanges(pipelineName, relationName), undefined, {
-        paths: ['$.json_data.*'],
-        bufferSize: 10 * 1024 * 1024
-      })
+      const cancel = parseJSONInStream(
+        stream,
+        pushChanges(pipelineName, relationName),
+        (skippedBytes) => pushChanges(pipelineName, relationName)([{ skippedBytes }]),
+        {
+          paths: ['$.json_data.*'],
+          bufferSize: 10 * 1024 * 1024
+        }
+      )
       return () => {
         cancel()
       }
@@ -169,7 +168,8 @@
                     startReadingStream(pipelineName, relation.relationName)
                 }
               }}
-              value={relation} />
+              value={relation}
+            />
             {relation.relationName}
           </label>
         {/snippet}
@@ -196,7 +196,7 @@
       {#if getRows()[pipelineName]?.length}
         <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="text-surface-500 p-2">
+        <span class="p-2 text-surface-500">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}
