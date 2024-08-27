@@ -7,7 +7,7 @@
   let errors = useSystemErrors(pipeline)
 </script>
 
-<div class="flex h-full flex-col gap-4">
+<div class="flex h-full flex-col gap-4 p-2">
   {#each errors.current as systemError}
     <div class="whitespace-nowrap">
       <a href={systemError.cause.source}>

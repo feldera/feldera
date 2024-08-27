@@ -9,3 +9,11 @@
 .preset-grayout-surface {
   @apply text-surface-600 hover:text-surface-950 dark:text-surface-400 hover:dark:text-surface-50;
 }
+
+.pane-divider-horizontal {
+  @apply z-[1] h-0.5 transition-colors bg-surface-100-900 before:-mt-0.5 before:flex before:h-2 before:w-full hover:bg-primary-500 active:bg-primary-500;
+}
+
+.pane-divider-vertical {
+  @apply z-[1] w-0.5 transition-colors bg-surface-100-900 before:-ml-0.5 before:flex before:h-full before:w-2 hover:bg-primary-500 active:bg-primary-500;
+}

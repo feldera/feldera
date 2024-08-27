@@ -146,7 +146,7 @@
 
 <div class="flex h-full flex-row">
   <PaneGroup direction="horizontal">
-    <Pane defaultSize={20} minSize={5} class="flex h-full">
+    <Pane defaultSize={20} minSize={5} class="flex h-full p-2 pr-0">
       <div class="flex w-full flex-col overflow-y-auto text-nowrap">
         {#snippet relationItem(relation: RelationInfo & ExtraType)}
           <label class="flex-none overflow-hidden overflow-ellipsis">
@@ -190,13 +190,13 @@
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="w-2 bg-surface-100-900"></PaneResizer>
+    <PaneResizer class="pane-divider-vertical"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
       {#if getRows()[pipelineName]?.length}
         <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="px-4 text-surface-500">
+        <span class="p-2 text-surface-500">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}

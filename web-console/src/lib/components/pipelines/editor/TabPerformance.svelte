@@ -17,7 +17,7 @@
 </script>
 
 {#if global}
-  <div class="flex flex-col gap-4">
+  <div class="flex flex-col gap-4 p-2">
     <div class="flex w-full flex-col-reverse gap-2 lg:flex-row">
       <div class="mb-auto flex flex-col">
         <span class="w-full border-b-2 text-center text-surface-600-400">Total records</span>
@@ -100,5 +100,5 @@
     {/if}
   </div>
 {:else}
-  <span class="text-surface-600-400">Pipeline is not running</span>
+  <span class="flex p-2 text-surface-600-400">Pipeline is not running</span>
 {/if}

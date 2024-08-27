@@ -81,12 +81,16 @@
       value={tabName}
       classes="h-full overflow-y-auto relative"
     >
-      <div class="ggg absolute h-full w-full p-4 pt-0">
+      <div class="absolute h-full w-full">
         <TabComponent {pipeline} {metrics}></TabComponent>
       </div>
     </Tabs.Panel>
   {/each}
 {/snippet}
 
-<Tabs list={tabList} panels={tabPanels} panelsClasses="flex-1" classes="flex flex-col flex-1"
+<Tabs
+  list={tabList}
+  panels={tabPanels}
+  panelsClasses="flex-1"
+  classes="flex flex-col flex-1 space-y-0"
 ></Tabs>
