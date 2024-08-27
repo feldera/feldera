@@ -78,12 +78,12 @@ public class SourceFileContents {
             }
         } else {
             if (endLine - startLine < 5 || !decorated) {
-                for (int i = startLine; i < endLine; i++) {
+                for (int i = startLine; i <= endLine; i++) {
                     String line = this.lines.get(i);
                     if (!decorated) {
                         if (i == startLine)
                             line = line.substring(startCol);
-                        else if (i == endLine - 1)
+                        else if (i == endLine)
                             line = line.substring(0, endCol);
                     }
                     result.append(this.lineNo(i, decorated))

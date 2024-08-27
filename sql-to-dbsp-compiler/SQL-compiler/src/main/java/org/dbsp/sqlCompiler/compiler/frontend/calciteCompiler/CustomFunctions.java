@@ -35,6 +35,7 @@ public class CustomFunctions {
         this.initial.add(new GunzipFunction());
         this.initial.add(new WriteLogFunction());
         this.initial.add(new SequenceFunction());
+        this.initial.add(new ToIntFunction());
         this.initial.add(new NowFunction());
         this.udf = new HashMap<>();
     }
@@ -132,6 +133,25 @@ public class CustomFunctions {
                             .andThen(SqlTypeTransforms.TO_NULLABLE),
                     null,
                     family(SqlTypeFamily.INTEGER, SqlTypeFamily.INTEGER),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION);
+        }
+
+        @Override
+        public boolean isDeterministic() {
+            return false;
+        }
+    }
+
+    /** TO_INT(BINARY) returns an integers from a BINARY object which has less than 4 bytes.
+     * For VARBINARY objects it converts only the first 4 bytes. */
+    public static class ToIntFunction extends SqlFunction {
+        public ToIntFunction() {
+            super("TO_INT",
+                    SqlKind.OTHER_FUNCTION,
+                    ReturnTypes.INTEGER
+                            .andThen(SqlTypeTransforms.TO_NULLABLE),
+                    null,
+                    OperandTypes.BINARY,
                     SqlFunctionCategory.USER_DEFINED_FUNCTION);
         }
 

@@ -7,8 +7,7 @@ use hex::ToHex;
 use pipeline_types::{deserialize_without_context, serialize_without_context};
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
-use std::fmt::Debug;
-use std::io::Read;
+use std::{cmp::min, fmt::Debug, io::Read};
 
 #[derive(
     Debug,
@@ -192,3 +191,13 @@ pub fn gunzip_(source: ByteArray) -> String {
 }
 
 some_function1!(gunzip, ByteArray, String);
+
+pub fn to_int_(source: ByteArray) -> i32 {
+    let mut result = 0;
+    for i in 0..min(4, source.length()) {
+        result = (result << 8) | (source.data[i] as i32);
+    }
+    result
+}
+
+some_function1!(to_int, ByteArray, i32);

@@ -9,7 +9,6 @@ import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -28,7 +27,6 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void testLag() {
-        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         String sql = """
                 CREATE TABLE foo (
                     card_id INT,
