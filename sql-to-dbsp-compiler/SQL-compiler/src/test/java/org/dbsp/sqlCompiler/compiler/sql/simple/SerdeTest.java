@@ -52,6 +52,6 @@ public class SerdeTest extends SqlIoTest {
                 // new DBSPTupleExpression(new DBSPI32Literal()));
         );
         ccs.addPair(new Change(input), new Change(output));
-        this.addRustTestCase("jsonStructTest", ccs);
+        this.addRustTestCase(ccs);
     }
 }

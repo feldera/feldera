@@ -23,6 +23,6 @@ public class TpchTest extends BaseSQLTests {
         compiler.compileStatements(tpch);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.showErrors();
-        this.addRustTestCase("tpch", ccs);
+        this.addRustTestCase(ccs);
     }
 }

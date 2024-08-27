@@ -16,6 +16,20 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
+    public void issue2316() {
+        String sql = """
+                CREATE TABLE sum(c1 TINYINT);
+                CREATE VIEW sum_view AS SELECT SUM(c1) AS c1 FROM sum;
+                """;
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO sum VALUES (127), (1);",
+                " result" +
+                        "---------" +
+                        " -128");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void issue2261() {
         String sql = """
                 CREATE TABLE stddev_groupby(id INT, c2 TINYINT NOT NULL);
@@ -44,9 +58,7 @@ public class RegressionTests extends SqlIoTest {
                     lag(ttime, 2) OVER (PARTITION BY card_id ORDER BY ttime) as lag2
                 from foo;""";
 
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("""
                 INSERT INTO foo VALUES(2, 2, 10);
                 INSERT INTO foo VALUES(2, 2, 10);
@@ -83,9 +95,7 @@ public class RegressionTests extends SqlIoTest {
                        STDDEV_SAMP(c7) AS c7, STDDEV_SAMP(c8) AS c8
                 FROM T
                 GROUP BY id;""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+           CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("""
                         INSERT INTO T VALUES(null, 5, 2, null, 4, 5, 6, null, 8);
                         INSERT INTO T VALUES(null, 4, 3, 4,    6, 2, 3, 4,    2);""",
@@ -343,9 +353,7 @@ public class RegressionTests extends SqlIoTest {
                 window2 AS (PARTITION BY id ORDER BY ts RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 MINUTE FOLLOWING),
                 window3 AS (PARTITION BY id ORDER BY CAST(ts AS DATE) RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 MINUTE FOLLOWING),
                 window4 AS (PARTITION BY id ORDER BY CAST(ts AS TIME) RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 MINUTE FOLLOWING);""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(sql);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+           CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("""
                         INSERT INTO T VALUES(0, 1, '2024-01-01 00:00:00');
                         INSERT INTO T VALUES(1, 2, '2024-01-01 00:00:00');
@@ -365,7 +373,7 @@ public class RegressionTests extends SqlIoTest {
                         0  | 7   | 26 | 26 | 26 | 26 | 1
                         1  | 2   | 2  | 2  | 2  | 2  | 1"""
         );
-        this.addRustTestCase("issue2027", ccs);
+        this.addRustTestCase(ccs);
     }
 
     @Test

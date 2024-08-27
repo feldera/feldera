@@ -59,7 +59,7 @@ public class TimeTests extends BaseSQLTests {
         DBSPZSetLiteral expectedOutput = new DBSPZSetLiteral(new DBSPTupleExpression(fields));
         InputOutputChange change = new InputOutputChange(this.createInput(), new Change(expectedOutput));
         ccs.addChange(change);
-        this.addRustTestCase(query, ccs);
+        this.addRustTestCase(ccs);
     }
 
     public Change createInput() {

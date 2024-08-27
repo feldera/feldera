@@ -154,7 +154,7 @@ public class CatalogTests extends BaseSQLTests {
 
     @Test
     public void testSanitizeNames() {
-        String statements = """
+        String sql = """
                 create table t1(
                 c1 integer,
                 "col" boolean,
@@ -168,10 +168,8 @@ public class CatalogTests extends BaseSQLTests {
                 "αβγ" boolean not null,
                 ΔΘ boolean not null);
                 create view v1 as select * from t1;""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(statements);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase("docTest", ccs);
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -324,7 +322,7 @@ public class CatalogTests extends BaseSQLTests {
         DBSPCompiler compiler = testCompiler();
         compiler.compileStatements(statements);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase("testComplex", ccs);
+        this.addRustTestCase(ccs);
     }
 
     // Test for https://github.com/feldera/feldera/issues/1666
@@ -347,10 +345,8 @@ public class CatalogTests extends BaseSQLTests {
         // This is identical to ComplexQueriesTest.primaryKeyTest, but here
         // we generate code in a different way.
         String sql = "CREATE TABLE event_t ( id BIGINT NOT NULL PRIMARY KEY, local_event_dt DATE )";
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(sql);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase(sql, ccs);
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -365,10 +361,8 @@ public class CatalogTests extends BaseSQLTests {
                    int2 bigint,
                    primary key(id1, id2)
                 )""";
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(sql);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase(sql, ccs);
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
     }
 
     @Test
@@ -380,9 +374,7 @@ public class CatalogTests extends BaseSQLTests {
                    'materialized' = 'true'
                 );
                 create materialized view V as SELECT * FROM T;""";
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(sql);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase(sql, ccs);
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
     }
 }

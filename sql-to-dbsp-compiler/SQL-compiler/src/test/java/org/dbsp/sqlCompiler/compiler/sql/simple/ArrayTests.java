@@ -57,7 +57,7 @@ public class ArrayTests extends BaseSQLTests {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(statements, query);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler, streams);
-        this.addRustTestCase(query, ccs);
+        this.addRustTestCase(ccs);
     }
 
     private void testQuery(String statements, String query) {

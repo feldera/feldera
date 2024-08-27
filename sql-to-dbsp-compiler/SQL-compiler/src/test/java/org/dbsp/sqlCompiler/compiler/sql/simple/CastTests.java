@@ -73,7 +73,7 @@ public class CastTests extends BaseSQLTests {
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         InputOutputChange change = new InputOutputChange(this.createInput(), new Change(expectedOutput));
         ccs.addChange(change);
-        this.addRustTestCase(query, ccs);
+        this.addRustTestCase(ccs);
     }
 
     @Test

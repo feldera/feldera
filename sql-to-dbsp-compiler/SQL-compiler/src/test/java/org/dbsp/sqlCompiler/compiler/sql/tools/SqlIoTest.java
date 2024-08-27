@@ -134,7 +134,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
                 new Change(expected)
         );
         ccs.addChange(iochange);
-        this.addRustTestCase(query, ccs);
+        this.addRustTestCase(ccs);
     }
 
     public void compare(String query, String expected, boolean optimize) {
@@ -152,7 +152,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
                 result
         );
         ccs.addChange(change);
-        this.addRustTestCase(query, ccs);
+        this.addRustTestCase(ccs);
     }
 
     String removeComments(String queryAndOutput) {

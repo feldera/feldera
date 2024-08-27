@@ -525,7 +525,7 @@ public class PostgresNumericTests extends SqlIoTest {
                                 new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false),
                                 new DBSPTypeDecimal(CalciteObject.EMPTY, WIDTH, 10, false)))));
         ccs.addChange(change);
-        this.addRustTestCase(last, ccs);
+        this.addRustTestCase(ccs);
     }
 
     @Test

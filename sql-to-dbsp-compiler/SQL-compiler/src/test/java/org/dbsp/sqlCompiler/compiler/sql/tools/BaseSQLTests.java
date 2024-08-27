@@ -55,6 +55,12 @@ public class BaseSQLTests {
      * which the tests are built. */
     public void prepareInputs(DBSPCompiler compiler) {}
 
+    public CompilerCircuitStream getCCS(String sql) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(sql);
+        return new CompilerCircuitStream(compiler);
+    }
+
     /** Run a query that is expected to fail in compilation.
      * @param query             Query to run.
      * @param messageFragment   This fragment should appear in the error message. */
@@ -104,7 +110,7 @@ public class BaseSQLTests {
      * - the circuit, and
      * - the input/output data that is used to test the circuit. */
     public static class CompilerCircuitStream {
-        final DBSPCompiler compiler;
+        public final DBSPCompiler compiler;
         public final DBSPCircuit circuit;
         final InputOutputChangeStream stream;
 
@@ -246,12 +252,12 @@ public class BaseSQLTests {
     }
 
     public void addRustTestCase(
-            String name, CompilerCircuitStream ccs) {
+            CompilerCircuitStream ccs) {
         ccs.compiler.messages.show(System.err);
         if (ccs.compiler.messages.exitCode != 0)
             throw new RuntimeException("Compilation failed");
         ccs.compiler.messages.clear();
-        TestCase test = new TestCase(name, this.currentTestInformation, ccs, null);
+        TestCase test = new TestCase(this.currentTestInformation, this.currentTestInformation, ccs, null);
         testsToRun.add(test);
     }
 
@@ -261,7 +267,7 @@ public class BaseSQLTests {
         compiler.compileStatements(statements);
         Assert.assertFalse(compiler.hasErrors());
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase(this.currentTestInformation, ccs);
+        this.addRustTestCase(ccs);
     }
 
     protected void addFailingRustTestCase(
