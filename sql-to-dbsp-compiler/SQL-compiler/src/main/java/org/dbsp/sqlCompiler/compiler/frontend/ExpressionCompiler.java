@@ -1064,7 +1064,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "gunzip":
                         DBSPExpression arg = ops.get(0);
                         ops.set(0, arg.cast(new DBSPTypeBinary(arg.getNode(), arg.type.mayBeNull)));
-
+                        return compileFunction(call, node, type, ops, 1);
+                    case "to_int":
                         return compileFunction(call, node, type, ops, 1);
                     case "sequence":
                         for (int i = 0; i < ops.size(); i++)

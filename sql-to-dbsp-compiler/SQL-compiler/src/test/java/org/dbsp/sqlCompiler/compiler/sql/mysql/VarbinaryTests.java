@@ -23,6 +23,12 @@ public class VarbinaryTests extends SqlIoTest {
     }
 
     @Test
+    public void testCastInt() {
+        this.queryFailingInCompilation("select CAST(X'ffff' AS INT)",
+                "Cast function cannot convert value of type BINARY(2) to type INTEGER");
+    }
+
+    @Test
     public void testVarBinary() {
         this.queryFailingInCompilation("select X'ffff'+0", "Cannot apply '+' to arguments of type");
     }
@@ -97,6 +103,15 @@ public class VarbinaryTests extends SqlIoTest {
                  31393830\t 31393837\t 00000007
                  31393835\t 31393835\t 31393835
                  31393836\t 31393836\t 31393836""");
+    }
+
+    @Test
+    public void testToInt() {
+        this.q("""
+                SELECT TO_INT(x'0a'), TO_INT(x'1bcdef00'), TO_INT(x'1bcdef000506'), TO_INT(x'0abc');
+                 1 | 2 | 3 | 4
+                ----------------
+                 10 | 466480896 | 466480896 | 2748""");
     }
 
     @Test
