@@ -16,6 +16,7 @@
 mod zset_macro;
 
 use crate::{
+    // algebra::CheckedInt,
     dynamic::{DataTrait, DynUnit, DynWeightTyped, Erase, WeightTrait},
     trace::{
         ord::vec::{VecIndexedWSet, VecIndexedWSetFactories, VecWSet, VecWSetFactories},
@@ -36,6 +37,7 @@ use super::{AddAssignByRef, AddByRef, HasOne, NegByRef, ZRingValue};
 /// with the `R` type argument.  In practice, most Z-sets have integer weights.
 /// We use `ZWeight` as the standard integer weight type.
 pub type ZWeight = i64;
+// pub type ZWeight = CheckedInt<i64>; // TODO
 
 /// A dynamically typed wrapper around [`ZWeight`].
 pub type DynZWeight = DynWeightTyped<ZWeight>;

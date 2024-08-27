@@ -79,7 +79,7 @@ where
     }
 }
 
-pub type Weight = i64; // Default weight type
+pub type Weight = ZWeight;
 pub type WSet<D> = OrdZSet<D>;
 pub type IndexedWSet<K, D> = OrdIndexedZSet<K, D>;
 
