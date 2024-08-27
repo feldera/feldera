@@ -352,17 +352,19 @@ fn error_handler(state: &Weak<ServerState>, error: ControllerError) {
         // Prepare to handle poisoned locks in the following code.
 
         if let Ok(mut controller) = state.controller.lock() {
-            *controller = None;
-            // Don't risk calling `controller.stop()`.  If the error is caused
-            // by a panic in a DBSP worker thread, the `join` call in
-            // `controller.stop()` will panic.  We may consider calling `stop()`
-            // on errors do not indicate a panic, but that still seems risky.
+            if controller.is_some() {
+                *controller = None;
+                // Don't risk calling `controller.stop()`.  If the error is caused
+                // by a panic in a DBSP worker thread, the `join` call in
+                // `controller.stop()` will panic.  We may consider calling `stop()`
+                // on errors do not indicate a panic, but that still seems risky.
 
-            /*if let Some(controller) = controller.take() {
-                let _ = controller.stop();
-            }*/
-            if let Ok(mut phase) = state.phase.write() {
-                *phase = PipelinePhase::Failed(Arc::new(error));
+                /*if let Some(controller) = controller.take() {
+                    let _ = controller.stop();
+                }*/
+                if let Ok(mut phase) = state.phase.write() {
+                    *phase = PipelinePhase::Failed(Arc::new(error));
+                }
             }
         }
 

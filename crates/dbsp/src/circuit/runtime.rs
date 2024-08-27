@@ -76,7 +76,7 @@ impl Display for Error {
                 }
                 Ok(())
             }
-            Self::Terminated => f.write_str("circuit terminated by the user"),
+            Self::Terminated => f.write_str("circuit has been terminated"),
             Self::IncompatibleStorage => {
                 f.write_str("Supplied storage directory does not fit the runtime circuit")
             }
