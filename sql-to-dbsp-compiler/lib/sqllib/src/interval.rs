@@ -6,6 +6,10 @@
 //! - Long intervals, representing differences between months. These are
 //!   represented as days.
 
+use crate::{
+    operators::{eq, gt, gte, lt, lte, neq},
+    some_existing_operator, some_operator,
+};
 use dbsp::num_entries_scalar;
 use num::PrimInt;
 use pipeline_types::{deserialize_without_context, serialize_without_context};
@@ -110,6 +114,13 @@ where
 serialize_without_context!(ShortInterval);
 deserialize_without_context!(ShortInterval);
 
+some_operator!(lt, ShortInterval, ShortInterval, bool);
+some_operator!(gt, ShortInterval, ShortInterval, bool);
+some_operator!(eq, ShortInterval, ShortInterval, bool);
+some_operator!(neq, ShortInterval, ShortInterval, bool);
+some_operator!(gte, ShortInterval, ShortInterval, bool);
+some_operator!(lte, ShortInterval, ShortInterval, bool);
+
 /////////////////////////
 
 #[derive(
@@ -179,3 +190,10 @@ num_entries_scalar! {
 
 serialize_without_context!(LongInterval);
 deserialize_without_context!(LongInterval);
+
+some_operator!(lt, LongInterval, LongInterval, bool);
+some_operator!(gt, LongInterval, LongInterval, bool);
+some_operator!(eq, LongInterval, LongInterval, bool);
+some_operator!(neq, LongInterval, LongInterval, bool);
+some_operator!(gte, LongInterval, LongInterval, bool);
+some_operator!(lte, LongInterval, LongInterval, bool);
