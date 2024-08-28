@@ -37,7 +37,7 @@ rdkafka = { version = "0.34.0", features = ["cmake-build", "ssl-vendored", "gssa
 clap = { version = "3.2.8", features = ["derive", "env"] }
 cached = { version = "0.38.0" }
 serde = { version = "1.0", features = ["derive"] }
-rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits"] }
+rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
 metrics = "0.23.0"
 metrics-util = "0.17.0"
 

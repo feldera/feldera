@@ -20,8 +20,7 @@ chrono = { version = "0.4.38" }
 like = { version = "0.3.1" }
 paste = { version = "1.0.12" }
 regex = { version = "1.9.1" }
-# Go back to rkyv repo once https://github.com/rkyv/rkyv/pull/462 is merged:
-rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits"] }
+rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
 hex = "0.4.3"
 num-traits = "0.2"
 flate2 = "1.0.28"

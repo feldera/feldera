@@ -333,7 +333,6 @@ members = [ "{}" ]
 resolver = "2"
 
 [patch.crates-io]
-rkyv = {{ git = "https://github.com/gz/rkyv.git", rev = "3d3fd86" }}
 rust_decimal = {{ git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }}
 size-of = {{ git = "https://github.com/gz/size-of.git", rev = "f8e6be7" }}
 

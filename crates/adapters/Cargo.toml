@@ -71,7 +71,7 @@ uuid = { version = "1.3.3", features = ["v4", "std"] }
 # See the `ensure_default_crypto_provider` function at the root of this crate.
 rustls = "0.23.12"
 lazy_static = "1.4.0"
-rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits"] }
+rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
 csv-core = "0.1.10"
 rand = { version = "0.8.5", features = ["small_rng"] }
 rand_distr = "0.4.3"

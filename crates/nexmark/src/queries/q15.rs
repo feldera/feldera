@@ -71,7 +71,7 @@ use time::{
     Serialize,
     Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct Q15Output {
     day: String,
@@ -168,18 +168,14 @@ pub fn q15(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q15Stream {
         .map_index(|Tup2(k, v)| (*k, *v));
 
     // Compute bids per day.
-    let count_total_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> = bids
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .weighted_count();
-    let count_rank1_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> = rank1_bids
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .weighted_count();
-    let count_rank2_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> = rank2_bids
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .weighted_count();
-    let count_rank3_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> = rank3_bids
-        .map_index(|Tup2(k, v)| (*k, *v))
-        .weighted_count();
+    let count_total_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
+        bids.map_index(|Tup2(k, v)| (*k, *v)).weighted_count();
+    let count_rank1_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
+        rank1_bids.map_index(|Tup2(k, v)| (*k, *v)).weighted_count();
+    let count_rank2_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
+        rank2_bids.map_index(|Tup2(k, v)| (*k, *v)).weighted_count();
+    let count_rank3_bids: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
+        rank3_bids.map_index(|Tup2(k, v)| (*k, *v)).weighted_count();
 
     // Count unique bidders per day.
     let count_total_bidders: Stream<_, OrdIndexedZSet<OrdinalDate, ZWeight>> =
