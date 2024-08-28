@@ -427,7 +427,7 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE VIEW window_computation AS
                 SELECT *
                 FROM transactions
-                WHERE ts >= now() - INTERVAL 1 DAY AND ts <= now() + INTERVAL 1 DAY""";
+                WHERE ts BETWEEN now() - INTERVAL 1 DAY AND now() + INTERVAL 1 DAY""";
            CompilerCircuitStream ccs = this.getCCS(sql);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int window = 0;

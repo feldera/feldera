@@ -151,9 +151,7 @@ public class StructTests extends SqlIoTest {
             CREATE TYPE vec AS (fields SIMPLE ARRAY);
             CREATE TABLE T(col vec);
             CREATE VIEW V AS SELECT A.* FROM (T CROSS JOIN UNNEST(T.col.fields) A)""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.compileStatements(ddl);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(ddl);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
         DBSPExpression t0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
                 new DBSPVecLiteral(true,
