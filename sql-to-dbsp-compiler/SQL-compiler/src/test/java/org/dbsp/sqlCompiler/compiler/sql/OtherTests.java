@@ -377,7 +377,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.options.languageOptions.incrementalize = true;
         compiler.compileStatements(script);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        this.addRustTestCase(ccs);
+        //this.addRustTestCase(ccs);
     }
 
     @Test

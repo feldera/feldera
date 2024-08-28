@@ -27,10 +27,12 @@ import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
-import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyBaseExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
@@ -129,6 +131,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -231,8 +234,15 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
         return this.preorder(node.to(IDBSPInnerNode.class));
     }
 
-    public VisitDecision preorder(DBSPAggregate.Implementation node) {
+    public VisitDecision preorder(AggregateBase node) {
         return this.preorder(node.to(IDBSPInnerNode.class));
+    }
+    public VisitDecision preorder(NonLinearAggregate node) {
+        return this.preorder(node.to(AggregateBase.class));
+    }
+
+    public VisitDecision preorder(LinearAggregate node) {
+        return this.preorder(node.to(AggregateBase.class));
     }
 
     public VisitDecision preorder(DBSPExpression node) {
@@ -777,8 +787,16 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
         this.postorder(node.to(IDBSPInnerNode.class));
     }
 
-    public void postorder(DBSPAggregate.Implementation node) {
+    public void postorder(AggregateBase node) {
         this.postorder(node.to(IDBSPInnerNode.class));
+    }
+
+    public void postorder(NonLinearAggregate node) {
+        this.postorder(node.to(AggregateBase.class));
+    }
+
+    public void postorder(LinearAggregate node) {
+        this.postorder(node.to(AggregateBase.class));
     }
 
     public void postorder(DBSPExpression node) {

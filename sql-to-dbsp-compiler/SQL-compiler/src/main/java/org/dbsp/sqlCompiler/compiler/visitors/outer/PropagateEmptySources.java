@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
@@ -96,6 +97,12 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPAggregateOperator operator) {
+        if (this.replaceUnary(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
         if (this.replaceUnary(operator))
             super.postorder(operator);
     }

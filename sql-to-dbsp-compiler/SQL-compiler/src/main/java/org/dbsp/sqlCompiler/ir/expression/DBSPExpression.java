@@ -206,4 +206,8 @@ public abstract class DBSPExpression
     public boolean equivalent(DBSPExpression other) {
         return EquivalenceContext.equiv(this, other);
     }
+
+    public DBSPExpression not() {
+        return new DBSPUnaryExpression(this.getNode(), this.getType(), DBSPOpcode.NOT, this);
+    }
 }

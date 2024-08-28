@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
-import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.IIndentStream;
@@ -17,18 +17,15 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
     // After lowering these two are swapped.
     @Nullable
     public final DBSPAggregate aggregate;
-    public final boolean isLinear;
 
     protected DBSPAggregateOperatorBase(CalciteObject node, String operation,
                                         DBSPTypeIndexedZSet outputType,
                                         @Nullable DBSPExpression function,
                                         @Nullable DBSPAggregate aggregate,
                                         boolean multiset,
-                                        DBSPOperator source,
-                                        boolean isLinear) {
+                                        DBSPOperator source) {
         super(node, operation, function, outputType, multiset, source);
         this.aggregate = aggregate;
-        this.isLinear = isLinear;
         // There are really two different representations of an aggregate operator,
         // which reuse the same classes: a high-level one, which contains an Aggregate,
         // and a low-level one, which contains a function.
@@ -52,8 +49,7 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
         DBSPPartitionedRollingAggregateOperator otherOperator = other.as(DBSPPartitionedRollingAggregateOperator.class);
         if (otherOperator == null)
             return false;
-        return this.isLinear == otherOperator.isLinear &&
-                EquivalenceContext.equiv(this.aggregate, otherOperator.aggregate);
+        return EquivalenceContext.equiv(this.aggregate, otherOperator.aggregate);
     }
 
     @Override

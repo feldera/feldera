@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
@@ -1125,6 +1126,26 @@ public class ToRustVisitor extends CircuitVisitor {
         builder.append(operator.operation)
                 .append("(");
         operator.getFunction().accept(this.innerVisitor);
+        builder.append(");");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPAggregateLinearPostprocessOperator operator) {
+        DBSPType streamType = new DBSPTypeStream(operator.outputType);
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getOutputName())
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ");
+        builder.append(operator.input().getOutputName())
+                .append(".");
+        builder.append(operator.operation)
+                .append("(");
+        operator.getFunction().accept(this.innerVisitor);
+        builder.append(", ");
+        operator.postProcess.accept(this.innerVisitor);
         builder.append(");");
         return VisitDecision.STOP;
     }

@@ -563,11 +563,7 @@ public class ImplementNow extends Passes {
                 DBSPType commonType = bounds.common.getType();
                 if (bounds.common.getType().mayBeNull) {
                     DBSPClosureExpression nonNull =
-                            new DBSPUnaryExpression(
-                                    operator.getNode(),
-                                    DBSPTypeBool.create(false),
-                                    DBSPOpcode.NOT,
-                                    bounds.common.is_null()).closure(param);
+                            bounds.common.is_null().not().closure(param);
                     DBSPFilterOperator filter = new DBSPFilterOperator(operator.getNode(), nonNull, source);
                     this.addOperator(filter);
                     source = filter;

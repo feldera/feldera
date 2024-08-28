@@ -717,10 +717,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return makeBinaryExpression(node, type, DBSPOpcode.EQ, ops);
             case IS_DISTINCT_FROM:
                 return makeBinaryExpression(node, type, DBSPOpcode.IS_DISTINCT, ops);
-            case IS_NOT_DISTINCT_FROM: {
-                DBSPExpression op = makeBinaryExpression(node, type, DBSPOpcode.IS_DISTINCT, ops);
-                return makeUnaryExpression(node, new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.NOT, Linq.list(op));
-            }
+            case IS_NOT_DISTINCT_FROM:
+                return makeBinaryExpression(node, type, DBSPOpcode.IS_DISTINCT, ops).not();
             case NOT_EQUALS:
                 return makeBinaryExpression(node, type, DBSPOpcode.NEQ, ops);
             case OR:

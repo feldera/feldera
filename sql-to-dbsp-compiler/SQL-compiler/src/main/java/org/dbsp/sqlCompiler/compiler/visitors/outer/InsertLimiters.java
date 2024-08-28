@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.apache.commons.math3.util.Pair;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
@@ -63,7 +64,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -335,6 +335,43 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.nonMonotone(operator);
         }
         super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPAggregateLinearPostprocessOperator aggregator) {
+        DBSPOperator source = this.mapped(aggregator.input());
+        OperatorExpansion expanded = this.expandedInto.get(aggregator);
+        if (expanded == null) {
+            this.nonMonotone(aggregator);
+            super.postorder(aggregator);
+            return;
+        }
+
+        ReplacementExpansion ae = expanded.to(ReplacementExpansion.class);
+        DBSPOperator limiter = this.bound.get(aggregator.input());
+        if (limiter == null) {
+            super.postorder(aggregator);
+            this.nonMonotone(aggregator);
+            return;
+        }
+
+        DBSPOperator filteredAggregator = aggregator.withInputs(Linq.list(source), false);
+        DBSPOperator limiter2 = this.addBounds(ae.replacement, 0);
+        if (limiter2 == null) {
+            this.map(aggregator, filteredAggregator);
+            return;
+        }
+
+        this.addOperator(filteredAggregator);
+        MonotoneExpression monotoneValue2 = this.expansionMonotoneValues.get(ae.replacement);
+        IMaybeMonotoneType projection2 = Monotonicity.getBodyType(Objects.requireNonNull(monotoneValue2));
+
+        DBSPIntegrateTraceRetainKeysOperator after = DBSPIntegrateTraceRetainKeysOperator.create(
+                aggregator.getNode(), filteredAggregator, projection2, limiter2);
+        this.addOperator(after);
+        // output of 'after'' is not used in the graph, but the DBSP Rust layer will use it
+
+        this.map(aggregator, filteredAggregator, false);
     }
 
     @Override
@@ -1127,8 +1164,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPExpression eq = eq(min, var.deref());
         DBSPOperator extend = new DBSPApplyOperator(operator.getNode(),
                 new DBSPTupleExpression(
-                        new DBSPUnaryExpression(operator.getNode(),
-                                eq.getType(), DBSPOpcode.NOT, eq),
+                        eq.not(),
                         var.deref().applyClone()).closure(var.asParameter()),
                 delay, null);
         extend.addAnnotation(new Waterline());

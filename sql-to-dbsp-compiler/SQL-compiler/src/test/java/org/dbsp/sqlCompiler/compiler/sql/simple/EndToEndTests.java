@@ -831,6 +831,22 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void linearNonLinearTest() {
+        String query = "SELECT MAX(T.COL1), SUM(T.COL1) FROM T";
+        this.testAggregate(query,
+                new DBSPZSetLiteral(
+                        new DBSPTupleExpression(
+                                new DBSPI32Literal(10, true),
+                                new DBSPI32Literal(20, true)
+                        )),
+                new DBSPZSetLiteral(
+                        new DBSPTupleExpression(
+                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true).none(),
+                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true).none())
+                        ));
+    }
+
+    @Test
     public void maxTest() {
         String query = "SELECT MAX(T.COL1) FROM T";
         this.testAggregate(query,

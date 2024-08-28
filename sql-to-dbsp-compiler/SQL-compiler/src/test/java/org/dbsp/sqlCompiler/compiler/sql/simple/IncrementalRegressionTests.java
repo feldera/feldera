@@ -39,7 +39,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 
                 create view V2 as
                 select SUM(5) from v group by ts;""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int integrate_trace_keys = 0;
@@ -57,7 +57,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(2, this.integrate_trace_keys);
+                Assert.assertEquals(1, this.integrate_trace_keys);
                 Assert.assertEquals(2, this.integrate_trace_values);
             }
         };

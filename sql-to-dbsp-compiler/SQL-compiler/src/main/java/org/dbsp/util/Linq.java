@@ -142,7 +142,11 @@ public class Linq {
         return result;
     }
 
-    public static <T> boolean same(T[] left, T[] right) {
+    public static <T> boolean same(@Nullable T[] left, @Nullable T[] right) {
+        if (left == null)
+            return right == null;
+        if (right == null)
+            return false;
         if (left.length != right.length)
             return false;
         return Linq.all(Linq.zipSameLength(left, right, (l, r) -> l == r, Boolean.class));

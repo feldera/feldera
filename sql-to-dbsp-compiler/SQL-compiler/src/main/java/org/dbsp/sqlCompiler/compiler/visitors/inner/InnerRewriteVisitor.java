@@ -4,10 +4,13 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
-import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAsExpression;
@@ -1202,22 +1205,37 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPAggregate.Implementation implementation) {
+    public VisitDecision preorder(NonLinearAggregate implementation) {
         this.push(implementation);
         DBSPExpression zero = this.transform(implementation.zero);
         DBSPExpression increment = this.transform(implementation.increment);
         @Nullable DBSPExpression postProcess = this.transformN(implementation.postProcess);
         DBSPExpression emptySetResult = this.transform(implementation.emptySetResult);
         DBSPType semiGroup = this.transform(implementation.semigroup);
-        DBSPExpression linear = this.transformN(implementation.linearFunction);
         this.pop(implementation);
 
-        DBSPAggregate.Implementation result = new DBSPAggregate.Implementation(
+        NonLinearAggregate result = new NonLinearAggregate(
                 implementation.getNode(), zero,
                 increment.to(DBSPClosureExpression.class),
                 postProcess != null ? postProcess.to(DBSPClosureExpression.class) : null,
-                emptySetResult, semiGroup,
-                linear != null ? linear.to(DBSPClosureExpression.class) : null);
+                emptySetResult, semiGroup);
+        result.validate();
+        this.map(implementation, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(LinearAggregate implementation) {
+        this.push(implementation);
+        DBSPExpression map = this.transform(implementation.map);
+        DBSPExpression postProcess = this.transform(implementation.postProcess);
+        DBSPExpression emptySetResult = this.transform(implementation.emptySetResult);
+        this.pop(implementation);
+
+        LinearAggregate result = new LinearAggregate(
+                implementation.getNode(), map.to(DBSPClosureExpression.class),
+                postProcess.to(DBSPClosureExpression.class),
+                emptySetResult);
         result.validate();
         this.map(implementation, result);
         return VisitDecision.STOP;
@@ -1227,23 +1245,20 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPAggregate aggregate) {
         this.push(aggregate);
         DBSPExpression rowVar = this.transform(aggregate.rowVar);
-        DBSPAggregate.Implementation[] implementations =
-                Linq.map(aggregate.components, c -> {
+        List<AggregateBase> implementations =
+                Linq.map(aggregate.aggregates, c -> {
                             IDBSPInnerNode result = this.apply(c);
-                            return result.to(DBSPAggregate.Implementation.class);
-                        },
-                        DBSPAggregate.Implementation.class);
+                            return result.to(AggregateBase.class);
+                        });
         this.pop(aggregate);
         DBSPAggregate result = new DBSPAggregate(
-                aggregate.getNode(), rowVar.to(DBSPVariablePath.class), implementations, aggregate.isWindowAggregate);
+                aggregate.getNode(), rowVar.to(DBSPVariablePath.class), implementations);
         this.map(aggregate, result);
         return VisitDecision.STOP;
     }
 
-    /**
-     * Given a visitor for inner nodes returns a visitor
-     * that optimizes an entire circuit.
-     */
+    /** Given a visitor for inner nodes returns a visitor
+     * that optimizes an entire circuit. */
     public CircuitRewriter circuitRewriter() {
         return new CircuitRewriter(this.errorReporter, this);
     }

@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
@@ -50,7 +51,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
-import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
@@ -231,7 +232,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || input != operator.input()) {
             result = new DBSPStreamAggregateOperator(operator.getNode(),
                     outputType.to(DBSPTypeIndexedZSet.class),
-                    function, aggregate, input, operator.isLinear)
+                    function, aggregate, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -269,7 +270,26 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || aggregate != operator.aggregate
                 || function != operator.function) {
             result = new DBSPAggregateOperator(operator.getNode(),
-                    outputType.to(DBSPTypeIndexedZSet.class), function, aggregate, input, operator.isLinear)
+                    outputType.to(DBSPTypeIndexedZSet.class), function, aggregate, input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPExpression function = this.transform(operator.getFunction());
+        DBSPExpression postProcess = this.transform(operator.postProcess);
+        DBSPOperator input = this.mapped(operator.input());
+
+        DBSPOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || input != operator.input()
+                || postProcess != operator.postProcess
+                || function != operator.function) {
+            result = new DBSPAggregateLinearPostprocessOperator(operator.getNode(),
+                    outputType.to(DBSPTypeIndexedZSet.class), function, postProcess.to(DBSPClosureExpression.class), input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
