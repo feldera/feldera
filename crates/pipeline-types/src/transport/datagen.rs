@@ -198,8 +198,8 @@ pub struct RngFieldSettings {
     /// Specifies the values that the generator should produce for the key in case the field is a map.
     pub key: Option<Box<RngFieldSettings>>,
 
-    /// Specifies the values that the generator should produce for the value in case the field is a map
-    /// or array.
+    /// Specifies the values that the generator should produce for the value in case the field is of type map,
+    /// array or a binary/varbinary.
     pub value: Option<Box<RngFieldSettings>>,
 }
 

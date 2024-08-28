@@ -5,18 +5,17 @@ use arrow::array::{
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
 use pipeline_types::program_schema::{ColumnType, Field, SqlType};
+use pipeline_types::{
+    deserialize_table_record, deserialize_without_context, serialize_struct, serialize_table_record,
+};
 use prop::sample::SizeRange;
 use proptest::{collection, prelude::*};
 use proptest_derive::Arbitrary;
 use size_of::SizeOf;
+use sqllib::{Date, Timestamp};
 use std::collections::BTreeMap;
 use std::string::ToString;
 use std::sync::Arc;
-
-use pipeline_types::{
-    deserialize_table_record, deserialize_without_context, serialize_struct, serialize_table_record,
-};
-use sqllib::{Date, Timestamp};
 
 #[derive(
     Debug,
