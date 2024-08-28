@@ -13,14 +13,17 @@
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   type Payload = { insert: XgressRecord } | { delete: XgressRecord } | { skippedBytes: number }
   type Row = { relationName: string } & Payload
-  let rows: Record<string, Row[]> = {} // Initialize row array
+  let changeStream: Record<string, { rows: Row[]; totalSkippedBytes: number }> = {} // Initialize row array
   // Separate getRows as a $state avoids burdening rows array itself with reactivity overhead
-  let getRows = $state<() => typeof rows>(() => rows)
+  let getChangeStream = $state(() => changeStream)
 
   const bufferSize = 10000
   const pushChanges = (pipelineName: string, relationName: string) => (changes: Payload[]) => {
-    rows[pipelineName].splice(0, rows[pipelineName].length + changes.length - bufferSize)
-    rows[pipelineName].push(
+    changeStream[pipelineName].rows.splice(
+      0,
+      changeStream[pipelineName].rows.length + changes.length - bufferSize
+    )
+    changeStream[pipelineName].rows.push(
       ...changes.slice(-bufferSize).map((change) => ({
         ...change,
         relationName
@@ -35,7 +38,10 @@
       const cancel = parseJSONInStream(
         stream,
         pushChanges(pipelineName, relationName),
-        (skippedBytes) => pushChanges(pipelineName, relationName)([{ skippedBytes }]),
+        (skippedBytes) => {
+          pushChanges(pipelineName, relationName)([{ skippedBytes }])
+          changeStream[pipelineName].totalSkippedBytes += skippedBytes
+        },
         {
           paths: ['$.json_data.*'],
           bufferSize: 10 * 1024 * 1024
@@ -47,8 +53,10 @@
     })
     return () => {
       handle.then((cancel) => cancel?.())
-      rows[pipelineName] = rows[pipelineName].filter((row) => row.relationName !== relationName)
-      getRows = () => rows
+      changeStream[pipelineName].rows = changeStream[pipelineName].rows.filter(
+        (row) => row.relationName !== relationName
+      )
+      getChangeStream = () => changeStream
     }
   }
   const registerPipelineName = (pipelineName: string) => {
@@ -56,14 +64,14 @@
       return
     }
     pipelinesRelations[pipelineName] = {}
-    rows[pipelineName] = []
+    changeStream[pipelineName] = { rows: [], totalSkippedBytes: 0 }
     pipelineActionCallbacks.add(pipelineName, 'start_paused', async () => {
       const relations = Object.entries(pipelinesRelations[pipelineName])
         .filter((relation) => relation[1].selected)
         .map((relation) => relation[0])
       for (const relationName of relations) {
-        rows[pipelineName].length = 0 // Clear row buffer when starting pipeline again
-        getRows = () => rows
+        changeStream[pipelineName].rows.length = 0 // Clear row buffer when starting pipeline again
+        getChangeStream = () => changeStream
         pipelinesRelations[pipelineName][relationName].cancelStream = startReadingStream(
           pipelineName,
           relationName
@@ -135,7 +143,7 @@
   const visualUpdateMs = 100
   // Update visible list of changes at a constant time period
   $effect(() => {
-    const update = () => (getRows = () => rows)
+    const update = () => (getChangeStream = () => changeStream)
     const handle = setInterval(update, visualUpdateMs)
     update()
     return () => {
@@ -193,8 +201,8 @@
     <PaneResizer class="pane-divider-vertical"></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
-      {#if getRows()[pipelineName]?.length}
-        <ChangeStream changes={getRows()[pipelineName]}></ChangeStream>
+      {#if getChangeStream()[pipelineName]?.rows?.length}
+        <ChangeStream changeStream={getChangeStream()[pipelineName]}></ChangeStream>
       {:else}
         <span class="p-2 text-surface-500">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}

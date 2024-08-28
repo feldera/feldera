@@ -111,7 +111,9 @@ export const parseJSONInStream = <T>(
                 chunksToParse.shift()
               }
               if (restart) {
-                console.log(`Skipped ${humanSize(previousBufferSize - bufferSize)} of change stream. New buffer size is ${humanSize(bufferSize)}`)
+                console.log(
+                  `Skipped ${humanSize(previousBufferSize - bufferSize)} of change stream. New buffer size is ${humanSize(bufferSize)}`
+                )
                 onBytesSkipped?.(previousBufferSize - bufferSize)
                 parser = mkParser(onValue, options)
                 break

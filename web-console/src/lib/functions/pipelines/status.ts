@@ -71,7 +71,7 @@ export const isMetricsAvailable = (status: PipelineStatus) => {
     .with('Pausing', () => true)
     .with('Resuming', () => true)
     .with('ShuttingDown', () => false)
-    .with({ PipelineError: P.select() }, () => true)
+    .with({ PipelineError: P.select() }, () => false)
     .with('Compiling sql', () => false)
     .with('Queued', () => false)
     .with('Compiling bin', () => false)

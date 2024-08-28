@@ -9,17 +9,21 @@
   import { useResizeObserver } from 'runed'
   import { scale } from 'svelte/transition'
   import { humanSize } from '$lib/functions/common/string'
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
 
   type Payload = { insert: XgressRecord } | { delete: XgressRecord } | { skippedBytes: number }
   type Row = { relationName: string } & Payload
   let {
-    changes
+    changeStream
   }: {
-    changes: Row[]
+    changeStream: {
+      rows: Row[]
+      totalSkippedBytes: number
+    }
   } = $props()
 
-  let len = $derived(changes.length)
-  let lastLen = $state(changes.length)
+  let len = $derived(changeStream.rows.length)
+  let lastLen = $state(changeStream.rows.length)
   let scrollOffset = $state(0)
   let lastScrollOffset = $state(0)
   const itemSize = 24
@@ -65,9 +69,9 @@
   <VirtualList
     width="100%"
     {height}
-    model={changes}
+    model={changeStream.rows}
     {scrollOffset}
-    modelCount={changes.length}
+    modelCount={changeStream.rows.length}
     {itemSize}
     {onAfterScroll}
   >
@@ -104,5 +108,18 @@
         setTimeout(() => (scrollOffset = len * itemSize))
       }}
     ></button>
+  {/if}
+  {#if changeStream.totalSkippedBytes}
+    <div
+      class="bx bx-error absolute right-4 top-4 rounded-full !border-2 border-warning-500 p-2 text-[24px] text-warning-800 bg-surface-50-950"
+    ></div>
+    <Tooltip
+      class=" border-2 border-warning-500 bg-surface-50-950 text-surface-950-50 "
+      trigger="click"
+      placement="right-start"
+      >Receiving changes faster than can displayed here.
+      <br />Skipping some records to keep up.
+      <br />Skipped {humanSize(changeStream.totalSkippedBytes)} in total.</Tooltip
+    >
   {/if}
 </div>
