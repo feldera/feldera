@@ -379,12 +379,6 @@ where
             phantom: PhantomData,
         }
     }
-
-    fn clear(&mut self) {
-        if self.updates.capacity() > MAX_REUSABLE_CAPACITY {
-            self.updates = Vec::new();
-        }
-    }
 }
 
 impl<De, K, D, C> DeCollectionStream for DeZSetStream<De, K, D, C>
@@ -418,12 +412,12 @@ where
 
     fn flush(&mut self) {
         self.handle.append(&mut self.updates);
-        self.clear();
+        self.updates.shrink_to(MAX_REUSABLE_CAPACITY);
     }
 
     fn clear_buffer(&mut self) {
         self.updates.clear();
-        self.clear();
+        self.updates.shrink_to(MAX_REUSABLE_CAPACITY);
     }
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
