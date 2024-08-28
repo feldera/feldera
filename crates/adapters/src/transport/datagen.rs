@@ -50,6 +50,39 @@ fn range_as_i64(field: &str, range: &Option<(Value, Value)>) -> AnyResult<Option
     }
 }
 
+fn field_is_json_array(field: &Field, value: &Value) -> AnyResult<()> {
+    if !matches!(value, Value::Array(_)) {
+        return Err(anyhow!(
+            "Invalid type found in `values` for field {:?} with type {:?}",
+            field.name,
+            field.columntype.typ
+        ));
+    }
+    Ok(())
+}
+
+fn field_is_string(field: &Field, value: &Value) -> AnyResult<()> {
+    if !matches!(value, Value::String(_)) {
+        return Err(anyhow!(
+            "Invalid type found in `values` for field {:?} with type {:?}",
+            field.name,
+            field.columntype.typ
+        ));
+    }
+    Ok(())
+}
+
+fn field_is_number(field: &Field, value: &Value) -> AnyResult<()> {
+    if !matches!(value, Value::Number(_)) {
+        return Err(anyhow!(
+            "Invalid type found in `values` for field {:?} with type {:?}",
+            field.name,
+            field.columntype.typ
+        ));
+    }
+    Ok(())
+}
+
 /// Tries to parse a range as a date range which is days since UNIX epoch
 /// but we can specify either as a number or a string.
 fn parse_range_for_date(
@@ -646,7 +679,9 @@ impl RecordGenerator {
                     }
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    *obj = values[self.current % values.len()].clone();
+                    let new_value = values[self.current % values.len()].clone();
+                    field_is_json_array(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let len = rng.sample(Uniform::from(min..max)) * scale;
@@ -656,7 +691,9 @@ impl RecordGenerator {
                     }
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
-                    *obj = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                    let new_value = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                    field_is_json_array(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (DatagenStrategy::Zipf, None) => {
                     let range = max - min;
@@ -670,7 +707,9 @@ impl RecordGenerator {
                 (DatagenStrategy::Zipf, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                     let idx = rng.sample(zipf) as usize - 1;
-                    *obj = values[idx].clone()
+                    let new_value = values[idx].clone();
+                    field_is_json_array(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (m, _) => {
                     return Err(anyhow!(
@@ -733,7 +772,9 @@ impl RecordGenerator {
                     write!(str, "{}", t)?;
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    *obj = values[self.current % values.len()].clone();
+                    let new_value = values[self.current % values.len()].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let dist = Uniform::from(min..max);
@@ -742,7 +783,9 @@ impl RecordGenerator {
                     write!(str, "{}", t)?;
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
-                    *obj = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                    let new_value = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (DatagenStrategy::Zipf, None) => {
                     let range = max - min;
@@ -754,7 +797,9 @@ impl RecordGenerator {
                 (DatagenStrategy::Zipf, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                     let idx = rng.sample(zipf) as usize - 1;
-                    *obj = values[idx].clone();
+                    let new_value = values[idx].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (m, _) => {
                     return Err(anyhow!(
@@ -813,7 +858,9 @@ impl RecordGenerator {
                     )?;
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    *obj = values[self.current % values.len()].clone();
+                    let new_value = values[self.current % values.len()].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let dist = Uniform::from(min..max);
@@ -830,7 +877,9 @@ impl RecordGenerator {
                     )?;
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
-                    *obj = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                    let new_value = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (DatagenStrategy::Zipf, None) => {
                     let range = max - min;
@@ -851,7 +900,9 @@ impl RecordGenerator {
                 (DatagenStrategy::Zipf, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                     let idx = rng.sample(zipf) as usize - 1;
-                    *obj = values[idx].clone();
+                    let new_value = values[idx].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (m, _) => {
                     return Err(anyhow!(
@@ -914,7 +965,9 @@ impl RecordGenerator {
                     *obj = Value::String(dt.to_rfc3339());
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    *obj = values[self.current % values.len()].clone();
+                    let new_value = values[self.current % values.len()].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let dist = Uniform::from(min..max);
@@ -923,7 +976,9 @@ impl RecordGenerator {
                     *obj = Value::String(dt.to_rfc3339());
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
-                    *obj = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                    let new_value = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (DatagenStrategy::Zipf, None) => {
                     let range = max - min;
@@ -936,7 +991,9 @@ impl RecordGenerator {
                 (DatagenStrategy::Zipf, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                     let idx = rng.sample(zipf) as usize - 1;
-                    *obj = values[idx].clone();
+                    let new_value = values[idx].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (m, _) => {
                     return Err(anyhow!(
@@ -999,14 +1056,18 @@ impl RecordGenerator {
                     write!(str, "{}", self.current as i64 * settings.scale)?;
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    *obj = values[self.current % values.len()].clone()
+                    let new_value = values[self.current % values.len()].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (DatagenStrategy::Uniform, None) => {
                     let len = rng.sample(Uniform::from(min..max));
                     str.extend(rng.sample_iter(&Alphanumeric).map(char::from).take(len));
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
-                    *obj = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                    let new_value = values[rng.sample(Uniform::from(0..values.len()))].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (DatagenStrategy::Zipf, None) => {
                     let zipf = Zipf::new(max as u64, settings.e as f64).unwrap();
@@ -1016,7 +1077,9 @@ impl RecordGenerator {
                 (DatagenStrategy::Zipf, Some(values)) => {
                     let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                     let idx = rng.sample(zipf) as usize - 1;
-                    *obj = values[idx].clone();
+                    let new_value = values[idx].clone();
+                    field_is_string(field, &new_value)?;
+                    *obj = new_value;
                 }
                 (DatagenStrategy::Word, _) => *str = Dummy::dummy_with_rng(&Word(EN), rng),
                 (DatagenStrategy::Words, _) => {
@@ -1228,7 +1291,9 @@ impl RecordGenerator {
                 *obj = Value::Number(serde_json::Number::from(val));
             }
             (DatagenStrategy::Increment, Some(values), _) => {
-                *obj = values[self.current % values.len()].clone();
+                let new_value = values[self.current % values.len()].clone();
+                field_is_number(field, &new_value)?;
+                *obj = new_value;
             }
             (DatagenStrategy::Uniform, None, None) => {
                 let dist = Uniform::from(min..max);
@@ -1240,7 +1305,9 @@ impl RecordGenerator {
             }
             (DatagenStrategy::Uniform, Some(values), _) => {
                 let dist = Uniform::from(0..values.len());
-                *obj = values[rng.sample(dist)].clone()
+                let new_value = values[rng.sample(dist)].clone();
+                field_is_number(field, &new_value)?;
+                *obj = new_value;
             }
             (DatagenStrategy::Zipf, None, None) => {
                 let zipf = Zipf::new(max as u64, settings.e as f64).unwrap();
@@ -1256,7 +1323,9 @@ impl RecordGenerator {
             (DatagenStrategy::Zipf, Some(values), _) => {
                 let zipf = Zipf::new(values.len() as u64, settings.e as f64).unwrap();
                 let idx = rng.sample(zipf) as usize - 1;
-                *obj = values[idx].clone()
+                let new_value = values[idx].clone();
+                field_is_number(field, &new_value)?;
+                *obj = new_value;
             }
             (m, _, _) => {
                 return Err(anyhow!(
@@ -1562,6 +1631,126 @@ transport:
             next += 1;
             if next == 102 {
                 next = 99;
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_integer_values() {
+        for strategy in &["increment", "uniform", "zipf"] {
+            let config_str = format!(
+                r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ {{ limit: 4, fields: {{ "id": {{ values: ["a", "b"], "strategy": "{strategy}" }} }} }} ]
+"#,
+            );
+
+            let (_endpoint, consumer, _zset) =
+                mk_pipeline::<TestStruct2, TestStruct2>(&config_str, TestStruct2::schema())
+                    .unwrap();
+
+            while !consumer.state().eoi {
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_string_values() {
+        for strategy in &["increment", "uniform", "zipf"] {
+            let config_str = format!(
+                r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ {{ limit: 4, fields: {{ "name": {{ values: [1, 2], "strategy": "{strategy}" }} }} }} ]
+"#,
+            );
+
+            let (_endpoint, consumer, _zset) =
+                mk_pipeline::<TestStruct2, TestStruct2>(&config_str, TestStruct2::schema())
+                    .unwrap();
+
+            while !consumer.state().eoi {
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_timestamp_values() {
+        for strategy in &["increment", "uniform", "zipf"] {
+            let config_str = format!(
+                r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ {{ limit: 4, fields: {{ "ts": {{ values: [true], "strategy": "{strategy}" }} }} }} ]
+"#,
+            );
+
+            let (_endpoint, consumer, _zset) =
+                mk_pipeline::<TestStruct2, TestStruct2>(&config_str, TestStruct2::schema())
+                    .unwrap();
+
+            while !consumer.state().eoi {
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_time_values() {
+        for strategy in &["increment", "uniform", "zipf"] {
+            let config_str = format!(
+                r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ {{ limit: 4, fields: {{ "t": {{ values: [1], "strategy": "{strategy}" }} }} }} ]
+"#,
+            );
+
+            let (_endpoint, consumer, _zset) =
+                mk_pipeline::<TestStruct2, TestStruct2>(&config_str, TestStruct2::schema())
+                    .unwrap();
+
+            while !consumer.state().eoi {
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_date_values() {
+        for strategy in &["increment", "uniform", "zipf"] {
+            let config_str = format!(
+                r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ {{ limit: 4, fields: {{ "dt": {{ values: [1.0], "strategy": "{strategy}" }} }} }} ]
+"#,
+            );
+
+            let (_endpoint, consumer, _zset) =
+                mk_pipeline::<TestStruct2, TestStruct2>(&config_str, TestStruct2::schema())
+                    .unwrap();
+
+            while !consumer.state().eoi {
+                thread::sleep(Duration::from_millis(20));
             }
         }
     }
