@@ -189,13 +189,39 @@ struct InputGenerator {
 impl InputGenerator {
     fn new(
         consumer: Box<dyn InputConsumer>,
-        config: DatagenInputConfig,
+        mut config: DatagenInputConfig,
         schema: Relation,
     ) -> AnyResult<Self> {
         let notifier = Arc::new(Notify::new());
 
         let generated = Arc::new(AtomicUsize::new(0));
         let status = Arc::new(Atomic::new(PipelineState::Paused));
+
+        // Deal with case sensitivity in field names, make sure we can find the field in settings.
+        // return an error if have a field in datagen that's not in the table.
+        for plan in config.plan.iter_mut() {
+            let mut normalized_plan_names: HashMap<String, Box<RngFieldSettings>> =
+                HashMap::with_capacity(plan.fields.len());
+            for (name, settings) in plan.fields.iter() {
+                if let Some(field) = schema.fields.iter().find(|f| {
+                    if f.case_sensitive {
+                        f.name.eq(name)
+                    } else {
+                        f.name.eq_ignore_ascii_case(name)
+                    }
+                }) {
+                    // Replace the settings name with the field name which is either all lower case
+                    // (case_sensitive = false) or the original case (case_sensitive = true) to store the settings.
+                    normalized_plan_names.insert(field.name.clone(), settings.clone());
+                } else {
+                    return Err(anyhow!(
+                        "Field `{}` specified in datagen does not exist in the table schema.",
+                        name
+                    ));
+                }
+            }
+            plan.fields = normalized_plan_names;
+        }
 
         let rate_limiters = config
             .plan
@@ -472,24 +498,10 @@ impl RecordGenerator {
         obj: &mut Value,
     ) -> AnyResult<()> {
         let map = obj.as_object_mut().unwrap();
-        for key in settings.keys() {
-            if !fields.iter().any(|f| {
-                if f.case_sensitive {
-                    f.name.eq(key)
-                } else {
-                    f.name.eq_ignore_ascii_case(key)
-                }
-            }) {
-                return Err(anyhow!(
-                    "Field `{}` specified in datagen does not exist in the table schema.",
-                    key
-                ));
-            }
-        }
 
         let default_settings = Box::<RngFieldSettings>::default();
         for field in fields {
-            let field_settings = settings.get(&field.name()).unwrap_or(&default_settings);
+            let field_settings = settings.get(&field.name).unwrap_or(&default_settings);
             let obj = map
                 .entry(field.name())
                 .and_modify(|v| {
@@ -1808,7 +1820,7 @@ transport:
                 },
                 Field {
                     name: "t".to_string(),
-                    case_sensitive: false,
+                    case_sensitive: true,
                     columntype: ColumnType {
                         typ: SqlType::Time,
                         nullable: false,
@@ -1939,6 +1951,46 @@ transport:
         assert_eq!(record.field, Timestamp::new(1724803200000));
         assert_eq!(record.field_1, Date::new(19963));
         assert_eq!(record.field_2, Time::new(5000000000));
+    }
+
+    /// Field T not found, "t" is case sensitive.
+    #[test]
+    #[should_panic]
+    fn test_case_sensitivity() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 2, fields: { "T": {} } } ]
+"#;
+        let (_endpoint, _consumer, _zset) =
+            mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
+    }
+
+    #[test]
+    fn test_case_insensitivity() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 1, fields: { "TS": { "values": ["1970-01-01T00:00:00Z"] }, "dT": { "values": ["1970-01-02"] }, "t": { "values": ["00:00:01"] } } } ]
+"#;
+        let (_endpoint, consumer, zset) =
+            mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        let zst = zset.state();
+        let mut iter = zst.flushed.iter();
+        let first = iter.next().unwrap();
+        let record = first.unwrap_insert();
+        assert_eq!(record.field, Timestamp::new(0));
+        assert_eq!(record.field_1, Date::new(1));
+        assert_eq!(record.field_2, Time::new(1_000_000_000));
     }
 
     #[test]
