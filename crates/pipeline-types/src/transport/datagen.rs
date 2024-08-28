@@ -28,6 +28,13 @@ fn default_sequence() -> Vec<GenerationPlan> {
 pub enum DatagenStrategy {
     /// Whether the field should be incremented for each new
     /// record rather than generated randomly.
+    ///
+    /// The default increment size is:
+    /// - 1 for number types.
+    /// - 1 millisecond for timestamp and time types.
+    /// - 1 day for the date type.
+    ///
+    /// The step size can be increased/decreased with the `scale` parameter.
     Increment,
     /// A uniform random distribution is chosen to generate the value.
     Uniform,
@@ -139,23 +146,29 @@ pub struct RngFieldSettings {
 
     /// An optional, exclusive range [a, b) to limit the range of values the generator should produce.
     ///
-    /// - For integer/floating point types specifies min/max values.
+    /// - For integer/floating point types specifies min/max values as an integer.
     ///   If not set, the generator will produce values for the entire range of the type for number types.
-    /// - For string/binary types specifies min/max length, values are required to be >=0.
+    /// - For string/binary types specifies min/max length as an integer, values are required to be >=0.
     ///   If not set, a range of [0, 25) is used by default.
-    /// - For timestamp types specifies the min/max in milliseconds from the number of non-leap
+    /// - For timestamp types specifies the min/max as two strings in the RFC 3339 format
+    ///   (e.g., ["2021-01-01T00:00:00Z", "2022-01-02T00:00:00Z"]).
+    ///   Alternatively, the range values can be specified as a number of non-leap
     ///   milliseconds since January 1, 1970 0:00:00.000 UTC (aka “UNIX timestamp”).
-    ///   If not set, a range of [0, 4102444800) is used by default (1970-01-01 -- 2100-01-01).
-    /// - For time types specifies the min/max in milliseconds.
-    ///   If not set, the range is 24h. Range values are required to be >=0.
-    /// - For date types specifies the min/max in days from the number of days since January 1, 1970.
-    ///   If not set, a range of [0, 54787) is used by default (1970-01-01 -- 2100-01-01).
-    /// - For array types specifies the min/max number of elements.
+    ///   If not set, a range of ["1970-01-01T00:00:00Z", "2100-01-01T00:00:00Z") or [0, 4102444800000)
+    ///   is used by default.
+    /// - For time types specifies the min/max as two strings in the "HH:MM:SS" format.
+    ///   Alternatively, the range values can be specified in milliseconds as two positive integers.
+    ///   If not set, the range is 24h.
+    /// - For date types, the min/max range is specified as two strings in the "YYYY-MM-DD" format.
+    ///   Alternatively, two integers that represent number of days since January 1, 1970 can be used.
+    ///   If not set, a range of ["1970-01-01", "2100-01-01") or [0, 54787) is used by default.
+    /// - For array types specifies the min/max number of elements as an integer.
     ///   If not set, a range of [0, 5) is used by default. Range values are required to be >=0.
-    /// - For map types specifies the min/max number of key-value pairs.
+    /// - For map types specifies the min/max number of key-value pairs as an integer.
     ///   If not set, a range of [0, 5) is used by default.
     /// - For struct/boolean/null types `range` is ignored.
-    pub range: Option<(i64, i64)>,
+    #[schema(value_type=Object)]
+    pub range: Option<(JsonValue, JsonValue)>,
 
     /// A scale factor to apply a multiplier to the generated value.
     ///

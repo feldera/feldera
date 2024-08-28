@@ -42,7 +42,12 @@ Each field can set a strategy that defines how a value is picked:
 
 * `strategy` - The strategy to use for generating values. The following strategies are available:
     * `increment` - (default) Generate an incrementing sequence of values for the given type where each value is
-      greater than the previous one (wrapping around once reaching the limit of numeric types).
+      greater than the previous one (wrapping around once reaching the limit of numeric types or the limits specified
+      by `range`). The step size is determined by the type but can be adjusted with the `scale` parameter:
+        * For integer and string types, the increment is 1.
+        * For floating point types, the increment is 1.0.
+        * For time and timestamp types, the increment is 1 millisecond.
+        * For date types, the increment is 1 day.
     * `uniform` - Generate random values from a uniform distribution.
     * `zipf` - Generate random values from a Zipf distribution. The exponent of the distribution can be set with the
       `e` parameter.
@@ -57,13 +62,18 @@ The application of range depends on the type:
   If not set, the generator will produce values for the entire range of the type for number types.
 - For string types specifies min/max length, values are required to be `>=0`.
   If not set, a range of `[0, 25)` is used by default.
-- For timestamp types specifies the min/max in milliseconds from the number of non-leap
+- For timestamp types specifies the min/max as two strings in the RFC 3339 format
+  (e.g., `["2021-01-01T00:00:00Z", "2022-01-02T00:00:00Z"]`).
+  Alternatively, the range values can be specified as a number of non-leap
   milliseconds since January 1, 1970 0:00:00.000 UTC (aka “UNIX timestamp”).
-  If not set, a range of `[0, 4102444800)` is used by default (1970-01-01 -- 2100-01-01).
-- For time types specifies the min/max in milliseconds.
-  If not set, the range is 24h. Range values are required to be `>=0`.
-- For date types specifies the min/max in days from the number of days since January 1, 1970.
-  If not set, a range of `[0, 54787)` is used by default (1970-01-01 -- 2100-01-01).
+  If not set, a range of `["1970-01-01T00:00:00Z", "2100-01-01T00:00:00Z")` or `[0, 4102444800000)`
+  is used by default.
+- For time types specifies the min/max as two strings in the `HH:MM:SS` format.
+  Alternatively, the range values can be specified in milliseconds as two positive integers.
+  If not set, the range is 24h.
+- For date types, the min/max range is specified as two strings in the "YYYY-MM-DD" format.
+  Alternatively, two integers that represent number of days since January 1, 1970 can be used.
+  If not set, a range of `["1970-01-01", "2100-01-01")` or `[0, 54787)` is used by default.
 - For array, binary or varbinary types specifies the min/max number of elements it should contain.
   If not set, a range of `[0, 5)` is used by default. Range values are required to be >=0.
 - For map types specifies the min/max number of key-value pairs it should contain.
@@ -164,7 +174,7 @@ CREATE TABLE Stocks (
     "transport": {
       "name": "datagen",
       "config": {
-        "plan": [{ 
+        "plan": [{
             "limit": 5,
             "rate": 1,
             "fields": {
@@ -203,7 +213,7 @@ CREATE TABLE binary_tbl (
     "transport": {
       "name": "datagen",
       "config": {
-        "plan": [{ 
+        "plan": [{
             "limit": 5,
             "fields": {
                 "bin": { "range": [0, 5], "value": { "strategy": "uniform", "range": [128, 256] } }
@@ -228,4 +238,44 @@ Will generate the following data:
 | [219, 208, 161, 147] |
 | []                   |
 +----------------------+
+```
+
+* A table with date, timestamp and time types and specified `range` for each field (the values wrap around
+  after second row):
+
+```sql
+CREATE TABLE times (
+    dt DATE NOT NULL,
+    ts TIMESTAMP NOT NULL,
+    t TIME NOT NULL
+) with (
+  'connectors' = '[{
+    "transport": {
+      "name": "datagen",
+      "config": {
+        "plan": [{
+            "limit": 3,
+            "rate": 1,
+            "fields": {
+                "ts": { "range": ["2024-08-28T00:00:00Z", "2024-08-28T00:00:02Z"], "scale": 1000 },
+                "dt": { "range": ["2024-08-28", "2024-08-30"] },
+                "t": { "range": ["00:00:05", "00:00:07"], "scale": 1000 }
+            }
+        }]
+      }
+    }
+  }]'
+);
+```
+
+Will generate the following data:
+
+```text
++------------+---------------------+----------+
+| dt         | ts                  | t        |
++------------+---------------------+----------+
+| 2024-08-28 | 2024-08-28 00:00:00 | 00:00:05 |
+| 2024-08-29 | 2024-08-28 00:00:01 | 00:00:06 |
+| 2024-08-28 | 2024-08-28 00:00:00 | 00:00:05 |
++------------+---------------------+----------+
 ```

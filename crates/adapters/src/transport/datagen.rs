@@ -13,7 +13,7 @@ use crate::{InputConsumer, InputEndpoint, InputReader, PipelineState, TransportI
 use anyhow::{anyhow, Result as AnyResult};
 use atomic::Atomic;
 use chrono::format::{Item, StrftimeItems};
-use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime};
+use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime, Timelike};
 use dbsp::circuit::tokio::TOKIO;
 use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
@@ -30,6 +30,122 @@ use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Zipf};
 use serde_json::{to_writer, Map, Value};
 use tokio::sync::Notify;
+
+fn range_as_i64(field: &str, range: &Option<(Value, Value)>) -> AnyResult<Option<(i64, i64)>> {
+    match range {
+        None => Ok(None),
+        Some((Value::Number(a), Value::Number(b))) => {
+            let a = a
+                .as_i64()
+                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field))?;
+            let b = b
+                .as_i64()
+                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field))?;
+            Ok(Some((a, b)))
+        }
+        _ => Err(anyhow!(
+            "Range values must be integers for field {:?}",
+            field
+        )),
+    }
+}
+
+/// Tries to parse a range as a date range which is days since UNIX epoch
+/// but we can specify either as a number or a string.
+fn parse_range_for_date(
+    field: &str,
+    range: &Option<(Value, Value)>,
+) -> AnyResult<Option<(i64, i64)>> {
+    match range {
+        None => Ok(None),
+        Some((Value::Number(a), Value::Number(b))) => {
+            let a = a
+                .as_i64()
+                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field))?;
+            let b = b
+                .as_i64()
+                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field))?;
+            Ok(Some((a, b)))
+        }
+        Some((Value::String(a), Value::String(b))) => {
+            let unix_date: NaiveDate = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+            let since = NaiveDate::signed_duration_since;
+            let a = NaiveDate::parse_from_str(a, "%Y-%m-%d")
+                .map_err(|e| anyhow!("Invalid min date range for field {:?}: {}", field, e))?;
+            let b = NaiveDate::parse_from_str(b, "%Y-%m-%d")
+                .map_err(|e| anyhow!("Invalid max date range for field {:?}: {}", field, e))?;
+            Ok(Some((
+                since(a, unix_date).num_days(),
+                since(b, unix_date).num_days(),
+            )))
+        }
+        _ => Err(anyhow!(
+            "Range values must be integers or strings for field {:?}",
+            field
+        )),
+    }
+}
+
+fn parse_range_for_time(
+    field: &str,
+    range: &Option<(Value, Value)>,
+) -> AnyResult<Option<(i64, i64)>> {
+    match range {
+        None => Ok(None),
+        Some((Value::Number(a), Value::Number(b))) => {
+            let a = a
+                .as_i64()
+                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field))?;
+            let b = b
+                .as_i64()
+                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field))?;
+            Ok(Some((a, b)))
+        }
+        Some((Value::String(a), Value::String(b))) => {
+            let a = NaiveTime::parse_from_str(a, "%H:%M:%S")
+                .map_err(|e| anyhow!("Invalid min time range for field {:?}: {}", field, e))?;
+            let b = NaiveTime::parse_from_str(b, "%H:%M:%S")
+                .map_err(|e| anyhow!("Invalid max time range for field {:?}: {}", field, e))?;
+            Ok(Some((
+                a.num_seconds_from_midnight() as i64 * 1000,
+                b.num_seconds_from_midnight() as i64 * 1000,
+            )))
+        }
+        _ => Err(anyhow!(
+            "Range values must be integers or strings for field {:?}",
+            field
+        )),
+    }
+}
+
+fn parse_range_for_datetime(
+    field: &str,
+    range: &Option<(Value, Value)>,
+) -> AnyResult<Option<(i64, i64)>> {
+    match range {
+        None => Ok(None),
+        Some((Value::Number(a), Value::Number(b))) => {
+            let a = a
+                .as_i64()
+                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field))?;
+            let b = b
+                .as_i64()
+                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field))?;
+            Ok(Some((a, b)))
+        }
+        Some((Value::String(a), Value::String(b))) => {
+            let a = DateTime::parse_from_rfc3339(a)
+                .map_err(|e| anyhow!("Invalid min datetime range for field {:?}: {}", field, e))?;
+            let b = DateTime::parse_from_rfc3339(b)
+                .map_err(|e| anyhow!("Invalid max datetime range for field {:?}: {}", field, e))?;
+            Ok(Some((a.timestamp_millis(), b.timestamp_millis())))
+        }
+        _ => Err(anyhow!(
+            "Range values must be integers or strings for field {:?}",
+            field
+        )),
+    }
+}
 
 pub(crate) struct GeneratorEndpoint {
     config: DatagenInputConfig,
@@ -476,14 +592,14 @@ impl RecordGenerator {
         obj: &mut Value,
     ) -> AnyResult<()> {
         if let Value::Array(arr) = obj {
-            if settings.range.iter().any(|(a, b)| *a < 0 || *b < 0) {
+            let range = range_as_i64(field.name.as_str(), &settings.range)?;
+            if range.iter().any(|(a, b)| *a < 0 || *b < 0) {
                 return Err(anyhow!(
                     "Range for field `{:?}` must be positive.",
                     field.name
                 ));
             }
-            let (min, max) = settings
-                .range
+            let (min, max) = range
                 .map(|(a, b)| (a.try_into().unwrap_or(0), b.try_into().unwrap_or(5)))
                 .unwrap_or((0usize, 5usize));
             if min >= max {
@@ -569,14 +685,14 @@ impl RecordGenerator {
         const MAX_TIME_VALUE: u64 = 86400000; // 24h in milliseconds
         if let Value::String(str) = obj {
             str.clear();
-            if settings.range.iter().any(|(a, b)| *a < 0 || *b < 0) {
+            let range = parse_range_for_time(field.name.as_str(), &settings.range)?;
+            if range.iter().any(|(a, b)| *a < 0 || *b < 0) {
                 return Err(anyhow!(
                     "Range for field `{:?}` must be positive.",
                     field.name
                 ));
             }
-            let (min, max) = settings
-                .range
+            let (min, max) = range
                 .map(|(a, b)| {
                     (
                         a.try_into().unwrap_or(0u64),
@@ -596,7 +712,11 @@ impl RecordGenerator {
 
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment, None) => {
-                    let val = (self.current as u64 * scale) % max;
+                    let range = max - min;
+                    let val_in_range = (self.current as u64 * scale) % range;
+                    let val = min + val_in_range;
+                    debug_assert!(val >= min && val < max);
+
                     let t = start_time + Duration::milliseconds(val as i64);
                     write!(str, "{}", t)?;
                 }
@@ -650,7 +770,8 @@ impl RecordGenerator {
         if let Value::String(str) = obj {
             str.clear();
 
-            let (min, max) = settings.range.unwrap_or((0, MAX_DATE_VALUE));
+            let range = parse_range_for_date(field.name.as_str(), &settings.range)?;
+            let (min, max) = range.unwrap_or((0, MAX_DATE_VALUE));
             if min >= max {
                 return Err(anyhow!(
                     "Empty range, min >= max for field {:?}",
@@ -667,7 +788,10 @@ impl RecordGenerator {
 
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment, None) => {
-                    let val = (self.current as i64 * scale) % (max - min);
+                    let range = max - min;
+                    let val_in_range = (self.current as i64 * scale) % range;
+                    let val = min + val_in_range;
+                    debug_assert!(val >= min && val < max);
                     let d = unix_date + Days::new(val as u64);
 
                     write!(
@@ -743,8 +867,8 @@ impl RecordGenerator {
 
         if let Value::String(str) = obj {
             str.clear();
-
-            let (min, max) = settings.range.unwrap_or((0, MAX_DATETIME_VALUE)); // 4102444800 => 2100-01-01
+            let range = parse_range_for_datetime(field.name.as_str(), &settings.range)?;
+            let (min, max) = range.unwrap_or((0, MAX_DATETIME_VALUE)); // 4102444800 => 2100-01-01
             if min >= max {
                 return Err(anyhow!(
                     "Empty range, min >= max for field {:?}",
@@ -841,9 +965,9 @@ impl RecordGenerator {
 
         if let Value::String(str) = obj {
             str.clear();
+            let range = range_as_i64(field.name.as_str(), &settings.range)?;
 
-            let (min, max) = settings
-                .range
+            let (min, max) = range
                 .map(|(a, b)| (a.try_into().unwrap_or(0), b.try_into().unwrap_or(25)))
                 .unwrap_or((0, 25));
             if min >= max {
@@ -1063,7 +1187,8 @@ impl RecordGenerator {
             // rather than an i8
             u8::MAX as i64
         };
-        if let Some((a, b)) = settings.range {
+        let range = range_as_i64(field.name.as_str(), &settings.range)?;
+        if let Some((a, b)) = range {
             if a > b {
                 return Err(anyhow!(
                     "Invalid range, min > max for field {:?}",
@@ -1078,7 +1203,7 @@ impl RecordGenerator {
             return Ok(());
         }
 
-        match (&settings.strategy, &settings.values, &settings.range) {
+        match (&settings.strategy, &settings.values, &range) {
             (DatagenStrategy::Increment, None, None) => {
                 let val = (self.current as i64 * scale) % max;
                 *obj = Value::Number(serde_json::Number::from(val));
@@ -1142,7 +1267,9 @@ impl RecordGenerator {
     ) -> AnyResult<()> {
         let min = N::min_value().to_f64().unwrap_or(f64::MIN);
         let max = N::max_value().to_f64().unwrap_or(f64::MAX);
-        if let Some((a, b)) = settings.range {
+        let range = range_as_i64(field.name.as_str(), &settings.range)?;
+
+        if let Some((a, b)) = range {
             if a > b {
                 return Err(anyhow!(
                     "Invalid range, min > max for field {:?}",
@@ -1150,7 +1277,7 @@ impl RecordGenerator {
                 ));
             }
         }
-        let range = settings.range.map(|(a, b)| (a as f64, b as f64));
+        let range = range.map(|(a, b)| (a as f64, b as f64));
         if let Some(nl) = Self::maybe_null(field, settings, rng) {
             *obj = nl;
             return Ok(());
@@ -1298,6 +1425,7 @@ mod test {
     use pipeline_types::{deserialize_table_record, serialize_table_record};
     use size_of::SizeOf;
     use sqllib::binary::ByteArray;
+    use sqllib::{Date, Time, Timestamp};
     use std::collections::BTreeMap;
     use std::time::Duration;
     use std::{env, thread};
@@ -1563,7 +1691,7 @@ transport:
         r#field["bs"]: ByteArray
     });
 
-    deserialize_table_record!(ByteStruct["TestStruct", 1   ] {
+    deserialize_table_record!(ByteStruct["ByteStruct", 1] {
         (r#field, "bs", false, ByteArray, None)
     });
 
@@ -1619,6 +1747,198 @@ transport:
         let second = iter.next().unwrap();
         let record = second.unwrap_insert();
         assert!(*record.field.as_slice().first().unwrap() >= 128u8);
+    }
+
+    #[derive(
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        serde::Serialize,
+        serde::Deserialize,
+        Clone,
+        Hash,
+        SizeOf,
+        rkyv::Archive,
+        rkyv::Serialize,
+        rkyv::Deserialize,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct TimeStuff {
+        #[serde(rename = "ts")]
+        pub field: Timestamp,
+        #[serde(rename = "dt")]
+        pub field_1: Date,
+        #[serde(rename = "t")]
+        pub field_2: Time,
+    }
+
+    impl TimeStuff {
+        pub fn schema() -> Vec<Field> {
+            vec![
+                Field {
+                    name: "ts".to_string(),
+                    case_sensitive: false,
+                    columntype: ColumnType {
+                        typ: SqlType::Timestamp,
+                        nullable: false,
+                        precision: None,
+                        scale: None,
+                        component: None,
+                        fields: None,
+                        key: None,
+                        value: None,
+                    },
+                },
+                Field {
+                    name: "dt".to_string(),
+                    case_sensitive: false,
+                    columntype: ColumnType {
+                        typ: SqlType::Date,
+                        nullable: false,
+                        precision: None,
+                        scale: None,
+                        component: None,
+                        fields: None,
+                        key: None,
+                        value: None,
+                    },
+                },
+                Field {
+                    name: "t".to_string(),
+                    case_sensitive: false,
+                    columntype: ColumnType {
+                        typ: SqlType::Time,
+                        nullable: false,
+                        precision: None,
+                        scale: None,
+                        component: None,
+                        fields: None,
+                        key: None,
+                        value: None,
+                    },
+                },
+            ]
+        }
+    }
+    serialize_table_record!(TimeStuff[3]{
+        r#field["ts"]: Timestamp,
+        r#field_1["dt"]: Date,
+        r#field_2["t"]: Time
+    });
+
+    deserialize_table_record!(TimeStuff["TimeStuff", 3] {
+        (r#field, "ts", false, Timestamp, None),
+        (r#field_1, "dt", false, Date, None),
+        (r#field_2, "t", false, Time, None)
+    });
+
+    #[test]
+    fn test_time_types() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 2, fields: {} } ]
+"#;
+        let (_endpoint, consumer, zset) =
+            mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        let zst = zset.state();
+        let mut iter = zst.flushed.iter();
+        let first = iter.next().unwrap();
+        let record = first.unwrap_insert();
+        assert_eq!(record.field, Timestamp::new(0));
+        assert_eq!(record.field_1, Date::new(0));
+        assert_eq!(record.field_2, Time::new(0));
+
+        let second = iter.next().unwrap();
+        let record = second.unwrap_insert();
+        assert_eq!(record.field, Timestamp::new(1));
+        assert_eq!(record.field_1, Date::new(1));
+        assert_eq!(record.field_2, Time::new(1000000));
+    }
+
+    #[test]
+    fn test_time_types_with_integer_range() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 3, fields: { "ts": { "range": [1724803200000, 1724803200002] }, "dt": { "range": [19963, 19965] }, "t": { "range": [5, 7] } } } ]
+"#;
+        let (_endpoint, consumer, zset) =
+            mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        let zst = zset.state();
+        let mut iter = zst.flushed.iter();
+        let first = iter.next().unwrap();
+        let record = first.unwrap_insert();
+        assert_eq!(record.field, Timestamp::new(1724803200000));
+        assert_eq!(record.field_1, Date::new(19963));
+        assert_eq!(record.field_2, Time::new(5000000));
+
+        let second = iter.next().unwrap();
+        let record = second.unwrap_insert();
+        assert_eq!(record.field, Timestamp::new(1724803200000 + 1));
+        assert_eq!(record.field_1, Date::new(19963 + 1));
+        assert_eq!(record.field_2, Time::new(5000000 + 1000000));
+
+        let second = iter.next().unwrap();
+        let record = second.unwrap_insert();
+        assert_eq!(record.field, Timestamp::new(1724803200000));
+        assert_eq!(record.field_1, Date::new(19963));
+        assert_eq!(record.field_2, Time::new(5000000));
+    }
+
+    #[test]
+    fn test_time_types_with_string_range() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 3, fields: {  "ts": { "range": ["2024-08-28T00:00:00Z", "2024-08-28T00:00:02Z"], "scale": 1000 }, "dt": { "range": ["2024-08-28", "2024-08-30"] }, "t": { "range": ["00:00:05", "00:00:07"], "scale": 1000 } } } ]
+
+"#;
+        let (_endpoint, consumer, zset) =
+            mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        let zst = zset.state();
+        let mut iter = zst.flushed.iter();
+        let first = iter.next().unwrap();
+        let record = first.unwrap_insert();
+        assert_eq!(record.field, Timestamp::new(1724803200000));
+        assert_eq!(record.field_1, Date::new(19963));
+        assert_eq!(record.field_2, Time::new(5000000000));
+
+        let second = iter.next().unwrap();
+        let record = second.unwrap_insert();
+        assert_eq!(record.field, Timestamp::new(1724803200000 + 1000));
+        assert_eq!(record.field_1, Date::new(19963 + 1));
+        assert_eq!(record.field_2, Time::new(6000000000));
+
+        let second = iter.next().unwrap();
+        let record = second.unwrap_insert();
+        assert_eq!(record.field, Timestamp::new(1724803200000));
+        assert_eq!(record.field_1, Date::new(19963));
+        assert_eq!(record.field_2, Time::new(5000000000));
     }
 
     #[test]
