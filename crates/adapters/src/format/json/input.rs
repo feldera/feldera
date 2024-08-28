@@ -448,7 +448,7 @@ impl Parser for JsonParser {
 #[cfg(test)]
 mod test {
     use crate::{
-        test::{mock_parser_pipeline, MockUpdate},
+        test::{init_test_logger, mock_parser_pipeline, MockUpdate},
         transport::InputConsumer,
         FormatConfig, ParseError,
     };
@@ -459,7 +459,7 @@ mod test {
         serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
     };
     use log::trace;
-    use std::{borrow::Cow, fmt::Debug};
+    use std::{borrow::Cow, fmt::Debug, panic::Location};
 
     #[derive(PartialEq, Debug, Eq)]
     struct TestStruct {
@@ -517,6 +517,11 @@ mod test {
 
     #[derive(Debug)]
     struct TestCase<T, U> {
+        /// Putting the location in here makes it easier to find failing test
+        /// cases because they get logged.
+        #[allow(dead_code)]
+        location: &'static Location<'static>,
+
         chunks: bool,
         config: JsonParserConfig,
         /// Input data, expected result.
@@ -556,6 +561,7 @@ mod test {
     }
 
     impl<T, U> TestCase<T, U> {
+        #[track_caller]
         fn new(
             chunks: bool,
             config: JsonParserConfig,
@@ -564,6 +570,7 @@ mod test {
             final_result: Vec<ParseError>,
         ) -> Self {
             Self {
+                location: Location::caller(),
                 chunks,
                 config,
                 input_batches,
@@ -575,6 +582,7 @@ mod test {
 
     #[test]
     fn test_json_variants() {
+        init_test_logger();
         let test_cases: Vec<TestCase<TestStruct, TestStructUpd>> = vec! [
             /* Raw update format */
 
