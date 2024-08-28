@@ -43,8 +43,7 @@ mimalloc-rust-sys = "1.7.2"
 rand = "0.8.5"
 # Revert after https://github.com/paupino/rust-decimal/pull/637 is merged:
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
-# Go back to rkyv repo once https://github.com/rkyv/rkyv/pull/462 is merged:
-rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86", default-features = false, features = ["std", "size_64", "extra_traits", "validation", "uuid"] }
+rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64", "validation", "uuid"] }
 # Once chrono is released with `849932` chrono version needs to be updated in size-of crate:
 size-of = { git = "https://github.com/gz/size-of.git", rev = "f8e6be7", features = ["hashbrown", "time-std", "xxhash-xxh3", "arcstr", "chrono", "ordered-float"] }
 tarpc = { version = "0.33.0", features = ["full"] }

@@ -57,7 +57,7 @@ use std::hash::Hash;
     Serialize,
     Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct Q14Output(u64, u64, Decimal, BidTimeType, u64, String, u64);
 
@@ -66,7 +66,7 @@ type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output>>;
 #[derive(
     Eq, Clone, Debug, Hash, PartialEq, PartialOrd, Ord, SizeOf, Archive, Serialize, Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 pub enum BidTimeType {
     Day,

@@ -26,7 +26,7 @@ use time::{format_description::well_known::Iso8601, OffsetDateTime};
     Deserialize,
     SerdeSerialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct Person {
     pub id: u64,
@@ -59,7 +59,7 @@ pub struct Person {
     Deserialize,
     SerdeSerialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct Auction {
     pub id: u64,
@@ -95,7 +95,7 @@ pub struct Auction {
     Deserialize,
     SerdeSerialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct Bid {
     /// Id of auction this bid is for.
@@ -121,7 +121,7 @@ pub struct Bid {
 #[derive(
     Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, SizeOf, Archive, Serialize, Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 pub enum Event {
     Person(Person),

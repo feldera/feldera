@@ -23,7 +23,7 @@ geo-types = { version = "0.7" }
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 serde_json = { version = "1.0.127" }
 chrono = { version = "0.4.38" }
-rkyv = { version = "0.7", default-features = false, features = ["std", "size_64"] }
+rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
 num = { version = "0.4.1" }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
@@ -47,6 +47,5 @@ doctest = false
 incremental = false
 
 [patch.crates-io]
-rkyv = { git = "https://github.com/gz/rkyv.git", rev = "3d3fd86" }
 rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
 size-of = { git = "https://github.com/gz/size-of.git", rev = "f8e6be7" }
