@@ -23,9 +23,8 @@ public class RegressionTests extends SqlIoTest {
         CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.step("INSERT INTO sum VALUES (127), (1);",
                 " result" +
-                        "---------" +
-                        " -128");
-        this.addFailingRustTestCase("issue2316", "attempt to add with overflow", ccs);
+                        "---------");
+        this.addFailingRustTestCase("issue2316", "overflow", ccs);
     }
 
     @Test

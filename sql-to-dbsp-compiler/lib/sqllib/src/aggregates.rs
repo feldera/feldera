@@ -5,9 +5,9 @@
 use crate::binary::ByteArray;
 use crate::timestamp::*;
 use crate::{FromInteger, ToInteger};
-use core::ops::Add;
 use dbsp::algebra::{FirstLargeValue, HasOne, HasZero, SignedPrimInt, UnsignedPrimInt, F32, F64};
 use num::PrimInt;
+use num_traits::CheckedAdd;
 use rust_decimal::Decimal;
 use std::cmp::Ord;
 use std::fmt::Debug;
@@ -234,12 +234,28 @@ some_aggregate!(agg_min, agg_min, s, String);
 
 pub fn agg_plus<T>(left: T, right: T) -> T
 where
-    T: Add<T, Output = T> + Copy,
+    T: CheckedAdd + Copy,
 {
+    left.checked_add(&right).expect("Addition overflow")
+}
+
+pub fn agg_plus_f32(left: F32, right: F32) -> F32 {
     left + right
 }
 
-for_all_numeric_aggregate!(agg_plus, agg_plus);
+pub fn agg_plus_f64(left: F64, right: F64) -> F64 {
+    left + right
+}
+
+pub fn agg_plus_decimal(left: Decimal, right: Decimal) -> Decimal {
+    left + right
+}
+
+some_aggregate!(agg_plus_f32, agg_plus, f, F32);
+some_aggregate!(agg_plus_f64, agg_plus, d, F64);
+some_aggregate!(agg_plus_decimal, agg_plus, decimal, Decimal);
+
+for_all_int_aggregate!(agg_plus, agg_plus);
 
 #[inline(always)]
 fn agg_and<T>(left: T, right: T) -> T

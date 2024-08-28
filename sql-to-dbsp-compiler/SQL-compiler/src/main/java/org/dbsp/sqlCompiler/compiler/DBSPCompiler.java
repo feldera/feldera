@@ -117,9 +117,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         API,
     }
 
-    /**
-     * Variable that refers to the weight of the row in the z-set.
-     */
+    /** Variable that refers to the weight of the row in the z-set. */
     public final DBSPVariablePath weightVar;
 
     public final CalciteCompiler frontend;

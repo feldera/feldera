@@ -1,5 +1,6 @@
 use crate::algebra::{AddAssignByRef, AddByRef, HasOne, HasZero, MulByRef, NegByRef};
 use num::{traits::CheckedNeg, CheckedAdd, CheckedMul};
+use size_of::SizeOf;
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display, Error, Formatter},
@@ -9,7 +10,20 @@ use std::{
 /// Ring on numeric values that panics on overflow.
 ///
 /// Computes exactly like any signed numeric value, but panics on overflow.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    SizeOf,
+    Hash,
+    Default,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 #[repr(transparent)]
 pub struct CheckedInt<T> {
     value: T,
