@@ -36,10 +36,6 @@ release() {
     # Regenerate OpenAPI JSON to have updated version
     (cd .. && cargo make --cwd crates/pipeline_manager openapi_json)
 
-    # Update changelog
-    release_date=`date +"%Y-%m-%d"`
-    sed -i.backup "s/\[Unreleased\]/\[Unreleased\]\n\n\#\# \[$new_version\] - $release_date/" ../CHANGELOG.md
-
     # Commit the new version
     release_branch="release-v$new_version"
     if git rev-parse "$release_branch" >/dev/null 2>&1; then
