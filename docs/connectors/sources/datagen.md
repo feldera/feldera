@@ -49,13 +49,13 @@ Each field can set a strategy that defines how a value is picked:
     * For string types, the [String Generation](#string-generation-strategies) section lists more strategies
       on how to generate more specific strings.
 
-A field can have an optional `range` parameter that defines the range of values a strategy will pick from. 
+A field can have an optional `range` parameter that defines the range of values a strategy will pick from.
 The range is inclusive and contains all values with `start <= x < end`. It will return an error if `start >= end`.
 The application of range depends on the type:
 
 - For integer/floating point types specifies min/max values.
   If not set, the generator will produce values for the entire range of the type for number types.
-- For string/binary types specifies min/max length, values are required to be `>=0`.
+- For string types specifies min/max length, values are required to be `>=0`.
   If not set, a range of `[0, 25)` is used by default.
 - For timestamp types specifies the min/max in milliseconds from the number of non-leap
   milliseconds since January 1, 1970 0:00:00.000 UTC (aka “UNIX timestamp”).
@@ -64,7 +64,7 @@ The application of range depends on the type:
   If not set, the range is 24h. Range values are required to be `>=0`.
 - For date types specifies the min/max in days from the number of days since January 1, 1970.
   If not set, a range of `[0, 54787)` is used by default (1970-01-01 -- 2100-01-01).
-- For array types specifies the min/max number of elements it should contain.
+- For array, binary or varbinary types specifies the min/max number of elements it should contain.
   If not set, a range of `[0, 5)` is used by default. Range values are required to be >=0.
 - For map types specifies the min/max number of key-value pairs it should contain.
   If not set, a range of `[0, 5)` is used by default.
@@ -83,14 +83,20 @@ by the strategy. The default scale is `1`. The `scale` factor is only applicable
 - For date types, the generated value (days) is multiplied by the scale factor.
 - For string/binary types, the scale factor is ignored except with the `increment` strategy where
   it applies the scale to the number that is formatted as a string.
-- For array/map/struct/boolean/null types, the scale factor is ignored.
+- For array/map/struct/binary/varbinary/boolean/null types, the scale factor is ignored.
 - If `values` is specified, the scale factor is ignored.
 
 `null_percentage` adds a chance for generating `null` values for this field. If not specified, the field will
 never be `null`.
 
-If the type of the field is a complex type (array, map, struct), the `value`, `key`/`value`, and `fields` parameter
-respectively define the field settings for the complex type.
+#### Nested Types
+
+If the type of the field is of type `array`, `binary` or `varbinary` the `value` parameter defines the field
+settings for the elements of the array.
+
+If the type of the field is map, the `key`/`value` define the field settings for the two types of the map.
+
+If the type of the field is struct, the `fields` list defines the field settings for each member of the struct.
 
 #### String Generation Strategies
 
@@ -184,4 +190,42 @@ Will generate the following data:
 | NVDA   | 3          | 2985.127163635988|
 | AAPL   | 4          | 6762.121127526935|
 +--------+------------+------------------+
+```
+
+* A table with a `VARBINARY` type, datagen is configured so the array will contain a growing number of elements
+  from 0 and 4, each element will be a random byte in range `128..256`:
+
+```sql
+CREATE TABLE binary_tbl (
+    bin VARBINARY NOT NULL
+) with (
+  'connectors' = '[{
+    "transport": {
+      "name": "datagen",
+      "config": {
+        "plan": [{ 
+            "limit": 5,
+            "fields": {
+                "bin": { "range": [0, 5], "value": { "strategy": "uniform", "range": [128, 256] } }
+            }
+        }]
+      }
+    }
+  }]'
+);
+```
+
+Will generate the following data:
+
+```text
++----------------------+
+| bin                  |
++----------------------+
+| []                   |
+| [128]                |
+| [203, 175]           |
+| [174, 228, 209]      |
+| [219, 208, 161, 147] |
+| []                   |
++----------------------+
 ```

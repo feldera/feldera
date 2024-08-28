@@ -20,7 +20,7 @@ use governor::middleware::NoOpMiddleware;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Jitter, Quota, RateLimiter};
 use num_traits::{clamp, Bounded, ToPrimitive};
-use pipeline_types::program_schema::{Field, Relation, SqlType};
+use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
 use pipeline_types::transport::datagen::{
     DatagenInputConfig, DatagenStrategy, GenerationPlan, RngFieldSettings,
 };
@@ -335,10 +335,9 @@ impl RecordGenerator {
             | SqlType::Real
             | SqlType::Double
             | SqlType::Decimal => Value::Number(serde_json::Number::from(0)),
+            SqlType::Binary | SqlType::Varbinary => Value::Array(Vec::new()),
             SqlType::Char
             | SqlType::Varchar
-            | SqlType::Binary
-            | SqlType::Varbinary
             | SqlType::Timestamp
             | SqlType::Date
             | SqlType::Time => Value::String(String::new()),
@@ -358,7 +357,13 @@ impl RecordGenerator {
     ) -> AnyResult<()> {
         let map = obj.as_object_mut().unwrap();
         for key in settings.keys() {
-            if !fields.iter().any(|f| f.name.eq(key)) {
+            if !fields.iter().any(|f| {
+                if f.case_sensitive {
+                    f.name.eq(key)
+                } else {
+                    f.name.eq_ignore_ascii_case(key)
+                }
+            }) {
                 return Err(anyhow!(
                     "Field `{}` specified in datagen does not exist in the table schema.",
                     key
@@ -368,9 +373,9 @@ impl RecordGenerator {
 
         let default_settings = Box::<RngFieldSettings>::default();
         for field in fields {
-            let field_settings = settings.get(&field.name).unwrap_or(&default_settings);
+            let field_settings = settings.get(&field.name()).unwrap_or(&default_settings);
             let obj = map
-                .entry(&field.name)
+                .entry(field.name())
                 .and_modify(|v| {
                     // If a `null_percentage` is set it can happen that a field in the
                     // map got set to NULL previously, however our generator methods
@@ -403,9 +408,16 @@ impl RecordGenerator {
             SqlType::Real => self.generate_real::<f64>(field, settings, rng, obj),
             SqlType::Double => self.generate_real::<f64>(field, settings, rng, obj),
             SqlType::Decimal => self.generate_real::<f64>(field, settings, rng, obj),
-            SqlType::Char | SqlType::Varchar | SqlType::Binary | SqlType::Varbinary => {
-                self.generate_string(field, settings, rng, obj)
+            SqlType::Binary | SqlType::Varbinary => {
+                let mut field = field.clone();
+                let mut columntype = Box::new(ColumnType::tinyint(false));
+                // Hack to indicate we're dealing with an u8 and not an i8
+                // in `generate_integer`
+                columntype.scale = Some(1);
+                field.columntype.component = Some(columntype);
+                self.generate_array(&field, settings, rng, obj)
             }
+            SqlType::Char | SqlType::Varchar => self.generate_string(field, settings, rng, obj),
             SqlType::Timestamp => self.generate_timestamp(field, settings, rng, obj),
             SqlType::Date => self.generate_date(field, settings, rng, obj),
             SqlType::Time => self.generate_time(field, settings, rng, obj),
@@ -1043,7 +1055,14 @@ impl RecordGenerator {
         obj: &mut Value,
     ) -> AnyResult<()> {
         let min = N::min_value().to_i64().unwrap_or(i64::MIN);
-        let max = N::max_value().to_i64().unwrap_or(i64::MAX);
+        let max = if field.columntype.scale.is_none() {
+            N::max_value().to_i64().unwrap_or(i64::MAX)
+        } else {
+            // We don't have a SQL type for u8 but we need one for the value type of the binary array
+            // so by setting scale on tinyint we currently indicate that we're dealing with a u8
+            // rather than an i8
+            u8::MAX as i64
+        };
         if let Some((a, b)) = settings.range {
             if a > b {
                 return Err(anyhow!(
@@ -1273,9 +1292,12 @@ mod test {
     use crate::InputReader;
     use anyhow::Result as AnyResult;
     use pipeline_types::config::{InputEndpointConfig, TransportConfig};
-    use pipeline_types::program_schema::{Field, Relation};
+    use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
     use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
     use pipeline_types::transport::datagen::GenerationPlan;
+    use pipeline_types::{deserialize_table_record, serialize_table_record};
+    use size_of::SizeOf;
+    use sqllib::binary::ByteArray;
     use std::collections::BTreeMap;
     use std::time::Duration;
     use std::{env, thread};
@@ -1495,6 +1517,108 @@ transport:
             let record = upd.unwrap_insert();
             assert!(record.field_0.is_some());
         }
+    }
+
+    #[derive(
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        serde::Serialize,
+        serde::Deserialize,
+        Clone,
+        Hash,
+        SizeOf,
+        rkyv::Archive,
+        rkyv::Serialize,
+        rkyv::Deserialize,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct ByteStruct {
+        #[serde(rename = "bs")]
+        field: ByteArray,
+    }
+
+    impl ByteStruct {
+        pub fn schema() -> Vec<Field> {
+            vec![Field {
+                name: "bs".to_string(),
+                case_sensitive: false,
+                columntype: ColumnType {
+                    typ: SqlType::Varbinary,
+                    nullable: false,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                    key: None,
+                    value: None,
+                },
+            }]
+        }
+    }
+    serialize_table_record!(ByteStruct[1]{
+        r#field["bs"]: ByteArray
+    });
+
+    deserialize_table_record!(ByteStruct["TestStruct", 1   ] {
+        (r#field, "bs", false, ByteArray, None)
+    });
+
+    #[test]
+    fn test_byte_array_generator() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 2, fields: { "bs": { "range": [ 1, 5 ], values: [[1,2], [1,2,3]] } } } ]
+"#;
+        let (_endpoint, consumer, zset) =
+            mk_pipeline::<ByteStruct, ByteStruct>(config_str, ByteStruct::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        let zst = zset.state();
+        let mut iter = zst.flushed.iter();
+        let first = iter.next().unwrap();
+        let record = first.unwrap_insert();
+        assert_eq!(record.field.as_slice(), &[1, 2]);
+
+        let second = iter.next().unwrap();
+        let record = second.unwrap_insert();
+        assert_eq!(record.field.as_slice(), &[1, 2, 3]);
+    }
+
+    #[test]
+    fn test_byte_array_with_value() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 2, fields: { "bs": { "range": [ 1, 2 ], value: { "range": [128, 255], "strategy": "uniform" } } } } ]
+"#;
+        let (_endpoint, consumer, zset) =
+            mk_pipeline::<ByteStruct, ByteStruct>(config_str, ByteStruct::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        let zst = zset.state();
+        let mut iter = zst.flushed.iter();
+        let first = iter.next().unwrap();
+        let record = first.unwrap_insert();
+        assert!(*record.field.as_slice().first().unwrap() >= 128u8);
+
+        let second = iter.next().unwrap();
+        let record = second.unwrap_insert();
+        assert!(*record.field.as_slice().first().unwrap() >= 128u8);
     }
 
     #[test]

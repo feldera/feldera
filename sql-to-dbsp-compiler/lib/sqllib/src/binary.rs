@@ -92,6 +92,10 @@ impl ByteArray {
         r.extend(&other.data);
         ByteArray::from_vec(r)
     }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.data
+    }
 }
 
 pub fn to_hex_(value: ByteArray) -> String {

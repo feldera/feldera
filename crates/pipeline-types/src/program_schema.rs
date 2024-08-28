@@ -124,6 +124,18 @@ pub struct Field {
     pub columntype: ColumnType,
 }
 
+impl Field {
+    /// Returns canonical name of the field: case-insensitive names are
+    /// converted to lowercase; case-sensitive names returned as is.
+    pub fn name(&self) -> String {
+        if self.case_sensitive {
+            self.name.clone()
+        } else {
+            self.name.to_lowercase()
+        }
+    }
+}
+
 /// Thanks to the brain-dead Calcite schema, if we are deserializing a field, the type options
 /// end up inside the Field struct.
 ///
