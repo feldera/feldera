@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.ir.type;
+package org.dbsp.sqlCompiler.ir;
 
 import javax.annotation.Nullable;
 import java.math.BigInteger;

@@ -28,8 +28,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.IsIntervalLiteral;
-import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
+import org.dbsp.sqlCompiler.ir.IsIntervalLiteral;
+import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.util.IIndentStream;
 

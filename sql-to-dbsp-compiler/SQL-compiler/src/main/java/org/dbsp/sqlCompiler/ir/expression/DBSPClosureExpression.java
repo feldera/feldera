@@ -113,20 +113,6 @@ public final class DBSPClosureExpression extends DBSPExpression {
                 Linq.same(this.parameters, o.parameters);
     }
 
-    /** Check if the two closures have the same parameter names,
-     * with the same corresponding types */
-    public boolean sameParameters(DBSPClosureExpression other) {
-        if (this.parameters.length != other.parameters.length)
-            return false;
-        for (int i = 0; i < this.parameters.length; i++) {
-            DBSPParameter mine = this.parameters[i];
-            DBSPParameter their = other.parameters[i];
-            if (!mine.sameFields(their))
-                return false;
-        }
-        return true;
-    }
-
     /** A closure representing the identity function with the specified parameter. */
     public static DBSPClosureExpression id(DBSPParameter param) {
         return param.asVariable().closure(param);

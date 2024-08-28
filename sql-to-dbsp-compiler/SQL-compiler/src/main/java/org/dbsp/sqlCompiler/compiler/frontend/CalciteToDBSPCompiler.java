@@ -72,6 +72,7 @@ import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.circuit.DBSPPartialCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
@@ -124,10 +125,12 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.LatenessStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
-import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -145,7 +148,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
@@ -169,7 +171,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
-import org.dbsp.sqlCompiler.ir.type.IsNumericLiteral;
+import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
@@ -300,24 +302,41 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * @param groupCount   Number of groupBy variables.
      * @param inputRowType Type of input row.
      * @param resultType   Type of result produced.
+     * @param linearAllowed If true we can generate linear aggregates, otherwise they must be non-linear.
      */
-    public DBSPAggregate createAggregate(RelNode node,
-            List<AggregateCall> aggregates, DBSPTypeTuple resultType,
-            DBSPType inputRowType, int groupCount, ImmutableBitSet groupKeys) {
+    public DBSPAggregate createAggregate(
+            RelNode node, List<AggregateCall> aggregates, DBSPTypeTuple resultType,
+            DBSPType inputRowType, int groupCount, ImmutableBitSet groupKeys, boolean linearAllowed) {
         CalciteObject obj = CalciteObject.create(node);
         DBSPVariablePath rowVar = inputRowType.ref().var();
-        DBSPAggregate.Implementation[] implementations = new DBSPAggregate.Implementation[aggregates.size()];
+        List<AggregateBase> implementations = new ArrayList<>(aggregates.size());
         int aggIndex = 0;
 
+        boolean someLinear = false;
+        boolean someNonlinear = false;
         for (AggregateCall call: aggregates) {
             DBSPType resultFieldType = resultType.getFieldType(aggIndex + groupCount);
             AggregateCompiler compiler = new AggregateCompiler(node,
-                    this.compiler(), call, resultFieldType, rowVar, groupKeys);
-            DBSPAggregate.Implementation implementation = compiler.compile();
-            implementations[aggIndex] =  implementation;
+                    this.compiler(), call, resultFieldType, rowVar, groupKeys, linearAllowed);
+            AggregateBase implementation = compiler.compile();
+            if (implementation.isLinear())
+                someLinear = true;
+            else
+                someNonlinear = true;
+            implementations.add(implementation);
             aggIndex++;
         }
-        return new DBSPAggregate(obj, rowVar, implementations, false);
+
+        if (someNonlinear && someLinear) {
+            // TODO: do them separately.
+            assert linearAllowed;
+            // We cannot yet handle a mix of linear and non-linear in a single operation.
+            // For now fall back onto non-linear
+            return this.createAggregate(
+                    node, aggregates, resultType,
+                    inputRowType, groupCount, groupKeys, false);
+        }
+        return new DBSPAggregate(obj, rowVar, implementations);
     }
 
     void visitCorrelate(LogicalCorrelate correlate) {
@@ -595,10 +614,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 aggregate.getGroupSet(), aggregate.getGroupSet(), t, keySlice);
         DBSPType[] aggTypes = Utilities.arraySlice(tuple.tupFields, aggregate.getGroupCount());
         DBSPTypeTuple aggType = new DBSPTypeTuple(aggTypes);
-        DBSPAggregate fold = this.createAggregate(aggregate, aggregateCalls, tuple, inputRowType, aggregate.getGroupCount(), localKeys);
+        DBSPAggregate fold = this.createAggregate(
+                aggregate, aggregateCalls, tuple, inputRowType, aggregate.getGroupCount(), localKeys, true);
         // The aggregate operator will not return a stream of type aggType, but a stream
         // with a type given by fd.defaultZero.
-        DBSPTypeTuple typeFromAggregate = fold.defaultZeroType();
+        DBSPTypeTuple typeFromAggregate = fold.getEmptySetResultType();
         DBSPTypeIndexedZSet aggregateResultType = makeIndexedZSet(globalKeys.getType(), typeFromAggregate);
 
         DBSPTupleExpression localKeyExpression = this.generateKeyExpression(
@@ -622,11 +642,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     var.field(0).deref().applyCloneIfNeeded(),
                     new DBSPTupleExpression());
             agg = new DBSPMapIndexOperator(node, addEmpty.closure(var.asParameter()), aggregateType, createIndex);
-          this.circuit.addOperator(agg);
+            this.circuit.addOperator(agg);
             agg = new DBSPStreamDistinctOperator(node, agg);
+        } else if (fold.isLinear()) {
+            LinearAggregate linear = fold.asLinear(this.compiler());
+            agg = new DBSPAggregateLinearPostprocessOperator(
+                    node, aggregateType, linear.map, linear.postProcess, createIndex);
         } else {
             agg = new DBSPStreamAggregateOperator(
-                      node, aggregateType, null, fold, createIndex, fold.isLinear());
+                      node, aggregateType, null, fold, createIndex);
         }
         this.circuit.addOperator(agg);
 
@@ -704,13 +728,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
         //                  +
         //              {z->1}/{c->1}
         DBSPVariablePath _t = tuple.ref().var();
-        DBSPExpression toZero = fold.defaultZero().closure(_t.asParameter());
+        DBSPExpression toZero = fold.getEmptySetResult().closure(_t.asParameter());
         DBSPOperator map1 = new DBSPMapOperator(node, toZero, this.makeZSet(type), map);
         this.circuit.addOperator(map1);
         DBSPOperator neg = new DBSPNegateOperator(node, map1);
         this.circuit.addOperator(neg);
         DBSPOperator constant = new DBSPConstantOperator(
-                node, new DBSPZSetLiteral(fold.defaultZero()), false, false);
+                node, new DBSPZSetLiteral(fold.getEmptySetResult()), false, false);
         this.circuit.addOperator(constant);
         DBSPOperator sum = new DBSPSumOperator(node, Linq.list(constant, neg, map));
         this.circuit.addOperator(sum);
@@ -940,7 +964,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         Objects.requireNonNull(condition);
-        condition = new DBSPUnaryExpression(node, condition.getType(), DBSPOpcode.NOT, condition);
+        condition = condition.not();
         DBSPClosureExpression filterFunc = condition.closure(var.asParameter());
         DBSPFilterOperator filter = new DBSPFilterOperator(node, filterFunc, input);
         this.circuit.addOperator(filter);
@@ -1929,7 +1953,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 List<DBSPType> types = Linq.map(aggregateCalls, c -> this.compiler.convertType(c.type, false));
                 DBSPTypeTuple tuple = new DBSPTypeTuple(types);
                 DBSPAggregate fd = this.compiler.createAggregate(
-                        window, aggregateCalls, tuple, inputRowType, 0, ImmutableBitSet.of());
+                        window, aggregateCalls, tuple, inputRowType, 0, ImmutableBitSet.of(), false);
 
                 // This function is always the same: |Tup2(x, y)| (x, y)
                 DBSPVariablePath pr = new DBSPVariablePath(partitionAndRowType.ref());
@@ -1939,7 +1963,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                                 pr.deref().field(1).applyCloneIfNeeded())
                                 .closure(pr.asParameter());
 
-                aggResultType = fd.defaultZeroType().to(DBSPTypeTuple.class);
+                aggResultType = fd.getEmptySetResultType().to(DBSPTypeTuple.class);
                 finalResultType = makeIndexedZSet(
                         new DBSPTypeTuple(partitionType, sortType), aggResultType);
                 // Prepare a type that will make the operator following the window aggregate happy
@@ -2250,7 +2274,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPExpression folder = constructor.call(zero, push);
         DBSPStreamAggregateOperator agg = new DBSPStreamAggregateOperator(node,
                 makeIndexedZSet(new DBSPTypeRawTuple(), new DBSPTypeVec(inputRowType, false)),
-                folder, null, index, false);
+                folder, null, index);
         this.circuit.addOperator(agg);
 
         if (limit != null)

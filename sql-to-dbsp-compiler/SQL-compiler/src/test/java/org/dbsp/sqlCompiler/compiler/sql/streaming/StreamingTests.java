@@ -14,7 +14,9 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.OptimizeMaps;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -283,7 +285,7 @@ public class StreamingTests extends StreamingTestBase {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(4, this.integrate_trace);
+                Assert.assertEquals(2, this.integrate_trace);
             }
         };
         visitor.apply(ccs.circuit);
@@ -1272,7 +1274,7 @@ public class StreamingTests extends StreamingTestBase {
                         pickup TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
                 );
                 CREATE VIEW V AS
-                SELECT AVG(distance), CAST(pickup AS DATE)
+                SELECT MAX(distance), CAST(pickup AS DATE)
                 FROM series GROUP BY CAST(pickup AS DATE);
                 """;
         // Rust program which profiles the circuit.

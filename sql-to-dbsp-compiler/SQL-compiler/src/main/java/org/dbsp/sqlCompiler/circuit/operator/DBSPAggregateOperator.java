@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -39,9 +39,9 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
             CalciteObject node,
             DBSPTypeIndexedZSet outputType,
             @Nullable DBSPExpression function,
-            @Nullable DBSPAggregate aggregate, DBSPOperator input, boolean isLinear) {
-        super(node, isLinear ? "aggregate_linear" : "aggregate", outputType,
-                function, aggregate, false, input, isLinear);
+            @Nullable DBSPAggregate aggregate, DBSPOperator input) {
+        super(node, "aggregate", outputType,
+                function, aggregate, false, input);
     }
 
     @Override
@@ -58,7 +58,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
         DBSPTypeIndexedZSet ix = outputType.to(DBSPTypeIndexedZSet.class);
         return new DBSPAggregateOperator(
                 this.getNode(), ix,
-                expression, this.aggregate, this.input(), this.isLinear)
+                expression, this.aggregate, this.input())
                 .copyAnnotations(this);
     }
 
@@ -67,7 +67,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
         if (force || this.inputsDiffer(newInputs))
             return new DBSPAggregateOperator(
                     this.getNode(), this.outputType.to(DBSPTypeIndexedZSet.class),
-                    this.function, this.aggregate, newInputs.get(0), this.isLinear)
+                    this.function, this.aggregate, newInputs.get(0))
                     .copyAnnotations(this);
         return this;
     }

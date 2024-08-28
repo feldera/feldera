@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -39,10 +39,10 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
                                        DBSPTypeIndexedZSet outputType,
                                        @Nullable DBSPExpression function,
                                        @Nullable DBSPAggregate aggregate,
-                                       DBSPOperator input,
-                                       boolean isLinear) {
-        super(node, isLinear ? "stream_aggregate_linear" : "stream_aggregate",
-                outputType, function, aggregate, false, input, isLinear);
+                                       DBSPOperator input) {
+        super(node, "stream_aggregate",
+                outputType, function, aggregate, false, input);
+        assert aggregate == null || !aggregate.isLinear();
     }
 
     @Override
@@ -58,7 +58,7 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
     public DBSPOperator withFunction(@Nullable DBSPExpression expression, DBSPType outputType) {
         DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
         return new DBSPStreamAggregateOperator(this.getNode(),
-                ixOutputType, expression, this.aggregate, this.input(), this.isLinear)
+                ixOutputType, expression, this.aggregate, this.input())
                 .copyAnnotations(this);
     }
 
@@ -67,7 +67,7 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
         if (force || this.inputsDiffer(newInputs))
             return new DBSPStreamAggregateOperator(
                     this.getNode(), this.getOutputIndexedZSetType(),
-                    this.function, this.aggregate, newInputs.get(0), this.isLinear)
+                    this.function, this.aggregate, newInputs.get(0))
                     .copyAnnotations(this);
         return this;
     }

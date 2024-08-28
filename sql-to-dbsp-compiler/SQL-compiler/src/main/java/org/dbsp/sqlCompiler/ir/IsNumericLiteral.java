@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.ir.type;
+package org.dbsp.sqlCompiler.ir;
 
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 

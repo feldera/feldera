@@ -1403,4 +1403,99 @@ mod test {
         dbsp.step().unwrap();
         assert_eq!(output_handle.consolidate(), indexed_zset! {});
     }
+
+    // Like previous test but uses i8
+    #[test]
+    fn aggregate_linear_postprocess_test_i8() {
+        // Aggregation function that returns a 3-tuple including:
+        // 1. Number of elements in the group.
+        // 2. Number of non-null elements
+        // 3. Sum of non-null elements
+        // Note we only compute 1 to make sure that the aggregate is not
+        // zero unless the group is actualy empty.
+        fn agg_func(x: &Option<i8>) -> Tup3<i8, i8, i8> {
+            let v = x.unwrap_or_default();
+
+            Tup3(1, if x.is_some() { 1 } else { 0 }, v)
+        }
+
+        // Postprocessing: sum of non-null elements or NULL if
+        // all elements are NULL.
+        fn postprocess_func(Tup3(_count, non_nulls, sum): Tup3<i8, i8, i8>) -> Option<i8> {
+            if non_nulls > 0 {
+                Some(sum)
+            } else {
+                None
+            }
+        }
+
+        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(4, |circuit| {
+            let (input, input_handle) = circuit.add_input_zset::<Tup2<i8, Option<i8>>>();
+
+            let indexed_input = input.map_index(|Tup2(k, v)| (*k, v.clone()));
+
+            let sum = indexed_input.aggregate_linear_postprocess(agg_func, postprocess_func);
+
+            // aggregate_linear_postprocess must be equivalent to aggregate_linear().map_index().
+            let sum_slow = indexed_input
+                .aggregate_linear(agg_func)
+                .map_index(|(k, v)| (k.clone(), postprocess_func(v.clone())));
+
+            sum.apply2(&sum_slow, |sum, sum_slow| assert_eq!(sum, sum_slow));
+
+            let output_handle = sum.integrate().output();
+
+            Ok((input_handle, output_handle))
+        })
+        .unwrap();
+
+        // A single NULL element -> aggregate is NULL
+        input_handle.append(&mut vec![Tup2(Tup2(1i8, None), 2)]);
+        dbsp.step().unwrap();
+        assert_eq!(
+            output_handle.consolidate(),
+            indexed_zset! {1 => {None => 1}}
+        );
+
+        // +5 -> aggregate = 5
+        input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(5)), 1)]);
+        dbsp.step().unwrap();
+        assert_eq!(
+            output_handle.consolidate(),
+            indexed_zset! {1 => {Some(5) => 1}}
+        );
+
+        // +3 * 2 -> aggrregate = 11
+        input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(3)), 2)]);
+        dbsp.step().unwrap();
+        assert_eq!(
+            output_handle.consolidate(),
+            indexed_zset! {1 => {Some(11) => 1}}
+        );
+
+        // + (-11) -> aggregate = 0
+        input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(-11)), 1)]);
+        dbsp.step().unwrap();
+        assert_eq!(
+            output_handle.consolidate(),
+            indexed_zset! {1 => {Some(0) => 1}}
+        );
+
+        // Remove all non-NULL eleements -> aggregate = NULL
+        input_handle.append(&mut vec![
+            Tup2(Tup2(1i8, Some(-11)), -1),
+            Tup2(Tup2(1i8, Some(5)), -1),
+            Tup2(Tup2(1i8, Some(3)), -2),
+        ]);
+        dbsp.step().unwrap();
+        assert_eq!(
+            output_handle.consolidate(),
+            indexed_zset! {1 => {None => 1}}
+        );
+
+        // Remove the remaining NULL -> the whole group disappears.
+        input_handle.append(&mut vec![Tup2(Tup2(1i8, None), -2)]);
+        dbsp.step().unwrap();
+        assert_eq!(output_handle.consolidate(), indexed_zset! {});
+    }
 }

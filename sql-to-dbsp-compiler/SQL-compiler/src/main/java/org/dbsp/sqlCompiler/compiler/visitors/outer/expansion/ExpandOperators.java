@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.expansion;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
@@ -142,39 +143,12 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPStreamAggregateOperator operator) {
-        if (operator.isLinear) {
-            DBSPOperator input = this.mapped(operator.input());
-            DBSPExpression function = operator.getAggregate().combineLinear();
-            DBSPTypeIndexedZSet ix = input.getOutputIndexedZSetType();
-            DBSPVariablePath arg = new DBSPVariablePath(
-                    new DBSPTypeTuple(ix.keyType.ref(), ix.elementType.ref()));
-            DBSPExpression body = function.call(arg.field(1));
-            DBSPExpression closure = body.closure(arg.asParameter());
-            DBSPWeighOperator weigh = new DBSPWeighOperator(operator.getNode(), closure, input);
-            this.addOperator(weigh);
-            DBSPExpression weightedSum = new DBSPConstructorExpression(
-                    new DBSPPathExpression(
-                            DBSPTypeAny.getDefault(),
-                            new DBSPPath("WeightedSum")),
-                    DBSPTypeAny.getDefault());
-            DBSPStreamAggregateOperator result = new DBSPStreamAggregateOperator(operator.getNode(),
-                    operator.getOutputIndexedZSetType(), weightedSum, null, weigh, false);
-            this.map(operator, result);
-            this.addExpansion(operator, new StreamAggregateExpansion(weigh, result));
-        } else {
-            this.replace(operator);
-        }
+        this.replace(operator);
     }
 
     @Override
     public void postorder(DBSPAggregateOperator operator) {
         DBSPOperator input = this.mapped(operator.input());
-        /*
-        if (operator.isLinear) {
-            throw new UnimplementedException(operator.getNode());
-        } else {}
-        For now treat linear and non-linear operators identically.
-         */
         DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getNode(), input);
         this.addOperator(integrator);
         DBSPPrimitiveAggregateOperator agg = new DBSPPrimitiveAggregateOperator(operator.getNode(),
@@ -198,6 +172,12 @@ public class ExpandOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPPartitionedRollingAggregateOperator operator) {
+        // This is not true, but we don't care here about the internal structure
+        this.identity(operator);
+    }
+
+    @Override
+    public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
         // This is not true, but we don't care here about the internal structure
         this.identity(operator);
     }

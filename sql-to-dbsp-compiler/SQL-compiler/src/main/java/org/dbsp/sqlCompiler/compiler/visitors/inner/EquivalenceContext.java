@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
-import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 
@@ -51,7 +51,11 @@ public class EquivalenceContext {
         return left.equivalent(this, right);
     }
 
-    public boolean equivalent(DBSPExpression[] left, DBSPExpression[] right) {
+    public boolean equivalent(@Nullable DBSPExpression[] left, @Nullable DBSPExpression[] right) {
+        if (left == null)
+            return right == null;
+        if (right == null)
+            return false;
         if (left.length != right.length)
             return false;
         for (int i = 0; i < left.length; i++)

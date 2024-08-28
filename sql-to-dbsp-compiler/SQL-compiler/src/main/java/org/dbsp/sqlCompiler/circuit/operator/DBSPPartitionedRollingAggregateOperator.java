@@ -4,7 +4,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.DBSPAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPWindowBoundExpression;
@@ -35,7 +35,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
             // the current IR, so this type is a lie.
             DBSPTypeIndexedZSet outputType,
             DBSPOperator input) {
-        super(node, "partitioned_rolling_aggregate", outputType, function, aggregate, true, input, false);
+        super(node, "partitioned_rolling_aggregate", outputType, function, aggregate, true, input);
         this.lower = lower;
         this.upper = upper;
         this.partitioningFunction = partitioningFunction;

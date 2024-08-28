@@ -28,7 +28,9 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.util.Logger;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
 import org.junit.AfterClass;
@@ -59,6 +61,14 @@ public class BaseSQLTests {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(sql);
         return new CompilerCircuitStream(compiler);
+    }
+
+    protected void showPlan() {
+        Logger.INSTANCE.setLoggingLevel(CalciteCompiler.class, 2);
+    }
+
+    protected void showFinal() {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
     }
 
     /** Run a query that is expected to fail in compilation.
