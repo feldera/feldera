@@ -431,7 +431,7 @@ CREATE VIEW Q16 AS
 SELECT
     channel,
     CAST(date_time AS DATE) as 'day',
-    max(format_date('HH:mm', date_time)) as 'minute',
+    format_date('HH:mm', max(date_time)) as 'minute',
     count(*) AS total_bids,
     count(*) filter (where price < 10000) AS rank1_bids,
     count(*) filter (where price >= 10000 and price < 1000000) AS rank2_bids,
@@ -858,7 +858,6 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
 
     @Test
     public void q15test() {
-        // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         this.createTest(15, "",
                 """
  day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions

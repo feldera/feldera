@@ -4,7 +4,7 @@ name: Nightly Tests
 
 on:
   schedule:
-    - cron: '02 30 * * *'
+    - cron: '5 4 * * *'
   release:
     types: [published]
   workflow_dispatch:

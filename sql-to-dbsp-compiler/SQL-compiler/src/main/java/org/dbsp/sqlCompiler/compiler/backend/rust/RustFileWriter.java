@@ -296,7 +296,7 @@ public class RustFileWriter {
             if (i <= 10)
                 // These are already pre-declared
                 continue;
-            stream.append("pipeline_types::deserialize_without_context!(");
+            stream.append("feldera_types::deserialize_without_context!(");
             stream.append(DBSPTypeCode.TUPLE.rustName)
                     .append(i);
             for (int j = 0; j < i; j++) {

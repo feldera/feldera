@@ -32,6 +32,40 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void testBetween() {
+        this.qs("""
+                SELECT TIMESTAMP '2020-02-02 10:00:00' between TIMESTAMP '2020-02-02 09:00:00' and TIMESTAMP '2020-02-02 11:00:00';
+                 result
+                --------
+                 true
+                (1 row)
+                
+                SELECT INTERVAL 5 MONTHS between INTERVAL 4 MONTHS and INTERVAL 1 YEAR;
+                 result
+                --------
+                 true
+                (1 row)
+                
+                SELECT INTERVAL '1:01' HOURS TO MINUTES between INTERVAL 1 HOURS and INTERVAL 1 DAYS;
+                 result
+                --------
+                 true
+                (1 row)
+                
+                SELECT DATE '2020-02-02' between DATE '2020-01-01' and DATE '2020-03-03';
+                 result
+                --------
+                 true
+                (1 row)
+                
+                SELECT TIME '10:00:00' between TIME '09:00:00' and TIME '11:00:00';
+                 result
+                --------
+                 true
+                (1 row)""");
+    }
+
+    @Test
     public void testSqlFunc() {
         this.q("""
                 SELECT dbl(3);
