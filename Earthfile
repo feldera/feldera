@@ -152,7 +152,7 @@ build-webui:
 build-dbsp:
     FROM +rust-sources
     DO rust+CARGO --args="build --package dbsp --benches"
-    DO rust+CARGO --args="build --package feldera_types"
+    DO rust+CARGO --args="build --package feldera-types"
     DO rust+CARGO --args="build --package dbsp_nexmark --benches"
     DO rust+CARGO --args="build --package fda"
 
@@ -546,7 +546,7 @@ flink-benchmark:
     END
     SAVE ARTIFACT benchmark/flink_results.csv AS LOCAL .
 
-all-tests:
+ci-tests:
     BUILD +formatting-check
     BUILD +machete
     BUILD +clippy
@@ -554,15 +554,15 @@ all-tests:
     BUILD +openapi-checker
     BUILD +test-sql
     BUILD +integration-tests
-    BUILD +test-docker-compose
     # BUILD +test-docker-compose-stable
-    BUILD +test-debezium-mysql
     # TODO: Temporarily disabled while we port the demo script
-    BUILD +test-debezium-postgres
-    BUILD +test-debezium-jdbc-sink
     # BUILD +test-snowflake
     # BUILD +test-s3
     BUILD +test-service-related
 
 nightly-tests:
     BUILD +test-python
+    BUILD +test-debezium-postgres
+    BUILD +test-debezium-jdbc-sink
+    BUILD +test-debezium-mysql
+    BUILD +test-docker-compose
