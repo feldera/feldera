@@ -4,9 +4,9 @@ use actix::System;
 use actix_web::http::header::{ByteRangeSpec, ContentRangeSpec, Range, CONTENT_RANGE};
 use anyhow::{anyhow, Result as AnyResult};
 use awc::{Client, Connector};
+use feldera_types::program_schema::Relation;
+use feldera_types::transport::url::UrlInputConfig;
 use futures::StreamExt;
-use pipeline_types::program_schema::Relation;
-use pipeline_types::transport::url::UrlInputConfig;
 use std::{cmp::Ordering, str::FromStr, sync::Arc, thread::spawn, time::Duration};
 use tokio::{
     select,
@@ -269,9 +269,9 @@ mod test {
         App, FromRequest, Handler, HttpResponse, HttpServer, Responder, Result,
     };
     use async_stream::stream;
+    use feldera_types::deserialize_without_context;
+    use feldera_types::program_schema::Relation;
     use futures_timer::Delay;
-    use pipeline_types::deserialize_without_context;
-    use pipeline_types::program_schema::Relation;
     use serde::{Deserialize, Serialize};
     use std::{
         io::Error as IoError,

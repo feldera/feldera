@@ -5,8 +5,8 @@ use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineDescr, PipelineI
 use crate::db::types::program::{ProgramConfig, ProgramInfo, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
 use async_trait::async_trait;
-use pipeline_types::config::{PipelineConfig, RuntimeConfig};
-use pipeline_types::error::ErrorResponse;
+use feldera_types::config::{PipelineConfig, RuntimeConfig};
+use feldera_types::error::ErrorResponse;
 use uuid::Uuid;
 
 /// The [`Storage`] trait has all methods the API uses to interact with storage.

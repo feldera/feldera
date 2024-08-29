@@ -4,8 +4,8 @@ use crate::{
     AsyncErrorCallback, OutputEndpoint,
 };
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
+use feldera_types::transport::kafka::KafkaOutputConfig;
 use log::{debug, info, warn};
-use pipeline_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::{
     config::FromClientConfigAndContext,

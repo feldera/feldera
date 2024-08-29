@@ -24,11 +24,11 @@ use colored::Colorize;
 use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
+use feldera_types::{format::json::JsonFlavor, transport::http::EgressMode};
+use feldera_types::{query::OutputQuery, transport::http::SERVER_PORT_FILE};
 use futures_util::FutureExt;
 use log::{debug, error, info, log, trace, warn, Level};
 use minitrace::collector::Config;
-use pipeline_types::{format::json::JsonFlavor, transport::http::EgressMode};
-use pipeline_types::{query::OutputQuery, transport::http::SERVER_PORT_FILE};
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::io::Write;
@@ -405,11 +405,11 @@ where
     // - "dbsp" for the dbsp crate
     // - "dbsp_adapters" for the adapters crate which is renamed
     // - "dbsp_nexmark" for the nexmark crate which is renamed
-    // - "pipeline_types" for the pipeline-types crate
+    // - "feldera_types" for the feldera-types crate
     // For all others, the WARN level is used.
     // Note that this can be overridden by setting the RUST_LOG environment variable.
     env_logger::Builder::from_env(Env::default().default_filter_or(
-        "warn,project=info,dbsp=info,dbsp_adapters=info,dbsp_nexmark=info,pipeline_types=info",
+        "warn,project=info,dbsp=info,dbsp_adapters=info,dbsp_nexmark=info,feldera_types=info",
     ))
     .format(move |buf, record| {
         let t = chrono::Utc::now();

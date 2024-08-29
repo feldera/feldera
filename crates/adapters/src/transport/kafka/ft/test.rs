@@ -11,8 +11,8 @@ use crate::{
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use env_logger::Env;
+use feldera_types::program_schema::Relation;
 use log::info;
-use pipeline_types::program_schema::Relation;
 use proptest::prelude::*;
 use rdkafka::mocking::MockCluster;
 use std::{

@@ -5,8 +5,8 @@
 
 use crate::controller::{ControllerInner, EndpointId};
 use crate::{ControllerError, Encoder, OutputEndpoint, TransportInputEndpoint};
-use pipeline_types::config::{InputEndpointConfig, OutputEndpointConfig, TransportConfig};
-use pipeline_types::program_schema::Relation;
+use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, TransportConfig};
+use feldera_types::program_schema::Relation;
 use std::sync::Weak;
 
 use crate::transport::IntegratedInputEndpoint;
@@ -18,7 +18,7 @@ mod delta_table;
 pub use delta_table::{DeltaTableInputEndpoint, DeltaTableWriter};
 
 #[cfg(feature = "with-deltalake")]
-use pipeline_types::config::TransportConfig::DeltaTableInput;
+use feldera_types::config::TransportConfig::DeltaTableInput;
 
 /// An integrated output connector implements both transport endpoint
 /// (`OutputEndpoint`) and `Encoder` traits.  It is used to implement

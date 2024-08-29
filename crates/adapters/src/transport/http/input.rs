@@ -9,9 +9,9 @@ use actix_web::{web::Payload, HttpResponse};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use circular_queue::CircularQueue;
+use feldera_types::program_schema::Relation;
 use futures_util::StreamExt;
 use log::debug;
-use pipeline_types::program_schema::Relation;
 use serde::Deserialize;
 use std::{
     sync::{atomic::Ordering, Arc, Mutex},

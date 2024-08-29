@@ -6,8 +6,8 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{anyhow, Result as AnyResult};
+use feldera_types::secret_ref::MaybeSecretRef;
 use log::debug;
-use pipeline_types::secret_ref::MaybeSecretRef;
 use regex::Regex;
 
 /// Enumeration which holds a simple string or a resolved secret's string.
@@ -137,7 +137,7 @@ mod tests {
     use std::io::Write;
 
     use super::MaybeSecret;
-    use pipeline_types::secret_ref::MaybeSecretRef;
+    use feldera_types::secret_ref::MaybeSecretRef;
 
     #[test]
     fn test_new_string() {

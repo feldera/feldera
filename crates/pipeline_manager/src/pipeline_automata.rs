@@ -11,9 +11,9 @@ use crate::{config::LocalRunnerConfig, db::storage::Storage, runner::RunnerError
 use actix_web::http::{Method, StatusCode};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use feldera_types::config::PipelineConfig;
+use feldera_types::error::ErrorResponse;
 use log::{debug, error, info};
-use pipeline_types::config::PipelineConfig;
-use pipeline_types::error::ErrorResponse;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
@@ -761,8 +761,8 @@ mod test {
     use crate::logging;
     use crate::pipeline_automata::PipelineAutomaton;
     use async_trait::async_trait;
-    use pipeline_types::config::RuntimeConfig;
-    use pipeline_types::program_schema::ProgramSchema;
+    use feldera_types::config::RuntimeConfig;
+    use feldera_types::program_schema::ProgramSchema;
     use std::sync::Arc;
     use tokio::sync::{Mutex, Notify};
     use uuid::Uuid;

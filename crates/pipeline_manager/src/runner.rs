@@ -10,7 +10,7 @@ use actix_web::{
     web::Payload,
     HttpRequest, HttpResponse, HttpResponseBuilder, ResponseError,
 };
-use pipeline_types::error::{DetailedError, ErrorResponse};
+use feldera_types::error::{DetailedError, ErrorResponse};
 use serde::Serialize;
 use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, sync::Arc, time::Duration};
 use tokio::sync::Mutex;

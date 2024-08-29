@@ -5,7 +5,7 @@
 // This was introduced to resolve issues with auto-derived rkyv trait
 // implementations.
 
-use pipeline_types::deserialize_without_context;
+use feldera_types::deserialize_without_context;
 
 pub mod gen;
 

@@ -10,9 +10,9 @@ use crate::{
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use crossbeam::queue::ArrayQueue;
+use feldera_types::program_schema::Relation;
+use feldera_types::{secret_ref::MaybeSecretRef, transport::kafka::KafkaInputConfig};
 use log::debug;
-use pipeline_types::program_schema::Relation;
-use pipeline_types::{secret_ref::MaybeSecretRef, transport::kafka::KafkaInputConfig};
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::{
     config::FromClientConfigAndContext,

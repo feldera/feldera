@@ -14,10 +14,10 @@ use crate::{
     },
     DetailedError,
 };
+use feldera_types::config::StorageCacheConfig;
 use lazy_static::lazy_static;
 use log::warn;
 use once_cell::sync::Lazy;
-use pipeline_types::config::StorageCacheConfig;
 use serde::Serialize;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::{
@@ -798,7 +798,7 @@ mod tests {
         operator::Generator,
         Circuit, RootCircuit,
     };
-    use pipeline_types::config::{StorageCacheConfig, StorageConfig};
+    use feldera_types::config::{StorageCacheConfig, StorageConfig};
     use std::{
         cell::RefCell,
         rc::Rc,

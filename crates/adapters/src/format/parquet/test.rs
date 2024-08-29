@@ -9,13 +9,13 @@ use std::time::Duration;
 use arrow::array::RecordBatch;
 use dbsp::utils::Tup2;
 use dbsp::OrdZSet;
+use feldera_types::format::json::JsonFlavor;
+use feldera_types::format::parquet::ParquetEncoderConfig;
+use feldera_types::program_schema::Relation;
+use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use parquet::file::serialized_reader::SerializedFileReader;
-use pipeline_types::format::json::JsonFlavor;
-use pipeline_types::format::parquet::ParquetEncoderConfig;
-use pipeline_types::program_schema::Relation;
-use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use pretty_assertions::assert_eq;
 use tempfile::NamedTempFile;
 

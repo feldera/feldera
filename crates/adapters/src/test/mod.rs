@@ -7,10 +7,10 @@ use crate::{
 use anyhow::Result as AnyResult;
 use dbsp::{DBData, OrdZSet, Runtime};
 use env_logger::Env;
-use log::{Log, Metadata, Record};
-use pipeline_types::serde_with_context::{
+use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
+use log::{Log, Metadata, Record};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -42,11 +42,11 @@ pub use data::{
 };
 use dbsp::circuit::CircuitConfig;
 use dbsp::utils::Tup2;
+use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
+use feldera_types::program_schema::{Field, Relation};
 pub use mock_dezset::{wait_for_output_ordered, wait_for_output_unordered, MockDeZSet, MockUpdate};
 pub use mock_input_consumer::MockInputConsumer;
 pub use mock_output_consumer::MockOutputConsumer;
-use pipeline_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
-use pipeline_types::program_schema::{Field, Relation};
 
 pub struct TestLogger;
 

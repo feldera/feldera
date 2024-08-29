@@ -526,6 +526,6 @@ impl LocalRunnerConfig {
     /// Location for pipeline port file
     pub(crate) fn port_file_path(&self, pipeline_id: PipelineId) -> PathBuf {
         self.pipeline_dir(pipeline_id)
-            .join(pipeline_types::transport::http::SERVER_PORT_FILE)
+            .join(feldera_types::transport::http::SERVER_PORT_FILE)
     }
 }

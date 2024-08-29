@@ -1,14 +1,13 @@
 [package]
-name = "pipeline_types"
+name = "feldera-types"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Public API types for pipelines"
+description = "Public API types for Feldera"
 homepage = "https://github.com/feldera/feldera"
 repository = "https://github.com/feldera/feldera"
 keywords = ["DBSP", "streaming", "analytics", "database"]
 categories = ["database", "api-bindings", "network-programming"]
-publish = false
 
 [features]
 testing = ["proptest", "proptest-derive"]

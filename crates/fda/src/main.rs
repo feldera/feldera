@@ -4,9 +4,9 @@ use std::convert::Infallible;
 use std::io::Read;
 
 use clap::{CommandFactory, Parser};
+use feldera_types::config::RuntimeConfig;
+use feldera_types::error::ErrorResponse;
 use log::{debug, error, info, trace};
-use pipeline_types::config::RuntimeConfig;
-use pipeline_types::error::ErrorResponse;
 use reqwest::header::HeaderValue;
 use reqwest::StatusCode;
 use tabled::builder::Builder;

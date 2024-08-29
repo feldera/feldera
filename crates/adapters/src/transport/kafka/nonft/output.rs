@@ -3,9 +3,9 @@ use crate::transport::secret_resolver::MaybeSecret;
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
+use feldera_types::secret_ref::MaybeSecretRef;
+use feldera_types::transport::kafka::KafkaOutputConfig;
 use log::debug;
-use pipeline_types::secret_ref::MaybeSecretRef;
-use pipeline_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::{
     config::FromClientConfigAndContext,

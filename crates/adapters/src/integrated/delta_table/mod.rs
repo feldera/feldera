@@ -4,10 +4,10 @@ mod output;
 #[cfg(test)]
 mod test;
 
+use feldera_types::serde_with_context::serde_config::DecimalFormat;
+use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 pub use input::DeltaTableInputEndpoint;
 pub use output::DeltaTableWriter;
-use pipeline_types::serde_with_context::serde_config::DecimalFormat;
-use pipeline_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use std::sync::Once;
 
 static REGISTER_STORAGE_HANDLERS: Once = Once::new();

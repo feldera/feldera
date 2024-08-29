@@ -15,10 +15,10 @@ use crate::db::types::program::{
 use crate::db::types::tenant::TenantId;
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
+use feldera_types::config::{PipelineConfig, ResourceConfig, RuntimeConfig};
+use feldera_types::error::ErrorResponse;
+use feldera_types::program_schema::ProgramSchema;
 use openssl::sha;
-use pipeline_types::config::{PipelineConfig, ResourceConfig, RuntimeConfig};
-use pipeline_types::error::ErrorResponse;
-use pipeline_types::program_schema::ProgramSchema;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
 use proptest_derive::Arbitrary;

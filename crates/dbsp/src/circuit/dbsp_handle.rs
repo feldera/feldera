@@ -6,13 +6,13 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
+pub use feldera_types::config::{StorageCacheConfig, StorageConfig};
 use hashbrown::HashMap;
 use itertools::Either;
 use metrics::counter;
 use minitrace::collector::SpanContext;
 use minitrace::local::LocalSpan;
 use minitrace::Span;
-pub use pipeline_types::config::{StorageCacheConfig, StorageConfig};
 use std::sync::Arc;
 use std::{
     collections::HashSet,
@@ -804,7 +804,7 @@ mod tests {
         TypedBox, ZSetHandle, ZWeight,
     };
     use anyhow::anyhow;
-    use pipeline_types::config::{StorageCacheConfig, StorageConfig};
+    use feldera_types::config::{StorageCacheConfig, StorageConfig};
     use tempfile::{tempdir, TempDir};
     use uuid::Uuid;
 

@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 dbsp = { path = "../../../crates/dbsp" }
-pipeline_types = { path = "../../../crates/pipeline-types" }
+feldera-types = { path = "../../../crates/feldera-types" }
 itertools = { version = "0.13.0" }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["maths", "rkyv"] }
 geo = { version = "0.26.0" }

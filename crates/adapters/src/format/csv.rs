@@ -8,7 +8,7 @@ use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use csv_core::{ReadRecordResult, Reader as CsvReader};
 use erased_serde::Serialize as ErasedSerialize;
-use pipeline_types::format::csv::{CsvEncoderConfig, CsvParserConfig};
+use feldera_types::format::csv::{CsvEncoderConfig, CsvParserConfig};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{borrow::Cow, mem::take};
@@ -17,7 +17,7 @@ pub(crate) mod deserializer;
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
 pub use deserializer::byte_record_deserializer;
 pub use deserializer::string_record_deserializer;
-use pipeline_types::program_schema::Relation;
+use feldera_types::program_schema::Relation;
 use serde_yaml::Value as YamlValue;
 
 /// When including a long CSV record in an error message,
@@ -347,8 +347,8 @@ impl Encoder for CsvEncoder {
 #[cfg(test)]
 mod test {
     use crate::format::string_record_deserializer;
-    use pipeline_types::deserialize_table_record;
-    use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+    use feldera_types::deserialize_table_record;
+    use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 
     #[derive(Debug, Eq, PartialEq)]
     #[allow(non_snake_case)]

@@ -4,9 +4,9 @@ use crate::{transport::Step, ControllerError};
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_types::program_schema::Relation;
+use feldera_types::serde_with_context::FieldParseError;
 use once_cell::sync::Lazy;
-use pipeline_types::program_schema::Relation;
-use pipeline_types::serde_with_context::FieldParseError;
 use serde::Serialize;
 use serde_yaml::Value as YamlValue;
 use std::{

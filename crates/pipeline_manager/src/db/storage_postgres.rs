@@ -15,9 +15,9 @@ use crate::db::types::tenant::TenantId;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
+use feldera_types::config::{PipelineConfig, RuntimeConfig};
+use feldera_types::error::ErrorResponse;
 use log::{debug, info, log, Level};
-use pipeline_types::config::{PipelineConfig, RuntimeConfig};
-use pipeline_types::error::ErrorResponse;
 use tokio_postgres::NoTls;
 use uuid::Uuid;
 

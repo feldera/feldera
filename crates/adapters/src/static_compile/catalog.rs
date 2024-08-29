@@ -13,9 +13,9 @@ use dbsp::{
     utils::Tup2,
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet,
 };
-use pipeline_types::deserialize_struct;
-use pipeline_types::program_schema::Relation;
-use pipeline_types::serde_with_context::{
+use feldera_types::deserialize_struct;
+use feldera_types::program_schema::Relation;
+use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
 use serde::{Deserialize, Serialize};
@@ -608,7 +608,7 @@ mod test {
         Catalog, CircuitCatalog, SerBatch,
     };
     use dbsp::Runtime;
-    use pipeline_types::format::json::JsonFlavor;
+    use feldera_types::format::json::JsonFlavor;
 
     const RECORD_FORMAT: RecordFormat = RecordFormat::Json(JsonFlavor::Default);
 

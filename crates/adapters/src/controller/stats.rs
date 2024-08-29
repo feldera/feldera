@@ -38,6 +38,7 @@ use crate::{
 use anyhow::Error as AnyError;
 use atomic::Atomic;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
+use feldera_types::config::PipelineConfig;
 use log::error;
 use metrics::{KeyName, SharedString as MetricString, Unit as MetricUnit};
 use metrics_util::{
@@ -45,7 +46,6 @@ use metrics_util::{
     CompositeKey,
 };
 use ordered_float::OrderedFloat;
-use pipeline_types::config::PipelineConfig;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use psutil::process::{Process, ProcessError};
 use rand::{seq::index::sample, thread_rng};

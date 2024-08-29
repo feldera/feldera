@@ -5,11 +5,11 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Result as AnyResult};
 use csv::WriterBuilder as CsvWriterBuilder;
+use feldera_types::program_schema::Relation;
+use feldera_types::transport::kafka::default_redpanda_server;
 use futures::executor::block_on;
 use lazy_static::lazy_static;
 use log::{error, info};
-use pipeline_types::program_schema::Relation;
-use pipeline_types::transport::kafka::default_redpanda_server;
 use rdkafka::message::BorrowedMessage;
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewPartitions, NewTopic, TopicReplication},

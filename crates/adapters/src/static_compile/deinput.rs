@@ -10,7 +10,7 @@ use dbsp::{
     algebra::HasOne, operator::Update, utils::Tup2, DBData, InputHandle, MapHandle, SetHandle,
     ZSetHandle, ZWeight,
 };
-use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
 
@@ -943,7 +943,7 @@ mod test {
         algebra::F32, utils::Tup2, DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime,
     };
 
-    use pipeline_types::{deserialize_without_context, format::json::JsonFlavor};
+    use feldera_types::{deserialize_without_context, format::json::JsonFlavor};
     use serde_json::to_string as to_json_string;
     use size_of::SizeOf;
     use std::hash::Hash;

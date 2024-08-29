@@ -17,8 +17,8 @@ use dbsp::dynamic::DowncastTrait;
 use dbsp::trace::merge_batches;
 use dbsp::typed_batch::{DynBatchReader, DynSpine, DynTrace, Spine, TypedBatch};
 use dbsp::{trace::Cursor, Batch, BatchReader, OutputHandle, Trace};
-use pipeline_types::serde_with_context::serialize::SerializeWithContextWrapper;
-use pipeline_types::serde_with_context::{
+use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
+use feldera_types::serde_with_context::{
     DateFormat, SerializationContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
 };
