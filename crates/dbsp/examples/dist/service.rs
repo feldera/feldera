@@ -20,8 +20,7 @@ use size_of::SizeOf;
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct Record {
     pub location: String,
     pub date: NaiveDate,
@@ -44,7 +43,7 @@ pub struct Record {
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct VaxMonthly {
     pub count: u64,

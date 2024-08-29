@@ -84,7 +84,6 @@ type Normalizations = HashMap<&'static str, &'static [&'static str], Xxh3Builder
 
 #[derive(Default, Debug, Clone, SizeOf, Archive, Serialize, Deserialize)]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
 pub struct PersonalNetworkGkgEntry {
     pub id: String,
     pub date: u64,

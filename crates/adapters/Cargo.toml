@@ -53,8 +53,7 @@ actix = "0.13.1"
 actix-web = { version = "4.4.0", default-features = false, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
 mime = "0.3.16"
 log = "0.4.20"
-# Once chrono is released with `849932` chrono version needs to be updated in size-of crate:
-size-of = { git = "https://github.com/gz/size-of.git", rev = "f8e6be7", features = ["time-std", "ordered-float"], optional = true }
+size-of = { version = "0.1.5", package = "feldera-size-of", features = ["time-std", "ordered-float"], optional = true }
 futures = { version = "0.3.28" }
 futures-util = { version = "0.3.28" }
 proptest = { version = "1.0.0", optional = true }
@@ -86,7 +85,7 @@ bytes = "1.5.0"
 deltalake = { version = "=0.18.1", features = ["datafusion", "s3", "gcs", "azure"], optional = true }
 apache-avro = { version = "0.16.0", optional = true }
 schema_registry_converter = { version = "4.0.0", features = ["avro", "blocking"], optional = true }
-rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
+rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
 url = "2.5.0"
 # Make sure to match metrics version in dbsp to include them!
 metrics = "0.23"
@@ -117,7 +116,7 @@ psutil = "3.2.2"
 actix-test = "0.1.1"
 bstr = { version = "0.2.1", features = ["serde1"] }
 serde_json = "1.0.127"
-size-of = { git = "https://github.com/gz/size-of.git", rev = "f8e6be7", features = ["time-std", "ordered-float"] }
+size-of = { version = "0.1.5", package = "feldera-size-of", features = ["time-std", "ordered-float"] }
 tempfile = "3.3.0"
 proptest = "1.0.0"
 proptest-derive = "0.3.0"

@@ -122,7 +122,7 @@ const DAY_IN_SECONDS: i64 = 24 * 3600;
     rkyv::Deserialize,
     serde::Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 struct QueryResult {
     // day: Weekday,
@@ -189,7 +189,7 @@ struct Demographics {
     rkyv::Deserialize,
     serde::Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 struct Transaction {
     #[serde(deserialize_with = "naive_date_time_from_str")]
