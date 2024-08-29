@@ -9,7 +9,7 @@
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
-  import type { ExtendedPipeline, Pipeline } from '$lib/services/pipelineManager'
+  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import { listPipelineErrors } from '$lib/compositions/health/systemErrors.svelte'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -39,6 +39,7 @@
     }
   }
   $effect(() => {
+    pipelineName
     setTimeout(() => pipelineActionCallbacks.add(pipelineName, 'start_paused', switchTo))
     return () => {
       pipelineActionCallbacks.remove(pipelineName, 'start_paused', switchTo)
@@ -81,12 +82,16 @@
       value={tabName}
       classes="h-full overflow-y-auto relative"
     >
-      <div class="ggg absolute h-full w-full p-4 pt-0">
+      <div class="absolute h-full w-full">
         <TabComponent {pipeline} {metrics}></TabComponent>
       </div>
     </Tabs.Panel>
   {/each}
 {/snippet}
 
-<Tabs list={tabList} panels={tabPanels} panelsClasses="flex-1" classes="flex flex-col flex-1"
+<Tabs
+  list={tabList}
+  panels={tabPanels}
+  panelsClasses="flex-1"
+  classes="flex flex-col flex-1 !space-y-0"
 ></Tabs>

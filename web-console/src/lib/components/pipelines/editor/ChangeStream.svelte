@@ -8,15 +8,22 @@
   import { VirtualList, type AfterScrollEvent } from 'svelte-virtuallists'
   import { useResizeObserver } from 'runed'
   import { scale } from 'svelte/transition'
+  import { humanSize } from '$lib/functions/common/string'
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
 
+  type Payload = { insert: XgressRecord } | { delete: XgressRecord } | { skippedBytes: number }
+  type Row = { relationName: string } & Payload
   let {
-    changes
+    changeStream
   }: {
-    changes: ({ relationName: string } & ({ insert: XgressRecord } | { delete: XgressRecord }))[]
+    changeStream: {
+      rows: Row[]
+      totalSkippedBytes: number
+    }
   } = $props()
 
-  let len = $derived(changes.length)
-  let lastLen = $state(changes.length)
+  let len = $derived(changeStream.rows.length)
+  let lastLen = $state(changeStream.rows.length)
   let scrollOffset = $state(0)
   let lastScrollOffset = $state(0)
   const itemSize = 24
@@ -58,17 +65,28 @@
   }
 </script>
 
-<div class="relative flex-1" bind:this={ref}>
+<div class="relative flex flex-1 flex-col" bind:this={ref}>
+  {#if changeStream.totalSkippedBytes}
+    <div class="flex gap-1 p-1 preset-tonal-warning">
+      <span class="bx bx-error text-[24px]"></span>
+      <span>
+        Receiving changes faster than can be displayed. Skipping some records to keep up, {humanSize(
+          changeStream.totalSkippedBytes
+        )} in total.
+      </span>
+    </div>
+  {/if}
+
   <VirtualList
     width="100%"
     {height}
-    model={changes}
+    model={changeStream.rows}
     {scrollOffset}
-    modelCount={changes.length}
+    modelCount={changeStream.rows.length}
     {itemSize}
     {onAfterScroll}
   >
-    {#snippet slot({ item, style })}
+    {#snippet slot({ item, style }: { item: Row; style: string })}
       <div
         {style}
         class={`row whitespace-nowrap pl-2 before:inline-block before:w-2 even:!bg-opacity-30 even:bg-surface-100-900 ` +
@@ -81,7 +99,13 @@
         <span class="inline-block w-64 overflow-clip overflow-ellipsis pl-4"
           >{item.relationName}</span
         >
-        <span class="">{JSONbig.stringify((item as any).insert ?? (item as any).delete)}</span>
+        <span class=""
+          >{'insert' in item
+            ? JSONbig.stringify(item.insert)
+            : 'delete' in item
+              ? JSONbig.stringify(item.delete)
+              : `Skipped ${humanSize(item.skippedBytes)} of changes stream`}</span
+        >
       </div>
     {/snippet}
   </VirtualList>

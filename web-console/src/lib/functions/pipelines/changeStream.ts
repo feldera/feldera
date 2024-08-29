@@ -4,6 +4,7 @@ import type { ParsedElementInfo } from '@streamparser/json/utils/types/parsedEle
 import { discreteDerivative } from '$lib/functions/common/math'
 import { tuple } from '$lib/functions/common/tuple'
 import { chunkIndices } from '$lib/functions/common/array'
+import { humanSize } from '$lib/functions/common/string'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
@@ -24,21 +25,33 @@ const mkParser = (
   })
 }
 
+/**
+ *
+ * @param stream
+ * @param pushChanges
+ * @param options.bufferSize Threshold size of the buffer that holds unprocessed JSON chunks.
+ * If the buffer size exceeds this value - when the new JSON batch arrives previous JSON batches are dropped
+ * until the buffer size is under the threshold, or only one batch remains.
+ * @returns
+ */
 export const parseJSONInStream = <T>(
   stream: ReadableStream<Uint8Array>,
   pushChanges: (changes: T[]) => void,
-  options?: TokenParserOptions
+  onBytesSkipped?: (bytes: number) => void,
+  options?: TokenParserOptions & { bufferSize?: number }
 ) => {
   const reader = stream.getReader()
   let count = 0
-  let resultBuffer = new Array()
+  let resultBuffer = [] as any[]
 
   const onValue = ({ value }: ParsedElementInfo) => {
     resultBuffer[count] = value
     ++count
   }
 
-  const chunksToParse = [] as Uint8Array[]
+  // chunksToParse is a list of batches (complete JSON objects), each split into a list of bytestring chunks
+  // chunksToParse contains no empty bytestrings
+  let chunksToParse = [[]] as Uint8Array[][]
 
   const startInterruptableParse = () => {
     let parser = mkParser(onValue, options)
@@ -52,7 +65,7 @@ export const parseJSONInStream = <T>(
         // We ignore the error because we just want to interrupt parsing and production of values
       }
       parser = mkParser(onValue, options)
-      chunksToParse.length = 0
+      chunksToParse = [[]]
       while (!done) {
         // Release thread to parse JSON
         await new Promise((resolve) => setTimeout(resolve))
@@ -62,8 +75,13 @@ export const parseJSONInStream = <T>(
     return {
       start: async () => {
         while (!isEnd) {
-          const value = chunksToParse.shift()
-          if (!value || value.length === 0) {
+          const value = chunksToParse[0]?.shift()
+          if (!value) {
+            if (chunksToParse.length > 1) {
+              // Keep atleast a single empty batch in chunksToParse
+              chunksToParse.shift()
+              parser = mkParser(onValue, options)
+            }
             await new Promise((resolve) => setTimeout(resolve))
             continue
           }
@@ -76,12 +94,27 @@ export const parseJSONInStream = <T>(
             if (isEnd) {
               break
             }
+
             {
-              // In each iteration we check if an empty array has been added to the parse queue
-              // If so, we drop all chunks before the latest empty array
-              const emptyChunkIdx = chunksToParse.findLastIndex((chunk) => chunk.length === 0)
-              if (emptyChunkIdx !== -1) {
-                chunksToParse.splice(0, emptyChunkIdx + 1)
+              // In each parse iteration we check if buffer is not too large
+              // If so, we drop oldest batches until buffer fits the threshold, or a single batch remains
+              const batchLengths = chunksToParse.map((batch) =>
+                batch.reduce((acc, cur) => acc + cur.length, 0)
+              )
+              const previousBufferSize = batchLengths.reduce((acc, cur) => acc + cur, 0)
+              let bufferSize = previousBufferSize
+              const tooLarge = () =>
+                chunksToParse.length > 1 && bufferSize > (options?.bufferSize ?? 0)
+              const restart = tooLarge()
+              while (tooLarge()) {
+                bufferSize -= batchLengths.shift()!
+                chunksToParse.shift()
+              }
+              if (restart) {
+                console.log(
+                  `Skipped ${humanSize(previousBufferSize - bufferSize)} of change stream. New buffer size is ${humanSize(bufferSize)}`
+                )
+                onBytesSkipped?.(previousBufferSize - bufferSize)
                 parser = mkParser(onValue, options)
                 break
               }
@@ -124,7 +157,13 @@ export const parseJSONInStream = <T>(
         stop()
         break
       }
-      splitByNewline(chunksToParse.push.bind(chunksToParse), value)
+
+      splitByNewline(
+        (chunk) => chunksToParse.at(-1)!.push(chunk),
+        () => chunksToParse.push([]),
+        value
+      )
+
       // Release thread to process UI
       await new Promise((resolve) => setTimeout(resolve))
     }
@@ -139,21 +178,19 @@ export const parseJSONInStream = <T>(
  * Split stream by newline character (LF, 0x0A), sending an empty chunk on each occurrence
  * Empty chunk is also sent when the upstream has ended
  */
-function splitByNewline(onChunk: (chunk: Uint8Array) => void, chunk: Uint8Array) {
+function splitByNewline(
+  onChunk: (chunk: Uint8Array) => void,
+  onBatch: () => void,
+  chunk: Uint8Array
+) {
   let start = 0
-
-  // TODO: currently splitting is stateless, so when chunk has a divider at its end empty chunk will not be injected.
-  // This may be suboptimal, as ideal behavior could be inserting empty chunk when the next upstream chunk arrives.
-  // This would require introducing state to splitting algorithm.
-
   while (start < chunk.length) {
     const newlineIndex = chunk.indexOf(10, start)
     const end = newlineIndex === -1 ? chunk.length : newlineIndex
 
     onChunk(chunk.subarray(start, end))
-    if (end < chunk.length - 1) {
-      // If found newline not at the end of the chunk
-      onChunk(new Uint8Array())
+    if (end !== chunk.length) {
+      onBatch()
     }
 
     // Move start to after the newline character
@@ -168,7 +205,11 @@ function splitByNewline(onChunk: (chunk: Uint8Array) => void, chunk: Uint8Array)
 function splitStreamByNewline(): TransformStream<Uint8Array, Uint8Array> {
   return new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
-      splitByNewline(controller.enqueue.bind(controller), chunk)
+      splitByNewline(
+        controller.enqueue.bind(controller),
+        () => controller.enqueue(new Uint8Array()),
+        chunk
+      )
     },
     flush(controller) {
       controller.enqueue(new Uint8Array())

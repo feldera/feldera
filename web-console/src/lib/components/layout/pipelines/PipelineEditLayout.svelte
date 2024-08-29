@@ -196,7 +196,7 @@
         </div>
       </div>
     </Pane>
-    <PaneResizer class="h-2 bg-surface-100-900" />
+    <PaneResizer class="pane-divider-horizontal" />
     <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
       {#if pipeline.current.name}
         <InteractionsPanel {pipeline} {metrics}></InteractionsPanel>
