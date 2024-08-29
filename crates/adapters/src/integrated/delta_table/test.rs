@@ -25,16 +25,16 @@ use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
 use env_logger::Env;
-use log::{debug, info, trace};
-use parquet::file::reader::Length;
-use pipeline_types::config::PipelineConfig;
-use pipeline_types::program_schema::{Field, Relation};
-use pipeline_types::serde_with_context::serialize::SerializeWithContextWrapper;
-use pipeline_types::serde_with_context::{
+use feldera_types::config::PipelineConfig;
+use feldera_types::program_schema::{Field, Relation};
+use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
+use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
 };
-use pipeline_types::transport::delta_table::DeltaTableIngestMode;
+use feldera_types::transport::delta_table::DeltaTableIngestMode;
+use log::{debug, info, trace};
+use parquet::file::reader::Length;
 use proptest::collection::vec;
 use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
 use proptest::proptest;

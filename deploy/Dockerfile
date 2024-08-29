@@ -120,7 +120,7 @@ COPY --chown=feldera Cargo.lock .feldera/cargo_workspace/Cargo.lock
 
 # The crates needed for the SQL compiler
 COPY crates/dbsp lib/crates/dbsp
-COPY crates/pipeline-types lib/crates/pipeline-types
+COPY crates/feldera-types lib/crates/feldera-types
 COPY crates/adapters lib/crates/adapters
 COPY crates/nexmark lib/crates/nexmark
 # Storage crate got folded into the dbsp crate for now. Revert if this changes.

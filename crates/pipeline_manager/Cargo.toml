@@ -14,7 +14,7 @@ publish = false
 development = ["pg-client-config"]
 
 [dependencies]
-pipeline_types = { path = "../pipeline-types/" }
+feldera-types = { path = "../feldera-types" }
 actix-web = "4.3"
 actix-http = "3.8.0"
 actix-web-static-files = "4.0.0"
@@ -78,7 +78,7 @@ serial_test = "2.0.0"
 aws-sdk-cognitoidentityprovider = "0.28.0"
 aws-config = "0.55.3"
 wiremock = "0.5"
-pipeline_types = { path = "../pipeline-types/", features = ["testing"] }
+feldera-types = { path = "../feldera-types", features = ["testing"] }
 
 # Used in integration tests
 [dev-dependencies.tokio]

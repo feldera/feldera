@@ -2,9 +2,9 @@
 
 use crate::{some_function1, some_function2, some_function3, some_function4};
 use dbsp::num_entries_scalar;
+use feldera_types::{deserialize_without_context, serialize_without_context};
 use flate2::read::GzDecoder;
 use hex::ToHex;
-use pipeline_types::{deserialize_without_context, serialize_without_context};
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{cmp::min, fmt::Debug, io::Read};

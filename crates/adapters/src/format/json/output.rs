@@ -9,8 +9,8 @@ use crate::{
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
-use pipeline_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
-use pipeline_types::program_schema::Relation;
+use feldera_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
+use feldera_types::program_schema::Relation;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -386,9 +386,9 @@ mod test {
         test::{generate_test_batches_with_weights, MockOutputConsumer, TestStruct},
     };
     use dbsp::{utils::Tup2, OrdZSet};
+    use feldera_types::format::json::JsonUpdateFormat;
+    use feldera_types::program_schema::Relation;
     use log::trace;
-    use pipeline_types::format::json::JsonUpdateFormat;
-    use pipeline_types::program_schema::Relation;
     use proptest::prelude::*;
     use serde::Deserialize;
     use std::collections::BTreeMap;

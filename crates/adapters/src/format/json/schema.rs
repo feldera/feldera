@@ -3,8 +3,8 @@
 //! The schema can be inlined in each message or distributed separately, e.g.,
 //! via a schema registry.
 
-use pipeline_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
-use pipeline_types::program_schema::Relation;
+use feldera_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
+use feldera_types::program_schema::Relation;
 
 /// Build a schema for the value component of the payload.
 pub fn build_value_schema(config: &JsonEncoderConfig, schema: &Relation) -> Option<String> {
@@ -50,7 +50,7 @@ pub fn build_key_schema(config: &JsonEncoderConfig, schema: &Relation) -> Option
 /// types can have additional parameters, e.g., scale and precision for
 /// decimals.
 mod kafka_connect_json_converter {
-    use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
+    use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
 
@@ -267,7 +267,7 @@ mod kafka_connect_json_converter {
     #[cfg(test)]
     mod test {
         use crate::format::json::schema::kafka_connect_json_converter::debezium_value_schema_str;
-        use pipeline_types::program_schema::Relation;
+        use feldera_types::program_schema::Relation;
 
         #[test]
         fn test_schema_encoder() {

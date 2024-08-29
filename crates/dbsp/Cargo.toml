@@ -66,7 +66,7 @@ log = { version = "0.4", features = [] }
 rlimit = "0.10.1"
 serde = { version = "1.0", features = ["derive"] }
 ptr_meta = "0.2.0"
-pipeline_types = { path = "../pipeline-types" }
+feldera-types = { path = "../feldera-types" }
 sysinfo = "0.30.5"
 libc = "0.2.153"
 static_assertions = "1.1.0"

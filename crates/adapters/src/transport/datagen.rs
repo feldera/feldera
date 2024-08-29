@@ -15,15 +15,15 @@ use atomic::Atomic;
 use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime, Timelike};
 use dbsp::circuit::tokio::TOKIO;
+use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
+use feldera_types::transport::datagen::{
+    DatagenInputConfig, DatagenStrategy, GenerationPlan, RngFieldSettings,
+};
 use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Jitter, Quota, RateLimiter};
 use num_traits::{clamp, Bounded, ToPrimitive};
-use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
-use pipeline_types::transport::datagen::{
-    DatagenInputConfig, DatagenStrategy, GenerationPlan, RngFieldSettings,
-};
 use rand::distributions::{Alphanumeric, Uniform};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -1499,11 +1499,11 @@ mod test {
     use crate::test::{mock_input_pipeline, MockDeZSet, MockInputConsumer, TestStruct2};
     use crate::InputReader;
     use anyhow::Result as AnyResult;
-    use pipeline_types::config::{InputEndpointConfig, TransportConfig};
-    use pipeline_types::program_schema::{ColumnType, Field, Relation, SqlType};
-    use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
-    use pipeline_types::transport::datagen::GenerationPlan;
-    use pipeline_types::{deserialize_table_record, serialize_table_record};
+    use feldera_types::config::{InputEndpointConfig, TransportConfig};
+    use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
+    use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+    use feldera_types::transport::datagen::GenerationPlan;
+    use feldera_types::{deserialize_table_record, serialize_table_record};
     use size_of::SizeOf;
     use sqllib::binary::ByteArray;
     use sqllib::{Date, Time, Timestamp};

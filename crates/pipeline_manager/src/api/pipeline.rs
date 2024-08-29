@@ -18,9 +18,9 @@ use actix_web::{
     HttpRequest, HttpResponse,
 };
 use chrono::{DateTime, Utc};
+use feldera_types::config::{PipelineConfig, RuntimeConfig};
+use feldera_types::error::ErrorResponse;
 use log::info;
-use pipeline_types::config::{PipelineConfig, RuntimeConfig};
-use pipeline_types::error::ErrorResponse;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -542,7 +542,7 @@ pub(crate) async fn input_endpoint_action(
     ),
     responses(
         // TODO: implement `ToSchema` for `ControllerStatus`, which is the
-        //       actual type returned by this endpoint and move it to pipeline-types.
+        //       actual type returned by this endpoint and move it to feldera-types.
         (status = OK
             , description = "Pipeline metrics retrieved successfully."
             , body = Object),

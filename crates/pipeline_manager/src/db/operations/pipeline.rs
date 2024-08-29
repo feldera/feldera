@@ -12,8 +12,8 @@ use crate::db::types::program::{
 };
 use crate::db::types::tenant::TenantId;
 use deadpool_postgres::Transaction;
-use pipeline_types::config::{PipelineConfig, RuntimeConfig};
-use pipeline_types::error::ErrorResponse;
+use feldera_types::config::{PipelineConfig, RuntimeConfig};
+use feldera_types::error::ErrorResponse;
 use tokio_postgres::Row;
 use uuid::Uuid;
 

@@ -10,7 +10,7 @@ use crate::{
 };
 use actix_web::HttpRequest;
 use erased_serde::Serialize as ErasedSerialize;
-use pipeline_types::format::json::{JsonParserConfig, JsonUpdateFormat};
+use feldera_types::format::json::{JsonParserConfig, JsonUpdateFormat};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -452,12 +452,12 @@ mod test {
         transport::InputConsumer,
         FormatConfig, ParseError,
     };
-    use log::trace;
-    use pipeline_types::{
+    use feldera_types::{
         deserialize_table_record,
         format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat},
         serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
     };
+    use log::trace;
     use std::{borrow::Cow, fmt::Debug};
 
     #[derive(PartialEq, Debug, Eq)]

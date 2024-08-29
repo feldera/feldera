@@ -10,11 +10,11 @@ use chrono::{
 };
 use core::fmt::Formatter;
 use dbsp::num_entries_scalar;
-use num::PrimInt;
-use pipeline_types::serde_with_context::{
+use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
 };
+use num::PrimInt;
 use serde::{de::Error as _, ser::Error as _, Deserialize, Deserializer, Serializer};
 use size_of::SizeOf;
 use std::{
@@ -1377,12 +1377,12 @@ pub fn extract_hour_Time(value: Time) -> i64 {
 #[cfg(test)]
 mod test {
     use super::{Date, Time, Timestamp};
-    use lazy_static::lazy_static;
-    use pipeline_types::format::json::JsonFlavor;
-    use pipeline_types::serde_with_context::{
+    use feldera_types::format::json::JsonFlavor;
+    use feldera_types::serde_with_context::{
         DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
     };
-    use pipeline_types::{deserialize_table_record, serialize_table_record};
+    use feldera_types::{deserialize_table_record, serialize_table_record};
+    use lazy_static::lazy_static;
 
     #[derive(Debug, Eq, PartialEq, serde::Serialize)]
     #[allow(non_snake_case)]

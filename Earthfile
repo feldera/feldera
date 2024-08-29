@@ -152,7 +152,7 @@ build-webui:
 build-dbsp:
     FROM +rust-sources
     DO rust+CARGO --args="build --package dbsp --benches"
-    DO rust+CARGO --args="build --package pipeline_types"
+    DO rust+CARGO --args="build --package feldera_types"
     DO rust+CARGO --args="build --package dbsp_nexmark --benches"
     DO rust+CARGO --args="build --package fda"
 
@@ -316,7 +316,7 @@ build-pipeline-manager-container:
 
     # Then copy over the crates needed by the sql compiler
     COPY crates/dbsp database-stream-processor/crates/dbsp
-    COPY crates/pipeline-types database-stream-processor/crates/pipeline-types
+    COPY crates/feldera-types database-stream-processor/crates/feldera-types
     COPY crates/adapters database-stream-processor/crates/adapters
     COPY crates/nexmark database-stream-processor/crates/nexmark
     COPY README.md database-stream-processor/README.md

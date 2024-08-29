@@ -13,11 +13,11 @@ use crate::metrics::{COMPILE_LATENCY_RUST, COMPILE_LATENCY_SQL};
 use crate::probe::Probe;
 use actix_files::NamedFile;
 use actix_web::{get, web, HttpRequest, HttpServer, Responder};
+use feldera_types::program_schema::ProgramSchema;
 use futures_util::join;
 use log::warn;
 use log::{debug, error, info};
 use metrics::histogram;
-use pipeline_types::program_schema::ProgramSchema;
 use std::collections::HashSet;
 use std::time::Instant;
 use std::{
@@ -980,8 +980,8 @@ mod test {
     use crate::{
         auth::TenantRecord, compiler::ProgramStatus, config::CompilerConfig, db::storage::Storage,
     };
-    use pipeline_types::config::RuntimeConfig;
-    use pipeline_types::program_schema::ProgramSchema;
+    use feldera_types::config::RuntimeConfig;
+    use feldera_types::program_schema::ProgramSchema;
     use std::{fs::File, sync::Arc};
     use tempfile::TempDir;
     use tokio::{fs, sync::Mutex};

@@ -20,8 +20,8 @@ use std::{
     },
 };
 
+use feldera_types::config::StorageCacheConfig;
 use log::{trace, warn};
-use pipeline_types::config::StorageCacheConfig;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use tempfile::TempDir;
 use thiserror::Error;

@@ -8,8 +8,8 @@ use crate::db::types::pipeline::{
 use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramStatus};
 use crate::error::ManagerError;
 use crate::runner::RunnerError;
-use pipeline_types::config::ResourceConfig;
-use pipeline_types::{config::RuntimeConfig, error::ErrorResponse};
+use feldera_types::config::ResourceConfig;
+use feldera_types::{config::RuntimeConfig, error::ErrorResponse};
 use uuid::uuid;
 
 pub(crate) fn error_duplicate_name() -> ErrorResponse {

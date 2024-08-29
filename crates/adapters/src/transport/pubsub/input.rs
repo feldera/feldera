@@ -5,6 +5,7 @@ use crate::{
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use chrono::DateTime;
 use dbsp::circuit::tokio::TOKIO;
+use feldera_types::{program_schema::Relation, transport::pubsub::PubSubInputConfig};
 use futures::StreamExt;
 use google_cloud_gax::conn::Environment;
 use google_cloud_pubsub::{
@@ -12,7 +13,6 @@ use google_cloud_pubsub::{
     subscription::{SeekTo, Subscription},
 };
 use log::{debug, warn};
-use pipeline_types::{program_schema::Relation, transport::pubsub::PubSubInputConfig};
 use std::{
     sync::Arc,
     thread,

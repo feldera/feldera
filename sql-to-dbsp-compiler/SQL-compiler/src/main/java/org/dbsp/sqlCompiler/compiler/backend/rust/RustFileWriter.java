@@ -127,7 +127,7 @@ public class RustFileWriter {
                         dynamic::{DynData,DynDataTyped},
                     };
                     use dbsp_adapters::Catalog;
-                    use pipeline_types::{deserialize_table_record, serialize_table_record};
+                    use feldera_types::{deserialize_table_record, serialize_table_record};
                     use size_of::*;
                     use ::serde::{Deserialize,Serialize};
                     use compare::{Compare, Extract};

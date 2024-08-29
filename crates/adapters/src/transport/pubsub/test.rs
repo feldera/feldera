@@ -7,6 +7,7 @@ use crate::test::{
 use anyhow::bail;
 use csv::WriterBuilder;
 use dbsp::circuit::tokio::TOKIO;
+use feldera_types::program_schema::Relation;
 use google_cloud_gax::conn::Environment;
 use google_cloud_googleapis::pubsub::v1::PubsubMessage;
 use google_cloud_pubsub::{
@@ -16,7 +17,6 @@ use google_cloud_pubsub::{
     topic::Topic,
 };
 use log::info;
-use pipeline_types::program_schema::Relation;
 use proptest::prelude::*;
 use serde::Serialize;
 

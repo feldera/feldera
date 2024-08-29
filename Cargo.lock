@@ -3556,6 +3556,7 @@ dependencies = [
  "fdlimit",
  "feldera-ijson",
  "feldera-size-of",
+ "feldera-types",
  "feldera_rust_decimal",
  "futures",
  "hashbrown 0.14.5",
@@ -3577,7 +3578,6 @@ dependencies = [
  "ordered-float 3.9.2",
  "paste",
  "petgraph",
- "pipeline_types",
  "pprof",
  "pretty_assertions",
  "priority-queue",
@@ -3646,6 +3646,7 @@ dependencies = [
  "erased-serde",
  "fake",
  "feldera-size-of",
+ "feldera-types",
  "feldera_rust_decimal",
  "form_urlencoded",
  "futures",
@@ -3672,7 +3673,6 @@ dependencies = [
  "once_cell",
  "ordered-float 4.2.2",
  "parquet",
- "pipeline_types",
  "pretty_assertions",
  "prometheus",
  "proptest",
@@ -4474,8 +4474,8 @@ dependencies = [
  "clap 4.5.16",
  "clap_complete",
  "env_logger 0.11.5",
+ "feldera-types",
  "log",
- "pipeline_types",
  "prettyplease",
  "progenitor",
  "progenitor-client",
@@ -4528,6 +4528,27 @@ dependencies = [
  "size-of-derive",
  "time",
  "xxhash-rust",
+]
+
+[[package]]
+name = "feldera-types"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "anyhow",
+ "csv",
+ "enum-map",
+ "feldera_rust_decimal",
+ "lazy_static",
+ "libc",
+ "log",
+ "proptest",
+ "proptest-derive 0.3.0",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "utoipa",
 ]
 
 [[package]]
@@ -5762,8 +5783,8 @@ version = "0.1.0"
 dependencies = [
  "dbsp",
  "feldera-ijson",
+ "feldera-types",
  "feldera_rust_decimal",
- "pipeline_types",
  "serde",
  "serde_json",
 ]
@@ -7092,6 +7113,7 @@ dependencies = [
  "deadpool-postgres",
  "dirs 5.0.1",
  "env_logger 0.10.2",
+ "feldera-types",
  "futures-util",
  "jsonwebtoken 8.3.0",
  "log",
@@ -7100,7 +7122,6 @@ dependencies = [
  "openssl",
  "pg-client-config",
  "pg-embed",
- "pipeline_types",
  "pretty_assertions",
  "proptest",
  "proptest-derive 0.3.0",
@@ -7124,27 +7145,6 @@ dependencies = [
  "utoipa-swagger-ui",
  "uuid",
  "wiremock",
-]
-
-[[package]]
-name = "pipeline_types"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "anyhow",
- "csv",
- "enum-map",
- "feldera_rust_decimal",
- "lazy_static",
- "libc",
- "log",
- "proptest",
- "proptest-derive 0.3.0",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "serde_yaml",
- "utoipa",
 ]
 
 [[package]]
@@ -9227,6 +9227,7 @@ dependencies = [
  "chrono",
  "dbsp",
  "feldera-size-of",
+ "feldera-types",
  "feldera_rust_decimal",
  "flate2",
  "geo",
@@ -9239,7 +9240,6 @@ dependencies = [
  "num",
  "num-traits",
  "paste",
- "pipeline_types",
  "regex",
  "rkyv",
  "serde",

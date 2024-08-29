@@ -1,6 +1,6 @@
 use anyhow::Error as AnyError;
+use feldera_types::transport::kafka::{KafkaHeader, KafkaLogLevel};
 use parquet::data_type::AsBytes;
-use pipeline_types::transport::kafka::{KafkaHeader, KafkaLogLevel};
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::{
     client::{Client as KafkaClient, ClientContext},

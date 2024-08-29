@@ -4,7 +4,7 @@
 //! [`InMemoryBackend`].
 use std::fs;
 
-use pipeline_types::config::StorageCacheConfig;
+use feldera_types::config::StorageCacheConfig;
 use pretty_assertions::assert_eq;
 use proptest::proptest;
 use proptest::test_runner::Config;

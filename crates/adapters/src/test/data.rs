@@ -4,8 +4,8 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
-use pipeline_types::program_schema::{ColumnType, Field, SqlType};
-use pipeline_types::{
+use feldera_types::program_schema::{ColumnType, Field, SqlType};
+use feldera_types::{
     deserialize_table_record, deserialize_without_context, serialize_struct, serialize_table_record,
 };
 use prop::sample::SizeRange;

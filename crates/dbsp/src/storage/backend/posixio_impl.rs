@@ -1,7 +1,7 @@
 //! Implementation of the storage backend ([`Storage`] APIs using POSIX I/O.
 
+use feldera_types::config::StorageCacheConfig;
 use metrics::{counter, histogram};
-use pipeline_types::config::StorageCacheConfig;
 use std::{
     cell::RefCell,
     collections::HashMap,

@@ -7,9 +7,9 @@ use crate::{
     },
     Controller, PipelineConfig,
 };
+use feldera_types::program_schema::Relation;
 use log::info;
 use parquet::data_type::AsBytes;
-use pipeline_types::program_schema::Relation;
 use proptest::prelude::*;
 use rdkafka::message::{BorrowedMessage, Header, Headers};
 use rdkafka::Message;

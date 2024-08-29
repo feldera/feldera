@@ -48,8 +48,8 @@ mod nexmark;
 mod pubsub;
 
 use crate::catalog::InputCollectionHandle;
-use pipeline_types::config::TransportConfig;
-use pipeline_types::program_schema::Relation;
+use feldera_types::config::TransportConfig;
+use feldera_types::program_schema::Relation;
 
 use crate::transport::datagen::GeneratorEndpoint;
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};

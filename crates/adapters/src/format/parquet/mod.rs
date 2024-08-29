@@ -25,9 +25,9 @@ use crate::{
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
     ControllerError, OutputConsumer, SerCursor,
 };
-use pipeline_types::format::json::JsonFlavor;
-use pipeline_types::format::parquet::{ParquetEncoderConfig, ParquetParserConfig};
-use pipeline_types::program_schema::{ColumnType, Field, IntervalUnit, Relation, SqlType};
+use feldera_types::format::json::JsonFlavor;
+use feldera_types::format::parquet::{ParquetEncoderConfig, ParquetParserConfig};
+use feldera_types::program_schema::{ColumnType, Field, IntervalUnit, Relation, SqlType};
 
 #[cfg(test)]
 pub mod test;

@@ -2,7 +2,7 @@
 
 //! Functions related to `JSON` support in DBSP
 
-use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 
 /// The actual Json type.
 pub type Json = ijson::IValue;
@@ -114,8 +114,8 @@ pub fn serialize(value: Json) -> String {
 
 #[cfg(test)]
 mod tests {
+    use feldera_types::deserialize_without_context;
     use ijson::ijson;
-    use pipeline_types::deserialize_without_context;
     use rust_decimal::{prelude::FromPrimitive, Decimal};
 
     use crate::{check_json, json_as, json_field, json_index, parse_json, serialize};

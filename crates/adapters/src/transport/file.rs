@@ -5,8 +5,8 @@ use crate::PipelineState;
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use crossbeam::sync::{Parker, Unparker};
-use pipeline_types::program_schema::Relation;
-use pipeline_types::transport::file::{FileInputConfig, FileOutputConfig};
+use feldera_types::program_schema::Relation;
+use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
 use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
@@ -200,8 +200,8 @@ however the File transport does not support this representation."
 mod test {
     use crate::test::{mock_input_pipeline, wait, DEFAULT_TIMEOUT_MS};
     use csv::WriterBuilder as CsvWriterBuilder;
-    use pipeline_types::deserialize_without_context;
-    use pipeline_types::program_schema::Relation;
+    use feldera_types::deserialize_without_context;
+    use feldera_types::program_schema::Relation;
     use serde::{Deserialize, Serialize};
     use std::{io::Write, thread::sleep, time::Duration};
     use tempfile::NamedTempFile;

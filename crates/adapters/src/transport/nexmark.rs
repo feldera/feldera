@@ -15,8 +15,8 @@ use dbsp_nexmark::generator::{NexmarkGenerator, NextEvent};
 use dbsp_nexmark::model::Event;
 use dbsp_nexmark::{config::GeneratorOptions, generator::config::Config as GeneratorConfig};
 use enum_map::EnumMap;
-use pipeline_types::program_schema::Relation;
-use pipeline_types::transport::nexmark::{NexmarkInputConfig, NexmarkInputOptions, NexmarkTable};
+use feldera_types::program_schema::Relation;
+use feldera_types::transport::nexmark::{NexmarkInputConfig, NexmarkInputOptions, NexmarkTable};
 use rand::rngs::ThreadRng;
 
 pub(crate) struct NexmarkEndpoint {

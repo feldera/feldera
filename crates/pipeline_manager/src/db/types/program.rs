@@ -2,12 +2,12 @@ use crate::db::error::DBError;
 use crate::db::types::common::validate_name;
 use crate::db::types::pipeline::PipelineId;
 use clap::Parser;
-use log::error;
-use pipeline_types::config::{
+use feldera_types::config::{
     ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
     TransportConfig,
 };
-use pipeline_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition};
+use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition};
+use log::error;
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};

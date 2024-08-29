@@ -212,7 +212,7 @@ mod test {
         db::storage::Storage,
         db_notifier::{DbNotification, Operation},
     };
-    use pipeline_types::config::RuntimeConfig;
+    use feldera_types::config::RuntimeConfig;
     use std::sync::Arc;
     use uuid::Uuid;
 

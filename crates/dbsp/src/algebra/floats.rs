@@ -1,7 +1,7 @@
 use crate::algebra::{HasOne, HasZero};
+use feldera_types::{deserialize_without_context, serialize_without_context};
 use ordered_float::OrderedFloat;
 use paste::paste;
-use pipeline_types::{deserialize_without_context, serialize_without_context};
 use size_of::SizeOf;
 use std::{
     fmt::{self, Debug, Display},

@@ -51,6 +51,7 @@ use crossbeam::{
 };
 use dbsp::circuit::{CircuitConfig, Layout};
 use dbsp::profile::GraphProfile;
+use feldera_types::query::OutputQuery;
 use log::{debug, error, info, trace};
 use metrics::set_global_recorder;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
@@ -58,7 +59,6 @@ use metrics_util::{
     debugging::{DebuggingRecorder, Snapshotter},
     layers::FanoutBuilder,
 };
-use pipeline_types::query::OutputQuery;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::mpsc::channel;
@@ -83,13 +83,13 @@ mod stats;
 use crate::catalog::{SerBatchReader, SerTrace};
 use crate::integrated::create_integrated_input_endpoint;
 pub use error::{ConfigError, ControllerError};
-use pipeline_types::config::OutputBufferConfig;
-pub use pipeline_types::config::{
+use feldera_types::config::OutputBufferConfig;
+pub use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };
-use pipeline_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
-use pipeline_types::program_schema::canonical_identifier;
+use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
+use feldera_types::program_schema::canonical_identifier;
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit

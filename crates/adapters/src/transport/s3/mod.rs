@@ -9,12 +9,12 @@ use tokio::sync::{
 
 use crate::{InputConsumer, InputReader, PipelineState, TransportInputEndpoint};
 use dbsp::circuit::tokio::TOKIO;
+use feldera_types::program_schema::Relation;
 #[cfg(test)]
 use mockall::automock;
-use pipeline_types::program_schema::Relation;
 
 use crate::transport::InputEndpoint;
-use pipeline_types::transport::s3::{AwsCredentials, ConsumeStrategy, ReadStrategy, S3InputConfig};
+use feldera_types::transport::s3::{AwsCredentials, ConsumeStrategy, ReadStrategy, S3InputConfig};
 
 pub struct S3InputEndpoint {
     config: Arc<S3InputConfig>,
@@ -298,10 +298,10 @@ mod test {
         primitives::{ByteStream, SdkBody},
         types::error::builders::{NoSuchBucketBuilder, NoSuchKeyBuilder},
     };
-    use mockall::predicate::eq;
-    use pipeline_types::{
+    use feldera_types::{
         config::InputEndpointConfig, config::TransportConfig, deserialize_without_context,
     };
+    use mockall::predicate::eq;
     use serde::{Deserialize, Serialize};
     use std::{sync::Arc, time::Duration};
 

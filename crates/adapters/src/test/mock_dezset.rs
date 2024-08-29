@@ -8,7 +8,7 @@ use crate::{
 };
 use anyhow::Result as AnyResult;
 use dbsp::DBData;
-use pipeline_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use std::{
     fmt::Debug,
     mem::take,

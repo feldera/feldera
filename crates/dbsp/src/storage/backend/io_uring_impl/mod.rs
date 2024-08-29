@@ -10,11 +10,11 @@ use std::os::{fd::AsRawFd, unix::fs::MetadataExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use feldera_types::config::StorageCacheConfig;
 use io_uring::squeue::Entry;
 use io_uring::{opcode, types::Fd, IoUring};
 use libc::{c_void, iovec};
 use metrics::counter;
-use pipeline_types::config::StorageCacheConfig;
 
 use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
 use crate::storage::backend::{
