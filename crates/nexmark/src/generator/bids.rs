@@ -13,7 +13,7 @@ use std::mem::size_of;
 
 /// Fraction of people/auctions which may be 'hot' sellers/bidders/auctions are
 /// 1 over these values.
-const HOT_AUCTON_RATIO: usize = 100;
+const HOT_AUCTION_RATIO: usize = 100;
 const HOT_BIDDER_RATIO: usize = 100;
 const HOT_CHANNELS_RATIO: usize = 100;
 
@@ -56,8 +56,8 @@ impl<R: Rng> NexmarkGenerator<R> {
             0 => self.next_base0_auction_id(event_id),
             _ => {
                 // Choose the first auction in the batch of last HOT_AUCTION_RATIO auctions.
-                (self.last_base0_auction_id(event_id) / HOT_AUCTON_RATIO as u64)
-                    * HOT_AUCTON_RATIO as u64
+                (self.last_base0_auction_id(event_id) / HOT_AUCTION_RATIO as u64)
+                    * HOT_AUCTION_RATIO as u64
             }
         } + FIRST_AUCTION_ID;
 
