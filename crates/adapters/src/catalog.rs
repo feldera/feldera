@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -283,6 +284,13 @@ pub trait SerCursor {
     /// Serialize current key. Panics if invalid.
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
 
+    /// Like `serialize_key`, but only serializes the specified fields of the key.
+    fn serialize_key_fields(
+        &mut self,
+        fields: &HashSet<String>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()>;
+
     /// Serialize current key into arrow format. Panics if invalid.
     fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()>;
 
@@ -394,6 +402,14 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
 
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.cursor.serialize_key(dst)
+    }
+
+    fn serialize_key_fields(
+        &mut self,
+        fields: &HashSet<String>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_key_fields(fields, dst)
     }
 
     #[cfg(feature = "with-avro")]

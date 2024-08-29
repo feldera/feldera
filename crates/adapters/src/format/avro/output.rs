@@ -393,7 +393,7 @@ mod test {
             .collect::<Vec<_>>();
 
         let mut actual_output = Vec::new();
-        for avro_datum in consumer_data.lock().unwrap().iter() {
+        for (_, avro_datum) in consumer_data.lock().unwrap().iter() {
             let avro_value =
                 apache_avro::from_avro_datum(&encoder.schema, &mut &avro_datum[5..], None).unwrap();
             // FIXME: this will use the default `serde::Deserialize` implementation and will only work

@@ -163,9 +163,23 @@ fn parquet_output() {
         .write(&batch)
         .expect("Writing to parquet should succeed");
     writer.close().expect("Closing the writer should succeed");
-    debug_parquet_buffer(buffer.lock().unwrap().concat());
+    debug_parquet_buffer(
+        buffer
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_k, v)| v.clone())
+            .flatten()
+            .collect(),
+    );
 
-    let buffer_copy = buffer.lock().unwrap().concat();
+    let buffer_copy = buffer
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_k, v)| v.clone())
+        .flatten()
+        .collect::<Vec<_>>();
 
     assert_eq!(expected_buffer, buffer_copy);
 }

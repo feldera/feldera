@@ -31,7 +31,10 @@ use serde::{
     ser::{SerializeMap, SerializeSeq, SerializeTuple},
     Serialize, Serializer,
 };
-use std::{collections::BTreeMap, marker::PhantomData};
+use std::{
+    collections::{BTreeMap, HashSet},
+    marker::PhantomData,
+};
 
 /// Similar to [`Serialize`], but takes an extra `context` argument and
 /// threads it through all nested structures.
@@ -39,6 +42,18 @@ pub trait SerializeWithContext<C>: Sized + Serialize {
     fn serialize_with_context<S>(&self, serializer: S, context: &C) -> Result<S::Ok, S::Error>
     where
         S: Serializer;
+
+    fn serialize_fields_with_context<S>(
+        &self,
+        serializer: S,
+        context: &C,
+        _fields: &HashSet<String>,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.serialize_with_context(serializer, context)
+    }
 }
 
 pub struct SerializeWithContextWrapper<'a, C, T> {
@@ -201,6 +216,18 @@ where
     {
         T::serialize_with_context(*self, serializer, context)
     }
+
+    fn serialize_fields_with_context<S>(
+        &self,
+        serializer: S,
+        context: &C,
+        fields: &HashSet<String>,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        T::serialize_fields_with_context(*self, serializer, context, fields)
+    }
 }
 
 macro_rules! serialize_tuple {
@@ -357,6 +384,25 @@ macro_rules! serialize_struct {
                 )*
                 serde::ser::SerializeStruct::end(struct_serializer)
             }
+
+            fn serialize_fields_with_context<S>(
+                &self,
+                serializer: S,
+                context: &C,
+                fields: &std::collections::HashSet<String>,
+            ) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                let mut struct_serializer = serializer.serialize_struct(stringify!($struct), fields.len())?;
+                $(
+                    if fields.contains($column_name) {
+                        serde::ser::SerializeStruct::serialize_field(&mut struct_serializer, $column_name, &$crate::serde_with_context::SerializationContext::new(context, &self.$field_name))?;
+                    }
+                )*
+                serde::ser::SerializeStruct::end(struct_serializer)
+            }
+
         }
     }
 }
@@ -374,6 +420,20 @@ macro_rules! serialize_table_record {
                 let mut struct_serializer = serializer.serialize_struct(stringify!($struct), $num_fields)?;
                 $(
                     serde::ser::SerializeStruct::serialize_field(&mut struct_serializer, $column_name, &$crate::serde_with_context::SerializationContext::new(context, &self.$field_name))?;
+                )*
+                serde::ser::SerializeStruct::end(struct_serializer)
+            }
+
+
+            fn serialize_fields_with_context<S>(&self, serializer: S, context: & $crate::serde_with_context::SqlSerdeConfig, fields: &std::collections::HashSet<String>) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                let mut struct_serializer = serializer.serialize_struct(stringify!($struct), fields.len())?;
+                $(
+                    if fields.contains($column_name) {
+                        serde::ser::SerializeStruct::serialize_field(&mut struct_serializer, $column_name, &$crate::serde_with_context::SerializationContext::new(context, &self.$field_name))?;
+                    }
                 )*
                 serde::ser::SerializeStruct::end(struct_serializer)
             }

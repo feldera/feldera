@@ -110,6 +110,13 @@ impl Relation {
             self.name.to_lowercase()
         }
     }
+
+    /// Lookup field by name.
+    pub fn field(&self, name: &str) -> Option<&Field> {
+        let name = canonical_identifier(name);
+
+        self.fields.iter().find(|f| f.name() == name)
+    }
 }
 
 /// A SQL field.
