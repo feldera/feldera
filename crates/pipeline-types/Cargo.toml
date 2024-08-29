@@ -23,8 +23,7 @@ log = "0.4.20"
 utoipa = "4.1"
 proptest = { version = "1.0.0", optional = true }
 proptest-derive = { version = "0.3.0", optional = true }
-# Revert after https://github.com/paupino/rust-decimal/pull/637 is merged:
-rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf" }
+rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
 actix-web = "4.3"
 enum-map = "2.7.3"
 

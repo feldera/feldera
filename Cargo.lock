@@ -3554,9 +3554,11 @@ dependencies = [
  "dyn-clone",
  "env_logger 0.11.5",
  "fdlimit",
+ "feldera-ijson",
+ "feldera-size-of",
+ "feldera_rust_decimal",
  "futures",
  "hashbrown 0.14.5",
- "ijson",
  "impl-trait-for-tuples",
  "indicatif",
  "io-uring",
@@ -3589,10 +3591,8 @@ dependencies = [
  "reqwest 0.11.27",
  "rkyv",
  "rlimit",
- "rust_decimal",
  "serde",
  "serde_json",
- "size-of",
  "static_assertions",
  "sysinfo",
  "tar",
@@ -3645,6 +3645,8 @@ dependencies = [
  "env_logger 0.10.2",
  "erased-serde",
  "fake",
+ "feldera-size-of",
+ "feldera_rust_decimal",
  "form_urlencoded",
  "futures",
  "futures-timer",
@@ -3682,7 +3684,6 @@ dependencies = [
  "regex",
  "reqwest 0.11.27",
  "rkyv",
- "rust_decimal",
  "rust_decimal_macros",
  "rustls 0.23.12",
  "schema_registry_converter",
@@ -3692,7 +3693,6 @@ dependencies = [
  "serde_urlencoded",
  "serde_yaml",
  "serial_test",
- "size-of",
  "sqllib",
  "tempfile",
  "test_bin",
@@ -3714,6 +3714,8 @@ dependencies = [
  "csv",
  "dbsp",
  "env_logger 0.10.2",
+ "feldera-size-of",
+ "feldera_rust_decimal",
  "hdrhist",
  "indicatif",
  "metrics",
@@ -3726,10 +3728,8 @@ dependencies = [
  "regex",
  "rkyv",
  "rstest",
- "rust_decimal",
  "serde",
  "serde_with",
- "size-of",
  "time",
 ]
 
@@ -4497,6 +4497,53 @@ checksum = "e182f7dbc2ef73d9ef67351c5fbbea084729c48362d3ce9dd44c28e32e277fe5"
 dependencies = [
  "libc",
  "thiserror",
+]
+
+[[package]]
+name = "feldera-ijson"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79db07c272b041d903546dbc40d8c11aa647a1be12806cef6ada8e0cf081c5f0"
+dependencies = [
+ "dashmap 5.5.3",
+ "feldera-size-of",
+ "lazy_static",
+ "ordered-float 3.9.2",
+ "rkyv",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "feldera-size-of"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3d32b0525ecf8a0e65a7440e99046fd94e20ee209ee69d02e6b7ed6e6048952"
+dependencies = [
+ "arcstr",
+ "chrono",
+ "feldera_rust_decimal",
+ "hashbrown 0.13.2",
+ "ordered-float 3.9.2",
+ "size-of-derive",
+ "time",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "feldera_rust_decimal"
+version = "1.33.1-feldera.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9cc62ec4b1d3f6641a0499d61efa9fc68b7b959d302595747a719aaed4a7dc5"
+dependencies = [
+ "arrayvec 0.7.4",
+ "borsh",
+ "bytes",
+ "num-traits",
+ "rand 0.8.5",
+ "rkyv",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5484,20 +5531,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ijson"
-version = "0.1.4"
-source = "git+https://github.com/abhizer/ijson.git?rev=08f2abf#08f2abfa66d66ea80bb72563eeadf473ca986031"
-dependencies = [
- "dashmap 5.5.3",
- "lazy_static",
- "ordered-float 3.9.2",
- "rkyv",
- "serde",
- "serde_json",
- "size-of",
-]
-
-[[package]]
 name = "impl-more"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5728,9 +5761,9 @@ name = "json"
 version = "0.1.0"
 dependencies = [
  "dbsp",
- "ijson",
+ "feldera-ijson",
+ "feldera_rust_decimal",
  "pipeline_types",
- "rust_decimal",
  "serde",
  "serde_json",
 ]
@@ -7101,12 +7134,12 @@ dependencies = [
  "anyhow",
  "csv",
  "enum-map",
+ "feldera_rust_decimal",
  "lazy_static",
  "libc",
  "log",
  "proptest",
  "proptest-derive 0.3.0",
- "rust_decimal",
  "rust_decimal_macros",
  "serde",
  "serde_json",
@@ -7975,10 +8008,10 @@ dependencies = [
  "csv",
  "dbsp",
  "derive_more",
+ "feldera-size-of",
  "paste",
  "rkyv",
  "serde",
- "size-of",
  "sqllib",
  "sqlvalue",
  "sqlx",
@@ -8427,17 +8460,12 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal"
-version = "1.33.1"
-source = "git+https://github.com/gz/rust-decimal.git?rev=ea85fdf#ea85fdf9b13a0e32aed2ac38eb9207d3e33ab64b"
+version = "1.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b082d80e3e3cc52b2ed634388d436fe1f4de6af5786cc2de9ba9737527bdf555"
 dependencies = [
  "arrayvec 0.7.4",
- "borsh",
- "bytes",
  "num-traits",
- "rand 0.8.5",
- "rkyv",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -9063,24 +9091,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
-name = "size-of"
-version = "0.1.5"
-source = "git+https://github.com/gz/size-of.git?rev=f8e6be7#f8e6be7050de36e9a6b552a52aaed29e671c17b5"
-dependencies = [
- "arcstr",
- "chrono",
- "hashbrown 0.13.2",
- "ordered-float 3.9.2",
- "rust_decimal",
- "size-of-derive",
- "time",
- "xxhash-rust",
-]
-
-[[package]]
 name = "size-of-derive"
 version = "0.1.2"
-source = "git+https://github.com/gz/size-of.git?rev=f8e6be7#f8e6be7050de36e9a6b552a52aaed29e671c17b5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eefff4890f5308d477f3da563af8bdb8fbb6fabaec4c974bd211896fa7945e68"
 dependencies = [
  "proc-macro2 1.0.86",
  "quote 1.0.36",
@@ -9212,6 +9226,8 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dbsp",
+ "feldera-size-of",
+ "feldera_rust_decimal",
  "flate2",
  "geo",
  "geo-types",
@@ -9226,10 +9242,8 @@ dependencies = [
  "pipeline_types",
  "regex",
  "rkyv",
- "rust_decimal",
  "serde",
  "serde_json",
- "size-of",
 ]
 
 [[package]]
@@ -9267,7 +9281,7 @@ name = "sqlvalue"
 version = "0.1.0"
 dependencies = [
  "dbsp",
- "rust_decimal",
+ "feldera_rust_decimal",
  "sqllib",
 ]
 

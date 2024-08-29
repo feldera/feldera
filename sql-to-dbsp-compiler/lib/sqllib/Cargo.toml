@@ -6,13 +6,12 @@ publish = false
 
 [dependencies]
 dbsp = { path = "../../../crates/dbsp" }
-pipeline_types = { path = "../../../crates/pipeline-types/" }
+pipeline_types = { path = "../../../crates/pipeline-types" }
 itertools = { version = "0.13.0" }
-rust_decimal = { git = "https://github.com/gz/rust-decimal.git", rev = "ea85fdf", features = ["maths", "rkyv"] }
+rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["maths", "rkyv"] }
 geo = { version = "0.26.0" }
 geo-types = { version = "0.7" }
-# Once chrono is released with `849932` chrono version needs to be updated in size-of crate:
-size-of = { git = "https://github.com/gz/size-of.git", rev = "f8e6be7", features = ["rust_decimal"] }
+size-of = { version = "0.1.5", package = "feldera-size-of", features = ["rust_decimal"] }
 serde = { version = "1.0", features = ["derive"] }
 num = { version = "0.4.1" }
 # Go back to a version once commit containing 849932 is released:

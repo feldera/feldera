@@ -32,7 +32,7 @@ type EmployeeID = u64;
     Serialize,
     Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 struct Manages {
     manager: EmployeeID,
@@ -55,7 +55,7 @@ struct Manages {
     Serialize,
     Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 struct SkipLevel {
     grandmanager: EmployeeID,

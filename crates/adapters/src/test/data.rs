@@ -34,8 +34,7 @@ use std::sync::Arc;
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct TestStruct {
     pub id: u32,
     pub b: bool,
@@ -614,8 +613,7 @@ deserialize_table_record!(TestStruct2["TestStruct", 7   ] {
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
-#[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
-#[archive(compare(PartialEq, PartialOrd))]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct DatabricksPeople {
     pub id: i32,
     pub first_name: Option<String>,

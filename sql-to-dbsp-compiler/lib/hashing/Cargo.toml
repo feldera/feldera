@@ -10,4 +10,4 @@ sqlvalue = { path = "../sqlvalue" }
 sqllib = { path = "../sqllib" }
 num = { version = "0.4.0" }
 dbsp = { path = "../../../crates/dbsp" }
-size-of = { git = "https://github.com/gz/size-of.git", rev = "f8e6be7", features = ["rust_decimal"] }
+size-of = { version = "0.1.5", package = "feldera-size-of", features = ["rust_decimal"] }
