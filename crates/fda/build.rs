@@ -1,10 +1,6 @@
 use progenitor::{GenerationSettings, InterfaceStyle};
 use quote::quote;
-use std::{
-    env,
-    fs::{self, File},
-    path::Path,
-};
+use std::{env, fs, path::Path};
 
 fn type_replacement() -> Vec<(&'static str, &'static str)> {
     vec![
@@ -172,10 +168,9 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
 }
 
 fn main() {
-    let src = "../../openapi.json";
-    println!("cargo:rerun-if-changed={}", src);
-    let file = File::open(src).unwrap();
-    let spec = serde_json::from_reader(file).unwrap();
+    let openapi = include_bytes!("openapi.json");
+    println!("cargo:rerun-if-changed=../../openapi.json");
+    let spec = serde_json::from_reader(&openapi[..]).unwrap();
     let mut settings = GenerationSettings::new();
     settings
         .with_interface(InterfaceStyle::Builder)

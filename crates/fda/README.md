@@ -1,15 +1,4 @@
-# Feldera CLI
+# fda
 
-A CLI tool for interacting with the Feldera REST API.
-
-```commandline
-cd crates/fda
-cargo install --path .
-fda --help
-```
-
-Set-up shell completion:
-
-```commandline
-fda shell-completion --help
-```
+A CLI tool for interacting with [Feldera](https://github.com/feldera/feldera).
+See the [fda documentation](https://www.feldera.com/docs/api/cli) for more information.

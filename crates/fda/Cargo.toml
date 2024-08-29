@@ -2,6 +2,7 @@
 name = "fda"
 version = "0.1.0"
 edition = "2021"
+include = ["openapi.json", "/src", "build.rs", "COPYRIGHT", "README.md"]
 
 [dependencies]
 log = "0.4"
