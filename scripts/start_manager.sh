@@ -5,7 +5,7 @@ set -e
 THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 ROOT_DIR="${THIS_DIR}/.."
 SQL_COMPILER_DIR="${ROOT_DIR}/sql-to-dbsp-compiler"
-MANAGER_DIR="${ROOT_DIR}/crates/pipeline_manager"
+MANAGER_DIR="${ROOT_DIR}/crates/pipeline-manager"
 if [[ -z "${RUST_BUILD_PROFILE+set}" ]]; then
     RUST_BUILD_PROFILE='--release'
 fi

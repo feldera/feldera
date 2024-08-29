@@ -4,7 +4,7 @@ use std::io::Write;
 
 pub fn init_logging(name: ColoredString) {
     // By default, logging is set to INFO level for the Feldera crates:
-    // - "pipeline_manager" for the pipeline_manager crate
+    // - "pipeline_manager" for the pipeline-manager crate
     // - "feldera_types" for the feldera-types crate
     // For all others, the WARN level is used.
     // Note that this can be overridden by setting the RUST_LOG environment variable.

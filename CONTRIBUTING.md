@@ -230,7 +230,7 @@ Here are some guidelines when contributing code that affects this database's sch
 
 * We use SQL migrations to apply the schema to a live database to facilitate upgrades. We
   use [refinery](https://github.com/rust-db/refinery) to manage migrations.
-* The migration files can be found in `crates/pipeline_manager/migrations`
+* The migration files can be found in `crates/pipeline-manager/migrations`
 * Do not modify an existing migration file. If you want to evolve the schema, add a new SQL or rust file to the
   migrations folder
   following [refinery's versioning and naming scheme](https://docs.rs/refinery/latest/refinery/#usage). The migration

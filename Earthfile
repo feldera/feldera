@@ -558,7 +558,6 @@ ci-tests:
     # TODO: Temporarily disabled while we port the demo script
     # BUILD +test-snowflake
     # BUILD +test-s3
-    BUILD +test-service-related
 
 nightly-tests:
     BUILD +test-python
@@ -566,3 +565,4 @@ nightly-tests:
     BUILD +test-debezium-jdbc-sink
     BUILD +test-debezium-mysql
     BUILD +test-docker-compose
+    BUILD +test-service-related
