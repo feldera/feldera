@@ -1,6 +1,8 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.util.Logger;
@@ -20,7 +22,7 @@ public class CSE extends Repeat {
     /** One CSE pass:
      * - build circuit graph,
      * - find common subexpressions,
-     * - remove them */
+     * - remove them. */
     static class OneCSEPass extends Passes {
         /** Maps each operator to its canonical representative */
         final Map<DBSPOperator, DBSPOperator> canonical = new HashMap<>();
@@ -60,12 +62,23 @@ public class CSE extends Repeat {
             }
         }
 
+        boolean hasGcSuccessor(DBSPOperator operator) {
+            for (DBSPOperator succ: this.graph.getDestinations(operator)) {
+                if (succ.is(DBSPIntegrateTraceRetainKeysOperator.class) ||
+                        succ.is(DBSPIntegrateTraceRetainValuesOperator.class))
+                        return true;
+            }
+            return false;
+        }
+
         @Override
         public void postorder(DBSPOperator operator) {
             List<DBSPOperator> destinations = this.graph.getDestinations(operator);
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
                 DBSPOperator base = destinations.get(i);
+                if (hasGcSuccessor(base))
+                    continue;
                 for (int j = i + 1; j < destinations.size(); j++) {
                     DBSPOperator compare = destinations.get(j);
                     if (this.canonical.containsKey(compare))
@@ -74,6 +87,9 @@ public class CSE extends Repeat {
                     if (compare == base)
                         // E.g., a join where both inputs come from the same source
                         continue;
+                    if (hasGcSuccessor(compare))
+                        continue;
+                    // Do not CSE something which is followed by a GC operator
                     if (base.equivalent(compare)) {
                         Logger.INSTANCE.belowLevel(this, 1)
                                 .append("CSE ")

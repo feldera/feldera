@@ -431,7 +431,7 @@ CREATE VIEW Q16 AS
 SELECT
     channel,
     CAST(date_time AS DATE) as 'day',
-    max(format_date('HH:mm', date_time)) as 'minute',
+    format_date('HH:mm', max(date_time)) as 'minute',
     count(*) AS total_bids,
     count(*) filter (where price < 10000) AS rank1_bids,
     count(*) filter (where price >= 10000 and price < 1000000) AS rank2_bids,
