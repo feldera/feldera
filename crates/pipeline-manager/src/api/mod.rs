@@ -32,6 +32,7 @@ use actix_http::body::BoxBody;
 use actix_http::StatusCode;
 use actix_web::body::MessageBody;
 use actix_web::dev::{Service, ServiceResponse};
+use actix_web::http::Method;
 use actix_web::Scope;
 use actix_web::{
     get,
@@ -347,16 +348,20 @@ pub fn log_response(
 ) -> Result<ServiceResponse<BoxBody>, actix_web::Error> {
     match &res {
         Ok(response) => {
+            let req = response.request();
             let level = if response.status().is_success()
                 || response.status() == StatusCode::NOT_MODIFIED
             {
-                Level::Debug
+                if req.method() == Method::GET && req.path() == "/healthz" {
+                    Level::Trace
+                } else {
+                    Level::Debug
+                }
             } else if response.status().is_client_error() {
                 Level::Info
             } else {
                 Level::Error
             };
-            let req = response.request();
             log!(
                 level,
                 "Response: {} (size: {:?}) to request {} {}",
