@@ -23,7 +23,7 @@ use feldera_types::serde_with_context::{
     TimestampFormat,
 };
 use serde_arrow::ArrayBuilder;
-use std::any::Any;
+use std::{any::Any, collections::HashSet};
 use std::{cell::RefCell, io, io::Write, marker::PhantomData, ops::DerefMut, sync::Arc};
 
 /// Implementation of the [`std::io::Write`] trait that allows swapping out
@@ -76,6 +76,15 @@ trait BytesSerializer<C>: Send {
         val: &T,
         buf: &mut Vec<u8>,
     ) -> AnyResult<()>;
+
+    fn serialize_fields<T: SerializeWithContext<C>>(
+        &mut self,
+        _val: &T,
+        _fields: &HashSet<String>,
+        _buf: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        unimplemented!()
+    }
 
     fn serialize_arrow<T>(&mut self, _val: &T, _buf: &mut ArrayBuilder) -> AnyResult<()>
     where
@@ -157,6 +166,20 @@ where
         T: SerializeWithContext<C>,
     {
         val.serialize_with_context(&mut serde_json::Serializer::new(buf), &self.context)?;
+        Ok(())
+    }
+
+    fn serialize_fields<T: SerializeWithContext<C>>(
+        &mut self,
+        val: &T,
+        fields: &HashSet<String>,
+        buf: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        val.serialize_fields_with_context(
+            &mut serde_json::Serializer::new(buf),
+            &self.context,
+            fields,
+        )?;
         Ok(())
     }
 }
@@ -552,6 +575,15 @@ where
 
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.serializer.serialize(self.key.as_ref().unwrap(), dst)
+    }
+
+    fn serialize_key_fields(
+        &mut self,
+        fields: &HashSet<String>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.serializer
+            .serialize_fields(self.key.as_ref().unwrap(), fields, dst)
     }
 
     fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {

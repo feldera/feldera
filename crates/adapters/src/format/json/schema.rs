@@ -29,6 +29,7 @@ pub fn build_key_schema(config: &JsonEncoderConfig, schema: &Relation) -> Option
             if matches!(config.update_format, JsonUpdateFormat::Debezium) {
                 Some(kafka_connect_json_converter::debezium_key_schema_str(
                     schema,
+                    config.key_fields.as_ref(),
                 ))
             } else {
                 None
@@ -50,7 +51,9 @@ pub fn build_key_schema(config: &JsonEncoderConfig, schema: &Relation) -> Option
 /// types can have additional parameters, e.g., scale and precision for
 /// decimals.
 mod kafka_connect_json_converter {
-    use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
+    use feldera_types::program_schema::{
+        canonical_identifier, ColumnType, Field, Relation, SqlType,
+    };
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
 
@@ -122,8 +125,11 @@ mod kafka_connect_json_converter {
         serde_json::to_string(&debezium_value_schema(schema)).unwrap()
     }
 
-    pub fn debezium_key_schema_str(schema: &Relation) -> String {
-        serde_json::to_string(&debezium_key_schema(schema)).unwrap()
+    /// Generate JSON schema for the Debezium key field.
+    ///
+    /// When `key_fields` is specified, only includes those fields in the schema.
+    pub fn debezium_key_schema_str(schema: &Relation, key_fields: Option<&Vec<String>>) -> String {
+        serde_json::to_string(&debezium_key_schema(schema, key_fields)).unwrap()
     }
 
     fn debezium_value_schema(schema: &Relation) -> Type {
@@ -133,7 +139,7 @@ mod kafka_connect_json_converter {
                     JsonField {
                         field: "after".to_string(),
                         schema: TypeSchema {
-                            typ: relation_schema(schema),
+                            typ: relation_schema(schema, None),
                             optional: true,
                         },
                     },
@@ -156,8 +162,8 @@ mod kafka_connect_json_converter {
         }
     }
 
-    fn debezium_key_schema(schema: &Relation) -> Type {
-        let mut typ = relation_schema(schema);
+    fn debezium_key_schema(schema: &Relation, key_fields: Option<&Vec<String>>) -> Type {
+        let mut typ = relation_schema(schema, key_fields);
         typ.logical_type = Some(LogicalType {
             name: "Key".to_string(),
             parameters: Default::default(),
@@ -166,11 +172,18 @@ mod kafka_connect_json_converter {
         typ
     }
 
-    fn relation_schema(schema: &Relation) -> Type {
+    fn relation_schema(schema: &Relation, key_fields: Option<&Vec<String>>) -> Type {
         let mut fields = Vec::new();
 
         for field in schema.fields.iter() {
-            fields.push(field_schema(field))
+            if key_fields.is_none()
+                || key_fields
+                    .unwrap()
+                    .iter()
+                    .any(|f| canonical_identifier(f) == field.name())
+            {
+                fields.push(field_schema(field))
+            }
         }
 
         Type {

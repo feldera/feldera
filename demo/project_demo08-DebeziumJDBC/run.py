@@ -1,8 +1,8 @@
 # Stream output of a view to Postgres via Debesium JDBC sink connector.VIEW_NAME
 #
 # To run the demo, start Feldera along with RedPanda, Kafka Connect, and Postgres containers:
-# > docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml -f deploy/docker-compose-jdbc.yml --profile debezium \
-#       up db pipeline-manager redpanda connect postgres --build --renew-anon-volumes --force-recreate
+# > docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-jdbc.yml --profile debezium \
+#       up redpanda connect postgres --renew-anon-volumes --force-recreate
 #
 # Run this script:
 # > python3 run.py --api-url=http://localhost:8080 --start
@@ -30,11 +30,10 @@ TABLE_NAME = "test_table"
 # Database view to read from. Also used as the name of the Kafka topic
 # to send updates to.
 VIEW_NAME = "test_view"
-PRIMARY_KEY_COLUMN = "id"
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
+    parser.add_argument("--api-url", default="http://localhost:8080", help="Feldera API URL (e.g., http://localhost:8080 )")
     parser.add_argument('--start', action='store_true', default=False, help="Start the Feldera pipeline")
     parser.add_argument('--kafka-url', required=False, default="redpanda:9092", help="Kafka URL reachable from the pipeline")
 
@@ -122,7 +121,6 @@ def create_debezium_jdbc_connector():
             "connection.password": "postgres",
             "insert.mode": "upsert",
             "primary.key.mode": "record_key",
-            "primary.key.fields": PRIMARY_KEY_COLUMN,
             "delete.enabled": True,
             "schema.evolution": "basic",
             "database.time_zone": "UTC",
@@ -187,7 +185,8 @@ WITH (
         "format": {{
             "name": "json",
             "config": {{
-                "update_format": "debezium"
+                "update_format": "debezium",
+                "key_fields": ["id"]
             }}
         }},
         "transport": {{
@@ -218,9 +217,10 @@ def generate_inputs(pipeline: Pipeline):
     print("Generating records...")
     date_time = datetime.datetime(2024, 1, 30, 8, 58)
 
+    data = []
+
     for batch in range(0, 100):
         print(f"Batch {batch}")
-        data = []
         for i in range(0, 100):
             data.append({
                     # The number of rows should hit 199 on successful test completion.
@@ -235,9 +235,15 @@ def generate_inputs(pipeline: Pipeline):
                     "f8": date_time.strftime("%F"),
                     #"f9": list("bar".encode('utf-8')),
                 })
-        pipeline.input_json("test_table", data)
+        inserts = [{"insert": element} for element in data]
+        pipeline.input_json("test_table", inserts, update_format="insert_delete")
 
     wait_for_n_outputs(199)
+
+    deletes = [{"delete": element} for element in data]
+    pipeline.input_json("test_table", deletes, update_format="insert_delete")
+    wait_for_n_outputs(0)
+
 
 if __name__ == "__main__":
     main()

@@ -10,11 +10,12 @@ use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
-use feldera_types::program_schema::Relation;
+use feldera_types::program_schema::{canonical_identifier, Relation};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
+use std::collections::HashSet;
 use std::{borrow::Cow, io::Write, mem::take};
 
 /// JSON format encoder.
@@ -62,7 +63,7 @@ impl OutputFormat for JsonOutputFormat {
             )
         })?;
 
-        validate(&config, endpoint_name)?;
+        validate(&config, endpoint_name, schema)?;
 
         // Snowflake and Debezium require one record per message.
         if matches!(
@@ -76,7 +77,11 @@ impl OutputFormat for JsonOutputFormat {
     }
 }
 
-fn validate(config: &JsonEncoderConfig, endpoint_name: &str) -> Result<(), ControllerError> {
+fn validate(
+    config: &JsonEncoderConfig,
+    endpoint_name: &str,
+    schema: &Relation,
+) -> Result<(), ControllerError> {
     if !matches!(
         config.update_format,
         JsonUpdateFormat::InsertDelete
@@ -90,6 +95,30 @@ fn validate(config: &JsonEncoderConfig, endpoint_name: &str) -> Result<(), Contr
                 config.update_format
             ),
         ));
+    }
+
+    if let Some(key_fields) = &config.key_fields {
+        if config.update_format != JsonUpdateFormat::Debezium {
+            return Err(ControllerError::invalid_encoder_configuration(
+                endpoint_name,
+                "'key_fields' property is only supported for the 'debezium' update format",
+            ));
+        }
+        if key_fields.is_empty() {
+            return Err(ControllerError::invalid_encoder_configuration(
+                endpoint_name,
+                "'key_fields' is empty: at least one key column must be specified",
+            ));
+        }
+
+        for key_field in key_fields.iter() {
+            if schema.field(key_field).is_none() {
+                return Err(ControllerError::invalid_encoder_configuration(
+                    endpoint_name,
+                    &format!("'key_fields' references unknown field '{key_field}'"),
+                ));
+            }
+        }
     }
 
     Ok(())
@@ -108,6 +137,9 @@ struct JsonEncoder {
     stream_id: u64,
     /// Sequence number of the last record produced by this encoder.
     seq_number: u64,
+    /// Primary key fields.  When specified, only
+    /// these fields must be included in the message key.
+    key_fields: Option<HashSet<String>>,
 }
 
 impl JsonEncoder {
@@ -129,6 +161,11 @@ impl JsonEncoder {
         let value_schema_str = build_value_schema(&config, schema);
         let key_schema_str = build_key_schema(&config, schema);
 
+        let key_fields = config
+            .key_fields
+            .as_ref()
+            .map(|fields| HashSet::from_iter(fields.iter().map(|f| canonical_identifier(f))));
+
         Self {
             output_consumer,
             config,
@@ -141,6 +178,7 @@ impl JsonEncoder {
             // id into a negative number.
             stream_id: StdRng::from_entropy().gen_range(0..i64::MAX) as u64,
             seq_number: 0,
+            key_fields,
         }
     }
 }
@@ -271,7 +309,11 @@ impl Encoder for JsonEncoder {
                             key_buffer.extend_from_slice(br#"{"payload":"#);
                         }
 
-                        cursor.serialize_key(&mut key_buffer)?;
+                        if let Some(key_fields) = &self.key_fields {
+                            cursor.serialize_key_fields(key_fields, &mut key_buffer)?;
+                        } else {
+                            cursor.serialize_key(&mut key_buffer)?;
+                        }
                         key_buffer.extend_from_slice(br#"}"#);
 
                         // Encode value.
@@ -360,7 +402,13 @@ impl Encoder for JsonEncoder {
             if self.config.array {
                 buffer.extend_from_slice(b"]\n");
             }
-            self.output_consumer.push_buffer(&buffer, num_records);
+            if !key_buffer.is_empty() {
+                self.output_consumer
+                    .push_key(&key_buffer, &buffer, num_records);
+            } else {
+                self.output_consumer.push_buffer(&buffer, num_records);
+            }
+
             buffer.clear();
         }
 
@@ -373,9 +421,10 @@ impl Encoder for JsonEncoder {
 
 #[cfg(test)]
 mod test {
-    use super::{JsonEncoder, JsonEncoderConfig};
+    use super::{JsonEncoder, JsonEncoderConfig, JsonOutputFormat};
     use crate::catalog::SerBatchReader;
     use crate::format::json::{DebeziumOp, DebeziumPayload, DebeziumUpdate};
+    use crate::OutputFormat;
     use crate::{
         catalog::SerBatch,
         format::{
@@ -391,6 +440,7 @@ mod test {
     use log::trace;
     use proptest::prelude::*;
     use serde::Deserialize;
+    use serde_json::json;
     use std::collections::BTreeMap;
     use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
 
@@ -488,6 +538,7 @@ mod test {
             json_flavor: None,
             buffer_size_records: 3,
             array,
+            key_fields: None,
         };
 
         let consumer = MockOutputConsumer::new();
@@ -579,10 +630,25 @@ mod test {
 
         trace!(
             "output: {}",
-            std::str::from_utf8(&consumer_data.lock().unwrap().concat()).unwrap()
+            std::str::from_utf8(
+                &consumer_data
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|(_k, v)| v.clone())
+                    .flatten()
+                    .collect::<Vec<_>>()
+            )
+            .unwrap()
         );
 
-        let consumer_data = consumer_data.lock().unwrap().concat();
+        let consumer_data = consumer_data
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_k, v)| v.clone())
+            .flatten()
+            .collect::<Vec<_>>();
         let deserializer = serde_json::Deserializer::from_slice(&consumer_data);
 
         let actual_output = if array {
@@ -672,6 +738,7 @@ mod test {
             json_flavor: None,
             buffer_size_records: 3,
             array: false,
+            key_fields: None,
         };
 
         let consumer = MockOutputConsumer::with_max_buffer_size_bytes(32);
@@ -692,6 +759,80 @@ mod test {
             .encode(&SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatchReader)
             .unwrap_err();
         assert_eq!(format!("{err}"), "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is 32 bytes, but the following record requires 46 bytes: '{\"delete\":{\"id\":1,\"b\":false,\"i\":10,\"s\":\"bar\"}}'.");
+    }
+
+    /// Test the `key_fields` option.
+    #[test]
+    fn test_debezium_key_fields() {
+        let config = JsonEncoderConfig {
+            update_format: JsonUpdateFormat::Debezium,
+            json_flavor: None,
+            buffer_size_records: 3,
+            array: false,
+            key_fields: Some(vec!["id".to_string(), "s".to_string()]),
+        };
+
+        let consumer = MockOutputConsumer::new();
+        let consumer_data = consumer.data.clone();
+
+        let mut encoder = JsonOutputFormat
+            .new_encoder(
+                "TestStruct",
+                &serde_yaml::to_value(&config).unwrap(),
+                &Relation::new(
+                    "TestStruct",
+                    false,
+                    TestStruct::schema(),
+                    false,
+                    BTreeMap::new(),
+                ),
+                Box::new(consumer),
+            )
+            .unwrap();
+        let zset = OrdZSet::from_keys((), test_data()[0].clone());
+
+        encoder
+            .encode(&SerBatchImpl::<_, TestStruct, ()>::new(zset) as &dyn SerBatchReader)
+            .unwrap();
+
+        let actual_output = consumer_data
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone()
+                        .map(|k| (serde_json::from_slice::<serde_json::Value>(&k).unwrap())),
+                    serde_json::from_slice::<serde_json::Value>(v).unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let expected_output = vec![
+            (
+                Some(json!({
+                    "schema":{"type":"struct","fields":[{"field":"id","optional":false,"type":"int64"},{"field":"s","optional":false,"type":"string"}],"name":"Key"},
+
+                    "payload":{"id":1,"s":"bar"}
+                })),
+                json!({
+                    "schema":{"type":"struct","fields":[{"field":"after","type":"struct","fields":[{"field":"id","type":"int64","optional":false},{"field":"b","type":"boolean","optional":false},{"field":"i","type":"int64","optional":true},{"field":"s","type":"string","optional":false}],"optional":true},{"field":"op","type":"string","optional":false}],"name":"Envelope"},
+                    "payload":{"op":"d"}
+                }),
+            ),
+            (
+                Some(json!({
+                    "schema":{"type":"struct","fields":[{"field":"id","optional":false,"type":"int64"},{"field":"s","optional":false,"type":"string"}],"name":"Key"},
+                    "payload":{"id":0,"s":"foo"}
+                })),
+                json!({
+                    "schema":{"type":"struct","fields":[{"field":"after","type":"struct","fields":[{"field":"id","type":"int64","optional":false},{"field":"b","type":"boolean","optional":false},{"field":"i","type":"int64","optional":true},{"field":"s","type":"string","optional":false}],"optional":true},{"field":"op","type":"string","optional":false}],"name":"Envelope"},
+                    "payload":{"op":"c","after":{"id":0,"b":true,"i":null,"s":"foo"}}
+                }),
+            ),
+        ];
+
+        assert_eq!(actual_output, expected_output)
     }
 
     #[test]

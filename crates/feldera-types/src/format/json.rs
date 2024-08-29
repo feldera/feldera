@@ -186,4 +186,13 @@ pub struct JsonEncoderConfig {
     pub buffer_size_records: usize,
     #[serde(default)]
     pub array: bool,
+
+    /// When this option is set, only the listed fields appear in the Debezium message key.
+    ///
+    /// This option is useful when writing to a table with primary keys.
+    /// For such tables, Debezium expects the message key to contain only
+    /// the primary key columns.
+    ///
+    /// This option is only valid with the `debezium` update format.
+    pub key_fields: Option<Vec<String>>,
 }
