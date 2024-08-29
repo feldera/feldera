@@ -65,7 +65,18 @@
   }
 </script>
 
-<div class="relative flex-1" bind:this={ref}>
+<div class="relative flex flex-1 flex-col" bind:this={ref}>
+  {#if changeStream.totalSkippedBytes}
+    <div class="flex gap-1 p-1 preset-tonal-warning">
+      <span class="bx bx-error text-[24px]"></span>
+      <span>
+        Receiving changes faster than can be displayed. Skipping some records to keep up, {humanSize(
+          changeStream.totalSkippedBytes
+        )} in total.
+      </span>
+    </div>
+  {/if}
+
   <VirtualList
     width="100%"
     {height}
@@ -108,18 +119,5 @@
         setTimeout(() => (scrollOffset = len * itemSize))
       }}
     ></button>
-  {/if}
-  {#if changeStream.totalSkippedBytes}
-    <div
-      class="bx bx-error absolute right-4 top-4 rounded-full !border-2 border-warning-500 p-2 text-[24px] text-warning-800 bg-surface-50-950"
-    ></div>
-    <Tooltip
-      class=" border-2 border-warning-500 bg-surface-50-950 text-surface-950-50 "
-      trigger="click"
-      placement="right-start"
-      >Receiving changes faster than can displayed here.
-      <br />Skipping some records to keep up.
-      <br />Skipped {humanSize(changeStream.totalSkippedBytes)} in total.</Tooltip
-    >
   {/if}
 </div>

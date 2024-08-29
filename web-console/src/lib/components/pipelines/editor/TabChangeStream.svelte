@@ -70,7 +70,7 @@
         .filter((relation) => relation[1].selected)
         .map((relation) => relation[0])
       for (const relationName of relations) {
-        changeStream[pipelineName].rows.length = 0 // Clear row buffer when starting pipeline again
+        changeStream[pipelineName] = { rows: [], totalSkippedBytes: 0 } // Clear row buffer when starting pipeline again
         getChangeStream = () => changeStream
         pipelinesRelations[pipelineName][relationName].cancelStream = startReadingStream(
           pipelineName,
