@@ -118,7 +118,7 @@ def wait_for_status(pipeline_name, status):
 
 def write_results(results, outfile):
     writer = csv.writer(outfile)
-    writer.writerow(['when', 'runner', 'mode', 'language', 'name', 'num_cores', 'num_events', 'elapsed', 'peak_memory_bytes', 'cpu_msecs'])
+    writer.writerow(['when', 'runner', 'mode', 'language', 'name', 'num_cores', 'num_events', 'elapsed', 'peak_memory_bytes', 'cpu_msecs', 'late_drops'])
     writer.writerows(results)
 
 def write_metrics(keys, results, outfile):
@@ -262,7 +262,6 @@ def main():
         # Wait till the pipeline is completed
         start = time.time()
         last_processed = 0
-        last_metrics = 0
         peak_memory = 0
         error = False
         while True:
@@ -278,12 +277,6 @@ def main():
                 processed = global_metrics["total_processed_records"]
                 peak_memory = max(peak_memory, global_metrics["rss_bytes"])
                 cpu_msecs = global_metrics.get("cpu_msecs", 0)
-                if processed > last_processed:
-                    before, after = ('\r', '') if os.isatty(1) else ('', '\n')
-                    peak_gib = peak_memory / 1024 / 1024 / 1024
-                    cpu_secs = cpu_msecs / 1000
-                    sys.stdout.write(f"{before}Pipeline {full_name} processed {processed} records in {elapsed:.1f} seconds ({peak_gib:.1f} GiB peak memory, {cpu_secs:.1f} s CPU time){after}")
-                last_metrics = elapsed
                 metrics_dict = {"name":pipeline_name, "elapsed_seconds":elapsed}
                 for key, value in global_metrics.items():
                     metrics_seen.add(key)
@@ -304,6 +297,12 @@ def main():
                             metrics_seen.add(k)
                             metrics_dict[k] = value["Histogram"][v]
                 pipeline_metrics += [metrics_dict]
+                late_drops = metrics_dict.get("records_late", 0)
+                if processed > last_processed:
+                    before, after = ('\r', '') if os.isatty(1) else ('', '\n')
+                    peak_gib = peak_memory / 1024 / 1024 / 1024
+                    cpu_secs = cpu_msecs / 1000
+                    sys.stdout.write(f"{before}Pipeline {full_name} processed {processed} records in {elapsed:.1f} seconds ({peak_gib:.1f} GiB peak memory, {cpu_secs:.1f} s CPU time, {late_drops} late drops){after}")
                 last_processed = processed
                 if stats["global_metrics"]["pipeline_complete"]:
                     break
@@ -316,7 +315,7 @@ def main():
         else:
             print(f"Pipeline {full_name} completed in {elapsed} s")
 
-            results += [[when, "feldera", "stream", "sql", pipeline_name, cores, last_processed, elapsed, peak_memory, cpu_msecs]]
+            results += [[when, "feldera", "stream", "sql", pipeline_name, cores, last_processed, elapsed, peak_memory, cpu_msecs, late_drops]]
 
             if profile:
                 response = requests.get(f"{api_url}/v0/pipelines/{full_name}/circuit_profile", headers=headers)
