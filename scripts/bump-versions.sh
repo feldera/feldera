@@ -34,7 +34,7 @@ release() {
     new_version=`cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version'`
 
     # Regenerate OpenAPI JSON to have updated version
-    (cd .. && cargo make --cwd crates/pipeline_manager openapi_json)
+    (cd .. && cargo make --cwd crates/pipeline-manager openapi_json)
 
     # Commit the new version
     release_branch="release-v$new_version"

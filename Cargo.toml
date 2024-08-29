@@ -5,7 +5,7 @@ members = [
   "crates/fda",
   "crates/nexmark",
   "crates/feldera-types",
-  "crates/pipeline_manager",
+  "crates/pipeline-manager",
   "sql-to-dbsp-compiler/lib/json",
   "sql-to-dbsp-compiler/lib/readers",
   "sql-to-dbsp-compiler/lib/sqllib",
