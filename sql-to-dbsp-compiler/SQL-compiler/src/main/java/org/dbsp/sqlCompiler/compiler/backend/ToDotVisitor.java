@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.LowerCircuitVisitor;
@@ -164,6 +165,13 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         return VisitDecision.STOP;
     }
 
+    String convertFunction(DBSPExpression expression) {
+        String result = ToRustInnerVisitor.toRustString(
+                this.errorReporter, expression, CompilerOptions.getDefault(), true);
+        result = result.replace("\n", "\\l");
+        return Utilities.escapeDoubleQuotes(result);
+    }
+
     String getFunction(DBSPOperator node) {
         DBSPExpression expression = node.function;
         if (node.is(DBSPAggregateOperatorBase.class)) {
@@ -190,10 +198,7 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                     this.errorReporter,
                     node.to(DBSPJoinFilterMapOperator.class));
         }
-        String result = ToRustInnerVisitor.toRustString(
-                this.errorReporter, expression, CompilerOptions.getDefault(), true);
-        result = result.replace("\n", "\\l");
-        return Utilities.escapeDoubleQuotes(result);
+        return this.convertFunction(expression);
     }
 
     String getColor(DBSPOperator operator) {
@@ -221,6 +226,14 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         };
     }
 
+    String shorten(String operation) {
+        if (operation.startsWith("integrate_trace"))
+            return operation.substring("integrate_trace_".length());
+        if (operation.equals("aggregate_linear_postprocess"))
+            return "aggregate_linear";
+        return operation;
+    }
+
     @Override
     public VisitDecision preorder(DBSPOperator node) {
         this.stream.append(node.getOutputName())
@@ -231,11 +244,39 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
                 .append(isMultiset(node))
                 .append(annotations(node))
                 .append(" ")
-                .append(node.operation)
+                .append(shorten(node.operation))
                 .append(node.comment != null ? node.comment : "");
         if (this.details > 3) {
             this.stream
                     .append("(")
+                    .append(this.getFunction(node))
+                    .append(")\\l");
+        }
+        this.stream.append("\" ]")
+                .newline();
+        this.addInputs(node);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPWaterlineOperator node) {
+        this.stream.append(node.getOutputName())
+                .append(" [ shape=box")
+                .append(this.getColor(node))
+                .append(" label=\"")
+                .append(node.getIdString())
+                .append(isMultiset(node))
+                .append(annotations(node))
+                .append(" ")
+                .append(shorten(node.operation))
+                .append(node.comment != null ? node.comment : "");
+        if (this.details > 3) {
+            this.stream
+                    .append("(")
+                    .append(this.convertFunction(node.init))
+                    .append(", ")
+                    .append(this.convertFunction(node.extractTs))
+                    .append(", ")
                     .append(this.getFunction(node))
                     .append(")\\l");
         }
