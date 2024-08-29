@@ -551,7 +551,6 @@ all-tests:
     BUILD +machete
     BUILD +clippy
     BUILD +test-rust
-    BUILD +test-python
     BUILD +openapi-checker
     BUILD +test-sql
     BUILD +integration-tests
@@ -564,3 +563,6 @@ all-tests:
     # BUILD +test-snowflake
     # BUILD +test-s3
     BUILD +test-service-related
+
+nightly-tests:
+    BUILD +test-python
