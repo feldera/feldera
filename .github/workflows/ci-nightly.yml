@@ -1,20 +1,13 @@
 # .github/workflows/ci.yml
 
-name: Build & Tests
+name: Nightly Tests
 
 on:
-  push:
-    paths-ignore:
-      - 'README.md'
-      - 'CODE_OF_CONDUCT.md'
-      - 'CONTRIBUTING.md'
-      - './vscode/**'
-  pull_request:
-    paths-ignore:
-      - 'README.md'
-      - 'CODE_OF_CONDUCT.md'
-      - 'CONTRIBUTING.md'
-      - './vscode/**'
+  schedule:
+    - cron: '02 30 * * *'
+  release:
+    types: [published]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -107,7 +100,7 @@ jobs:
         run: earthly --version
 
       - name: Run CI
-        run: earthly -P --ci +ci-tests
+        run: earthly -P --ci +nightly-tests
 
       - uses: actions/upload-artifact@v3
         if: always()

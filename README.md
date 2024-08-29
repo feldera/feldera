@@ -2,10 +2,11 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![CI workflow](https://github.com/feldera/feldera/actions/workflows/ci.yml/badge.svg)](https://github.com/feldera/feldera/actions)
-[![nightly](https://github.com/feldera/feldera/actions/workflows/containers.yml/badge.svg)](https://github.com/feldera/feldera/actions/workflows/containers.yml)
-[![slack](https://img.shields.io/badge/slack-blue.svg?logo=slack)](https://www.feldera.com/community)
-[![discord](https://img.shields.io/badge/discord-blue.svg?logo=discord&logoColor=white)](https://discord.gg/5YBX9Uw5u7)
-[![sandbox](https://img.shields.io/badge/feldera_sandbox-blue?logo=CodeSandbox)](https://www.feldera.com/sandbox)
+[![CI nightly](https://github.com/feldera/feldera/actions/workflows/ci-nightly.yml/badge.svg)](https://github.com/feldera/feldera/actions)
+[![Containers](https://github.com/feldera/feldera/actions/workflows/containers.yml/badge.svg)](https://github.com/feldera/feldera/actions/workflows/containers.yml)
+[![Slack](https://img.shields.io/badge/slack-blue.svg?logo=slack)](https://www.feldera.com/community)
+[![Discord](https://img.shields.io/badge/discord-blue.svg?logo=discord&logoColor=white)](https://discord.gg/5YBX9Uw5u7)
+[![Sandbox](https://img.shields.io/badge/feldera_sandbox-blue?logo=CodeSandbox)](https://www.feldera.com/sandbox)
 
 [Feldera](https://www.feldera.com) is a
 fast query engine for *incremental computation*.
@@ -13,16 +14,20 @@ Feldera has the [unique](#theory) ability to *evaluate arbitrary SQL programs
 incrementally*, making it more powerful, expressive and performant than existing
 alternatives like batch engines, warehouses, stream processors or streaming databases.
 
-Our approach to incremental computation is simple. A Feldera `pipeline` is a set of SQL tables and views. Views can be deeply nested.
+Our approach to incremental computation is simple. A Feldera `pipeline` is a set of SQL tables and views. Views can be
+deeply nested.
 Users start, stop or pause pipelines to manage and advance a computation.
 Pipelines continuously process
 **changes**, which are any number of inserts, updates or deletes to a set of tables. When the pipeline receives changes,
-Feldera **incrementally** updates all the views by only looking at the changes and it completely avoids recomputing over older data.
+Feldera **incrementally** updates all the views by only looking at the changes and it completely avoids recomputing over
+older data.
 While a pipeline is running, users can inspect the results of the views at any time.
 
 Our approach to incremental computation makes Feldera incredibly fast (millions of events per second on a laptop).
-It also enables unified offline and online compute over both live and historical data. Feldera users have built batch and real-time
-feature engineering pipelines, ETL pipelines, various forms of incremental and periodic analytical jobs over batch data, and more.
+It also enables unified offline and online compute over both live and historical data. Feldera users have built batch
+and real-time
+feature engineering pipelines, ETL pipelines, various forms of incremental and periodic analytical jobs over batch data,
+and more.
 
 Our defining features:
 
@@ -38,12 +43,13 @@ Our defining features:
 4. **Datasets larger than RAM.** Feldera is designed to handle datasets
    that exceed the available RAM by spilling efficiently to disk, taking advantage of recent advances in NVMe storage.
 
-5. **Strong guarantees on consistency and freshness.** Feldera is strongly consistent. It also [guarantees](https://www.feldera.com/blog/synchronous-streaming/) that the state of the views always corresponds
+5. **Strong guarantees on consistency and freshness.** Feldera is strongly consistent. It
+   also [guarantees](https://www.feldera.com/blog/synchronous-streaming/) that the state of the views always corresponds
    to what you'd get if you ran the queries in a batch system for the same input.
 
-6. **Connectors for your favorite data sources and destinations.** Feldera connects to myriad batch and streaming data sources, like Kafka, HTTP, CDC streams, S3, Data Lakes, Warehouses and more.
+6. **Connectors for your favorite data sources and destinations.** Feldera connects to myriad batch and streaming data
+   sources, like Kafka, HTTP, CDC streams, S3, Data Lakes, Warehouses and more.
    If you need a connector that we don't yet support, let us [know](https://github.com/feldera/feldera/issues).
-
 
 ## Architecture
 
@@ -67,7 +73,8 @@ It can take some time for the container images to be downloaded. About ten secon
 web console will become available. Visit [http://localhost:8080](http://localhost:8080) on your browser
 to bring it up. We suggest going through our [tutorial](https://www.feldera.com/docs/tutorials/basics/) next.
 
-Our [Getting Started](https://www.feldera.com/docs/get-started) guide has more detailed instructions on running the demo.
+Our [Getting Started](https://www.feldera.com/docs/get-started) guide has more detailed instructions on running the
+demo.
 
 ## Running Feldera from sources
 
