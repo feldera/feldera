@@ -1,8 +1,13 @@
 [package]
 name = "fda"
+description = "A CLI tool for interacting with Feldera"
+homepage = "https://github.com/feldera/feldera"
+repository = "https://github.com/feldera/feldera"
+license = "MIT OR Apache-2.0"
 version = "0.1.0"
 edition = "2021"
 include = ["openapi.json", "/src", "build.rs", "COPYRIGHT", "README.md"]
+
 
 [dependencies]
 log = "0.4"
