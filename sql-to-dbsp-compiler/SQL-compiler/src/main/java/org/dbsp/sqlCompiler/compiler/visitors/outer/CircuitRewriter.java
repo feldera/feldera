@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -481,6 +482,24 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || input != operator.input()
                 || function != operator.getFunction()) {
             result = new DBSPMapOperator(operator.getNode(), function, type.to(DBSPTypeZSet.class), input)
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPWaterlineOperator operator) {
+        DBSPOperator input = this.mapped(operator.input());
+        DBSPClosureExpression function = this.transform(operator.getFunction()).to(DBSPClosureExpression.class);
+        DBSPClosureExpression init = this.transform(operator.init).to(DBSPClosureExpression.class);
+        DBSPClosureExpression extractTs = this.transform(operator.extractTs).to(DBSPClosureExpression.class);
+        DBSPOperator result = operator;
+        if (input != operator.input()
+                || extractTs != operator.extractTs
+                || init != operator.init
+                || function != operator.function) {
+            result = new DBSPWaterlineOperator(
+                    operator.getNode(), init, extractTs, function, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

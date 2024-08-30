@@ -42,7 +42,8 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
-    public void q16() {
+    public void q16() {        
+        // simplified version of q16
         String sql = """
                 CREATE TABLE bid (
                    auction  BIGINT,
@@ -59,6 +60,82 @@ public class StreamingTests extends StreamingTestBase {
                     count(distinct auction) filter (where price >= 1000000) AS rank3_auctions
                 FROM bid
                 GROUP BY channel, CAST(date_time AS DATE);""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void q16alt() {
+        // alternate implementation of q16 from nexmark
+        String sql = """
+                CREATE TABLE bid (
+                    auction  BIGINT,
+                    bidder  BIGINT,
+                    price  BIGINT,
+                    channel  VARCHAR,
+                    url  VARCHAR,
+                    date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
+                    extra  VARCHAR
+                );
+                
+                CREATE LOCAL VIEW low
+                AS SELECT * FROM bid WHERE price < 10000;
+                
+                CREATE LOCAL VIEW mid
+                AS SELECT * FROM bid WHERE price >= 10000 AND price < 1000000;
+                
+                CREATE LOCAL VIEW high
+                AS SELECT * FROM bid WHERE price >= 1000000;
+                
+                CREATE LOCAL VIEW LOW_C AS
+                SELECT
+                   channel,
+                   CAST(date_time AS DATE) as dt,
+                   count(*) AS rank1_bids,
+                   count(distinct bidder) AS rank1_bidders,
+                   count(distinct auction) AS rank1_auctions
+                FROM low
+                GROUP BY channel, CAST(date_time AS DATE);
+                
+                CREATE LOCAL VIEW MID_C AS
+                SELECT
+                   channel,
+                   CAST(date_time AS DATE) as dt,
+                   count(*) AS rank2_bids,
+                   count(distinct bidder) AS rank2_bidders,
+                   count(distinct auction) AS rank2_auctions
+                FROM mid
+                GROUP BY channel, CAST(date_time AS DATE);
+                
+                CREATE LOCAL VIEW HIGH_C AS
+                SELECT
+                   channel,
+                   CAST(date_time AS DATE) as dt,
+                   count(*) AS rank3_bids,
+                   count(distinct bidder) AS rank3_bidders,
+                   count(distinct auction) AS rank3_auctions
+                FROM high
+                GROUP BY channel, CAST(date_time AS DATE);
+                
+                CREATE VIEW REST AS
+                SELECT
+                    channel,
+                    CAST(date_time AS DATE) as dt,
+                    format_date('HH:mm', max(date_time)) as 'minute',
+                    count(*) AS total_bids,
+                    count(distinct bidder) AS total_bidders,
+                    count(distinct auction) AS total_auctions
+                FROM bid
+                GROUP BY channel, CAST(date_time AS DATE);
+                
+                CREATE VIEW Q16 AS
+                SELECT * FROM REST
+                JOIN LOW_C
+                  ON REST.channel = LOW_C.channel AND REST.dt = LOW_C.dt
+                JOIN MID_C
+                  ON REST.channel = MID_C.channel AND REST.dt = MID_C.dt
+                JOIN HIGH_C
+                  ON REST.channel = HIGH_C.channel AND REST.dt = HIGH_C.dt;
+                """;
         this.compileRustTestCase(sql);
     }
 
