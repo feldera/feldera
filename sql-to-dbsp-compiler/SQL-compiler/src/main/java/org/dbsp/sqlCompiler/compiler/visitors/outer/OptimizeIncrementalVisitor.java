@@ -160,11 +160,6 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
-        this.linear(operator);
-    }
-
-    @Override
     public void postorder(DBSPStreamAggregateOperator operator) {
         DBSPOperator source = this.mapped(operator.input());
         if (source.is(DBSPIntegrateOperator.class)) {

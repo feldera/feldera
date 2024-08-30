@@ -229,7 +229,7 @@ where
     /// Linear aggregation with a post-processing step.
     ///
     /// Equivalent to `self.aggregate_linear(f).map_index(|(k,v)|(k, of(v)))`,
-    /// but more efficient.
+    /// but more efficient.  This operator is incremental.
     pub fn aggregate_linear_postprocess<F, A, OF, OV>(
         &self,
         f: F,
