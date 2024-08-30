@@ -50,10 +50,10 @@ function `contains_number` above:
 ```rs
 use sqllib::*;
 
-pub fn CONTAINS_NUMBER(pos: &SourcePositionRange, str: String, value: Option<i32>) ->
+pub fn CONTAINS_NUMBER(str: String, value: Option<i32>) ->
    Result<bool, Box<dyn std::error::Error>> {
    match value {
-      None => Err(format!(\"{}: null value\", pos).into()),
+      None => Err(\"null value\".into()),
       Some(value) => Ok(str.contains(&format!(\"{}\", value).to_string())),
    }
 }
@@ -119,21 +119,9 @@ In the Rust implementation the function always has to return the type
 `Result<T, Box<dyn std::error::Error>>`, where `T` is the Rust
 equivalent of the expected return type of the SQL function.  The Rust
 function should return an `Err` only when the function fails at
-runtime; in this case the returned error can use the source position
-information to indicate where the error has originated in the code.
-The function should return an error only for fatal conditions, similar
-to other SQL functions (e.g., array index out of bounds, arithmetic
-overflows, etc.).
-
-### Source position information
-
-The first argument passed to the Rust function is always `pos:
-&SourcePositionRange`.  This argument indicates the position in the
-SQL source code of the call to this user-defined function.  This
-information can be used to generate better runtime error messages when
-the user-defined function encounters an error. (Note: currently
-Calcite does not provide any source position information, but we hope
-to remedy this state of affairs soon.)
+runtime.  The function should return an error only for fatal
+conditions, similar to other SQL functions (e.g., array index out of
+bounds, arithmetic overflows, etc.).
 
 ## Limitations
 

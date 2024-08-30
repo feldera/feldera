@@ -39,8 +39,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -159,8 +157,7 @@ public class ExternalFunction extends SqlFunction {
         @Override
         public DBSPExpression visitInputRef(RexInputRef inputRef) {
             CalciteObject node = CalciteObject.create(inputRef);
-            // +1 because the first parameter is the source position parameter
-            int index = inputRef.getIndex() + 1;
+            int index = inputRef.getIndex();
             if (index < this.parameters.size()) {
                 return this.parameters.get(index).asVariable().applyCloneIfNeeded();
             }
@@ -173,18 +170,10 @@ public class ExternalFunction extends SqlFunction {
         }
     }
 
-    static DBSPParameter sourcePositionParameter() {
-        return new DBSPParameter("_pos",
-                new DBSPTypeUser(CalciteObject.EMPTY, DBSPTypeCode.USER, "SourcePositionRange", false)
-                        .ref());
-    }
-
     @Nullable
     public DBSPFunction getImplementation(TypeCompiler typeCompiler, DBSPCompiler compiler) {
         if (this.body != null) {
             List<DBSPParameter> parameters = new ArrayList<>();
-            // First parameter is always source position
-            parameters.add(sourcePositionParameter());
             for (RelDataTypeField param: this.parameterList) {
                 DBSPType type = typeCompiler.convertType(param.getType(), true);
                 DBSPParameter p = new DBSPParameter(param.getName(), type);
@@ -222,7 +211,6 @@ public class ExternalFunction extends SqlFunction {
                 return null;
             }
             DBSPType parameterType = typeCompiler.convertType(this.parameterList.get(0).getType(), false);
-            DBSPParameter position = sourcePositionParameter();
             DBSPParameter param = new DBSPParameter("s", parameterType);
             List<DBSPStatement> statements = new ArrayList<>();
             if (parameterType.mayBeNull)
@@ -240,7 +228,7 @@ public class ExternalFunction extends SqlFunction {
             DBSPExpression body = new DBSPBlockExpression(statements, retval);
             // DBSPExpression ok = new DBSPApplyMethodExpression("Ok", new DBSPTypeResult(returnType), retval);
             // TODO: the function should return Result
-            return new DBSPFunction(this.getName(), Linq.list(position, param), returnType, body, Linq.list());
+            return new DBSPFunction(this.getName(), Linq.list(param), returnType, body, Linq.list());
         }
         throw new UnimplementedException();
     }

@@ -1384,14 +1384,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         }
     }
 
-    DBSPExpression toPosition(SourcePosition pos) {
+    static DBSPExpression toPosition(SourcePosition pos) {
         return new DBSPConstructorExpression(
                 new DBSPPath("SourcePosition", "new").toExpression(),
                 DBSPTypeAny.getDefault(),
                 new DBSPU32Literal(pos.line), new DBSPU32Literal(pos.column));
     }
 
-    DBSPExpression toPosition(SourcePositionRange range) {
+    static DBSPExpression toPosition(SourcePositionRange range) {
         return new DBSPConstructorExpression(
                 new DBSPPath("SourcePositionRange", "new").toExpression(),
                 DBSPTypeAny.getDefault(),
@@ -1420,11 +1420,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         List<DBSPType> operandTypes = Linq.map(ef.parameterList,
                 p -> this.typeCompiler.convertType(p.getType(), false));
         List<DBSPExpression> converted = Linq.zip(ops, operandTypes, DBSPExpression::cast);
-        SourcePositionRange pos = node.getPositionRange();
-        DBSPExpression[] arguments = new DBSPExpression[converted.size() + 1];
-        arguments[0] = this.toPosition(pos).borrow();
+        DBSPExpression[] arguments = new DBSPExpression[converted.size()];
         for (int i = 0; i < converted.size(); i++)
-            arguments[i+1] = converted.get(i);
+            arguments[i] = converted.get(i);
         // The convention is that all such functions return Result.
         // This is not true for functions that we implement internally.
         // Currently, we need to unwrap.
