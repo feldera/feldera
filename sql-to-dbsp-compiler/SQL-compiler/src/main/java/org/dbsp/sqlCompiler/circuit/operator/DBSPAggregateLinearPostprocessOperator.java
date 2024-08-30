@@ -15,6 +15,7 @@ import java.util.List;
 public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOperator {
     public final DBSPClosureExpression postProcess;
 
+    // This operator is incremental-only
     public DBSPAggregateLinearPostprocessOperator(
             CalciteObject node,
             DBSPTypeIndexedZSet outputType,
