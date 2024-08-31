@@ -11,6 +11,7 @@ use reqwest::header::HeaderValue;
 use reqwest::StatusCode;
 use tabled::builder::Builder;
 use tabled::settings::Style;
+use tokio::time::{sleep, Duration};
 
 mod cli;
 
@@ -338,6 +339,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                     info!("Compiling pipeline...");
                     print_every_30_seconds = tokio::time::Instant::now();
                 }
+                sleep(Duration::from_millis(500)).await;
             }
 
             client
@@ -396,6 +398,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                     info!("Shutting down the pipeline...");
                     print_every_30_seconds = tokio::time::Instant::now();
                 }
+                sleep(Duration::from_millis(500)).await;
             }
             println!("Pipeline shutdown successful.");
 
