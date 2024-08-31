@@ -215,7 +215,11 @@ pub enum PipelineAction {
         action: EndpointAction,
     },
     /// Enter the ad-hoc SQL shell of the pipeline.
-    Shell,
+    Shell {
+        /// Start the pipeline before entering the shell.
+        #[arg(long, short = 's', default_value_t = false)]
+        start: bool,
+    },
 }
 
 #[derive(Subcommand)]

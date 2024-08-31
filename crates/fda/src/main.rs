@@ -14,15 +14,20 @@ use tabled::settings::Style;
 use tokio::time::{sleep, Duration};
 
 mod cli;
+mod shell;
 
 #[allow(clippy::all, unused)]
 mod cd {
     include!(concat!(env!("OUT_DIR"), "/codegen.rs"));
 }
 
+pub(crate) const UGPRADE_NOTICE: &str =
+    "Try upgrading to the latest CLI version or report the issue on github.com/feldera/feldera.";
+
 use crate::cd::types::*;
 use crate::cd::*;
 use crate::cli::*;
+use crate::shell::shell;
 
 async fn add_auth_headers(
     key: &Option<String>,
@@ -47,8 +52,6 @@ fn handle_errors_fatal(
 ) -> Box<dyn Fn(Error<ErrorResponse>) -> Infallible + Send> {
     assert_ne!(exit_code, 0, "Exit code must not be 0");
     Box::new(move |err: Error<ErrorResponse>| -> Infallible {
-        const UGPRADE_NOTICE: &str = "Try upgrading to the latest CLI version or report the issue on github.com/feldera/feldera.";
-
         match &err {
             Error::ErrorResponse(e) => {
                 eprintln!("{}", e.message);
@@ -525,7 +528,18 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
             endpoint_name,
             action,
         }) => endpoint(name, endpoint_name.as_str(), action, client).await,
-        Some(PipelineAction::Shell) => unimplemented!(),
+        Some(PipelineAction::Shell { start }) => {
+            let client2 = client.clone();
+            if start {
+                let _ = Box::pin(pipeline(
+                    name,
+                    Some(PipelineAction::Start { recompile: false }),
+                    client,
+                ))
+                .await;
+            }
+            shell(name, client2).await
+        }
         None => {
             let response = client
                 .get_pipeline()
