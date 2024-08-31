@@ -1,5 +1,8 @@
 use serde::{Deserialize, Deserializer, Serialize};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::fmt::Display;
+use std::hash::{Hash, Hasher};
 use utoipa::ToSchema;
 
 #[cfg(feature = "testing")]
@@ -17,6 +20,116 @@ pub fn canonical_identifier(id: &str) -> String {
         id[1..id.len() - 1].to_string()
     } else {
         id.to_lowercase()
+    }
+}
+
+/// An SQL identifier.
+///
+/// This struct is used to represent SQL identifiers in a canonical form.
+/// We store table names or field names as identifiers in the schema.
+#[derive(Serialize, Deserialize, ToSchema, Debug, Clone)]
+#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
+pub struct SqlIdentifier {
+    #[cfg_attr(feature = "testing", proptest(regex = "relation1|relation2|relation3"))]
+    name: String,
+    pub case_sensitive: bool,
+}
+
+impl SqlIdentifier {
+    pub fn new<S: AsRef<str>>(name: S, case_sensitive: bool) -> Self {
+        Self {
+            name: name.as_ref().to_string(),
+            case_sensitive,
+        }
+    }
+
+    /// Return the name of the identifier in canonical form.
+    pub fn name(&self) -> String {
+        if self.case_sensitive {
+            self.name.clone()
+        } else {
+            self.name.to_lowercase()
+        }
+    }
+
+    /// Return the name of the identifier as it would appear in SQL.
+    pub fn sql_name(&self) -> String {
+        if self.case_sensitive {
+            format!("\"{}\"", self.name)
+        } else {
+            self.name.clone()
+        }
+    }
+}
+
+impl Hash for SqlIdentifier {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name().hash(state);
+    }
+}
+
+impl PartialEq for SqlIdentifier {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.case_sensitive, other.case_sensitive) {
+            (true, true) => self.name == other.name,
+            (false, false) => self.name.to_lowercase() == other.name.to_lowercase(),
+            (true, false) => self.name == other.name,
+            (false, true) => self.name == other.name,
+        }
+    }
+}
+
+impl Ord for SqlIdentifier {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name().cmp(&other.name())
+    }
+}
+
+impl PartialOrd for SqlIdentifier {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<S: AsRef<str>> PartialEq<S> for SqlIdentifier {
+    fn eq(&self, other: &S) -> bool {
+        self == &SqlIdentifier::from(other.as_ref())
+    }
+}
+
+impl Eq for SqlIdentifier {}
+
+impl<S: AsRef<str>> From<S> for SqlIdentifier {
+    fn from(name: S) -> Self {
+        if name.as_ref().starts_with('"')
+            && name.as_ref().ends_with('"')
+            && name.as_ref().len() >= 2
+        {
+            Self {
+                name: name.as_ref()[1..name.as_ref().len() - 1].to_string(),
+                case_sensitive: true,
+            }
+        } else {
+            Self::new(name, false)
+        }
+    }
+}
+
+impl From<SqlIdentifier> for String {
+    fn from(id: SqlIdentifier) -> String {
+        id.name()
+    }
+}
+
+impl From<&SqlIdentifier> for String {
+    fn from(id: &SqlIdentifier) -> String {
+        id.name()
+    }
+}
+
+impl Display for SqlIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
     }
 }
 
@@ -62,10 +175,8 @@ pub struct PropertyValue {
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct Relation {
     // This field should only be accessed via the `name()` method.
-    #[cfg_attr(feature = "testing", proptest(regex = "relation1|relation2|relation3"))]
-    name: String,
-    #[serde(default)]
-    pub case_sensitive: bool,
+    #[serde(flatten)]
+    pub name: SqlIdentifier,
     #[cfg_attr(feature = "testing", proptest(value = "Vec::new()"))]
     pub fields: Vec<Field>,
     #[serde(default)]
@@ -77,8 +188,7 @@ pub struct Relation {
 impl Relation {
     pub fn empty() -> Self {
         Self {
-            name: "".to_string(),
-            case_sensitive: false,
+            name: SqlIdentifier::from("".to_string()),
             fields: Vec::new(),
             materialized: false,
             properties: BTreeMap::new(),
@@ -86,36 +196,23 @@ impl Relation {
     }
 
     pub fn new(
-        name: &str,
-        case_sensitive: bool,
+        name: SqlIdentifier,
         fields: Vec<Field>,
         materialized: bool,
         properties: BTreeMap<String, PropertyValue>,
     ) -> Self {
         Self {
-            name: name.to_string(),
-            case_sensitive,
+            name,
             fields,
             materialized,
             properties,
         }
     }
 
-    /// Returns canonical name of the relation: case-insensitive names are
-    /// converted to lowercase; case-sensitive names returned as is.
-    pub fn name(&self) -> String {
-        if self.case_sensitive {
-            self.name.clone()
-        } else {
-            self.name.to_lowercase()
-        }
-    }
-
     /// Lookup field by name.
     pub fn field(&self, name: &str) -> Option<&Field> {
         let name = canonical_identifier(name);
-
-        self.fields.iter().find(|f| f.name() == name)
+        self.fields.iter().find(|f| f.name == name)
     }
 }
 
@@ -125,22 +222,9 @@ impl Relation {
 #[derive(Serialize, ToSchema, Debug, Eq, PartialEq, Clone)]
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct Field {
-    pub name: String,
-    #[serde(default)]
-    pub case_sensitive: bool,
+    #[serde(flatten)]
+    pub name: SqlIdentifier,
     pub columntype: ColumnType,
-}
-
-impl Field {
-    /// Returns canonical name of the field: case-insensitive names are
-    /// converted to lowercase; case-sensitive names returned as is.
-    pub fn name(&self) -> String {
-        if self.case_sensitive {
-            self.name.clone()
-        } else {
-            self.name.to_lowercase()
-        }
-    }
 }
 
 /// Thanks to the brain-dead Calcite schema, if we are deserializing a field, the type options
@@ -211,8 +295,7 @@ impl<'de> Deserialize<'de> for Field {
             };
 
             Field {
-                name: helper.name.unwrap(),
-                case_sensitive: helper.case_sensitive,
+                name: SqlIdentifier::new(helper.name.unwrap(), helper.case_sensitive),
                 columntype,
             }
         }
@@ -550,6 +633,7 @@ impl ColumnType {
 
 #[cfg(test)]
 mod tests {
+    use super::SqlIdentifier;
     use crate::program_schema::SqlType;
 
     #[test]
@@ -828,5 +912,52 @@ mod tests {
         assert_eq!(address[1].columntype.typ, SqlType::Varchar);
         assert_eq!(address[2].columntype.typ, SqlType::Char);
         assert_eq!(address[3].columntype.typ, SqlType::Varchar);
+    }
+
+    #[test]
+    fn sql_identifier_cmp() {
+        assert_eq!(SqlIdentifier::from("foo"), SqlIdentifier::from("foo"));
+        assert_ne!(SqlIdentifier::from("foo"), SqlIdentifier::from("bar"));
+        assert_eq!(SqlIdentifier::from("bar"), SqlIdentifier::from("BAR"));
+        assert_eq!(SqlIdentifier::from("foo"), SqlIdentifier::from("\"foo\""));
+        assert_eq!(SqlIdentifier::from("bar"), SqlIdentifier::from("\"bar\""));
+        assert_eq!(SqlIdentifier::from("bAr"), SqlIdentifier::from("\"bAr\""));
+        assert_eq!(
+            SqlIdentifier::new("bAr", true),
+            SqlIdentifier::from("\"bAr\"")
+        );
+
+        assert_eq!(SqlIdentifier::from("bAr"), "bar");
+        assert_eq!(SqlIdentifier::from("bAr"), "bAr");
+    }
+
+    #[test]
+    fn sql_identifier_ord() {
+        let mut btree = std::collections::BTreeSet::new();
+        assert!(btree.insert(SqlIdentifier::from("foo")));
+        assert!(btree.insert(SqlIdentifier::from("bar")));
+        assert!(!btree.insert(SqlIdentifier::from("BAR")));
+        assert!(!btree.insert(SqlIdentifier::from("\"foo\"")));
+        assert!(!btree.insert(SqlIdentifier::from("\"bar\"")));
+    }
+
+    #[test]
+    fn sql_identifier_hash() {
+        let mut hs = std::collections::HashSet::new();
+        assert!(hs.insert(SqlIdentifier::from("foo")));
+        assert!(hs.insert(SqlIdentifier::from("bar")));
+        assert!(!hs.insert(SqlIdentifier::from("BAR")));
+        assert!(!hs.insert(SqlIdentifier::from("\"foo\"")));
+        assert!(!hs.insert(SqlIdentifier::from("\"bar\"")));
+    }
+
+    #[test]
+    fn sql_identifier_name() {
+        assert_eq!(SqlIdentifier::from("foo").name(), "foo");
+        assert_eq!(SqlIdentifier::from("bAr").name(), "bar");
+        assert_eq!(SqlIdentifier::from("\"bAr\"").name(), "bAr");
+        assert_eq!(SqlIdentifier::from("foo").sql_name(), "foo");
+        assert_eq!(SqlIdentifier::from("bAr").sql_name(), "bAr");
+        assert_eq!(SqlIdentifier::from("\"bAr\"").sql_name(), "\"bAr\"");
     }
 }

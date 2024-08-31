@@ -46,8 +46,7 @@ impl TestStruct {
     pub fn schema() -> Vec<Field> {
         vec![
             Field {
-                name: "id".to_string(),
-                case_sensitive: false,
+                name: "id".into(),
                 columntype: ColumnType {
                     typ: SqlType::BigInt,
                     nullable: false,
@@ -60,8 +59,7 @@ impl TestStruct {
                 },
             },
             Field {
-                name: "b".to_string(),
-                case_sensitive: false,
+                name: "b".into(),
                 columntype: ColumnType {
                     typ: SqlType::Boolean,
                     nullable: false,
@@ -74,8 +72,7 @@ impl TestStruct {
                 },
             },
             Field {
-                name: "i".to_string(),
-                case_sensitive: false,
+                name: "i".into(),
                 columntype: ColumnType {
                     typ: SqlType::BigInt,
                     nullable: true,
@@ -88,8 +85,7 @@ impl TestStruct {
                 },
             },
             Field {
-                name: "s".to_string(),
-                case_sensitive: false,
+                name: "s".into(),
                 columntype: ColumnType {
                     typ: SqlType::Varchar,
                     nullable: false,
@@ -401,8 +397,7 @@ impl TestStruct2 {
     pub fn schema() -> Vec<Field> {
         vec![
             Field {
-                name: "id".to_string(),
-                case_sensitive: false,
+                name: "id".into(),
                 columntype: ColumnType {
                     typ: SqlType::BigInt,
                     nullable: false,
@@ -415,8 +410,7 @@ impl TestStruct2 {
                 },
             },
             Field {
-                name: "name".to_string(),
-                case_sensitive: false,
+                name: "name".into(),
                 columntype: ColumnType {
                     typ: SqlType::Varchar,
                     nullable: true,
@@ -429,8 +423,7 @@ impl TestStruct2 {
                 },
             },
             Field {
-                name: "b".to_string(),
-                case_sensitive: false,
+                name: "b".into(),
                 columntype: ColumnType {
                     typ: SqlType::Boolean,
                     nullable: false,
@@ -443,8 +436,7 @@ impl TestStruct2 {
                 },
             },
             Field {
-                name: "ts".to_string(),
-                case_sensitive: false,
+                name: "ts".into(),
                 columntype: ColumnType {
                     typ: SqlType::Timestamp,
                     nullable: false,
@@ -457,8 +449,7 @@ impl TestStruct2 {
                 },
             },
             Field {
-                name: "dt".to_string(),
-                case_sensitive: false,
+                name: "dt".into(),
                 columntype: ColumnType {
                     typ: SqlType::Date,
                     nullable: false,
@@ -471,8 +462,7 @@ impl TestStruct2 {
                 },
             },
             /*Field {
-                name: "t".to_string(),
-                case_sensitive: false,
+                name: "t".into(),
                 columntype: ColumnType {
                     typ: SqlType::Time,
                     nullable: false,
@@ -483,8 +473,7 @@ impl TestStruct2 {
                 },
             },*/
             Field {
-                name: "es".to_string(),
-                case_sensitive: false,
+                name: "es".into(),
                 columntype: ColumnType {
                     typ: SqlType::Struct,
                     nullable: false,
@@ -492,8 +481,7 @@ impl TestStruct2 {
                     scale: None,
                     component: None,
                     fields: Some(vec![Field {
-                        name: "a".to_string(),
-                        case_sensitive: false,
+                        name: "a".into(),
                         columntype: ColumnType {
                             typ: SqlType::Boolean,
                             nullable: false,
@@ -510,8 +498,7 @@ impl TestStruct2 {
                 },
             },
             Field {
-                name: "m".to_string(),
-                case_sensitive: false,
+                name: "m".into(),
                 columntype: ColumnType {
                     typ: SqlType::Map,
                     nullable: false,
@@ -629,8 +616,7 @@ impl DatabricksPeople {
     pub fn schema() -> Vec<Field> {
         vec![
             Field {
-                name: "id".to_string(),
-                case_sensitive: false,
+                name: "id".into(),
                 columntype: ColumnType {
                     typ: SqlType::Int,
                     nullable: false,
@@ -643,8 +629,7 @@ impl DatabricksPeople {
                 },
             },
             Field {
-                name: "firstName".to_string(),
-                case_sensitive: false,
+                name: "firstName".into(),
                 columntype: ColumnType {
                     typ: SqlType::Varchar,
                     nullable: true,
@@ -657,8 +642,7 @@ impl DatabricksPeople {
                 },
             },
             Field {
-                name: "middleName".to_string(),
-                case_sensitive: false,
+                name: "middleName".into(),
                 columntype: ColumnType {
                     typ: SqlType::Varchar,
                     nullable: true,
@@ -671,8 +655,7 @@ impl DatabricksPeople {
                 },
             },
             Field {
-                name: "lastName".to_string(),
-                case_sensitive: false,
+                name: "lastName".into(),
                 columntype: ColumnType {
                     typ: SqlType::Varchar,
                     nullable: true,
@@ -685,8 +668,7 @@ impl DatabricksPeople {
                 },
             },
             Field {
-                name: "gender".to_string(),
-                case_sensitive: false,
+                name: "gender".into(),
                 columntype: ColumnType {
                     typ: SqlType::Varchar,
                     nullable: true,
@@ -699,8 +681,7 @@ impl DatabricksPeople {
                 },
             },
             Field {
-                name: "birthDate".to_string(),
-                case_sensitive: false,
+                name: "birthDate".into(),
                 columntype: ColumnType {
                     typ: SqlType::Timestamp,
                     nullable: true,
@@ -713,8 +694,7 @@ impl DatabricksPeople {
                 },
             },
             Field {
-                name: "ssn".to_string(),
-                case_sensitive: false,
+                name: "ssn".into(),
                 columntype: ColumnType {
                     typ: SqlType::Varchar,
                     nullable: true,
@@ -727,8 +707,7 @@ impl DatabricksPeople {
                 },
             },
             Field {
-                name: "salary".to_string(),
-                case_sensitive: false,
+                name: "salary".into(),
                 columntype: ColumnType {
                     typ: SqlType::Int,
                     nullable: true,

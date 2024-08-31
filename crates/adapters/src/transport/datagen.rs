@@ -15,7 +15,7 @@ use atomic::Atomic;
 use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime, Timelike};
 use dbsp::circuit::tokio::TOKIO;
-use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
+use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 use feldera_types::transport::datagen::{
     DatagenInputConfig, DatagenStrategy, GenerationPlan, RngFieldSettings,
 };
@@ -31,21 +31,24 @@ use rand_distr::{Distribution, Zipf};
 use serde_json::{to_writer, Map, Value};
 use tokio::sync::Notify;
 
-fn range_as_i64(field: &str, range: &Option<(Value, Value)>) -> AnyResult<Option<(i64, i64)>> {
+fn range_as_i64(
+    field: &SqlIdentifier,
+    range: &Option<(Value, Value)>,
+) -> AnyResult<Option<(i64, i64)>> {
     match range {
         None => Ok(None),
         Some((Value::Number(a), Value::Number(b))) => {
             let a = a
                 .as_i64()
-                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field))?;
+                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field.sql_name()))?;
             let b = b
                 .as_i64()
-                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field))?;
+                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field.sql_name()))?;
             Ok(Some((a, b)))
         }
         _ => Err(anyhow!(
             "Range values must be integers for field {:?}",
-            field
+            field.sql_name()
         )),
     }
 }
@@ -86,7 +89,7 @@ fn field_is_number(field: &Field, value: &Value) -> AnyResult<()> {
 /// Tries to parse a range as a date range which is days since UNIX epoch
 /// but we can specify either as a number or a string.
 fn parse_range_for_date(
-    field: &str,
+    field: &SqlIdentifier,
     range: &Option<(Value, Value)>,
 ) -> AnyResult<Option<(i64, i64)>> {
     match range {
@@ -94,19 +97,29 @@ fn parse_range_for_date(
         Some((Value::Number(a), Value::Number(b))) => {
             let a = a
                 .as_i64()
-                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field))?;
+                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field.sql_name()))?;
             let b = b
                 .as_i64()
-                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field))?;
+                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field.sql_name()))?;
             Ok(Some((a, b)))
         }
         Some((Value::String(a), Value::String(b))) => {
             let unix_date: NaiveDate = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
             let since = NaiveDate::signed_duration_since;
-            let a = NaiveDate::parse_from_str(a, "%Y-%m-%d")
-                .map_err(|e| anyhow!("Invalid min date range for field {:?}: {}", field, e))?;
-            let b = NaiveDate::parse_from_str(b, "%Y-%m-%d")
-                .map_err(|e| anyhow!("Invalid max date range for field {:?}: {}", field, e))?;
+            let a = NaiveDate::parse_from_str(a, "%Y-%m-%d").map_err(|e| {
+                anyhow!(
+                    "Invalid min date range for field {:?}: {}",
+                    field.sql_name(),
+                    e
+                )
+            })?;
+            let b = NaiveDate::parse_from_str(b, "%Y-%m-%d").map_err(|e| {
+                anyhow!(
+                    "Invalid max date range for field {:?}: {}",
+                    field.sql_name(),
+                    e
+                )
+            })?;
             Ok(Some((
                 since(a, unix_date).num_days(),
                 since(b, unix_date).num_days(),
@@ -114,13 +127,13 @@ fn parse_range_for_date(
         }
         _ => Err(anyhow!(
             "Range values must be integers or strings for field {:?}",
-            field
+            field.sql_name()
         )),
     }
 }
 
 fn parse_range_for_time(
-    field: &str,
+    field: &SqlIdentifier,
     range: &Option<(Value, Value)>,
 ) -> AnyResult<Option<(i64, i64)>> {
     match range {
@@ -128,17 +141,27 @@ fn parse_range_for_time(
         Some((Value::Number(a), Value::Number(b))) => {
             let a = a
                 .as_i64()
-                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field))?;
+                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field.sql_name()))?;
             let b = b
                 .as_i64()
-                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field))?;
+                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field.sql_name()))?;
             Ok(Some((a, b)))
         }
         Some((Value::String(a), Value::String(b))) => {
-            let a = NaiveTime::parse_from_str(a, "%H:%M:%S")
-                .map_err(|e| anyhow!("Invalid min time range for field {:?}: {}", field, e))?;
-            let b = NaiveTime::parse_from_str(b, "%H:%M:%S")
-                .map_err(|e| anyhow!("Invalid max time range for field {:?}: {}", field, e))?;
+            let a = NaiveTime::parse_from_str(a, "%H:%M:%S").map_err(|e| {
+                anyhow!(
+                    "Invalid min time range for field {:?}: {}",
+                    field.sql_name(),
+                    e
+                )
+            })?;
+            let b = NaiveTime::parse_from_str(b, "%H:%M:%S").map_err(|e| {
+                anyhow!(
+                    "Invalid max time range for field {:?}: {}",
+                    field.sql_name(),
+                    e
+                )
+            })?;
             Ok(Some((
                 a.num_seconds_from_midnight() as i64 * 1000,
                 b.num_seconds_from_midnight() as i64 * 1000,
@@ -146,13 +169,13 @@ fn parse_range_for_time(
         }
         _ => Err(anyhow!(
             "Range values must be integers or strings for field {:?}",
-            field
+            field.sql_name()
         )),
     }
 }
 
 fn parse_range_for_datetime(
-    field: &str,
+    field: &SqlIdentifier,
     range: &Option<(Value, Value)>,
 ) -> AnyResult<Option<(i64, i64)>> {
     match range {
@@ -160,22 +183,32 @@ fn parse_range_for_datetime(
         Some((Value::Number(a), Value::Number(b))) => {
             let a = a
                 .as_i64()
-                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field))?;
+                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field.sql_name()))?;
             let b = b
                 .as_i64()
-                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field))?;
+                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field.sql_name()))?;
             Ok(Some((a, b)))
         }
         Some((Value::String(a), Value::String(b))) => {
-            let a = DateTime::parse_from_rfc3339(a)
-                .map_err(|e| anyhow!("Invalid min datetime range for field {:?}: {}", field, e))?;
-            let b = DateTime::parse_from_rfc3339(b)
-                .map_err(|e| anyhow!("Invalid max datetime range for field {:?}: {}", field, e))?;
+            let a = DateTime::parse_from_rfc3339(a).map_err(|e| {
+                anyhow!(
+                    "Invalid min datetime range for field {:?}: {}",
+                    field.sql_name(),
+                    e
+                )
+            })?;
+            let b = DateTime::parse_from_rfc3339(b).map_err(|e| {
+                anyhow!(
+                    "Invalid max datetime range for field {:?}: {}",
+                    field.sql_name(),
+                    e
+                )
+            })?;
             Ok(Some((a.timestamp_millis(), b.timestamp_millis())))
         }
         _ => Err(anyhow!(
             "Range values must be integers or strings for field {:?}",
-            field
+            field.sql_name()
         )),
     }
 }
@@ -236,16 +269,10 @@ impl InputGenerator {
             let mut normalized_plan_names: HashMap<String, Box<RngFieldSettings>> =
                 HashMap::with_capacity(plan.fields.len());
             for (name, settings) in plan.fields.iter() {
-                if let Some(field) = schema.fields.iter().find(|f| {
-                    if f.case_sensitive {
-                        f.name.eq(name)
-                    } else {
-                        f.name.eq_ignore_ascii_case(name)
-                    }
-                }) {
+                if let Some(field) = schema.fields.iter().find(|f| f.name == name) {
                     // Replace the settings name with the field name which is either all lower case
                     // (case_sensitive = false) or the original case (case_sensitive = true) to store the settings.
-                    normalized_plan_names.insert(field.name.clone(), settings.clone());
+                    normalized_plan_names.insert(field.name.name(), settings.clone());
                 } else {
                     return Err(anyhow!(
                         "Field `{}` specified in datagen does not exist in the table schema.",
@@ -534,9 +561,11 @@ impl RecordGenerator {
 
         let default_settings = Box::<RngFieldSettings>::default();
         for field in fields {
-            let field_settings = settings.get(&field.name).unwrap_or(&default_settings);
+            let field_settings = settings
+                .get(&field.name.to_string())
+                .unwrap_or(&default_settings);
             let obj = map
-                .entry(field.name())
+                .entry(field.name.to_string())
                 .and_modify(|v| {
                     // If a `null_percentage` is set it can happen that a field in the
                     // map got set to NULL previously, however our generator methods
@@ -637,7 +666,7 @@ impl RecordGenerator {
         obj: &mut Value,
     ) -> AnyResult<()> {
         if let Value::Array(arr) = obj {
-            let range = range_as_i64(field.name.as_str(), &settings.range)?;
+            let range = range_as_i64(&field.name, &settings.range)?;
             if range.iter().any(|(a, b)| *a < 0 || *b < 0) {
                 return Err(anyhow!(
                     "Range for field `{:?}` must be positive.",
@@ -658,8 +687,7 @@ impl RecordGenerator {
             let value_settings = settings.value.clone().unwrap_or_default();
             let columntype = *field.columntype.component.as_ref().unwrap().clone();
             let arr_field = Field {
-                name: "array_element".to_string(),
-                case_sensitive: false,
+                name: SqlIdentifier::from("array_element"),
                 columntype,
             };
 
@@ -736,7 +764,7 @@ impl RecordGenerator {
         const MAX_TIME_VALUE: u64 = 86400000; // 24h in milliseconds
         if let Value::String(str) = obj {
             str.clear();
-            let range = parse_range_for_time(field.name.as_str(), &settings.range)?;
+            let range = parse_range_for_time(&field.name, &settings.range)?;
             if range.iter().any(|(a, b)| *a < 0 || *b < 0) {
                 return Err(anyhow!(
                     "Range for field `{:?}` must be positive.",
@@ -827,7 +855,7 @@ impl RecordGenerator {
         if let Value::String(str) = obj {
             str.clear();
 
-            let range = parse_range_for_date(field.name.as_str(), &settings.range)?;
+            let range = parse_range_for_date(&field.name, &settings.range)?;
             let (min, max) = range.unwrap_or((0, MAX_DATE_VALUE));
             if min >= max {
                 return Err(anyhow!(
@@ -930,7 +958,7 @@ impl RecordGenerator {
 
         if let Value::String(str) = obj {
             str.clear();
-            let range = parse_range_for_datetime(field.name.as_str(), &settings.range)?;
+            let range = parse_range_for_datetime(&field.name, &settings.range)?;
             let (min, max) = range.unwrap_or((0, MAX_DATETIME_VALUE)); // 4102444800 => 2100-01-01
             if min >= max {
                 return Err(anyhow!(
@@ -1034,7 +1062,7 @@ impl RecordGenerator {
 
         if let Value::String(str) = obj {
             str.clear();
-            let range = range_as_i64(field.name.as_str(), &settings.range)?;
+            let range = range_as_i64(&field.name, &settings.range)?;
 
             let (min, max) = range
                 .map(|(a, b)| (a.try_into().unwrap_or(0), b.try_into().unwrap_or(25)))
@@ -1262,7 +1290,7 @@ impl RecordGenerator {
             // rather than an i8
             u8::MAX as i64
         };
-        let range = range_as_i64(field.name.as_str(), &settings.range)?;
+        let range = range_as_i64(&field.name, &settings.range)?;
         if let Some((a, b)) = range {
             if a > b {
                 return Err(anyhow!(
@@ -1348,7 +1376,7 @@ impl RecordGenerator {
     ) -> AnyResult<()> {
         let min = N::min_value().to_f64().unwrap_or(f64::MIN);
         let max = N::max_value().to_f64().unwrap_or(f64::MAX);
-        let range = range_as_i64(field.name.as_str(), &settings.range)?;
+        let range = range_as_i64(&field.name, &settings.range)?;
 
         if let Some((a, b)) = range {
             if a > b {
@@ -1519,7 +1547,7 @@ mod test {
         T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
         U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     {
-        let relation = Relation::new("test_input", false, fields, true, BTreeMap::new());
+        let relation = Relation::new("test_input".into(), fields, true, BTreeMap::new());
         let (endpoint, consumer, zset) =
             mock_input_pipeline::<T, U>(serde_yaml::from_str(config_str).unwrap(), relation)?;
         endpoint.start(0)?;
@@ -1873,8 +1901,7 @@ transport:
     impl ByteStruct {
         pub fn schema() -> Vec<Field> {
             vec![Field {
-                name: "bs".to_string(),
-                case_sensitive: false,
+                name: "bs".into(),
                 columntype: ColumnType {
                     typ: SqlType::Varbinary,
                     nullable: false,
@@ -1980,8 +2007,7 @@ transport:
         pub fn schema() -> Vec<Field> {
             vec![
                 Field {
-                    name: "ts".to_string(),
-                    case_sensitive: false,
+                    name: "ts".into(),
                     columntype: ColumnType {
                         typ: SqlType::Timestamp,
                         nullable: false,
@@ -1994,8 +2020,7 @@ transport:
                     },
                 },
                 Field {
-                    name: "dt".to_string(),
-                    case_sensitive: false,
+                    name: "dt".into(),
                     columntype: ColumnType {
                         typ: SqlType::Date,
                         nullable: false,
@@ -2008,8 +2033,7 @@ transport:
                     },
                 },
                 Field {
-                    name: "t".to_string(),
-                    case_sensitive: true,
+                    name: "\"t\"".into(),
                     columntype: ColumnType {
                         typ: SqlType::Time,
                         nullable: false,

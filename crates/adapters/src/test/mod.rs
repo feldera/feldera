@@ -176,8 +176,7 @@ where
         let (input, hinput) = circuit.add_input_zset::<T>();
 
         let input_schema = serde_json::to_string(&Relation::new(
-            "test_input1",
-            false,
+            "test_input1".into(),
             schema.clone(),
             false,
             BTreeMap::new(),
@@ -185,8 +184,7 @@ where
         .unwrap();
 
         let output_schema = serde_json::to_string(&Relation::new(
-            "test_output1",
-            false,
+            "test_output1".into(),
             schema,
             false,
             BTreeMap::new(),
@@ -229,7 +227,7 @@ where
     let buffer = MockDeZSet::<T, T>::new();
 
     // Input parsers don't care about schema yet.
-    let schema = Relation::new("mock_schema", false, vec![], false, BTreeMap::new());
+    let schema = Relation::new("mock_schema".into(), vec![], false, BTreeMap::new());
 
     let mut parser = format
         .new_parser(

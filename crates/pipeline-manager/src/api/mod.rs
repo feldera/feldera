@@ -204,6 +204,7 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::program_schema::IntervalUnit,
         feldera_types::program_schema::SourcePosition,
         feldera_types::program_schema::PropertyValue,
+        feldera_types::program_schema::SqlIdentifier,
         feldera_types::error::ErrorResponse,
 
         // Configuration

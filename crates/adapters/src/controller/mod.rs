@@ -95,7 +95,7 @@ pub use feldera_types::config::{
     RuntimeConfig, TransportConfig,
 };
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
-use feldera_types::program_schema::canonical_identifier;
+use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
 pub use stats::{ControllerStatus, InputEndpointStatus, OutputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit
@@ -1129,11 +1129,8 @@ impl ControllerInner {
         // Sync feldera catalog with datafusion catalog
         for (name, clh) in catalog.output_iter() {
             if clh.integrate_handle.is_some() {
-                debug!("registering datafusion table: name={}", clh.schema.name());
-                let typ = if catalog
-                    .input_collection_handle(&clh.schema.name())
-                    .is_some()
-                {
+                debug!("registering datafusion table: name={}", clh.schema.name);
+                let typ = if catalog.input_collection_handle(&clh.schema.name).is_some() {
                     TableType::Base
                 } else {
                     TableType::View
@@ -1142,7 +1139,7 @@ impl ControllerInner {
                 let arrow_fields = relation_to_arrow_fields(&clh.schema.fields, false);
                 let adhoc_tbl = Arc::new(AdHocTable::new(
                     typ,
-                    clh.schema.name().to_string(),
+                    clh.schema.name.to_string(),
                     Arc::new(Schema::new(arrow_fields)),
                     self.trace_snapshot.clone(),
                 ));
@@ -1150,7 +1147,7 @@ impl ControllerInner {
                 // This should never fail (we're not registering the same table twice).
                 let r = self
                     .session_ctxt
-                    .register_table(clh.schema.name().to_string(), adhoc_tbl)
+                    .register_table(clh.schema.name.sql_name(), adhoc_tbl)
                     .expect("table registration failed");
                 assert!(r.is_none(), "table {name} already registered");
             }
@@ -1228,7 +1225,7 @@ impl ControllerInner {
 
         let catalog = self.catalog.lock().unwrap();
         let input_handle = catalog
-            .input_collection_handle(&endpoint_config.stream)
+            .input_collection_handle(&SqlIdentifier::from(&endpoint_config.stream))
             .ok_or_else(|| {
                 ControllerError::unknown_input_stream(endpoint_name, &endpoint_config.stream)
             })?;
@@ -1412,7 +1409,10 @@ impl ControllerInner {
             .catalog
             .lock()
             .unwrap()
-            .output_query_handles(&endpoint_config.stream, endpoint_config.query)
+            .output_query_handles(
+                &SqlIdentifier::from(&endpoint_config.stream),
+                endpoint_config.query,
+            )
             .ok_or_else(|| {
                 ControllerError::unknown_output_stream(endpoint_name, &endpoint_config.stream)
             })?;
