@@ -371,6 +371,41 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                     },
                 );
         }
+        Some(PipelineAction::Restart { recompile }) => {
+            let _r = client
+                .post_pipeline_action()
+                .pipeline_name(name)
+                .action("shutdown")
+                .send()
+                .await
+                .map_err(handle_errors_fatal("Failed to stop pipeline", 1))
+                .unwrap();
+
+            let mut print_every_30_seconds = tokio::time::Instant::now();
+            let mut shutting_down = true;
+            while shutting_down {
+                let pc = client
+                    .get_pipeline()
+                    .pipeline_name(name)
+                    .send()
+                    .await
+                    .map_err(handle_errors_fatal("Failed to get program config", 1))
+                    .unwrap();
+                shutting_down = !matches!(pc.deployment_status, PipelineStatus::Shutdown);
+                if print_every_30_seconds.elapsed().as_secs() > 30 {
+                    info!("Shutting down the pipeline...");
+                    print_every_30_seconds = tokio::time::Instant::now();
+                }
+            }
+            println!("Pipeline shutdown successful.");
+
+            let _ = Box::pin(pipeline(
+                name,
+                Some(PipelineAction::Start { recompile }),
+                client,
+            ))
+            .await;
+        }
         Some(PipelineAction::Shutdown) => {
             client
                 .post_pipeline_action()
@@ -396,7 +431,11 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                 .map_or_else(
                     handle_errors_fatal("Failed to get pipeline stats", 1),
                     |response| {
-                        println!("{:#?}", response);
+                        println!(
+                            "{}",
+                            serde_json::to_string(response.as_ref())
+                                .expect("Failed to serialize pipeline stats")
+                        );
                         std::process::exit(0);
                     },
                 );
@@ -515,6 +554,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
             endpoint_name,
             action,
         }) => endpoint(name, endpoint_name.as_str(), action, client).await,
+        Some(PipelineAction::Shell) => unimplemented!(),
         None => {
             client
                 .get_pipeline()

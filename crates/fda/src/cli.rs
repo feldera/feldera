@@ -169,6 +169,16 @@ pub enum PipelineAction {
     },
     /// Pause the pipeline.
     Pause,
+    /// Shutdown the pipeline, then restart it.
+    ///
+    /// This is a shortcut for calling `fda pipeline p1 shutdown` followed by `fda pipeline p1 start`.
+    Restart {
+        /// Force the recompilation of the pipeline before starting.
+        ///
+        /// This is useful for dev purposes in case the Feldera source-code has changed.
+        #[arg(long, short = 'r', default_value_t = false)]
+        recompile: bool,
+    },
     /// Shutdown the pipeline.
     #[clap(aliases = &["stop"])]
     Shutdown,
@@ -204,6 +214,8 @@ pub enum PipelineAction {
         #[command(subcommand)]
         action: EndpointAction,
     },
+    /// Enter the ad-hoc SQL shell of the pipeline.
+    Shell,
 }
 
 #[derive(Subcommand)]
