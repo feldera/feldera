@@ -27,6 +27,7 @@ use datafusion::error::DataFusionError;
 use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
+use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::{format::json::JsonFlavor, transport::http::EgressMode};
 use feldera_types::{
     query::{AdHocQueryFormat, AdhocQueryArgs, OutputQuery},
@@ -1032,7 +1033,7 @@ async fn output_endpoint(
                         .catalog()
                         .lock()
                         .unwrap()
-                        .output_handles(&config.stream)
+                        .output_handles(&SqlIdentifier::from(config.stream))
                         // The following `unwrap` is safe because `table_name` was previously
                         // validated by `add_output_endpoint`.
                         .unwrap()
@@ -1057,7 +1058,7 @@ async fn output_endpoint(
                         .catalog()
                         .lock()
                         .unwrap()
-                        .output_handles(&config.stream)
+                        .output_handles(&SqlIdentifier::from(config.stream))
                         .unwrap()
                         .num_quantiles_handle
                         .as_ref()

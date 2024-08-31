@@ -710,13 +710,15 @@ mod test {
         })
         .unwrap();
 
-        let input_map_handle = catalog.input_collection_handle("iNpUt_map").unwrap();
+        let input_map_handle = catalog
+            .input_collection_handle(&("iNpUt_map".into()))
+            .unwrap();
         let mut input_stream_handle = input_map_handle
             .handle
             .configure_deserializer(RECORD_FORMAT.clone())
             .unwrap();
 
-        let output_stream_handles = catalog.output_handles("Input_map").unwrap();
+        let output_stream_handles = catalog.output_handles(&("Input_map".into())).unwrap();
 
         // Step 1: insert a couple of values.
 

@@ -6,7 +6,7 @@ use feldera_types::config::{
     ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
     TransportConfig,
 };
-use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition};
+use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition, SqlIdentifier};
 use log::error;
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
@@ -324,14 +324,14 @@ struct NamedConnector {
 /// It also returns the originating property value it parsed, which is used for error reporting
 /// later on.
 fn parse_named_connectors(
-    relation: String,
+    relation: SqlIdentifier,
     properties: &BTreeMap<String, PropertyValue>,
 ) -> Result<(Vec<NamedConnector>, Option<PropertyValue>), ConnectorGenerationError> {
     for (key, value) in properties.iter() {
         if key != "connectors" && key != "materialized" {
             return Err(ConnectorGenerationError::PropertyDoesNotExist {
                 position: value.key_position,
-                relation,
+                relation: relation.sql_name(),
                 key: key.to_string(),
             });
         }
@@ -342,7 +342,7 @@ fn parse_named_connectors(
                 serde_json::from_str::<Vec<NamedConnector>>(&value.value).map_err(|e| {
                     ConnectorGenerationError::InvalidPropertyValue {
                         position: value.value_position,
-                        relation: relation.clone(),
+                        relation: relation.sql_name(),
                         key: "connectors".to_string(),
                         value: value.value.clone(),
                         reason: Box::new(format!(
@@ -355,7 +355,7 @@ fn parse_named_connectors(
                     validate_name(name).map_err(|e| {
                         ConnectorGenerationError::InvalidPropertyValue {
                             position: value.value_position,
-                            relation: relation.clone(),
+                            relation: relation.sql_name(),
                             key: "connectors".to_string(),
                             value: value.value.clone(),
                             reason: Box::new(format!("connector name '{name}' is not valid: {e}")),
@@ -481,7 +481,7 @@ pub fn generate_program_info_from_schema(
     let mut input_connectors = vec![];
     for input_relation in &program_schema.inputs {
         let (connectors, origin_value) =
-            parse_named_connectors(input_relation.name(), &input_relation.properties)?;
+            parse_named_connectors(input_relation.name.clone(), &input_relation.properties)?;
         for connector in connectors {
             let origin_value = origin_value
                 .clone()
@@ -498,13 +498,13 @@ pub fn generate_program_info_from_schema(
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedInputConnector {
                         position: origin_value.value_position,
-                        relation: input_relation.name(),
+                        relation: input_relation.name.sql_name(),
                         connector_name: connector.name.unwrap_or("<unnamed>".to_string()),
                     });
                 }
             }
             input_connectors.push((
-                input_relation.name(),
+                input_relation.name.name(),
                 connector.name,
                 connector.config,
                 origin_value,
@@ -531,7 +531,7 @@ pub fn generate_program_info_from_schema(
     let mut output_connectors = vec![];
     for output_relation in &program_schema.outputs {
         let (connectors, origin_value) =
-            parse_named_connectors(output_relation.name(), &output_relation.properties)?;
+            parse_named_connectors(output_relation.name.clone(), &output_relation.properties)?;
         for connector in connectors {
             let origin_value = origin_value
                 .clone()
@@ -543,13 +543,13 @@ pub fn generate_program_info_from_schema(
                 _ => {
                     return Err(ConnectorGenerationError::ExpectedOutputConnector {
                         position: origin_value.value_position,
-                        relation: output_relation.name(),
+                        relation: output_relation.name.sql_name(),
                         connector_name: connector.name.unwrap_or("<unnamed>".to_string()),
                     });
                 }
             }
             output_connectors.push((
-                output_relation.name(),
+                output_relation.name.name(),
                 connector.name,
                 connector.config,
                 origin_value,

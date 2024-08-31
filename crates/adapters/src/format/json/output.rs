@@ -547,8 +547,7 @@ mod test {
             Box::new(consumer),
             config,
             &Relation::new(
-                "TestStruct",
-                false,
+                "TestStruct".into(),
                 TestStruct::schema(),
                 false,
                 BTreeMap::new(),
@@ -746,8 +745,7 @@ mod test {
             Box::new(consumer),
             config,
             &Relation::new(
-                "TestStruct",
-                false,
+                "TestStruct".into(),
                 TestStruct::schema(),
                 false,
                 BTreeMap::new(),
@@ -780,8 +778,7 @@ mod test {
                 "TestStruct",
                 &serde_yaml::to_value(&config).unwrap(),
                 &Relation::new(
-                    "TestStruct",
-                    false,
+                    "TestStruct".into(),
                     TestStruct::schema(),
                     false,
                     BTreeMap::new(),

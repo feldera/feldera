@@ -10,8 +10,7 @@ use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
 use arrow::record_batch::RecordBatch;
 use dbsp::{utils::Tup2, InputHandle};
 use feldera_types::format::json::JsonFlavor;
-use feldera_types::program_schema::canonical_identifier;
-use feldera_types::program_schema::Relation;
+use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::query::OutputQuery;
 use feldera_types::serde_with_context::SqlSerdeConfig;
 use feldera_types::serialize_struct;
@@ -496,15 +495,21 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
 /// A catalog of input and output stream handles of a circuit.
 pub trait CircuitCatalog: Send {
     /// Look up an input stream handle by name.
-    fn input_collection_handle(&self, name: &str) -> Option<&InputCollectionHandle>;
+    fn input_collection_handle(&self, name: &SqlIdentifier) -> Option<&InputCollectionHandle>;
 
-    fn output_iter(&self) -> Box<dyn Iterator<Item = (&String, &OutputCollectionHandles)> + '_>;
+    fn output_iter(
+        &self,
+    ) -> Box<dyn Iterator<Item = (&SqlIdentifier, &OutputCollectionHandles)> + '_>;
 
     /// Look up output stream handles by name.
-    fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles>;
+    fn output_handles(&self, name: &SqlIdentifier) -> Option<&OutputCollectionHandles>;
 
     /// Look up output query handles by stream name and query type.
-    fn output_query_handles(&self, name: &str, query: OutputQuery) -> Option<OutputQueryHandles> {
+    fn output_query_handles(
+        &self,
+        name: &SqlIdentifier,
+        query: OutputQuery,
+    ) -> Option<OutputQueryHandles> {
         self.output_handles(name).map(|handles| match query {
             OutputQuery::Table => OutputQueryHandles {
                 schema: handles.schema.clone(),
@@ -536,8 +541,8 @@ pub trait CircuitCatalog: Send {
 
 /// Circuit catalog implementation.
 pub struct Catalog {
-    input_collection_handles: BTreeMap<String, InputCollectionHandle>,
-    output_batch_handles: BTreeMap<String, OutputCollectionHandles>,
+    input_collection_handles: BTreeMap<SqlIdentifier, InputCollectionHandle>,
+    output_batch_handles: BTreeMap<SqlIdentifier, OutputCollectionHandles>,
 }
 
 impl Default for Catalog {
@@ -558,11 +563,11 @@ impl Catalog {
         &mut self,
         handle: InputCollectionHandle,
     ) -> Result<(), ControllerError> {
-        let name = handle.schema.name();
-        if self.input_collection_handles.contains_key(&name) {
-            return Err(ControllerError::duplicate_input_stream(&name));
+        let name = &handle.schema.name;
+        if self.input_collection_handles.contains_key(name) {
+            return Err(ControllerError::duplicate_input_stream(&name.sql_name()));
         }
-        self.input_collection_handles.insert(name, handle);
+        self.input_collection_handles.insert(name.clone(), handle);
 
         Ok(())
     }
@@ -571,11 +576,11 @@ impl Catalog {
         &mut self,
         handles: OutputCollectionHandles,
     ) -> Result<(), ControllerError> {
-        let name = handles.schema.name();
-        if self.output_batch_handles.contains_key(&name) {
-            return Err(ControllerError::duplicate_output_stream(&name));
+        let name = &handles.schema.name;
+        if self.output_batch_handles.contains_key(name) {
+            return Err(ControllerError::duplicate_output_stream(&name.sql_name()));
         }
-        self.output_batch_handles.insert(name, handles);
+        self.output_batch_handles.insert(name.clone(), handles);
 
         Ok(())
     }
@@ -583,17 +588,18 @@ impl Catalog {
 
 impl CircuitCatalog for Catalog {
     /// Look up an input stream handle by name.
-    fn input_collection_handle(&self, name: &str) -> Option<&InputCollectionHandle> {
-        self.input_collection_handles
-            .get(&canonical_identifier(name))
+    fn input_collection_handle(&self, name: &SqlIdentifier) -> Option<&InputCollectionHandle> {
+        self.input_collection_handles.get(name)
     }
 
     /// Look up output stream handles by name.
-    fn output_handles(&self, name: &str) -> Option<&OutputCollectionHandles> {
-        self.output_batch_handles.get(&canonical_identifier(name))
+    fn output_handles(&self, name: &SqlIdentifier) -> Option<&OutputCollectionHandles> {
+        self.output_batch_handles.get(name)
     }
 
-    fn output_iter(&self) -> Box<dyn Iterator<Item = (&String, &OutputCollectionHandles)> + '_> {
+    fn output_iter(
+        &self,
+    ) -> Box<dyn Iterator<Item = (&SqlIdentifier, &OutputCollectionHandles)> + '_> {
         Box::new(self.output_batch_handles.iter())
     }
 }

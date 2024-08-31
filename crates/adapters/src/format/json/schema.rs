@@ -51,9 +51,7 @@ pub fn build_key_schema(config: &JsonEncoderConfig, schema: &Relation) -> Option
 /// types can have additional parameters, e.g., scale and precision for
 /// decimals.
 mod kafka_connect_json_converter {
-    use feldera_types::program_schema::{
-        canonical_identifier, ColumnType, Field, Relation, SqlType,
-    };
+    use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
 
@@ -176,12 +174,7 @@ mod kafka_connect_json_converter {
         let mut fields = Vec::new();
 
         for field in schema.fields.iter() {
-            if key_fields.is_none()
-                || key_fields
-                    .unwrap()
-                    .iter()
-                    .any(|f| canonical_identifier(f) == field.name())
-            {
+            if key_fields.is_none() || key_fields.unwrap().iter().any(|f| field.name == f) {
                 fields.push(field_schema(field))
             }
         }
@@ -194,7 +187,7 @@ mod kafka_connect_json_converter {
 
     fn field_schema(schema: &Field) -> JsonField {
         JsonField {
-            field: schema.name.clone(),
+            field: schema.name.name().clone(),
             schema: type_schema(&schema.columntype),
         }
     }

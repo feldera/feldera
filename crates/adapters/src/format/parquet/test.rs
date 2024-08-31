@@ -85,7 +85,7 @@ format:
     // Send the data through the mock pipeline
     let (endpoint, consumer, zset) = mock_input_pipeline::<TestStruct2, TestStruct2>(
         serde_yaml::from_str(&config_str).unwrap(),
-        Relation::new("test", false, TestStruct2::schema(), false, BTreeMap::new()),
+        Relation::new("test".into(), TestStruct2::schema(), false, BTreeMap::new()),
     )
     .unwrap();
     sleep(Duration::from_millis(10));
@@ -119,8 +119,7 @@ fn parquet_output() {
         Box::new(consumer),
         config,
         Relation::new(
-            "TestStruct2",
-            false,
+            "TestStruct2".into(),
             TestStruct2::schema(),
             false,
             BTreeMap::new(),

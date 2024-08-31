@@ -2561,23 +2561,23 @@
         }
       },
       "Field": {
-        "type": "object",
-        "description": "A SQL field.\n\nMatches the SQL compiler JSON format.",
-        "required": [
-          "name",
-          "columntype"
-        ],
-        "properties": {
-          "case_sensitive": {
-            "type": "boolean"
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SqlIdentifier"
           },
-          "columntype": {
-            "$ref": "#/components/schemas/ColumnType"
-          },
-          "name": {
-            "type": "string"
+          {
+            "type": "object",
+            "required": [
+              "columntype"
+            ],
+            "properties": {
+              "columntype": {
+                "$ref": "#/components/schemas/ColumnType"
+              }
+            }
           }
-        }
+        ],
+        "description": "A SQL field.\n\nMatches the SQL compiler JSON format."
       },
       "FileInputConfig": {
         "type": "object",
@@ -3580,35 +3580,35 @@
         }
       },
       "Relation": {
-        "type": "object",
-        "description": "A SQL table or view. It has a name and a list of fields.\n\nMatches the Calcite JSON format.",
-        "required": [
-          "name",
-          "fields"
-        ],
-        "properties": {
-          "case_sensitive": {
-            "type": "boolean"
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SqlIdentifier"
           },
-          "fields": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Field"
-            }
-          },
-          "materialized": {
-            "type": "boolean"
-          },
-          "name": {
-            "type": "string"
-          },
-          "properties": {
+          {
             "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/PropertyValue"
+            "required": [
+              "fields"
+            ],
+            "properties": {
+              "fields": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Field"
+                }
+              },
+              "materialized": {
+                "type": "boolean"
+              },
+              "properties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/PropertyValue"
+                }
+              }
             }
           }
-        }
+        ],
+        "description": "A SQL table or view. It has a name and a list of fields.\n\nMatches the Calcite JSON format."
       },
       "ResourceConfig": {
         "type": "object",
@@ -3872,6 +3872,22 @@
           },
           "warning": {
             "type": "boolean"
+          }
+        }
+      },
+      "SqlIdentifier": {
+        "type": "object",
+        "description": "An SQL identifier.\n\nThis struct is used to represent SQL identifiers in a canonical form.\nWe store table names or field names as identifiers in the schema.",
+        "required": [
+          "name",
+          "case_sensitive"
+        ],
+        "properties": {
+          "case_sensitive": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },
