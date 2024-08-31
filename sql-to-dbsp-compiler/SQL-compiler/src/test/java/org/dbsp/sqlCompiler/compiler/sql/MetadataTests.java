@@ -315,14 +315,14 @@ public class MetadataTests extends BaseSQLTests {
         createInputFile(implementation,
                 System.lineSeparator(),
                 "use sqllib::*;",
-                "pub fn CONTAINS_NUMBER(pos: &SourcePositionRange, str: String, value: Option<i32>) -> " +
+                "pub fn CONTAINS_NUMBER(str: String, value: Option<i32>) -> " +
                         "   Result<bool, Box<dyn std::error::Error>> {",
                 "   match value {",
-                "      None => Err(format!(\"{}: null value\", pos).into()),",
+                "      None => Err(\"null value\".into()),",
                 "      Some(value) => Ok(str.contains(&format!(\"{}\", value).to_string())),",
                 "   }",
                 "}",
-                "pub fn empty(pos: &SourcePositionRange) -> Result<Option<String>, Box<dyn std::error::Error>> {",
+                "pub fn empty() -> Result<Option<String>, Box<dyn std::error::Error>> {",
                 "   Ok(Some(\"\".to_string()))",
                 "}");
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, "--udf",
