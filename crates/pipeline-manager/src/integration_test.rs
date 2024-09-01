@@ -1883,6 +1883,8 @@ async fn pipeline_name_invalid() {
 #[serial]
 async fn pipeline_adhoc_query() {
     const PROGRAM: &str = r#"
+CREATE TABLE "TaBle1"(id bigint not null) with ('materialized' = 'true');
+
 CREATE TABLE t1 (
     id INT NOT NULL,
     dt DATE NOT NULL
@@ -1973,17 +1975,33 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
     assert!(!b1_body.is_empty());
     assert_eq!(b1_body, b2_body);
 
+    // Handle table casing
+    let mut r = config
+        .adhoc_query(
+            "/v0/pipelines/test/query",
+            "SELECT * FROM \"TaBle1\"",
+            "text",
+        )
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
+    let b = r.body().await.unwrap();
+    assert!(!b.is_empty());
+
     // Invalid SQL retruns 400
-    let r3 = config
+    let r = config
         .adhoc_query(
             "/v0/pipelines/test/query",
             "SELECT * FROM invalid_table",
             "text",
         )
         .await;
-    assert_eq!(r3.status(), StatusCode::BAD_REQUEST);
-    let r3 = config
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+    let r = config
         .adhoc_query("/v0/pipelines/test/query", "SELECT 1/0", "text")
         .await;
-    assert_eq!(r3.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+    let mut r = config
+        .adhoc_query("/v0/pipelines/test/query", "SELECT * FROM table1", "text")
+        .await;
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST);
 }

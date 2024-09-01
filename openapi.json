@@ -1582,7 +1582,7 @@
             "description": "Input data format, e.g., 'text', 'json' or 'parquet'.",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/AdHocQueryFormat"
+              "$ref": "#/components/schemas/AdHocResultFormat"
             }
           }
         ],
@@ -1822,7 +1822,7 @@
   },
   "components": {
     "schemas": {
-      "AdHocQueryFormat": {
+      "AdHocResultFormat": {
         "type": "string",
         "description": "URL-encoded `format` argument to the `/query` endpoint.",
         "enum": [
@@ -1839,7 +1839,7 @@
         ],
         "properties": {
           "format": {
-            "$ref": "#/components/schemas/AdHocQueryFormat"
+            "$ref": "#/components/schemas/AdHocResultFormat"
           },
           "sql": {
             "type": "string",

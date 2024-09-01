@@ -5,33 +5,33 @@ use utoipa::ToSchema;
 /// URL-encoded `format` argument to the `/query` endpoint.
 #[derive(Debug, Deserialize, PartialEq, Clone, Copy, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum AdHocQueryFormat {
-    /// Print results as a human-readable text table.
+pub enum AdHocResultFormat {
+    /// Serialize results as a human-readable text table.
     Text,
-    /// Print results as new-line delimited JSON records.
+    /// Serialize results as new-line delimited JSON records.
     Json,
     /// Downloads results in a parquet file.
     Parquet,
 }
 
-impl Display for AdHocQueryFormat {
+impl Display for AdHocResultFormat {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            AdHocQueryFormat::Text => write!(f, "text"),
-            AdHocQueryFormat::Json => write!(f, "json"),
-            AdHocQueryFormat::Parquet => write!(f, "parquet"),
+            AdHocResultFormat::Text => write!(f, "text"),
+            AdHocResultFormat::Json => write!(f, "json"),
+            AdHocResultFormat::Parquet => write!(f, "parquet"),
         }
     }
 }
 
-impl Default for AdHocQueryFormat {
+impl Default for AdHocResultFormat {
     fn default() -> Self {
         Self::Text
     }
 }
 
-fn default_format() -> AdHocQueryFormat {
-    AdHocQueryFormat::default()
+fn default_format() -> AdHocResultFormat {
+    AdHocResultFormat::default()
 }
 
 /// URL-encoded arguments to the `/query` endpoint.
@@ -41,7 +41,7 @@ pub struct AdhocQueryArgs {
     pub sql: String,
     /// In what format the data is sent to the client.
     #[serde(default = "default_format")]
-    pub format: AdHocQueryFormat,
+    pub format: AdHocResultFormat,
 }
 
 /// A query over an output stream.

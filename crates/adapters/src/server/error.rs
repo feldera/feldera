@@ -197,9 +197,22 @@ impl From<ControllerError> for PipelineError {
 
 impl From<DataFusionError> for PipelineError {
     fn from(error: DataFusionError) -> Self {
-        Self::AdHocQueryError {
-            error: error.to_string(),
-            df: Some(error),
+        match &error {
+            DataFusionError::Plan(s) => {
+                let mut msg = s.to_string();
+                if s.contains("table") && s.contains("not found") {
+                    msg += ". If the table/view exists make sure it is configured as materialized \
+(use `with ('materialized' = 'true')` for tables, or `create materialized view`)";
+                }
+                Self::AdHocQueryError {
+                    error: msg,
+                    df: Some(error),
+                }
+            }
+            _ => Self::AdHocQueryError {
+                error: error.to_string(),
+                df: Some(error),
+            },
         }
     }
 }

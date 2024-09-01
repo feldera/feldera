@@ -30,7 +30,7 @@ use env_logger::Env;
 use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::{format::json::JsonFlavor, transport::http::EgressMode};
 use feldera_types::{
-    query::{AdHocQueryFormat, AdhocQueryArgs, OutputQuery},
+    query::{AdHocResultFormat, AdhocQueryArgs, OutputQuery},
     transport::http::SERVER_PORT_FILE,
 };
 use futures_util::FutureExt;
@@ -554,7 +554,7 @@ async fn query(state: WebData<ServerState>, args: Query<AdhocQueryArgs>) -> impl
             let response = df.collect().await?;
 
             match args.format {
-                AdHocQueryFormat::Text => {
+                AdHocResultFormat::Text => {
                     let pretty_results = arrow::util::pretty::pretty_format_batches(&response)
                         .map_err(DataFusionError::from)?
                         .to_string();
@@ -562,8 +562,8 @@ async fn query(state: WebData<ServerState>, args: Query<AdhocQueryArgs>) -> impl
                         .content_type(mime::TEXT_PLAIN)
                         .body(pretty_results))
                 }
-                AdHocQueryFormat::Json => {
-                    let mut buf = Vec::with_capacity(1024);
+                AdHocResultFormat::Json => {
+                    let mut buf = Vec::with_capacity(4096);
                     let mut writer = LineDelimitedWriter::new(&mut buf);
                     writer
                         .write_batches(response.iter().collect::<Vec<&RecordBatch>>().as_slice())
@@ -574,7 +574,7 @@ async fn query(state: WebData<ServerState>, args: Query<AdhocQueryArgs>) -> impl
                         .content_type(mime::APPLICATION_JSON)
                         .body(buf))
                 }
-                AdHocQueryFormat::Parquet => {
+                AdHocResultFormat::Parquet => {
                     let mut buf = Vec::with_capacity(4096);
                     let writer_properties = WriterProperties::builder().build();
                     let schema = response[0].schema();
