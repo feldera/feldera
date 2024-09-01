@@ -97,7 +97,7 @@ pub async fn shell(name: &str, client: Client) {
                 }
             }
             Err(ReadlineError::Interrupted) => {
-                break;
+                continue;
             }
             Err(ReadlineError::Eof) => {
                 break;
