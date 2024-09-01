@@ -113,18 +113,14 @@ async fn api_key_commands(action: ApiKeyActions, client: Client) {
     match action {
         ApiKeyActions::Create { name } => {
             debug!("Creating API key: {}", name);
-            client
+            let response = client
                 .create_api_key()
                 .body(NewApiKeyRequest { name })
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to create API key", 1),
-                    |response| {
-                        println!("API key '{}' created: {}", response.name, response.api_key);
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to create API key", 1))
+                .unwrap();
+            println!("API key '{}' created: {}", response.name, response.api_key);
         }
         ApiKeyActions::Delete { name } => {
             debug!("Deleting API key: {}", name);
@@ -133,27 +129,26 @@ async fn api_key_commands(action: ApiKeyActions, client: Client) {
                 .api_key_name(name.as_str())
                 .send()
                 .await
-                .map_or_else(handle_errors_fatal("Failed to delete API key", 1), |_| {
-                    println!("API key '{}' deleted", name);
-                    std::process::exit(0);
-                });
+                .map_err(handle_errors_fatal("Failed to delete API key", 1))
+                .unwrap();
+            println!("API key '{}' deleted", name);
         }
         ApiKeyActions::List => {
             debug!("Listing API keys");
-            client.list_api_keys().send().await.map_or_else(
-                handle_errors_fatal("Failed to list API keys", 1),
-                |response| {
-                    let mut rows = vec![];
-                    rows.push(["name".to_string(), "id".to_string()]);
-                    for key in response.iter() {
-                        rows.push([key.name.to_string(), key.id.0.to_string()]);
-                    }
-                    println!(
-                        "{}",
-                        Builder::from_iter(rows).build().with(Style::rounded())
-                    );
-                    std::process::exit(0);
-                },
+            let response = client
+                .list_api_keys()
+                .send()
+                .await
+                .map_err(handle_errors_fatal("Failed to list API keys", 1))
+                .unwrap();
+            let mut rows = vec![];
+            rows.push(["name".to_string(), "id".to_string()]);
+            for key in response.iter() {
+                rows.push([key.name.to_string(), key.id.0.to_string()]);
+            }
+            println!(
+                "{}",
+                Builder::from_iter(rows).build().with(Style::rounded())
             );
         }
     }
@@ -161,23 +156,23 @@ async fn api_key_commands(action: ApiKeyActions, client: Client) {
 
 async fn pipelines(client: Client) {
     debug!("Listing pipelines");
-    client.list_pipelines().send().await.map_or_else(
-        handle_errors_fatal("Failed to list pipelines", 1),
-        |response| {
-            let mut rows = vec![];
-            rows.push(["name".to_string(), "status".to_string()]);
-            for pipeline in response.iter() {
-                rows.push([
-                    pipeline.name.to_string(),
-                    pipeline.deployment_status.to_string(),
-                ]);
-            }
-            println!(
-                "{}",
-                Builder::from_iter(rows).build().with(Style::rounded())
-            );
-            std::process::exit(0);
-        },
+    let response = client
+        .list_pipelines()
+        .send()
+        .await
+        .map_err(handle_errors_fatal("Failed to list pipelines", 1))
+        .unwrap();
+    let mut rows = vec![];
+    rows.push(["name".to_string(), "status".to_string()]);
+    for pipeline in response.iter() {
+        rows.push([
+            pipeline.name.to_string(),
+            pipeline.deployment_status.to_string(),
+        ]);
+    }
+    println!(
+        "{}",
+        Builder::from_iter(rows).build().with(Style::rounded())
     );
 }
 
@@ -263,7 +258,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
             stdin,
         }) => {
             if let Ok(program_code) = read_program_code(program_path, stdin).await {
-                client
+                let response = client
                     .post_pipeline()
                     .body(PipelineDescr {
                         description: "".to_string(),
@@ -274,14 +269,10 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                     })
                     .send()
                     .await
-                    .map_or_else(
-                        handle_errors_fatal("Failed to create pipeline", 1),
-                        |response| {
-                            println!("Pipeline created successfully.");
-                            debug!("{:#?}", response);
-                            std::process::exit(0);
-                        },
-                    );
+                    .map_err(handle_errors_fatal("Failed to create pipeline", 1))
+                    .unwrap();
+                println!("Pipeline created successfully.");
+                debug!("{:#?}", response);
             } else {
                 // Already reported error in read_program_code.
                 std::process::exit(1);
@@ -342,36 +333,28 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                 sleep(Duration::from_millis(500)).await;
             }
 
-            client
+            let response = client
                 .post_pipeline_action()
                 .pipeline_name(name)
                 .action("start")
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to start pipeline", 1),
-                    |response| {
-                        println!("Pipeline started successfully.");
-                        trace!("{:#?}", response);
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to start pipeline", 1))
+                .unwrap();
+            println!("Pipeline started successfully.");
+            trace!("{:#?}", response);
         }
         Some(PipelineAction::Pause) => {
-            client
+            let response = client
                 .post_pipeline_action()
                 .pipeline_name(name)
                 .action("pause")
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to pause pipeline", 1),
-                    |response| {
-                        println!("Pipeline paused successfully.");
-                        trace!("{:#?}", response);
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to pause pipeline", 1))
+                .unwrap();
+            println!("Pipeline paused successfully.");
+            trace!("{:#?}", response);
         }
         Some(PipelineAction::Restart { recompile }) => {
             let _r = client
@@ -410,108 +393,89 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
             .await;
         }
         Some(PipelineAction::Shutdown) => {
-            client
+            let response = client
                 .post_pipeline_action()
                 .pipeline_name(name)
                 .action("shutdown")
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to stop pipeline", 1),
-                    |response| {
-                        println!("Pipeline shutdown successful.");
-                        trace!("{:#?}", response);
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to stop pipeline", 1))
+                .unwrap();
+            println!("Pipeline shutdown successful.");
+            trace!("{:#?}", response);
         }
         Some(PipelineAction::Stats) => {
-            client
+            let response = client
                 .get_pipeline_stats()
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to get pipeline stats", 1),
-                    |response| {
-                        println!(
-                            "{}",
-                            serde_json::to_string(response.as_ref())
-                                .expect("Failed to serialize pipeline stats")
-                        );
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to get pipeline stats", 1))
+                .unwrap();
+            println!(
+                "{}",
+                serde_json::to_string(response.as_ref())
+                    .expect("Failed to serialize pipeline stats")
+            );
         }
         Some(PipelineAction::Delete) => {
-            client
+            let response = client
                 .delete_pipeline()
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to delete the pipeline", 1),
-                    |response| {
-                        println!("Pipeline deleted successfully.");
-                        trace!("{:#?}", response);
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to delete the pipeline", 1))
+                .unwrap();
+            println!("Pipeline deleted successfully.");
+            trace!("{:#?}", response);
         }
         Some(PipelineAction::Status) => {
-            client
+            let response = client
                 .get_pipeline()
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to get pipeline status", 1),
-                    |response| {
-                        let mut rows = vec![];
-                        rows.push([
-                            "status".to_string(),
-                            "desired_status".to_string(),
-                            "program_status".to_string(),
-                            "error".to_string(),
-                            "location".to_string(),
-                            "status_since".to_string(),
-                        ]);
-                        rows.push([
-                            response.deployment_status.to_string(),
-                            response.deployment_desired_status.to_string(),
-                            format!("{:?}", response.program_status).to_string(),
-                            response
-                                .deployment_error
-                                .as_ref()
-                                .map(|e| e.message.to_string())
-                                .unwrap_or(String::from("n/a")),
-                            response
-                                .deployment_location
-                                .clone()
-                                .unwrap_or(String::from("n/a")),
-                            response.deployment_status_since.to_string(),
-                        ]);
-                        println!(
-                            "{}",
-                            Builder::from_iter(rows).build().with(Style::rounded())
-                        );
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to get pipeline status", 1))
+                .unwrap();
+
+            let mut rows = vec![];
+            rows.push([
+                "status".to_string(),
+                "desired_status".to_string(),
+                "program_status".to_string(),
+                "error".to_string(),
+                "location".to_string(),
+                "status_since".to_string(),
+            ]);
+            rows.push([
+                response.deployment_status.to_string(),
+                response.deployment_desired_status.to_string(),
+                format!("{:?}", response.program_status).to_string(),
+                response
+                    .deployment_error
+                    .as_ref()
+                    .map(|e| e.message.to_string())
+                    .unwrap_or(String::from("n/a")),
+                response
+                    .deployment_location
+                    .clone()
+                    .unwrap_or(String::from("n/a")),
+                response.deployment_status_since.to_string(),
+            ]);
+            println!(
+                "{}",
+                Builder::from_iter(rows).build().with(Style::rounded())
+            );
         }
         Some(PipelineAction::Config) => {
-            client
+            let response = client
                 .get_pipeline()
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to get pipeline config", 1),
-                    |response| {
-                        println!("{:#?}", response.runtime_config);
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to get pipeline config", 1))
+                .unwrap();
+            println!("{:#?}", response.runtime_config);
         }
         Some(PipelineAction::SetConfig { key, value }) => {
             let mut rc = client
@@ -531,7 +495,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                 return;
             }
 
-            client
+            let response = client
                 .patch_pipeline()
                 .pipeline_name(name)
                 .body(PatchPipeline {
@@ -543,14 +507,10 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                 })
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to set runtime config", 1),
-                    |response| {
-                        println!("Runtime config updated successfully.");
-                        println!("{:#?}", response.runtime_config);
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to set runtime config", 1))
+                .unwrap();
+            println!("Runtime config updated successfully.");
+            println!("{:#?}", response.runtime_config);
         }
         Some(PipelineAction::Program { action }) => program(name, action, client).await,
         Some(PipelineAction::Endpoint {
@@ -559,18 +519,14 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
         }) => endpoint(name, endpoint_name.as_str(), action, client).await,
         Some(PipelineAction::Shell) => unimplemented!(),
         None => {
-            client
+            let response = client
                 .get_pipeline()
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to get pipeline", 1),
-                    |response| {
-                        println!("{:#?}", response);
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to get pipeline", 1))
+                .unwrap();
+            println!("{:#?}", response);
         }
     }
 }
@@ -582,66 +538,54 @@ async fn endpoint(
     client: Client,
 ) {
     match action {
-        EndpointAction::Start => client
-            .input_endpoint_action()
-            .pipeline_name(pipeline_name)
-            .endpoint_name(endpoint_name)
-            .action("start")
-            .send()
-            .await
-            .map_or_else(
-                handle_errors_fatal("Failed to start endpoint", 1),
-                |_response| {
-                    println!("Endpoint {} started successfully.", endpoint_name);
-                    std::process::exit(0);
-                },
-            ),
-        EndpointAction::Pause => client
-            .input_endpoint_action()
-            .pipeline_name(pipeline_name)
-            .endpoint_name(endpoint_name)
-            .action("pause")
-            .send()
-            .await
-            .map_or_else(
-                handle_errors_fatal("Failed to pause endpoint", 1),
-                |_response| {
-                    println!("Endpoint {} paused successfully.", endpoint_name);
-                    std::process::exit(0);
-                },
-            ),
+        EndpointAction::Start => {
+            client
+                .input_endpoint_action()
+                .pipeline_name(pipeline_name)
+                .endpoint_name(endpoint_name)
+                .action("start")
+                .send()
+                .await
+                .map_err(handle_errors_fatal("Failed to start endpoint", 1))
+                .unwrap();
+            println!("Endpoint {} started successfully.", endpoint_name);
+        }
+        EndpointAction::Pause => {
+            client
+                .input_endpoint_action()
+                .pipeline_name(pipeline_name)
+                .endpoint_name(endpoint_name)
+                .action("pause")
+                .send()
+                .await
+                .map_err(handle_errors_fatal("Failed to pause endpoint", 1))
+                .unwrap();
+            println!("Endpoint {} paused successfully.", endpoint_name);
+        }
     };
 }
 
 async fn program(name: &str, action: Option<ProgramAction>, client: Client) {
     match action {
         None => {
-            client
+            let response = client
                 .get_pipeline()
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to get program", 1),
-                    |response| {
-                        println!("{}", response.program_code);
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to get program", 1))
+                .unwrap();
+            println!("{}", response.program_code);
         }
         Some(ProgramAction::Config) => {
-            client
+            let response = client
                 .get_pipeline()
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to get program config", 1),
-                    |response| {
-                        println!("{:#?}", response.program_config);
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to get program config", 1))
+                .unwrap();
+            println!("{:#?}", response.program_config);
         }
         Some(ProgramAction::SetConfig { profile }) => {
             let pp = PatchPipeline {
@@ -659,32 +603,22 @@ async fn program(name: &str, action: Option<ProgramAction>, client: Client) {
                 .body(pp)
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to set program config", 1),
-                    |_response| {
-                        println!("Program config updated successfully.");
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to set program config", 1))
+                .unwrap();
+            println!("Program config updated successfully.");
         }
         Some(ProgramAction::Status) => {
-            client
+            let response = client
                 .get_pipeline()
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_or_else(
-                    handle_errors_fatal("Failed to get program status", 1),
-                    |response| {
-                        println!(
-                            "{:#?} (version {}, last updated {})",
-                            response.program_status,
-                            response.program_version.0,
-                            response.program_status_since
-                        );
-                        std::process::exit(0);
-                    },
-                );
+                .map_err(handle_errors_fatal("Failed to get program status", 1))
+                .unwrap();
+            println!(
+                "{:#?} (version {}, last updated {})",
+                response.program_status, response.program_version.0, response.program_status_since
+            );
         }
         Some(ProgramAction::Set {
             program_path,
@@ -704,13 +638,9 @@ async fn program(name: &str, action: Option<ProgramAction>, client: Client) {
                     .body(pp)
                     .send()
                     .await
-                    .map_or_else(
-                        handle_errors_fatal("Failed to set program code", 1),
-                        |_response| {
-                            println!("Program updated successfully.");
-                            std::process::exit(0);
-                        },
-                    );
+                    .map_err(handle_errors_fatal("Failed to set program code", 1))
+                    .unwrap();
+                println!("Program updated successfully.");
             } else {
                 // Already reported error in read_program_code.
                 std::process::exit(1);
