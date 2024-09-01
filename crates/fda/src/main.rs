@@ -227,6 +227,9 @@ fn patch_runtime_config(
         RuntimeConfigKey::MinStorageBytes => {
             rc.min_storage_bytes = Some(value.parse().map_err(|_| ())?);
         }
+        RuntimeConfigKey::ClockResolutionUsecs => {
+            rc.clock_resolution_usecs = Some(value.parse().map_err(|_| ())?);
+        }
     };
 
     Ok(())
@@ -253,7 +256,6 @@ async fn read_program_code(program_path: String, stdin: bool) -> Result<String, 
 }
 
 async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
-    debug!("Listing pipelines");
     match action {
         Some(PipelineAction::Create {
             program_path,

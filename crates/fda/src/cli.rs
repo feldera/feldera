@@ -106,6 +106,7 @@ pub enum RuntimeConfigKey {
     StorageMbMax,
     StorageClass,
     MinStorageBytes,
+    ClockResolutionUsecs,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
