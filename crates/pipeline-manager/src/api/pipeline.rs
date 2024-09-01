@@ -668,7 +668,7 @@ pub(crate) async fn get_pipeline_heap_profile(
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
         ("sql" = String, Query, description = "The SQL query to execute."),
-        ("format" = AdHocQueryFormat, Query, description = "Input data format, e.g., 'text', 'json' or 'parquet'."),
+        ("format" = AdHocResultFormat, Query, description = "Input data format, e.g., 'text', 'json' or 'parquet'."),
     ),
     responses(
         (status = OK
