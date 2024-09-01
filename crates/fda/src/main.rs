@@ -414,7 +414,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                 .unwrap();
             println!(
                 "{}",
-                serde_json::to_string(response.as_ref())
+                serde_json::to_string_pretty(response.as_ref())
                     .expect("Failed to serialize pipeline stats")
             );
         }
@@ -475,7 +475,11 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                 .await
                 .map_err(handle_errors_fatal("Failed to get pipeline config", 1))
                 .unwrap();
-            println!("{:#?}", response.runtime_config);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&response.runtime_config)
+                    .expect("Failed to serialize pipeline stats")
+            );
         }
         Some(PipelineAction::SetConfig { key, value }) => {
             let mut rc = client
@@ -510,7 +514,11 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                 .map_err(handle_errors_fatal("Failed to set runtime config", 1))
                 .unwrap();
             println!("Runtime config updated successfully.");
-            println!("{:#?}", response.runtime_config);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&response.runtime_config)
+                    .expect("Failed to serialize pipeline stats")
+            );
         }
         Some(PipelineAction::Program { action }) => program(name, action, client).await,
         Some(PipelineAction::Endpoint {
@@ -526,7 +534,11 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                 .await
                 .map_err(handle_errors_fatal("Failed to get pipeline", 1))
                 .unwrap();
-            println!("{:#?}", response);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(response.as_ref())
+                    .expect("Failed to serialize pipeline stats")
+            );
         }
     }
 }
@@ -585,7 +597,11 @@ async fn program(name: &str, action: Option<ProgramAction>, client: Client) {
                 .await
                 .map_err(handle_errors_fatal("Failed to get program config", 1))
                 .unwrap();
-            println!("{:#?}", response.program_config);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&response.program_config)
+                    .expect("Failed to serialize pipeline stats")
+            );
         }
         Some(ProgramAction::SetConfig { profile }) => {
             let pp = PatchPipeline {
