@@ -51,11 +51,13 @@ DECIMAL(10, 4))` if you expect 10-digit results to be possible.
   </tr>
   <tr>
      <td><code>ARG_MAX(value, compared)</code></td>
-     <td>Returns <code>value</code> for the maximum value of <code>compared</code> in the group</td>
+     <td>Returns a <code>value</code> for one of the rows containing the maximum value of <code>compared</code> in the group.
+         The rule for selecting the value is not specified if there are multiple rows with the same maximum value.</td>
   </tr>
   <tr>
      <td><code>ARG_MIN(value, compared)</code></td>
-     <td>Returns <code>value</code> for the minimum value of <code>compared</code> in the group</td>
+     <td>Returns a  <code>value</code> for one of the rows containing the minimum value of <code>compared</code> in the group.
+         This rule for selecting the value is not specified if there are multiple rows with the same minimum value.</td>
   </tr>
   <tr>
      <td><code>BIT_AND( [ ALL | DISTINCT ] value)</code></td>

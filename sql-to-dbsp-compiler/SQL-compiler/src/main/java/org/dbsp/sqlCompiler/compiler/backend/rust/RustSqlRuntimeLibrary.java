@@ -106,6 +106,8 @@ public class RustSqlRuntimeLibrary {
         this.stringFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
         this.stringFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
         this.stringFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
+        this.stringFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
+        this.stringFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
 
         this.booleanFunctions.put("eq", DBSPOpcode.EQ);
         this.booleanFunctions.put("neq", DBSPOpcode.NEQ);
@@ -119,6 +121,8 @@ public class RustSqlRuntimeLibrary {
         this.booleanFunctions.put("is_not_false", DBSPOpcode.IS_NOT_FALSE);
         this.booleanFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
         this.booleanFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
+        this.booleanFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
+        this.booleanFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
         this.booleanFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
         this.booleanFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
 
@@ -127,6 +131,8 @@ public class RustSqlRuntimeLibrary {
         this.otherFunctions.put("agg_or", DBSPOpcode.AGG_OR);
         this.otherFunctions.put("agg_xor", DBSPOpcode.AGG_XOR);
         this.otherFunctions.put("concat", DBSPOpcode.CONCAT);
+        this.otherFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
+        this.otherFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
     }
 
     public static class FunctionDescription {

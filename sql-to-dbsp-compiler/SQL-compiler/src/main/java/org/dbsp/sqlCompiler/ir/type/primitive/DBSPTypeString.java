@@ -70,7 +70,7 @@ public class DBSPTypeString extends DBSPTypeBaseType {
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPStringLiteral("", StandardCharsets.UTF_8, this.mayBeNull);
+        return new DBSPStringLiteral("", StandardCharsets.UTF_8, this);
     }
 
     @Override

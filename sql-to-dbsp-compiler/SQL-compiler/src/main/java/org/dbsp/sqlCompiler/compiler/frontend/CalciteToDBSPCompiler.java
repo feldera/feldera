@@ -1415,7 +1415,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (this.modifyTableTranslation != null) {
             this.modifyTableTranslation.setResult(result);
         } else {
-            DBSPOperator constant = new DBSPConstantOperator(node, result, false, false);
+            // We currently don't have a reliable way to check whether there are duplicates
+            // in the Z-set, so we assume it is a multiset
+            DBSPOperator constant = new DBSPConstantOperator(node, result, false, true);
             this.assignOperator(values, constant);
         }
     }

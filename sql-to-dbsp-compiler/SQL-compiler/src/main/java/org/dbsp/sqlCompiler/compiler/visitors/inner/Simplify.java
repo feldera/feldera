@@ -200,7 +200,7 @@ public class Simplify extends InnerRewriteVisitor {
                     DBSPTypeString typeString = type.to(DBSPTypeString.class);
                     if (typeString.precision == DBSPTypeString.UNLIMITED_PRECISION) {
                         String value = Utilities.trimRight(str.value);
-                        result = new DBSPStringLiteral(value, str.charset, type.mayBeNull);
+                        result = new DBSPStringLiteral(value, str.charset, type);
                     } else {
                         String value;
                         if (!typeString.fixed) {

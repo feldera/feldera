@@ -305,6 +305,8 @@ pub fn agg_xor_bytes(left: ByteArray, right: ByteArray) -> ByteArray {
 
 some_aggregate!(agg_xor_bytes, agg_xor, bytes, ByteArray);
 
+// In this aggregate the left value is the current value
+// while the right value is the accumulator
 pub fn agg_lte__<T>(left: T, right: T) -> bool
 where
     T: Ord,

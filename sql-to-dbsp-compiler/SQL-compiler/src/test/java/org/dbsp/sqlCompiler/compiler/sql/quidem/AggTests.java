@@ -214,7 +214,7 @@ public class AggTests extends PostBaseTests {
                 | 19 |
                 +----+
                 (1 row)
-   
+                
                 -- [CALCITE-998] Exception when calling STDDEV_SAMP, STDDEV_POP
                 -- stddev_samp
                 select stddev_samp(deptno) as s from emp;
@@ -260,7 +260,8 @@ public class AggTests extends PostBaseTests {
                 (2 rows)""");
     }
 
-    @Test @Ignore("multiset not yet implemented")
+    @Test
+    @Ignore("multiset not yet implemented")
     public void testIntersection() {
         this.qs("""
                 -- [CALCITE-3815] Add missing SQL standard aggregate
@@ -654,7 +655,8 @@ public class AggTests extends PostBaseTests {
                 (1 row)""");
     }
 
-    @Test public void testGrouping() {
+    @Test
+    public void testGrouping() {
         this.qs("""
                 -- CUBE and JOIN
                 select e.deptno, e.gender, min(e.ename) as min_name
@@ -910,6 +912,37 @@ public class AggTests extends PostBaseTests {
                 (2 rows)""");
     }
 
+    @Test public void t0() {
+        this.qs("""
+                select distinct '1'
+                from (values (1,2),(3,4));
+                +--------+
+                | EXPR$0 |
+                +--------+
+                | 1|
+                +--------+
+                (1 row)
+                
+                select count(distinct '1')
+                from (values (1,2),(3,4));
+                +--------+
+                | EXPR$0 |
+                +--------+
+                |      1 |
+                +--------+
+                (1 row)
+                
+                -- [CALCITE-1381] SqlCall.clone should retain function quantifier
+                select nullif(count(distinct '1'),0)
+                from (values (1,2),(3,4));
+                +--------+
+                | EXPR$0 |
+                +--------+
+                |      1 |
+                +--------+
+                (1 row)""");
+    }
+
    /*
    TODO: setup more tests
    @Test
@@ -940,101 +973,6 @@ public class AggTests extends PostBaseTests {
                 +---------------------+---+
                 | 2015-02-15 10:00:00 | 5 |
                 +---------------------+---+
-                (1 row)
-
-                -- [CALCITE-729] IndexOutOfBoundsException in ROLLUP query on JDBC data source
-                !use jdbc_scott
-                select deptno, job, count(*) as c
-                from jdbc_scott.emp
-                group by rollup (deptno, job)
-                order by 1, 2;
-                +--------+-----------+----+
-                | DEPTNO | JOB       | C  |
-                +--------+-----------+----+
-                |     10 | CLERK     |  1 |
-                |     10 | MANAGER   |  1 |
-                |     10 | PRESIDENT |  1 |
-                |     10 |           |  3 |
-                |     20 | ANALYST   |  2 |
-                |     20 | CLERK     |  2 |
-                |     20 | MANAGER   |  1 |
-                |     20 |           |  5 |
-                |     30 | CLERK     |  1 |
-                |     30 | MANAGER   |  1 |
-                |     30 | SALESMAN  |  4 |
-                |     30 |           |  6 |
-                |        |           | 14 |
-                +--------+-----------+----+
-                (13 rows)
-                                
-                -- [CALCITE-799] Incorrect result for "HAVING count(*) > 1"
-                select d.deptno, min(e.empid) as empid
-                from (values (100, 'Bill', 1),
-                             (200, 'Eric', 1),
-                             (150, 'Sebastian', 3)) as e(empid, name, deptno)
-                join (values (1, 'LeaderShip'),
-                             (2, 'TestGroup'),
-                             (3, 'Development')) as d(deptno, name)
-                on e.deptno = d.deptno
-                group by d.deptno
-                having count(*) > 1;
-                +--------+-------+
-                | DEPTNO | EMPID |
-                +--------+-------+
-                |      1 |   100 |
-                +--------+-------+
-                (1 row)
-
-                -- Same, using USING (combining [CALCITE-799] and [CALCITE-801])
-                select d.deptno, min(e.empid) as empid
-                from (values (100, 'Bill', 1),
-                             (200, 'Eric', 1),
-                             (150, 'Sebastian', 3)) as e(empid, name, deptno)
-                join (values (1, 'LeaderShip'),
-                             (2, 'TestGroup'),
-                             (3, 'Development')) as d(deptno, name)
-                using (deptno)
-                group by d.deptno
-                having count(*) > 1;
-                +--------+-------+
-                | DEPTNO | EMPID |
-                +--------+-------+
-                |      1 |   100 |
-                +--------+-------+
-                (1 row)
-
-                -- [CALCITE-886] System functions in the GROUP BY clause
-                -- Calls to system functions do not have "()", which may confuse the validator.
-                select CURRENT_USER as CUSER
-                from jdbc_scott.emp
-                group by CURRENT_USER;
-                +-------+
-                | CUSER |
-                +-------+
-                | SCOTT |
-                +-------+
-                (1 row)
-
-                -- [CALCITE-886] System functions in the GROUP BY clause
-                -- System function inside a GROUPING SETS.
-                select CURRENT_USER as CUSER
-                from jdbc_scott.emp
-                group by grouping sets(CURRENT_USER);
-                +-------+
-                | CUSER |
-                +-------+
-                | SCOTT |
-                +-------+
-                (1 row)
-
-                -- [CALCITE-1381] SqlCall.clone should retain function quantifier
-                select nullif(count(distinct '1'),0)
-                from (values (1,2),(3,4));
-                +--------+
-                | EXPR$0 |
-                +--------+
-                |      1 |
-                +--------+
                 (1 row)
 
                 !use scott
@@ -1844,85 +1782,5 @@ public class AggTests extends PostBaseTests {
                 |      2 |    2 |      2 |    2 |
                 +--------+------+--------+------+
                 (2 rows)
-                                
-                -- [CALCITE-5283] Add ARG_MIN, ARG_MAX aggregate function
-                                
-                -- ARG_MIN, ARG_MAX without GROUP BY
-                select arg_min(ename, deptno) as mi, arg_max(ename, deptno) as ma
-                from emp;
-                +-------+-------+
-                | MI    | MA    |
-                +-------+-------+
-                | CLARK | ALLEN |
-                +-------+-------+
-                (1 row)
-                                
-                -- ARG_MIN, ARG_MAX with DISTINCT
-                select arg_min(distinct ename, deptno) as mi, arg_max(distinct ename, deptno) as ma
-                from emp;
-                +-------+-------+
-                | MI    | MA    |
-                +-------+-------+
-                | CLARK | ALLEN |
-                +-------+-------+
-                (1 row)
-                                
-                -- ARG_MIN, ARG_MAX function with WHERE.
-                select arg_min(ename, deptno) as mi, arg_max(ename, deptno) as ma
-                from emp
-                where deptno <= 20;
-                +-------+-------+
-                | MI    | MA    |
-                +-------+-------+
-                | CLARK | SMITH |
-                +-------+-------+
-                (1 row)
-                                
-                -- ARG_MIN, ARG_MAX function with WHERE that removes all rows.
-                -- Result is NULL even though ARG_MIN, ARG_MAX is applied to a not-NULL column.
-                select arg_min(ename, deptno) as mi, arg_max(ename, deptno) as ma
-                from emp
-                where deptno > 60;
-                +----+----+
-                | MI | MA |
-                +----+----+
-                |    |    |
-                +----+----+
-                (1 row)
-                                
-                -- ARG_MIN, ARG_MAX function with GROUP BY. note that key is NULL but result is not NULL.
-                select deptno, arg_min(ename, ename) as mi, arg_max(ename, ename) as ma
-                from emp
-                group by deptno;
-                +--------+-------+--------+
-                | DEPTNO | MI    | MA     |
-                +--------+-------+--------+
-                |     10 | CLARK | MILLER |
-                |     20 | ADAMS | SMITH  |
-                |     30 | ALLEN | WARD   |
-                +--------+-------+--------+
-                (3 rows)
-                                
-                -- ARG_MIN, ARG_MAX applied to an integer.
-                select arg_min(deptno, empno) as mi,
-                  arg_max(deptno, empno) as ma,
-                  arg_max(deptno, empno) filter (where job = 'MANAGER') as mamgr
-                from emp;
-                +----+----+-------+
-                | MI | MA | MAMGR |
-                +----+----+-------+
-                | 20 | 10 |    10 |
-                +----+----+-------+
-                (1 row)
-                                
-                -- DISTINCT query with ORDER BY on aggregate when there is an implicit cast
-                select distinct sum(deptno + '1') as deptsum from dept order by 1;
-                +---------+
-                | DEPTSUM |
-                +---------+
-                |     104 |
-                +---------+
-                (1 row)""");
-    }
-     */
+                */
 }

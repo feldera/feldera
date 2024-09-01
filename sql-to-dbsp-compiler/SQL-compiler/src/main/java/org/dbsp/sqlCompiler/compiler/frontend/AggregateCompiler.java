@@ -59,6 +59,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
@@ -302,8 +303,9 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processBasic(SqlBasicAggFunction function) {
-        // ARG_MAX(value, compared).  First argument is the output, and has type `this.returnType`
-        // or ARRAY_AGG
+        // ARRAY_AGG or
+        // ARG_MAX(value, compared).
+        // For ARG_MAX first argument is the output, and has type `this.returnType`
         SqlKind kind = function.getKind();
         if (kind == SqlKind.ARRAY_AGG) {
             this.processArrayAgg(function);
@@ -318,18 +320,19 @@ public class AggregateCompiler implements ICompilerComponent {
             default -> throw new UnimplementedException(node);
         };
 
-        // Accumulator is a pair of fields.
+        DBSPType currentType = tuple.fields[1].getType().setMayBeNull(true);
+        DBSPType zeroType = new DBSPTypeTuple(this.resultType, currentType);
         DBSPExpression zero = new DBSPTupleExpression(
                 this.resultType.defaultValue(),
-                tuple.fields[1].getType().defaultValue());
-        DBSPVariablePath accumulator = zero.getType().var();
+                currentType.nullValue());
+        DBSPVariablePath accumulator = zeroType.var();
         DBSPExpression ge = new DBSPBinaryExpression(
                 node, DBSPTypeBool.create(false), compareOpcode,
-                tuple.fields[1].applyCloneIfNeeded(),
+                tuple.fields[1].cast(currentType).applyCloneIfNeeded(),
                 accumulator.field(1).applyCloneIfNeeded());
         DBSPTupleExpression aggArgCast = new DBSPTupleExpression(
                 tuple.fields[0].cast(this.resultType).applyCloneIfNeeded(),
-                tuple.fields[1].applyCloneIfNeeded());
+                tuple.fields[1].cast(currentType).applyCloneIfNeeded());
         DBSPExpression increment = new DBSPIfExpression(node, ge, aggArgCast, accumulator.applyCloneIfNeeded());
         DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "UnimplementedSemigroup",
                 false, aggArgCast.getType());
