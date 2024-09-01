@@ -1346,4 +1346,151 @@ public class AggScottTests extends ScottBaseTests {
                 (1 row)
                 """);
     }
+
+    @Test public void testArgMax() {
+        // Results differ from the Calcite test
+        // because ARG_MIN and ARG_MAX are non-deterministic
+        this.qs("""
+                -- ARG_MIN, ARG_MAX without GROUP BY
+                select arg_min(ename, deptno) as mi, arg_max(ename, deptno) as ma
+                from emp;
+                +-------+-------+
+                | MI    | MA    |
+                +-------+-------+
+                | MILLER| WARD|
+                +-------+-------+
+                (1 row)
+                
+                -- ARG_MIN, ARG_MAX with DISTINCT
+                select arg_min(distinct ename, deptno) as mi, arg_max(distinct ename, deptno) as ma
+                from emp;
+                +-------+-------+
+                | MI    | MA    |
+                +-------+-------+
+                | MILLER| WARD|
+                +-------+-------+
+                (1 row)
+                
+                -- ARG_MIN, ARG_MAX function with WHERE.
+                select arg_min(ename, deptno) as mi, arg_max(ename, deptno) as ma
+                from emp
+                where deptno <= 20;
+                +-------+-------+
+                | MI    | MA    |
+                +-------+-------+
+                | MILLER| SMITH|
+                +-------+-------+
+                (1 row)
+                
+                -- ARG_MIN, ARG_MAX function with WHERE that removes all rows.
+                -- Result is NULL even though ARG_MIN, ARG_MAX is applied to a not-NULL column.
+                select arg_min(ename, deptno) as mi, arg_max(ename, deptno) as ma
+                from emp
+                where deptno > 60;
+                +----+----+
+                | MI | MA |
+                +----+----+
+                |NULL|NULL|
+                +----+----+
+                (1 row)
+                
+                -- ARG_MIN, ARG_MAX function with GROUP BY. note that key is NULL but result is not NULL.
+                select deptno, arg_min(ename, ename) as mi, arg_max(ename, ename) as ma
+                from emp
+                group by deptno;
+                +--------+-------+--------+
+                | DEPTNO | MI    | MA     |
+                +--------+-------+--------+
+                |     10 | CLARK| MILLER|
+                |     20 | ADAMS| SMITH|
+                |     30 | ALLEN| WARD|
+                +--------+-------+--------+
+                (3 rows)
+                
+                -- ARG_MIN, ARG_MAX applied to an integer.
+                select arg_min(deptno, empno) as mi,
+                  arg_max(deptno, empno) as ma,
+                  arg_max(deptno, empno) filter (where job = 'MANAGER') as mamgr
+                from emp;
+                +----+----+-------+
+                | MI | MA | MAMGR |
+                +----+----+-------+
+                | 20 | 10 |    10 |
+                +----+----+-------+
+                (1 row)
+                
+                -- DISTINCT query with ORDER BY on aggregate when there is an implicit cast
+                select distinct sum(deptno + '1') as deptsum from dept order by 1;
+                +---------+
+                | DEPTSUM |
+                +---------+
+                |     104 |
+                +---------+
+                (1 row)""");
+    }
+
+    @Test
+    public void testAggregates5() {
+        this.qs("""
+                   -- [CALCITE-729] IndexOutOfBoundsException in ROLLUP query on JDBC data source
+                   select deptno, job, count(*) as c
+                   from emp
+                   group by rollup (deptno, job)
+                   order by 1, 2;
+                   +--------+-----------+----+
+                   | DEPTNO | JOB       | C  |
+                   +--------+-----------+----+
+                   |     10 | CLERK|  1 |
+                   |     10 | MANAGER|  1 |
+                   |     10 | PRESIDENT|  1 |
+                   |     10 |NULL|  3 |
+                   |     20 | ANALYST|  2 |
+                   |     20 | CLERK|  2 |
+                   |     20 | MANAGER|  1 |
+                   |     20 |NULL|  5 |
+                   |     30 | CLERK|  1 |
+                   |     30 | MANAGER|  1 |
+                   |     30 | SALESMAN|  4 |
+                   |     30 |NULL|  6 |
+                   |        |NULL| 14 |
+                   +--------+-----------+----+
+                   (13 rows)
+                   
+                   -- [CALCITE-799] Incorrect result for "HAVING count(*) > 1"
+                   select d.deptno, min(e.empid) as empid
+                   from (values (100, 'Bill', 1),
+                                (200, 'Eric', 1),
+                                (150, 'Sebastian', 3)) as e(empid, name, deptno)
+                   join (values (1, 'LeaderShip'),
+                                (2, 'TestGroup'),
+                                (3, 'Development')) as d(deptno, name)
+                   on e.deptno = d.deptno
+                   group by d.deptno
+                   having count(*) > 1;
+                   +--------+-------+
+                   | DEPTNO | EMPID |
+                   +--------+-------+
+                   |      1 |   100 |
+                   +--------+-------+
+                   (1 row)
+
+                   -- Same, using USING (combining [CALCITE-799] and [CALCITE-801])
+                   select d.deptno, min(e.empid) as empid
+                   from (values (100, 'Bill', 1),
+                                (200, 'Eric', 1),
+                                (150, 'Sebastian', 3)) as e(empid, name, deptno)
+                   join (values (1, 'LeaderShip'),
+                                (2, 'TestGroup'),
+                                (3, 'Development')) as d(deptno, name)
+                   using (deptno)
+                   group by d.deptno
+                   having count(*) > 1;
+                   +--------+-------+
+                   | DEPTNO | EMPID |
+                   +--------+-------+
+                   |      1 |   100 |
+                   +--------+-------+
+                   (1 row)""");
+    }
+
 }

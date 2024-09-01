@@ -28,6 +28,23 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2350() {
+        String sql = """
+                CREATE TABLE arg_min(c1 TINYINT NOT NULL);
+                CREATE VIEW arg_min_view AS SELECT
+                ARG_MIN(c1, c1) AS c1
+                FROM arg_min""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.step("""
+                INSERT INTO arg_min VALUES (2), (3), (5)""",
+                """
+                 value | weight
+                ----------------
+                  2    | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void issue2261() {
         String sql = """
                 CREATE TABLE stddev_groupby(id INT, c2 TINYINT NOT NULL);

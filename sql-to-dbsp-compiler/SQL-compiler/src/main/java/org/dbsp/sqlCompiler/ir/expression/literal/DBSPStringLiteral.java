@@ -43,17 +43,12 @@ public final class DBSPStringLiteral extends DBSPLiteral {
     public final String value;
     public final Charset charset;
 
-    @SuppressWarnings("unused")
-    public DBSPStringLiteral() {
-        this(null, StandardCharsets.UTF_8, true);
-    }
-
     public DBSPStringLiteral(String value, Charset charset) {
-        this(value, charset, false);
+        this(value, charset, DBSPTypeString.varchar(false));
     }
 
     public DBSPStringLiteral(String value) {
-        this(value, StandardCharsets.UTF_8, false);
+        this(value, StandardCharsets.UTF_8, DBSPTypeString.varchar(false));
     }
 
     public DBSPStringLiteral(CalciteObject node, DBSPType type, @Nullable String value, Charset charset) {
@@ -75,9 +70,9 @@ public final class DBSPStringLiteral extends DBSPLiteral {
         return Objects.equals(value, that.value);
     }
 
-    public DBSPStringLiteral(@Nullable String value, Charset charset, boolean nullable) {
-        this(CalciteObject.EMPTY, new DBSPTypeString(CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, nullable), value, charset);
-        if (value == null && !nullable)
+    public DBSPStringLiteral(@Nullable String value, Charset charset, DBSPType type) {
+        this(CalciteObject.EMPTY, type, value, charset);
+        if (value == null && !type.mayBeNull)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
 
@@ -98,7 +93,7 @@ public final class DBSPStringLiteral extends DBSPLiteral {
 
     @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
-        return new DBSPStringLiteral(this.checkIfNull(this.value, mayBeNull), this.charset, mayBeNull);
+        return new DBSPStringLiteral(this.checkIfNull(this.value, mayBeNull), this.charset, this.type.setMayBeNull(true));
     }
 
     @Override

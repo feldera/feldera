@@ -139,7 +139,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                             exp = DBSPLiteral.none(new DBSPTypeString(
                                     CalciteObject.EMPTY, DBSPTypeString.UNLIMITED_PRECISION, false, true));
                         else
-                            exp = new DBSPStringLiteral(s, StandardCharsets.UTF_8, type.mayBeNull);
+                            exp = new DBSPStringLiteral(s, StandardCharsets.UTF_8, type);
                     }
                     cols[i] = exp;
                 }
