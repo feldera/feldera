@@ -123,7 +123,7 @@ const compare = <T extends string | number>(a: T, b: T) =>
         })()
 
 /**
- * The groups are ordered by associated key. Order of items in a group is arbitrary
+ * The groups are ordered by associated key. Order of items in a group is preserved
  */
 export const groupBy = <T, K extends string | number>(list: T[], getKey: (item: T) => K) => {
   if (!list.length) {

@@ -8,13 +8,13 @@ Add environment variable `CI=true` when executing tests in CI setting.
 
 ### Running e2e tests
 
-Run `yarn test-e2e` to execute all e2e tests on all supported platforms in background, or run `yarn test-e2e-ui` to open a UI to run tests interactively.
+Run `bun run test-e2e` to execute all e2e tests on all supported platforms in background, or run `bun run test-e2e-ui` to open a UI to run tests interactively.
 Tests should be executed against a running Pipeline Manager instance.
 As an artificial limitation of scope, currently no services for Kafka, Debezium, Snowflake and other similar connector types are available for tests in the CI, so only HTTP connectors and API is available along with the UI itself.
 
 ### Running ct tests
 
-Run `yarn test-ct` to execute all ct tests on all supported platforms in background, or run `yarn test-ct-ui` to open a UI to run tests interactively.
+Run `bun run test-ct` to execute all ct tests on all supported platforms in background, or run `bun run test-ct-ui` to open a UI to run tests interactively.
 Unit tests do not need Feldera instance to run because they run against individual ESM modules compiled on-demand for the test.
 
 ### Contributing tests
@@ -29,7 +29,7 @@ When committing new tests or updating screenshots for existing tests, `PLAYWRIGH
 When testing locally, you need to manually clone `playwright-snapshots` and checkout the correct commit hash, e.g.:
 
 ```
-cd web-console && yarn test-prepare
+cd web-console && bun run test-prepare
 ```
 OR
 ```
@@ -51,7 +51,7 @@ install Playwright on your host system: https://playwright.dev/docs/intro
 
 Execute Playwright Codegen with:
 ```bash
-yarn playwright codegen http://localhost:8080/
+bunx playwright codegen http://localhost:8080/
 ```
 
 Keep in mind that codegen is not designed to produce production-ready code,

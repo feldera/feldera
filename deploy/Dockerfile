@@ -56,7 +56,7 @@ RUN ln -s $HOME/.bun/bin/bun /usr/bin/bun
 # sveltekit
 COPY web-console/package.json web-console/
 COPY web-console/bun.lockb web-console/
-RUN cd web-console && bun install
+RUN cd web-console && bun run install-frozen
 
 COPY web-console/static web-console/static
 COPY web-console/src web-console/src

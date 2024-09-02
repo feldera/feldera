@@ -35,7 +35,7 @@ RUN apt-get install -y \
    gcc clang libclang-dev python3-pip python3-plumbum \
    hub numactl openjdk-19-jre-headless maven
 
-## Install nodejs and global packages
+## Install nodejs and global packages (optional)
 # - nodejs
 RUN mkdir -p /etc/apt/keyrings
 RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
@@ -43,7 +43,7 @@ ENV NODE_MAJOR=20
 RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
 RUN apt update --fix-missing && apt install nodejs
 RUN npm install --global yarn
-RUN npm install --global openapi-typescript-codegen
+RUN npm install --global @hey-api/openapi-ts
 
 ## Install Redpanda rpk to enable preparing demos
 
