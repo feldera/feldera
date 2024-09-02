@@ -2000,8 +2000,49 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
         .adhoc_query("/v0/pipelines/test/query", "SELECT 1/0", "text")
         .await;
     assert_eq!(r.status(), StatusCode::BAD_REQUEST);
-    let mut r = config
+    let r = config
         .adhoc_query("/v0/pipelines/test/query", "SELECT * FROM table1", "text")
         .await;
     assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+}
+
+/// Tests that logs can be retrieved from the pipeline.
+#[actix_web::test]
+#[serial]
+async fn pipeline_logs() {
+    let config = setup().await;
+
+    // Retrieve logs of non-existent pipeline
+    let response = config.get("/v0/pipelines/test/logs").await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // Basic test pipeline started in paused state
+    create_and_deploy_test_pipeline(
+        &config,
+        "CREATE TABLE t1(c1 INTEGER) with ('materialized' = 'true');",
+    )
+    .await;
+
+    // TODO: test in the other deployment statuses whether logs can be retrieved
+
+    // Retrieve logs (paused)
+    let mut response = config.get("/v0/pipelines/test/logs").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let val: Value = response.json().await.unwrap();
+    assert!(val.is_string());
+
+    // Start the pipeline
+    let response = config
+        .post_no_body(format!("/v0/pipelines/test/start"))
+        .await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Running, config.resume_timeout)
+        .await;
+
+    // Retrieve logs (running)
+    let mut response = config.get("/v0/pipelines/test/logs").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let val: Value = response.json().await.unwrap();
+    assert!(val.is_string());
 }

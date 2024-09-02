@@ -22,6 +22,7 @@ use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use log::info;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -534,6 +535,45 @@ pub(crate) async fn input_endpoint_action(
     Ok(HttpResponse::Accepted().finish())
 }
 
+/// Retrieve pipeline logs.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Pipeline logs retrieved successfully"
+            , body = Object),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline()))
+    ),
+    tag = "Pipelines"
+)]
+#[get("/pipelines/{pipeline_name}/logs")]
+pub(crate) async fn get_pipeline_logs(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    // Retrieving the pipeline to check it at least exists
+    // TODO: implement retrieval of logs
+    let _pipeline = state
+        .db
+        .lock()
+        .await
+        .get_pipeline(*tenant_id, &pipeline_name)
+        .await?;
+    let logs = "Retrieval of logs is not yet implemented\n".repeat(100);
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(json!(logs)))
+}
+
 /// Retrieve pipeline statistics (e.g., metrics, performance counters).
 #[utoipa::path(
     context_path = "/v0",
@@ -545,7 +585,7 @@ pub(crate) async fn input_endpoint_action(
         // TODO: implement `ToSchema` for `ControllerStatus`, which is the
         //       actual type returned by this endpoint and move it to feldera-types.
         (status = OK
-            , description = "Pipeline metrics retrieved successfully."
+            , description = "Pipeline metrics retrieved successfully"
             , body = Object),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
