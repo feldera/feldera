@@ -100,7 +100,7 @@ async fn api_key_commands(action: ApiKeyActions, client: Client) {
         ApiKeyActions::Create { name } => {
             debug!("Creating API key: {}", name);
             let response = client
-                .create_api_key()
+                .post_api_key()
                 .body(NewApiKeyRequest { name })
                 .send()
                 .await
