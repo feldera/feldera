@@ -40,7 +40,7 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
-    public void q16() {        
+    public void q16() {
         // simplified version of q16
         String sql = """
                 CREATE TABLE bid (
