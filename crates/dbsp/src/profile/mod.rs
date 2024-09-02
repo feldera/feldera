@@ -196,9 +196,9 @@ all: $(FORMATS)
 define format_template
 $(1): $(DOTS:.dot=.$(1))
 %.$(1): %.dot
-        dot -T$(1) $$< -o$$@
+	dot -T$(1) $$< -o$$@
 clean:
-        rm -f $(DOTS:.dot=.$$(1))
+	rm -f $(DOTS:.dot=.$$(1))
 endef
 
 $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
