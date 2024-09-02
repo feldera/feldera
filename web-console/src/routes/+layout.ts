@@ -18,6 +18,7 @@ export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
       auth: 'none'
     }
   }
+
   const authConfig = await loadAuthConfig()
   if (!authConfig) {
     return {
