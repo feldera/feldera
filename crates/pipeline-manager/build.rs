@@ -54,11 +54,11 @@ fn main() {
         let asset_path: PathBuf = Path::new("../../web-console/").join(rel_build_dir);
         let mut resource_dir = NpmBuild::new("../../web-console")
             .executable("bun")
-            .install()
+            .run("install-frozen")
             .expect(
-                "Could not run `bun install`. Follow set-up instructions in web-console/README.md",
+                "Could not run `bun install --frozen-lockfile`. Follow set-up instructions in web-console/README.md",
             )
-            .run("build")
+            .run("build --frozen-lockfile")
             .expect("Could not run `bun run build`. Run it manually in web-console/ to debug.")
             .target(asset_path.clone())
             .to_resource_dir();
