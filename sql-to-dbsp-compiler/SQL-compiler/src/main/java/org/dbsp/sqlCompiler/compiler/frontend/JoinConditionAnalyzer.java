@@ -46,23 +46,24 @@ public class JoinConditionAnalyzer implements IWritesLogs {
     }
 
     /** Represents an equality test in a join
-     * between two columns in the two tables. */
-    static class EqualityTest {
-        public final int leftColumn;
-        public final int rightColumn;
-        public final DBSPType commonType;
-
-        EqualityTest(int leftColumn, int rightColumn, DBSPType commonType) {
+     * between two columns in the two tables.
+     * @param leftColumn  Column from the left relation that is compared for equality
+     * @param rightColumn Column from the right relation that is compared for equality
+     * @param commonType  Type that columns have to be cast to
+     * @param nonNull     If true the columns cannot be null */
+    record EqualityTest(int leftColumn, int rightColumn, DBSPType commonType, boolean nonNull) {
+        EqualityTest(int leftColumn, int rightColumn, DBSPType commonType, boolean nonNull) {
             this.leftColumn = leftColumn;
             this.rightColumn = rightColumn;
             this.commonType = commonType;
+            this.nonNull = nonNull;
             if (leftColumn < 0 || rightColumn < 0)
                 throw new InternalCompilerError("Illegal column number " +
                         leftColumn + ":" + rightColumn, commonType);
         }
 
         public EqualityTest withType(DBSPType type) {
-            return new EqualityTest(this.leftColumn, this.rightColumn, type);
+            return new EqualityTest(this.leftColumn, this.rightColumn, type, this.nonNull);
         }
     }
 
@@ -85,12 +86,12 @@ public class JoinConditionAnalyzer implements IWritesLogs {
             this.leftOver = leftOver;
         }
 
-        public void addEquality(RexNode left, RexNode right, DBSPType commonType) {
+        public void addEquality(RexNode left, RexNode right, DBSPType commonType, boolean nonNull) {
             RexInputRef ref = Objects.requireNonNull(asInputRef(left));
             int l = ref.getIndex();
             ref = Objects.requireNonNull(asInputRef(right));
             int r = ref.getIndex() - JoinConditionAnalyzer.this.leftTableColumnCount;
-            this.comparisons.add(new EqualityTest(l, r, commonType));
+            this.comparisons.add(new EqualityTest(l, r, commonType, nonNull));
         }
 
         void validate() {
@@ -158,17 +159,18 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                     left.getType(), true);
             DBSPType rightType = JoinConditionAnalyzer.this.typeCompiler.convertType(
                     right.getType(), true);
+            boolean mayBeNull = false;
             if (call.op.kind == SqlKind.IS_NOT_DISTINCT_FROM) {
                 // Only used if any of the operands is not nullable
                 if (leftType.mayBeNull && rightType.mayBeNull) {
-                    return false;
+                    mayBeNull = true;
                 }
             }
-            DBSPType commonType = ExpressionCompiler.reduceType(leftType, rightType).setMayBeNull(false);
+            DBSPType commonType = ExpressionCompiler.reduceType(leftType, rightType).setMayBeNull(mayBeNull);
             if (leftIsLeft) {
-                this.addEquality(left, right, commonType);
+                this.addEquality(left, right, commonType, !mayBeNull);
             } else {
-                this.addEquality(right, left, commonType);
+                this.addEquality(right, left, commonType, !mayBeNull);
             }
             return true;
         }
