@@ -189,7 +189,7 @@ build-manager:
 test-sql:
     # SQL-generated code imports adapters crate.
     FROM +build-adapters
-    RUN cd "sql-to-dbsp-compiler" && ./build.sh
+    RUN cd "sql-to-dbsp-compiler" && ./build.sh && mvn test --no-transfer-progress -q -B
 
 build-nexmark:
     FROM +build-dbsp
