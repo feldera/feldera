@@ -519,7 +519,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     let (mut circuit, catalog) = circuit(CircuitConfig::with_workers(2))
                         .expect("Failed to build circuit");
                     let persons = catalog
-                        .input_collection_handle("PERSON")
+                        .input_collection_handle(&SqlIdentifier::from("PERSON"))
                         .expect("Failed to get input collection handle");
                     let mut persons_stream = persons
                         .handle
@@ -541,7 +541,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                         .unwrap();
                 
                     let adult = &catalog
-                        .output_handles("ADULT")
+                        .output_handles(&SqlIdentifier::from("ADULT"))
                         .expect("Failed to get output collection handles")
                         .delta_handle;
                 

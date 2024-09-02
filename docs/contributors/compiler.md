@@ -375,7 +375,7 @@ pub fn test() {
     let (mut circuit, catalog) = circuit(2)
         .expect("Failed to build circuit");
     let persons = catalog
-        .input_collection_handle("PERSON")
+        .input_collection_handle(&SqlIdentifier::from("PERSON"))
         .expect("Failed to get input collection handle");
     let mut persons_stream = persons
         .configure_deserializer(RecordFormat::Csv)
@@ -396,7 +396,7 @@ pub fn test() {
         .unwrap();
 
     let adult = &catalog
-        .output_handles("ADULT")
+        .output_handles(&SqlIdentifier::from("ADULT"))
         .expect("Failed to get output collection handles")
         .delta_handle;
 

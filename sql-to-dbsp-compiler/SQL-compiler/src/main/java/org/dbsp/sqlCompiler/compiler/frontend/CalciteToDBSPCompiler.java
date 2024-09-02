@@ -993,11 +993,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
         JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(
                 leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
         JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join.getCondition());
-        // If any key field is nullable we need to filter the inputs; this will make key columns non-nullable
-        DBSPOperator filteredLeft = this.filterNonNullFields(join, Linq.map(decomposition.comparisons, c -> c.leftColumn), left);
-        DBSPOperator filteredRight = this.filterNonNullFields(join, Linq.map(decomposition.comparisons, c -> c.rightColumn), right);
+        // If any key field that is compared with = is nullable we need to filter the inputs;
+        // this will make some key columns non-nullable
+        DBSPOperator filteredLeft = this.filterNonNullFields(join,
+                Linq.map(Linq.where(decomposition.comparisons, JoinConditionAnalyzer.EqualityTest::nonNull),
+                        JoinConditionAnalyzer.EqualityTest::leftColumn), left);
+        DBSPOperator filteredRight = this.filterNonNullFields(join,
+                Linq.map(Linq.where(decomposition.comparisons, JoinConditionAnalyzer.EqualityTest::nonNull),
+                        JoinConditionAnalyzer.EqualityTest::rightColumn), right);
 
-        // leftElementType = filteredLeft.getType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
         DBSPTypeTuple rightElementType = filteredRight.getType().to(DBSPTypeZSet.class).elementType
                 .to(DBSPTypeTuple.class);
 
@@ -1014,10 +1018,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath r = rightElementType.ref().var();
             List<DBSPExpression> leftKeyFields = Linq.map(
                     decomposition.comparisons,
-                    c -> l.deepCopy().deref().field(c.leftColumn).applyCloneIfNeeded().cast(c.commonType));
+                    c -> l.deepCopy().deref().field(c.leftColumn()).applyCloneIfNeeded().cast(c.commonType()));
             List<DBSPExpression> rightKeyFields = Linq.map(
                     decomposition.comparisons,
-                    c -> r.deepCopy().deref().field(c.rightColumn).applyCloneIfNeeded().cast(c.commonType));
+                    c -> r.deepCopy().deref().field(c.rightColumn()).applyCloneIfNeeded().cast(c.commonType()));
             DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
             keyType = leftKey.getType();
 
@@ -1244,7 +1248,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // Throw away all rows in the right collection that have a NULL in a join key column
         // or in the timestamp column.  They can never surface in the join output.
         List<JoinConditionAnalyzer.EqualityTest> comparisons = decomposition.comparisons;
-        List<Integer> rightFilteredColumns = Linq.map(comparisons, c -> c.rightColumn);
+        List<Integer> rightFilteredColumns = Linq.map(comparisons, JoinConditionAnalyzer.EqualityTest::rightColumn);
         rightFilteredColumns.add(rightTsIndex);
         DBSPOperator filteredRight = this.filterNonNullFields(join, rightFilteredColumns, right);
         DBSPTypeTuple rightElementType = filteredRight.getType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
@@ -1255,7 +1259,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         for (int i = 0; i < comparisons.size(); i++) {
             JoinConditionAnalyzer.EqualityTest test = comparisons.get(i);
             DBSPType leftType = leftElementType.tupFields[i];
-            DBSPType useType = test.commonType.setMayBeNull(leftType.mayBeNull);
+            DBSPType useType = test.commonType().setMayBeNull(leftType.mayBeNull);
             comparisons.set(i, test.withType(useType));
         }
 
@@ -1267,10 +1271,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPVariablePath r = rightElementType.ref().var();
             List<DBSPExpression> leftKeyFields = Linq.map(
                     comparisons,
-                    c -> l.deepCopy().deref().field(c.leftColumn).applyCloneIfNeeded().cast(c.commonType));
+                    c -> l.deepCopy().deref().field(c.leftColumn()).applyCloneIfNeeded().cast(c.commonType()));
             List<DBSPExpression> rightKeyFields = Linq.map(
                     comparisons,
-                    c -> r.deepCopy().deref().field(c.rightColumn).applyCloneIfNeeded().cast(c.commonType));
+                    c -> r.deepCopy().deref().field(c.rightColumn()).applyCloneIfNeeded().cast(c.commonType()));
             DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
             keyType = leftKey.getType().to(DBSPTypeTuple.class);
             DBSPExpression rightKey = new DBSPTupleExpression(node, rightKeyFields);

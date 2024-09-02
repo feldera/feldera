@@ -126,6 +126,7 @@ public class RustFileWriter {
                         MapHandle, ZSetHandle, OutputHandle,
                         dynamic::{DynData,DynDataTyped},
                     };
+                    use feldera_types::program_schema::SqlIdentifier;
                     use dbsp_adapters::Catalog;
                     use feldera_types::{deserialize_table_record, serialize_table_record};
                     use size_of::*;
