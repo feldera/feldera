@@ -2,16 +2,15 @@
 </script>
 
 <script lang="ts">
-  import type { XgressRecord } from '$lib/types/pipelineManager'
   import JSONbig from 'true-json-bigint'
 
   import { VirtualList, type AfterScrollEvent } from 'svelte-virtuallists'
   import { useResizeObserver } from 'runed'
   import { scale } from 'svelte/transition'
   import { humanSize } from '$lib/functions/common/string'
-  import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import type { XgressEntry } from '$lib/services/pipelineManager'
 
-  type Payload = { insert: XgressRecord } | { delete: XgressRecord } | { skippedBytes: number }
+  type Payload = XgressEntry | { skippedBytes: number }
   type Row = { relationName: string } & Payload
   let {
     changeStream
@@ -88,6 +87,10 @@
   >
     {#snippet slot({ item, style }: { item: Row; style: string })}
       <div
+        oncopy={(e) => {
+          e.clipboardData!.setData('text/plain', JSONbig.stringify(item))
+          e.preventDefault()
+        }}
         {style}
         class={`row whitespace-nowrap pl-2 before:inline-block before:w-2 even:!bg-opacity-30 even:bg-surface-100-900 ` +
           ('insert' in item

@@ -85,12 +85,19 @@
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
   import { getCaseIndependentName } from '$lib/functions/felderaRelation'
-  import { relationEggressStream, type ExtendedPipeline } from '$lib/services/pipelineManager'
+  import {
+    relationEggressStream,
+    relationIngress,
+    type ExtendedPipeline,
+    type XgressEntry
+  } from '$lib/services/pipelineManager'
   import type { XgressRecord } from '$lib/types/pipelineManager'
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type { Relation } from '$lib/services/manager'
   import { parseJSONInStream } from '$lib/functions/pipelines/changeStream'
+  import JSONbig from 'true-json-bigint'
+  import { groupBy } from '$lib/functions/common/array'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
@@ -150,10 +157,32 @@
       clearInterval(handle)
     }
   })
+
+  const pasteChanges = (changes: { relationName: string; values: XgressEntry[] }[]) => {
+    for (const batch of changes) {
+      relationIngress(pipelineName, batch.relationName, batch.values, 'force')
+    }
+  }
+  const ingestPasted = (e: ClipboardEvent) => {
+    e.preventDefault()
+    let pastedData = JSONbig.parse(e.clipboardData!.getData('text/plain'))
+    if (!Array.isArray(pastedData)) {
+      pastedData = [pastedData]
+    }
+    pasteChanges(
+      groupBy(
+        pastedData as ({ relationName: string } & XgressEntry)[],
+        (row) => row.relationName
+      ).map(([relationName, values]) => ({
+        relationName,
+        values: values.map(({ relationName, ...v }) => v)
+      }))
+    )
+  }
 </script>
 
 <div class="flex h-full flex-row">
-  <PaneGroup direction="horizontal">
+  <PaneGroup direction="horizontal" onpaste={ingestPasted}>
     <Pane defaultSize={20} minSize={5} class="flex h-full p-2 pr-0">
       <div class="flex w-full flex-col overflow-y-auto text-nowrap">
         {#snippet relationItem(relation: RelationInfo & ExtraType)}

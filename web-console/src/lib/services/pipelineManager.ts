@@ -19,7 +19,8 @@ import {
   createApiKey,
   deleteApiKey as _deleteApiKey,
   httpOutput,
-  getConfigDemos
+  getConfigDemos,
+  httpInput
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -30,7 +31,7 @@ export type {
   RuntimeConfig
 } from '$lib/services/manager'
 import { P, match } from 'ts-pattern'
-import type { ControllerStatus } from '$lib/types/pipelineManager'
+import type { ControllerStatus, XgressRecord } from '$lib/types/pipelineManager'
 export type { ProgramSchema, ProgramStatus } from '$lib/services/manager'
 
 import * as AxaOidc from '@axa-fr/oidc-client'
@@ -326,6 +327,25 @@ export const relationEggressStream = async (pipelineName: string, relationName: 
     }
   )
   return result.status === 200 && result.body ? result.body : (result.json() as Promise<Error>)
+}
+
+export type XgressEntry = { insert: XgressRecord } | { delete: XgressRecord }
+
+/**
+ * @param force Insert changes immediately even if pipeline is stopped
+ */
+export const relationIngress = async (
+  pipelineName: string,
+  relationName: string,
+  data: XgressEntry[],
+  force?: 'force'
+) => {
+  return httpInput({
+    path: { pipeline_name: pipelineName, table_name: relationName },
+    parseAs: 'text', // Response is empty, so no need to parse it as JSON
+    query: { format: 'json', array: true, update_format: 'insert_delete', force: !!force },
+    body: data as any
+  })
 }
 
 export const getDemos = handled(getConfigDemos)
