@@ -472,6 +472,7 @@ case $runner:$language in
             --cores $cores \
             --events $events \
             --csv results.csv \
+	    --circuit-profile \
             $(if $storage; then printf "%s" --storage; fi) \
             --query $(if test $query = all; then echo all; else echo q$query; fi)
         ;;
