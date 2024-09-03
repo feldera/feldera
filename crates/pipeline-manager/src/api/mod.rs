@@ -125,6 +125,7 @@ The program version is used internally by the compiler to know when to recompile
 
         // Common
         crate::db::types::common::Version,
+        crate::api::config_api::Configuration,
 
         // Pipeline
         crate::db::types::pipeline::PipelineId,

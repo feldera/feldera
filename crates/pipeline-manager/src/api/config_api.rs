@@ -8,6 +8,12 @@ use utoipa::ToSchema;
 
 use super::{ManagerError, ServerState};
 
+#[derive(Clone, Serialize, ToSchema)]
+pub(crate) struct Configuration {
+    pub telemetry: String,
+    pub version: String,
+}
+
 /// Retrieve general configuration.
 #[utoipa::path(
     path="/config",
@@ -15,7 +21,7 @@ use super::{ManagerError, ServerState};
         (status = OK
             , description = "The response body contains basic configuration information about this host."
             , content_type = "application/json"
-            , body = AuthProvider),
+            , body = Configuration),
         (status = INTERNAL_SERVER_ERROR
             , description = "Request failed."
             , body = ErrorResponse),
