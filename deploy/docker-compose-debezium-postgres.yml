@@ -27,6 +27,7 @@ services:
       REDPANDA_BROKERS: "redpanda:9092"
       RUST_LOG: "info"
       KAFKA_CONNECT_SERVER: "http://connect:8083"
+      POSTGRES_SERVER: "postgres:5432"
     command:
       - bash
       - -c
