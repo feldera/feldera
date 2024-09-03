@@ -9,14 +9,14 @@ import type { AuthDetails } from '$lib/types/auth'
 import { goto } from '$app/navigation'
 import posthog from 'posthog-js'
 import { getConfig } from '$lib/services/pipelineManager'
+import type { Configuration } from '$lib/services/manager'
 
 const { OidcClient, OidcLocation } = AxaOidc
 
 export const ssr = false
 export const trailingSlash = 'always'
 
-const initPosthog = async () => {
-  const config = await getConfig()
+const initPosthog = async (config: Configuration) => {
   if (!config.telemetry) {
     return
   }
@@ -28,28 +28,33 @@ const initPosthog = async () => {
   })
 }
 
-export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
+export const load = async ({
+  fetch,
+  url
+}): Promise<{ auth: AuthDetails; felderaVersion: string }> => {
   if (!('window' in globalThis)) {
     return {
-      auth: 'none'
+      auth: 'none',
+      felderaVersion: ''
     }
   } else {
   }
 
-  const authConfig = await loadAuthConfig()
+  const [config, authConfig] = await Promise.all([getConfig(), loadAuthConfig()])
   if (!authConfig) {
     return {
-      auth: 'none'
+      auth: 'none',
+      felderaVersion: config.version
     }
   }
   const axaOidcConfig = toAxaOidcConfig(authConfig.oidc)
-  return axaOidcAuth({
+  const auth = await axaOidcAuth({
     oidcConfig: axaOidcConfig,
     logoutExtras: authConfig.logoutExtras,
     onBeforeLogin: () => window.sessionStorage.setItem('redirect_to', window.location.href),
     onAfterLogin: async (idTokenPayload) => {
       {
-        initPosthog().then(() => {
+        initPosthog(config).then(() => {
           if (idTokenPayload?.email) {
             posthog.identify(idTokenPayload.email, {
               email: idTokenPayload.email,
@@ -71,6 +76,10 @@ export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
       posthog.reset()
     }
   })
+  return {
+    auth,
+    felderaVersion: config.version
+  }
 }
 
 const axaOidcAuth = async (params: {
@@ -118,7 +127,5 @@ const axaOidcAuth = async (params: {
       accessToken: tokens.accessToken // Only used in HTTP requests that cannot be handled with the global HTTP client instance from @hey-api/client-fetch
     }
   })
-  return {
-    auth: result
-  }
+  return result
 }

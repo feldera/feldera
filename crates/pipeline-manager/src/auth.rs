@@ -722,6 +722,7 @@ mod test {
             config_file: None,
             allowed_origins: None,
             demos_dir: None,
+            telemetry: "".to_owned(),
         };
 
         let (conn, _temp) = crate::db::test::setup_pg().await;
