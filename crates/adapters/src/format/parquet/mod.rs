@@ -300,12 +300,12 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
                         "entries",
                         [
                             Arc::new(ArrowField::new(
-                                "keys",
+                                "key",
                                 columntype_to_datatype(key_type, delta_lake),
                                 key_type.nullable,
                             )),
                             Arc::new(ArrowField::new(
-                                "values",
+                                "value",
                                 columntype_to_datatype(val_type, delta_lake),
                                 val_type.nullable,
                             )),

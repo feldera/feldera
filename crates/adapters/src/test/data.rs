@@ -1,6 +1,6 @@
 use arrow::array::{
-    ArrayRef, BooleanArray, Date32Array, Int64Array, Int64Builder, MapBuilder, StringArray,
-    StringBuilder, StructArray, TimestampMicrosecondArray,
+    ArrayRef, BooleanArray, Date32Array, Int64Array, Int64Builder, MapBuilder, MapFieldNames,
+    StringArray, StringBuilder, StructArray, TimestampMicrosecondArray,
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
@@ -353,8 +353,8 @@ impl TestStruct2 {
             arrow::datatypes::Field::new_map(
                 "m",
                 "entries",
-                arrow::datatypes::Field::new("keys", DataType::Utf8, false),
-                arrow::datatypes::Field::new("values", DataType::Int64, false),
+                arrow::datatypes::Field::new("key", DataType::Utf8, false),
+                arrow::datatypes::Field::new("value", DataType::Int64, false),
                 false,
                 false,
             ),
@@ -534,9 +534,20 @@ impl TestStruct2 {
         let string_builder = StringBuilder::new();
         let int_builder = Int64Builder::new();
 
-        let mut map_builder = MapBuilder::new(None, string_builder, int_builder).with_values_field(
-            arrow::datatypes::Field::new("values", DataType::Int64, false),
-        );
+        let mut map_builder = MapBuilder::new(
+            Some(MapFieldNames {
+                entry: "entries".to_string(),
+                key: "key".to_string(),
+                value: "value".to_string(),
+            }),
+            string_builder,
+            int_builder,
+        )
+        .with_values_field(arrow::datatypes::Field::new(
+            "value",
+            DataType::Int64,
+            false,
+        ));
         for x in data.iter() {
             for (key, val) in x.field_6.iter() {
                 map_builder.keys().append_value(key);
