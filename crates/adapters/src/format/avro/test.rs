@@ -17,6 +17,7 @@ use dbsp::utils::Tup2;
 use dbsp::{DBData, OrdZSet};
 use feldera_types::{
     format::avro::AvroEncoderConfig,
+    program_schema::Relation,
     serde_with_context::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig},
 };
 use feldera_types::{
@@ -215,7 +216,7 @@ where
             // 5-byte header
             let mut buffer = vec![0; 5];
             let refs = HashMap::new();
-            let serializer = AvroSchemaSerializer::new(&avro_schema, &refs);
+            let serializer = AvroSchemaSerializer::new(&avro_schema, &refs, true);
             let val = x
                 .serialize_with_context(serializer, &avro_ser_config())
                 .unwrap();
@@ -263,7 +264,8 @@ where
         .map(|x| {
             // 5-byte header
             let mut buffer = vec![0; 5];
-            let serializer = AvroSchemaSerializer::new(&debezium_schema, resolved.get_names());
+            let serializer =
+                AvroSchemaSerializer::new(&debezium_schema, resolved.get_names(), true);
             let dbz_message = DebeziumMessage::new("u", Some(x.clone()), Some(x.clone()));
             let val = dbz_message
                 .serialize_with_context(serializer, &avro_ser_config())
@@ -352,14 +354,20 @@ where
     T: DBData + for<'de> Deserialize<'de> + SerializeWithContext<SqlSerdeConfig>,
 {
     let config = AvroEncoderConfig {
-        schema: avro_schema.to_string(),
+        schema: Some(avro_schema.to_string()),
         ..Default::default()
     };
 
     let consumer = MockOutputConsumer::new();
     let consumer_data = consumer.data.clone();
-    let mut encoder =
-        AvroEncoder::create("avro_test_endpoint", Box::new(consumer), config).unwrap();
+    let mut encoder = AvroEncoder::create(
+        "avro_test_endpoint",
+        &Relation::empty(),
+        Box::new(consumer),
+        config,
+        None,
+    )
+    .unwrap();
     let zsets = batches
         .iter()
         .map(|batch| {
@@ -424,7 +432,8 @@ where
     let mut actual_output = Vec::new();
     for (_, avro_datum) in consumer_data.lock().unwrap().iter() {
         let avro_value =
-            apache_avro::from_avro_datum(&encoder.schema, &mut &avro_datum[5..], None).unwrap();
+            apache_avro::from_avro_datum(&encoder.value_schema, &mut &avro_datum[5..], None)
+                .unwrap();
         // FIXME: this will use the default `serde::Deserialize` implementation and will only work
         // for types where it happens to do the right thing. We should use Avro-compatible
         // deserialization logic instead, when it exists.

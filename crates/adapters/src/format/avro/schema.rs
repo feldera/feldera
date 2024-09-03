@@ -1,7 +1,16 @@
 //! Helpers for working with Avro schemas.
 
-use apache_avro::{schema::RecordField, Schema as AvroSchema};
-use feldera_types::program_schema::{canonical_identifier, ColumnType, Field, SqlType};
+use std::collections::BTreeMap;
+
+use apache_avro::{
+    schema::{DecimalSchema, Name, RecordField, RecordFieldOrder, RecordSchema, UnionSchema},
+    Schema as AvroSchema,
+};
+use feldera_types::program_schema::{
+    canonical_identifier, ColumnType, Field, Relation, SqlIdentifier, SqlType,
+};
+
+use crate::ControllerError;
 
 /// Convert schema to JSON format.
 pub fn schema_json(schema: &AvroSchema) -> String {
@@ -217,7 +226,7 @@ pub fn validate_field_schema(
             if key_type.typ != SqlType::Char || key_type.typ != SqlType::Varchar {
                 return Err(format!(
                     "cannot deserialize map with key type '{}': Avro only allows string keys",
-                    serde_json::to_string(&key_type.typ).unwrap()
+                    &key_type.typ
                 ));
             }
 
@@ -235,4 +244,221 @@ pub fn validate_field_schema(
     }
 
     Ok(())
+}
+
+pub fn is_valid_avro_identifier(ident: &str) -> bool {
+    if ident.is_empty() {
+        return false;
+    }
+    let first = ident.chars().next().unwrap();
+
+    (first.is_ascii_alphabetic() || first == '_')
+        && ident.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+pub fn gen_key_schema(
+    record_schema: &RecordSchema,
+    key_fields: &[SqlIdentifier],
+) -> Result<AvroSchema, ControllerError> {
+    let key_fields = key_fields.iter().map(|f| f.name()).collect::<Vec<_>>();
+
+    let mut fields = Vec::new();
+    let mut lookup = BTreeMap::new();
+
+    for field in record_schema.fields.iter() {
+        if key_fields.contains(&field.name) {
+            lookup.insert(field.name.clone(), fields.len());
+            fields.push(field.clone());
+        }
+    }
+
+    let key_record_schema = RecordSchema {
+        fields,
+        lookup,
+        name: Name {
+            name: format!("__{}__Key", &record_schema.name.name),
+            namespace: record_schema.name.namespace.clone(),
+        },
+        aliases: None,
+        doc: None,
+        attributes: BTreeMap::new(),
+    };
+
+    Ok(AvroSchema::Record(key_record_schema))
+}
+
+#[derive(Default)]
+pub struct AvroSchemaBuilder {
+    namespace: Option<String>,
+    key_fields: Option<Vec<SqlIdentifier>>,
+}
+
+impl AvroSchemaBuilder {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn with_namespace(mut self, namespace: Option<&str>) -> Self {
+        self.namespace = namespace.map(|ns| ns.to_string());
+        self
+    }
+
+    pub fn with_key_fields(mut self, key_fields: Option<&Vec<SqlIdentifier>>) -> Self {
+        self.key_fields = key_fields.cloned();
+        self
+    }
+
+    pub fn relation_to_avro_schema(
+        &self,
+        relation_schema: &Relation,
+    ) -> Result<AvroSchema, String> {
+        Ok(AvroSchema::Record(self.struct_to_avro_schema(
+            &relation_schema.name,
+            &relation_schema.fields,
+            true,
+        )?))
+    }
+
+    fn struct_to_avro_schema(
+        &self,
+        name: &SqlIdentifier,
+        struct_fields: &[Field],
+        top_level: bool,
+    ) -> Result<RecordSchema, String> {
+        let name = name.name();
+        if !is_valid_avro_identifier(&name) {
+            return Err(format!("'{name}' is not a valid Avro identifier"));
+        }
+
+        let mut fields = Vec::with_capacity(struct_fields.len());
+        let mut lookup = BTreeMap::new();
+
+        for (i, field) in struct_fields.iter().enumerate() {
+            let key_field = self.key_fields.is_none()
+                || self.key_fields.as_ref().unwrap().contains(&field.name);
+            let f = self.field_to_avro_schema(field, i, top_level && !key_field)?;
+            lookup.insert(f.name.clone(), i);
+            fields.push(f);
+        }
+
+        Ok(RecordSchema {
+            name: Name {
+                name: name.to_string(),
+                namespace: self.namespace.clone(),
+            },
+            aliases: None,
+            doc: None,
+            fields,
+            lookup,
+            attributes: BTreeMap::new(),
+        })
+    }
+
+    fn field_to_avro_schema(
+        &self,
+        field: &Field,
+        position: usize,
+        force_optional: bool,
+    ) -> Result<RecordField, String> {
+        let name = field.name.name();
+        if !is_valid_avro_identifier(&name) {
+            return Err(format!("'{name}' is not a valid Avro identifier"));
+        }
+
+        Ok(RecordField {
+            name: name.clone(),
+            doc: None,
+            aliases: None,
+            default: None,
+            schema: self
+                .column_type_to_avro_schema(&field.columntype, force_optional)
+                .map_err(|e| format!("error generating Avro schema for field '{}': {e}", &name))?,
+            order: RecordFieldOrder::Ascending,
+            position,
+            custom_attributes: BTreeMap::new(),
+        })
+    }
+
+    fn column_type_to_avro_schema(
+        &self,
+        column_type: &ColumnType,
+        force_optional: bool,
+    ) -> Result<AvroSchema, String> {
+        let inner = self.column_type_to_avro_schema_inner(column_type)?;
+
+        if column_type.nullable || force_optional {
+            Ok(AvroSchema::Union(
+                UnionSchema::new(vec![AvroSchema::Null, inner])
+                    .map_err(|e| format!("error generating union schema: {e}"))?,
+            ))
+        } else {
+            Ok(inner)
+        }
+    }
+
+    fn column_type_to_avro_schema_inner(
+        &self,
+        column_type: &ColumnType,
+    ) -> Result<AvroSchema, String> {
+        Ok(match column_type.typ {
+            SqlType::Boolean => AvroSchema::Boolean,
+            SqlType::TinyInt => AvroSchema::Int,
+            SqlType::SmallInt => AvroSchema::Int,
+            SqlType::Int => AvroSchema::Int,
+            SqlType::BigInt => AvroSchema::Long,
+            SqlType::Real => AvroSchema::Float,
+            SqlType::Double => AvroSchema::Double,
+            SqlType::Decimal => {
+                let precision = column_type
+                    .precision
+                    .ok_or("internal error: decimal type is missing precision")?
+                    as usize;
+                let scale = column_type
+                    .scale
+                    .ok_or("internal error: decimal type is missing scale")?
+                    as usize;
+                AvroSchema::Decimal(DecimalSchema {
+                    precision,
+                    scale,
+                    inner: Box::new(AvroSchema::Bytes),
+                })
+            }
+            SqlType::Char => AvroSchema::String,
+            SqlType::Varchar => AvroSchema::String,
+            SqlType::Binary => AvroSchema::Bytes,
+            SqlType::Varbinary => AvroSchema::Bytes,
+            SqlType::Time => AvroSchema::TimeMicros,
+            SqlType::Date => AvroSchema::Date,
+            SqlType::Timestamp => AvroSchema::TimestampMicros,
+            SqlType::Interval(_) => {
+                return Err("not implemented: Avro encoding for the SQL interval type".to_string())
+            }
+            SqlType::Array => {
+                let component = column_type
+                    .component
+                    .as_ref()
+                    .ok_or("internal error: array type is missing array element type")?;
+                AvroSchema::Array(Box::new(self.column_type_to_avro_schema(component, false)?))
+            }
+            SqlType::Struct => {
+                return Err("not implemented: Avro encoding for user-defined SQL types".to_string())
+            }
+            SqlType::Map => {
+                let key_type = column_type.value.as_ref().ok_or(
+                    "internal error: relation schema contains a map field, with a missing key type",
+                )?;
+                if !key_type.typ.is_string() {
+                    return Err(format!(
+                        "cannot serialize map with key type '{}': Avro only allows string keys",
+                        &key_type.typ
+                    ));
+                }
+                let value_type = column_type.value.as_ref().ok_or("internal error: relation schema contains a map field, with a missing value type")?;
+                AvroSchema::Map(Box::new(
+                    self.column_type_to_avro_schema(value_type, false)?,
+                ))
+            }
+            SqlType::Null => AvroSchema::Null,
+        })
+    }
 }

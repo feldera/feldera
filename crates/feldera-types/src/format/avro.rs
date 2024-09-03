@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 use utoipa::ToSchema;
 
 /// Supported Avro data change event formats.
@@ -16,11 +16,46 @@ pub enum AvroUpdateFormat {
     /// Debezium data change event format.
     #[serde(rename = "debezium")]
     Debezium,
+
+    /// Confluent JDBC connector change event format.
+    #[serde(rename = "confluent_jdbc")]
+    ConfluentJdbc,
 }
 
 impl Default for AvroUpdateFormat {
     fn default() -> Self {
         Self::Raw
+    }
+}
+
+impl Display for AvroUpdateFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Raw => f.write_str("raw"),
+            Self::Debezium => f.write_str("debezium"),
+            Self::ConfluentJdbc => f.write_str("confluent_jdbc"),
+        }
+    }
+}
+
+impl AvroUpdateFormat {
+    /// `true` - this format has both key and value components.
+    /// `false` - format includes value only.
+    pub fn has_key(&self) -> bool {
+        match self {
+            Self::Raw => false,
+            Self::Debezium => true,
+            Self::ConfluentJdbc => true,
+        }
+    }
+
+    /// Does the format support deletions?
+    pub fn supports_deletes(&self) -> bool {
+        match self {
+            Self::Raw => false,
+            Self::Debezium => true,
+            Self::ConfluentJdbc => true,
+        }
     }
 }
 
@@ -91,16 +126,81 @@ pub struct AvroParserConfig {
     pub registry_config: AvroSchemaRegistryConfig,
 }
 
+/// Subject name strategies used in registering key and value schemas
+/// with the schema registry.
+#[derive(Clone, Serialize, Deserialize, Debug, ToSchema)]
+pub enum SubjectNameStrategy {
+    /// The subject name is derived directly from the Kafka topic name.
+    ///
+    /// For update formats with both key and value components, use subject names
+    /// `{topic_name}-key` and `{topic_name}-value` for key and value schemas respectively.
+    /// For update formats without a key (e.g., `raw`), publish value schema
+    /// under the subject name `{topic_name}`.
+    ///
+    /// Only applicable when using Kafka as a transport.
+    #[serde(rename = "topic_name")]
+    TopicName,
+    /// The subject name is derived from the fully qualified name of the record.
+    #[serde(rename = "record_name")]
+    RecordName,
+    /// Combines both the topic name and the record name to form the subject.
+    ///
+    /// For update formats with both key and value components, use subject names
+    /// `{topic_name}-{record_name}-key` and `{topic_name}-{record_name}-value` for
+    /// key and value schemas respectively.
+    /// For update formats without a key (e.g., `raw`), publish value schema
+    /// under the subject name `{topic_name}-{record_name}`.
+    ///
+    /// Here, `{record_name}` is the name of the SQL view tha this connector
+    /// is attached to.
+    ///
+    /// Only applicable when using Kafka as a transport.
+    #[serde(rename = "topic_record_name")]
+    TopicRecordName,
+}
+
 /// Avro output format configuration.
 #[derive(Serialize, Deserialize, Debug, Default, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AvroEncoderConfig {
+    /// Format used to encode data change events in this stream.
+    ///
+    /// The default value is 'raw'.
+    #[serde(default)]
+    pub update_format: AvroUpdateFormat,
+
     /// Avro schema used to encode output records.
     ///
+    /// When specified, the encoder will use this schema; otherwise it will automatically
+    /// generate an Avro schema based on the SQL view definition.
+    ///
     /// Specified as a string containing schema definition in JSON format.
-    /// This schema must match precisely the SQL view definition, including
+    /// This schema must match precisely the SQL view definition, modulo
     /// nullability of columns.
-    pub schema: String,
+    pub schema: Option<String>,
+
+    /// Avro namespace for the generated Avro schemas.
+    pub namespace: Option<String>,
+
+    /// Subject name strategy used to publish Avro schemas used by the connector
+    /// in the schema registry.
+    ///
+    /// When this property is not specified, the connector chooses subject name strategy automatically:
+    /// * `topic_name` for `confluent_jdbc` update format
+    /// * `record_name` for `raw` update format
+    pub subject_name_strategy: Option<SubjectNameStrategy>,
+
+    /// When this option is set, only the listed fields appear in the Debezium message key.
+    ///
+    /// This option is only valid with the `confluent_jdbc` update format.
+    /// It is used when writing to a table with primary keys.
+    /// For such tables, the Confluent JDBC sink connector expects the message key
+    /// (and its schema) to contain only the primary key columns.
+    ///
+    /// When this field is set, the connector generates a separate Avro schema, containing
+    /// only the listed fields, and uses this schema to encode Kafka
+    /// message keys.
+    pub key_fields: Option<Vec<String>>,
 
     /// Set to `true` if serialized messages should only contain raw data
     /// without the header carrying schema ID.
@@ -111,6 +211,10 @@ pub struct AvroEncoderConfig {
     pub skip_schema_id: bool,
 
     /// Schema registry configuration.
+    ///
+    /// When configured, the connector will push the Avro schema, whether it is specified as part of
+    /// connector configuration or generated automatically, to the schema registry and use the schema id
+    /// assigned by the registry in the
     #[serde(flatten)]
     pub registry_config: AvroSchemaRegistryConfig,
 }

@@ -1459,7 +1459,12 @@ impl ControllerInner {
             let format = <dyn OutputFormat>::get_format(&format_config.name).ok_or_else(|| {
                 ControllerError::unknown_output_format(endpoint_name, &format_config.name)
             })?;
-            format.new_encoder(endpoint_name, &format_config.config, &handles.schema, probe)?
+            format.new_encoder(
+                endpoint_name,
+                &endpoint_config.connector_config,
+                &handles.schema,
+                probe,
+            )?
         } else {
             // `endpoint` is `None` - instantiate an integrated endpoint.
             let endpoint = create_integrated_output_endpoint(
@@ -1940,8 +1945,8 @@ impl OutputConsumer for OutputProbe {
         }
     }
 
-    fn push_key(&mut self, key: &[u8], val: &[u8], num_records: usize) {
-        let num_bytes = key.len() + val.len();
+    fn push_key(&mut self, key: &[u8], val: Option<&[u8]>, num_records: usize) {
+        let num_bytes = key.len() + val.map(|v| v.len()).unwrap_or_default();
 
         match self.endpoint.push_key(key, val) {
             Ok(()) => {

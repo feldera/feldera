@@ -356,14 +356,14 @@ pub trait OutputEndpoint: Send {
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()>;
 
-    /// Output a message consisting of a key/value pair.
+    /// Output a message consisting of a key/value pair, with optional value.
     ///
     /// This API is implemented by Kafka and other transports that transmit
     /// messages consisting of key and value fields and in invoked by
     /// Kafka-specific data formats that rely on this message structure,
     /// e.g., Debezium. If a given transport does not implement this API, it
     /// should return an error.
-    fn push_key(&mut self, key: &[u8], val: &[u8]) -> AnyResult<()>;
+    fn push_key(&mut self, key: &[u8], val: Option<&[u8]>) -> AnyResult<()>;
 
     /// Notifies the output endpoint that output for the current step is
     /// complete.

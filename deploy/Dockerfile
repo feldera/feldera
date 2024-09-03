@@ -193,12 +193,16 @@ RUN apt update && apt install pkg-config \
 CMD bash
 
 # Kafka connect with all Debezium connectors + the Snowflake connector.
-FROM debezium/connect:2.5 AS kafka-connect
+FROM debezium/connect:2.7 AS kafka-connect
 RUN mkdir /kafka/connect/snowflake-kafka-connector
 RUN cd /kafka/connect/snowflake-kafka-connector \
   && curl -LO https://repo1.maven.org/maven2/com/snowflake/snowflake-kafka-connector/2.1.0/snowflake-kafka-connector-2.1.0.jar \
   && curl -LO https://repo1.maven.org/maven2/org/bouncycastle/bc-fips/1.0.1/bc-fips-1.0.1.jar \
-  && curl -LO https://repo1.maven.org/maven2/org/bouncycastle/bcpkix-fips/1.0.3/bcpkix-fips-1.0.3.jar
+  && curl -LO https://repo1.maven.org/maven2/org/bouncycastle/bcpkix-fips/1.0.3/bcpkix-fips-1.0.3.jar \
+  && curl -LO http://d2p6pa21dvn84.cloudfront.net/api/plugins/confluentinc/kafka-connect-jdbc/versions/10.7.11/confluentinc-kafka-connect-jdbc-10.7.11.zip \
+  && unzip confluentinc-kafka-connect-jdbc-10.7.11.zip
+
+#&& curl -LO https://packages.confluent.io/maven/io/confluent/kafka-connect-jdbc/10.7.4/kafka-connect-jdbc-10.7.4.jar
 
 # By default, only build the release version
 FROM release

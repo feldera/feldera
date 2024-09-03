@@ -140,6 +140,16 @@ impl AvroParser {
             ));
         }
 
+        match config.update_format {
+            AvroUpdateFormat::ConfluentJdbc => {
+                return Err(ControllerError::invalid_parser_configuration(
+                    endpoint_name,
+                    "'confluent_jdbc' data change event format is not yet supported by the Avro parser",
+                ));
+            }
+            AvroUpdateFormat::Debezium | AvroUpdateFormat::Raw => (),
+        }
+
         let mut parser = Self {
             endpoint_name: endpoint_name.to_string(),
             input_handle,
@@ -230,6 +240,9 @@ impl AvroParser {
                     schema_json(schema)
                 ))),
             },
+            AvroUpdateFormat::ConfluentJdbc => {
+                unreachable!()
+            }
         }
     }
 
@@ -356,6 +369,9 @@ impl AvroParser {
                             )
                         })?;
                 }
+            }
+            AvroUpdateFormat::ConfluentJdbc => {
+                unreachable!()
             }
         }
 

@@ -45,12 +45,13 @@ impl OutputConsumer for MockOutputConsumer {
     fn push_buffer(&mut self, buffer: &[u8], _num_records: usize) {
         self.data.lock().unwrap().push((None, buffer.to_vec()))
     }
-    fn push_key(&mut self, key: &[u8], val: &[u8], _num_records: usize) {
+    fn push_key(&mut self, key: &[u8], val: Option<&[u8]>, _num_records: usize) {
         // println!("push_key {:?} , {:?}", key, val);
+        // TODO: support None values.
         self.data
             .lock()
             .unwrap()
-            .push((Some(key.to_vec()), val.to_vec()))
+            .push((Some(key.to_vec()), val.unwrap().to_vec()))
     }
     fn batch_end(&mut self) {}
 }
