@@ -177,6 +177,13 @@ pub struct ApiServerConfig {
     #[serde(default)]
     #[arg(long)]
     pub demos_dir: Option<String>,
+
+    /// Telemetry key.
+    ///
+    /// If a telemetry key is set, anonymous usage data will be collected
+    /// and sent to our telemetry service.
+    #[arg(long, default_value = "", env = "TELEMETRY")]
+    pub telemetry: String,
 }
 
 impl ApiServerConfig {

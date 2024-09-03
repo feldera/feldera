@@ -115,6 +115,7 @@ The program version is used internally by the compiler to know when to recompile
         // Configuration
         config_api::get_config_authentication,
         config_api::get_config_demos,
+        config_api::get_config,
     ),
     components(schemas(
         // Authentication
@@ -233,6 +234,7 @@ fn public_scope() -> Scope {
     // or route resolution does not work correctly.
     web::scope("")
         .service(config_api::get_config_authentication)
+        .service(config_api::get_config)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(healthz)
         .service(ResourceFiles::new("/", generate()).resolve_not_found_to_root())
