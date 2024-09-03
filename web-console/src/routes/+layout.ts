@@ -7,6 +7,8 @@ import { base } from '$app/paths'
 import { authRequestMiddleware, authResponseMiddleware } from '$lib/services/auth'
 import type { AuthDetails } from '$lib/types/auth'
 import { goto } from '$app/navigation'
+import posthog from 'posthog-js'
+
 const { OidcClient, OidcLocation } = AxaOidc
 
 export const ssr = false
@@ -17,6 +19,13 @@ export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
     return {
       auth: 'none'
     }
+  } else {
+    posthog.init('<ph_project_api_key>', {
+      api_host: 'https://us.i.posthog.com',
+      person_profiles: 'identified_only',
+      capture_pageview: false,
+      capture_pageleave: false
+    })
   }
 
   const authConfig = await loadAuthConfig()
@@ -30,13 +39,26 @@ export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
     oidcConfig: axaOidcConfig,
     logoutExtras: authConfig.logoutExtras,
     onBeforeLogin: () => window.sessionStorage.setItem('redirect_to', window.location.href),
-    onAfterLogin: () => {
-      const redirectTo = window.sessionStorage.getItem('redirect_to')
-      if (!redirectTo) {
-        return
+    onAfterLogin: (idTokenPayload) => {
+      {
+        if (idTokenPayload?.email) {
+          posthog.identify(idTokenPayload.email, {
+            email: idTokenPayload.email,
+            name: idTokenPayload.name
+          })
+        }
       }
-      window.sessionStorage.removeItem('redirect_to')
-      goto(redirectTo)
+      {
+        const redirectTo = window.sessionStorage.getItem('redirect_to')
+        if (!redirectTo) {
+          return
+        }
+        window.sessionStorage.removeItem('redirect_to')
+        goto(redirectTo)
+      }
+    },
+    onBeforeLogout() {
+      posthog.reset()
     }
   })
 }
@@ -45,7 +67,8 @@ const axaOidcAuth = async (params: {
   oidcConfig: AxaOidc.OidcConfiguration
   logoutExtras?: AxaOidc.StringMap
   onBeforeLogin?: () => void
-  onAfterLogin?: () => void
+  onAfterLogin?: (idTokenPayload: any, userInfo: Promise<AxaOidc.OidcUserInfo>) => void
+  onBeforeLogout?: () => void
 }) => {
   const oidcClient = OidcClient.getOrCreate(() => fetch, new OidcLocation())(params.oidcConfig)
   const href = window.location.href
@@ -68,14 +91,18 @@ const axaOidcAuth = async (params: {
       }
     }
 
-    params.onAfterLogin?.()
-    const userInfo = await oidcClient.userInfoAsync()
+    const userInfoPromise = oidcClient.userInfoAsync()
+    params.onAfterLogin?.(tokens.idTokenPayload, userInfoPromise)
+    const userInfo = await userInfoPromise
 
     client.interceptors.request.use(authRequestMiddleware)
     client.interceptors.response.use(authResponseMiddleware)
 
     return {
-      logout: ({ callbackUrl }) => oidcClient.logoutAsync(callbackUrl, params.logoutExtras),
+      logout: ({ callbackUrl }) => {
+        params.onBeforeLogout?.()
+        return oidcClient.logoutAsync(callbackUrl, params.logoutExtras)
+      },
       userInfo,
       profile: fromAxaUserInfo(userInfo),
       accessToken: tokens.accessToken // Only used in HTTP requests that cannot be handled with the global HTTP client instance from @hey-api/client-fetch
