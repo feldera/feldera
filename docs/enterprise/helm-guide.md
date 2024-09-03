@@ -19,9 +19,9 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
   `learnmore@feldera.com` if you are interested.
 
 * The Feldera Helm chart and Docker images are hosted on
-  [AWS ECR public registry](https://gallery.ecr.aws/n4h1j7h1).
+  [AWS ECR public registry](https://gallery.ecr.aws/feldera).
   We will use the chart and images by referring to their online repository
-  naming `public.ecr.aws/n4h1j7h1/<image>:<version>`.
+  naming `public.ecr.aws/feldera/<image>:<version>`.
 
 ## Installing Feldera Enterprise
 
@@ -41,9 +41,9 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    LICENSE_KEY="00000000-0000-0000-0000-000000000000"  # Set to own
    
    helm upgrade --install feldera \
-       oci://public.ecr.aws/n4h1j7h1/feldera-chart --version 0.7.3 \
+       oci://public.ecr.aws/feldera/feldera-chart --version 0.8.0 \
        --namespace feldera --create-namespace \
-       --set felderaVersion="0.7.3" \
+       --set felderaVersion="0.8.0" \
        --set felderaAccountId="${ACCOUNT_ID}" \
        --set felderaLicenseKey="${LICENSE_KEY}" \
        --set felderaDatabaseSecretRef="feldera-db-insecure-secret"
@@ -64,7 +64,6 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    NAME                                         READY   STATUS    RESTARTS   AGE
    feldera-db-0                                 1/1     Running   0          3m9s
    feldera-kubernetes-runner-6447b8f56d-86j4w   1/1     Running   0          3m9s
-   feldera-prober-server-5c945b7fcf-9r727       1/1     Running   0          3m9s
    feldera-compiler-server-0                    1/1     Running   0          3m9s
    feldera-api-server-c546499bc-wdpkm           1/1     Running   0          3m9s
    ```
@@ -125,7 +124,6 @@ Instead of the insecure default DB credentials, you can supply your own custom d
 ```
 $ kubectl get svc -n feldera
 NAME                        TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)     AGE
-feldera-prober-server       ClusterIP   10.43.67.233    <none>        44444/TCP   5m10s
 feldera-kubernetes-runner   ClusterIP   10.43.175.228   <none>        8080/TCP    5m10s
 feldera-api-server          ClusterIP   10.43.176.120   <none>        8080/TCP    5m10s
 feldera-db                  ClusterIP   10.43.60.190    <none>        5431/TCP    5m10s
@@ -138,7 +136,6 @@ $ kubectl get pods -n feldera
 NAME                                         READY   STATUS    RESTARTS   AGE
 feldera-db-0                                 1/1     Running   0          5m31s
 feldera-kubernetes-runner-6447b8f56d-86j4w   1/1     Running   0          5m31s
-feldera-prober-server-5c945b7fcf-9r727       1/1     Running   0          5m31s
 feldera-compiler-server-0                    1/1     Running   0          5m31s
 feldera-api-server-c546499bc-wdpkm           1/1     Running   0          5m31s
 ```
@@ -156,7 +153,6 @@ feldera-compiler-server   1/1     5m41s
 $ kubectl get deployments -n feldera
 NAME                        READY   UP-TO-DATE   AVAILABLE   AGE
 feldera-kubernetes-runner   1/1     1            1           5m55s
-feldera-prober-server       1/1     1            1           5m55s
 feldera-api-server          1/1     1            1           5m55s
 ```
 
@@ -202,7 +198,6 @@ feldera-db-0                                 1/1     Running            0       
 feldera-compiler-server-0                    1/1     Running            0            2m34s
 feldera-kubernetes-runner-854446fb84-rg66z   0/1     CrashLoopBackOff   1 (9s ago)   2m34s
 feldera-api-server-7bb757f685-jwn5v          1/1     Running            0            2m34s
-feldera-prober-server-698c999557-f8nsr       1/1     Running            0            2m34s
 ```
 
 ... and an explanation will be visible in its log:
