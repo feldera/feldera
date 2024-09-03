@@ -1,0 +1,3 @@
+kafka-python-ng==2.2.2
+
+git+https://github.com/feldera/feldera#subdirectory=python

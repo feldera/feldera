@@ -1,0 +1,4 @@
+plumbum==1.8.3
+psycopg[binary]==3.2.1
+
+git+https://github.com/feldera/feldera#subdirectory=python
