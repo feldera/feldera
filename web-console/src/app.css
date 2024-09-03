@@ -11,9 +11,9 @@
 }
 
 .pane-divider-horizontal {
-  @apply z-[1] h-0.5 transition-colors bg-surface-100-900 before:-mt-0.5 before:flex before:h-2 before:w-full hover:bg-primary-500 active:bg-primary-500;
+  @apply z-[1] h-[2px] transition-colors before:-mt-[3px] before:flex before:h-[8px] before:w-full hover:bg-primary-500 active:bg-primary-500;
 }
 
 .pane-divider-vertical {
-  @apply z-[1] w-0.5 transition-colors bg-surface-100-900 before:-ml-0.5 before:flex before:h-full before:w-2 hover:bg-primary-500 active:bg-primary-500;
+  @apply z-[1] w-[2px] transition-colors before:-ml-[3px] before:flex before:h-full before:w-[8px] hover:bg-primary-500 active:bg-primary-500;
 }

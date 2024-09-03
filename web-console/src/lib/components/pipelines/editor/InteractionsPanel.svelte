@@ -64,7 +64,7 @@
     <Tabs.Control
       bind:group={currentTab.value}
       name={tabName}
-      contentClasses="group-hover:preset-tonal-surface"
+      contentClasses="group-hover:!bg-inherit"
     >
       {#if tabControl}
         {@render tabControl(pipeline.current)}

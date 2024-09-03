@@ -73,30 +73,34 @@
 
 <div class="h-full w-full">
   <PaneGroup direction="vertical" class="!overflow-visible">
-    <Pane defaultSize={60} minSize={15} class="flex flex-col-reverse !overflow-visible">
-      <CodeEditor path={pipeline.current.name} {files}>
-        {#snippet statusBarCenter()}
-          <ProgramStatus programStatus={pipeline.current.programStatus}></ProgramStatus>
-        {/snippet}
-        {#snippet statusBarEnd(downstreamChanged)}
-          {#if pipeline.current.status}
-            <DeploymentStatus
-              class="ml-auto h-full w-40 text-[1rem] "
-              status={pipeline.current.status}
-            ></DeploymentStatus>
-            <PipelineActions
-              {pipeline}
-              onDeletePipeline={(pipelineName) =>
-                updatePipelines((pipelines) => pipelines.filter((p) => p.name !== pipelineName))}
-              pipelineBusy={editDisabled}
-              unsavedChanges={downstreamChanged}
-              onActionSuccess={(action) => handleActionSuccess(pipeline.current.name, action)}
-            ></PipelineActions>
-          {/if}
-        {/snippet}
-      </CodeEditor>
-    </Pane>
-    <PaneResizer class="pane-divider-horizontal" />
+    <CodeEditor path={pipeline.current.name} {files}>
+      {#snippet textEditor(children)}
+        <Pane defaultSize={60} minSize={15} class="!overflow-visible">
+          {@render children()}
+        </Pane>
+        <PaneResizer class="pane-divider-horizontal -mb-0.5" />
+      {/snippet}
+      {#snippet statusBarCenter()}
+        <ProgramStatus programStatus={pipeline.current.programStatus}></ProgramStatus>
+      {/snippet}
+      {#snippet statusBarEnd(downstreamChanged)}
+        {#if pipeline.current.status}
+          <DeploymentStatus
+            class="ml-auto h-full w-40 text-[1rem] "
+            status={pipeline.current.status}
+          ></DeploymentStatus>
+          <PipelineActions
+            {pipeline}
+            onDeletePipeline={(pipelineName) =>
+              updatePipelines((pipelines) => pipelines.filter((p) => p.name !== pipelineName))}
+            pipelineBusy={editDisabled}
+            unsavedChanges={downstreamChanged}
+            onActionSuccess={(action) => handleActionSuccess(pipeline.current.name, action)}
+          ></PipelineActions>
+        {/if}
+      {/snippet}
+    </CodeEditor>
+    <div class="h-[1px] w-full bg-surface-100-900"></div>
     <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
       {#if pipeline.current.name}
         <InteractionsPanel {pipeline} {metrics}></InteractionsPanel>

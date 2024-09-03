@@ -12,6 +12,7 @@
     path,
     files,
     editDisabled,
+    textEditor,
     statusBarCenter,
     statusBarEnd
   }: {
@@ -22,6 +23,7 @@
       markers?: Record<string, editor.IMarkerData[]>
     }[]
     editDisabled?: boolean
+    textEditor: Snippet<[children: Snippet]>
     statusBarCenter?: Snippet
     statusBarEnd?: Snippet<[downstreamChanged: boolean]>
   } = $props()
@@ -71,6 +73,49 @@
   const mode = useDarkMode()
 </script>
 
+{@render textEditor(x)}
+{#snippet x()}
+  <div class="flex h-full flex-col">
+    <div class="flex">
+      {#each files as file}
+        <div class="py-1 pl-3 pr-8 {file.name === currentFileName ? 'bg-secondary-50' : ''}">
+          {file.name}
+        </div>
+      {/each}
+    </div>
+    <div class="relative flex-1">
+      <div class="absolute h-full w-full" class:opacity-50={editDisabled}>
+        <MonacoEditor
+          markers={file.markers}
+          on:ready={(x) => {
+            x.detail.onKeyDown((e) => {
+              if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
+                editedText.push()
+                e.preventDefault()
+              }
+            })
+          }}
+          bind:editor={editorRef}
+          bind:value={editedText.current}
+          options={{
+            theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
+            automaticLayout: true,
+            lineNumbersMinChars: 3,
+            ...isMonacoEditorDisabled(editDisabled),
+            overviewRulerLanes: 0,
+            hideCursorInOverviewRuler: true,
+            overviewRulerBorder: false,
+            scrollbar: {
+              vertical: 'visible'
+            },
+            language: 'sql'
+          }}
+        />
+      </div>
+    </div>
+  </div>
+{/snippet}
+
 <div class="flex flex-nowrap items-center gap-8 pr-2">
   <div class="flex h-full flex-nowrap gap-2">
     <PipelineEditorStatusBar
@@ -81,41 +126,4 @@
     {@render statusBarCenter?.()}
   </div>
   {@render statusBarEnd?.(editedText.downstreamChanged)}
-</div>
-<div class="relative h-full w-full">
-  <div class="absolute h-full w-full" class:opacity-50={editDisabled}>
-    <MonacoEditor
-      markers={file.markers}
-      on:ready={(x) => {
-        x.detail.onKeyDown((e) => {
-          if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
-            editedText.push()
-            e.preventDefault()
-          }
-        })
-      }}
-      bind:editor={editorRef}
-      bind:value={editedText.current}
-      options={{
-        theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
-        automaticLayout: true,
-        lineNumbersMinChars: 3,
-        ...isMonacoEditorDisabled(editDisabled),
-        overviewRulerLanes: 0,
-        hideCursorInOverviewRuler: true,
-        overviewRulerBorder: false,
-        scrollbar: {
-          vertical: 'visible'
-        },
-        language: 'sql'
-      }}
-    />
-  </div>
-</div>
-<div class="flex">
-  {#each files as file}
-    <div class="py-1 pl-3 pr-8 {file.name === currentFileName ? 'bg-secondary-50' : ''}">
-      {file.name}
-    </div>
-  {/each}
 </div>
