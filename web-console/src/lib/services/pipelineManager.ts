@@ -16,7 +16,7 @@ import {
   getConfigAuthentication,
   type ExtendedPipelineDescr,
   listApiKeys,
-  createApiKey,
+  postApiKey as _postApiKey,
   deleteApiKey as _deleteApiKey,
   httpOutput,
   getConfig as _getConfig,
@@ -312,7 +312,7 @@ export const getConfig = () => handled(_getConfig)({ client: unauthenticatedClie
 
 export const getApiKeys = () => handled(listApiKeys)()
 
-export const postApiKey = (name: string) => handled(createApiKey)({ body: { name } })
+export const postApiKey = (name: string) => handled(_postApiKey)({ body: { name } })
 
 export const deleteApiKey = (name: string) =>
   handled(_deleteApiKey)({ path: { api_key_name: name } })

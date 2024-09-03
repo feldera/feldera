@@ -1329,22 +1329,21 @@ export const $NewApiKeyRequest = {
 export const $NewApiKeyResponse = {
   type: 'object',
   description: 'Response to a successful API key creation.',
-  required: ['api_key_id', 'name', 'api_key'],
+  required: ['id', 'name', 'api_key'],
   properties: {
     api_key: {
       type: 'string',
-      description: `Generated API key. There is no way to
-retrieve this key again from the
-pipeline-manager, so store it securely.`,
+      description: `Generated secret API key. There is no way to retrieve this
+key again through the API, so store it securely.`,
       example:
         'apikey:v5y5QNtlPNVMwkmNjKwFU8bbIu5lMge3yHbyddxAOdXlEo84SEoNn32DUhQaf1KLeI9aOOfnJjhQ1pYzMrU4wQXON6pm6BS7Zgzj46U2b8pwz1280vYBEtx41hiDBRP'
     },
-    api_key_id: {
+    id: {
       $ref: '#/components/schemas/ApiKeyId'
     },
     name: {
       type: 'string',
-      description: 'API key name',
+      description: 'API key name provided by the user.',
       example: 'my-api-key'
     }
   }
