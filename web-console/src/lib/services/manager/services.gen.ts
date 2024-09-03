@@ -6,12 +6,11 @@ import type {
   GetConfigResponse,
   GetConfigAuthenticationError,
   GetConfigAuthenticationResponse,
-  ListApiKeysData,
   ListApiKeysError,
   ListApiKeysResponse,
-  CreateApiKeyData,
-  CreateApiKeyError,
-  CreateApiKeyResponse,
+  PostApiKeyData,
+  PostApiKeyError,
+  PostApiKeyResponse,
   GetApiKeyData,
   GetApiKeyError,
   GetApiKeyResponse,
@@ -90,7 +89,7 @@ export const getConfigAuthentication = (options?: Options) => {
 /**
  * Retrieve the list of API keys.
  */
-export const listApiKeys = (options?: Options<ListApiKeysData>) => {
+export const listApiKeys = (options?: Options) => {
   return (options?.client ?? client).get<ListApiKeysResponse, ListApiKeysError>({
     ...options,
     url: '/v0/api_keys'
@@ -100,8 +99,8 @@ export const listApiKeys = (options?: Options<ListApiKeysData>) => {
 /**
  * Create a new API key.
  */
-export const createApiKey = (options: Options<CreateApiKeyData>) => {
-  return (options?.client ?? client).post<CreateApiKeyResponse, CreateApiKeyError>({
+export const postApiKey = (options: Options<PostApiKeyData>) => {
+  return (options?.client ?? client).post<PostApiKeyResponse, PostApiKeyError>({
     ...options,
     url: '/v0/api_keys'
   })
