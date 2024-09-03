@@ -1,5 +1,3 @@
-# .github/workflows/ci.yml
-
 name: Nightly Tests
 
 on:

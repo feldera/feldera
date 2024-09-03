@@ -4,6 +4,7 @@
 [![CI workflow](https://github.com/feldera/feldera/actions/workflows/ci.yml/badge.svg)](https://github.com/feldera/feldera/actions)
 [![CI nightly](https://github.com/feldera/feldera/actions/workflows/ci-nightly.yml/badge.svg)](https://github.com/feldera/feldera/actions)
 [![Containers](https://github.com/feldera/feldera/actions/workflows/containers.yml/badge.svg)](https://github.com/feldera/feldera/actions/workflows/containers.yml)
+[![Benchmarks](https://github.com/feldera/feldera/actions/workflows/benchmark-command.yml/badge.svg)](https://benchmarks.feldera.io)
 [![Slack](https://img.shields.io/badge/slack-blue.svg?logo=slack)](https://www.feldera.com/community)
 [![Discord](https://img.shields.io/badge/discord-blue.svg?logo=discord&logoColor=white)](https://discord.gg/5YBX9Uw5u7)
 [![Sandbox](https://img.shields.io/badge/feldera_sandbox-blue?logo=CodeSandbox)](https://www.feldera.com/sandbox)

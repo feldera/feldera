@@ -1,4 +1,4 @@
-name: Benchmark DBSP
+name: Benchmark Feldera
 
 on:
   push:
