@@ -1,5 +1,4 @@
 use progenitor::{GenerationSettings, InterfaceStyle};
-use quote::quote;
 use std::{env, fs, path::Path};
 
 fn type_replacement() -> Vec<(&'static str, &'static str)> {
@@ -172,10 +171,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../../openapi.json");
     let spec = serde_json::from_reader(&openapi[..]).unwrap();
     let mut settings = GenerationSettings::new();
-    settings
-        .with_interface(InterfaceStyle::Builder)
-        .with_inner_type(quote! {Option<String>})
-        .with_pre_hook_async(quote! { crate::add_auth_headers });
+    settings.with_interface(InterfaceStyle::Builder);
     for (from, to) in type_replacement() {
         let impls = vec![];
         settings.with_replacement(from, to, impls.into_iter());

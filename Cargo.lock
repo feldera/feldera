@@ -4909,7 +4909,6 @@ dependencies = [
  "prettyplease",
  "progenitor",
  "progenitor-client",
- "quote 1.0.37",
  "reqwest 0.11.27",
  "rustyline",
  "serde",

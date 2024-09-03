@@ -22,6 +22,7 @@ use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use log::info;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -524,6 +525,7 @@ pub(crate) async fn input_endpoint_action(
             Method::GET,
             &format!("input_endpoints/{endpoint_name}/{action}"),
             "",
+            None,
         )
         .await?;
 
@@ -573,6 +575,7 @@ pub(crate) async fn get_pipeline_stats(
             Method::GET,
             "stats",
             request.query_string(),
+            None,
         )
         .await
 }
@@ -615,6 +618,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
             Method::GET,
             "dump_profile",
             request.query_string(),
+            Some(Duration::from_secs(120)),
         )
         .await
 }
@@ -657,6 +661,7 @@ pub(crate) async fn get_pipeline_heap_profile(
             Method::GET,
             "heap_profile",
             request.query_string(),
+            None,
         )
         .await
 }
@@ -701,6 +706,7 @@ pub(crate) async fn pipeline_adhoc_sql(
             Method::GET,
             "query",
             request.query_string(),
+            Some(Duration::MAX),
         )
         .await
 }

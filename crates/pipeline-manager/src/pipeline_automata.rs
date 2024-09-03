@@ -735,7 +735,7 @@ async fn pipeline_http_request_json_response(
     port: &str,
 ) -> Result<(StatusCode, JsonValue), RunnerError> {
     let response =
-        RunnerApi::pipeline_http_request(pipeline_id, method, endpoint, port, "").await?;
+        RunnerApi::pipeline_http_request(pipeline_id, method, endpoint, port, "", None).await?;
     let status = response.status();
 
     let value = response
