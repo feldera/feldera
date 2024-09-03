@@ -210,13 +210,17 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         Ok(())
     }
 
-    fn push_key(&mut self, key: &[u8], val: &[u8]) -> AnyResult<()> {
+    fn push_key(&mut self, key: &[u8], val: Option<&[u8]>) -> AnyResult<()> {
         self.wait_for_in_flight_acks();
 
-        let record = <BaseRecord<[u8], [u8], ()>>::to(&self.config.topic)
-            .key(key)
-            .payload(val)
-            .headers(self.headers.clone());
+        let mut record = <BaseRecord<[u8], [u8], ()>>::to(&self.config.topic).key(key);
+
+        if let Some(val) = val {
+            record = record.payload(val);
+        }
+
+        record = record.headers(self.headers.clone());
+
         self.kafka_producer
             .send(record)
             .map_err(|(err, _record)| err)?;

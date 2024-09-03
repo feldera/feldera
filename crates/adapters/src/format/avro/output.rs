@@ -1,26 +1,25 @@
 use crate::catalog::{CursorWithPolarity, SerBatchReader};
+use crate::format::avro::schema::{gen_key_schema, schema_json, AvroSchemaBuilder};
 use crate::format::avro::schema_registry_settings;
 use crate::format::MAX_DUPLICATES;
 use crate::{ControllerError, Encoder, OutputConsumer, OutputFormat, RecordFormat, SerCursor};
 use actix_web::HttpRequest;
 use anyhow::{anyhow, bail, Result as AnyResult};
-use apache_avro::{to_avro_datum, Schema as AvroSchema};
+use apache_avro::{to_avro_datum, types::Value as AvroValue, Schema as AvroSchema};
 use erased_serde::Serialize as ErasedSerialize;
-use feldera_types::format::avro::AvroEncoderConfig;
-use feldera_types::program_schema::Relation;
+use feldera_types::config::{ConnectorConfig, TransportConfig};
+use feldera_types::format::avro::{AvroEncoderConfig, AvroUpdateFormat, SubjectNameStrategy};
+use feldera_types::program_schema::{Relation, SqlIdentifier};
 use log::{debug, error};
 use schema_registry_converter::avro_common::get_supplied_schema;
 use schema_registry_converter::blocking::schema_registry::post_schema;
+use schema_registry_converter::blocking::schema_registry::SrSettings;
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::str::FromStr;
 
 // TODOs:
-// - This connector currently only supports raw Avro format, i.e., deletes cannot be represented.
-//   Add support for other variants such as Debezium that are able to represent deletions.
 // - Support multiple subject name strategies.  Currently, the record name strategy is used
 //   to name the schema in the schema registry
 // - Add options to specify schema by id or subject name and retrieve it from the registry.
@@ -57,11 +56,12 @@ impl OutputFormat for AvroOutputFormat {
     fn new_encoder(
         &self,
         endpoint_name: &str,
-        config: &YamlValue,
-        _schema: &Relation,
+        config: &ConnectorConfig,
+        schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
-        let config = AvroEncoderConfig::deserialize(config).map_err(|e| {
+        let avro_config = AvroEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
+            .map_err(|e| {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &e,
@@ -69,10 +69,17 @@ impl OutputFormat for AvroOutputFormat {
             )
         })?;
 
+        let topic = match &config.transport {
+            TransportConfig::KafkaOutput(kafka_config) => Some(kafka_config.topic.clone()),
+            _ => None,
+        };
+
         Ok(Box::new(AvroEncoder::create(
             endpoint_name,
+            schema,
             consumer,
-            config,
+            avro_config,
+            topic,
         )?))
     }
 }
@@ -81,85 +88,248 @@ pub(crate) struct AvroEncoder {
     endpoint_name: String,
     /// Consumer to push serialized data to.
     output_consumer: Box<dyn OutputConsumer>,
-    pub(crate) schema: AvroSchema,
+    pub(crate) value_schema: AvroSchema,
+    /// Only set when using a separate schema for the key.
+    key_schema: Option<AvroSchema>,
     /// Buffer to store serialized avro records, reused across `encode` invocations.
-    buffer: Vec<u8>,
+    value_buffer: Vec<u8>,
+    key_buffer: Vec<u8>,
     /// Count of skipped deletes, used to rate-limit error messages.
     skipped_deletes: usize,
     /// `True` if the serialized result should not include the schema ID.
     skip_schema_id: bool,
+    update_format: AvroUpdateFormat,
 }
 
 impl AvroEncoder {
     pub(crate) fn create(
         endpoint_name: &str,
+        relation_schema: &Relation,
         output_consumer: Box<dyn OutputConsumer>,
         config: AvroEncoderConfig,
+        topic: Option<String>,
     ) -> Result<Self, ControllerError> {
         debug!("Creating Avro encoder; config: {config:#?}");
 
-        let schema_json = serde_json::Value::from_str(&config.schema).map_err(|e| {
-            ControllerError::encoder_config_parse_error(
+        match config.update_format {
+            AvroUpdateFormat::Raw | AvroUpdateFormat::ConfluentJdbc => (),
+            AvroUpdateFormat::Debezium => {
+                return Err(ControllerError::invalid_encoder_configuration(
+                    endpoint_name,
+                    "'debezium' data change event format is not yet supported by the Avro encoder",
+                ));
+            }
+        }
+
+        let key_fields = config.key_fields.as_ref().map(|fs| {
+            fs.iter()
+                .map(|f| SqlIdentifier::from(&f))
+                .collect::<Vec<_>>()
+        });
+
+        let value_schema = match &config.schema {
+            None => AvroSchemaBuilder::new()
+                .with_key_fields(key_fields.as_ref())
+                .with_namespace(config.namespace.as_deref())
+                .relation_to_avro_schema(relation_schema)
+                .map_err(|e| {
+                    ControllerError::invalid_encoder_configuration(
+                        endpoint_name,
+                        &format!(
+                            "error generating Avro schema for the SQL relation {}: {e}",
+                            relation_schema.name.name()
+                        ),
+                    )
+                })?,
+            Some(schema) => AvroSchema::parse_str(schema).map_err(|e| {
+                ControllerError::encoder_config_parse_error(
+                    endpoint_name,
+                    &format!("invalid Avro schema: {e}"),
+                    &serde_yaml::to_string(&config).unwrap_or_default(),
+                )
+            })?,
+        };
+
+        debug!(
+            "Avro encoder {endpoint_name}: value schema: {}",
+            schema_json(&value_schema)
+        );
+
+        let AvroSchema::Record(record_schema) = &value_schema else {
+            return Err(ControllerError::invalid_encoder_configuration(
                 endpoint_name,
-                &format!(
-                    "'schema' string '{}' is not a valid JSON document: {e}",
-                    &config.schema
-                ),
-                &serde_yaml::to_string(&config).unwrap_or_default(),
-            )
-        })?;
-        let schema = AvroSchema::parse(&schema_json).map_err(|e| {
-            ControllerError::encoder_config_parse_error(
-                endpoint_name,
-                &format!("invalid Avro schema: {e}"),
-                &serde_yaml::to_string(&config).unwrap_or_default(),
-            )
-        })?;
+                "expected Avro schema of type 'record'",
+            ));
+        };
+
+        if let Some(key_fields) = &key_fields {
+            if !config.update_format.has_key() {
+                return Err(ControllerError::invalid_encoder_configuration(
+                    endpoint_name,
+                    "'key_fields' property is only supported for the 'confluent_jdbc' update format",
+                ));
+            }
+            if key_fields.is_empty() {
+                return Err(ControllerError::invalid_encoder_configuration(
+                    endpoint_name,
+                    "'key_fields' list is empty: at least one key column must be specified",
+                ));
+            }
+
+            for key_field in key_fields.iter() {
+                if !record_schema.lookup.contains_key(&key_field.name()) {
+                    return Err(ControllerError::invalid_encoder_configuration(
+                        endpoint_name,
+                        &format!("'key_fields' references field '{key_field}', which is not part of the schema"),
+                    ));
+                }
+            }
+        }
+
+        let key_schema = if config.update_format.has_key() {
+            if let Some(key_fields) = &key_fields {
+                let key_schema = gen_key_schema(record_schema, key_fields)?;
+
+                debug!(
+                    "Avro encoder {endpoint_name}: key schema: {}",
+                    schema_json(&key_schema)
+                );
+
+                Some(key_schema)
+            } else {
+                debug!("Avro encoder {endpoint_name}: 'key_fields' not specified; using the same schema for the key as for the value");
+                Some(value_schema.clone())
+            }
+        } else {
+            None
+        };
 
         let sr_settings = schema_registry_settings(&config.registry_config)
             .map_err(|e| ControllerError::invalid_encoder_configuration(endpoint_name, &e))?;
 
-        let schema_id = if let Some(sr_settings) = &sr_settings {
-            let supplied_schema = get_supplied_schema(&schema);
-            let name = supplied_schema
-                .name
-                .as_ref()
-                .ok_or_else(|| {
-                    ControllerError::invalid_encoder_configuration(
-                        endpoint_name,
-                        "Avro schema must be of type 'record'",
-                    )
-                })?
-                .clone();
-            let registered_schema =
-                post_schema(sr_settings, name, supplied_schema).map_err(|e| {
-                    ControllerError::encode_error(
-                        endpoint_name,
-                        anyhow!("failed to post Avro schema to the schema registry: {e}"),
-                    )
-                })?;
-            debug!(
-                "avro encoder {endpoint_name}: registered new avro schema with id {}",
-                registered_schema.id
-            );
-            registered_schema.id
-        } else {
-            0
+        let mut value_schema_id = 0;
+        let mut key_schema_id = 0;
+
+        if let Some(sr_settings) = &sr_settings {
+            let subject_name_strategy = if let Some(strategy) = config.subject_name_strategy {
+                strategy
+            } else {
+                match config.update_format {
+                    AvroUpdateFormat::ConfluentJdbc => SubjectNameStrategy::TopicName,
+                    AvroUpdateFormat::Raw => SubjectNameStrategy::RecordName,
+                    AvroUpdateFormat::Debezium => SubjectNameStrategy::TopicName,
+                }
+            };
+
+            let key_subject = if let Some(key_schema) = &key_schema {
+                match subject_name_strategy {
+                    SubjectNameStrategy::RecordName => {
+                        Some(key_schema.name().unwrap().fullname(None))
+                    }
+                    SubjectNameStrategy::TopicName => {
+                        if let Some(topic) = &topic {
+                            Some(format!("{topic}-key"))
+                        } else {
+                            return Err(ControllerError::invalid_encoder_configuration(endpoint_name, "'topic_name' subject strategy is only valid for connectors with Kafka transport"));
+                        }
+                    }
+                    SubjectNameStrategy::TopicRecordName => {
+                        // use `value_schema``, since the `-key` suffix encodes the fact that this is a key.
+                        if let Some(topic) = &topic {
+                            Some(format!(
+                                "{topic}-{}-key",
+                                value_schema.name().unwrap().fullname(None)
+                            ))
+                        } else {
+                            return Err(ControllerError::invalid_encoder_configuration(endpoint_name, "'topic_record_name' subject strategy is only valid for connectors with Kafka transport"));
+                        }
+                    }
+                }
+            } else {
+                None
+            };
+
+            let value_subject = match subject_name_strategy {
+                SubjectNameStrategy::RecordName => value_schema.name().unwrap().fullname(None),
+                SubjectNameStrategy::TopicName => {
+                    if let Some(topic) = &topic {
+                        if config.update_format.has_key() {
+                            format!("{topic}-value")
+                        } else {
+                            topic.to_string()
+                        }
+                    } else {
+                        return Err(ControllerError::invalid_encoder_configuration(endpoint_name, "'topic_name' subject strategy is only valid for connectors with Kafka transport"));
+                    }
+                }
+                SubjectNameStrategy::TopicRecordName => {
+                    if let Some(topic) = &topic {
+                        if config.update_format.has_key() {
+                            format!(
+                                "{topic}-{}-value",
+                                value_schema.name().unwrap().fullname(None)
+                            )
+                        } else {
+                            format!("{topic}-{}", value_schema.name().unwrap().fullname(None))
+                        }
+                    } else {
+                        return Err(ControllerError::invalid_encoder_configuration(endpoint_name, "'topic_record_name' subject strategy is only valid for connectors with Kafka transport"));
+                    }
+                }
+            };
+
+            value_schema_id =
+                publish_schema(endpoint_name, &value_schema, &value_subject, sr_settings)?;
+            if let Some(key_schema) = &key_schema {
+                key_schema_id = publish_schema(
+                    endpoint_name,
+                    key_schema,
+                    key_subject.as_ref().unwrap(),
+                    sr_settings,
+                )?;
+            }
         };
 
-        let mut buffer = vec![0u8; 5];
+        let mut value_buffer = vec![0u8; 5];
+        let mut key_buffer = vec![0u8; 5];
+
         if !config.skip_schema_id {
-            buffer[1..].clone_from_slice(&schema_id.to_be_bytes());
+            value_buffer[1..].clone_from_slice(&value_schema_id.to_be_bytes());
+            key_buffer[1..].clone_from_slice(&key_schema_id.to_be_bytes());
         }
 
         Ok(Self {
             endpoint_name: endpoint_name.to_string(),
             output_consumer,
-            schema,
-            buffer,
+            value_schema,
+            key_schema,
+            value_buffer,
+            key_buffer,
             skipped_deletes: 0,
             skip_schema_id: config.skip_schema_id,
+            update_format: config.update_format,
         })
+    }
+
+    fn serialize_avro_value(
+        skip_schema_id: bool,
+        value: AvroValue,
+        schema: &AvroSchema,
+        buffer: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        let mut avro_buffer = to_avro_datum(schema, value)
+            .map_err(|e| anyhow!("error serializing Avro value: {e}"))?;
+
+        if !skip_schema_id {
+            // 5 is the length of the Avro message header (magic byte + 4-byte schema id).
+            buffer.truncate(5);
+        } else {
+            buffer.clear();
+        }
+
+        buffer.append(&mut avro_buffer);
+
+        Ok(())
     }
 }
 
@@ -178,15 +348,13 @@ impl Encoder for AvroEncoder {
             }
             let mut w = cursor.weight();
 
-            if w < 0 {
-                // TODO: we currently only support the "plain" Avro flavor that does not
-                // support deletes.  Other formats, e.g., Debezium will allow deletes.
-
+            if w < 0 && !self.update_format.supports_deletes() {
                 // Log the first delete, and then each 10,000's delete.
                 if self.skipped_deletes % 10_000 == 0 {
                     error!(
-                        "avro encoder {}: received a 'delete' record, but the encoder does not currently support deletes; record will be dropped (total number of dropped deletes: {})",
+                        "avro encoder {}: received a 'delete' record, but the '{}' format does not support deletes; record will be dropped (total number of dropped deletes: {})",
                         self.endpoint_name,
+                        self.update_format,
                         self.skipped_deletes + 1,
                     );
                 }
@@ -203,21 +371,70 @@ impl Encoder for AvroEncoder {
 
             while w != 0 {
                 // TODO: resolve schema
-                let avro_value = cursor
-                    .key_to_avro(&self.schema, &HashMap::new())
-                    .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
-                let mut avro_buffer = to_avro_datum(&self.schema, avro_value)
-                    .map_err(|e| anyhow!("error serializing Avro value: {e}"))?;
-
-                if !self.skip_schema_id {
-                    // 5 is the length of the Avro message header (magic byte + 4-byte schema id).
-                    self.buffer.truncate(5);
+                let avro_value = if w > 0 {
+                    cursor
+                        .key_to_avro(&self.value_schema, &HashMap::new())
+                        .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?
                 } else {
-                    self.buffer.clear();
-                }
+                    AvroValue::Union(0, Box::new(AvroValue::Null))
+                };
 
-                self.buffer.append(&mut avro_buffer);
-                self.output_consumer.push_buffer(&self.buffer, 1);
+                let avro_key = if let Some(key_schema) = &self.key_schema {
+                    Some(
+                        cursor
+                            .key_to_avro(key_schema, &HashMap::new())
+                            .map_err(|e| {
+                                anyhow!("error converting record key to Avro format: {e}")
+                            })?,
+                    )
+                } else {
+                    None
+                };
+
+                match self.update_format {
+                    AvroUpdateFormat::Raw => {
+                        Self::serialize_avro_value(
+                            self.skip_schema_id,
+                            avro_value,
+                            &self.value_schema,
+                            &mut self.value_buffer,
+                        )?;
+
+                        self.output_consumer.push_buffer(&self.value_buffer, 1);
+                    }
+                    AvroUpdateFormat::ConfluentJdbc if w > 0 => {
+                        Self::serialize_avro_value(
+                            self.skip_schema_id,
+                            avro_value.clone(),
+                            &self.value_schema,
+                            &mut self.value_buffer,
+                        )?;
+
+                        Self::serialize_avro_value(
+                            self.skip_schema_id,
+                            avro_key.unwrap(),
+                            self.key_schema.as_ref().unwrap(),
+                            &mut self.key_buffer,
+                        )?;
+
+                        self.output_consumer.push_key(
+                            &self.key_buffer,
+                            Some(&self.value_buffer),
+                            1,
+                        );
+                    }
+                    AvroUpdateFormat::ConfluentJdbc => {
+                        Self::serialize_avro_value(
+                            self.skip_schema_id,
+                            avro_key.unwrap(),
+                            self.key_schema.as_ref().unwrap(),
+                            &mut self.key_buffer,
+                        )?;
+
+                        self.output_consumer.push_key(&self.key_buffer, None, 1);
+                    }
+                    AvroUpdateFormat::Debezium => unreachable!(),
+                }
 
                 if w > 0 {
                     w -= 1;
@@ -230,4 +447,35 @@ impl Encoder for AvroEncoder {
 
         Ok(())
     }
+}
+
+fn publish_schema(
+    endpoint_name: &str,
+    schema: &AvroSchema,
+    subject: &str,
+    sr_settings: &SrSettings,
+) -> Result<u32, ControllerError> {
+    let supplied_schema = get_supplied_schema(schema);
+    /*let name = supplied_schema
+    .name
+    .as_ref()
+    .ok_or_else(|| {
+        ControllerError::invalid_encoder_configuration(
+            endpoint_name,
+            "Avro schema must be of type 'record'",
+        )
+    })?
+    .clone();*/
+    let registered_schema = post_schema(sr_settings, subject.to_string(), supplied_schema)
+        .map_err(|e| {
+            ControllerError::encode_error(
+                endpoint_name,
+                anyhow!("failed to post Avro schema to the schema registry: {e}"),
+            )
+        })?;
+    debug!(
+        "avro encoder {endpoint_name}: registered new avro schema '{subject}' with id {}",
+        registered_schema.id
+    );
+    Ok(registered_schema.id)
 }

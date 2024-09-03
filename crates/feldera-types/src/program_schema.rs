@@ -406,6 +406,12 @@ pub enum SqlType {
     Null,
 }
 
+impl Display for SqlType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&serde_json::to_string(self).unwrap())
+    }
+}
+
 impl<'de> Deserialize<'de> for SqlType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -477,6 +483,13 @@ impl From<SqlType> for &'static str {
             SqlType::Map => "MAP",
             SqlType::Null => "NULL",
         }
+    }
+}
+
+impl SqlType {
+    /// Is this a string type?
+    pub fn is_string(&self) -> bool {
+        matches!(self, Self::Char | Self::Varchar)
     }
 }
 

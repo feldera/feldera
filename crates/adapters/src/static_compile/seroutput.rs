@@ -99,6 +99,7 @@ trait BytesSerializer<C>: Send {
         _val: &T,
         _schema: &AvroSchema,
         _refs: &NamesRef<'_>,
+        _strict: bool,
     ) -> Result<AvroValue, AvroSerializerError>
     where
         T: SerializeWithContext<C>,
@@ -213,11 +214,15 @@ impl BytesSerializer<SqlSerdeConfig> for AvroSerializer {
         val: &T,
         schema: &AvroSchema,
         refs: &NamesRef<'_>,
+        strict: bool,
     ) -> Result<AvroValue, AvroSerializerError>
     where
         T: SerializeWithContext<SqlSerdeConfig>,
     {
-        val.serialize_with_context(AvroSchemaSerializer::new(schema, refs), &self.config)
+        val.serialize_with_context(
+            AvroSchemaSerializer::new(schema, refs, strict),
+            &self.config,
+        )
     }
 }
 
@@ -640,7 +645,7 @@ where
     fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
         Ok(self
             .serializer
-            .serialize_avro(self.key.as_ref().unwrap(), schema, refs)?)
+            .serialize_avro(self.key.as_ref().unwrap(), schema, refs, false)?)
     }
 
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -657,7 +662,7 @@ where
     fn val_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
         Ok(self
             .serializer
-            .serialize_avro(self.val.as_ref().unwrap(), schema, refs)?)
+            .serialize_avro(self.val.as_ref().unwrap(), schema, refs, true)?)
     }
 
     fn weight(&mut self) -> i64 {

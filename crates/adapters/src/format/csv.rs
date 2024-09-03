@@ -8,7 +8,10 @@ use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use csv_core::{ReadRecordResult, Reader as CsvReader};
 use erased_serde::Serialize as ErasedSerialize;
-use feldera_types::format::csv::{CsvEncoderConfig, CsvParserConfig};
+use feldera_types::{
+    config::ConnectorConfig,
+    format::csv::{CsvEncoderConfig, CsvParserConfig},
+};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{borrow::Cow, mem::take};
@@ -238,17 +241,18 @@ impl OutputFormat for CsvOutputFormat {
     fn new_encoder(
         &self,
         endpoint_name: &str,
-        config: &YamlValue,
+        config: &ConnectorConfig,
         _schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
-        let config = CsvEncoderConfig::deserialize(config).map_err(|e| {
-            ControllerError::encoder_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_yaml::to_string(&config).unwrap_or_default(),
-            )
-        })?;
+        let config = CsvEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
+            .map_err(|e| {
+                ControllerError::encoder_config_parse_error(
+                    endpoint_name,
+                    &e,
+                    &serde_yaml::to_string(&config).unwrap_or_default(),
+                )
+            })?;
 
         Ok(Box::new(CsvEncoder::new(consumer, config)))
     }

@@ -6,6 +6,7 @@ use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
 use avro::input::AvroInputFormat;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_types::config::ConnectorConfig;
 use feldera_types::program_schema::Relation;
 use feldera_types::serde_with_context::FieldParseError;
 use once_cell::sync::Lazy;
@@ -478,7 +479,7 @@ pub trait OutputFormat: Send + Sync {
     fn new_encoder(
         &self,
         endpoint_name: &str,
-        config: &YamlValue,
+        config: &ConnectorConfig,
         schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError>;
@@ -507,6 +508,6 @@ pub trait OutputConsumer: Send {
 
     fn batch_start(&mut self, step: Step);
     fn push_buffer(&mut self, buffer: &[u8], num_records: usize);
-    fn push_key(&mut self, key: &[u8], val: &[u8], num_records: usize);
+    fn push_key(&mut self, key: &[u8], val: Option<&[u8]>, num_records: usize);
     fn batch_end(&mut self);
 }
