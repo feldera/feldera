@@ -41,7 +41,7 @@
     </div>
   </Drawer>
   <div class="flex h-full w-full flex-col">
-    <div class="flex justify-between p-3">
+    <div class="flex justify-between p-1">
       <div class="flex">
         <button
           class="btn-icon"

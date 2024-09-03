@@ -135,10 +135,14 @@ export const getPipeline = async (pipeline_name: string) => {
   )
 }
 
-export const getExtendedPipeline = async (pipeline_name: string) => {
-  return handled(_getPipeline)({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(
-    toExtendedPipeline
-  )
+export const getExtendedPipeline = async (
+  pipeline_name: string,
+  options?: { fetch?: (request: Request) => ReturnType<typeof fetch> }
+) => {
+  return handled(_getPipeline)({
+    path: { pipeline_name: encodeURIComponent(pipeline_name) },
+    ...options
+  }).then(toExtendedPipeline)
 }
 
 /**
