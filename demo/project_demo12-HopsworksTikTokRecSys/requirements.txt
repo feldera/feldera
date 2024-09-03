@@ -5,3 +5,5 @@ tensorflow-recommenders==0.7.2
 tqdm
 kafka-python-ng
 pandas
+
+git+https://github.com/feldera/feldera#subdirectory=python

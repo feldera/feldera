@@ -6,7 +6,6 @@
 #
 # Run this script:
 # > python3 run.py --api-url=http://localhost:8080 --start
-import base64
 import os
 import time
 import datetime
@@ -14,7 +13,6 @@ import requests
 import argparse
 from plumbum.cmd import rpk
 import psycopg
-import json
 import random
 from feldera import PipelineBuilder, FelderaClient, Pipeline
 
