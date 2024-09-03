@@ -62,6 +62,7 @@
     "oidc-client-ts-lumeris": "^1.0.0",
     "paneforge": "^0.0.5",
     "postcss": "^8.4.39",
+    "posthog-js": "^1.160.1",
     "prettier": "^3.3.3",
     "prettier-plugin-svelte": "^3.2.6",
     "prettier-plugin-tailwindcss": "^0.6.5",
