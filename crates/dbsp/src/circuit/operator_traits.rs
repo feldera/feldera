@@ -11,6 +11,8 @@ use crate::Error;
 use std::borrow::Cow;
 use uuid::Uuid;
 
+use super::GlobalNodeId;
+
 /// Minimal requirements for values exchanged by operators.
 pub trait Data: Clone + 'static {}
 
@@ -25,6 +27,9 @@ pub trait Operator: 'static {
     fn location(&self) -> OperatorLocation {
         None
     }
+
+    /// Reports metrics about the current operator
+    fn metrics(&self, _global_id: &GlobalNodeId) {}
 
     /// Collects metadata about the current operator
     fn metadata(&self, _meta: &mut OperatorMeta) {}

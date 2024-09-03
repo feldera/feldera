@@ -3,8 +3,8 @@ use crate::{
     Controller,
 };
 use anyhow::{Error as AnyError, Result as AnyResult};
+use metrics::Gauge;
 use metrics_exporter_prometheus::PrometheusHandle;
-use prometheus::{Encoder, IntGauge, Opts, Registry, TextEncoder};
 use std::{collections::BTreeMap, sync::atomic::Ordering};
 
 /// Prometheus metrics of the controller.
@@ -13,7 +13,6 @@ use std::{collections::BTreeMap, sync::atomic::Ordering};
 /// to Prometheus metrics on demand.
 pub(crate) struct PrometheusMetrics {
     pipeline_name: String,
-    registry: Registry,
     input_metrics: BTreeMap<EndpointId, InputMetrics>,
     output_metrics: BTreeMap<EndpointId, OutputMetrics>,
     handle: PrometheusHandle,
@@ -29,7 +28,6 @@ impl PrometheusMetrics {
             .map_or_else(|| "unnamed".to_string(), |n| n.clone());
         let mut result = Self {
             pipeline_name,
-            registry: Registry::new(),
             input_metrics: BTreeMap::new(),
             output_metrics: BTreeMap::new(),
             handle: controller.metrics(),
@@ -85,19 +83,19 @@ impl PrometheusMetrics {
 
         metrics
             .total_bytes
-            .set(status.metrics.total_bytes.load(Ordering::Acquire) as i64);
+            .set(status.metrics.total_bytes.load(Ordering::Acquire) as f64);
         metrics
             .total_records
-            .set(status.metrics.total_records.load(Ordering::Acquire) as i64);
+            .set(status.metrics.total_records.load(Ordering::Acquire) as f64);
         metrics
             .buffered_records
-            .set(status.metrics.buffered_records.load(Ordering::Acquire) as i64);
+            .set(status.metrics.buffered_records.load(Ordering::Acquire) as f64);
         metrics
             .num_transport_errors
-            .set(status.metrics.num_transport_errors.load(Ordering::Acquire) as i64);
+            .set(status.metrics.num_transport_errors.load(Ordering::Acquire) as f64);
         metrics
             .num_parse_errors
-            .set(status.metrics.num_parse_errors.load(Ordering::Acquire) as i64);
+            .set(status.metrics.num_parse_errors.load(Ordering::Acquire) as f64);
 
         Ok(())
     }
@@ -144,22 +142,22 @@ impl PrometheusMetrics {
 
         metrics
             .transmitted_bytes
-            .set(status.metrics.transmitted_bytes.load(Ordering::Acquire) as i64);
+            .set(status.metrics.transmitted_bytes.load(Ordering::Acquire) as f64);
         metrics
             .transmitted_records
-            .set(status.metrics.transmitted_records.load(Ordering::Acquire) as i64);
+            .set(status.metrics.transmitted_records.load(Ordering::Acquire) as f64);
         metrics
             .buffered_records
-            .set(status.metrics.queued_records.load(Ordering::Acquire) as i64);
+            .set(status.metrics.queued_records.load(Ordering::Acquire) as f64);
         metrics
             .buffered_batches
-            .set(status.metrics.queued_batches.load(Ordering::Acquire) as i64);
+            .set(status.metrics.queued_batches.load(Ordering::Acquire) as f64);
         metrics
             .num_transport_errors
-            .set(status.metrics.num_transport_errors.load(Ordering::Acquire) as i64);
+            .set(status.metrics.num_transport_errors.load(Ordering::Acquire) as f64);
         metrics
             .num_encode_errors
-            .set(status.metrics.num_encode_errors.load(Ordering::Acquire) as i64);
+            .set(status.metrics.num_encode_errors.load(Ordering::Acquire) as f64);
 
         Ok(())
     }
@@ -167,7 +165,6 @@ impl PrometheusMetrics {
     /// Extract metrics in the format expected by the Prometheus server.
     pub(crate) fn metrics(&self, controller: &Controller) -> AnyResult<Vec<u8>> {
         let status = controller.status();
-        let dbsp_metrics = self.handle.render();
 
         for (endpoint_id, endpoint_status) in status.input_status().iter() {
             self.update_input_metrics(*endpoint_id, endpoint_status)?;
@@ -177,38 +174,34 @@ impl PrometheusMetrics {
             self.update_output_metrics(*endpoint_id, endpoint_status)?;
         }
 
-        let mut buffer = dbsp_metrics.into();
-        let encoder = TextEncoder::new();
-        let metric_families = self.registry.gather();
-        encoder.encode(&metric_families, &mut buffer)?;
-
-        Ok(buffer)
+        Ok(self.handle.render().into())
     }
 
-    fn create_gauge(&self, name: &str, endpoint: &str) -> AnyResult<IntGauge> {
-        let opts = Opts::new(name, name)
-            .const_label("pipeline", &self.pipeline_name)
-            .const_label("endpoint", endpoint);
-        let gauge = IntGauge::with_opts(opts)?;
-        self.registry.register(Box::new(gauge.clone()))?;
+    fn create_gauge(&self, name: &str, endpoint: &str) -> AnyResult<Gauge> {
+        metrics::describe_gauge!(name.to_owned(), name.to_owned());
+        let gauge = metrics::gauge!(
+            name.to_owned(),
+            "pipeline" => self.pipeline_name.clone(),
+            "endpoint" => endpoint.to_owned()
+        );
 
         Ok(gauge)
     }
 }
 
 struct InputMetrics {
-    total_bytes: IntGauge,
-    total_records: IntGauge,
-    buffered_records: IntGauge,
-    num_transport_errors: IntGauge,
-    num_parse_errors: IntGauge,
+    total_bytes: Gauge,
+    total_records: Gauge,
+    buffered_records: Gauge,
+    num_transport_errors: Gauge,
+    num_parse_errors: Gauge,
 }
 
 struct OutputMetrics {
-    transmitted_bytes: IntGauge,
-    transmitted_records: IntGauge,
-    buffered_records: IntGauge,
-    buffered_batches: IntGauge,
-    num_transport_errors: IntGauge,
-    num_encode_errors: IntGauge,
+    transmitted_bytes: Gauge,
+    transmitted_records: Gauge,
+    buffered_records: Gauge,
+    buffered_batches: Gauge,
+    num_transport_errors: Gauge,
+    num_encode_errors: Gauge,
 }
