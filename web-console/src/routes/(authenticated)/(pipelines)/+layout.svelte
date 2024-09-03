@@ -3,7 +3,6 @@
   import { page as pageStore } from '$app/stores'
   import NewPipelineTabControl from '$lib/components/pipelines/tabs/NewPipelineTabControl.svelte'
   import ExistingPipelineTabControl from '$lib/components/pipelines/tabs/ExistingPipelineTabControl.svelte'
-  import { useChangedPipelines } from '$lib/compositions/pipelines/useChangedPipelines.svelte'
   import { base } from '$app/paths'
   import { Store } from 'runed'
 
@@ -14,10 +13,9 @@
       ? { new: 'new' }
       : { existing: page.current.params.pipelineName }
   )
-  const changedPipelines = useChangedPipelines()
 </script>
 
-<div class=" -mt-10 mb-4 ml-14 w-fit">
+<div class=" -mt-[35px] mb-2 ml-14 w-fit">
   {#if 'existing' in pipeline}
     {#snippet text()}
       {pipeline.existing}
@@ -26,7 +24,7 @@
       {text}
       close={undefined}
       existing={pipeline.existing}
-      tabContentChanged={changedPipelines.has(pipeline.existing)}
+      tabContentChanged={false}
     ></ExistingPipelineTabControl>
   {:else}
     {#snippet text()}

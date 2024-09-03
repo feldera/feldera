@@ -5,7 +5,7 @@ import { useDebounce } from 'runed'
  * On `.pull()` upstream is applied to downstream
  * On `.push()` downstream is applied to upstream
  */
-export const useDecoupledState = <T>(
+export const useDecoupledState = <T extends string | number | boolean>(
   upstream: { current: T },
   wait: () => number | 'decoupled'
 ) => {
@@ -22,8 +22,18 @@ export const useDecoupledState = <T>(
     () => ((wait) => (wait === 'decoupled' ? 0 : wait))(wait())
   )
   $effect(() => {
-    void upstream.current
-    upstreamChanged = true
+    upstream.current
+    setTimeout(() => {
+      const eq = upstream.current === downstream.current
+      if (eq && upstreamChanged) {
+        upstreamChanged = false
+        return
+      }
+      if (eq) {
+        return
+      }
+      upstreamChanged = true
+    })
   })
   return {
     get current() {
@@ -31,7 +41,7 @@ export const useDecoupledState = <T>(
     },
     set current(value: T) {
       downstream.current = value
-      downstreamChanged = true
+      downstreamChanged = downstream.current !== upstream.current
       if (wait() === 'decoupled') {
         return
       }
