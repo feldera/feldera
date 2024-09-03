@@ -1,11 +1,11 @@
 //! Pipeline manager integration tests that test the end-to-end
-//! compiler->run->feed iinputs->receive outputs workflow.
+//! compiler->run->feed inputs->receive outputs workflow.
 //!
 //! There are two ways to run these tests:
 //!
 //! 1. Self-contained mode, spinning up a pipeline manager instance on each run.
-//! This is good for running tests from a clean state, but is very slow, as it
-//! involves pre-compiling all dependencies from scratch:
+//!    This is good for running tests from a clean state, but is very slow, as it
+//!    involves pre-compiling all dependencies from scratch:
 //!
 //! ```text
 //! cargo test --features integration-test --features=pg-embed integration_test::
@@ -105,6 +105,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         config_file: None,
         allowed_origins: None,
         demos_dir: None,
+        telemetry: "".to_string(),
     }
     .canonicalize()
     .unwrap();
@@ -140,7 +141,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
     // To avoid that problem, and for general integration test hygiene, we force
     // another tokio runtime to be created here to run the server processes. We
     // obviously can't create one runtime within another, so the easiest way to
-    // work around that is to do so within an std::thread::spawn().
+    // work around that is to do so within std::thread::spawn().
     std::thread::spawn(|| {
         tokio::runtime::Runtime::new()
             .unwrap()
@@ -474,7 +475,7 @@ impl TestConfig {
                 panic!("Compilation timeout ({timeout:?})");
             }
 
-            std::thread::sleep(Duration::from_secs(1));
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -612,13 +613,7 @@ async fn bearer_token() -> Option<String> {
                 .send()
                 .await
                 .unwrap();
-            Some(
-                res.authentication_result()
-                    .unwrap()
-                    .access_token()
-                    .unwrap()
-                    .to_string(),
-            )
+            Some(res.authentication_result()?.access_token()?.to_string())
         }
         Err(e) => {
             println!(
@@ -720,9 +715,7 @@ async fn create_and_deploy_test_pipeline(config: &TestConfig, sql: &str) {
         .await;
 
     // Start the pipeline in Paused state
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/pause"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/pause").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
 
     // Await it reaching paused status
@@ -743,7 +736,7 @@ async fn lists_at_initialization_are_empty() {
     }
 }
 
-/// Tests creating a pipeline, waiting for it to compile and delete afterwards.
+/// Tests creating a pipeline, waiting for it to compile and delete afterward.
 #[actix_web::test]
 #[serial]
 async fn pipeline_create_compile_delete() {
@@ -762,9 +755,9 @@ async fn pipeline_create_compile_delete() {
     config
         .wait_for_compilation("test", version, config.compilation_timeout)
         .await;
-    let response = config.delete(format!("/v0/pipelines/test")).await;
+    let response = config.delete("/v0/pipelines/test").await;
     assert_eq!(StatusCode::OK, response.status());
-    let response = config.get(format!("/v0/programs/test").as_str()).await;
+    let response = config.get("/v0/programs/test").await;
     assert_eq!(StatusCode::NOT_FOUND, response.status());
 }
 
@@ -808,15 +801,11 @@ async fn deploy_pipeline() {
     ).await;
 
     // Again pause the pipeline before it is started
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/pause"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/pause").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
 
     // Start the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Running, config.resume_timeout)
@@ -824,26 +813,18 @@ async fn deploy_pipeline() {
 
     // Push some data
     let response = config
-        .post_csv(
-            format!("/v0/pipelines/test/ingress/t1"),
-            "1\n2\n3\n".to_string(),
-        )
+        .post_csv("/v0/pipelines/test/ingress/t1", "1\n2\n3\n".to_string())
         .await;
     assert!(response.status().is_success());
 
     // Push more data with Windows-style newlines
     let response = config
-        .post_csv(
-            format!("/v0/pipelines/test/ingress/t1"),
-            "4\r\n5\r\n6".to_string(),
-        )
+        .post_csv("/v0/pipelines/test/ingress/t1", "4\r\n5\r\n6".to_string())
         .await;
     assert!(response.status().is_success());
 
     // Pause a pipeline after it is started
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/pause"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/pause").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Paused, config.pause_timeout)
@@ -854,9 +835,7 @@ async fn deploy_pipeline() {
     assert_eq!(&quantiles, "1,1\n2,1\n3,1\n4,1\n5,1\n6,1\n");
 
     // Start the pipeline again
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Running, config.resume_timeout)
@@ -867,9 +846,7 @@ async fn deploy_pipeline() {
     assert_eq!(&quantiles, "1,1\n2,1\n3,1\n4,1\n5,1\n6,1\n");
 
     // Shutdown the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
@@ -891,9 +868,7 @@ async fn pipeline_panic() {
     .await;
 
     // Start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let resp = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
     // Wait until it is running
@@ -907,10 +882,7 @@ async fn pipeline_panic() {
 
     // Push some data, which should cause a panic
     let response = config
-        .post_csv(
-            format!("/v0/pipelines/test/ingress/t1"),
-            "1\n2\n3\n".to_string(),
-        )
+        .post_csv("/v0/pipelines/test/ingress/t1", "1\n2\n3\n".to_string())
         .await;
     assert_eq!(response.status(), StatusCode::OK, "Val: {:?}", response);
 
@@ -945,36 +917,28 @@ async fn pipeline_restart() {
     .await;
 
     // Start the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Running, config.start_timeout)
         .await;
 
     // Shutdown the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
         .await;
 
     // Start the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Running, config.start_timeout)
         .await;
 
     // Shutdown the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
@@ -1073,7 +1037,7 @@ async fn pipeline_start_without_compiling() {
         if now.elapsed().as_secs() > 30 {
             panic!("Took longer than 30 seconds to be past CompilingSql");
         }
-        let mut response = config.get(format!("/v0/pipelines/test")).await;
+        let mut response = config.get("/v0/pipelines/test").await;
         let val: Value = response.json().await.unwrap();
         let status = val["program_status"].clone();
         if status != json!("Pending") && status != json!("CompilingSql") {
@@ -1082,9 +1046,7 @@ async fn pipeline_start_without_compiling() {
     }
 
     // Attempt to start the pipeline
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let resp = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -1101,9 +1063,7 @@ async fn json_ingress() {
         .await;
 
     // Start the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status(
@@ -1116,7 +1076,7 @@ async fn json_ingress() {
     // Push some data using default json config.
     let response = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=raw",
             r#"{"c1": 10, "c2": true}
             {"c1": 20, "c3": "foo"}"#
                 .to_string(),
@@ -1141,7 +1101,7 @@ async fn json_ingress() {
     // Push more data using insert/delete format.
     let response = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",),
+            "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",
             r#"{"delete": {"c1": 10, "c2": true}}
             {"insert": {"c1": 30, "c3": "bar"}}"#
                 .to_string(),
@@ -1155,7 +1115,7 @@ async fn json_ingress() {
     // Format data as json array.
     let response = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert": [40, true, "buzz"]}"#.to_string(),
         )
         .await;
@@ -1164,9 +1124,7 @@ async fn json_ingress() {
     // Use array of updates instead of newline-delimited JSON
     let response = config
         .post_json(
-            format!(
-                "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete&array=true",
-            ),
+            "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete&array=true",
             r#"[{"delete": [40, true, "buzz"]}, {"insert": [50, true, ""]}]"#.to_string(),
         )
         .await;
@@ -1178,9 +1136,7 @@ async fn json_ingress() {
     // Trigger parse errors.
     let mut response = config
         .post_json(
-            format!(
-                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
-            ),
+    "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             r#"[{"insert": [35, true, ""]}, {"delete": [40, "foo", "buzz"]}, {"insert": [true, true, ""]}]"#.to_string(),
         )
         .await;
@@ -1196,10 +1152,8 @@ async fn json_ingress() {
 
     let mut response = config
         .post_json(
-            format!(
-                "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",
-            ),
-            r#"{"insert": [25, true, ""]}{"delete": [40, "foo", "buzz"]}{"insert": [true, true, ""]}"#.to_string(),
+            "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",
+                    r#"{"insert": [25, true, ""]}{"delete": [40, "foo", "buzz"]}{"insert": [true, true, ""]}"#.to_string(),
         )
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -1215,7 +1169,7 @@ async fn json_ingress() {
     // Debezium CDC format
     let response = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=debezium",),
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=debezium",
             r#"{"payload": {"op": "u", "before": [50, true, ""], "after": [60, true, "hello"]}}"#
                 .to_string(),
         )
@@ -1232,7 +1186,7 @@ async fn json_ingress() {
     // get ingested).
     let mut response = config
         .post_csv(
-            format!("/v0/pipelines/test/ingress/t1?format=csv"),
+            "/v0/pipelines/test/ingress/t1?format=csv",
             r#"15,true,foo
 not_a_number,true,ΑαΒβΓγΔδ
 16,false,unicode🚲"#
@@ -1251,9 +1205,7 @@ not_a_number,true,ΑαΒβΓγΔδ
     );
 
     // Shutdown the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
@@ -1274,9 +1226,7 @@ async fn map_column() {
         .await;
 
     // Start the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status(
@@ -1289,7 +1239,7 @@ async fn map_column() {
     // Push some data using default json config.
     let response = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=raw",
             r#"{"c1": 10, "c2": true, "c3": {"foo": "1", "bar": "2"}}
             {"c1": 20}"#
                 .to_string(),
@@ -1312,9 +1262,7 @@ async fn map_column() {
     assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"c1\":10,\"c2\":true,\"c3\":{\"bar\":\"2\",\"foo\":\"1\"}}}},{\"insert\":{\"index\":1,\"key\":{\"c1\":20,\"c2\":null,\"c3\":null}}}]");
 
     // Shutdown the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
@@ -1334,9 +1282,7 @@ async fn parse_datetime() {
     .await;
 
     // Start the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status(
@@ -1350,7 +1296,7 @@ async fn parse_datetime() {
     // dates/times.
     let response = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/t1?format=json&update_format=raw",),
+            "/v0/pipelines/test/ingress/t1?format=json&update_format=raw",
             r#"{"t":"13:22:00","ts": "2021-05-20 12:12:33","d": "2021-05-20"}
             {"t":" 11:12:33.483221092 ","ts": " 2024-02-25 12:12:33 ","d": " 2024-02-25 "}"#
                 .to_string(),
@@ -1363,9 +1309,7 @@ async fn parse_datetime() {
                "[{\"insert\":{\"d\":\"2024-02-25\",\"t\":\"11:12:33.483221092\",\"ts\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"d\":\"2021-05-20\",\"t\":\"13:22:00\",\"ts\":\"2021-05-20 12:12:33\"}}]".parse::<Value>().unwrap());
 
     // Shutdown the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
@@ -1385,9 +1329,7 @@ async fn quoted_columns() {
         .await;
 
     // Start the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status(
@@ -1400,7 +1342,7 @@ async fn quoted_columns() {
     // Push some data using default json config.
     let response = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=raw",),
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=raw",
             r#"{"c1": 10, "C2": true, "😁❤": "foo", "αβγ": true, "δθ": false}"#.to_string(),
         )
         .await;
@@ -1415,9 +1357,7 @@ async fn quoted_columns() {
     );
 
     // Shutdown the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
@@ -1437,9 +1377,7 @@ async fn primary_keys() {
         .await;
 
     // Start the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status(
@@ -1452,7 +1390,7 @@ async fn primary_keys() {
     // Push some data using default json config.
     let response = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":1, "s": "1"}}
 {"insert":{"id":2, "s": "2"}}"#
                 .to_string(),
@@ -1481,7 +1419,7 @@ async fn primary_keys() {
     // Make some changes.
     let req = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":1, "s": "1-modified"}}
 {"update":{"id":2, "s": "2-modified"}}"#
                 .to_string(),
@@ -1508,7 +1446,7 @@ async fn primary_keys() {
     // Delete a key
     let response = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"delete":{"id":2}}"#.to_string(),
         )
         .await;
@@ -1523,9 +1461,7 @@ async fn primary_keys() {
     );
 
     // Shutdown the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
@@ -1552,9 +1488,7 @@ create materialized view "v1" as select * from table1;"#,
     .await;
 
     // Start the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status(
@@ -1570,9 +1504,7 @@ create materialized view "v1" as select * from table1;"#,
     // Push some data using default json config.
     let response = config
         .post_json(
-            format!(
-                "/v0/pipelines/test/ingress/\"TaBle1\"?format=json&update_format=insert_delete",
-            ),
+            "/v0/pipelines/test/ingress/\"TaBle1\"?format=json&update_format=insert_delete",
             r#"{"insert":{"id":1}}"#.to_string(),
         )
         .await;
@@ -1580,7 +1512,7 @@ create materialized view "v1" as select * from table1;"#,
 
     let response = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/table1?format=json&update_format=insert_delete",),
+            "/v0/pipelines/test/ingress/table1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":2}}"#.to_string(),
         )
         .await;
@@ -1615,9 +1547,7 @@ create materialized view "v1" as select * from table1;"#,
     );
 
     // Shutdown the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
@@ -1637,9 +1567,7 @@ async fn duplicate_outputs() {
         .await;
 
     // Start the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status(
@@ -1654,7 +1582,7 @@ async fn duplicate_outputs() {
     // Push some data using default json config.
     let response2 = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":1, "s": "1"}}
 {"insert":{"id":2, "s": "2"}}"#
                 .to_string(),
@@ -1673,7 +1601,7 @@ async fn duplicate_outputs() {
     // Push some more data
     let response2 = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete"),
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":3, "s": "3"}}
 {"insert":{"id":4, "s": "4"}}"#
                 .to_string(),
@@ -1692,7 +1620,7 @@ async fn duplicate_outputs() {
     // Push more records that will create duplicate outputs.
     let response2 = config
         .post_json(
-            format!("/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",),
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":5, "s": "1"}}
 {"insert":{"id":6, "s": "2"}}"#
                 .to_string(),
@@ -1709,9 +1637,7 @@ async fn duplicate_outputs() {
         .await;
 
     // Shutdown the pipeline
-    let response2 = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
+    let response2 = config.post_no_body("/v0/pipelines/test/shutdown").await;
     assert_eq!(response2.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
@@ -1738,9 +1664,7 @@ async fn upsert() {
     .await;
 
     // Start the pipeline
-    let response = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status(
@@ -1761,9 +1685,7 @@ async fn upsert() {
     // happens, increasing buffering delay in DBSP should solve that.
     let response2 = config
         .post_json(
-            format!(
                 "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
-            ),
             // Add several identical records with different id's
             r#"[{"insert":{"id1":1, "id2":1, "str1": "1", "int1": 1}},{"insert":{"id1":2, "id2":1, "str1": "1", "int1": 1}},{"insert":{"id1":3, "id2":1, "str1": "1", "int1": 1}}]"#
                 .to_string(),
@@ -1785,9 +1707,7 @@ async fn upsert() {
 
     let response2 = config
         .post_json(
-            format!(
                 "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
-            ),
             // 1: Update 'str1'.
             // 2: Update 'str2'.
             // 3: Overwrite entire record.
@@ -1814,9 +1734,7 @@ async fn upsert() {
 
     let response2 = config
         .post_json(
-            format!(
                 "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
-            ),
             // 1: Update command that doesn't modify any fields - noop.
             // 2: Clear 'str2' to null.
             // 3: Delete record.
@@ -1841,9 +1759,7 @@ async fn upsert() {
         .await;
 
     // Shutdown the pipeline
-    let response2 = config
-        .post_no_body(format!("/v0/pipelines/test/shutdown"))
-        .await;
+    let response2 = config.post_no_body("/v0/pipelines/test/shutdown").await;
     assert_eq!(response2.status(), StatusCode::ACCEPTED);
     config
         .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
@@ -1924,9 +1840,7 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
 
     let config = setup().await;
     create_and_deploy_test_pipeline(&config, PROGRAM).await;
-    let resp = config
-        .post_no_body(format!("/v0/pipelines/test/start"))
-        .await;
+    let resp = config.post_no_body("/v0/pipelines/test/start").await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
     config
@@ -1958,7 +1872,7 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
         assert_eq!(b1_sorted, b2_sorted);
     }
 
-    // Test parquet format, here we can't just sort it so we ensure that view and adhoc join have the same order
+    // Test parquet format, here we can't just sort it, so we ensure that view and adhoc join have the same order
     let q1 = format!("{} ORDER BY c1, c2", ADHOC_SQL_A);
     let mut r1 = config
         .adhoc_query("/v0/pipelines/test/query", q1.as_str(), "parquet")
@@ -1987,7 +1901,7 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
     let b = r.body().await.unwrap();
     assert!(!b.is_empty());
 
-    // Invalid SQL retruns 400
+    // Invalid SQL returns 400
     let r = config
         .adhoc_query(
             "/v0/pipelines/test/query",
@@ -2000,7 +1914,7 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
         .adhoc_query("/v0/pipelines/test/query", "SELECT 1/0", "text")
         .await;
     assert_eq!(r.status(), StatusCode::BAD_REQUEST);
-    let mut r = config
+    let r = config
         .adhoc_query("/v0/pipelines/test/query", "SELECT * FROM table1", "text")
         .await;
     assert_eq!(r.status(), StatusCode::BAD_REQUEST);
