@@ -182,7 +182,7 @@ pub struct ApiServerConfig {
     ///
     /// If a telemetry key is set, anonymous usage data will be collected
     /// and sent to our telemetry service.
-    #[arg(long, default_value = "", env = "TELEMETRY")]
+    #[arg(long, default_value = "", env = "FELDERA_TELEMETRY")]
     pub telemetry: String,
 }
 
