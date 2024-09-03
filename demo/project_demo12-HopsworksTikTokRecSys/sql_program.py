@@ -11,7 +11,6 @@ def generate_program(transport_cfg, format_cfg):
             interaction_type STRING,
             watch_time INT,
             interaction_date TIMESTAMP LATENESS INTERVAL 15 MINUTES,
-            previous_interaction_date TIMESTAMP,
             interaction_month TIMESTAMP
         )"""
 
