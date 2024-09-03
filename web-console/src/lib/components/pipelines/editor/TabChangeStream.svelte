@@ -227,7 +227,7 @@
         {/if}
       </div>
     </Pane>
-    <PaneResizer class="pane-divider-vertical"></PaneResizer>
+    <PaneResizer class="pane-divider-vertical bg-surface-100-900 "></PaneResizer>
 
     <Pane minSize={70} class="flex h-full">
       {#if getChangeStream()[pipelineName]?.rows?.length}

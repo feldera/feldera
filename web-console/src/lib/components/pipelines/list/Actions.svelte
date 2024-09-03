@@ -3,7 +3,8 @@
     postPipelineAction,
     type ExtendedPipeline,
     type Pipeline,
-    type PipelineAction
+    type PipelineAction,
+    type PipelineStatus
   } from '$lib/services/pipelineManager'
   import { match, P } from 'ts-pattern'
   import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
@@ -78,7 +79,8 @@
       .exhaustive()
   )
 
-  const buttonClass = ' btn-icon h-9 w-9 preset-tonal-surface text-[36px]'
+  const buttonClass =
+    'hover:brightness-90 dark:hover:brightness-110 hover:backdrop-brightness-100 text-[32px] w-9 h-9'
 </script>
 
 {#snippet deleteDialog()}
@@ -100,25 +102,26 @@
 
 {#snippet _delete()}
   <button
-    class={'bx bx-trash-alt  ' + buttonClass}
+    class="bx bx-trash-alt {buttonClass}"
     onclick={() => (globalDialog.dialog = deleteDialog)}
   >
   </button>
 {/snippet}
+{#snippet start(action: PipelineAction, status: PipelineStatus)}
+  <button
+    class:disabled={unsavedChanges}
+    class="{buttonClass} bx bx-play text-[36px] bg-success-200-800"
+    onclick={async () => {
+      const success = await postPipelineAction(pipeline.current.name, action)
+      pipeline.optimisticUpdate({ status })
+      await success()
+      onActionSuccess?.('start_paused')
+    }}
+  >
+  </button>
+{/snippet}
 {#snippet _start()}
-  <div class={buttonClass}>
-    <button
-      class:disabled={unsavedChanges}
-      class={'bx bx-play !bg-success-200-800 '}
-      onclick={async () => {
-        const success = await postPipelineAction(pipeline.current.name, 'start')
-        pipeline.optimisticUpdate({ status: 'Resuming' })
-        await success()
-        onActionSuccess?.('start')
-      }}
-    >
-    </button>
-  </div>
+  {@render start('start', 'Resuming')}
   {#if unsavedChanges}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Save the pipeline before running
@@ -126,19 +129,7 @@
   {/if}
 {/snippet}
 {#snippet _start_paused()}
-  <div class={buttonClass}>
-    <button
-      class:disabled={unsavedChanges}
-      class={'bx bx-play !bg-success-200-800 '}
-      onclick={async () => {
-        const success = await postPipelineAction(pipeline.current.name, 'start_paused')
-        pipeline.optimisticUpdate({ status: 'Starting up' })
-        await success()
-        onActionSuccess?.('start_paused')
-      }}
-    >
-    </button>
-  </div>
+  {@render start('start_paused', 'Starting up')}
   {#if unsavedChanges}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
       Save the pipeline before running
@@ -146,8 +137,8 @@
   {/if}
 {/snippet}
 {#snippet _start_disabled()}
-  <div class="{buttonClass} !filter-none">
-    <button class="bx bx-play" disabled> </button>
+  <div class="h-9">
+    <button class="{buttonClass} bx bx-play disabled text-[36px]"></button>
   </div>
 {/snippet}
 {#snippet _start_error()}
@@ -164,7 +155,7 @@
 {/snippet}
 {#snippet _pause()}
   <button
-    class={'bx bx-pause ' + buttonClass}
+    class="bx bx-pause {buttonClass}"
     onclick={() =>
       postPipelineAction(pipeline.current.name, 'pause').then(() => {
         onActionSuccess?.('pause')
@@ -175,7 +166,7 @@
 {/snippet}
 {#snippet _shutdown()}
   <button
-    class={'bx bx-stop ' + buttonClass}
+    class="bx bx-stop {buttonClass}"
     onclick={() =>
       postPipelineAction(pipeline.current.name, 'shutdown').then(() => {
         onActionSuccess?.('shutdown')
@@ -205,7 +196,7 @@
   {/snippet}
   <button
     onclick={() => (globalDialog.dialog = pipelineResourcesDialog)}
-    class={'bx bx-cog ' + buttonClass}
+    class="bx bx-cog {buttonClass}"
   >
   </button>
   {#if pipelineBusy}
@@ -218,7 +209,7 @@
   <div class="w-9"></div>
 {/snippet}
 {#snippet _spinner()}
-  <div class={'pointer-events-none h-9 ' + buttonClass}>
-    <div class="bx bx-loader-alt btn-icon animate-spin"></div>
-  </div>
+  <div
+    class="bx bx-loader-alt pointer-events-none h-9 w-9 animate-spin pt-[0.5px] !text-[36px]"
+  ></div>
 {/snippet}
