@@ -8,11 +8,25 @@ import { authRequestMiddleware, authResponseMiddleware } from '$lib/services/aut
 import type { AuthDetails } from '$lib/types/auth'
 import { goto } from '$app/navigation'
 import posthog from 'posthog-js'
+import { getConfig } from '$lib/services/pipelineManager'
 
 const { OidcClient, OidcLocation } = AxaOidc
 
 export const ssr = false
 export const trailingSlash = 'always'
+
+const initPosthog = async () => {
+  const config = await getConfig()
+  if (!config.telemetry) {
+    return
+  }
+  posthog.init(config.telemetry, {
+    api_host: 'https://us.i.posthog.com',
+    person_profiles: 'identified_only',
+    capture_pageview: false,
+    capture_pageleave: false
+  })
+}
 
 export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
   if (!('window' in globalThis)) {
@@ -20,12 +34,6 @@ export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
       auth: 'none'
     }
   } else {
-    posthog.init('<ph_project_api_key>', {
-      api_host: 'https://us.i.posthog.com',
-      person_profiles: 'identified_only',
-      capture_pageview: false,
-      capture_pageleave: false
-    })
   }
 
   const authConfig = await loadAuthConfig()
@@ -39,14 +47,16 @@ export const load = async ({ fetch, url }): Promise<{ auth: AuthDetails }> => {
     oidcConfig: axaOidcConfig,
     logoutExtras: authConfig.logoutExtras,
     onBeforeLogin: () => window.sessionStorage.setItem('redirect_to', window.location.href),
-    onAfterLogin: (idTokenPayload) => {
+    onAfterLogin: async (idTokenPayload) => {
       {
-        if (idTokenPayload?.email) {
-          posthog.identify(idTokenPayload.email, {
-            email: idTokenPayload.email,
-            name: idTokenPayload.name
-          })
-        }
+        initPosthog().then(() => {
+          if (idTokenPayload?.email) {
+            posthog.identify(idTokenPayload.email, {
+              email: idTokenPayload.email,
+              name: idTokenPayload.name
+            })
+          }
+        })
       }
       {
         const redirectTo = window.sessionStorage.getItem('redirect_to')

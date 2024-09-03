@@ -9,10 +9,41 @@
     "version": "0.25.0"
   },
   "paths": {
+    "/config": {
+      "get": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "Retrieve general configuration.",
+        "operationId": "get_config",
+        "responses": {
+          "200": {
+            "description": "The response body contains basic configuration information about this host.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Configuration"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/authentication": {
       "get": {
         "tags": [
-          "Authentication"
+          "Configuration"
         ],
         "summary": "Retrieve authentication provider configuration.",
         "operationId": "get_config_authentication",
@@ -2052,6 +2083,21 @@
           "unoptimized",
           "optimized"
         ]
+      },
+      "Configuration": {
+        "type": "object",
+        "required": [
+          "telemetry",
+          "version"
+        ],
+        "properties": {
+          "telemetry": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
       },
       "ConnectorConfig": {
         "allOf": [

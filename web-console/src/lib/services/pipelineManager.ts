@@ -19,6 +19,7 @@ import {
   createApiKey,
   deleteApiKey as _deleteApiKey,
   httpOutput,
+  getConfig as _getConfig,
   getConfigDemos,
   httpInput
 } from '$lib/services/manager'
@@ -302,6 +303,8 @@ export const postPipelineAction = async (
 
 export const getAuthConfig = () =>
   handled(getConfigAuthentication)({ client: unauthenticatedClient })
+
+export const getConfig = () => handled(_getConfig)({ client: unauthenticatedClient })
 
 export const getApiKeys = () => handled(listApiKeys)()
 
