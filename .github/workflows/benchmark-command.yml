@@ -1,4 +1,4 @@
-name: Benchmark Feldera
+name: Benchmarks
 
 on:
   push:
