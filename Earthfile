@@ -129,7 +129,7 @@ build-webui-deps:
 
     COPY web-console/package.json ./web-console/
     COPY web-console/bun.lockb ./web-console/
-    RUN cd web-console && bun run install-frozen
+    RUN cd web-console && bun install
 
 build-webui:
     FROM +build-webui-deps
@@ -498,75 +498,6 @@ integration-tests:
             exit $status
     END
 
-ui-playwright-container:
-    FROM +install-deps
-    COPY web-console web-console
-    # COPY web-console/playwright-ct.config.ts web-console
-    COPY deploy/docker-compose.yml .
-    COPY deploy/.env .
-
-    # Pull playwright-snapshots for visual regression testing
-    # It was decided it's better to clone the snapshots repo during the build rather than have it as a submodule
-    ARG PLAYWRIGHT_SNAPSHOTS_COMMIT
-    RUN echo PLAYWRIGHT_SNAPSHOTS_COMMIT=$PLAYWRIGHT_SNAPSHOTS_COMMIT
-    GIT CLONE --branch=$PLAYWRIGHT_SNAPSHOTS_COMMIT https://github.com/feldera/playwright-snapshots.git playwright-snapshots
-
-    WORKDIR web-console
-    RUN bun run install-frozen
-    # Generate .svelte-kit/tsconfig.json and .svelte-kit/types
-    RUN bunx svelte-kit sync
-    RUN bunx playwright install
-    RUN bunx playwright install-deps
-    ENV CI=true
-    ENV PLAYWRIGHT_API_ORIGIN=http://localhost:8080/
-    ENV PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/
-    ENV DISPLAY=
-
-    # Install docker compose - earthly can do this automatically, but it installs an older version
-    ENV DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
-    RUN mkdir -p $DOCKER_CONFIG/cli-plugins
-    RUN curl -SL https://github.com/docker/compose/releases/download/v2.24.0-birthday.10/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
-    RUN chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
-
-    # Install zip to prepare test artifacts for export
-    RUN apt-get install -y zip
-
-# ui-playwright-tests-e2e:
-#     FROM +ui-playwright-container
-#     ENV FELDERA_VERSION=latest
-
-#     TRY
-#         WITH DOCKER --load ghcr.io/feldera/pipeline-manager:latest=+pipeline-manager-container-cors-all \
-#                     --compose ../docker-compose.yml \
-#                     --service pipeline-manager
-#             # We zip artifacts regardless of test success or error, and then we complete the command preserving test's exit_code
-#             RUN sleep 10 && if bunx playwright test -c playwright-e2e.config.ts; then exit_code=0; else exit_code=$?; fi \
-#                 && cd /dbsp \
-#                 && zip -r playwright-report-e2e.zip playwright-report-e2e \
-#                 && zip -r test-results-e2e.zip test-results-e2e \
-#                 && exit $exit_code
-#         END
-#     FINALLY
-#         SAVE ARTIFACT --if-exists /dbsp/playwright-report-e2e.zip AS LOCAL ./playwright-artifacts/
-#         SAVE ARTIFACT --if-exists /dbsp/test-results-e2e.zip      AS LOCAL ./playwright-artifacts/
-#     END
-
-ui-playwright-tests-ct:
-    FROM +ui-playwright-container
-    ENV FELDERA_VERSION=latest
-
-    TRY
-        # We zip artifacts regardless of test success or error, and then we complete the command preserving test's exit_code
-        RUN if bunx playwright test -c playwright-ct.config.ts; then exit_code=0; else exit_code=$?; fi \
-        && cd /dbsp/web-console \
-        && zip -r playwright-report-ct.zip playwright-report-ct \
-        && zip -r test-results-ct.zip test-results-ct \
-        && exit $exit_code
-    FINALLY
-        SAVE ARTIFACT --if-exists /dbsp/web-console/playwright-report-ct.zip AS LOCAL ./playwright-artifacts/
-        SAVE ARTIFACT --if-exists /dbsp/web-console/test-results-ct.zip      AS LOCAL ./playwright-artifacts/
-    END
-
 benchmark:
     FROM +build-manager
     COPY demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen
@@ -631,7 +562,6 @@ ci-tests:
     BUILD +openapi-checker
     BUILD +test-sql
     BUILD +integration-tests
-    BUILD +ui-playwright-tests-ct
     # BUILD +test-docker-compose-stable
     # TODO: Temporarily disabled while we port the demo script
     # BUILD +test-snowflake
@@ -644,4 +574,3 @@ nightly-tests:
     BUILD +test-debezium-mysql
     BUILD +test-docker-compose
     BUILD +test-service-related
-    # BUILD +ui-playwright-tests-e2e
