@@ -192,7 +192,7 @@ impl RunnerApi {
     /// wait for the issued request to attain an outcome (be it success or
     /// failure). Upon timeout, the request is failed and immediately
     /// returns.
-    const PIPELINE_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_millis(2_000);
+    const PIPELINE_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
     /// Create a local runner.
     pub fn new(db: Arc<Mutex<StoragePostgres>>) -> Self {
@@ -207,6 +207,7 @@ impl RunnerApi {
         method: Method,
         endpoint: &str,
         query_string: &str,
+        timeout: Option<Duration>,
     ) -> Result<HttpResponse, ManagerError> {
         let pipeline = self
             .db
@@ -227,6 +228,7 @@ impl RunnerApi {
             endpoint,
             &pipeline.deployment_location.unwrap(),
             query_string,
+            timeout,
         )
         .await // TODO: unwrap
     }
@@ -240,10 +242,17 @@ impl RunnerApi {
         endpoint: &str,
         location: &str,
         query_string: &str,
+        timeout: Option<Duration>,
     ) -> Result<HttpResponse, ManagerError> {
-        let response =
-            Self::pipeline_http_request(pipeline_id, method, endpoint, location, query_string)
-                .await?;
+        let response = Self::pipeline_http_request(
+            pipeline_id,
+            method,
+            endpoint,
+            location,
+            query_string,
+            timeout,
+        )
+        .await?;
         let status = response.status();
 
         let mut response_builder = HttpResponse::build(status);
@@ -275,6 +284,7 @@ impl RunnerApi {
         endpoint: &str,
         location: &str,
         query_string: &str,
+        timeout: Option<Duration>,
     ) -> Result<reqwest::Response, RunnerError> {
         let client = reqwest::Client::new();
         client
@@ -282,7 +292,7 @@ impl RunnerApi {
                 method,
                 &format!("http://{location}/{endpoint}?{}", query_string),
             )
-            .timeout(Self::PIPELINE_HTTP_REQUEST_TIMEOUT)
+            .timeout(timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT))
             .send()
             .await
             .map_err(|e| RunnerError::HttpForwardError {

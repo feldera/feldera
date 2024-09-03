@@ -29,23 +29,6 @@ use crate::cd::*;
 use crate::cli::*;
 use crate::shell::shell;
 
-async fn add_auth_headers(
-    key: &Option<String>,
-    req: &mut reqwest::Request,
-) -> Result<(), reqwest::header::InvalidHeaderValue> {
-    // You can perform asynchronous, fallible work in a request hook, then
-    // modify the request right before it is transmitted to the server; e.g.,
-    // for generating an authenticaiton signature based on the complete set of
-    // request header values:
-    if let Some(key) = key {
-        req.headers_mut().insert(
-            reqwest::header::AUTHORIZATION,
-            HeaderValue::from_str(format!("Bearer {}", key).as_str())?,
-        );
-    }
-    Ok(())
-}
-
 fn handle_errors_fatal(
     msg: &'static str,
     exit_code: i32,
@@ -685,7 +668,35 @@ async fn program(name: &str, action: Option<ProgramAction>, client: Client) {
 async fn main() {
     let _r = env_logger::try_init();
     let cli = Cli::parse();
-    let client = Client::new(cli.host.as_str(), cli.auth.clone());
+
+    // Add the API key to the headers if it was supplied
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(key) = &cli.auth {
+        let header_value = HeaderValue::from_str(format!("Bearer {}", key).as_str());
+        match header_value {
+            Ok(mut header_value) => {
+                header_value.set_sensitive(true);
+                headers.insert(reqwest::header::AUTHORIZATION, header_value);
+            }
+            Err(e) => {
+                eprintln!("Failed to parse supplied API key: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    let client_builder = reqwest::ClientBuilder::new()
+        .connect_timeout(Duration::from_secs(cli.timeout))
+        .timeout(Duration::from_secs(cli.timeout))
+        .default_headers(headers);
+    let client = client_builder
+        .build()
+        .map_err(|e| {
+            eprintln!("Failed to create HTTP client: {}", e);
+            std::process::exit(1);
+        })
+        .unwrap();
+    let client = Client::new_with_client(cli.host.as_str(), client);
 
     match cli.command {
         Commands::Apikey { action } => api_key_commands(action, client).await,
