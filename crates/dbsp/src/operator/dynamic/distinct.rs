@@ -1,5 +1,6 @@
 //! Distinct operator.
 
+use crate::circuit::metrics::gauge;
 use crate::{
     algebra::{
         AddByRef, HasOne, HasZero, IndexedZSet, IndexedZSetReader, Lattice, OrdIndexedZSet,
@@ -15,6 +16,7 @@ use crate::{
     trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
     DBData, Timestamp, ZWeight,
 };
+use metrics::Unit;
 use minitrace::trace;
 use size_of::SizeOf;
 use std::{
@@ -596,6 +598,19 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("DistinctIncremental")
+    }
+
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        let size: usize = self.keys_of_interest.values().map(|v| v.len()).sum();
+
+        gauge(
+            global_id.to_owned(),
+            "total_updates".to_owned(),
+            size as f64,
+            vec![],
+            Some(Unit::Count),
+            None,
+        );
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {

@@ -1,3 +1,4 @@
+use crate::circuit::metrics::gauge;
 use crate::{
     circuit::{
         metadata::{
@@ -14,6 +15,7 @@ use crate::{
     Error, Timestamp,
 };
 use dyn_clone::clone_box;
+use metrics::Unit;
 use minitrace::trace;
 use size_of::SizeOf;
 use std::{
@@ -812,6 +814,23 @@ where
             }
         }
         self.time.advance(scope + 1);
+    }
+
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        let total_size = self
+            .trace
+            .as_ref()
+            .map(|trace| trace.num_entries_deep())
+            .unwrap_or(0);
+
+        gauge(
+            global_id.to_owned(),
+            NUM_ENTRIES_LABEL.to_string(),
+            total_size as f64,
+            vec![],
+            Some(Unit::Count),
+            None,
+        );
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {

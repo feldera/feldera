@@ -30,6 +30,7 @@ use crate::{
     InputHandle, OutputHandle,
 };
 
+use crate::circuit::metrics::{histogram, OPERATOR_EVAL_DURATION};
 use crate::{
     circuit::{
         cache::{CircuitCache, CircuitStoreMarker},
@@ -52,6 +53,7 @@ use crate::{
     Error as DBSPError, Error, Runtime,
 };
 use anyhow::Error as AnyError;
+use metrics::Unit;
 use serde::Serialize;
 use std::{
     any::type_name_of_val,
@@ -810,6 +812,8 @@ pub trait Node {
     /// another node).
     unsafe fn clock_end(&mut self, scope: Scope);
 
+    fn metrics(&self, _global_id: &GlobalNodeId) {}
+
     fn metadata(&self, output: &mut OperatorMeta);
 
     fn fixedpoint(&self, scope: Scope) -> bool;
@@ -924,7 +928,7 @@ impl GlobalNodeId {
         self.0.last().cloned()
     }
 
-    /// Returns parent id of `self` or `None` if `self` is the rooot node.
+    /// Returns parent id of `self` or `None` if `self` is the root node.
     pub fn parent_id(&self) -> Option<Self> {
         self.0
             .split_last()
@@ -944,6 +948,13 @@ impl GlobalNodeId {
             pid += format!("-{}", &e.0.to_string()).as_str();
         }
         pid
+    }
+
+    pub(crate) fn metrics_id(&self) -> String {
+        self.to_string()
+            .replace("[]", "root")
+            .replace(['[', ']'], "")
+            .replace('.', "_")
     }
 }
 
@@ -2395,6 +2406,8 @@ where
         // optimization.
         circuit.log_scheduler_event(&SchedulerEvent::eval_start(circuit.nodes[id.0].as_ref()));
 
+        let start = std::time::Instant::now();
+
         // Safety: `eval` cannot invoke the
         // `eval` method of another node.  To circumvent
         // this invariant the user would have to extract a
@@ -2402,6 +2415,20 @@ where
         // but this module doesn't expose nodes, only
         // streams.
         unsafe { circuit.nodes[id.0].eval()? };
+        let end = start.elapsed();
+
+        let gid = circuit.nodes[id.0].global_id();
+
+        histogram(
+            gid.clone(),
+            OPERATOR_EVAL_DURATION.to_string(),
+            end.as_micros() as f64,
+            vec![],
+            Some(Unit::Microseconds),
+            Some("Operator evaluation time in Microseconds".to_string()),
+        );
+
+        circuit.nodes[id.0].metrics(gid);
 
         circuit.log_scheduler_event(&SchedulerEvent::eval_end(circuit.nodes[id.0].as_ref()));
 
@@ -3220,6 +3247,10 @@ where
         self.operator.clock_end(scope);
     }
 
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        self.operator.metrics(global_id)
+    }
+
     fn metadata(&self, output: &mut OperatorMeta) {
         self.operator.metadata(output);
     }
@@ -3302,6 +3333,10 @@ where
 
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
+    }
+
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        self.operator.metrics(global_id);
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -3394,6 +3429,10 @@ where
         self.operator.clock_end(scope);
     }
 
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        self.operator.metrics(global_id);
+    }
+
     fn metadata(&self, output: &mut OperatorMeta) {
         self.operator.metadata(output);
     }
@@ -3475,6 +3514,10 @@ where
 
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
+    }
+
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        self.operator.metrics(global_id);
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -3578,6 +3621,10 @@ where
 
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
+    }
+
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        self.operator.metrics(global_id);
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -3701,6 +3748,10 @@ where
 
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
+    }
+
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        self.operator.metrics(global_id)
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -3828,6 +3879,10 @@ where
 
     unsafe fn clock_end(&mut self, scope: Scope) {
         self.operator.clock_end(scope);
+    }
+
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        self.operator.metrics(global_id);
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -3975,6 +4030,10 @@ where
         self.operator.clock_end(scope);
     }
 
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        self.operator.metrics(global_id);
+    }
+
     fn metadata(&self, output: &mut OperatorMeta) {
         self.operator.metadata(output);
     }
@@ -4105,6 +4164,10 @@ where
         self.operator.clock_end(scope);
     }
 
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        self.operator.metrics(global_id);
+    }
+
     fn metadata(&self, output: &mut OperatorMeta) {
         self.operator.metadata(output);
     }
@@ -4217,6 +4280,10 @@ where
         (*self.operator.get()).clock_end(scope);
     }
 
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        unsafe { (*self.operator.get()).metrics(global_id) }
+    }
+
     fn metadata(&self, output: &mut OperatorMeta) {
         unsafe { (*self.operator.get()).metadata(output) }
     }
@@ -4300,6 +4367,10 @@ where
     fn clock_start(&mut self, _scope: Scope) {}
 
     unsafe fn clock_end(&mut self, _scope: Scope) {}
+
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        unsafe { (*self.operator.get()).metrics(global_id) }
+    }
 
     fn metadata(&self, output: &mut OperatorMeta) {
         unsafe { (*self.operator.get()).metadata(output) }

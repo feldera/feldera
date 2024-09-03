@@ -1,3 +1,4 @@
+use crate::circuit::metrics::gauge;
 use crate::{
     algebra::{
         IndexedZSet, IndexedZSetReader, Lattice, MulByRef, OrdIndexedZSet, OrdZSet, PartialOrder,
@@ -24,6 +25,7 @@ use crate::{
     utils::Tup2,
     DBData, ZWeight,
 };
+use metrics::Unit;
 use minitrace::trace;
 use size_of::{Context, SizeOf};
 use std::{
@@ -1015,6 +1017,60 @@ where
             .output_batchers
             .keys()
             .all(|time| !time.less_equal(&self.clock.time())));
+    }
+
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        // Find the percentage of consolidated outputs
+        let mut output_redundancy = ((self.stats.output_tuples as f64
+            - self.stats.produced_tuples as f64)
+            / self.stats.output_tuples as f64)
+            * 100.0;
+        if output_redundancy.is_nan() {
+            output_redundancy = 0.0;
+        } else if output_redundancy.is_infinite() {
+            output_redundancy = 100.0;
+        }
+
+        gauge(
+            global_id.to_owned(),
+            "left_tuples".to_string(),
+            self.stats.lhs_tuples as f64,
+            vec![],
+            Some(Unit::Count),
+            None,
+        );
+        gauge(
+            global_id.to_owned(),
+            "right_tuples".to_string(),
+            self.stats.rhs_tuples as f64,
+            vec![],
+            Some(Unit::Count),
+            None,
+        );
+        gauge(
+            global_id.to_owned(),
+            "computed_output".to_string(),
+            self.stats.output_tuples as f64,
+            vec![],
+            Some(Unit::Count),
+            None,
+        );
+        gauge(
+            global_id.to_owned(),
+            "produced_output".to_string(),
+            self.stats.produced_tuples as f64,
+            vec![],
+            Some(Unit::Count),
+            None,
+        );
+        gauge(
+            global_id.to_owned(),
+            "output_redundancy".to_string(),
+            output_redundancy,
+            vec![],
+            Some(Unit::Count),
+            None,
+        );
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {

@@ -1,5 +1,6 @@
 //! z^-1 operator delays its input by one timestamp.
 
+use crate::circuit::metrics::gauge;
 use crate::{
     algebra::HasZero,
     circuit::checkpointer::Checkpoint,
@@ -16,6 +17,7 @@ use crate::{
     storage::{checkpoint_path, file::to_bytes, write_commit_metadata},
     Error, NumEntries,
 };
+use metrics::Unit;
 use size_of::{Context, SizeOf};
 use std::{borrow::Cow, fs, mem::replace, path::PathBuf};
 use uuid::Uuid;
@@ -262,6 +264,17 @@ where
         self.values = self.zero.clone();
     }
 
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        gauge(
+            global_id.to_owned(),
+            NUM_ENTRIES_LABEL.to_string(),
+            self.values.num_entries_deep() as f64,
+            vec![],
+            Some(Unit::Count),
+            Some("Total number of entries stored by the operator".to_string()),
+        )
+    }
+
     fn metadata(&self, meta: &mut OperatorMeta) {
         let bytes = self.values.size_of();
         meta.extend(metadata! {
@@ -428,6 +441,23 @@ where
         if scope > 0 {
             self.reset();
         }
+    }
+
+    fn metrics(&self, global_id: &GlobalNodeId) {
+        let total_size: usize = self
+            .values
+            .iter()
+            .map(|batch| batch.num_entries_deep())
+            .sum();
+
+        gauge(
+            global_id.to_owned(),
+            NUM_ENTRIES_LABEL.to_string(),
+            total_size as f64,
+            vec![],
+            Some(Unit::Count),
+            Some("Total number of entries stored by the operator".to_string()),
+        )
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
