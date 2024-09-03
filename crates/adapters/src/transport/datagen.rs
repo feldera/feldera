@@ -415,13 +415,14 @@ impl InputGenerator {
                 let mut batch_idx = 0;
 
                 for idx in generate_range.clone() {
-                    let record = generator.make_json_record(idx);
-                    match status.load(Ordering::Acquire) {
-                        PipelineState::Paused => notifier.notified().await,
-                        PipelineState::Running => { /* continue */ }
-                        PipelineState::Terminated => return,
+                    loop {
+                        match status.load(Ordering::Acquire) {
+                            PipelineState::Paused => notifier.notified().await,
+                            PipelineState::Running => break,
+                            PipelineState::Terminated => return,
+                        }
                     }
-                    match record {
+                    match generator.make_json_record(idx) {
                         Ok(record) => {
                             if batch_idx == 0 {
                                 buffer.clear();
