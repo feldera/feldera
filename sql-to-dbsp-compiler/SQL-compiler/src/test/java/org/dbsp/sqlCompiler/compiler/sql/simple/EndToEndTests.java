@@ -45,7 +45,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
@@ -487,12 +487,23 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
-    public void projectNullTest() {
-        String query = "SELECT T.COL5 FROM T";
+    public void testVariant() {
+        String query = "SELECT CAST(CAST(T.COL5 as VARIANT) AS INTEGER) FROM T";
+        DBSPI32Literal one = new DBSPI32Literal(1, true);
         this.testQuery(query,
                 new DBSPZSetLiteral(
-                        new DBSPTupleExpression(new DBSPI32Literal(1, true)),
-                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
+                        new DBSPTupleExpression(one),
+                        new DBSPTupleExpression(DBSPLiteral.none(one.getType()))));
+    }
+
+    @Test
+    public void projectNullTest() {
+        String query = "SELECT T.COL5 FROM T";
+        DBSPI32Literal one = new DBSPI32Literal(1, true);
+        this.testQuery(query,
+                new DBSPZSetLiteral(
+                        new DBSPTupleExpression(one),
+                        new DBSPTupleExpression(DBSPLiteral.none(one.getType()))));
     }
 
     @Test

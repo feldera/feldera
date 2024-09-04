@@ -75,6 +75,10 @@ public class BaseSQLTests {
         Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 4);
     }
 
+    protected void showFinalVerbose() {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 4);
+    }
+
     /** Run a query that is expected to fail in compilation.
      * @param query             Query to run.
      * @param messageFragment   This fragment should appear in the error message. */

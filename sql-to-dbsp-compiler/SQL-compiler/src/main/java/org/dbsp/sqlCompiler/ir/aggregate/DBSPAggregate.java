@@ -13,7 +13,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
@@ -71,9 +71,9 @@ public final class DBSPAggregate extends DBSPNode
 
     public DBSPExpression compact(IErrorReporter reporter) {
         if (this.isLinear())
-            return this.asFold(reporter, true);
-        else
             return this.asLinear(reporter);
+        else
+            return this.asFold(reporter, true);
     }
 
     public DBSPExpression asFold(IErrorReporter reporter, boolean compact) {

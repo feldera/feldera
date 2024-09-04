@@ -115,13 +115,13 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
@@ -707,12 +707,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
         String functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                 "_" + sourceType.baseTypeWithSuffix();
-        this.builder.append(functionName).append("(");
+        this.builder.append(functionName).increase().append("(");
         expression.source.accept(this);
         DBSPTypeDecimal dec = destType.as(DBSPTypeDecimal.class);
         if (dec != null) {
             // pass precision and scale as arguments to cast method too
-            this.builder.append(", ")
+            this.builder.append(",").newline()
                     .append(dec.precision)
                     .append(", ")
                     .append(dec.scale);
@@ -720,12 +720,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
         DBSPTypeString str = destType.as(DBSPTypeString.class);
         if (str != null) {
             // pass precision and scale as arguments to cast method too
-            this.builder.append(", ")
+            this.builder.append(",")
                     .append(str.precision)
                     .append(", ")
                     .append(Boolean.toString(str.fixed));
         }
-        this.builder.append(")");
+        this.builder.decrease().append(")");
         return VisitDecision.STOP;
     }
 
@@ -963,15 +963,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
         expression.function.accept(this);
-        this.builder.append("(");
+        this.builder.append("(").increase();
         boolean first = true;
         for (DBSPExpression arg: expression.arguments) {
             if (!first)
-                this.builder.append(", ");
+                this.builder.append(",").newline();
             first = false;
             arg.accept(this);
         }
-        this.builder.append(")");
+        this.builder.decrease().append(")");
         return VisitDecision.STOP;
     }
 
@@ -980,15 +980,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
         expression.self.accept(this);
         this.builder.append(".");
         expression.function.accept(this);
-        this.builder.append("(");
+        this.builder.append("(").increase();
         boolean first = true;
         for (DBSPExpression arg: expression.arguments) {
             if (!first)
-                this.builder.append(", ");
+                this.builder.append(",").newline();
             first = false;
             arg.accept(this);
         }
-        this.builder.append(")");
+        this.builder.decrease().append(")");
         return VisitDecision.STOP;
     }
 

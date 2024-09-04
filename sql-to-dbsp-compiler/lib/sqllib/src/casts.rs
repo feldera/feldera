@@ -4,7 +4,9 @@
 
 use std::cmp::Ordering;
 
-use crate::{binary::ByteArray, geopoint::*, interval::*, timestamp::*};
+use crate::{
+    binary::ByteArray, geopoint::*, interval::*, sqlvalue::SqlValue::*, sqlvalue::*, timestamp::*,
+};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
@@ -1425,3 +1427,43 @@ cast_function!(i, isize, i64, i64);
 pub fn cast_to_bytesN_nullN(_value: Option<()>) -> Option<ByteArray> {
     None
 }
+
+///////////////////// Cast to Variant
+
+// Synthesizes 6 functions for the argument type, e.g.:
+// cast_to_V_i32
+// cast_to_VN_i32
+// cast_to_V_i32N
+// cast_to_VN_i32N
+//      and
+// cast_to_i32N_VN
+// cast_to_i32N_V
+macro_rules! cast_variant {
+    ($result_name: ident, $result_type: ty, $enum: ident) => {
+        ::paste::paste! {
+            #[inline]
+            pub fn [<cast_to_ V_ $result_name >]( value: $result_type ) -> SqlValue {
+                SqlValue::from(value)
+            }
+
+            #[inline]
+            pub fn [< cast_to_ $result_name N _V >](value: SqlValue) -> Option<$result_name> {
+                match value {
+                    $enum(value) => Some(value),
+                    _            => None,
+                }
+            }
+
+            #[inline]
+            pub fn [<cast_to_ $result_name N_ VN >]( value: Option<SqlValue> ) -> Option<$result_type> {
+                let value = value?;
+                [<cast_to_ $result_name N_V >](value)
+            }
+
+            cast_function!(V, SqlValue, $result_name, $result_type);
+        }
+    };
+}
+
+cast_variant!(i16, i16, I16);
+cast_variant!(i32, i32, I32);
