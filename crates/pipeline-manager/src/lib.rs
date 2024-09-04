@@ -1,3 +1,4 @@
+use log::debug;
 use rustls::crypto::CryptoProvider;
 
 mod auth;
@@ -30,4 +31,15 @@ pub mod runner;
 /// in all tests that exercise libraries that use `rustls` internally.
 pub fn ensure_default_crypto_provider() {
     let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
+}
+
+/// Try to increase the file descriptor limit to avoid surprises when starting the manager on
+/// many cores.
+pub fn init_fd_limit() {
+    match fdlimit::raise_fd_limit() {
+        Ok(_) => {}
+        Err(e) => {
+            debug!("Failed to raise fd limit: {}", e);
+        }
+    }
 }

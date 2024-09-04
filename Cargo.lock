@@ -6963,6 +6963,7 @@ dependencies = [
  "deadpool-postgres",
  "dirs 5.0.1",
  "env_logger 0.10.2",
+ "fdlimit",
  "feldera-types",
  "futures-util",
  "jsonwebtoken 8.3.0",
