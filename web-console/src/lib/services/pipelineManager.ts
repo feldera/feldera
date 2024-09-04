@@ -19,6 +19,7 @@ import {
   createApiKey,
   deleteApiKey as _deleteApiKey,
   httpOutput,
+  getConfig as _getConfig,
   getConfigDemos,
   httpInput
 } from '$lib/services/manager'
@@ -134,10 +135,14 @@ export const getPipeline = async (pipeline_name: string) => {
   )
 }
 
-export const getExtendedPipeline = async (pipeline_name: string) => {
-  return handled(_getPipeline)({ path: { pipeline_name: encodeURIComponent(pipeline_name) } }).then(
-    toExtendedPipeline
-  )
+export const getExtendedPipeline = async (
+  pipeline_name: string,
+  options?: { fetch?: (request: Request) => ReturnType<typeof fetch> }
+) => {
+  return handled(_getPipeline)({
+    path: { pipeline_name: encodeURIComponent(pipeline_name) },
+    ...options
+  }).then(toExtendedPipeline)
 }
 
 /**
@@ -302,6 +307,8 @@ export const postPipelineAction = async (
 
 export const getAuthConfig = () =>
   handled(getConfigAuthentication)({ client: unauthenticatedClient })
+
+export const getConfig = () => handled(_getConfig)({ client: unauthenticatedClient })
 
 export const getApiKeys = () => handled(listApiKeys)()
 

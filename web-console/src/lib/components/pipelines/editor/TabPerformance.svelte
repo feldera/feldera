@@ -2,7 +2,7 @@
   import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
   import PipelineThroughputGraph from '$lib/components/layout/pipelines/PipelineThroughputGraph.svelte'
   import { humanSize } from '$lib/functions/common/string'
-  import { emptyPipelineMetrics, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
+  import { type PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import { format } from 'd3-format'
 
@@ -19,24 +19,25 @@
 {#if global}
   <div class="flex flex-col gap-4 p-2">
     <div class="flex w-full flex-col-reverse gap-2 lg:flex-row">
-      <div class="mb-auto flex flex-col">
-        <span class="w-full border-b-2 text-center text-surface-600-400">Total records</span>
-        <div
-          class=" grid max-w-64 grid-flow-col grid-rows-2 gap-x-4 lg:grid-flow-row lg:grid-cols-2"
-        >
-          <!-- <span class="col-span-2">Records</span> -->
-          <span>Ingested:</span>
-          <span class="text-end">
-            {formatQty(global.total_input_records)}
-          </span>
-          <span>Processed:</span>
-          <span class="text-end">
-            {formatQty(global.total_processed_records)}
-          </span>
-          <span>Buffered:</span>
-          <span class="text-end">
-            {formatQty(global.buffered_input_records)}
-          </span>
+      <div class="mr-auto">
+        <div class="mb-auto flex flex-col">
+          <div class="border-b-2 text-center text-surface-600-400">Total records</div>
+          <div
+            class=" grid max-w-64 grid-flow-col grid-rows-2 gap-x-4 lg:grid-flow-row lg:grid-cols-2"
+          >
+            <span>Ingested:</span>
+            <span class="text-end">
+              {formatQty(global.total_input_records)}
+            </span>
+            <span>Processed:</span>
+            <span class="text-end">
+              {formatQty(global.total_processed_records)}
+            </span>
+            <span>Buffered:</span>
+            <span class="text-end">
+              {formatQty(global.buffered_input_records)}
+            </span>
+          </div>
         </div>
       </div>
       <div class="flex w-full flex-col md:flex-row">
@@ -54,49 +55,65 @@
         </div>
       </div>
     </div>
-    <div class="grid max-w-[800px] grid-cols-5">
-      <span class="border-b-2 text-center text-surface-600-400">Table</span>
-      <span class="border-b-2 text-center text-surface-600-400">Ingested records</span>
-      <span class="border-b-2 text-center text-surface-600-400">Ingested bytes</span>
-      <span class="border-b-2 text-center text-surface-600-400">Parse errors</span>
-      <span class="border-b-2 text-center text-surface-600-400">Transport errors</span>
-      {#each metrics.current.input.entries() as [relation, stats]}
-        <span>
-          {relation}
-        </span>
-        <span class="mr-4 text-end">
-          {formatQty(stats.total_records)}
-        </span>
-        <span class="mr-4 text-end">
-          {humanSize(stats.total_bytes)}
-        </span>
-        <span class="mr-4 text-end">{formatQty(stats.num_parse_errors)} </span>
-        <span class="mr-4 text-end">{formatQty(stats.num_transport_errors)} </span>
-      {/each}
-    </div>
-    {#if metrics.current.output.size}
-      <div class="grid max-w-[960px] grid-cols-6">
-        <span class="border-b-2 text-center text-surface-600-400">View</span>
-        <span class="border-b-2 text-center text-surface-600-400">Transmitted records</span>
-        <span class="border-b-2 text-center text-surface-600-400">Transmitted bytes</span>
-        <span class="border-b-2 text-center text-surface-600-400">Processed records</span>
-        <span class="border-b-2 text-center text-surface-600-400">Encode errors</span>
-        <span class="border-b-2 text-center text-surface-600-400">Transport errors</span>
-        {#each metrics.current.output.entries() as [relation, stats]}
-          <span>
-            {relation}
-          </span>
-          <span class="mr-4 text-end">
-            {formatQty(stats.transmitted_records)}
-          </span>
-          <span class="mr-4 text-end">
-            {humanSize(stats.transmitted_bytes)}
-          </span>
-          <span class="mr-4 text-end">{formatQty(stats.total_processed_input_records)} </span>
-          <span class="mr-4 text-end">{formatQty(stats.num_encode_errors)} </span>
-          <span class="mr-4 text-end">{formatQty(stats.num_transport_errors)} </span>
+    <table class="max-w-[1000px]">
+      <thead class="border-b-2">
+        <tr>
+          <th class="text-center font-normal text-surface-600-400">Table</th>
+          <th class="text-center font-normal text-surface-600-400">Ingested records</th>
+          <th class="text-center font-normal text-surface-600-400">Ingested bytes</th>
+          <th class="text-center font-normal text-surface-600-400">Parse errors</th>
+          <th class="text-center font-normal text-surface-600-400">Transport errors</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each metrics.current.input.entries() as [relation, stats]}
+          <tr>
+            <td>
+              {relation}
+            </td>
+            <td class="text-end">
+              {formatQty(stats.total_records)}
+            </td>
+            <td class="text-end">
+              {humanSize(stats.total_bytes)}
+            </td>
+            <td class="text-end">{formatQty(stats.num_parse_errors)} </td>
+            <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+          </tr>
         {/each}
-      </div>
+      </tbody>
+    </table>
+    {#if metrics.current.output.size}
+      <table class="max-w-[1200px]">
+        <thead class="border-b-2">
+          <tr>
+            <th class="text-center font-normal text-surface-600-400">View</th>
+            <th class="text-center font-normal text-surface-600-400">Transmitted records</th>
+            <th class="text-center font-normal text-surface-600-400">Transmitted bytes</th>
+            <th class="text-center font-normal text-surface-600-400">Processed records</th>
+            <th class="text-center font-normal text-surface-600-400">Encode errors</th>
+            <th class="text-center font-normal text-surface-600-400">Transport errors</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each metrics.current.output.entries() as [relation, stats]}
+            <tr>
+              <td>
+                {relation}
+              </td>
+              <td class="text-end">
+                {formatQty(stats.transmitted_records)}
+              </td>
+              <td class="text-end">
+                {humanSize(stats.transmitted_bytes)}
+              </td>
+              <td class="text-end">{formatQty(stats.total_processed_input_records)} </td>
+              <td class="text-end">{formatQty(stats.num_encode_errors)} </td>
+              <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     {/if}
   </div>
 {:else}

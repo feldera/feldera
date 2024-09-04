@@ -2,10 +2,40 @@
 use crate::demo::{read_demos_from_directory, Demo};
 use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
 use serde::Serialize;
+use serde_json::json;
 use std::path::Path;
 use utoipa::ToSchema;
 
 use super::{ManagerError, ServerState};
+
+#[derive(Clone, Serialize, ToSchema)]
+pub(crate) struct Configuration {
+    pub telemetry: String,
+    pub version: String,
+}
+
+/// Retrieve general configuration.
+#[utoipa::path(
+    path="/config",
+    responses(
+        (status = OK
+            , description = "The response body contains basic configuration information about this host."
+            , content_type = "application/json"
+            , body = Configuration),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Request failed."
+            , body = ErrorResponse),
+    ),
+    tag = "Configuration"
+)]
+#[get("/config")]
+async fn get_config(
+    state: WebData<ServerState>,
+    _req: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    Ok(HttpResponse::Ok()
+        .json(json!({"telemetry": state._config.telemetry, "version": env!("CARGO_PKG_VERSION") })))
+}
 
 /// Retrieve authentication provider configuration.
 #[utoipa::path(
@@ -20,7 +50,7 @@ use super::{ManagerError, ServerState};
             , description = "Request failed."
             , body = ErrorResponse),
     ),
-    tag = "Authentication"
+    tag = "Configuration"
 )]
 #[get("/config/authentication")]
 async fn get_config_authentication(

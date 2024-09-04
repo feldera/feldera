@@ -84,6 +84,7 @@ async fn metrics(
                 "metrics",
                 &rts.deployment_location.unwrap(),
                 "",
+                None,
             ) // TODO: unwrap
             .await
             {

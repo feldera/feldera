@@ -9,6 +9,7 @@ use arrow::datatypes::{
 };
 use bytes::Bytes;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_types::config::ConnectorConfig;
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use parquet::file::reader::{FileReader, SerializedFileReader};
@@ -204,17 +205,18 @@ impl OutputFormat for ParquetOutputFormat {
     fn new_encoder(
         &self,
         endpoint_name: &str,
-        config: &YamlValue,
+        config: &ConnectorConfig,
         schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
-        let config = ParquetEncoderConfig::deserialize(config).map_err(|e| {
-            ControllerError::encoder_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_yaml::to_string(&config).unwrap_or_default(),
-            )
-        })?;
+        let config = ParquetEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
+            .map_err(|e| {
+                ControllerError::encoder_config_parse_error(
+                    endpoint_name,
+                    &e,
+                    &serde_yaml::to_string(&config).unwrap_or_default(),
+                )
+            })?;
         Ok(Box::new(ParquetEncoder::new(
             consumer,
             config,

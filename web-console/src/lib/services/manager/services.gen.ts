@@ -2,6 +2,8 @@
 
 import { client, type Options } from '@hey-api/client-fetch'
 import type {
+  GetConfigError,
+  GetConfigResponse,
   GetConfigAuthenticationError,
   GetConfigAuthenticationResponse,
   ListApiKeysData,
@@ -51,6 +53,9 @@ import type {
   InputEndpointActionData,
   InputEndpointActionError,
   InputEndpointActionResponse,
+  PipelineAdhocSqlData,
+  PipelineAdhocSqlError,
+  PipelineAdhocSqlResponse,
   GetPipelineStatsData,
   GetPipelineStatsError,
   GetPipelineStatsResponse,
@@ -58,6 +63,16 @@ import type {
   PostPipelineActionError,
   PostPipelineActionResponse
 } from './types.gen'
+
+/**
+ * Retrieve general configuration.
+ */
+export const getConfig = (options?: Options) => {
+  return (options?.client ?? client).get<GetConfigResponse, GetConfigError>({
+    ...options,
+    url: '/config'
+  })
+}
 
 /**
  * Retrieve authentication provider configuration.
@@ -259,6 +274,16 @@ export const inputEndpointAction = (options: Options<InputEndpointActionData>) =
   return (options?.client ?? client).post<InputEndpointActionResponse, InputEndpointActionError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/input_endpoints/{endpoint_name}/{action}'
+  })
+}
+
+/**
+ * Execute an ad-hoc query in a running or paused pipeline.
+ */
+export const pipelineAdhocSql = (options: Options<PipelineAdhocSqlData>) => {
+  return (options?.client ?? client).get<PipelineAdhocSqlResponse, PipelineAdhocSqlError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/query'
   })
 }
 

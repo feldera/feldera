@@ -4,6 +4,10 @@
   import { BodyAttr } from 'svelte-attr'
   import '@fortawesome/fontawesome-free/css/brands.min.css'
 
+  import posthog from 'posthog-js'
+  import { browser } from '$app/environment'
+  import { beforeNavigate, afterNavigate } from '$app/navigation'
+
   import type { Action } from 'svelte/action'
 
   export const classList: Action<Element, string | string[]> = (node, classes) => {
@@ -18,6 +22,11 @@
   }
   let { children } = $props()
   let { darkMode } = useDarkMode()
+
+  if (browser) {
+    beforeNavigate(() => posthog.capture('$pageleave'))
+    afterNavigate(() => posthog.capture('$pageview'))
+  }
 </script>
 
 <BodyAttr class={darkMode.value} />

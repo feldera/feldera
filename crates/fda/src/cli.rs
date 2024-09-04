@@ -7,6 +7,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
+    /// The format in which the output should be displayed.
+    #[arg(long, default_value = "text", env = "FELDERA_OUTPUT_FORMAT")]
+    pub format: OutputFormat,
     /// The Feldera host to connect to.
     #[arg(long, env = "FELDERA_HOST", default_value_t = String::from("https://try.feldera.com"))]
     pub host: String,
@@ -17,9 +20,13 @@ pub struct Cli {
     /// If not specified, a request without authentication will be used.
     #[arg(long, env = "FELDERA_API_KEY")]
     pub auth: Option<String>,
-    /// The format in which the output should be displayed.
-    #[arg(long, default_value = "text", env = "FELDERA_OUTPUT_FORMAT")]
-    pub format: OutputFormat,
+    /// The client timeout for requests in seconds.
+    ///
+    /// In almost all cases you should not need to change this value.
+    /// It can be helpful to increase this if you want to evaluate long-running
+    /// ad-hoc queries in the shell.
+    #[arg(long, default_value_t = 120, env = "FELDERA_REQUEST_TIMEOUT")]
+    pub timeout: u64,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]

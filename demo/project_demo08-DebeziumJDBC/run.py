@@ -1,12 +1,10 @@
-# Stream output of a view to Postgres via Debesium JDBC sink connector.VIEW_NAME
+# Stream output of a view to Postgres via Debezium JDBC sink connector and Confluent JDBC sink connector.
 #
 # To run the demo, start Feldera along with RedPanda, Kafka Connect, and Postgres containers:
-# > docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-jdbc.yml --profile debezium \
-#       up redpanda connect postgres --renew-anon-volumes --force-recreate
+# > docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-jdbc.yml --profile debezium up redpanda connect postgres --renew-anon-volumes --force-recreate
 #
 # Run this script:
 # > python3 run.py --api-url=http://localhost:8080 --start
-import base64
 import os
 import time
 import datetime
@@ -14,9 +12,9 @@ import requests
 import argparse
 from plumbum.cmd import rpk
 import psycopg
-import json
 import random
 from feldera import PipelineBuilder, FelderaClient, Pipeline
+from typing import Dict
 
 # File locations
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
@@ -24,36 +22,97 @@ PROJECT_SQL = os.path.join(SCRIPT_DIR, "project.sql")
 
 DATABASE_NAME = "jdbc_test_db"
 PIPELINE_NAME = "demo-debezium-jdbc-pipeline"
-KAFKA_CONNECT_CONNECTOR_NAME = "jdbc-test-connector"
+JSON_CONNECTOR_NAME = "jdbc-test-connector-json"
+AVRO_CONNECTOR_NAME = "jdbc-test-connector-avro"
 FELDERA_CONNECTOR_NAME = "jdbc-sink"
 TABLE_NAME = "test_table"
-# Database view to read from. Also used as the name of the Kafka topic
-# to send updates to.
-VIEW_NAME = "test_view"
+
+# The name of the Kafka topic and the resulting Postgres table.
+JSON_TABLE_NAME = "json_jdbc_test"
+AVRO_TABLE_NAME = "avro_jdbc_test"
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-url", default="http://localhost:8080", help="Feldera API URL (e.g., http://localhost:8080 )")
     parser.add_argument('--start', action='store_true', default=False, help="Start the Feldera pipeline")
-    parser.add_argument('--kafka-url', required=False, default="redpanda:9092", help="Kafka URL reachable from the pipeline")
+    parser.add_argument('--kafka-url-from-pipeline', required=False, default="redpanda:9092", help="Kafka URL reachable from the pipeline")
+    parser.add_argument("--registry-url-from-pipeline", default="http://redpanda:8081", help="Schema registry address reachable from the pipeline")
+    parser.add_argument("--registry-url-from-connect", default="http://redpanda:8081", help="Schema registry address reachable from the Kafka Connect server")
 
     args = parser.parse_args()
     # Delete old connector instance first so it doesn't block topic deletion.
-    delete_connector()
+    delete_connector(JSON_CONNECTOR_NAME)
+    delete_connector(AVRO_CONNECTOR_NAME)
+
     # Drop and re-create the database.
     create_database()
     # Create fresh Kafka topics and a new connector instance listening on those topics.
-    create_debezium_jdbc_connector()
+
+    json_config = {
+            "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
+            "tasks.max": "1",
+            "connection.url": f"jdbc:postgresql://postgres:5432/{DATABASE_NAME}",
+            "connection.username": "postgres",
+            "connection.password": "postgres",
+            "insert.mode": "upsert",
+            "primary.key.mode": "record_key",
+            "delete.enabled": True,
+            "schema.evolution": "basic",
+            "database.time_zone": "UTC",
+            "dialect.name": "PostgreSqlDatabaseDialect",
+            "topics": JSON_TABLE_NAME,
+            "errors.deadletterqueue.topic.name": "dlq",
+            "errors.deadletterqueue.context.headers.enable": True,
+            "errors.deadletterqueue.topic.replication.factor": 1,
+            "errors.tolerance": "all",
+            "binary.handling.mode": "bytes",
+            "decimal.handling.mode": "string"
+        }
+
+    create_jdbc_connector(JSON_CONNECTOR_NAME, JSON_TABLE_NAME, json_config)
+
+    avro_config = {
+            "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+            "errors.log.include.messages": "true",
+            "dialect.name": "PostgreSqlDatabaseDialect",
+            "tasks.max": "1",
+            "connection.url": f"jdbc:postgresql://postgres:5432/{DATABASE_NAME}",
+            "connection.user": "postgres",
+            "connection.password": "postgres",
+            "insert.mode": "upsert",
+            "delete.enabled": True,
+            "pk.mode": "record_key",
+            "auto.create": True,
+            "auto.evolve": True,
+            "schema.evolution": "basic",
+            "database.time_zone": "UTC",
+            "topics": AVRO_TABLE_NAME,
+            "errors.deadletterqueue.topic.name": "dlq",
+            "errors.deadletterqueue.context.headers.enable": True,
+            "errors.deadletterqueue.topic.replication.factor": 1,
+            "errors.tolerance": "all",
+            "key.converter.key.subject.name.strategy": "io.confluent.kafka.serializers.subject.TopicNameStrategy",
+            "value.converter.value.subject.name.strategy": "io.confluent.kafka.serializers.subject.TopicNameStrategy",
+            "key.converter": "io.confluent.connect.avro.AvroConverter",
+            "value.converter": "io.confluent.connect.avro.AvroConverter",
+            "key.converter.schemas.enable": "true",
+            "value.converter.schemas.enable": "true",
+            "key.converter.schema.registry.url": args.registry_url_from_connect,
+            "value.converter.schema.registry.url": args.registry_url_from_connect,
+        }
+
+    create_jdbc_connector(AVRO_CONNECTOR_NAME, AVRO_TABLE_NAME, avro_config)
+
     # Create a pipeline that will write to the topics.
-    pipeline = create_feldera_pipeline(args.api_url, args.kafka_url, args.start)
+    pipeline = create_feldera_pipeline(args.api_url, args.kafka_url_from_pipeline, args.registry_url_from_pipeline, args.start)
     if args.start:
         generate_inputs(pipeline)
 
-def delete_connector():
-    print("Deleting old connector")
+def delete_connector(connector_name: str):
+    print(f"Deleting old connector {connector_name}")
     connect_server = os.getenv("KAFKA_CONNECT_SERVER", "http://localhost:8083")
     # Delete previous connector instance if any.
-    requests.delete(f"{connect_server}/connectors/{KAFKA_CONNECT_CONNECTOR_NAME}")
+    requests.delete(f"{connect_server}/connectors/{connector_name}")
 
 def create_database():
     postgres_server = os.getenv("POSTGRES_SERVER", "localhost:6432")
@@ -63,18 +122,19 @@ def create_database():
             print(f"(Re-)creating test database {DATABASE_NAME}")
             cur.execute(f"DROP DATABASE IF EXISTS {DATABASE_NAME}")
             cur.execute(f"CREATE DATABASE {DATABASE_NAME}")
+            print("Database created")
 
 
 # Wait until the db contains exactly expected_rows rows.
-def wait_for_n_outputs(expected_rows: int):
+def wait_for_n_outputs(table_name: str, expected_rows: int):
     postgres_server = os.getenv("POSTGRES_SERVER", "localhost:6432")
 
     with psycopg.connect(f"postgresql://postgres:postgres@{postgres_server}/{DATABASE_NAME}") as conn:
         with conn.cursor() as cur:
-            print(f"Waiting for Postgres table {VIEW_NAME} to be created")
+            print(f"Waiting for Postgres table {table_name} to be created")
             start_time = time.time()
             while True:
-                cur.execute(f"select exists(select * from information_schema.tables where table_name='{VIEW_NAME}')")
+                cur.execute(f"select exists(select * from information_schema.tables where table_name='{table_name}')")
                 if cur.fetchone()[0]:
                     print("Done!")
                     break
@@ -86,10 +146,10 @@ def wait_for_n_outputs(expected_rows: int):
                     time.sleep(3)
 
 
-            print(f"Waiting for {expected_rows} rows in table {VIEW_NAME}")
+            print(f"Waiting for {expected_rows} rows in table {table_name}")
             start_time = time.time()
             while True:
-                cur.execute(f"SELECT count(id) from {VIEW_NAME}")
+                cur.execute(f"SELECT count(id) from {table_name}")
                 nrows = cur.fetchone()[0]
                 print(f"Found {nrows} rows")
                 if nrows == expected_rows:
@@ -102,37 +162,18 @@ def wait_for_n_outputs(expected_rows: int):
                     time.sleep(3)
 
 
-def create_debezium_jdbc_connector():
+def create_jdbc_connector(connector_name: str, topic_name: str, config: Dict):
     connect_server = os.getenv("KAFKA_CONNECT_SERVER", "http://localhost:8083")
 
     # It's important to stop the connector before deleting the topics.
     print(f"(Re-)creating topic")
-    rpk["topic", "delete", VIEW_NAME]()
-    rpk["topic", "create", VIEW_NAME]()
+    rpk["topic", "delete", topic_name]()
+    rpk["topic", "create", topic_name]()
 
     print("Create connector")
     config = {
-        "name": KAFKA_CONNECT_CONNECTOR_NAME,
-        "config": {
-            "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
-            "tasks.max": "1",
-            "connection.url": f"jdbc:postgresql://postgres:5432/{DATABASE_NAME}",
-            "connection.username": "postgres",
-            "connection.password": "postgres",
-            "insert.mode": "upsert",
-            "primary.key.mode": "record_key",
-            "delete.enabled": True,
-            "schema.evolution": "basic",
-            "database.time_zone": "UTC",
-            "dialect.name": "PostgreSqlDatabaseDialect",
-            "topics": VIEW_NAME,
-            "errors.deadletterqueue.topic.name": "dlq",
-            "errors.deadletterqueue.context.headers.enable": True,
-            "errors.deadletterqueue.topic.replication.factor": 1,
-            "errors.tolerance": "all",
-            "binary.handling.mode": "bytes",
-            "decimal.handling.mode": "string"
-        }
+        "name": connector_name,
+        "config": config
     }
 
     requests.post(
@@ -143,7 +184,7 @@ def create_debezium_jdbc_connector():
     start_time = time.time()
     while True:
         response = requests.get(
-            f"{connect_server}/connectors/{KAFKA_CONNECT_CONNECTOR_NAME}/status"
+            f"{connect_server}/connectors/{connector_name}/status"
         )
         print(f"response: {response}")
         if response.ok:
@@ -164,7 +205,7 @@ def create_debezium_jdbc_connector():
             print("Waiting for connector creation")
             time.sleep(1)
 
-def build_sql(pipeline_to_redpanda_server: str) -> str:
+def build_sql(pipeline_to_redpanda_server: str, registry_url_from_pipeline: str) -> str:
     return f"""
 create table test_table(
     id bigint not null primary key,
@@ -181,7 +222,8 @@ create table test_table(
 
 create view test_view
 WITH (
-    'connectors' = '[{{
+    'connectors' = '[
+    {{
         "format": {{
             "name": "json",
             "config": {{
@@ -193,17 +235,38 @@ WITH (
             "name": "kafka_output",
             "config": {{
                 "bootstrap.servers": "{pipeline_to_redpanda_server}",
-                "topic": "{VIEW_NAME}"
+                "topic": "{JSON_TABLE_NAME}"
             }}
         }}
-    }}]'
+    }},
+    {{
+        "format": {{
+            "name": "avro",
+            "config": {{
+                "update_format": "confluent_jdbc",
+                "registry_urls": ["{registry_url_from_pipeline}"],
+                "key_fields": ["id"]
+            }}
+        }},
+        "transport": {{
+            "name": "kafka_output",
+            "config": {{
+                "bootstrap.servers": "{pipeline_to_redpanda_server}",
+                "topic": "{AVRO_TABLE_NAME}"
+            }}
+        }}
+    }}
+
+
+    ]'
 )
 as select * from test_table;
     """
 
-def create_feldera_pipeline(api_url: str, pipeline_to_redpanda_server: str, start_pipeline: bool):
+def create_feldera_pipeline(api_url: str, pipeline_to_redpanda_server: str, registry_url_from_pipeline: str, start_pipeline: bool):
     client = FelderaClient(api_url)
-    sql = build_sql(pipeline_to_redpanda_server)
+    print("Creating the pipeline...")
+    sql = build_sql(pipeline_to_redpanda_server, registry_url_from_pipeline)
     pipeline = PipelineBuilder(client, name=PIPELINE_NAME, sql=sql).create_or_replace()
 
     if start_pipeline:
@@ -238,11 +301,13 @@ def generate_inputs(pipeline: Pipeline):
         inserts = [{"insert": element} for element in data]
         pipeline.input_json("test_table", inserts, update_format="insert_delete")
 
-    wait_for_n_outputs(199)
+    wait_for_n_outputs(JSON_TABLE_NAME, 199)
+    wait_for_n_outputs(AVRO_TABLE_NAME, 199)
 
-    deletes = [{"delete": element} for element in data]
-    pipeline.input_json("test_table", deletes, update_format="insert_delete")
-    wait_for_n_outputs(0)
+    # deletes = [{"delete": element} for element in data]
+    # pipeline.input_json("test_table", deletes, update_format="insert_delete")
+    # # #wait_for_n_outputs(JSON_TABLE_NAME, 0)
+    # wait_for_n_outputs(AVRO_TABLE_NAME, 0)
 
 
 if __name__ == "__main__":

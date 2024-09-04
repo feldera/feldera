@@ -124,8 +124,13 @@ fn handle_sql_response_error(err: Error<ErrorResponse>) {
             eprintln!("{}", UGPRADE_NOTICE);
         }
         Error::CommunicationError(e) => {
-            eprintln!("ERROR: {}: ", e);
-            eprintln!("Check your network connection.");
+            if e.is_timeout() {
+                eprintln!("ERROR: Request timed out.");
+                eprintln!("Try increasing the limit with the `--timeout` argument.");
+            } else {
+                eprintln!("ERROR: {}: ", e);
+                eprintln!("Check your network connection.");
+            }
         }
         Error::InvalidUpgrade(e) => {
             eprintln!("ERROR: {}: ", e);

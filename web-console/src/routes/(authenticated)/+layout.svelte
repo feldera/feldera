@@ -13,6 +13,7 @@
   import type { LayoutData } from './$types'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { base } from '$app/paths'
+  import { page } from '$app/stores'
 
   const dialog = useGlobalDialog()
 
@@ -26,18 +27,21 @@
 <div class="flex h-full">
   <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
     <div class="flex h-full w-full flex-col gap-1">
-      <a href="{base}/">
-        {#if darkMode.value === 'dark'}
-          <FelderaLogoWhite class="w-40 p-3"></FelderaLogoWhite>
-        {:else}
-          <FelderaLogoColor class="w-40 p-3"></FelderaLogoColor>
-        {/if}
-      </a>
+      <span class="flex items-end">
+        <a href="{base}/">
+          {#if darkMode.value === 'dark'}
+            <FelderaLogoWhite class="w-40 p-3"></FelderaLogoWhite>
+          {:else}
+            <FelderaLogoColor class="w-40 p-3"></FelderaLogoColor>
+          {/if}
+        </a>
+        <span class="pb-1 text-surface-500">{$page.data.felderaVersion}</span>
+      </span>
       <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
     </div>
   </Drawer>
   <div class="flex h-full w-full flex-col">
-    <div class="flex justify-between p-3">
+    <div class="flex justify-between p-1">
       <div class="flex">
         <button
           class="btn-icon"

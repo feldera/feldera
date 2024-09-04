@@ -183,7 +183,7 @@ impl OutputEndpoint for FileOutputEndpoint {
         Ok(())
     }
 
-    fn push_key(&mut self, _key: &[u8], _val: &[u8]) -> AnyResult<()> {
+    fn push_key(&mut self, _key: &[u8], _val: Option<&[u8]>) -> AnyResult<()> {
         bail!(
             "File output transport does not support key-value pairs. \
 This output endpoint was configured with a data format that produces outputs as key-value pairs; \

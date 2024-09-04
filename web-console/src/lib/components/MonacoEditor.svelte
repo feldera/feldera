@@ -63,9 +63,11 @@
   }
   $: model &&
     markers &&
-    Object.entries(markers).forEach(([owner, markers]) =>
-      monaco.editor.setModelMarkers(model, owner, markers)
-    )
+    setTimeout(() => {
+      Object.entries(markers).forEach(([owner, markers]) =>
+        monaco.editor.setModelMarkers(model, owner, markers)
+      )
+    })
 
   onMount(async () => {
     monaco = await loader.init()

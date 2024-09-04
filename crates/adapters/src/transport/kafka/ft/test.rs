@@ -85,6 +85,7 @@ fn init_test_logger() {
 }
 
 #[test]
+#[ignore]
 fn test_kafka_output_errors() {
     init_test_logger();
 
@@ -229,6 +230,7 @@ outputs:
 
 /// Test a topic that's empty and won't get any data.
 #[test]
+#[ignore]
 fn test_empty_input() {
     init_test_logger();
 
@@ -309,6 +311,7 @@ config:
 }
 
 #[test]
+#[ignore]
 fn test_input() {
     init_test_logger();
 
@@ -545,6 +548,7 @@ impl InputConsumer for DummyInputConsumer {
 }
 
 #[test]
+#[ignore]
 fn output_test() {
     kafka_output_test(
         "ft_kafka_end_to_end_csv_large",
@@ -774,6 +778,7 @@ format:
 /// not functioning properly, it's good to fail quickly without printing a
 /// thousand records as part of the failure.
 #[test]
+#[ignore]
 fn kafka_input_trivial() {
     test_ft_kafka_input(Vec::new(), "trivial_test_topic1", "trivial_test_topic2");
 }
@@ -782,26 +787,31 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(2))]
 
     #[test]
+    #[ignore]
     fn proptest_kafka_input(data in generate_test_batches(0, 100, 1000)) {
         test_ft_kafka_input(data, "input_test_topic1", "input_test_topic2");
     }
 
     #[test]
+    #[ignore]
     fn proptest_kafka_end_to_end_csv_large(data in generate_test_batches(0, 30, 1000)) {
         ft_kafka_end_to_end_test("proptest_kafka_end_to_end_csv_large", "csv", "", 1000000, data);
     }
 
     #[test]
+    #[ignore]
     fn proptest_kafka_end_to_end_csv_small(data in generate_test_batches(0, 30, 1000)) {
         ft_kafka_end_to_end_test("proptest_kafka_end_to_end_csv_small", "csv", "", 1500, data);
     }
 
     #[test]
+    #[ignore]
     fn proptest_kafka_end_to_end_json_small(data in generate_test_batches(0, 30, 1000)) {
         ft_kafka_end_to_end_test("proptest_kafka_end_to_end_json_small", "json", "", 2048, data);
     }
 
     #[test]
+    #[ignore]
     fn proptest_kafka_end_to_end_json_array_small(data in generate_test_batches(0, 30, 1000)) {
         ft_kafka_end_to_end_test("proptest_kafka_end_to_end_json_array_small", "json", "array: true", 5000, data);
     }

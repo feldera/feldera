@@ -9,12 +9,12 @@ use crate::{
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_types::config::ConnectorConfig;
 use feldera_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
 use feldera_types::program_schema::{canonical_identifier, Relation};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 use std::collections::HashSet;
 use std::{borrow::Cow, io::Write, mem::take};
 
@@ -51,17 +51,18 @@ impl OutputFormat for JsonOutputFormat {
     fn new_encoder(
         &self,
         endpoint_name: &str,
-        config: &YamlValue,
+        config: &ConnectorConfig,
         schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
-        let mut config = JsonEncoderConfig::deserialize(config).map_err(|e| {
-            ControllerError::encoder_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_yaml::to_string(config).unwrap_or_default(),
-            )
-        })?;
+        let mut config = JsonEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
+            .map_err(|e| {
+                ControllerError::encoder_config_parse_error(
+                    endpoint_name,
+                    &e,
+                    &serde_yaml::to_string(config).unwrap_or_default(),
+                )
+            })?;
 
         validate(&config, endpoint_name, schema)?;
 
@@ -385,7 +386,7 @@ impl Encoder for JsonEncoder {
                     // );
                     if !key_buffer.is_empty() {
                         self.output_consumer
-                            .push_key(&key_buffer, &buffer, num_records);
+                            .push_key(&key_buffer, Some(&buffer), num_records);
                     } else {
                         self.output_consumer.push_buffer(&buffer, num_records);
                     }
@@ -404,7 +405,7 @@ impl Encoder for JsonEncoder {
             }
             if !key_buffer.is_empty() {
                 self.output_consumer
-                    .push_key(&key_buffer, &buffer, num_records);
+                    .push_key(&key_buffer, Some(&buffer), num_records);
             } else {
                 self.output_consumer.push_buffer(&buffer, num_records);
             }
@@ -421,10 +422,9 @@ impl Encoder for JsonEncoder {
 
 #[cfg(test)]
 mod test {
-    use super::{JsonEncoder, JsonEncoderConfig, JsonOutputFormat};
+    use super::{JsonEncoder, JsonEncoderConfig};
     use crate::catalog::SerBatchReader;
     use crate::format::json::{DebeziumOp, DebeziumPayload, DebeziumUpdate};
-    use crate::OutputFormat;
     use crate::{
         catalog::SerBatch,
         format::{
@@ -765,7 +765,7 @@ mod test {
         let config = JsonEncoderConfig {
             update_format: JsonUpdateFormat::Debezium,
             json_flavor: None,
-            buffer_size_records: 3,
+            buffer_size_records: 1,
             array: false,
             key_fields: Some(vec!["id".to_string(), "s".to_string()]),
         };
@@ -773,19 +773,16 @@ mod test {
         let consumer = MockOutputConsumer::new();
         let consumer_data = consumer.data.clone();
 
-        let mut encoder = JsonOutputFormat
-            .new_encoder(
-                "TestStruct",
-                &serde_yaml::to_value(&config).unwrap(),
-                &Relation::new(
-                    "TestStruct".into(),
-                    TestStruct::schema(),
-                    false,
-                    BTreeMap::new(),
-                ),
-                Box::new(consumer),
-            )
-            .unwrap();
+        let mut encoder = JsonEncoder::new(
+            Box::new(consumer),
+            config,
+            &Relation::new(
+                "TestStruct".into(),
+                TestStruct::schema(),
+                false,
+                BTreeMap::new(),
+            ),
+        );
         let zset = OrdZSet::from_keys((), test_data()[0].clone());
 
         encoder

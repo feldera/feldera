@@ -28,7 +28,7 @@
     grid: {
       top: 10,
       left: 64,
-      right: 20,
+      right: 50,
       bottom: 48
     },
     xAxis: {
