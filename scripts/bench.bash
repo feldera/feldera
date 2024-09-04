@@ -74,7 +74,7 @@ sql_benchmark() {
 }
 
 DIR="benchmark/feldera-sql/benchmarks/"
-TESTS=${DIR}/*
+TESTS="nexmark"
 if [ "$CLOUD" != "" ]; then
   TESTS=${DIR}/nexmark
 fi
@@ -106,12 +106,6 @@ if [ "$CLOUD" = "" ]; then
       DATASET_SMALL='wiki-Talk'
       DATASET_MEDIUM='kgs'
   fi
-  #cargo bench --bench ldbc-graphalytics -- bfs ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
-  #cargo bench --bench ldbc-graphalytics -- bfs ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
-  #cargo bench --bench ldbc-graphalytics -- pagerank ${DATASET_SMALL} --threads 1 --csv ${LDBC_CSV_FILE}
-  #cargo bench --bench ldbc-graphalytics -- pagerank ${DATASET_MEDIUM} --threads 6 --csv ${LDBC_CSV_FILE}
-  #mkdir -p ${LDBC_RESULTS_DIR}
-  #mv crates/dbsp/${LDBC_CSV_FILE} ${LDBC_RESULTS_DIR}
 
   # Run nexmark benchmark with persistence
   MAX_EVENTS=3000000
@@ -120,7 +114,5 @@ if [ "$CLOUD" = "" ]; then
     MAX_EVENTS=100000
   fi
   cargo bench --bench nexmark -- --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_DRAM_CSV_FILE}
-  mv crates/nexmark/${NEXMARK_DRAM_CSV_FILE} $NEXMARK_RESULTS_DIR 
-  #cargo bench --bench nexmark --features persistence -- --max-events=${MAX_EVENTS} --cpu-cores ${CORES} --num-event-generators 6 --source-buffer-size 10000 --input-batch-size 40000 --csv ${NEXMARK_PERSISTENCE_CSV_FILE}
-  #mv crates/nexmark/${NEXMARK_PERSISTENCE_CSV_FILE} $NEXMARK_RESULTS_DIR 
+  mv crates/nexmark/${NEXMARK_DRAM_CSV_FILE} $NEXMARK_RESULTS_DIR
 fi
