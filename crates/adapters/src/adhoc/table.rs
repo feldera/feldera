@@ -71,8 +71,15 @@ impl TableProvider for AdHocTable {
         // This holds because we don't enable filter push-down for now.
         assert!(filters.is_empty(), "AdHocTable does not support filters");
 
+        let projected_schema = if let Some(keep_indices) = projection.as_ref() {
+            Arc::new(self.schema.project(keep_indices)?)
+        } else {
+            self.schema.clone()
+        };
+
         Ok(Arc::new(AdHocQueryExecution::new(
             self.schema.clone(),
+            projected_schema,
             self.snapshots.lock().await.get(&self.name).unwrap().clone(),
             projection,
             limit,
@@ -81,7 +88,8 @@ impl TableProvider for AdHocTable {
 }
 
 struct AdHocQueryExecution {
-    schema: Arc<Schema>,
+    table_schema: Arc<Schema>,
+    projected_schema: Arc<Schema>,
     readers: Vec<Arc<dyn SyncSerBatchReader>>,
     projection: Option<Vec<usize>>,
     limit: usize,
@@ -91,7 +99,8 @@ struct AdHocQueryExecution {
 
 impl AdHocQueryExecution {
     fn new(
-        schema: Arc<Schema>,
+        table_schema: Arc<Schema>,
+        projected_schema: Arc<Schema>,
         readers: Vec<Arc<dyn SyncSerBatchReader>>,
         projection: Option<&Vec<usize>>,
         limit: Option<usize>,
@@ -99,12 +108,13 @@ impl AdHocQueryExecution {
         // TODO: we could do much better here by encoding our data partitioning schema
         // and using the correct equivalence properties.
         let num_partitions = readers.len();
-        let eq_props = EquivalenceProperties::new(schema.clone());
+        let eq_props = EquivalenceProperties::new(projected_schema.clone());
         let partitioning = Partitioning::UnknownPartitioning(num_partitions);
         let plan_properties = PlanProperties::new(eq_props, partitioning, ExecutionMode::Bounded);
 
         Self {
-            schema,
+            table_schema,
+            projected_schema,
             readers,
             projection: projection.cloned(),
             limit: limit.unwrap_or(usize::MAX),
@@ -155,7 +165,8 @@ impl ExecutionPlan for AdHocQueryExecution {
         children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
         Ok(Arc::new(AdHocQueryExecution {
-            schema: self.schema.clone(),
+            table_schema: self.table_schema.clone(),
+            projected_schema: self.projected_schema.clone(),
             readers: self.readers.clone(),
             projection: self.projection.clone(),
             limit: self.limit,
@@ -189,11 +200,10 @@ impl ExecutionPlan for AdHocQueryExecution {
             Ok(())
         }
 
-        let mut builder = RecordBatchReceiverStreamBuilder::new(self.schema.clone(), 10);
-
+        let mut builder = RecordBatchReceiverStreamBuilder::new(self.projected_schema.clone(), 10);
         // Returns a single batch when the returned stream is polled
         let batch_reader = self.readers[partition].clone();
-        let schema = self.schema.clone();
+        let schema = self.table_schema.clone();
         let tx = builder.tx();
         let projection = self.projection.clone();
 
@@ -263,7 +273,7 @@ impl ExecutionPlan for AdHocQueryExecution {
         });
 
         Ok(Box::pin(RecordBatchStreamAdapter::new(
-            self.schema.clone(),
+            self.projected_schema.clone(),
             builder.build(),
         )))
     }
