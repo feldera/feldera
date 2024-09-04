@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+set -e
 
 # This script builds the SQL compiler
 # it has an optional argument which specifies whether to build
@@ -57,7 +57,7 @@ if [ ${NEXT} = 'y' ]; then
     cd calcite
     git checkout ${CALCITE_BRANCH}
     if [[ ! -z "${CALCITE_NEXT_COMMIT}" ]]; then
-	git reset --hard ${CALCITE_NEXT_COMMIT}
+        git reset --hard ${CALCITE_NEXT_COMMIT}
     fi
 
     GROUP=org.apache.calcite
