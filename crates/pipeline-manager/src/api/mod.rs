@@ -44,7 +44,7 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use futures_util::FutureExt;
-use log::{error, info, log, trace, Level};
+use log::{error, log, trace, Level};
 use std::{env, net::TcpListener, sync::Arc};
 use tokio::sync::Mutex;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
@@ -441,7 +441,7 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
 
     let addr = env::var("BANNER_ADDR").unwrap_or(bind_address);
     let url = format!("http://{}:{}", addr, port);
-    info!(
+    println!(
         r"
                     Welcome to
 
