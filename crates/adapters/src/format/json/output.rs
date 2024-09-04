@@ -636,6 +636,7 @@ mod test {
                     .iter()
                     .map(|(_k, v)| v.clone())
                     .flatten()
+                    .flatten()
                     .collect::<Vec<_>>()
             )
             .unwrap()
@@ -646,6 +647,7 @@ mod test {
             .unwrap()
             .iter()
             .map(|(_k, v)| v.clone())
+            .flatten()
             .flatten()
             .collect::<Vec<_>>();
         let deserializer = serde_json::Deserializer::from_slice(&consumer_data);
@@ -797,7 +799,7 @@ mod test {
                 (
                     k.clone()
                         .map(|k| (serde_json::from_slice::<serde_json::Value>(&k).unwrap())),
-                    serde_json::from_slice::<serde_json::Value>(v).unwrap(),
+                    serde_json::from_slice::<serde_json::Value>(v.as_ref().unwrap()).unwrap(),
                 )
             })
             .collect::<Vec<_>>();

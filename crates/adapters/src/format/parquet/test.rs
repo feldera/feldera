@@ -169,6 +169,7 @@ fn parquet_output() {
             .iter()
             .map(|(_k, v)| v.clone())
             .flatten()
+            .flatten()
             .collect(),
     );
 
@@ -177,6 +178,7 @@ fn parquet_output() {
         .unwrap()
         .iter()
         .map(|(_k, v)| v.clone())
+        .flatten()
         .flatten()
         .collect::<Vec<_>>();
 
