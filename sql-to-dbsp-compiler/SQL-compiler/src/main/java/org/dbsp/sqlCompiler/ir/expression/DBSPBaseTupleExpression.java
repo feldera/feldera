@@ -26,7 +26,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
 

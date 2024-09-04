@@ -16,8 +16,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.path.DBSPSimplePathSegment;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.util.IIndentStream;
 

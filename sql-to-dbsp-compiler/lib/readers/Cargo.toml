@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 paste = { version = "1.0.12" }
 derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
-sqlvalue = { path = "../sqlvalue" }
+sltsqlvalue = { path = "../sltsqlvalue" }
 serde = { version = "1.0", features = ["derive"] }
 csv = { version = "1.2.2" }
 dbsp = { path = "../../../crates/dbsp" }

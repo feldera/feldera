@@ -23,6 +23,27 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void testControl() {
+        // Test using a control table to save changes from a query
+        String query = """
+                CREATE TABLE T(COL1 INT, COL2 BIGINT);
+                create table control (id int);
+                
+                CREATE LOCAL VIEW test  AS
+                SELECT
+                    COL1,
+                    COUNT(*),
+                    SUM(COL2)
+                FROM T
+                GROUP BY T.COL1;
+                
+                CREATE VIEW output as
+                select * from
+                test where exists (select 1 from control);""";
+        this.compileRustTestCase(query);
+    }
+
+    @Test
     public void issue2243() {
         String sql = """
                 CREATE TABLE CUSTOMER (cc_num bigint not null, ts timestamp not null lateness interval 0 day);

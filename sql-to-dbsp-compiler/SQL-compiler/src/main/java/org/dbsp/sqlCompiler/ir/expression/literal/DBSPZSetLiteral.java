@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.IDBSPContainer;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;

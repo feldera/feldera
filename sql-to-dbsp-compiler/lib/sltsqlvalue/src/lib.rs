@@ -1,4 +1,4 @@
-//! SqlValue is a dynamically-typed object that can represent a subset
+//! SltSqlValue is a dynamically-typed object that can represent a subset
 //! of the Tuple* values in a SQL program.  This is used by SQL Logic Test,
 //! which has a particular way of formatting tuples.  The
 //! Tuple* types are used for computations, and they are converted
@@ -11,7 +11,7 @@ use rust_decimal::Decimal;
 use sqllib::casts::*;
 
 #[derive(Debug)]
-pub enum SqlValue {
+pub enum SltSqlValue {
     Int(i32),
     Long(i64),
     Str(String),
@@ -29,123 +29,123 @@ pub enum SqlValue {
     OptDecimal(Option<Decimal>),
 }
 
-impl From<i32> for SqlValue {
+impl From<i32> for SltSqlValue {
     fn from(value: i32) -> Self {
-        SqlValue::Int(value)
+        SltSqlValue::Int(value)
     }
 }
 
-impl From<i64> for SqlValue {
+impl From<i64> for SltSqlValue {
     fn from(value: i64) -> Self {
-        SqlValue::Long(value)
+        SltSqlValue::Long(value)
     }
 }
 
-impl From<bool> for SqlValue {
+impl From<bool> for SltSqlValue {
     fn from(value: bool) -> Self {
-        SqlValue::Bool(value)
+        SltSqlValue::Bool(value)
     }
 }
 
-impl From<f32> for SqlValue {
+impl From<f32> for SltSqlValue {
     fn from(value: f32) -> Self {
-        SqlValue::Flt(value)
+        SltSqlValue::Flt(value)
     }
 }
 
-impl From<f64> for SqlValue {
+impl From<f64> for SltSqlValue {
     fn from(value: f64) -> Self {
-        SqlValue::Dbl(value)
+        SltSqlValue::Dbl(value)
     }
 }
 
-impl From<F32> for SqlValue {
+impl From<F32> for SltSqlValue {
     fn from(value: F32) -> Self {
-        SqlValue::Flt(value.into_inner())
+        SltSqlValue::Flt(value.into_inner())
     }
 }
 
-impl From<F64> for SqlValue {
+impl From<F64> for SltSqlValue {
     fn from(value: F64) -> Self {
-        SqlValue::Dbl(value.into_inner())
+        SltSqlValue::Dbl(value.into_inner())
     }
 }
 
-impl From<String> for SqlValue {
+impl From<String> for SltSqlValue {
     fn from(value: String) -> Self {
-        SqlValue::Str(value)
+        SltSqlValue::Str(value)
     }
 }
 
-impl From<Decimal> for SqlValue {
+impl From<Decimal> for SltSqlValue {
     fn from(value: Decimal) -> Self {
-        SqlValue::Decimal(value)
+        SltSqlValue::Decimal(value)
     }
 }
 
-impl From<Option<i32>> for SqlValue {
+impl From<Option<i32>> for SltSqlValue {
     fn from(value: Option<i32>) -> Self {
-        SqlValue::OptInt(value)
+        SltSqlValue::OptInt(value)
     }
 }
 
-impl From<Option<i64>> for SqlValue {
+impl From<Option<i64>> for SltSqlValue {
     fn from(value: Option<i64>) -> Self {
-        SqlValue::OptLong(value)
+        SltSqlValue::OptLong(value)
     }
 }
 
-impl From<Option<bool>> for SqlValue {
+impl From<Option<bool>> for SltSqlValue {
     fn from(value: Option<bool>) -> Self {
-        SqlValue::OptBool(value)
+        SltSqlValue::OptBool(value)
     }
 }
 
-impl From<Option<f32>> for SqlValue {
+impl From<Option<f32>> for SltSqlValue {
     fn from(value: Option<f32>) -> Self {
-        SqlValue::OptFlt(value)
+        SltSqlValue::OptFlt(value)
     }
 }
 
-impl From<Option<f64>> for SqlValue {
+impl From<Option<f64>> for SltSqlValue {
     fn from(value: Option<f64>) -> Self {
-        SqlValue::OptDbl(value)
+        SltSqlValue::OptDbl(value)
     }
 }
 
-impl From<Option<F32>> for SqlValue {
+impl From<Option<F32>> for SltSqlValue {
     fn from(value: Option<F32>) -> Self {
         match value {
-            None => SqlValue::OptFlt(None),
-            Some(x) => SqlValue::OptFlt(Some(x.into_inner())),
+            None => SltSqlValue::OptFlt(None),
+            Some(x) => SltSqlValue::OptFlt(Some(x.into_inner())),
         }
     }
 }
 
-impl From<Option<F64>> for SqlValue {
+impl From<Option<F64>> for SltSqlValue {
     fn from(value: Option<F64>) -> Self {
         match value {
-            None => SqlValue::OptDbl(None),
-            Some(x) => SqlValue::OptDbl(Some(x.into_inner())),
+            None => SltSqlValue::OptDbl(None),
+            Some(x) => SltSqlValue::OptDbl(Some(x.into_inner())),
         }
     }
 }
 
-impl From<Option<String>> for SqlValue {
+impl From<Option<String>> for SltSqlValue {
     fn from(value: Option<String>) -> Self {
-        SqlValue::OptStr(value)
+        SltSqlValue::OptStr(value)
     }
 }
 
-impl From<Option<Decimal>> for SqlValue {
+impl From<Option<Decimal>> for SltSqlValue {
     fn from(value: Option<Decimal>) -> Self {
-        SqlValue::OptDecimal(value)
+        SltSqlValue::OptDecimal(value)
     }
 }
 
 #[derive(Default)]
 pub struct SqlRow {
-    values: Vec<SqlValue>,
+    values: Vec<SltSqlValue>,
 }
 
 pub trait ToSqlRow {
@@ -184,7 +184,7 @@ impl SqlRow {
 }
 
 impl SqlRow {
-    pub fn push(&mut self, value: SqlValue) {
+    pub fn push(&mut self, value: SltSqlValue) {
         self.values.push(value)
     }
 }
@@ -210,44 +210,44 @@ fn slt_translate_string(s: &str) -> String {
     result
 }
 
-/// Format a SqlValue according to SqlLogicTest rules
+/// Format a SltSqlValue according to SqlLogicTest rules
 /// the arg is one character of the form I - i32, R - f32, or T - String.
-impl SqlLogicTestFormat for SqlValue {
+impl SqlLogicTestFormat for SltSqlValue {
     fn format_slt(&self, arg: &char) -> String {
         match (self, arg) {
-            (SqlValue::Int(x), _) => format!("{}", x),
-            (SqlValue::OptInt(None), _) => String::from("NULL"),
-            (SqlValue::OptInt(Some(x)), _) => format!("{}", x),
+            (SltSqlValue::Int(x), _) => format!("{}", x),
+            (SltSqlValue::OptInt(None), _) => String::from("NULL"),
+            (SltSqlValue::OptInt(Some(x)), _) => format!("{}", x),
 
-            (SqlValue::Decimal(x), _) => format!("{}", x),
-            (SqlValue::OptDecimal(None), _) => String::from("NULL"),
-            (SqlValue::OptDecimal(Some(x)), _) => format!("{}", x),
+            (SltSqlValue::Decimal(x), _) => format!("{}", x),
+            (SltSqlValue::OptDecimal(None), _) => String::from("NULL"),
+            (SltSqlValue::OptDecimal(Some(x)), _) => format!("{}", x),
 
-            (SqlValue::Long(x), _) => format!("{}", x),
-            (SqlValue::OptLong(None), _) => String::from("NULL"),
-            (SqlValue::OptLong(Some(x)), _) => format!("{}", x),
+            (SltSqlValue::Long(x), _) => format!("{}", x),
+            (SltSqlValue::OptLong(None), _) => String::from("NULL"),
+            (SltSqlValue::OptLong(Some(x)), _) => format!("{}", x),
 
-            (SqlValue::OptFlt(None), _) => String::from("NULL"),
-            (SqlValue::Flt(x), 'I') => format!("{}", *x as i32),
-            (SqlValue::OptFlt(Some(x)), 'I') => format!("{}", *x as i32),
-            (SqlValue::Flt(x), _) => format!("{:.3}", x),
-            (SqlValue::OptFlt(Some(x)), _) => format!("{:.3}", x),
+            (SltSqlValue::OptFlt(None), _) => String::from("NULL"),
+            (SltSqlValue::Flt(x), 'I') => format!("{}", *x as i32),
+            (SltSqlValue::OptFlt(Some(x)), 'I') => format!("{}", *x as i32),
+            (SltSqlValue::Flt(x), _) => format!("{:.3}", x),
+            (SltSqlValue::OptFlt(Some(x)), _) => format!("{:.3}", x),
 
-            (SqlValue::OptDbl(None), _) => String::from("NULL"),
-            (SqlValue::Dbl(x), 'I') => format!("{}", *x as i32),
-            (SqlValue::OptDbl(Some(x)), 'I') => format!("{}", *x as i32),
-            (SqlValue::Dbl(x), _) => format!("{:.3}", x),
-            (SqlValue::OptDbl(Some(x)), _) => format!("{:.3}", x),
+            (SltSqlValue::OptDbl(None), _) => String::from("NULL"),
+            (SltSqlValue::Dbl(x), 'I') => format!("{}", *x as i32),
+            (SltSqlValue::OptDbl(Some(x)), 'I') => format!("{}", *x as i32),
+            (SltSqlValue::Dbl(x), _) => format!("{:.3}", x),
+            (SltSqlValue::OptDbl(Some(x)), _) => format!("{:.3}", x),
 
-            (SqlValue::Str(x), 'T') => slt_translate_string(x),
-            (SqlValue::OptStr(None), 'T') => String::from("NULL"),
-            (SqlValue::OptStr(Some(x)), 'T') => slt_translate_string(x),
-            (SqlValue::OptStr(None), 'I') => String::from("NULL"),
-            (SqlValue::OptStr(Some(x)), 'I') => format!("{}", cast_to_i32_s(x.clone())),
+            (SltSqlValue::Str(x), 'T') => slt_translate_string(x),
+            (SltSqlValue::OptStr(None), 'T') => String::from("NULL"),
+            (SltSqlValue::OptStr(Some(x)), 'T') => slt_translate_string(x),
+            (SltSqlValue::OptStr(None), 'I') => String::from("NULL"),
+            (SltSqlValue::OptStr(Some(x)), 'I') => format!("{}", cast_to_i32_s(x.clone())),
 
-            (SqlValue::OptBool(None), _) => String::from("NULL"),
-            (SqlValue::Bool(b), _) => format!("{}", b),
-            (SqlValue::OptBool(Some(b)), _) => format!("{}", b),
+            (SltSqlValue::OptBool(None), _) => String::from("NULL"),
+            (SltSqlValue::Bool(b), _) => format!("{}", b),
+            (SltSqlValue::OptBool(Some(b)), _) => format!("{}", b),
             _ => panic!("Unexpected combination {:?} {:?}", self, arg),
         }
     }
@@ -263,13 +263,13 @@ macro_rules! to_sql_row_impl {
     ) => {
         $(
             impl<$($element),*> ToSqlRow for $tuple_name<$($element,)*> where
-                $(SqlValue: From<$element>,)*
+                $(SltSqlValue: From<$element>,)*
                 $($element: Clone, )*
             {
                 fn to_row(&self) -> SqlRow  {
                     let mut result = SqlRow::new();
                     let $tuple_name($($element),*) = self;
-                    $(result.push(SqlValue::from($element.clone()));)*
+                    $(result.push(SltSqlValue::from($element.clone()));)*
                     result
                 }
             }

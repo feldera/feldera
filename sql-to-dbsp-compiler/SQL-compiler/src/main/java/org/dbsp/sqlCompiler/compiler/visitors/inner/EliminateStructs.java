@@ -3,8 +3,8 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 
 import java.util.ArrayList;
 import java.util.List;

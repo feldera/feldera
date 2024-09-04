@@ -49,6 +49,7 @@ public enum DBSPTypeCode {
     USER(null, "", ""),
     VEC("ARRAY", "", ""),
     MAP("MAP", "", "BTreeMap"),
+    VARIANT("VARIANT", "V", "SqlValue"),
     ZSET("MULTISET", "", ""),
     // Abstract type, used in some dataflow analysis.
     ABSTRACT(null, "", "");

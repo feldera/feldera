@@ -55,7 +55,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;

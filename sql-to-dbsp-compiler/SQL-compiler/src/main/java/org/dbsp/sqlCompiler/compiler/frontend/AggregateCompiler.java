@@ -59,7 +59,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;

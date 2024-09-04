@@ -8,9 +8,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
 import javax.annotation.Nullable;

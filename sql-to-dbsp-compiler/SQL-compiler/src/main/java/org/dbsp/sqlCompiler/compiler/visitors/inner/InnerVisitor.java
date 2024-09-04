@@ -124,13 +124,13 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
@@ -152,6 +152,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -473,6 +474,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     
     public VisitDecision preorder(DBSPTypeRef node) {
         return this.preorder(node.to(DBSPType.class));
+    }
+
+    public VisitDecision preorder(DBSPTypeVariant node) {
+        return this.preorder(node.to(DBSPTypeBaseType.class));
     }
 
     // Patterns
@@ -1019,6 +1024,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
 
     public void postorder(DBSPTypeRef node) {
         this.postorder(node.to(DBSPType.class));
+    }
+
+    public void postorder(DBSPTypeVariant node) {
+        this.postorder(node.to(DBSPTypeBaseType.class));
     }
 
     // Patterns

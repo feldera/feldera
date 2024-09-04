@@ -21,7 +21,7 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir.type;
+package org.dbsp.sqlCompiler.ir.type.derived;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 

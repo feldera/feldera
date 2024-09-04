@@ -29,7 +29,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.junit.Ignore;

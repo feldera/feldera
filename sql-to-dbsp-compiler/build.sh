@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -ex
 
 # This script builds the SQL compiler
 # it has an optional argument which specifies whether to build
@@ -9,8 +9,19 @@ set -e
 # Default is to use the next version
 NEXT='y'
 
+if false; then
+    # This is the standard behavior
+    CALCITE_REPO="https://github.com/apache/calcite.git"
+    CALCITE_BRANCH="main"
+    CALCITE_NEXT_COMMIT="787dfdb39c4bca91ec18ee5e223cb31260186c5a"
+else
+    # Switch to this script when testing a branch in mihaibudiu's fork that
+    # hasn't been merged yet
+    CALCITE_REPO="https://github.com/mihaibudiu/calcite.git"
+    CALCITE_BRANCH="variant"
+    CALCITE_NEXT_COMMIT=""
+fi
 CALCITE_NEXT="1.38.0"
-CALCITE_NEXT_COMMIT="787dfdb39c4bca91ec18ee5e223cb31260186c5a"
 CALCITE_CURRENT="1.37.0"
 
 usage() {
@@ -41,11 +52,13 @@ done
 
 if [ ${NEXT} = 'y' ]; then
     update_pom ${CALCITE_NEXT}
-    echo "Building calcite"
     pushd /tmp >/dev/null
-    git clone --quiet https://github.com/apache/calcite.git
+    git clone --quiet ${CALCITE_REPO}
     cd calcite
-    git reset --hard ${CALCITE_NEXT_COMMIT}
+    git checkout ${CALCITE_BRANCH}
+    if [[ ! -z "${CALCITE_NEXT_COMMIT}" ]]; then
+	git reset --hard ${CALCITE_NEXT_COMMIT}
+    fi
 
     GROUP=org.apache.calcite
     VERSION=${CALCITE_NEXT}

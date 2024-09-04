@@ -38,7 +38,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 

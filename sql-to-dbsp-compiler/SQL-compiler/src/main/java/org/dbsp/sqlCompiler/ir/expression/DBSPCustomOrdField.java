@@ -5,7 +5,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 import org.dbsp.util.IIndentStream;
 

@@ -7,7 +7,7 @@ use dbsp::{
 
 use dbsp::dynamic::{DowncastTrait, Erase};
 use sqllib::{WSet, Weight};
-use sqlvalue::*;
+use sltsqlvalue::*;
 use std::ops::{Add, Neg};
 
 #[derive(Eq, PartialEq)]

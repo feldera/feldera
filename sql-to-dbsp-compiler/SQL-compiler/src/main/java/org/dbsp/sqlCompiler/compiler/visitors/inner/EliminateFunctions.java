@@ -11,7 +11,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPExpressionStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 
 import java.util.ArrayList;

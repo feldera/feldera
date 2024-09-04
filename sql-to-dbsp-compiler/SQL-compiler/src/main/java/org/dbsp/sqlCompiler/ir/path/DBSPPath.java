@@ -30,7 +30,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
