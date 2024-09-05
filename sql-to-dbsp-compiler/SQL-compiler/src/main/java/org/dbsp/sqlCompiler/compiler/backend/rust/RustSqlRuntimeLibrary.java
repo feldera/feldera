@@ -168,30 +168,30 @@ public class RustSqlRuntimeLibrary {
                 unsignedType.baseTypeWithSuffix(), unsignedType);
     }
 
-    public FunctionDescription getImplementation(CalciteObject node,
-            DBSPOpcode opcode, @Nullable DBSPType expectedReturnType,
-            DBSPType ltype, @Nullable DBSPType rtype) {
+    /** The name of the Rust function in the sqllib which implements a specific operation
+     * @param node                Calcite node.
+     * @param opcode              Operation opcode.
+     * @param expectedReturnType  Return type of the function.
+     * @param ltype               Type of first argument.
+     * @param rtype               Type of second argument; null if function takes only one argument.
+     * @return                    The function name.
+     */
+    public String getFunctionName(CalciteObject node,
+                                  DBSPOpcode opcode, DBSPType expectedReturnType,
+                                  DBSPType ltype, @Nullable DBSPType rtype) {
         if (ltype.is(DBSPTypeAny.class) || (rtype != null && rtype.is(DBSPTypeAny.class)))
             throw new InternalCompilerError("Unexpected type _ for operand of " + opcode, ltype);
         HashMap<String, DBSPOpcode> map = null;
-        boolean anyNull = ltype.mayBeNull || (rtype != null && rtype.mayBeNull);
         String suffixReturn = "";  // suffix based on the return type
 
-        DBSPType returnType;
-        if (expectedReturnType != null)
-            returnType = expectedReturnType.setMayBeNull(anyNull);
-        else
-            returnType = ltype.setMayBeNull(anyNull);
         if (ltype.as(DBSPTypeBool.class) != null) {
             map = this.booleanFunctions;
         } else if (ltype.is(IsDateType.class)) {
             map = this.dateFunctions;
             if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD) {
                 if (ltype.is(DBSPTypeTimestamp.class) || ltype.is(DBSPTypeDate.class)) {
-                    assert expectedReturnType != null;
                     assert rtype != null;
-                    returnType = expectedReturnType;
-                    suffixReturn = "_" + returnType.baseTypeWithSuffix();
+                    suffixReturn = "_" + expectedReturnType.baseTypeWithSuffix();
                     if (rtype.is(IsNumericType.class))
                         throw new CompilationError("Cannot apply operation " + Utilities.singleQuote(opcode.toString()) +
                                 " to arguments of type " + ltype.asSqlString() + " and " + rtype.asSqlString(), node);
@@ -208,19 +208,9 @@ public class RustSqlRuntimeLibrary {
             if (opcode.equals(DBSPOpcode.MUL)) {
                 // e.g., 10 * INTERVAL
                 map = this.dateFunctions;
-                returnType = rtype.setMayBeNull(anyNull);
             }
         }
 
-        if (opcode.isComparison())
-            returnType = new DBSPTypeBool(CalciteObject.EMPTY, false).setMayBeNull(anyNull);
-        if (opcode == DBSPOpcode.IS_TRUE || opcode == DBSPOpcode.IS_NOT_TRUE ||
-                opcode == DBSPOpcode.IS_FALSE || opcode == DBSPOpcode.IS_NOT_FALSE ||
-                opcode == DBSPOpcode.IS_DISTINCT || opcode == DBSPOpcode.IS_NOT_DISTINCT ||
-                opcode == DBSPOpcode.AGG_LTE || opcode == DBSPOpcode.AGG_GTE)
-            returnType = new DBSPTypeBool(CalciteObject.EMPTY, false);
-        if (opcode == DBSPOpcode.CONCAT || opcode == DBSPOpcode.DIV_NULL)
-            returnType = expectedReturnType;
         String suffixl = ltype.nullableSuffix();
         String suffixr = rtype == null ? "" : rtype.nullableSuffix();
         String tsuffixl;
@@ -242,9 +232,7 @@ public class RustSqlRuntimeLibrary {
         for (String k: map.keySet()) {
             DBSPOpcode inMap = map.get(k);
             if (opcode.equals(inMap)) {
-                return new FunctionDescription(
-                        k + "_" + tsuffixl + suffixl + "_" + tsuffixr + suffixr + suffixReturn,
-                        Objects.requireNonNull(returnType));
+                return k + "_" + tsuffixl + suffixl + "_" + tsuffixr + suffixr + suffixReturn;
             }
         }
         throw new UnimplementedException("Could not find `" + opcode + "` for type " + ltype);

@@ -28,6 +28,20 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void decimalMult() {
+        String sql = """
+                CREATE TABLE T(C DECIMAL(16, 2));
+                CREATE VIEW V AS SELECT 100.20 * T.C FROM T;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES (100.0)",
+                """
+                 value  | weight
+                ----------------
+                  10020 | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void issue2350() {
         String sql = """
                 CREATE TABLE arg_min(c1 TINYINT NOT NULL);
