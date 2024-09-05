@@ -12,12 +12,11 @@ ENV PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH
 ENV RUST_VERSION=1.78.0
 ENV RUST_BUILD_MODE='' # set to --release for release builds
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
-ENV DEBIAN_FRONTEND=noninteractive
 
 install-deps:
     RUN apt-get update
-    RUN apt-get install --fix-missing --yes build-essential curl libssl-dev build-essential pkg-config \
-                              cmake git gcc clang libclang-dev python3-pip python3-plumbum python3-pandas \
+    RUN apt-get install --yes build-essential curl libssl-dev build-essential pkg-config \
+                              cmake git gcc clang libclang-dev python3-pip python3-plumbum \
                               hub numactl openjdk-19-jre-headless maven netcat jq \
                               docker.io libenchant-2-2 graphviz locales protobuf-compiler
     # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
