@@ -28,7 +28,7 @@ jobs:
         uses: earthly/actions-setup@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          version: 0.8.14
+          version: 0.8.15
 
       - name: MUIX license
         run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-console/.env && cat web-console/.env

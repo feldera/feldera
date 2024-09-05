@@ -28,7 +28,7 @@ jobs:
         uses: earthly/actions-setup@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          version: 0.8.14
+          version: 0.8.15
 
       - name: Earthly version
         run: earthly --version
