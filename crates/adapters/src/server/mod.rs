@@ -1,4 +1,5 @@
 use crate::{
+    adhoc::stream_adhoc_result,
     catalog::RecordFormat,
     controller::ConnectorConfig,
     ensure_default_crypto_provider,
@@ -19,25 +20,20 @@ use actix_web::{
     web::{self, Data as WebData, Json, Payload, Query},
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
 };
-use arrow::array::RecordBatch;
-use arrow_json::LineDelimitedWriter;
 use clap::Parser;
 use colored::Colorize;
-use datafusion::error::DataFusionError;
 use dbsp::circuit::CircuitConfig;
 use dbsp::operator::sample::MAX_QUANTILES;
 use env_logger::Env;
 use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::{format::json::JsonFlavor, transport::http::EgressMode};
 use feldera_types::{
-    query::{AdHocResultFormat, AdhocQueryArgs, OutputQuery},
+    query::{AdhocQueryArgs, OutputQuery},
     transport::http::SERVER_PORT_FILE,
 };
 use futures_util::FutureExt;
 use log::{debug, error, info, log, trace, warn, Level};
 use minitrace::collector::Config;
-use parquet::arrow::ArrowWriter;
-use parquet::file::properties::WriterProperties;
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::io::Write;
@@ -549,53 +545,7 @@ async fn query(state: WebData<ServerState>, args: Query<AdhocQueryArgs>) -> impl
     };
 
     match session_ctxt {
-        Some(session) => {
-            let df = session.sql(&args.sql).await?;
-            let response = df.collect().await?;
-
-            match args.format {
-                AdHocResultFormat::Text => {
-                    let pretty_results = arrow::util::pretty::pretty_format_batches(&response)
-                        .map_err(DataFusionError::from)?
-                        .to_string();
-                    Ok(HttpResponse::Ok()
-                        .content_type(mime::TEXT_PLAIN)
-                        .body(pretty_results))
-                }
-                AdHocResultFormat::Json => {
-                    let mut buf = Vec::with_capacity(4096);
-                    let mut writer = LineDelimitedWriter::new(&mut buf);
-                    writer
-                        .write_batches(response.iter().collect::<Vec<&RecordBatch>>().as_slice())
-                        .map_err(DataFusionError::from)?;
-                    writer.finish().map_err(DataFusionError::from)?;
-
-                    Ok(HttpResponse::Ok()
-                        .content_type(mime::APPLICATION_JSON)
-                        .body(buf))
-                }
-                AdHocResultFormat::Parquet => {
-                    let mut buf = Vec::with_capacity(4096);
-                    let writer_properties = WriterProperties::builder().build();
-                    let schema = response[0].schema();
-                    let mut writer =
-                        ArrowWriter::try_new(&mut buf, schema.clone(), Some(writer_properties))
-                            .map_err(PipelineError::from)?;
-                    for batch in response {
-                        writer.write(&batch)?;
-                    }
-                    let file_name = format!(
-                        "results_{}.parquet",
-                        chrono::Utc::now().format("%Y%m%d_%H%M%S")
-                    );
-                    writer.close().expect("closing writer");
-                    Ok(HttpResponse::Ok()
-                        .insert_header(header::ContentDisposition::attachment(file_name))
-                        .content_type(mime::APPLICATION_OCTET_STREAM)
-                        .body(buf))
-                }
-            }
-        }
+        Some(session) => stream_adhoc_result(args.into_inner(), session).await,
         None => Err(missing_controller_error(&state)),
     }
 }
@@ -991,7 +941,7 @@ async fn output_endpoint(
             };
 
             // We need to pass a callback to `request` to disconnect the endpoint when the
-            // request completes.  Use a donwgraded reference to `state`, so
+            // request completes.  Use a downgraded reference to `state`, so
             // this closure doesn't prevent the controller from shutting down.
             let weak_state = Arc::downgrade(&state);
 
@@ -999,7 +949,7 @@ async fn output_endpoint(
             // evaluated after we return the response object to actix.
             response = endpoint.request(Box::new(move || {
                 // Delete endpoint on completion/error.
-                // We don't control the lifetime of the reponse object after
+                // We don't control the lifetime of the response object after
                 // returning it to actix, so the only way to run cleanup code
                 // when the HTTP request terminates is to piggyback on the
                 // destructor.
