@@ -288,11 +288,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return new DBSPTypeInteger(left.getNode(), width, true, anyNull);
             }
             if (rf != null) {
+                /*
                 // INT op FLOAT, choose float or double depending on width of INT
-                if (ln.getPrecision() <= rn.getPrecision())
-                    return right.setMayBeNull(false);
-                // Use double
-                return new DBSPTypeDouble(left.getNode(), anyNull);
+                // Postgres always uses double in this case...
+                if (ln.getPrecision() > rn.getPrecision())
+                   // Use double
+                   return new DBSPTypeDouble(left.getNode(), anyNull);
+                 */
+                // Calcite uses the float always
+                return rf.setMayBeNull(anyNull);
             }
             if (rd != null) {
                 // INT op DECIMAL
@@ -303,9 +307,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         }
         if (lf != null) {
             if (ri != null) {
-                // FLOAT op INT, use FLOAT if large enough, DOUBLE otherwise
+                // FLOAT op INT, Calcite uses the float always
+                /*
                 if (ln.getPrecision() < rn.getPrecision())
                     return new DBSPTypeDouble(left.getNode(), anyNull);
+                 */
                 return lf.setMayBeNull(anyNull);
             }
             if (rf != null) {
@@ -451,6 +457,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             if (leftType.is(DBSPTypeNull.class) || rightType.is(DBSPTypeNull.class)) {
                 // Result is always NULL - evaluate to the NULL literal directly
                 return DBSPLiteral.none(type);
+            }
+            if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD) {
+                if (leftType.is(DBSPTypeTimestamp.class) || leftType.is(DBSPTypeDate.class)) {
+                    if (rightType.is(IsNumericType.class))
+                        throw new CompilationError("Cannot apply operation " + Utilities.singleQuote(opcode.toString()) +
+                                " to arguments of type " + leftType.asSqlString() + " and " + rightType.asSqlString(), node);
+                }
             }
             if (leftType.is(IsDateType.class) || rightType.is(IsDateType.class))
                 expressionResultType = typeWithNull;

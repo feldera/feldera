@@ -28,6 +28,18 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void testFpCast() {
+        String sql = """
+               CREATE TABLE TAB2 (COL0 INTEGER, COL1 INTEGER, COL2 INTEGER);
+               CREATE VIEW V100 AS
+               SELECT 99 * - COR0.COL0
+               FROM TAB2 AS COR0
+               WHERE NOT - COR0.COL2 * + CAST(+ COR0.COL0 AS REAL) >= + (- COR0.COL2)
+               """;
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void decimalMult() {
         String sql = """
                 CREATE TABLE T(C DECIMAL(16, 2));
