@@ -215,7 +215,6 @@ impl ExecutionPlan for AdHocQueryExecution {
         })?;
 
         builder.spawn(async move {
-            const MAX_BATCH_SIZE: usize = 1 << 16;
             let mut cursor = batch_reader
                 .cursor(RecordFormat::Parquet(sas.clone()))
                 .map_err(|e| DataFusionError::External(Box::new(e)))?;
@@ -247,6 +246,9 @@ impl ExecutionPlan for AdHocQueryExecution {
                     cur_batch_size += 1;
                     w -= 1;
 
+                    // `256` turned out to be a good compromise of performance and fast response latency.
+                    // If too high, the HTTP server will wait too long esp. until the first results are sent out.
+                    const MAX_BATCH_SIZE: usize = 256;
                     if cur_batch_size >= MAX_BATCH_SIZE {
                         let batch = insert_builder.builder.to_record_batch().map_err(|e| {
                             DataFusionError::Execution(format!(

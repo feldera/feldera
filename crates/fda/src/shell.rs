@@ -99,6 +99,11 @@ pub async fn shell(name: &str, client: Client) {
                                     let mut byte_stream = response.into_inner();
                                     while let Some(chunk) = byte_stream.next().await {
                                         if cancel_token_child.is_cancelled() {
+                                            printer.print(NEWLINE.to_string()).unwrap();
+                                            printer.print(
+                                                "ERROR: canceling statement due to user request.".to_string(),
+                                            ).unwrap();
+                                            printer.print(NEWLINE.to_string()).unwrap();
                                             return;
                                         }
                                         let mut buffer = Vec::new();
@@ -109,10 +114,11 @@ pub async fn shell(name: &str, client: Client) {
                                         printer.print(text.to_string()).unwrap();
                                     }
                                     printer.print(NEWLINE.to_string()).unwrap();
+                                    printer.print(NEWLINE.to_string()).unwrap();
                                 }
                                 Err(err) => {
                                     println!();
-                                    handle_sql_response_error(err);
+                                    handle_sql_response_error(err).await;
                                     println!();
                                 }
                             }
@@ -122,9 +128,6 @@ pub async fn shell(name: &str, client: Client) {
                         let abort_task = tokio::spawn(async move {
                             signal::ctrl_c().await.unwrap();
                             cancel_token.cancel();
-                            println!();
-                            println!("ERROR: canceling statement due to user request.");
-                            println!();
                         });
 
                         // Wait for either the request to finish or Ctrl+C
@@ -154,8 +157,8 @@ pub async fn shell(name: &str, client: Client) {
     }
 }
 
-fn handle_sql_response_error(err: Error<ErrorResponse>) {
-    match &err {
+async fn handle_sql_response_error(err: Error<ErrorResponse>) {
+    match err {
         Error::ErrorResponse(e) => {
             eprintln!("ERROR: {}", e.message);
         }

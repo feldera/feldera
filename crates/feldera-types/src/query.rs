@@ -10,7 +10,7 @@ pub enum AdHocResultFormat {
     Text,
     /// Serialize results as new-line delimited JSON records.
     Json,
-    /// Downloads results in a parquet file.
+    /// Download results in a parquet file.
     Parquet,
 }
 

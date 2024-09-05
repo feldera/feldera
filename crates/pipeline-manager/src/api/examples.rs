@@ -29,6 +29,13 @@ pub(crate) fn error_unknown_api_key() -> ErrorResponse {
     })
 }
 
+pub(crate) fn error_stream_terminated() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&RunnerError::HttpForwardError {
+        pipeline_id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
+        error: "Error forwarding HTTP request to pipeline 67e55044-10b1-426f-9247-bb680e5fe0c8: Failed to connect to host: Internal error: connector has been disconnected".to_string(),
+    })
+}
+
 pub(crate) fn pipeline_1() -> PipelineDescr {
     PipelineDescr {
         name: "example1".to_string(),

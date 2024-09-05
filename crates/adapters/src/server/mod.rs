@@ -209,7 +209,7 @@ where
     let state_clone = state.clone();
 
     // The bootstrap thread will read the config, including pipeline name,
-    // and initalize the logger.  Use this channel to wait for the log to
+    // and initialize the logger.  Use this channel to wait for the log to
     // be ready, so that the first few messages from the server don't get
     // lost.
     let (loginit_sender, loginit_receiver) = mpsc::channel();
@@ -260,7 +260,7 @@ where
     .run();
 
     rt::System::new().block_on(async {
-        // Spawn a task that will shutdown the server on `/kill`.
+        // Spawn a task that will shut down the server on `/kill`.
         let server_handle = server.handle();
         spawn(async move {
             terminate_receiver.recv().await;
