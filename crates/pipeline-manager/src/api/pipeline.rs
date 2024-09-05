@@ -687,7 +687,11 @@ pub(crate) async fn get_pipeline_heap_profile(
         (status = BAD_REQUEST
         , description = "Pipeline is shutdown or an invalid SQL query was supplied"
         , body = ErrorResponse
-        , example = json!(examples::error_pipeline_not_running_or_paused()))
+        , example = json!(examples::error_pipeline_not_running_or_paused())),
+        (status = INTERNAL_SERVER_ERROR
+        , description = "A fatal error occurred during query processing (after streaming response was already initiated)"
+        , body = ErrorResponse
+        , example = json!(examples::error_stream_terminated()))
     ),
     tag = "Pipelines"
 )]

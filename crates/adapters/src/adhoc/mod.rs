@@ -1,63 +1,204 @@
 use crate::PipelineError;
 use actix_web::http::header;
 use actix_web::HttpResponse;
-use arrow::record_batch::RecordBatch;
+use arrow::util::pretty::pretty_format_batches;
 use arrow_json::LineDelimitedWriter;
+use async_stream::{stream, try_stream};
+use bytes::Bytes;
 use datafusion::common::DataFusionError;
 use datafusion::prelude::SessionContext;
 use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs};
-use parquet::arrow::ArrowWriter;
+use futures_util::future::{BoxFuture, FutureExt};
+use futures_util::{select, StreamExt};
+use parquet::arrow::async_writer::AsyncFileWriter;
+use parquet::arrow::AsyncArrowWriter;
+use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
+use std::convert::Infallible;
+use tokio::sync::mpsc;
 
 pub(crate) mod table;
 
+struct ChannelWriter {
+    tx: mpsc::Sender<Bytes>,
+}
+
+impl ChannelWriter {
+    fn new(tx: mpsc::Sender<Bytes>) -> Self {
+        Self { tx }
+    }
+}
+
+impl AsyncFileWriter for ChannelWriter {
+    fn write(&mut self, bs: Bytes) -> BoxFuture<'_, parquet::errors::Result<()>> {
+        let tx = self.tx.clone();
+        async move {
+            tx.send(bs)
+                .await
+                .map_err(|e| parquet::errors::ParquetError::External(Box::new(e)))?;
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn complete(&mut self) -> BoxFuture<'_, parquet::errors::Result<()>> {
+        async move { Ok(()) }.boxed()
+    }
+}
+
+/// Stream the result of an ad-hoc query.
 pub async fn stream_adhoc_result(
     args: AdhocQueryArgs,
     session: SessionContext,
 ) -> Result<HttpResponse, PipelineError> {
     let df = session.sql(&args.sql).await?;
-    let response = df.collect().await?;
 
+    // Note that once we are in the stream!{} macros any error that occurs will lead to the connection
+    // in the manager being terminated and a 500 error being returned to the client.
+    // We can't return an error in a stream that is already Response::Ok.
+    //
+    // Sometimes things do tend to fail inside the stream!{} macro, e.g., "select 1/0;" will cause a
+    // division by zero error during query execution. So we return errors according to the chosen
+    // format for text and json, and for parquet we return the 500 error.
     match args.format {
         AdHocResultFormat::Text => {
-            let pretty_results = arrow::util::pretty::pretty_format_batches(&response)
-                .map_err(DataFusionError::from)?
-                .to_string();
             Ok(HttpResponse::Ok()
                 .content_type(mime::TEXT_PLAIN)
-                .body(pretty_results))
+                .streaming::<_, Infallible>(try_stream! {
+                    let mut headers_sent = false;
+                    let mut last_line: Option<String> = None;
+                    let stream_exec = df.execute_stream().await.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None });
+                    match stream_exec {
+                        Ok(mut stream) => {
+                            while let Some(batch) = stream.next().await {
+                                let batch_result = batch.map_err(PipelineError::from);
+                                match batch_result {
+                                    Ok(batch) => {
+                                        let txt_table_format = pretty_format_batches(&[batch])
+                                            .map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None });
+                                        match txt_table_format {
+                                            Ok(txt_table) => {
+                                                let txt_table = txt_table.to_string();
+                                                let pretty_results_lines: Vec<&str> = txt_table.lines().skip(if headers_sent { 3 } else { 0 }).collect::<Vec<&str>>();
+                                                if let Some((last_str, other_lines)) = pretty_results_lines.split_last() {
+                                                    last_line = Some(last_str.to_string());
+                                                    let mut pretty_results_adjusted = other_lines.join("\n");
+                                                    pretty_results_adjusted.push('\n');
+                                                    yield pretty_results_adjusted.into();
+                                                }
+                                                headers_sent = true;
+                                            }
+                                            Err(e) => {
+                                                yield format!("ERROR: {}", e).into();
+                                                return;
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        yield format!("ERROR: {}", e).into();
+                                        return;
+                                    }
+                                }
+                            }
+                            if let Some(last_line) = last_line {
+                                yield last_line.into();
+                            }
+                        }
+                        Err(e) => {
+                            yield format!("ERROR: {}", e).into();
+                            return;
+                        }
+                    }
+                }))
         }
-        AdHocResultFormat::Json => {
-            let mut buf = Vec::with_capacity(4096);
-            let mut writer = LineDelimitedWriter::new(&mut buf);
-            writer
-                .write_batches(response.iter().collect::<Vec<&RecordBatch>>().as_slice())
-                .map_err(DataFusionError::from)?;
-            writer.finish().map_err(DataFusionError::from)?;
-
-            Ok(HttpResponse::Ok()
-                .content_type(mime::APPLICATION_JSON)
-                .body(buf))
-        }
+        AdHocResultFormat::Json => Ok(HttpResponse::Ok()
+            .content_type(mime::APPLICATION_JSON)
+            .streaming::<_, Infallible>(try_stream! {
+                let stream_exec = df.execute_stream().await.map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None });
+                match stream_exec {
+                    Ok(mut stream) => {
+                        while let Some(batch) = stream.next().await {
+                            let batch_result = batch.map_err(PipelineError::from);
+                            match batch_result {
+                                Ok(batch) => {
+                                    let mut buf = Vec::with_capacity(4096);
+                                    let mut writer = LineDelimitedWriter::new(&mut buf);
+                                    if let Err(e) = writer.write(&batch).map_err(DataFusionError::from).map_err(PipelineError::from) {
+                                        yield serde_json::to_string(&e).unwrap().into();
+                                        return;
+                                    }
+                                    if let Err(e) = writer.finish().map_err(DataFusionError::from).map_err(PipelineError::from) {
+                                        yield serde_json::to_string(&e).unwrap().into();
+                                        return;
+                                    }
+                                    yield buf.into();
+                                }
+                                Err(e) => {
+                                    yield serde_json::to_string(&e).unwrap().into();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        yield serde_json::to_string(&e).unwrap().into();
+                        return;
+                    }
+                }
+            })),
         AdHocResultFormat::Parquet => {
-            let mut buf = Vec::with_capacity(4096);
-            let writer_properties = WriterProperties::builder().build();
-            let schema = response[0].schema();
-            let mut writer =
-                ArrowWriter::try_new(&mut buf, schema.clone(), Some(writer_properties))
-                    .map_err(PipelineError::from)?;
-            for batch in response {
-                writer.write(&batch)?;
-            }
             let file_name = format!(
                 "results_{}.parquet",
                 chrono::Utc::now().format("%Y%m%d_%H%M%S")
             );
-            writer.close().expect("closing writer");
+            // Create a channel to communicate between the parquet writer and the HTTP response
+            let (tx, mut rx) = mpsc::channel(1024);
+
+            let mut stream_job = Box::pin(async move {
+                let mut stream = df.execute_stream().await?;
+                let mut writer = None;
+                while let Some(batch) = stream.next().await {
+                    let batch = batch.map_err(DataFusionError::from)?;
+                    if writer.is_none() {
+                        let tx = tx.clone();
+                        writer = Some(AsyncArrowWriter::try_new(
+                            ChannelWriter::new(tx),
+                            batch.schema(),
+                            Some(WriterProperties::builder().set_compression(Compression::SNAPPY).build()),
+                        )?);
+                    }
+                    writer.as_mut().unwrap().write(&batch).await?;
+                }
+                writer.as_mut().unwrap().flush().await?;
+                writer.unwrap().close().await?;
+                <datafusion::common::Result<_>>::Ok(())
+            }.fuse());
+
             Ok(HttpResponse::Ok()
                 .insert_header(header::ContentDisposition::attachment(file_name))
                 .content_type(mime::APPLICATION_OCTET_STREAM)
-                .body(buf))
+                .streaming(stream! {
+                    loop {
+                        select! {
+                            stream_res = stream_job.as_mut() => {
+                                match stream_res {
+                                    Ok(()) => {}
+                                    Err(err) => {
+                                        yield Err(err);
+                                    }
+                                }
+                            },
+                            maybe_bytes = rx.recv().fuse() => {
+                                if let Some(bytes) = maybe_bytes {
+                                    yield Ok(bytes);
+                                } else {
+                                    // Channel closed, we're done
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }))
         }
     }
 }

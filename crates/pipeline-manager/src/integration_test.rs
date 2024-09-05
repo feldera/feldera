@@ -405,8 +405,8 @@ impl TestConfig {
         let mut resp = self
             .post(
                 format!(
-                "/v0/pipelines/{name}/egress/{table}?query=neighborhood&mode=snapshot&format=json"
-            ),
+                    "/v0/pipelines/{name}/egress/{table}?query=neighborhood&mode=snapshot&format=json"
+                ),
                 &json!({"before": before, "after": after, "anchor": anchor}),
             )
             .await;
@@ -1136,7 +1136,7 @@ async fn json_ingress() {
     // Trigger parse errors.
     let mut response = config
         .post_json(
-    "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             r#"[{"insert": [35, true, ""]}, {"delete": [40, "foo", "buzz"]}, {"insert": [true, true, ""]}]"#.to_string(),
         )
         .await;
@@ -1153,7 +1153,7 @@ async fn json_ingress() {
     let mut response = config
         .post_json(
             "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",
-                    r#"{"insert": [25, true, ""]}{"delete": [40, "foo", "buzz"]}{"insert": [true, true, ""]}"#.to_string(),
+            r#"{"insert": [25, true, ""]}{"delete": [40, "foo", "buzz"]}{"insert": [true, true, ""]}"#.to_string(),
         )
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -1685,7 +1685,7 @@ async fn upsert() {
     // happens, increasing buffering delay in DBSP should solve that.
     let response2 = config
         .post_json(
-                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             // Add several identical records with different id's
             r#"[{"insert":{"id1":1, "id2":1, "str1": "1", "int1": 1}},{"insert":{"id1":2, "id2":1, "str1": "1", "int1": 1}},{"insert":{"id1":3, "id2":1, "str1": "1", "int1": 1}}]"#
                 .to_string(),
@@ -1707,7 +1707,7 @@ async fn upsert() {
 
     let response2 = config
         .post_json(
-                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             // 1: Update 'str1'.
             // 2: Update 'str2'.
             // 3: Overwrite entire record.
@@ -1734,7 +1734,7 @@ async fn upsert() {
 
     let response2 = config
         .post_json(
-                "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
+            "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             // 1: Update command that doesn't modify any fields - noop.
             // 2: Clear 'str2' to null.
             // 3: Delete record.
@@ -1910,10 +1910,11 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
         )
         .await;
     assert_eq!(r.status(), StatusCode::BAD_REQUEST);
-    let r = config
+    let mut r = config
         .adhoc_query("/v0/pipelines/test/query", "SELECT 1/0", "text")
         .await;
-    assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(r.status(), StatusCode::OK);
+    assert!(String::from_utf8_lossy(r.body().await.unwrap().as_ref()).contains("ERROR"));
     let r = config
         .adhoc_query("/v0/pipelines/test/query", "SELECT * FROM table1", "text")
         .await;
