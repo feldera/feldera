@@ -62,13 +62,6 @@ mod prometheus;
 pub use self::error::{ErrorResponse, PipelineError, MAX_REPORTED_PARSE_ERRORS};
 use self::prometheus::PrometheusMetrics;
 
-/// By default actix will start the number of threads equal to the number of
-/// cores, which is an overkill and can lead to file descriptor exhaustion when
-/// running multiple pipelines on systems with >100 cores.  We use a fixed
-/// number of threads instead.  Four should be more than enough, but we can make
-/// it configurable if needed.
-static NUM_HTTP_WORKERS: usize = 4;
-
 /// Tracks the health of the pipeline.
 ///
 /// Enables the server to report the state of the pipeline while it is
@@ -262,7 +255,6 @@ where
     // Set timeout for graceful shutdown of workers.
     // The default in actix is 30s. We may consider making this configurable.
     .shutdown_timeout(10)
-    .workers(NUM_HTTP_WORKERS)
     .listen(listener)
     .map_err(|e| ControllerError::io_error("binding server to the listener".to_string(), e))?
     .run();
