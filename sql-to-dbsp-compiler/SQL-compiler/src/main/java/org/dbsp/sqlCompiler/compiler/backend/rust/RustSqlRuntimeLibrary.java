@@ -177,7 +177,11 @@ public class RustSqlRuntimeLibrary {
         boolean anyNull = ltype.mayBeNull || (rtype != null && rtype.mayBeNull);
         String suffixReturn = "";  // suffix based on the return type
 
-        DBSPType returnType = ltype.setMayBeNull(anyNull);
+        DBSPType returnType;
+        if (expectedReturnType != null)
+            returnType = expectedReturnType.setMayBeNull(anyNull);
+        else
+            returnType = ltype.setMayBeNull(anyNull);
         if (ltype.as(DBSPTypeBool.class) != null) {
             map = this.booleanFunctions;
         } else if (ltype.is(IsDateType.class)) {

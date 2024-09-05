@@ -47,12 +47,12 @@ FELDERA_API=http://localhost:8080
 if [ "$CLOUD" != "" ]; then
   FELDERA_API=$API_URL
   KAFKA_BROKER='${secret:demo-bootstrap-servers}'
-  CLOUD_OPTIONS='-O security.protocol=${secret:demo-security-protocol} 
-      -O ssl.ca.pem=${secret:demo-ssl-ca-pem} 
+  CLOUD_OPTIONS='-O security.protocol=${secret:demo-security-protocol}
+      -O ssl.ca.pem=${secret:demo-ssl-ca-pem}
       -O ssl.certificate.pem=${secret:demo-ssl-certificate-pem}
       -O ssl.key.pem=${secret:demo-ssl-key-pem}
       -O ssl.key.password=${secret:demo-ssl-key-password}
-      -O ssl.endpoint.identification.algorithm=${secret:demo-ssl-endpoint-identification-algorithm} 
+      -O ssl.endpoint.identification.algorithm=${secret:demo-ssl-endpoint-identification-algorithm}
       -O sasl.mechanism=${secret:demo-sasl-mechanism}
       -O sasl.username=${secret:demo-sasl-username}
       -O sasl.password=${secret:demo-sasl-password}
@@ -74,15 +74,16 @@ sql_benchmark() {
 }
 
 DIR="benchmark/feldera-sql/benchmarks/"
-TESTS="nexmark"
-if [ "$CLOUD" != "" ]; then
-  TESTS=${DIR}/nexmark
+if [[ -z "$CLOUD" ]]; then
+    TESTS="${DIR}/*"
+else
+    TESTS="nexmark"
 fi
 
 for test in ${TESTS}; do
-  if test -e ${test}/generate.bash; then
+  if [[ -e ${test}/generate.bash ]]; then
       rpk topic -X brokers=$KAFKA_BROKER delete -r '.*'
-      source ${test}/generate.bash
+      ${test}/generate.bash
   fi
   name=$(basename $test)
   sql_benchmark "sql_${name}_results.csv" "sql_${name}_metrics.csv" --folder benchmarks/${name}
