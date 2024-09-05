@@ -301,6 +301,7 @@ impl RunnerApi {
             })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn forward_to_pipeline_as_stream(
         &self,
         tenant_id: TenantId,
@@ -309,6 +310,7 @@ impl RunnerApi {
         req: HttpRequest,
         body: Payload,
         client: &awc::Client,
+        timeout: Option<Duration>,
     ) -> Result<HttpResponse, ManagerError> {
         let pipeline = self
             .db
@@ -324,11 +326,11 @@ impl RunnerApi {
         }
         let location = pipeline.deployment_location.unwrap(); // TODO: unwrap
 
-        // TODO: it might be better to have ?name={}, otherwise we have to
-        // restrict name format
         let url = format!("http://{location}/{endpoint}?{}", req.query_string());
 
-        let mut request = client.request(req.method().clone(), url);
+        let mut request = client
+            .request(req.method().clone(), url)
+            .timeout(timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT));
 
         for header in req
             .headers()

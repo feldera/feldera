@@ -105,6 +105,7 @@ async fn http_input(
             req,
             body,
             client.as_ref(),
+            None,
         )
         .await
 }
@@ -204,6 +205,7 @@ async fn http_output(
             req,
             body,
             client.as_ref(),
+            None,
         )
         .await
 }

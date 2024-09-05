@@ -695,17 +695,20 @@ pub(crate) async fn get_pipeline_heap_profile(
 pub(crate) async fn pipeline_adhoc_sql(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
+    client: WebData<awc::Client>,
     request: HttpRequest,
+    body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     state
         .runner
-        .forward_to_pipeline(
+        .forward_to_pipeline_as_stream(
             *tenant_id,
             &pipeline_name,
-            Method::GET,
             "query",
-            request.query_string(),
+            request,
+            body,
+            client.as_ref(),
             Some(Duration::MAX),
         )
         .await
