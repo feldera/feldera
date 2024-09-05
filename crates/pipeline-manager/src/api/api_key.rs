@@ -52,7 +52,8 @@ pub(crate) struct NewApiKeyResponse {
     responses(
         (status = OK
             , description = "API keys retrieved successfully"
-            , body = [ApiKeyDescr])
+            , body = [ApiKeyDescr]),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
     tag = "API keys"
 )]
