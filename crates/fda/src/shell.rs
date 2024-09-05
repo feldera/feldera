@@ -6,7 +6,11 @@ use futures_util::StreamExt;
 use progenitor_client::Error;
 use reqwest::StatusCode;
 use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
+use rustyline::{DefaultEditor, ExternalPrinter};
+use tokio::signal;
+use tokio_util::sync::CancellationToken;
+
+const NEWLINE: &str = if cfg!(windows) { "\r\n" } else { "\n" };
 
 const HELP_TEXT: &str = r#"You are using fda, the command-line interface to Feldera.
 Type:  \h for help with SQL commands
@@ -67,31 +71,67 @@ pub async fn shell(name: &str, client: Client) {
                         continue;
                     }
                     _ => {
-                        match client
-                            .pipeline_adhoc_sql()
-                            .pipeline_name(name)
-                            .format("text")
-                            .sql(trimmed_line)
-                            .send()
-                            .await
-                        {
-                            Ok(response) => {
-                                let mut buffer = Vec::new();
-                                let mut byte_stream = response.into_inner();
-                                while let Some(chunk) = byte_stream.next().await {
-                                    buffer.extend_from_slice(&chunk.expect("Failed to read chunk"));
+                        if trimmed_line.is_empty() {
+                            continue;
+                        }
+
+                        let client = client.clone();
+                        let name = name.to_string();
+                        let trimmed_line = trimmed_line.to_string();
+                        let cancel_token = CancellationToken::new();
+                        let cancel_token_child = cancel_token.clone();
+                        let mut printer = rl
+                            .create_external_printer()
+                            .expect("Failed to create external printer");
+
+                        // Print the SQL response, aborting if Ctrl+C is pressed
+                        let req_handle = tokio::spawn(async move {
+                            match client
+                                .pipeline_adhoc_sql()
+                                .pipeline_name(name)
+                                .format("text")
+                                .sql(trimmed_line)
+                                .send()
+                                .await
+                            {
+                                Ok(response) => {
+                                    printer.print(NEWLINE.to_string()).unwrap();
+                                    let mut byte_stream = response.into_inner();
+                                    while let Some(chunk) = byte_stream.next().await {
+                                        if cancel_token_child.is_cancelled() {
+                                            return;
+                                        }
+                                        let mut buffer = Vec::new();
+                                        buffer.extend_from_slice(
+                                            &chunk.expect("Reading Chunk should succeed"),
+                                        );
+                                        let text = String::from_utf8_lossy(&buffer);
+                                        printer.print(text.to_string()).unwrap();
+                                    }
+                                    printer.print(NEWLINE.to_string()).unwrap();
                                 }
-                                let text =
-                                    String::from_utf8(buffer).expect("Failed to parse response");
-                                println!();
-                                println!("{}", text);
-                                println!();
+                                Err(err) => {
+                                    println!();
+                                    handle_sql_response_error(err);
+                                    println!();
+                                }
                             }
-                            Err(err) => {
-                                println!();
-                                handle_sql_response_error(err);
-                                println!();
-                            }
+                        });
+
+                        // Listen for Ctrl+C
+                        let abort_task = tokio::spawn(async move {
+                            signal::ctrl_c().await.unwrap();
+                            cancel_token.cancel();
+                            println!();
+                            println!("ERROR: canceling statement due to user request.");
+                            println!();
+                        });
+
+                        // Wait for either the request to finish or Ctrl+C
+                        tokio::select! {
+                            biased;
+                            _ = abort_task => {}
+                            _ = req_handle => {}
                         }
                     }
                 }

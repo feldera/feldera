@@ -26,6 +26,7 @@ tabled = { version = "0.16.0", features = ["macros", "ansi"] }
 rustyline = { version = "14", features = ["with-file-history"] }
 directories = { version = "5" }
 futures-util = "0.3.30"
+tokio-util = "0.7.11"
 
 [build-dependencies]
 prettyplease = "0.2.21"
