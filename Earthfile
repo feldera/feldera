@@ -18,7 +18,7 @@ install-deps:
     RUN apt-get install --yes build-essential curl libssl-dev build-essential pkg-config \
                               cmake git gcc clang libclang-dev python3-pip python3-plumbum \
                               hub numactl openjdk-19-jre-headless maven netcat jq \
-                              docker.io libenchant-2-2 graphviz locales protobuf-compiler csvkit
+                              docker.io libenchant-2-2 graphviz locales protobuf-compiler
     # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
     RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
         locale-gen
@@ -496,6 +496,7 @@ integration-tests:
 
 benchmark:
     FROM +build-manager
+    RUN apt-get install --yes csvkit    
     COPY demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen
     COPY scripts/bench.bash scripts/bench.bash
     COPY benchmark/feldera-sql/run.py benchmark/feldera-sql/run.py
