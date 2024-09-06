@@ -12,9 +12,9 @@ in a Kubernetes cluster.
    LICENSE_KEY="00000000-0000-0000-0000-000000000000"  # Set to own
     
    helm upgrade --install feldera \
-       oci://public.ecr.aws/n4h1j7h1/feldera-chart --version 0.7.3 \
+       oci://public.ecr.aws/feldera/feldera-chart --version 0.9.0 \
        --namespace feldera --create-namespace \
-       --set felderaVersion="0.7.3" \
+       --set felderaVersion="0.9.0" \
        --set felderaAccountId="${ACCOUNT_ID}" \
        --set felderaLicenseKey="${LICENSE_KEY}" \
        --set felderaDatabaseSecretRef="feldera-db-insecure-secret"
@@ -26,7 +26,6 @@ in a Kubernetes cluster.
    NAME                                         READY   STATUS    RESTARTS   AGE
    feldera-db-0                                 1/1     Running   0          3m9s
    feldera-kubernetes-runner-6447b8f56d-86j4w   1/1     Running   0          3m9s
-   feldera-prober-server-5c945b7fcf-9r727       1/1     Running   0          3m9s
    feldera-compiler-server-0                    1/1     Running   0          3m9s
    feldera-api-server-c546499bc-wdpkm           1/1     Running   0          3m9s
    ```

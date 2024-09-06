@@ -122,7 +122,6 @@ install-python:
     RUN pip install --user -v --no-index --find-links=wheels -r python/tests/requirements.txt
     RUN pip install --user -v --no-index --find-links=wheels feldera
     SAVE ARTIFACT /root/.local/lib/python3.10
-    SAVE ARTIFACT /root/.local/bin
 
 build-webui-deps:
     FROM +install-deps
@@ -261,10 +260,8 @@ test-python:
     FROM +build-manager
     COPY +build-manager/pipeline-manager .
     RUN mkdir -p /root/.local/lib/python3.10
-    RUN mkdir -p /root/.local/bin
 
     COPY +install-python/python3.10 /root/.local/lib/python3.10
-    COPY +install-python/bin /root/.local/bin
 
     COPY +build-manager/pipeline-manager .
     COPY +build-sql/sql-to-dbsp-compiler sql-to-dbsp-compiler
@@ -349,7 +346,6 @@ build-demo-container:
         && SNOWSQL_DEST=/bin SNOWSQL_LOGIN_SHELL=~/.profile bash snowsql-1.2.28-linux_x86_64.bash \
         && snowsql -v
     COPY +install-python/python3.10 /root/.local/lib/python3.10
-    COPY +install-python/bin /root/.local/bin
     # Needed by the JDBC demo.
     RUN pip3 install "psycopg[binary]"
     # Needed by the simple-count demo.

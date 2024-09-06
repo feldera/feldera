@@ -4,7 +4,7 @@ use super::{
     serializer::{avro_ser_config, AvroSchemaSerializer},
 };
 use crate::{
-    static_compile::seroutput::SerBatchImpl,
+    static_compile::{deinput::AvroWrapper, seroutput::SerBatchImpl},
     test::{
         generate_test_batches_with_weights, mock_parser_pipeline, MockOutputConsumer, MockUpdate,
         TestStruct, TestStruct2,
@@ -12,7 +12,7 @@ use crate::{
     transport::InputConsumer,
     Encoder, FormatConfig, ParseError, SerBatch,
 };
-use apache_avro::{schema::ResolvedSchema, to_avro_datum, Schema as AvroSchema};
+use apache_avro::{from_avro_datum, schema::ResolvedSchema, to_avro_datum, Schema as AvroSchema};
 use dbsp::utils::Tup2;
 use dbsp::{DBData, OrdZSet};
 use feldera_types::{
@@ -24,13 +24,11 @@ use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
     serialize_struct,
 };
-use log::trace;
 use proptest::prelude::*;
 use proptest::proptest;
-use serde::Deserialize;
 use serde::Serialize;
-use std::sync::Arc;
 use std::{borrow::Cow, collections::HashMap, fmt::Debug};
+use std::{iter::repeat, sync::Arc};
 
 #[derive(Debug)]
 struct TestCase<T> {
@@ -349,14 +347,79 @@ proptest! {
 
 }
 
-fn test_avro_output<T>(avro_schema: &str, batches: Vec<Vec<Tup2<T, i64>>>)
+fn test_raw_avro_output<T>(config: AvroEncoderConfig, batches: Vec<Vec<Tup2<T, i64>>>)
 where
-    T: DBData + for<'de> Deserialize<'de> + SerializeWithContext<SqlSerdeConfig>,
+    T: DBData
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
 {
-    let config = AvroEncoderConfig {
-        schema: Some(avro_schema.to_string()),
-        ..Default::default()
-    };
+    let schema = AvroSchema::parse_str(config.schema.as_ref().unwrap()).unwrap();
+    let consumer = MockOutputConsumer::new();
+    let consumer_data = consumer.data.clone();
+    let mut encoder = AvroEncoder::create(
+        "avro_test_endpoint",
+        &Relation::empty(),
+        Box::new(consumer),
+        config,
+        None,
+    )
+    .unwrap();
+    let zsets = batches
+        .iter()
+        .map(|batch| {
+            let zset = OrdZSet::from_keys((), batch.clone());
+            Arc::new(<SerBatchImpl<_, T, ()>>::new(zset)) as Arc<dyn SerBatch>
+        })
+        .collect::<Vec<_>>();
+    for (step, zset) in zsets.iter().enumerate() {
+        encoder.consumer().batch_start(step as u64);
+        encoder.encode(zset.as_batch_reader()).unwrap();
+        encoder.consumer().batch_end();
+    }
+
+    let expected_output = OrdZSet::from_keys(
+        (),
+        batches
+            .concat()
+            .into_iter()
+            .filter(|Tup2(_, w)| *w > 0)
+            .collect(),
+    );
+
+    let actual_output = OrdZSet::from_keys(
+        (),
+        consumer_data
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_k, v)| {
+                let val = from_avro_datum(&schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
+                let AvroWrapper { value } =
+                    apache_avro::from_value::<AvroWrapper<T>>(&val).unwrap();
+                Tup2(value, 1)
+            })
+            .collect(),
+    );
+
+    assert_eq!(actual_output, expected_output);
+}
+
+fn test_confluent_avro_output<K, V, KF>(
+    config: AvroEncoderConfig,
+    batches: Vec<Vec<Tup2<V, i64>>>,
+    key_func: KF,
+    key_schema: &str,
+) where
+    K: DBData
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
+    V: DBData
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + SerializeWithContext<SqlSerdeConfig>,
+    KF: Fn(&V) -> K,
+{
+    let schema = AvroSchema::parse_str(config.schema.as_ref().unwrap()).unwrap();
+    let key_schema = AvroSchema::parse_str(key_schema).unwrap();
 
     let consumer = MockOutputConsumer::new();
     let consumer_data = consumer.data.clone();
@@ -371,14 +434,8 @@ where
     let zsets = batches
         .iter()
         .map(|batch| {
-            let zset = OrdZSet::from_keys(
-                (),
-                batch
-                    .iter()
-                    .map(|Tup2(x, w)| Tup2(x.clone(), *w))
-                    .collect::<Vec<_>>(),
-            );
-            Arc::new(<SerBatchImpl<_, T, ()>>::new(zset)) as Arc<dyn SerBatch>
+            let zset = OrdZSet::from_keys((), batch.clone());
+            Arc::new(<SerBatchImpl<_, V, ()>>::new(zset)) as Arc<dyn SerBatch>
         })
         .collect::<Vec<_>>();
     for (step, zset) in zsets.iter().enumerate() {
@@ -387,67 +444,78 @@ where
         encoder.consumer().batch_end();
     }
 
-    let expected_output = batches
+    let (expected_inserts, expected_deletes): (Vec<_>, Vec<_>) = batches
+        .concat()
         .into_iter()
-        .flat_map(|batch| {
-            let zset = OrdZSet::from_keys(
-                (),
-                batch
-                    .iter()
-                    .map(|Tup2(x, w)| Tup2(x.clone(), *w))
-                    .collect::<Vec<_>>(),
-            );
-            /*let mut deletes = zset
-            .iter()
-            .flat_map(|(data, (), weight)| {
-                trace!("data: {data:?}, weight: {weight}");
-                let range = if weight < 0 { weight..0 } else { 0..0 };
-
-                range.map(move |_| {
-                    let upd = U::update(
-                        false,
-                        data.clone(),
-                        encoder.stream_id,
-                        *seq_number.borrow(),
-                    );
-                    *seq_number.borrow_mut() += 1;
-                    upd
-                })
-            })
-            .collect::<Vec<_>>();*/
-            let inserts = zset
-                .iter()
-                .flat_map(|(data, (), weight)| {
-                    trace!("data: {data:?}, weight: {weight}");
-                    let range = if weight > 0 { 0..weight } else { 0..0 };
-
-                    range.map(move |_| data.clone())
-                })
-                .collect::<Vec<_>>();
-
-            inserts
+        .map(|Tup2(v, w)| {
+            if w > 0 {
+                repeat(Tup2(v.clone(), 1)).take(w as usize)
+            } else {
+                repeat(Tup2(v.clone(), -1)).take(-w as usize)
+            }
         })
+        .flatten()
+        .partition(|Tup2(_, w)| *w > 0);
+    let expected_deletes = expected_deletes
+        .into_iter()
+        .map(|Tup2(v, w)| Tup2(key_func(&v), w))
         .collect::<Vec<_>>();
 
-    let mut actual_output = Vec::new();
-    for (_, avro_datum) in consumer_data.lock().unwrap().iter() {
-        let avro_value =
-            apache_avro::from_avro_datum(&encoder.value_schema, &mut &avro_datum[5..], None)
-                .unwrap();
-        // FIXME: this will use the default `serde::Deserialize` implementation and will only work
-        // for types where it happens to do the right thing. We should use Avro-compatible
-        // deserialization logic instead, when it exists.
-        let val = apache_avro::from_value::<T>(&avro_value).unwrap();
-        actual_output.push(val);
-    }
+    let (inserts, deletes): (Vec<_>, Vec<_>) = consumer_data
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(k, v)| {
+            if let Some(v) = v {
+                let val = from_avro_datum(&schema, &mut &v[5..], None).unwrap();
+                let AvroWrapper { value } =
+                    apache_avro::from_value::<AvroWrapper<V>>(&val).unwrap();
+                (Some(Tup2(value, 1)), None)
+            } else {
+                let val =
+                    from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
+                let AvroWrapper { value } =
+                    apache_avro::from_value::<AvroWrapper<K>>(&val).unwrap();
+                (None, Some(Tup2(value, -1)))
+            }
+        })
+        .unzip();
 
-    assert_eq!(actual_output, expected_output);
+    let inserts = inserts.into_iter().flatten().collect::<Vec<_>>();
+    let deletes = deletes.into_iter().flatten().collect::<Vec<_>>();
+
+    assert_eq!(inserts, expected_inserts);
+    assert_eq!(deletes, expected_deletes);
 }
 
 proptest! {
     #[test]
-    fn proptest_avro_output(data in generate_test_batches_with_weights(10, 20))
+    fn proptest_raw_avro_output(data in generate_test_batches_with_weights(10, 20))
     {
-        test_avro_output::<TestStruct>(TestStruct::avro_schema(), data)
+        let schema_str = TestStruct::avro_schema().to_string();
+        let config: AvroEncoderConfig = AvroEncoderConfig {
+            schema: Some(schema_str.clone()),
+            ..Default::default()
+        };
+
+        test_raw_avro_output::<TestStruct>(config, data)
     }
+
+    #[test]
+    fn proptest_confluent_avro_output(data in generate_test_batches_with_weights(10, 20))
+    {
+        let schema_str = TestStruct::avro_schema();
+
+        let config: AvroEncoderConfig = AvroEncoderConfig {
+            schema: Some(schema_str.to_string()),
+            namespace: Some("foo.bar".to_string()),
+            update_format: AvroUpdateFormat::ConfluentJdbc,
+            key_fields: Some(vec!["b".to_string(), "id".to_string(), "i".to_string(), "s".to_string()]),
+            ..Default::default()
+        };
+
+        test_confluent_avro_output::<TestStruct, TestStruct, _>(config, data, |v| v.clone(), schema_str);
+    }
+
+
 }
