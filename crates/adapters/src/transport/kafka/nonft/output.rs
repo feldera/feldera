@@ -1,8 +1,7 @@
-use crate::transport::kafka::{build_headers, rdkafka_loglevel_from, DeferredLogging};
+use crate::transport::kafka::{build_headers, kafka_send, rdkafka_loglevel_from, DeferredLogging};
 use crate::transport::secret_resolver::MaybeSecret;
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
-use crossbeam::sync::{Parker, Unparker};
 use feldera_types::secret_ref::MaybeSecretRef;
 use feldera_types::transport::kafka::KafkaOutputConfig;
 use log::debug;
@@ -16,8 +15,6 @@ use rdkafka::{
 };
 use std::{sync::RwLock, time::Duration};
 
-const OUTPUT_POLLING_INTERVAL: Duration = Duration::from_millis(100);
-
 const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
 
 /// Max metadata overhead added by Kafka to each message.  Useful payload size
@@ -28,10 +25,6 @@ const MAX_MESSAGE_OVERHEAD: usize = 64;
 /// Producer context object used to handle async delivery notifications from
 /// Kafka.
 struct KafkaOutputContext {
-    /// Used to unpark the endpoint thread waiting for the number of in-flight
-    /// messages to drop below `max_inflight_messages`.
-    unparker: Unparker,
-
     /// Callback to notify the controller about delivery failure.
     async_error_callback: RwLock<Option<AsyncErrorCallback>>,
 
@@ -39,9 +32,8 @@ struct KafkaOutputContext {
 }
 
 impl KafkaOutputContext {
-    fn new(unparker: Unparker) -> Self {
+    fn new() -> Self {
         Self {
-            unparker,
             async_error_callback: RwLock::new(None),
             deferred_logging: DeferredLogging::new(),
         }
@@ -80,10 +72,6 @@ impl ProducerContext for KafkaOutputContext {
                 cb(false, AnyError::new(error.clone()));
             }
         }
-
-        // There is no harm in unparking the endpoint thread unconditionally,
-        // regardless of whether it's actually parked or not.
-        self.unparker.unpark();
     }
 }
 
@@ -91,7 +79,6 @@ pub struct KafkaOutputEndpoint {
     kafka_producer: ThreadedProducer<KafkaOutputContext>,
     config: KafkaOutputConfig,
     headers: OwnedHeaders,
-    parker: Parker,
     max_message_size: usize,
 }
 
@@ -123,10 +110,8 @@ impl KafkaOutputEndpoint {
             client_config.set_log_level(rdkafka_loglevel_from(log_level));
         }
 
-        let parker = Parker::new();
-
         // Context object to intercept message delivery events.
-        let context = KafkaOutputContext::new(parker.unparker().clone());
+        let context = KafkaOutputContext::new();
 
         let message_max_bytes = client_config
             .get("message.max.bytes")
@@ -146,25 +131,8 @@ impl KafkaOutputEndpoint {
             kafka_producer,
             config,
             headers,
-            parker,
             max_message_size,
         })
-    }
-
-    fn wait_for_in_flight_acks(&self) {
-        // Wait for the number of unacknowledged messages to drop
-        // below `max_inflight_messages`.
-        while self.kafka_producer.in_flight_count() as i64
-            > self.config.max_inflight_messages as i64
-        {
-            // FIXME: It appears that the delivery callback can be invoked before the
-            // in-flight counter is decremented, in which case we may never get
-            // unparked and may need to poll the in-flight counter.  This
-            // shouldn't cause performance issues in practice, but
-            // it would still be nice to have a more reliable way to wake up the endpoint
-            // thread _after_ the in-flight counter has been decremented.
-            self.parker.park_timeout(OUTPUT_POLLING_INTERVAL);
-        }
     }
 }
 
@@ -199,20 +167,13 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
-        self.wait_for_in_flight_acks();
-
         let record = <BaseRecord<(), [u8], ()>>::to(&self.config.topic)
             .payload(buffer)
             .headers(self.headers.clone());
-        self.kafka_producer
-            .send(record)
-            .map_err(|(err, _record)| err)?;
-        Ok(())
+        kafka_send(&self.kafka_producer, &self.config.topic, record)
     }
 
     fn push_key(&mut self, key: &[u8], val: Option<&[u8]>) -> AnyResult<()> {
-        self.wait_for_in_flight_acks();
-
         let mut record = <BaseRecord<[u8], [u8], ()>>::to(&self.config.topic).key(key);
 
         if let Some(val) = val {

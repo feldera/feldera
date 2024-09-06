@@ -1,21 +1,28 @@
-use anyhow::Error as AnyError;
+use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use feldera_types::transport::kafka::{KafkaHeader, KafkaLogLevel};
+use log::warn;
 use parquet::data_type::AsBytes;
-use rdkafka::message::{Header, OwnedHeaders};
+use rdkafka::message::{Header, OwnedHeaders, ToBytes};
+use rdkafka::producer::{BaseRecord, ProducerContext, ThreadedProducer};
 use rdkafka::{
     client::{Client as KafkaClient, ClientContext},
     config::RDKafkaLogLevel,
     error::KafkaError,
     types::RDKafkaErrorCode,
 };
+use std::cmp::min;
 #[cfg(test)]
 use std::sync::Mutex;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
 pub use ft::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint};
 pub use nonft::{KafkaInputEndpoint, KafkaOutputEndpoint};
 
 mod ft;
 mod nonft;
+
+const MAX_POLLING_INTERVAL: Duration = Duration::from_millis(5000);
 
 pub(crate) fn rdkafka_loglevel_from(level: KafkaLogLevel) -> RDKafkaLogLevel {
     match level {
@@ -180,4 +187,49 @@ pub fn build_headers(headers: &Vec<KafkaHeader>) -> OwnedHeaders {
     }
 
     result
+}
+
+pub fn kafka_send<T1, T2, C>(
+    producer: &ThreadedProducer<C>,
+    topic: &str,
+    mut record: BaseRecord<T1, T2, C::DeliveryOpaque>,
+) -> AnyResult<()>
+where
+    T1: ToBytes + ?Sized,
+    T2: ToBytes + ?Sized,
+    C: ProducerContext,
+{
+    let mut polling_interval = Duration::from_micros(10);
+    let mut start;
+
+    loop {
+        match producer.send(record) {
+            Ok(()) => return Ok(()),
+            Err((e, r)) => match e {
+                KafkaError::MessageProduction(e) if is_retriable_send_error(e) => {
+                    // Start timing after the first error.
+                    start = Some(Instant::now());
+                    record = r;
+
+                    // Start warning after hitting max polling interval
+                    if polling_interval >= MAX_POLLING_INTERVAL {
+                        warn!(
+                                "Attempts to send a message to Kafka topic '{}' have failed for {:?}, will keep retrying (error: {e})",
+                                &topic, start.unwrap().elapsed()
+                            );
+                    }
+
+                    sleep(polling_interval);
+                    if polling_interval < MAX_POLLING_INTERVAL {
+                        polling_interval = min(polling_interval * 2, MAX_POLLING_INTERVAL);
+                    }
+                }
+                _ => bail!(e),
+            },
+        }
+    }
+}
+
+fn is_retriable_send_error(error: RDKafkaErrorCode) -> bool {
+    error == RDKafkaErrorCode::QueueFull
 }
