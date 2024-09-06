@@ -2,7 +2,7 @@ use crate::catalog::ArrowStream;
 #[cfg(feature = "with-avro")]
 use crate::catalog::AvroStream;
 #[cfg(feature = "with-avro")]
-use crate::format::avro::input::avro_de_config;
+use crate::format::avro::from_avro_value;
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::byte_record_deserializer,
@@ -17,8 +17,6 @@ use dbsp::{
     ZSetHandle, ZWeight,
 };
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
-#[cfg(feature = "with-avro")]
-use serde::Deserialize;
 use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
 
@@ -478,30 +476,6 @@ where
     }
 }
 
-/// Implements `Deserialize` for `T` by calling `deserialize_with_context`.
-#[cfg(feature = "with-avro")]
-pub struct AvroWrapper<T> {
-    pub value: T,
-}
-
-#[cfg(feature = "with-avro")]
-impl<'de, T> Deserialize<'de> for AvroWrapper<T>
-where
-    T: DeserializeWithContext<'de, SqlSerdeConfig>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(AvroWrapper {
-            value: DeserializeWithContext::deserialize_with_context(
-                deserializer,
-                avro_de_config(),
-            )?,
-        })
-    }
-}
-
 /// `AvroStream` implementation that collects deserialized records
 /// into a Z-set.
 #[cfg(feature = "with-avro")]
@@ -537,19 +511,19 @@ where
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
-        let v: AvroWrapper<D> = apache_avro::from_value(data)
-            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+        let v: D =
+            from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.handle.push(K::from(v.value), 1);
+        self.handle.push(K::from(v), 1);
 
         Ok(())
     }
 
     fn delete(&mut self, data: &AvroValue) -> AnyResult<()> {
-        let v: AvroWrapper<D> = apache_avro::from_value(data)
-            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+        let v: D =
+            from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.handle.push(K::from(v.value), -1);
+        self.handle.push(K::from(v), -1);
 
         Ok(())
     }
@@ -800,19 +774,19 @@ where
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
-        let v: AvroWrapper<D> = apache_avro::from_value(data)
-            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+        let v: D =
+            from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.handle.push(K::from(v.value), true);
+        self.handle.push(K::from(v), true);
 
         Ok(())
     }
 
     fn delete(&mut self, data: &AvroValue) -> AnyResult<()> {
-        let v: AvroWrapper<D> = apache_avro::from_value(data)
-            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+        let v: D =
+            from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        self.handle.push(K::from(v.value), false);
+        self.handle.push(K::from(v), false);
 
         Ok(())
     }
@@ -1185,10 +1159,10 @@ where
     VF: Fn(&V) -> K + Clone + Send + 'static,
 {
     fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
-        let v: AvroWrapper<VD> = apache_avro::from_value(data)
-            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+        let v: VD =
+            from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        let val = V::from(v.value);
+        let val = V::from(v);
         self.handle
             .push((self.value_key_func)(&val), Update::Insert(val));
 
@@ -1196,10 +1170,10 @@ where
     }
 
     fn delete(&mut self, data: &AvroValue) -> AnyResult<()> {
-        let v: AvroWrapper<VD> = apache_avro::from_value(data)
-            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+        let v: VD =
+            from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
-        let val = V::from(v.value);
+        let val = V::from(v);
         self.handle
             .push((self.value_key_func)(&val), Update::Delete);
 

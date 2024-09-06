@@ -1,6 +1,6 @@
 use crate::{
     catalog::{AvroStream, InputCollectionHandle},
-    format::avro::schema::{nullable_schema_value_schema, schema_json, validate_struct_schema},
+    format::avro::schema::{schema_json, validate_struct_schema},
     ControllerError, DeCollectionHandle, InputFormat, ParseError, Parser,
 };
 use actix_web::HttpRequest;
@@ -31,7 +31,7 @@ use std::{
 // `ControllerError` type.  There are multiple concurrent refactorings of this crate
 // going on at the moment, so we'll do this later.
 
-use super::schema_registry_settings;
+use super::{schema::schema_unwrap_optional, schema_registry_settings};
 
 pub const fn avro_de_config() -> &'static SqlSerdeConfig {
     &SqlSerdeConfig {
@@ -232,8 +232,7 @@ impl AvroParser {
                         ))
                     })?;
                     let before_schema = &record_schema.fields[before_field].schema;
-                    Ok(nullable_schema_value_schema(before_schema)
-                        .ok_or_else(|| ControllerError::schema_validation_error(&format!("invalid Debezium Avro schema: 'before' must be a nullable field, but its schema is {}", schema_json(before_schema))))?)
+                    Ok(schema_unwrap_optional(before_schema).0)
                 }
                 _ => Err(ControllerError::schema_validation_error(&format!(
                     "invalid Debezium Avro schema: expected schema of type 'record', but found: {}",

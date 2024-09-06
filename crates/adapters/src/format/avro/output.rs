@@ -20,12 +20,9 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 // TODOs:
-// - Support multiple subject name strategies.  Currently, the record name strategy is used
-//   to name the schema in the schema registry
 // - Add options to specify schema by id or subject name and retrieve it from the registry.
 // - Verify that the Avro schema matches table declaration, including nullability of columns
 //   by matching the schema against the SQL relation schema.
-// - Add an option to generate Avro schema from relation schema.
 // - Support complex schemas with cross-references.
 // - The serializer doesn't currently support the Avro `fixed` type.
 // - Add a Kafka end-to-end test to `kafka/test.rs`.  This requires implementing an Avro parser.

@@ -1,5 +1,5 @@
 use crate::catalog::{ArrowStream, AvroStream};
-use crate::static_compile::deinput::AvroWrapper;
+use crate::format::avro::from_avro_value;
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     static_compile::deinput::{
@@ -270,15 +270,15 @@ where
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
-        let v: AvroWrapper<T> = apache_avro::from_value(data)
-            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+        let v: T =
+            from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.handle
             .0
             .lock()
             .unwrap()
             .buffered
-            .push(MockUpdate::Insert(v.value));
+            .push(MockUpdate::Insert(v));
 
         self.handle.flush();
 
@@ -286,15 +286,15 @@ where
     }
 
     fn delete(&mut self, data: &apache_avro::types::Value) -> AnyResult<()> {
-        let v: AvroWrapper<T> = apache_avro::from_value(data)
-            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+        let v: T =
+            from_avro_value(data).map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.handle
             .0
             .lock()
             .unwrap()
             .buffered
-            .push(MockUpdate::Delete(v.value));
+            .push(MockUpdate::Delete(v));
 
         self.handle.flush();
         Ok(())

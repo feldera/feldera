@@ -3,6 +3,7 @@ use std::time::Duration;
 use feldera_types::format::avro::AvroSchemaRegistryConfig;
 use schema_registry_converter::blocking::schema_registry::SrSettings;
 
+pub mod deserializer;
 pub mod input;
 pub mod output;
 mod schema;
@@ -10,6 +11,8 @@ pub mod serializer;
 
 #[cfg(test)]
 mod test;
+
+pub use deserializer::from_avro_value;
 
 /// Convert schema registry config to `struct SrSettings` used by the
 /// `schema_registry_converter` crate.

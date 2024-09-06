@@ -94,6 +94,7 @@ where
 /// └─────────────────┘   └──────┘   └──────────┘
 /// ```
 pub fn mock_parser_pipeline<T, U>(
+    schema: &Relation,
     config: &FormatConfig,
 ) -> AnyResult<(MockInputConsumer, MockDeZSet<T, U>)>
 where
@@ -101,10 +102,8 @@ where
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
 {
     let input_handle = <MockDeZSet<T, U>>::new();
-    // Input parsers don't care about schema yet.
-    let schema = Relation::empty();
     let consumer = MockInputConsumer::from_handle(
-        &InputCollectionHandle::new(schema, input_handle.clone()),
+        &InputCollectionHandle::new(schema.clone(), input_handle.clone()),
         config,
     );
     Ok((consumer, input_handle))
@@ -141,6 +140,7 @@ where
     };
 
     let (consumer, input_handle) = mock_parser_pipeline(
+        &relation,
         config
             .connector_config
             .format

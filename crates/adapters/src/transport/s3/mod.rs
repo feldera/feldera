@@ -299,7 +299,9 @@ mod test {
         types::error::builders::{NoSuchBucketBuilder, NoSuchKeyBuilder},
     };
     use feldera_types::{
-        config::InputEndpointConfig, config::TransportConfig, deserialize_without_context,
+        config::{InputEndpointConfig, TransportConfig},
+        deserialize_without_context,
+        program_schema::Relation,
     };
     use mockall::predicate::eq;
     use serde::{Deserialize, Serialize};
@@ -368,6 +370,7 @@ format:
             }
         };
         let (consumer, input_handle) = mock_parser_pipeline::<TestStruct, TestStruct>(
+            &Relation::empty(),
             &config.connector_config.format.unwrap(),
         )
         .unwrap();

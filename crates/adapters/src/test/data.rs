@@ -4,7 +4,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
-use feldera_types::program_schema::{ColumnType, Field, SqlType};
+use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 use feldera_types::{
     deserialize_table_record, deserialize_without_context, serialize_struct, serialize_table_record,
 };
@@ -512,6 +512,15 @@ impl TestStruct2 {
                 },
             },
         ]
+    }
+
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("TestStruct2", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
     }
 
     pub fn make_arrow_array(data: &[TestStruct2]) -> Vec<ArrayRef> {

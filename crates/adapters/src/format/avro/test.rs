@@ -4,7 +4,8 @@ use super::{
     serializer::{avro_ser_config, AvroSchemaSerializer},
 };
 use crate::{
-    static_compile::{deinput::AvroWrapper, seroutput::SerBatchImpl},
+    format::avro::from_avro_value,
+    static_compile::seroutput::SerBatchImpl,
     test::{
         generate_test_batches_with_weights, mock_parser_pipeline, MockOutputConsumer, MockUpdate,
         TestStruct, TestStruct2,
@@ -32,6 +33,7 @@ use std::{iter::repeat, sync::Arc};
 
 #[derive(Debug)]
 struct TestCase<T> {
+    relation_schema: Relation,
     config: AvroParserConfig,
     /// Input data, expected result.
     input_batches: Vec<(Vec<u8>, Vec<ParseError>)>,
@@ -188,8 +190,34 @@ fn debezium_avro_schema(value_schema: &str, value_type_name: &str) -> AvroSchema
     AvroSchema::parse_str(&schema_str).unwrap()
 }
 
+fn serialize_record<T>(x: &T, schema: &AvroSchema) -> Vec<u8>
+where
+    T: Clone
+        + Debug
+        + Eq
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Send
+        + 'static,
+{
+    // 5-byte header
+    let mut buffer = vec![0; 5];
+    let refs = HashMap::new();
+    let serializer = AvroSchemaSerializer::new(&schema, &refs, false);
+    let val = x
+        .serialize_with_context(serializer, &avro_ser_config())
+        .unwrap();
+    let mut avro_record = to_avro_datum(&schema, val).unwrap();
+    buffer.append(&mut avro_record);
+    buffer
+}
+
 /// Generate a test case using raw Avro update format.
-fn gen_raw_parser_test<T>(data: &[T], avro_schema_str: &str) -> TestCase<T>
+fn gen_raw_parser_test<T>(
+    data: &[T],
+    relation_schema: &Relation,
+    avro_schema_str: &str,
+) -> TestCase<T>
 where
     T: Clone
         + Debug
@@ -211,15 +239,7 @@ where
     let input_batches = data
         .iter()
         .map(|x| {
-            // 5-byte header
-            let mut buffer = vec![0; 5];
-            let refs = HashMap::new();
-            let serializer = AvroSchemaSerializer::new(&avro_schema, &refs, true);
-            let val = x
-                .serialize_with_context(serializer, &avro_ser_config())
-                .unwrap();
-            let mut avro_record = to_avro_datum(&avro_schema, val).unwrap();
-            buffer.append(&mut avro_record);
+            let buffer = serialize_record(x, &avro_schema);
             (buffer, vec![])
         })
         .collect::<Vec<_>>();
@@ -230,6 +250,7 @@ where
         .collect::<Vec<_>>();
 
     TestCase {
+        relation_schema: relation_schema.clone(),
         config,
         input_batches,
         expected_output,
@@ -237,7 +258,12 @@ where
 }
 
 /// Generate a test case using Debezium Avro update format.
-fn gen_debezium_parser_test<T>(data: &[T], avro_schema_str: &str, type_name: &str) -> TestCase<T>
+fn gen_debezium_parser_test<T>(
+    data: &[T],
+    relation_schema: &Relation,
+    avro_schema_str: &str,
+    type_name: &str,
+) -> TestCase<T>
 where
     T: Clone
         + Debug
@@ -281,6 +307,7 @@ where
         .collect::<Vec<_>>();
 
     TestCase {
+        relation_schema: relation_schema.clone(),
         config,
         input_batches,
         expected_output,
@@ -297,7 +324,8 @@ where
             config: serde_yaml::to_value(test.config).unwrap(),
         };
 
-        let (mut consumer, outputs) = mock_parser_pipeline(&format_config).unwrap();
+        let (mut consumer, outputs) =
+            mock_parser_pipeline(&test.relation_schema, &format_config).unwrap();
         consumer.on_error(Some(Box::new(|_, _| {})));
         for (avro, expected_result) in test.input_batches {
             let res = consumer.input_chunk(&avro);
@@ -310,7 +338,11 @@ where
 
 #[test]
 fn test_raw_avro_parser() {
-    let test_case = gen_raw_parser_test(&TestStruct2::data(), &TestStruct2::avro_schema());
+    let test_case = gen_raw_parser_test(
+        &TestStruct2::data(),
+        &TestStruct2::relation_schema(),
+        &TestStruct2::avro_schema(),
+    );
 
     run_parser_test(vec![test_case])
 }
@@ -319,11 +351,205 @@ fn test_raw_avro_parser() {
 fn test_debezium_avro_parser() {
     let test_case = gen_debezium_parser_test(
         &TestStruct2::data(),
+        &TestStruct2::relation_schema(),
         &TestStruct2::avro_schema(),
         "TestStruct2",
     );
 
     run_parser_test(vec![test_case])
+}
+
+/// SQL table can have nullable columns that are not in the Avro schema.
+#[test]
+fn test_extra_columns() {
+    // Schema sans one field.
+    let schema_str = r#"{
+        "type": "record",
+        "name": "TestStruct2Short",
+        "fields": [
+            { "name": "id", "type": "long" },
+            { "name": "b", "type": "boolean" },
+            { "name": "ts", "type": "long", "logicalType": "timestamp-micros" },
+            { "name": "dt", "type": "int", "logicalType": "date" },
+            {
+                "name": "es",
+                "type":
+                    {
+                        "type": "record",
+                        "name": "EmbeddedStruct",
+                        "fields": [
+                            { "name": "a", "type": "boolean" }
+                        ]
+                    }
+            },
+            {
+                "name": "m",
+                "type":
+                    {
+                        "type": "map",
+                        "values": "long"
+                    }
+            }
+        ]
+    }"#;
+
+    let schema = AvroSchema::parse_str(&schema_str).unwrap();
+    let vals = TestStruct2::data();
+    let input_batches = vals
+        .iter()
+        .map(|v| (serialize_record(v, &schema), vec![]))
+        .collect::<Vec<_>>();
+    let expected_output = vals
+        .iter()
+        .map(|v| {
+            let mut v = v.clone();
+            // set missing field to NULL
+            v.field_0 = None;
+            MockUpdate::Insert(v)
+        })
+        .collect::<Vec<_>>();
+
+    let test = TestCase {
+        relation_schema: TestStruct2::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Raw,
+            schema: Some(schema_str.to_string()),
+            no_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches,
+        expected_output,
+    };
+
+    run_parser_test(vec![test]);
+}
+
+/// Deserializing non-optional fields into NULL-able columns.
+#[test]
+fn test_non_null_to_nullable() {
+    // Make `name` column non-optional.
+    let schema_str = r#"{
+        "type": "record",
+        "name": "TestStruct2",
+        "connect.name": "test_namespace.TestStruct2",
+        "fields": [
+            { "name": "id", "type": "long" },
+            { "name": "name", "type": "string" },
+            { "name": "b", "type": "boolean" },
+            { "name": "ts", "type": "long", "logicalType": "timestamp-micros" },
+            { "name": "dt", "type": "int", "logicalType": "date" },
+            {
+                "name": "es",
+                "type":
+                    {
+                        "type": "record",
+                        "name": "EmbeddedStruct",
+                        "fields": [
+                            { "name": "a", "type": "boolean" }
+                        ]
+                    }
+            },
+            {
+                "name": "m",
+                "type":
+                    {
+                        "type": "map",
+                        "values": "long"
+                    }
+            }
+        ]
+    }"#;
+
+    let schema = AvroSchema::parse_str(&schema_str).unwrap();
+    let vals = vec![TestStruct2 {
+        field: 1,
+        field_0: Some("test".to_string()),
+        ..Default::default()
+    }];
+    let input_batches = vals
+        .iter()
+        .map(|v| (serialize_record(v, &schema), vec![]))
+        .collect::<Vec<_>>();
+    let expected_output = vals
+        .iter()
+        .map(|v| MockUpdate::Insert(v.clone()))
+        .collect::<Vec<_>>();
+
+    let test = TestCase {
+        relation_schema: TestStruct2::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Raw,
+            schema: Some(schema_str.to_string()),
+            no_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches,
+        expected_output,
+    };
+
+    run_parser_test(vec![test]);
+}
+
+/// Deserialize timestamp encoded as timestamp-millis instead of micros.
+#[test]
+fn test_ms_time() {
+    // timestamp-millis instead of timestamp-micros
+    let schema_str = r#"{
+        "type": "record",
+        "name": "TestStruct2",
+        "connect.name": "test_namespace.TestStruct2",
+        "fields": [
+            { "name": "id", "type": "long" },
+            { "name": "name", "type": ["string", "null"] },
+            { "name": "b", "type": "boolean" },
+            { "name": "ts", "type": "long", "logicalType": "timestamp-millis" },
+            { "name": "dt", "type": "int", "logicalType": "date" },
+            {
+                "name": "es",
+                "type":
+                    {
+                        "type": "record",
+                        "name": "EmbeddedStruct",
+                        "fields": [
+                            { "name": "a", "type": "boolean" }
+                        ]
+                    }
+            },
+            {
+                "name": "m",
+                "type":
+                    {
+                        "type": "map",
+                        "values": "long"
+                    }
+            }
+        ]
+    }"#;
+
+    let schema = AvroSchema::parse_str(&schema_str).unwrap();
+    let vals = TestStruct2::data();
+    let input_batches = vals
+        .iter()
+        .map(|v| (serialize_record(v, &schema), vec![]))
+        .collect::<Vec<_>>();
+    let expected_output = vals
+        .iter()
+        .map(|v| MockUpdate::Insert(v.clone()))
+        .collect::<Vec<_>>();
+
+    let test = TestCase {
+        relation_schema: TestStruct2::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Raw,
+            schema: Some(schema_str.to_string()),
+            no_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches,
+        expected_output,
+    };
+
+    run_parser_test(vec![test]);
 }
 
 proptest! {
@@ -332,7 +558,7 @@ proptest! {
     #[test]
     fn proptest_raw_avro_parser(data in proptest::collection::vec(any::<TestStruct2>(), 0..=10000))
     {
-        let test_case = gen_raw_parser_test(&data, &TestStruct2::avro_schema());
+        let test_case = gen_raw_parser_test(&data, &TestStruct2::relation_schema(),  &TestStruct2::avro_schema());
 
         run_parser_test(vec![test_case])
     }
@@ -340,7 +566,7 @@ proptest! {
     #[test]
     fn proptest_debezium_avro_parser(data in proptest::collection::vec(any::<TestStruct2>(), 0..=10000))
     {
-        let test_case = gen_debezium_parser_test(&data, &TestStruct2::avro_schema(), "TestStruct2");
+        let test_case = gen_debezium_parser_test(&data, &TestStruct2::relation_schema(), &TestStruct2::avro_schema(), "TestStruct2");
 
         run_parser_test(vec![test_case])
     }
@@ -394,8 +620,7 @@ where
             .iter()
             .map(|(_k, v)| {
                 let val = from_avro_datum(&schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
-                let AvroWrapper { value } =
-                    apache_avro::from_value::<AvroWrapper<T>>(&val).unwrap();
+                let value = from_avro_value::<T>(&val).unwrap();
                 Tup2(value, 1)
             })
             .collect(),
@@ -468,14 +693,12 @@ fn test_confluent_avro_output<K, V, KF>(
         .map(|(k, v)| {
             if let Some(v) = v {
                 let val = from_avro_datum(&schema, &mut &v[5..], None).unwrap();
-                let AvroWrapper { value } =
-                    apache_avro::from_value::<AvroWrapper<V>>(&val).unwrap();
+                let value = from_avro_value::<V>(&val).unwrap();
                 (Some(Tup2(value, 1)), None)
             } else {
                 let val =
                     from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
-                let AvroWrapper { value } =
-                    apache_avro::from_value::<AvroWrapper<K>>(&val).unwrap();
+                let value = from_avro_value::<K>(&val).unwrap();
                 (None, Some(Tup2(value, -1)))
             }
         })

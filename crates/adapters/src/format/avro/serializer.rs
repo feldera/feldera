@@ -13,6 +13,8 @@ use std::fmt::{Display, Formatter};
 use std::iter::once;
 use std::mem::take;
 
+use super::schema::{schema_unwrap_optional, OptionalField};
+
 /// Serde configuration expected by [`AvroSchemaSerializer`].
 pub fn avro_ser_config() -> SqlSerdeConfig {
     SqlSerdeConfig::default()
@@ -420,12 +422,6 @@ impl SerializeStructVariant for StructVariantSerializer {
         unreachable!()
     }
 }
-
-enum OptionalField {
-    NonOptional,
-    Optional(u32),
-}
-
 fn serialize_maybe_optional<F>(schema: &AvroSchema, f: F) -> Result<AvroValue, AvroSerializerError>
 where
     F: Fn(&AvroSchema) -> Result<AvroValue, AvroSerializerError>,
@@ -437,17 +433,6 @@ where
             _ => f(schema),
         },
         _ => f(schema),
-    }
-}
-
-fn schema_unwrap_optional(schema: &AvroSchema) -> (&AvroSchema, OptionalField) {
-    match schema {
-        AvroSchema::Union(union_schema) => match union_schema.variants() {
-            [AvroSchema::Null, s] => (s, OptionalField::Optional(1)),
-            [s, AvroSchema::Null] => (s, OptionalField::Optional(0)),
-            _ => (schema, OptionalField::NonOptional),
-        },
-        _ => (schema, OptionalField::NonOptional),
     }
 }
 
@@ -646,7 +631,8 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
                 }
                 _ => Err(AvroSerializerError::incompatible("Option<>", self.schema)),
             },
-            _ => Err(AvroSerializerError::incompatible("Option<>", self.schema)),
+            // Attempt to serialize Some(T) as T.
+            _ => value.serialize(self),
         }
     }
 
