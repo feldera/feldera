@@ -23,7 +23,7 @@ To use the demo to regenerate the GIFs:
 3. Start Redpanda locally, e.g.:
 
    ```
-   docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 redpanda start --smp 2
+   docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v24.2.4 redpanda start --smp 2
    ```
    
 4. In another terminal, start the secops simulator, e.g.:

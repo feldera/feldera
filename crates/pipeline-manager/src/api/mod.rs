@@ -107,9 +107,9 @@ The program version is used internally by the compiler to know when to recompile
         http_io::http_output,
 
         // API keys
-        api_key::create_api_key,
         api_key::list_api_keys,
         api_key::get_api_key,
+        api_key::post_api_key,
         api_key::delete_api_key,
 
         // Configuration
@@ -260,9 +260,9 @@ fn api_scope() -> Scope {
         .service(pipeline::get_pipeline_heap_profile)
         .service(pipeline::pipeline_adhoc_sql)
         // API keys endpoints
-        .service(api_key::create_api_key)
         .service(api_key::list_api_keys)
         .service(api_key::get_api_key)
+        .service(api_key::post_api_key)
         .service(api_key::delete_api_key)
         // HTTP input/output endpoints
         .service(http_io::http_input)

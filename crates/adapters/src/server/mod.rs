@@ -1377,7 +1377,7 @@ outputs:
                 .unwrap()
                 .status()
                 .is_success());
-            sleep(Duration::from_millis(75));
+            sleep(Duration::from_millis(150));
         }
 
         println!("Connecting to HTTP output endpoint");

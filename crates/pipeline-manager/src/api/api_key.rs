@@ -15,7 +15,7 @@ use actix_web::{
 };
 use log::info;
 use serde::{Deserialize, Serialize};
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// Request to create a new API key.
@@ -29,84 +29,61 @@ pub(crate) struct NewApiKeyRequest {
 /// Response to a successful API key creation.
 #[derive(Debug, Serialize, ToSchema)]
 pub(crate) struct NewApiKeyResponse {
-    /// Id of the newly created API key.
-    #[schema(example = 42)]
-    api_key_id: ApiKeyId,
+    /// Identifier of the newly created API key.
+    #[schema(example = "00000000-0000-0000-0000-000000000000")]
+    id: ApiKeyId,
 
-    /// API key name
+    /// API key name provided by the user.
     #[schema(example = "my-api-key")]
     name: String,
 
-    /// Generated API key. There is no way to
-    /// retrieve this key again from the
-    /// pipeline-manager, so store it securely.
+    /// Generated secret API key. There is no way to retrieve this
+    /// key again through the API, so store it securely.
     #[schema(
         example = "apikey:v5y5QNtlPNVMwkmNjKwFU8bbIu5lMge3yHbyddxAOdXlEo84SEoNn32DUhQaf1KLeI9aOOfnJjhQ1pYzMrU4wQXON6pm6BS7Zgzj46U2b8pwz1280vYBEtx41hiDBRP"
     )]
     api_key: String,
 }
 
-/// Query for an API key by name.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
-pub(crate) struct ApiKeyNameQuery {
-    /// API key name
-    #[schema(example = "my-api-key")]
-    name: Option<String>,
-}
-
 /// Retrieve the list of API keys.
 #[utoipa::path(
-    responses(
-        (status = OK, description = "API keys retrieved successfully", body = [ApiKeyDescr]),
-        (status = NOT_FOUND
-            , description = "Specified API key name does not exist."
-            , body = ErrorResponse
-            , examples(
-                ("Unknown API key name" = (value = json!(examples::error_unknown_api_key()))),
-            ),
-        )
-    ),
-    params(ApiKeyNameQuery),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
+    responses(
+        (status = OK
+            , description = "API keys retrieved successfully"
+            , body = [ApiKeyDescr]),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
+    ),
     tag = "API keys"
 )]
 #[get("/api_keys")]
 pub(crate) async fn list_api_keys(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: web::Query<ApiKeyNameQuery>,
 ) -> Result<HttpResponse, ManagerError> {
-    if let Some(ref name) = req.name {
-        let api_key = state.db.lock().await.get_api_key(*tenant_id, name).await?;
-        Ok(HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(vec![api_key]))
-    } else {
-        let api_keys = state.db.lock().await.list_api_keys(*tenant_id).await?;
-        Ok(HttpResponse::Ok()
-            .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-            .json(&api_keys))
-    }
+    let api_keys = state.db.lock().await.list_api_keys(*tenant_id).await?;
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(&api_keys))
 }
 
 /// Retrieve an API key.
 #[utoipa::path(
-    responses(
-        (status = OK, description = "API key retrieved successfully", body = ApiKeyDescr),
-        (status = NOT_FOUND
-            , description = "Specified API key name does not exist."
-            , body = ErrorResponse
-            , examples(
-                ("Unknown API key name" = (value = json!(examples::error_unknown_api_key()))),
-            ),
-        )
-    ),
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
     params(
         ("api_key_name" = String, Path, description = "Unique API key name")
     ),
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
+    responses(
+        (status = OK,
+            description = "API key retrieved successfully",
+            body = ApiKeyDescr),
+        (status = NOT_FOUND
+            , description = "API key with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_api_key()))
+    ),
     tag = "API keys"
 )]
 #[get("/api_keys/{api_key_name}")]
@@ -122,23 +99,68 @@ pub(crate) async fn get_api_key(
         .json(&[api_key]))
 }
 
+/// Create a new API key.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    responses(
+        (status = CREATED
+            , description = "API key created successfully"
+            , body = NewApiKeyResponse),
+        (status = CONFLICT
+            , description = "API key with that name already exists"
+            , body = ErrorResponse
+            , example = json!(examples::error_duplicate_name())),
+    ),
+    tag = "API keys"
+)]
+#[post("/api_keys")]
+async fn post_api_key(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    req: web::Json<NewApiKeyRequest>,
+) -> Result<HttpResponse, ManagerError> {
+    let new_id = Uuid::now_v7();
+    let generated_api_key = crate::auth::generate_api_key();
+    let res = state
+        .db
+        .lock()
+        .await
+        .store_api_key_hash(
+            *tenant_id,
+            new_id,
+            &req.name,
+            &generated_api_key,
+            vec![ApiPermission::Read, ApiPermission::Write],
+        )
+        .await
+        .map(|_| {
+            info!("Created API key {} (tenant: {})", &req.name, *tenant_id);
+            HttpResponse::Created()
+                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+                .json(&NewApiKeyResponse {
+                    id: ApiKeyId(new_id),
+                    name: req.name.clone(),
+                    api_key: generated_api_key,
+                })
+        })?;
+    Ok(res)
+}
+
 /// Delete an API key.
 #[utoipa::path(
-    responses(
-        (status = OK, description = "API key deleted successfully"),
-        (status = NOT_FOUND
-            , description = "Specified API key name does not exist."
-            , body = ErrorResponse
-            , examples(
-                ("Unknown API key name" = (value = json!(examples::error_unknown_api_key()))),
-            ),
-        )
-    ),
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
     params(
         ("api_key_name" = String, Path, description = "Unique API key name")
     ),
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
+    responses(
+        (status = OK, description = "API key deleted successfully"),
+        (status = NOT_FOUND
+            , description = "API key with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_api_key()))
+    ),
     tag = "API keys"
 )]
 #[delete("/api_keys/{api_key_name}")]
@@ -157,50 +179,4 @@ pub(crate) async fn delete_api_key(
         .map(|_| HttpResponse::Ok().finish())?;
     info!("Deleted API key {name} (tenant: {})", *tenant_id);
     Ok(resp)
-}
-
-/// Create a new API key.
-#[utoipa::path(
-    responses(
-        (status = CREATED, description = "API key created successfully.", body = NewApiKeyResponse),
-        (status = CONFLICT
-            , description = "An API key with this name already exists."
-            , body = ErrorResponse
-            , example = json!(examples::error_duplicate_name())),
-    ),
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
-    tag = "API keys"
-)]
-#[post("/api_keys")]
-async fn create_api_key(
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-    req: web::Json<NewApiKeyRequest>,
-) -> Result<HttpResponse, ManagerError> {
-    let api_key = crate::auth::generate_api_key();
-    let id = Uuid::now_v7();
-    let res = state
-        .db
-        .lock()
-        .await
-        .store_api_key_hash(
-            *tenant_id,
-            id,
-            &req.name,
-            &api_key,
-            vec![ApiPermission::Read, ApiPermission::Write],
-        )
-        .await
-        .map(|_| {
-            info!("Created API key {} (tenant: {})", &req.name, *tenant_id);
-            HttpResponse::Created()
-                .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-                .json(&NewApiKeyResponse {
-                    api_key_id: ApiKeyId(id),
-                    name: req.name.clone(),
-                    api_key,
-                })
-        })?;
-    Ok(res)
 }

@@ -78,18 +78,6 @@
         ],
         "summary": "Retrieve the list of API keys.",
         "operationId": "list_api_keys",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "query",
-            "description": "API key name",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "API keys retrieved successfully",
@@ -104,23 +92,12 @@
               }
             }
           },
-          "404": {
-            "description": "Specified API key name does not exist.",
+          "500": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "Unknown API key name": {
-                    "value": {
-                      "details": {
-                        "name": "unknown_api_key"
-                      },
-                      "error_code": "UnknownApiKey",
-                      "message": "Unknown API key 'unknown_api_key'"
-                    }
-                  }
                 }
               }
             }
@@ -137,7 +114,7 @@
           "API keys"
         ],
         "summary": "Create a new API key.",
-        "operationId": "create_api_key",
+        "operationId": "post_api_key",
         "requestBody": {
           "description": "",
           "content": {
@@ -151,7 +128,7 @@
         },
         "responses": {
           "201": {
-            "description": "API key created successfully.",
+            "description": "API key created successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -161,7 +138,7 @@
             }
           },
           "409": {
-            "description": "An API key with this name already exists.",
+            "description": "API key with that name already exists",
             "content": {
               "application/json": {
                 "schema": {
@@ -213,22 +190,18 @@
             }
           },
           "404": {
-            "description": "Specified API key name does not exist.",
+            "description": "API key with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "examples": {
-                  "Unknown API key name": {
-                    "value": {
-                      "details": {
-                        "name": "unknown_api_key"
-                      },
-                      "error_code": "UnknownApiKey",
-                      "message": "Unknown API key 'unknown_api_key'"
-                    }
-                  }
+                "example": {
+                  "details": {
+                    "name": "unknown_api_key"
+                  },
+                  "error_code": "UnknownApiKey",
+                  "message": "Unknown API key 'unknown_api_key'"
                 }
               }
             }
@@ -262,22 +235,18 @@
             "description": "API key deleted successfully"
           },
           "404": {
-            "description": "Specified API key name does not exist.",
+            "description": "API key with that name does not exist",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
-                "examples": {
-                  "Unknown API key name": {
-                    "value": {
-                      "details": {
-                        "name": "unknown_api_key"
-                      },
-                      "error_code": "UnknownApiKey",
-                      "message": "Unknown API key 'unknown_api_key'"
-                    }
-                  }
+                "example": {
+                  "details": {
+                    "name": "unknown_api_key"
+                  },
+                  "error_code": "UnknownApiKey",
+                  "message": "Unknown API key 'unknown_api_key'"
                 }
               }
             }
@@ -3019,22 +2988,22 @@
         "type": "object",
         "description": "Response to a successful API key creation.",
         "required": [
-          "api_key_id",
+          "id",
           "name",
           "api_key"
         ],
         "properties": {
           "api_key": {
             "type": "string",
-            "description": "Generated API key. There is no way to\nretrieve this key again from the\npipeline-manager, so store it securely.",
+            "description": "Generated secret API key. There is no way to retrieve this\nkey again through the API, so store it securely.",
             "example": "apikey:v5y5QNtlPNVMwkmNjKwFU8bbIu5lMge3yHbyddxAOdXlEo84SEoNn32DUhQaf1KLeI9aOOfnJjhQ1pYzMrU4wQXON6pm6BS7Zgzj46U2b8pwz1280vYBEtx41hiDBRP"
           },
-          "api_key_id": {
+          "id": {
             "$ref": "#/components/schemas/ApiKeyId"
           },
           "name": {
             "type": "string",
-            "description": "API key name",
+            "description": "API key name provided by the user.",
             "example": "my-api-key"
           }
         }

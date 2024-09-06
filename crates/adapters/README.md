@@ -27,7 +27,7 @@ The test code has the following dependencies:
   Or with Docker:
 
   ```sh
-  docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 redpanda start --smp 2
+  docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v24.2.4 redpanda start --smp 2
   ```
 
 Furthermore, for developing client (web browser) UI used to monitor a

@@ -905,14 +905,13 @@ export type NewApiKeyRequest = {
  */
 export type NewApiKeyResponse = {
   /**
-   * Generated API key. There is no way to
-   * retrieve this key again from the
-   * pipeline-manager, so store it securely.
+   * Generated secret API key. There is no way to retrieve this
+   * key again through the API, so store it securely.
    */
   api_key: string
-  api_key_id: ApiKeyId
+  id: ApiKeyId
   /**
-   * API key name
+   * API key name provided by the user.
    */
   name: string
 }
@@ -1843,26 +1842,17 @@ export type GetConfigAuthenticationResponse = AuthProvider
 
 export type GetConfigAuthenticationError = ErrorResponse
 
-export type ListApiKeysData = {
-  query?: {
-    /**
-     * API key name
-     */
-    name?: string | null
-  }
-}
-
 export type ListApiKeysResponse = Array<ApiKeyDescr>
 
 export type ListApiKeysError = ErrorResponse
 
-export type CreateApiKeyData = {
+export type PostApiKeyData = {
   body: NewApiKeyRequest
 }
 
-export type CreateApiKeyResponse = NewApiKeyResponse
+export type PostApiKeyResponse = NewApiKeyResponse
 
-export type CreateApiKeyError = ErrorResponse
+export type PostApiKeyError = ErrorResponse
 
 export type GetApiKeyData = {
   path: {
@@ -2194,27 +2184,23 @@ export type $OpenApiTs = {
   }
   '/v0/api_keys': {
     get: {
-      req: ListApiKeysData
       res: {
         /**
          * API keys retrieved successfully
          */
         '200': Array<ApiKeyDescr>
-        /**
-         * Specified API key name does not exist.
-         */
-        '404': ErrorResponse
+        '500': ErrorResponse
       }
     }
     post: {
-      req: CreateApiKeyData
+      req: PostApiKeyData
       res: {
         /**
-         * API key created successfully.
+         * API key created successfully
          */
         '201': NewApiKeyResponse
         /**
-         * An API key with this name already exists.
+         * API key with that name already exists
          */
         '409': ErrorResponse
       }
@@ -2229,7 +2215,7 @@ export type $OpenApiTs = {
          */
         '200': ApiKeyDescr
         /**
-         * Specified API key name does not exist.
+         * API key with that name does not exist
          */
         '404': ErrorResponse
       }
@@ -2242,7 +2228,7 @@ export type $OpenApiTs = {
          */
         '200': unknown
         /**
-         * Specified API key name does not exist.
+         * API key with that name does not exist
          */
         '404': ErrorResponse
       }
