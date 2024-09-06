@@ -235,57 +235,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     @Test
-    public void rustSqlTest() throws IOException, InterruptedException, SQLException {
-        String filepath = BaseSQLTests.rustDirectory + "/" + "test.db";
-        Connection connection = DriverManager.getConnection("jdbc:sqlite:" + filepath);
-        Statement statement = connection.createStatement();
-        statement.executeUpdate("drop table if exists t1");
-        statement.executeUpdate("create table t1(c1 integer not null, c2 bool not null, " +
-                                "c3 varcharnot null , c4 integer)");
-        statement.executeUpdate("insert into t1 values(10, true, 'Hi', null)"); // e0NoDouble
-        statement.executeUpdate("insert into t1 values(10, false, 'Hi', 1)"); // e1NoDouble
-        connection.close();
-        DBSPCompiler compiler = testCompiler();
-
-        DBSPZSetLiteral data = new DBSPZSetLiteral(EndToEndTests.e0NoDouble, EndToEndTests.e1NoDouble);
-        List<DBSPStatement> list = new ArrayList<>();
-
-        String connectionString = "sqlite://" + filepath;
-        // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tup type>) invocation
-        DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
-        DBSPVariablePath rowVariable = new DBSPVariablePath("row", sqliteRowType.ref());
-        DBSPExpression[] fields = EndToEndTests.e0NoDouble.fields; // Should be the same for e1NoDouble too
-        assert fields != null;
-        final List<DBSPExpression> rowGets = new ArrayList<>(fields.length);
-        for (int i = 0; i < fields.length; i++) {
-            DBSPApplyMethodExpression rowGet =
-                    new DBSPApplyMethodExpression("get",
-                            fields[i].getType(),
-                            rowVariable.deref(), new DBSPUSizeLiteral(i));
-            rowGets.add(rowGet);
-        }
-        DBSPTupleExpression tuple = new DBSPTupleExpression(rowGets, false);
-        DBSPClosureExpression mapClosure = new DBSPClosureExpression(tuple,
-               rowVariable.asParameter());
-        DBSPApplyExpression readDb = new DBSPApplyExpression("read_db", data.getType(),
-                new DBSPStrLiteral(connectionString), new DBSPStrLiteral("t1"), mapClosure);
-
-        DBSPLetStatement src = new DBSPLetStatement("src", readDb);
-        list.add(src);
-        list.add(new DBSPApplyExpression(
-                "assert_eq!", new DBSPTypeVoid(), src.getVarReference(),
-                data).toStatement());
-        DBSPExpression body = new DBSPBlockExpression(list, null);
-        DBSPFunction tester = new DBSPFunction("test", new ArrayList<>(),
-                new DBSPTypeVoid(), body, Linq.list("#[test]"));
-
-        RustFileWriter writer = new RustFileWriter(BaseSQLTests.testFilePath);
-        writer.add(tester);
-        writer.writeAndClose(compiler);
-        Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
-    }
-
-    @Test
     public void rustCsvTest2() throws IOException, InterruptedException {
         DBSPCompiler compiler = this.testCompiler();
         DBSPZSetLiteral data = new DBSPZSetLiteral(

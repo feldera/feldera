@@ -18,10 +18,6 @@ use rkyv::Archive;
 use serde::{Deserialize, Serialize};
 use size_of::*;
 use sqllib::{WSet, Weight};
-use sqlx::{
-    any::AnyRow, migrate::MigrateDatabase, sqlite::SqliteConnection, sqlite::SqliteRow,
-    AnyConnection, Connection, Executor, Row,
-};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::ops::Neg;
 use std::{fs::File, io::BufReader, path::Path};
@@ -47,6 +43,9 @@ where
     WSet::<T>::from_keys((), vec)
 }
 
+/*
+Removed, perhaps permanently, to get rid of dependence on sqlx.
+
 pub fn read_db<T>(conn_str: &str, table_name: &str, mapper: impl Fn(&AnyRow) -> T) -> WSet<T>
 where
     T: DBData + for<'de> serde::Deserialize<'de>,
@@ -66,6 +65,7 @@ where
         .collect();
     WSet::from_keys((), vec)
 }
+*/
 
 #[cfg(test)]
 dbsp::declare_tuples! {
@@ -89,6 +89,7 @@ fn csv_test() {
     );
 }
 
+/*
 #[async_std::test]
 async fn sql_test_sqlite() {
     let conn_str = "sqlite:///tmp/test.db";
@@ -113,3 +114,4 @@ async fn sql_test_sqlite() {
         zset
     );
 }
+*/

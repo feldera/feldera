@@ -42,27 +42,6 @@ public class TableValue {
         this.contents = contents;
     }
 
-    public DBSPExpression generateReadDbCall(String connectionString) {
-        // Generates a read_table(<conn>, <table_name>, <mapper from |AnyRow| -> Tup type>) invocation
-        DBSPTypeUser sqliteRowType = new DBSPTypeUser(CalciteObject.EMPTY, USER, "AnyRow", false);
-        DBSPVariablePath rowVariable = sqliteRowType.ref().var();
-        DBSPTypeTuple tupleType = this.contents.elementType.to(DBSPTypeTuple.class);
-        final List<DBSPExpression> rowGets = new ArrayList<>(tupleType.tupFields.length);
-        for (int i = 0; i < tupleType.tupFields.length; i++) {
-            DBSPApplyMethodExpression rowGet =
-                    new DBSPApplyMethodExpression("get",
-                            tupleType.tupFields[i],
-                            rowVariable.deref(), new DBSPUSizeLiteral(i));
-            rowGets.add(rowGet);
-        }
-        DBSPTupleExpression tuple = new DBSPTupleExpression(rowGets, false);
-        DBSPClosureExpression mapClosure = new DBSPClosureExpression(CalciteObject.EMPTY, tuple,
-                rowVariable.asParameter());
-        return new DBSPApplyExpression("read_db", this.contents.getType(),
-                new DBSPStrLiteral(connectionString), new DBSPStrLiteral(this.tableName),
-                mapClosure);
-    }
-
     static final class HasDecimalOrDate extends InnerVisitor {
         public boolean found = false;
 
@@ -122,18 +101,14 @@ public class TableValue {
                 // Illegal Date values are deserialized incorrectly.
                 continue;
 
-            if (connectionString.equals("csv")) {
-                // If the data is large, write it to a CSV file and read it at runtime.
-                String fileName = (Paths.get(directory, tables[i].tableName)) + ".csv";
-                File file = new File(fileName);
-                file.deleteOnExit();
-                ToCsvVisitor.toCsv(new StderrErrorReporter(), file, tables[i].contents);
-                fields[i] = new DBSPApplyExpression(CalciteObject.EMPTY, "read_csv",
-                        tables[i].contents.getType(),
-                        new DBSPStrLiteral(fileName));
-            } else {
-                fields[i] = tables[i].generateReadDbCall(connectionString);
-            }
+            // If the data is large, write it to a CSV file and read it at runtime.
+            String fileName = (Paths.get(directory, tables[i].tableName)) + ".csv";
+            File file = new File(fileName);
+            file.deleteOnExit();
+            ToCsvVisitor.toCsv(new StderrErrorReporter(), file, tables[i].contents);
+            fields[i] = new DBSPApplyExpression(CalciteObject.EMPTY, "read_csv",
+                    tables[i].contents.getType(),
+                    new DBSPStrLiteral(fileName));
         }
         DBSPRawTupleExpression result = new DBSPRawTupleExpression(fields);
         return new DBSPFunction(name, new ArrayList<>(),
