@@ -1844,7 +1844,7 @@ export type GetConfigAuthenticationError = ErrorResponse
 
 export type ListApiKeysResponse = Array<ApiKeyDescr>
 
-export type ListApiKeysError = unknown
+export type ListApiKeysError = ErrorResponse
 
 export type PostApiKeyData = {
   body: NewApiKeyRequest
@@ -2189,6 +2189,7 @@ export type $OpenApiTs = {
          * API keys retrieved successfully
          */
         '200': Array<ApiKeyDescr>
+        '500': ErrorResponse
       }
     }
     post: {
