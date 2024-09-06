@@ -1,9 +1,11 @@
 import os
+import time
 import unittest
 import pandas as pd
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.admin import KafkaAdminClient, NewTopic
 
+from build.lib.feldera.enums import PipelineStatus
 from feldera import PipelineBuilder, Pipeline
 from tests import TEST_CLIENT
 
@@ -699,6 +701,7 @@ class TestPipelineBuilder(unittest.TestCase):
         got = out.to_dict()
 
         assert expected_data == got
+        pipeline.delete()
 
     def test_pandas_decimal(self):
         from decimal import Decimal
@@ -721,6 +724,7 @@ class TestPipelineBuilder(unittest.TestCase):
         got = out.to_dict()
 
         assert expected == got
+        pipeline.delete()
 
     def test_pandas_array(self):
         sql = f"""
@@ -742,6 +746,7 @@ class TestPipelineBuilder(unittest.TestCase):
             datum.update({"insert_delete": 1})
 
         assert got == data
+        pipeline.delete()
 
     def test_pandas_struct(self):
         sql = f"""
@@ -765,6 +770,7 @@ class TestPipelineBuilder(unittest.TestCase):
             datum.update({"insert_delete": 1})
 
         assert data == got
+        pipeline.delete()
 
     def test_pandas_date_time_timestamp(self):
         from pandas import Timestamp, Timedelta
@@ -785,6 +791,7 @@ class TestPipelineBuilder(unittest.TestCase):
         got = out.to_dict()
 
         assert expected == got
+        pipeline.delete()
 
     def test_pandas_simple(self):
         sql = f"""
@@ -805,6 +812,7 @@ class TestPipelineBuilder(unittest.TestCase):
             datum.update({"insert_delete": 1})
 
         assert data == got
+        pipeline.delete()
 
     def test_pandas_map(self):
         sql = f"""
@@ -823,6 +831,27 @@ class TestPipelineBuilder(unittest.TestCase):
         got = out.to_dict()
 
         assert expected == got
+        pipeline.delete()
+
+    def test_failed_pipeline_shutdown(self):
+        sql = f"""
+            CREATE TABLE t0 (c1 TINYINT);
+            CREATE VIEW v0 AS SELECT c1 + 127::TINYINT FROM t0;"""
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name="test_failed_pipeline_shutdown", sql=sql).create_or_replace()
+        pipeline.start()
+        data = [{"c1": 127}]
+        pipeline.input_json("t0", data)
+
+        while True:
+            status = pipeline.status()
+            expected = PipelineStatus.FAILED
+            if status == expected:
+                break
+            time.sleep(1)
+
+        pipeline.shutdown()
+        pipeline.delete()
 
 
 if __name__ == '__main__':
