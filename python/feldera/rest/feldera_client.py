@@ -225,18 +225,38 @@ class FelderaClient:
             path=f"/pipelines/{pipeline_name}/shutdown",
         )
 
-        while True:
+        start = time.time()
+        timeout = 15
+
+        while time.time() - start < timeout:
             status = self.get_pipeline(pipeline_name).deployment_status
 
             if status == "Shutdown":
-                break
-            elif status == "Failed":
-                raise RuntimeError(f"Failed to shutdown pipeline")
+                return
 
             logging.debug("still shutting down %s, waiting for 100 more milliseconds", pipeline_name)
             time.sleep(0.1)
 
-    # TODO: better name for this method
+        # retry sending shutdown request as the pipline hasn't shutdown yet
+        logging.debug("pipeline %s hasn't shutdown after %s s, retrying", pipeline_name, timeout)
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/shutdown",
+        )
+
+        start = time.time()
+        timeout = 5
+
+        while time.time() - start < timeout:
+            status = self.get_pipeline(pipeline_name).deployment_status
+
+            if status == "Shutdown":
+                return
+
+            logging.debug("still shutting down %s, waiting for 100 more milliseconds", pipeline_name)
+            time.sleep(0.1)
+
+        raise RuntimeError(f"Failed to shutdown pipeline {pipeline_name}")
+
     def push_to_pipeline(
             self,
             pipeline_name: str,

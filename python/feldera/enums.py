@@ -181,3 +181,6 @@ class PipelineStatus(Enum):
             if member.name.lower() == value.lower():
                 return member
         raise ValueError(f"Unknown value '{value}' for enum {PipelineStatus.__name__}")
+
+    def __eq__(self, other):
+        return self.value == other.value
