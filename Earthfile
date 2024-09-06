@@ -212,8 +212,8 @@ test-adapters:
     DO rust+SET_CACHE_MOUNTS_ENV
     ARG DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID
     ARG DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY
-    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3
-        RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v24.2.4
+        RUN --mount=$EARTHLY_RUST_CARGO_HOME_CACHE --mount=$EARTHLY_RUST_TARGET_CACHE docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v24.2.4 \
             redpanda start --smp 2  && \
             (google-cloud-sdk/bin/gcloud beta emulators pubsub start --project=feldera-test --host-port=127.0.0.1:8685 &) && \
             sleep 5 && \
@@ -360,7 +360,7 @@ test-docker-compose:
     FROM earthly/dind:alpine
     COPY deploy/docker-compose.yml .
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v24.2.4 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container
         RUN COMPOSE_HTTP_TIMEOUT=120 SECOPS_DEMO_ARGS="--prepare-args 200000" RUST_LOG=debug,tokio_postgres=info docker-compose -f docker-compose.yml --profile demo up --force-recreate --exit-code-from demo
@@ -374,7 +374,7 @@ test-docker-compose-stable:
     ENV FELDERA_VERSION=0.25.0
     RUN apk --no-cache add curl
     WITH DOCKER --pull postgres \
-                --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+                --pull docker.redpanda.com/vectorized/redpanda:v24.2.4 \
                 --pull ghcr.io/feldera/pipeline-manager:0.25.0 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --pull ghcr.io/feldera/demo-container:0.25.0
@@ -393,7 +393,7 @@ test-debezium-mysql:
     COPY deploy/docker-compose.yml .
     COPY deploy/docker-compose-debezium-mysql.yml .
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v24.2.4 \
                 --pull debezium/example-mysql:2.5 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
@@ -406,7 +406,7 @@ test-debezium-postgres:
     COPY deploy/docker-compose.yml .
     COPY deploy/docker-compose-debezium-postgres.yml .
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v24.2.4 \
                 --pull debezium/example-postgres:2.5 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
@@ -419,7 +419,7 @@ test-debezium-jdbc-sink:
     COPY deploy/docker-compose.yml .
     COPY deploy/docker-compose-jdbc.yml .
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v24.2.4 \
                 --pull debezium/example-postgres:2.3 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
@@ -433,7 +433,7 @@ test-snowflake:
     COPY deploy/.env .
     RUN cat .env
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v24.2.4 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
                 --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
@@ -446,7 +446,7 @@ test-s3:
     COPY deploy/.env .
     RUN cat .env
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v24.2.4 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container \
                 --load ghcr.io/feldera/kafka-connect:latest=+build-kafka-connect-container
@@ -459,7 +459,7 @@ test-service-related:
     COPY deploy/.env .
     RUN cat .env
     ENV FELDERA_VERSION=latest
-    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v23.2.3 \
+    WITH DOCKER --pull docker.redpanda.com/vectorized/redpanda:v24.2.4 \
                 --load ghcr.io/feldera/pipeline-manager:latest=+build-pipeline-manager-container \
                 --load ghcr.io/feldera/demo-container:latest=+build-demo-container
         RUN COMPOSE_HTTP_TIMEOUT=120 RUST_LOG=debug,tokio_postgres=info docker-compose --env-file .env -f docker-compose.yml --profile demo-service-related up --force-recreate --exit-code-from demo-service-related
@@ -516,7 +516,7 @@ benchmark:
             sleep 10 && \
             (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=optimized &) && \
             sleep 5 && \
-            docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 redpanda start --smp 2 \
+            docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v24.2.4 redpanda start --smp 2 \
             && bash scripts/bench.bash
     END
     SAVE ARTIFACT benchmark-run-data AS LOCAL .

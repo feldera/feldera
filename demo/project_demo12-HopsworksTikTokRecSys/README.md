@@ -1,4 +1,4 @@
-# Hopsworks Tiktok Recommendation System Demo
+/ Hopsworks Tiktok Recommendation System Demo
 
 ### Getting Started
 
@@ -12,7 +12,7 @@ pip install feldera/ # from the base directory of this repo
 
 ```sh
 cargo run --bin=pipeline-manager --features pg-embed
-docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v23.2.3 redpanda start --smp 2
+docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v24.2.4 redpanda start --smp 2
 export KAFKA_SERVER=localhost:9092
 export KAFKA_SERVER_FROM_PIPELINE=$KAFKA_SERVER
 ```
