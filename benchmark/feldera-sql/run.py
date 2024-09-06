@@ -1,5 +1,16 @@
 #! /usr/bin/python3
 
+# This script does a bunch of stuff
+#
+# - it rewrites table connector declarations,
+#   - replacing {table} with a kafka connector for the same topic
+#   - it substitutes {lateness} with the lateness parameter if asked to
+#   - it substitutes {events} with the number of events to generate
+#   - it substitutes {cores} with the number of cores to use for the generator
+#   - it substitutes {folder} with the path where the table declarations are
+# - it creates a pipeline to compile all queries in the directory folder/queries
+# - it then runs the queries using the feldera pipeline manager and records the performance
+
 import csv
 import json
 import os
@@ -19,8 +30,8 @@ def load_queries(dir):
             queries[f.split('.')[0]] = file.read()
     return queries
 
-def load_table(folder, with_lateness, suffix, events, cores):
-    p = os.path.join(FILE_DIR, folder + '/table.sql')
+def load_table(folder: str, with_lateness: bool, suffix, events, cores):
+    p = os.path.join(FILE_DIR, folder, 'table.sql')
     file = open(p, 'r')
     text = file.read()
     table_start_string = 'create table '
@@ -30,14 +41,18 @@ def load_table(folder, with_lateness, suffix, events, cores):
         if i >= 0:
             inputs += [line[i + len(table_start_string):].split(' ')[0]]
     subst = {input: make_connector(input, suffix) for input in inputs}
-    subst["lateness"] = "LATENESS INTERVAL 4 SECONDS"
+    if with_lateness:
+        subst["lateness"] = "LATENESS INTERVAL 4 SECONDS"
+    else:
+        subst["lateness"] = ""
     subst["events"] = events
     subst["cores"] = cores
+    subst["folder"] = os.path.join(FILE_DIR, folder)
     return text.format(**subst)
 
 def sort_queries(queries):
     return sorted(queries, key=lambda q: int(q[1:]))
-    
+
 def parse_queries(all_queries, arg):
     if arg is not None:
         queries = set()
@@ -80,8 +95,8 @@ def make_connector(topic, suffix):
     }], indent=4)
 
 def get_full_name(folder, name):
-    return folder.split('/')[-1] + '-' + name 
-    
+    return folder.split('/')[-1] + '-' + name
+
 def stop_pipeline(pipeline_name, wait):
     r = requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown", headers=headers)
     if r.status_code == 404:
@@ -105,7 +120,7 @@ def write_results(results, outfile):
     writer = csv.writer(outfile)
     writer.writerow(['when', 'runner', 'mode', 'language', 'name', 'num_cores', 'num_events', 'elapsed', 'peak_memory_bytes', 'cpu_msecs'])
     writer.writerows(results)
-    
+
 def write_metrics(keys, results, outfile):
     writer = csv.writer(outfile)
     sorted_keys = sorted(keys)
@@ -150,7 +165,7 @@ def main():
     group.add_argument('--input-topic-suffix', help='suffix to apply to input topic names (by default, "")')
     parser.set_defaults(lateness=True, storage=False, cores=16, metrics_interval=1, folder='benchmarks/nexmark', events=100000)
 
-    
+
     global api_url, kafka_options, headers
     api_url = parser.parse_args().api_url
     api_key = parser.parse_args().api_key
@@ -224,7 +239,7 @@ def main():
         full_name = get_full_name(folder, program_name)
         while True:
             status = requests.get(f"{api_url}/v0/pipelines/{full_name}", headers=headers).json()["program_status"]
-            print(f"Program {full_name} status: {status}")
+            print(f"Program {full_name} compilation status: {status}")
             if status == "Success":
                 break
             elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
@@ -249,8 +264,14 @@ def main():
         last_processed = 0
         last_metrics = 0
         peak_memory = 0
+        error = False
         while True:
-            stats = requests.get(f"{api_url}/v0/pipelines/{full_name}/stats", headers=headers).json()
+            req = requests.get(f"{api_url}/v0/pipelines/{full_name}/stats", headers=headers)
+            if req.status_code != 200:
+                print("Failed to get stats")
+                error = True
+                break
+            stats = req.json()
             elapsed = time.time() - start
             if "global_metrics" in stats:
                 global_metrics = stats["global_metrics"]
@@ -276,7 +297,7 @@ def main():
                     elif "Gauge" in value and value["Gauge"] is not None:
                         metrics_seen.add(key)
                         metrics_dict[key] = value["Gauge"]
-                        
+
                     if "Histogram" in value and value["Histogram"] is not None:
                         for v in histogram_values:
                             k = key + "_histogram_" + v
@@ -290,23 +311,30 @@ def main():
         if os.isatty(1):
             print()
         elapsed = "{:.1f}".format(time.time() - start)
-        print(f"Pipeline {full_name} completed in {elapsed} s")
+        if error:
+            print(f"*** Pipeline {pipeline_name} terminated with error");
+        else:
+            print(f"Pipeline {full_name} completed in {elapsed} s")
 
-        results += [[when, "feldera", "stream", "sql", pipeline_name, cores, last_processed, elapsed, peak_memory, cpu_msecs]]
+            results += [[when, "feldera", "stream", "sql", pipeline_name, cores, last_processed, elapsed, peak_memory, cpu_msecs]]
 
-        if profile:
-            response = requests.get(f"{api_url}/v0/pipelines/{full_name}/circuit_profile", headers=headers)
-            profile_file_name = full_name + ".zip"
-            print("\nWriting circuit profile stats to " + profile_file_name + "...")
-            with open(profile_file_name, 'wb') as f:
-                for chunk in response.iter_content(1024):
-                    f.write(chunk)
-            break
+            if profile:
+                response = requests.get(f"{api_url}/v0/pipelines/{full_name}/circuit_profile", headers=headers)
+                if response.status_code == 200:
+                    profile_file_name = full_name + ".zip"
+                    print("\nWriting circuit profile stats to " + profile_file_name + "...")
+                    with open(profile_file_name, 'wb') as f:
+                        for chunk in response.iter_content(1024):
+                            f.write(chunk)
+                else:
+                    print("Failed to get stats")
 
         # Stop pipeline
         elapsed = stop_pipeline(full_name, True)
         print(f"Stopped pipeline {full_name} in {elapsed:.1f} s")
-    
+        if error:
+            exit(1)
+
     write_results(results, sys.stdout)
     if csvfile is not None:
         write_results(results, open(csvfile, 'w', newline=''))

@@ -24,13 +24,13 @@ public class TpcDsTest extends BaseSQLTests {
     // q89: OVER without ORDER BY
     @Test
     public void compileTpcds() throws IOException {
-        String tpch = TestUtil.readStringFromResourceFile("tpcds.sql");
+        String tpcds = TestUtil.readStringFromResourceFile("tpcds.sql");
         CompilerOptions options = this.testOptions(true, true);
         DBSPCompiler compiler = new DBSPCompiler(options);
         options.languageOptions.ignoreOrderBy = true;
         options.languageOptions.lenient = true;
         options.ioOptions.quiet = false;
-        compiler.compileStatements(tpch);
+        compiler.compileStatements(tpcds);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.showErrors();
         // This crashes the Rust compiler!

@@ -496,6 +496,7 @@ integration-tests:
 
 benchmark:
     FROM +build-manager
+    RUN apt-get install --yes csvkit    
     COPY demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen demo/project_demo12-HopsworksTikTokRecSys/tiktok-gen
     COPY scripts/bench.bash scripts/bench.bash
     COPY benchmark/feldera-sql/run.py benchmark/feldera-sql/run.py

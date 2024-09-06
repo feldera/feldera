@@ -41,6 +41,7 @@ nexmark_results.csv
 nexmark_comment.txt
 galen_results.csv
 ldbc_results.csv
+benchmark-run-data
 
 # pipeline manager
 manager.db

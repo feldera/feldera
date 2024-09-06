@@ -68,7 +68,11 @@ public class BaseSQLTests {
     }
 
     protected void showFinal() {
-        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 4);
+    }
+
+    protected void showFinalDetail() {
+        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 4);
     }
 
     /** Run a query that is expected to fail in compilation.

@@ -28,6 +28,56 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void testFpCast() {
+        String sql = """
+               CREATE TABLE TAB2 (COL0 INTEGER, COL1 INTEGER, COL2 INTEGER);
+               CREATE VIEW V100 AS
+               SELECT 99 * - COR0.COL0
+               FROM TAB2 AS COR0
+               WHERE NOT - COR0.COL2 * + CAST(+ COR0.COL0 AS REAL) >= + (- COR0.COL2)
+               """;
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void decimalMult() {
+        String sql = """
+                CREATE TABLE T(C DECIMAL(16, 2));
+                CREATE VIEW V AS SELECT 100.20 * T.C FROM T;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES (100.0)",
+                """
+                         value  | weight
+                        ----------------
+                          10020 | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void issue2438() {
+        String sql = """
+                CREATE TABLE t(
+                   id INT, c1 REAL,
+                   c2 REAL NOT NULL);
+                CREATE VIEW v AS SELECT
+                   AVG(c1) FILTER (WHERE c2 > -3802.271) AS f_c1,
+                   AVG(c2) FILTER (WHERE c2 > -3802.271) AS f_c2\s
+                FROM t;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.step("""
+                INSERT INTO t VALUES
+                (0, -1111.5672,  2231.790),
+                (0, NULL, -3802.271),
+                (1, 57681.08, 71689.8057),
+                (1, 57681.08, 87335.89658)""",
+                """
+                 c1       | c2      | weight
+                -----------------------------
+                 38083.53 | 53752.5 | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void issue2350() {
         String sql = """
                 CREATE TABLE arg_min(c1 TINYINT NOT NULL);
