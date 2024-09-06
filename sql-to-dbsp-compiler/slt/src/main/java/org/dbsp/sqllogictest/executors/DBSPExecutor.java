@@ -99,7 +99,6 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     private final boolean execute;
     public final CompilerOptions compilerOptions;
 
-    private final String connectionString; // either csv or a valid sqlx connection string
     final SqlTestPrepareInput inputPreparation;
     final SqlTestPrepareTables tablePreparation;
     final SqlTestPrepareViews viewPreparation;
@@ -110,11 +109,10 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     /**
      * Create an executor that executes SqlLogicTest queries directly compiling to
      * Rust and using the DBSP library.
-     * @param connectionString Connection string to use to get ground truth from database.
      * @param options  Options to use for compilation.
      */
     public DBSPExecutor(OptionsParser.SuppliedOptions options,
-                        CompilerOptions compilerOptions, String connectionString) {
+                        CompilerOptions compilerOptions) {
         super(options);
         this.execute = !options.doNotExecute;
         this.inputPreparation = new SqlTestPrepareInput();
@@ -122,7 +120,6 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         this.viewPreparation = new SqlTestPrepareViews();
         this.compilerOptions = compilerOptions;
         this.queriesToRun = new ArrayList<>();
-        this.connectionString = connectionString;
     }
 
     public void skip(int toSkip) {
@@ -165,7 +162,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             // Create function which generates inputs for all tests in this batch.
             // We know that all these tests consume the same input tables.
             ExecutorInputGenerator egen = new ExecutorInputGenerator(compiler);
-            InputFunctionGenerator gen = new InputFunctionGenerator(compiler, egen, this.connectionString);
+            InputFunctionGenerator gen = new InputFunctionGenerator(compiler, egen);
 
             // Generate a function and a tester for each query.
             int queryNo = 0;
@@ -587,7 +584,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
                 compilerOptions.languageOptions.throwOnError = options.stopAtFirstError;
                 compilerOptions.languageOptions.lenient = true;
                 compilerOptions.languageOptions.generateInputForEveryTable = true;
-                DBSPExecutor result = new DBSPExecutor(options, compilerOptions, "csv");
+                DBSPExecutor result = new DBSPExecutor(options, compilerOptions);
                 result.skip(skip.get());
                 Set<String> bugs = options.readBugsFile();
                 result.avoid(bugs);

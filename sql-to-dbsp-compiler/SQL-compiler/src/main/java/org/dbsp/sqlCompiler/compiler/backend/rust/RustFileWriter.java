@@ -159,8 +159,6 @@ public class RustFileWriter {
                     use sqlvalue::*;
                     #[cfg(test)]
                     use readers::*;
-                    #[cfg(test)]
-                    use sqlx::{AnyConnection, any::AnyRow, Row};
 
                     #[cfg(not(target_env = "msvc"))]
                     #[global_allocator]

@@ -69,7 +69,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
     public DbspJdbcExecutor(JdbcExecutor executor,
                             OptionsParser.SuppliedOptions options,
                             CompilerOptions compilerOptions) {
-        super(options, compilerOptions, "csv");
+        super(options, compilerOptions);
         this.statementExecutor = executor;
         this.tablesCreated = new ArrayList<>();
     }
