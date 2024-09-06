@@ -734,10 +734,13 @@ impl StoragePostgres {
         #[cfg(feature = "pg-embed")] pg_inst: Option<pg_embed::postgres::PgEmbed>,
     ) -> Result<Self, DBError> {
         if !connection_str.starts_with("postgres") {
-            panic!("Unsupported connection string {}", connection_str)
+            panic!("Unsupported Postgres connection string: does not start with 'postgres'");
         }
         let config = connection_str.parse::<tokio_postgres::Config>()?;
-        debug!("Opening connection to {:?}", connection_str);
+        debug!(
+            "Opening Postgres connection with configuration: {:?}",
+            config
+        );
 
         let db = StoragePostgres::initialize(
             config,
