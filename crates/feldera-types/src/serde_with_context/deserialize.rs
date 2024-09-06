@@ -80,6 +80,15 @@ macro_rules! deserialize_without_context {
     };
 }
 
+impl<'de, C> DeserializeWithContext<'de, C> for &'de str {
+    fn deserialize_with_context<D>(deserializer: D, _context: &'de C) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        serde::Deserialize::deserialize(deserializer)
+    }
+}
+
 deserialize_without_context!(bool);
 deserialize_without_context!(i8);
 deserialize_without_context!(u8);

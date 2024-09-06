@@ -455,6 +455,7 @@ mod test {
     use feldera_types::{
         deserialize_table_record,
         format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat},
+        program_schema::Relation,
         serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
     };
     use log::trace;
@@ -537,7 +538,8 @@ mod test {
                 config: serde_yaml::to_value(test.config).unwrap(),
             };
 
-            let (mut consumer, outputs) = mock_parser_pipeline(&format_config).unwrap();
+            let (mut consumer, outputs) =
+                mock_parser_pipeline(&Relation::empty(), &format_config).unwrap();
             consumer.on_error(Some(Box::new(|_, _| {})));
             for (json, expected_result) in test.input_batches {
                 let res = if test.chunks {

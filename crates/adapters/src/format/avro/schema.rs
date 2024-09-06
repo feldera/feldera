@@ -12,6 +12,13 @@ use feldera_types::program_schema::{
 
 use crate::ControllerError;
 
+/// Indicates whether the field has an optional type (`["null", T]`) and,
+/// if so, whether the non-null element of the union is at position 0 or 1.
+pub enum OptionalField {
+    NonOptional,
+    Optional(u32),
+}
+
 /// Convert schema to JSON format.
 pub fn schema_json(schema: &AvroSchema) -> String {
     serde_json::to_string(schema).unwrap_or_else(
@@ -20,17 +27,14 @@ pub fn schema_json(schema: &AvroSchema) -> String {
     )
 }
 
-/// Extract value type schema from a nullable field schema, which has the following shape:
-/// Union[null, type] or Union[type, null]. Returns `None` if `schema` doesn't match this
-/// pattern.
-pub fn nullable_schema_value_schema(schema: &AvroSchema) -> Option<&AvroSchema> {
+pub fn schema_unwrap_optional(schema: &AvroSchema) -> (&AvroSchema, OptionalField) {
     match schema {
         AvroSchema::Union(union_schema) => match union_schema.variants() {
-            [AvroSchema::Null, s] => Some(s),
-            [s, AvroSchema::Null] => Some(s),
-            _ => None,
+            [AvroSchema::Null, s] => (s, OptionalField::Optional(1)),
+            [s, AvroSchema::Null] => (s, OptionalField::Optional(0)),
+            _ => (schema, OptionalField::NonOptional),
         },
-        _ => None,
+        _ => (schema, OptionalField::NonOptional),
     }
 }
 
@@ -58,12 +62,18 @@ pub fn validate_struct_schema(
     };
 
     for field in struct_schema {
-        let avro_field = lookup_field(&record_schema.fields, field).ok_or_else(|| {
-            format!(
-                "column '{}' is missing in the Avro schema",
-                field.name.name()
-            )
-        })?;
+        let Some(avro_field) = lookup_field(&record_schema.fields, field) else {
+            // Allow nullable fields to be missing in the Avro schema. This is useful to, e.g.,
+            // support inputs encoded using older versions of the schema missing some fields.
+            if field.columntype.nullable {
+                return Ok(());
+            } else {
+                return Err(format!(
+                    "column '{}' is missing in the Avro schema",
+                    field.name.name()
+                ));
+            }
+        };
 
         validate_field_schema(&avro_field.schema, &field.columntype).map_err(|e| {
             format!(
@@ -114,13 +124,12 @@ fn validate_map_schema(avro_schema: &AvroSchema, value_schema: &ColumnType) -> R
 /// Check that Avro schema can be deserialized as SQL `TIMESTAMP` type.
 fn validate_timestamp_schema(avro_schema: &AvroSchema) -> Result<(), String> {
     // TODO: we can support TimestampMillis by transforming them to micros on the fly.
-    if avro_schema == &AvroSchema::TimestampMillis {
-        return Err("Avro timestamp encoding using 'timestamp-millis' type is currently not supported; use 'timestamp-micros instead'".to_string());
-    }
-
-    if avro_schema != &AvroSchema::TimestampMicros && avro_schema != &AvroSchema::Long {
+    if avro_schema != &AvroSchema::TimestampMicros
+        && avro_schema != &AvroSchema::TimestampMillis
+        && avro_schema != &AvroSchema::Long
+    {
         return Err(format!(
-            "invalid Avro schema for a column of type 'TIMESTAMP': expected 'timestamp-micros' or 'long', but found {}",
+            "invalid Avro schema for a column of type 'TIMESTAMP': expected 'timestamp-micros', 'timestamp-millis', or 'long', but found {}",
             schema_json(avro_schema)
         ));
     }
@@ -130,14 +139,12 @@ fn validate_timestamp_schema(avro_schema: &AvroSchema) -> Result<(), String> {
 
 /// Check that Avro schema can be deserialized as SQL `TIME` type.
 fn validate_time_schema(avro_schema: &AvroSchema) -> Result<(), String> {
-    // TODO: we can support TimeMillis by transforming them to micros on the fly.
-    if avro_schema == &AvroSchema::TimeMillis {
-        return Err("Avro time encoding using 'time-millis' type is currently not supported; use 'time-micros instead'".to_string());
-    }
-
-    if avro_schema != &AvroSchema::TimeMicros && avro_schema != &AvroSchema::Long {
+    if avro_schema != &AvroSchema::TimeMillis
+        && avro_schema != &AvroSchema::TimeMicros
+        && avro_schema != &AvroSchema::Long
+    {
         return Err(format!(
-            "invalid Avro schema for a column of type 'TIME': expected 'time-micros' ot 'long', but found {}",
+            "invalid Avro schema for a column of type 'TIME': expected 'time-micros', 'timestamp-millis', or 'long', but found {}",
             schema_json(avro_schema)
         ));
     }
@@ -164,12 +171,7 @@ pub fn validate_field_schema(
     field_schema: &ColumnType,
 ) -> Result<(), String> {
     if field_schema.nullable {
-        let avro_inner = nullable_schema_value_schema(avro_schema).ok_or_else(|| {
-            format!(
-                "nullable column with non-nullable Avro schema {}",
-                schema_json(avro_schema)
-            )
-        })?;
+        let avro_inner = schema_unwrap_optional(avro_schema).0;
         let mut field_schema = field_schema.clone();
         field_schema.nullable = false;
         return validate_field_schema(avro_inner, &field_schema);
@@ -223,7 +225,7 @@ pub fn validate_field_schema(
                 return Err("internal error: relation schema contains a map field, with a missing value type".to_string());
             };
 
-            if key_type.typ != SqlType::Char || key_type.typ != SqlType::Varchar {
+            if key_type.typ != SqlType::Char && key_type.typ != SqlType::Varchar {
                 return Err(format!(
                     "cannot deserialize map with key type '{}': Avro only allows string keys",
                     &key_type.typ
