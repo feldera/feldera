@@ -1197,7 +1197,6 @@ outputs:
             name: kafka_output
             config:
                 topic: test_server_output_topic
-                max_inflight_messages: 0
         format:
             name: csv
 "#;

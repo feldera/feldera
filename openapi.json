@@ -2900,12 +2900,6 @@
             ],
             "nullable": true
           },
-          "max_inflight_messages": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Maximum number of unacknowledged messages buffered by the Kafka\nproducer.\n\nKafka producer buffers outgoing messages until it receives an\nacknowledgement from the broker.  This configuration parameter\nbounds the number of unacknowledged messages.  When the number of\nunacknowledged messages reaches this limit, sending of a new message\nblocks until additional acknowledgements arrive from the broker.\n\nDefaults to 1000.",
-            "minimum": 0
-          },
           "topic": {
             "type": "string",
             "description": "Topic to write to."

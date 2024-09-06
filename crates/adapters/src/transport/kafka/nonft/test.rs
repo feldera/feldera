@@ -40,7 +40,6 @@ outputs:
             config:
                 bootstrap.servers: localhost:11111
                 topic: end_to_end_test_output_topic
-                max_inflight_messages: 0
         format:
             name: csv
 "#;
@@ -103,7 +102,6 @@ outputs:
             name: kafka_output
             config:
                 topic: {output_topic}
-                max_inflight_messages: 0
                 message.max.bytes: "{message_max_bytes}"
         format:
             name: {format}
@@ -359,7 +357,6 @@ outputs:
             name: kafka_output
             config:
                 topic: {output_topic}
-                max_inflight_messages: 0
                 message.max.bytes: "1000000"
                 headers:
                     - key: header1

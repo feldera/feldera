@@ -1,4 +1,4 @@
-use crate::transport::kafka::build_headers;
+use crate::transport::kafka::{build_headers, kafka_send};
 use crate::{
     transport::{kafka::DeferredLogging, Step},
     AsyncErrorCallback, OutputEndpoint,
@@ -16,11 +16,7 @@ use rdkafka::{
     ClientConfig, ClientContext, Message,
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    cmp::max,
-    sync::{Condvar, Mutex, RwLock},
-    time::Duration,
-};
+use std::{cmp::max, sync::RwLock, time::Duration};
 
 use super::{count_partitions_in_topic, CommonConfig, Ctp, DataConsumerContext};
 
@@ -122,7 +118,7 @@ impl KafkaOutputEndpoint {
         // Since we initialize transactions, this has the effect of achieving
         // mutual exclusion with other instances of ourselves and any other
         // producers cooperating with us by using the same `transactional.id`.
-        let context = DataProducerContext::new(config.max_inflight_messages);
+        let context = DataProducerContext::new();
         let kafka_producer =
             ThreadedProducer::from_config_and_context(&common.producer_config, context)?;
         kafka_producer
@@ -235,10 +231,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
                 .partition(self.next_partition as i32)
                 .payload(buffer)
                 .headers(self.headers.clone());
-            self.kafka_producer
-                .send(record)
-                .map_err(|(err, _record)| err)?;
-            self.kafka_producer.context().take_delivery_slot();
+            kafka_send(&self.kafka_producer, &self.topic, record)?;
 
             self.next_partition += 1;
             if self.next_partition >= self.n_partitions {
@@ -309,47 +302,15 @@ struct DataProducerContext {
     /// Callback to notify the controller about delivery failure.
     async_error_callback: RwLock<Option<AsyncErrorCallback>>,
 
-    /// Number of additional messages that may be in flight.  Decreases when we
-    /// send a message, increases when one is delivered.  When this reaches 0,
-    /// we wait for it to increase before sending another message.
-    delivery_slots: Mutex<u32>,
-
-    /// Notifies when `in_flight_limiter` has increased from zero to nonzero.
-    nonzero_condition: Condvar,
-
     deferred_logging: DeferredLogging,
 }
 
 impl DataProducerContext {
-    /// Creates a new producer context that supports keeping up to
-    /// `max_inflight_messages` in flight at once.
-    fn new(max_inflight_messages: u32) -> Self {
+    fn new() -> Self {
         Self {
             async_error_callback: RwLock::new(None),
-            delivery_slots: Mutex::new(max_inflight_messages),
-            nonzero_condition: Condvar::new(),
             deferred_logging: DeferredLogging::new(),
         }
-    }
-
-    /// Waits as long as the number of in-flight messages is at its maximum, and
-    /// then takes one of those slots.
-    fn take_delivery_slot(&self) {
-        let mut delivery_slots = self
-            .nonzero_condition
-            .wait_while(self.delivery_slots.lock().unwrap(), |n| *n == 0)
-            .unwrap();
-        *delivery_slots -= 1;
-    }
-
-    /// Records that an in-flight message has been delivered (or delivery
-    /// failed).
-    fn free_delivery_slot(&self) {
-        let mut delivery_slots = self.delivery_slots.lock().unwrap();
-        if *delivery_slots == 0 {
-            self.nonzero_condition.notify_one();
-        }
-        *delivery_slots += 1;
     }
 }
 
@@ -378,7 +339,6 @@ impl ProducerContext for DataProducerContext {
         delivery_result: &DeliveryResult<'_>,
         _delivery_opaque: Self::DeliveryOpaque,
     ) {
-        self.free_delivery_slot();
         if let Err((error, _message)) = delivery_result {
             if let Some(cb) = self.async_error_callback.read().unwrap().as_ref() {
                 cb(false, AnyError::new(error.clone()));

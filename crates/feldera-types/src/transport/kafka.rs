@@ -191,10 +191,6 @@ pub fn default_redpanda_server() -> String {
     env::var("REDPANDA_BROKERS").unwrap_or_else(|_| "localhost".to_string())
 }
 
-const fn default_max_inflight_messages() -> u32 {
-    1000
-}
-
 const fn default_initialization_timeout_secs() -> u32 {
     60
 }
@@ -298,19 +294,6 @@ pub struct KafkaOutputConfig {
     /// If not specified, the log level will be calculated based on the global
     /// log level of the `log` crate.
     pub log_level: Option<KafkaLogLevel>,
-
-    /// Maximum number of unacknowledged messages buffered by the Kafka
-    /// producer.
-    ///
-    /// Kafka producer buffers outgoing messages until it receives an
-    /// acknowledgement from the broker.  This configuration parameter
-    /// bounds the number of unacknowledged messages.  When the number of
-    /// unacknowledged messages reaches this limit, sending of a new message
-    /// blocks until additional acknowledgements arrive from the broker.
-    ///
-    /// Defaults to 1000.
-    #[serde(default = "default_max_inflight_messages")]
-    pub max_inflight_messages: u32,
 
     /// Maximum timeout in seconds to wait for the endpoint to connect to
     /// a Kafka broker.

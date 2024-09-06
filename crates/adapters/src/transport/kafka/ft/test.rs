@@ -103,7 +103,6 @@ outputs:
             config:
                 bootstrap.servers: localhost:11111
                 topic: ft_end_to_end_test_output_topic
-                max_inflight_messages: 0
                 fault_tolerance: {}
         format:
             name: csv
@@ -171,7 +170,6 @@ outputs:
             name: kafka_output
             config:
                 topic: {output_topic}
-                max_inflight_messages: 0
                 message.max.bytes: "{message_max_bytes}"
                 fault_tolerance: {{}}
         format:
