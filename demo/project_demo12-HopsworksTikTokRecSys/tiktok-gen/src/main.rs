@@ -7,9 +7,7 @@ use rdkafka::{
     producer::ThreadedProducer,
     ClientConfig,
 };
-use tiktok_gen::{
-    buffered_topic::BufferedTopic, interactions::Interaction, users::User, videos::Video,
-};
+use tiktok_gen::{buffered_topic::BufferedTopic, interactions::InteractionGenerator};
 
 #[derive(Debug, Parser)]
 struct GeneratorOptions {
@@ -85,13 +83,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let start = std::time::Instant::now();
 
-    let users = User::generate(options.users, options.historical);
-    println!("Sample users:\n{:#?}", users.get(0..10));
+    let interactions = InteractionGenerator::default()
+        .max_users(options.users)
+        .max_videos(options.videos)
+        .max_interactions(options.interactions)
+        .start_date(if options.historical {
+            chrono::Utc::now() - chrono::TimeDelta::days(630)
+        } else {
+            chrono::Utc::now()
+        })
+        .generate();
 
-    let videos = Video::generate(options.videos, options.historical);
-    println!("Sample videos:\n{:#?}", videos.get(0..10));
-
-    let interactions = Interaction::generate(options.interactions, users, videos);
     let took = start.elapsed();
 
     println!("Sample interactions:\n{:#?}", interactions.get(0..10));
