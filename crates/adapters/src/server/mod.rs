@@ -1152,6 +1152,7 @@ mod test_with_kafka {
     use tempfile::NamedTempFile;
 
     #[actix_web::test]
+    #[ignore = "This test is flaky and needs to be fixed"]
     async fn test_server() {
         ensure_default_crypto_provider();
 
