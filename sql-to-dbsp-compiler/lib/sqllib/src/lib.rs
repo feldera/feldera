@@ -10,6 +10,7 @@ pub mod operators;
 pub mod source;
 pub mod string;
 pub mod timestamp;
+mod variant;
 
 use casts::cast_to_decimal_decimal;
 pub use geopoint::GeoPoint;
