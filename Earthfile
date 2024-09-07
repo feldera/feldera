@@ -566,7 +566,7 @@ ci-tests:
     # BUILD +test-s3
 
 nightly-tests:
-    #BUILD +test-python
+    BUILD +test-python
     BUILD +test-debezium-postgres
     BUILD +test-debezium-jdbc-sink
     BUILD +test-debezium-mysql
