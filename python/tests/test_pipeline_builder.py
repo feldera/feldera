@@ -5,8 +5,8 @@ import pandas as pd
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.admin import KafkaAdminClient, NewTopic
 
-from build.lib.feldera.enums import PipelineStatus
 from feldera import PipelineBuilder, Pipeline
+from feldera.enums import PipelineStatus
 from tests import TEST_CLIENT
 
 
