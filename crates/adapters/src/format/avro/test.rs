@@ -230,7 +230,7 @@ where
     let config = AvroParserConfig {
         update_format: AvroUpdateFormat::Raw,
         schema: Some(avro_schema_str.to_string()),
-        no_schema_id: false,
+        skip_schema_id: false,
         registry_config: Default::default(),
     };
 
@@ -279,7 +279,7 @@ where
     let config = AvroParserConfig {
         update_format: AvroUpdateFormat::Debezium,
         schema: Some(schema_json(&debezium_schema)),
-        no_schema_id: false,
+        skip_schema_id: false,
         registry_config: Default::default(),
     };
 
@@ -414,7 +414,7 @@ fn test_extra_columns() {
         config: AvroParserConfig {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(schema_str.to_string()),
-            no_schema_id: false,
+            skip_schema_id: false,
             registry_config: Default::default(),
         },
         input_batches,
@@ -480,7 +480,7 @@ fn test_non_null_to_nullable() {
         config: AvroParserConfig {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(schema_str.to_string()),
-            no_schema_id: false,
+            skip_schema_id: false,
             registry_config: Default::default(),
         },
         input_batches,
@@ -542,7 +542,7 @@ fn test_ms_time() {
         config: AvroParserConfig {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(schema_str.to_string()),
-            no_schema_id: false,
+            skip_schema_id: false,
             registry_config: Default::default(),
         },
         input_batches,

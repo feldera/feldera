@@ -123,7 +123,6 @@ fn validate_map_schema(avro_schema: &AvroSchema, value_schema: &ColumnType) -> R
 
 /// Check that Avro schema can be deserialized as SQL `TIMESTAMP` type.
 fn validate_timestamp_schema(avro_schema: &AvroSchema) -> Result<(), String> {
-    // TODO: we can support TimestampMillis by transforming them to micros on the fly.
     if avro_schema != &AvroSchema::TimestampMicros
         && avro_schema != &AvroSchema::TimestampMillis
         && avro_schema != &AvroSchema::Long

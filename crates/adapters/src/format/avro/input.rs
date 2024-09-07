@@ -129,14 +129,21 @@ impl AvroParser {
         if config.schema.is_none() && sr_settings.is_none() {
             return Err(ControllerError::invalid_parser_configuration(
                 endpoint_name,
-                "Avro connector configuration missing schema information; please specify either a 'schema' or a schema registry",
+                "Avro connector configuration missing schema information; please specify either a static schema using the 'schema' property or a schema registry using the 'registry_urls' property",
             ));
         }
 
-        if config.schema.is_none() && config.no_schema_id {
+        if config.schema.is_some() && sr_settings.is_some() {
             return Err(ControllerError::invalid_parser_configuration(
                 endpoint_name,
-                "Avro connector, configured with 'no_schema_id' flag, does not specify an Avro schema; please provide the schema definition in the 'schema' field",
+                "'schema' and 'registry_urls' properties are mutually exclusive; please specify either a static schema using the 'schema' property or a schema registry using the 'registry_urls' property, but not both",
+            ));
+        }
+
+        if config.schema.is_none() && config.skip_schema_id {
+            return Err(ControllerError::invalid_parser_configuration(
+                endpoint_name,
+                "Avro connector, configured with 'skip_schema_id' flag, does not specify an Avro schema; please provide the schema definition in the 'schema' field",
             ));
         }
 
@@ -265,7 +272,7 @@ impl AvroParser {
     fn input(&mut self, data: &[u8]) -> Result<(), ParseError> {
         self.last_event_number += 1;
 
-        let mut record = if !self.config.no_schema_id {
+        let mut record = if !self.config.skip_schema_id {
             if data.len() < 5 {
                 return Err(ParseError::bin_event_error(
                         "Avro record is less than 5 bytes long (valid Avro records must include a 5-byte header)".to_string(),
