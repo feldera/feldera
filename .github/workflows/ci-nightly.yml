@@ -1,11 +1,7 @@
 name: Nightly Tests
 
 on:
-  schedule:
-    - cron: '5 4 * * *'
-  release:
-    types: [published]
-  workflow_dispatch:
+  merge_group:
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,25 +12,11 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/dbspmanager
 
 jobs:
-  pre_job:
-    runs-on: ubuntu-latest
-    outputs:
-      should_skip: ${{ steps.skip_check.outputs.should_skip }}
-    steps:
-      - id: skip_check
-        uses: fkirc/skip-duplicate-actions@master
-        with:
-          concurrent_skipping: "same_content_newer"
-          cancel_others: "true"
-          skip_after_successful_duplicate: "true"
-          do_not_skip: '["workflow_dispatch", "schedule"]'
   build:
     permissions:
       contents: read
       packages: write
     runs-on: [ self-hosted, skylake40 ]
-    needs: [ pre_job ]
-    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -99,12 +81,3 @@ jobs:
 
       - name: Run CI
         run: earthly -P --ci +nightly-tests
-
-      - uses: actions/upload-artifact@v3
-        if: always()
-        with:
-          name: playwright-artifacts
-          path: playwright-artifacts/
-          retention-days: 10
-      - name: Remove test artifacts from the CI machine
-        run: rm -f playwright-artifacts/*

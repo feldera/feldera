@@ -15,6 +15,7 @@ on:
       - 'CODE_OF_CONDUCT.md'
       - 'CONTRIBUTING.md'
       - './vscode/**'
+  merge_group:
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,7 +34,6 @@ jobs:
       - id: skip_check
         uses: fkirc/skip-duplicate-actions@master
         with:
-          concurrent_skipping: "same_content_newer"
           cancel_others: "true"
           skip_after_successful_duplicate: "true"
           do_not_skip: '["workflow_dispatch", "schedule"]'

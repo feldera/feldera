@@ -1,10 +1,7 @@
 name: Benchmarks
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  merge_group:
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,11 +26,6 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           version: 0.8.15
-
-      - name: MUIX license
-        run: echo "NEXT_PUBLIC_MUIX_PRO_KEY=${muix_license}" > web-console/.env && cat web-console/.env
-        env:
-          muix_license: ${{ secrets.muix_license }}
 
       - name: Earthly version
         run: earthly --version
