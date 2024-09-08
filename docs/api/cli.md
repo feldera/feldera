@@ -31,15 +31,40 @@ cargo install --path .
 
 ### Optional: Shell completion
 
-Once the `fda` binary is installed, you can enable shell command completion for `fda` by generating a completion script
-for your shell and copying it to the appropriate location.
+Once the `fda` binary is installed, you can enable shell command completion for `fda`
+by adding the following line to your shell init script. We recommend generating the
+shell code anew on shell startup so that it is “self-correcting” on shell launch,
+rather than writing the generated completions to a file.
+
+* Bash
 
 ```commandline
-fda shell-completion --help
-fda shell-completion
+echo "source <(COMPLETE=bash fda)" >> ~/.bashrc
 ```
 
-Currently, Bash, Elvish, Fish, Powershell, and Zsh are supported.
+* Elvish
+
+```commandline
+echo "eval (COMPLETE=elvish fda)" >> ~/.elvish/rc.elv
+```
+
+* Fish
+
+```commandline
+echo "source (COMPLETE=fish fda | psub)" >> ~/.config/fish/config.fish
+```
+
+* Powershell
+
+```commandline
+echo "COMPLETE=powershell fda | Invoke-Expression" >> $PROFILE
+```
+
+* Zsh
+
+```commandline
+echo "source <(COMPLETE=zsh fda)" >> ~/.zshrc
+```
 
 ## Connecting & Authentication
 
@@ -75,31 +100,31 @@ Create a new pipeline `p1` from a `program.sql` file:
 ```commandline
 echo "CREATE TABLE example ( id INT NOT NULL PRIMARY KEY );
 CREATE VIEW example_count AS ( SELECT COUNT(*) AS num_rows FROM example );" > program.sql
-fda pipeline p1 create program.sql
+fda create p1 program.sql
 ```
 
 Retrieve the program for `p1` and create a new pipeline `p2` from it:
 ```commandline
-fda pipeline p1 program | fda pipeline p2 create -s -
+fda program p1 | fda create p2 -s -
 ```
 
 Enable storage for `p1`:
 ```commandline
-fda pipeline p1 set-config storage true
+fda set-config p1 storage true
 ```
 
 Run the pipeline `p1`:
 ```commandline
-fda pipeline p1 start
+fda start p1
 ```
 
 Retrieve the stats for `p1`:
 ```commandline
-fda pipeline p1 stats
+fda stats p1
 ```
 
 Shutdown and delete the pipeline `p1`:
 ```commandline
-fda pipeline p1 shutdown
-fda pipeline p1 delete
+fda shutdown p1
+fda delete p1
 ```

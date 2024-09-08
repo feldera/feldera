@@ -1,5 +1,37 @@
+use clap::{Parser, Subcommand, ValueEnum, ValueHint};
+use clap_complete::engine::{ArgValueCompleter, CompletionCandidate};
+
 use crate::cd::types::{CompilationProfile, ProgramConfig};
-use clap::{Parser, Subcommand, ValueEnum};
+use crate::make_client;
+
+/// Autocompletion for pipeline names by trying to fetch them from the server.
+fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+    let mut completions = vec![];
+    // We parse FELDERA_HOST and FELDERA_API_KEY from the environment
+    // using the `try_parse_from` method.
+    let cli = Cli::try_parse_from(["fda", "pipelines"]);
+    if let Ok(cli) = cli {
+        let client = make_client(cli.host, cli.auth, cli.timeout).unwrap();
+
+        let r = futures::executor::block_on(async {
+            client
+                .list_pipelines()
+                .send()
+                .await
+                .map(|r| r.into_inner())
+                .unwrap_or_else(|_| vec![])
+        });
+
+        let current = current.to_string_lossy();
+        for pipeline in r {
+            if pipeline.name.starts_with(current.as_ref()) {
+                completions.push(CompletionCandidate::new(pipeline.name));
+            }
+        }
+    }
+
+    completions
+}
 
 #[derive(Parser)]
 #[command(name = "fda")]
@@ -11,14 +43,14 @@ pub struct Cli {
     #[arg(long, default_value = "text", env = "FELDERA_OUTPUT_FORMAT")]
     pub format: OutputFormat,
     /// The Feldera host to connect to.
-    #[arg(long, env = "FELDERA_HOST", default_value_t = String::from("https://try.feldera.com"))]
+    #[arg(long, env = "FELDERA_HOST", default_value_t = String::from("https://try.feldera.com"), value_hint = ValueHint::Url)]
     pub host: String,
     /// Which API key to use for authentication.
     ///
     /// The provided string should start with "apikey:" followed by the random characters.
     ///
     /// If not specified, a request without authentication will be used.
-    #[arg(long, env = "FELDERA_API_KEY")]
+    #[arg(long, env = "FELDERA_API_KEY", hide_env_values = true)]
     pub auth: Option<String>,
     /// The client timeout for requests in seconds.
     ///
@@ -38,44 +70,18 @@ pub enum OutputFormat {
 #[derive(Subcommand)]
 pub enum Commands {
     /// List the available pipelines.
+    #[command(next_help_heading = "Pipeline Commands")]
     Pipelines,
     /// Interact with a pipeline.
     ///
     /// If no sub-command is specified retrieves all configuration data for the pipeline.
-    Pipeline {
-        /// The name of the pipeline.
-        name: String,
-        #[command(subcommand)]
-        action: Option<PipelineAction>,
-    },
-    /// Manage API keys
+    #[command(flatten)]
+    Pipeline(PipelineAction),
+    /// Manage API keys.
     Apikey {
         #[command(subcommand)]
         action: ApiKeyActions,
     },
-    /// Generate a completion script for your shell.
-    ///
-    /// The script is written to stdout.
-    ///
-    /// EXAMPLES:
-    ///
-    /// bash:
-    /// $ fda shell-completion > fda.bash
-    /// $ sudo mv fda.bash /usr/share/bash-completion/completions/fda.bash
-    ///
-    /// zsh:
-    /// $ fda shell-completion > _fda
-    /// $ sudo mv fda.zsh /usr/local/share/zsh/site-functions/_fda
-    ///
-    /// or with oh-my-zsh:
-    /// $ mkdir -p ~/.oh-my-zsh/completions
-    /// $ fda shell-completion > ~/.oh-my-zsh/completions/_fda
-    ///
-    /// powershell:
-    /// $ fda shell-completion > fda.ps1
-    /// Add contents to ~\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
-    #[command(verbatim_doc_comment)]
-    ShellCompletion,
 }
 
 #[derive(Subcommand)]
@@ -148,9 +154,13 @@ impl Into<ProgramConfig> for Profile {
 pub enum PipelineAction {
     /// Create a new pipeline.
     Create {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
         /// A path to a file containing the SQL code.
         ///
         /// See the `stdin` flag for reading from stdin instead.
+        #[arg(value_hint = ValueHint::FilePath)]
         program_path: String,
         /// The compilation profile to use.
         #[arg(default_value = "optimized")]
@@ -159,55 +169,87 @@ pub enum PipelineAction {
         ///
         /// EXAMPLES:
         ///
-        /// * cat program.sql | fda pipeline p1 create -s -
-        /// * echo "SELECT 1" | fda pipeline p1 create -s - dev
-        /// * fda pipeline p2 program | fda pipeline p1 create -s -
+        /// * cat program.sql | fda create p1 -s -
+        /// * echo "SELECT 1" | fda create p2 -s - dev
+        /// * fda program p2 | fda create p3 -s -
         #[arg(verbatim_doc_comment, short = 's', long, default_value_t = false)]
         stdin: bool,
     },
-    /// Start the pipeline.
+    /// Start a pipeline.
     ///
     /// If the pipeline is compiling it will wait for the compilation to finish.
     Start {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
         /// Force the recompilation of the pipeline before starting.
         ///
         /// This is useful for dev purposes in case the Feldera source-code has changed.
         #[arg(long, short = 'r', default_value_t = false)]
         recompile: bool,
     },
-    /// Pause the pipeline.
-    Pause,
-    /// Shutdown the pipeline, then restart it.
+    /// Pause a pipeline.
+    Pause {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
+    /// Shutdown a pipeline, then restart it.
     ///
-    /// This is a shortcut for calling `fda pipeline p1 shutdown` followed by `fda pipeline p1 start`.
+    /// This is a shortcut for calling `fda shutdown p1 && fda start p1`.
     Restart {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
         /// Force the recompilation of the pipeline before starting.
         ///
         /// This is useful for dev purposes in case the Feldera source-code has changed.
         #[arg(long, short = 'r', default_value_t = false)]
         recompile: bool,
     },
-    /// Shutdown the pipeline.
+    /// Shutdown a pipeline.
     #[clap(aliases = &["stop"])]
-    Shutdown,
+    Shutdown {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
     /// Retrieve the deployment status of a pipeline.
-    Status,
-    /// Get the runtime stats of a pipeline.
+    Status {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
+    /// Retrieve the runtime statistics of a pipeline.
     #[clap(aliases = &["statistics"])]
-    Stats,
+    Stats {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
     /// Interact with the program of the pipeline.
     ///
     /// If no sub-command is specified retrieves the program.
     Program {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
         #[command(subcommand)]
         action: Option<ProgramAction>,
     },
-    /// Retrieve the runtime config of a pipeline.
+    /// Retrieve the runtime configuration of a pipeline.
     #[clap(aliases = &["cfg"])]
-    Config,
-    /// Update the runtime config of a pipeline.
+    Config {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
+    /// Update the runtime configuration of a pipeline.
     #[clap(aliases = &["set-cfg"])]
     SetConfig {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
         /// The key of the configuration to update.
         key: RuntimeConfigKey,
         /// The new value for the configuration.
@@ -215,15 +257,26 @@ pub enum PipelineAction {
     },
     /// Delete a pipeline.
     #[clap(aliases = &["del"])]
-    Delete,
-    /// Start/Stop an endpoint of the pipeline.
+    Delete {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
+    /// Control an endpoint of a pipeline.
     Endpoint {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// The name of the pipeline endpoint.
         endpoint_name: String,
         #[command(subcommand)]
         action: EndpointAction,
     },
-    /// Enter the ad-hoc SQL shell of the pipeline.
+    /// Enter the ad-hoc SQL shell for a pipeline.
     Shell {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
         /// Start the pipeline before entering the shell.
         #[arg(long, short = 's', default_value_t = false)]
         start: bool,
@@ -237,15 +290,16 @@ pub enum ProgramAction {
         /// A path to a file containing the SQL code.
         ///
         /// See the `stdin` flag for reading from stdin instead.
+        #[arg(value_hint = ValueHint::FilePath)]
         program_path: String,
 
         /// Read the program code from stdin.
         ///
         /// EXAMPLES:
         ///
-        /// * cat program.sql | fda pipeline p1 program set -s -
-        /// * echo "SELECT 1" | fda pipeline p1 program set -s -
-        /// * fda pipeline p2 program | fda pipeline p1 program set -s -
+        /// * cat program.sql | fda program p1 set -s -
+        /// * echo "SELECT 1" | fda program p1 set -s -
+        /// * fda program p2 | fda program p1 set -s -
         #[arg(verbatim_doc_comment, short = 's', long, default_value_t = false)]
         stdin: bool,
     },

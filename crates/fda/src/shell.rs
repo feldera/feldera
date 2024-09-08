@@ -1,5 +1,7 @@
 use crate::cd::Client;
-use crate::UGPRADE_NOTICE;
+use crate::cli::{Cli, Commands};
+use crate::{pipeline, UGPRADE_NOTICE};
+use clap::Parser;
 use directories::ProjectDirs;
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
@@ -13,8 +15,16 @@ use tokio_util::sync::CancellationToken;
 const NEWLINE: &str = if cfg!(windows) { "\r\n" } else { "\n" };
 
 const HELP_TEXT: &str = r#"You are using fda, the command-line interface to Feldera.
-Type:  \h for help with SQL commands
-       \? for help with fda shell commands
+Type:  \h for help with fda shell commands
+       \? for help with SQL commands
+
+       The following fda shell commands are available in the shell
+       to interact with the current pipeline:
+
+       - start
+       - pause
+       - restart [-r, --recompile]
+       - shutdown / stop
 "#;
 
 const SQL_HELP_TEXT: &str = r#"Send SQL commands to the pipeline.
@@ -28,7 +38,7 @@ materialized view.
 "#;
 
 /// Start an interactive shell for a pipeline.
-pub async fn shell(name: &str, client: Client) {
+pub async fn shell(name: String, client: Client) {
     println!(
         "fda shell ({}). Type \"help\" for help. Use Ctrl-D (i.e. EOF) to exit.",
         env!("CARGO_PKG_VERSION")
@@ -69,6 +79,27 @@ pub async fn shell(name: &str, client: Client) {
                     "\\?" => {
                         println!("{}", SQL_HELP_TEXT);
                         continue;
+                    }
+                    line if line.starts_with("start")
+                        || line.starts_with("pause")
+                        || line.starts_with("stop")
+                        || line.starts_with("restart")
+                        || line.starts_with("shutdown") =>
+                    {
+                        let mut args = trimmed_line.split(' ').collect::<Vec<&str>>();
+                        args.insert(0, "fda");
+                        args.push(name.as_str());
+
+                        match Cli::try_parse_from(&args) {
+                            Ok(cli) => {
+                                if let Commands::Pipeline(pa) = cli.command {
+                                    Box::pin(pipeline(pa, client.clone())).await;
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("ERROR: {}", e);
+                            }
+                        }
                     }
                     _ => {
                         if trimmed_line.is_empty() {

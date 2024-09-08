@@ -2576,9 +2576,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.16"
+version = "4.5.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed6719fffa43d0d87e5fd8caeab59be1554fb028cd30edc88fc4369b17971019"
+checksum = "3e5a21b8495e732f1b3c364c9949b201ca7bae518c502c80256c96ad79eaf6ac"
 dependencies = [
  "clap_builder",
  "clap_derive 4.5.13",
@@ -2586,9 +2586,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.15"
+version = "4.5.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "216aec2b177652e3846684cbfe25c9964d18ec45234f0f5da5157b207ed1aab6"
+checksum = "8cf2dd12af7a047ad9d6da2b6b249759a22a7abc0f474c1dae1777afa4b21a73"
 dependencies = [
  "anstream",
  "anstyle",
@@ -2599,11 +2599,14 @@ dependencies = [
 
 [[package]]
 name = "clap_complete"
-version = "4.5.24"
+version = "4.5.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d7db6eca8c205649e8d3ccd05aa5042b1800a784e56bc7c43524fde8abbfa9b"
+checksum = "205d5ef6d485fa47606b98b0ddc4ead26eb850aaa86abfb562a94fb3280ecba0"
 dependencies = [
- "clap 4.5.16",
+ "clap 4.5.17",
+ "clap_lex 0.7.2",
+ "is_executable",
+ "shlex",
 ]
 
 [[package]]
@@ -2838,7 +2841,7 @@ dependencies = [
  "anes",
  "cast",
  "ciborium",
- "clap 4.5.16",
+ "clap 4.5.17",
  "criterion-plot",
  "is-terminal",
  "itertools 0.10.5",
@@ -3532,7 +3535,7 @@ dependencies = [
  "arc-swap",
  "binrw",
  "chrono",
- "clap 4.5.16",
+ "clap 4.5.17",
  "crc32c",
  "criterion",
  "crossbeam",
@@ -3622,7 +3625,7 @@ dependencies = [
  "bytestring",
  "chrono",
  "circular-queue",
- "clap 4.5.16",
+ "clap 4.5.17",
  "colored",
  "crossbeam",
  "csv",
@@ -4394,11 +4397,12 @@ name = "fda"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "clap 4.5.16",
+ "clap 4.5.17",
  "clap_complete",
  "directories",
  "env_logger 0.11.5",
  "feldera-types",
+ "futures",
  "futures-util",
  "log",
  "prettyplease",
@@ -5535,6 +5539,15 @@ dependencies = [
  "hermit-abi 0.4.0",
  "libc",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "is_executable"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa9acdc6d67b75e626ad644734e8bc6df893d9cd2a834129065d3dd6158ea9c8"
+dependencies = [
+ "winapi",
 ]
 
 [[package]]
@@ -6959,7 +6972,7 @@ dependencies = [
  "cached 0.43.0",
  "change-detection",
  "chrono",
- "clap 4.5.16",
+ "clap 4.5.17",
  "colored",
  "deadpool-postgres",
  "dirs 5.0.1",
@@ -9766,9 +9779,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.11"
+version = "0.7.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cf6b47b3771c49ac75ad09a6162f53ad4b8088b76ac60e8ec1455b31a189fe1"
+checksum = "61e7c3654c13bcd040d4a03abee2c75b1d14a37b423cf5a813ceae1cc903ec6a"
 dependencies = [
  "bytes",
  "futures-core",
