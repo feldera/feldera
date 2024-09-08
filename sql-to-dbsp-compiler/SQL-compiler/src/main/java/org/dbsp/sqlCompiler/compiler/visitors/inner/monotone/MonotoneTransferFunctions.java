@@ -369,7 +369,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 expression, new MonotoneType(expression.getType()), expression);
         this.constantExpressions.add(expression);
         if (expression.is(IsNumericLiteral.class)) {
-            if (!expression.to(DBSPLiteral.class).isNull &&
+            if (!expression.to(DBSPLiteral.class).isNull() &&
                     expression.to(IsNumericLiteral.class).gt0())
                 this.positiveExpressions.add(expression);
         }

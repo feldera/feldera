@@ -133,6 +133,13 @@ public class RustSqlRuntimeLibrary {
         this.otherFunctions.put("concat", DBSPOpcode.CONCAT);
         this.otherFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
         this.otherFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
+        // These are defined for all types
+        this.otherFunctions.put("eq", DBSPOpcode.EQ);
+        this.otherFunctions.put("neq", DBSPOpcode.NEQ);
+        this.otherFunctions.put("lt", DBSPOpcode.LT);
+        this.otherFunctions.put("gt", DBSPOpcode.GT);
+        this.otherFunctions.put("lte", DBSPOpcode.LTE);
+        this.otherFunctions.put("gte", DBSPOpcode.GTE);
     }
 
     public static class FunctionDescription {
@@ -201,7 +208,7 @@ public class RustSqlRuntimeLibrary {
             map = this.arithmeticFunctions;
         } else if (ltype.is(DBSPTypeString.class)) {
             map = this.stringFunctions;
-        } else if (ltype.is(DBSPTypeBinary.class)) {
+        } else if (ltype.is(DBSPTypeBinary.class) || ltype.is(DBSPTypeVariant.class)) {
             map = this.otherFunctions;
         }
         if (rtype != null && rtype.is(IsDateType.class)) {

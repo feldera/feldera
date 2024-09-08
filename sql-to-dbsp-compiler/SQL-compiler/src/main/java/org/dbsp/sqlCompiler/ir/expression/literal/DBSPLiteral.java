@@ -43,13 +43,17 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 public abstract class DBSPLiteral extends DBSPExpression {
-    public final boolean isNull;
+    protected final boolean isNull;
 
     protected DBSPLiteral(CalciteObject node, DBSPType type, boolean isNull) {
         super(node, type);
         this.isNull = isNull;
         if (this.isNull && !type.mayBeNull && !type.is(DBSPTypeAny.class))
             throw new UnsupportedException("Type " + type + " cannot represent null", node);
+    }
+
+    public boolean isNull() {
+        return this.isNull;
     }
 
     /** Represents a "null" value of the specified type. */

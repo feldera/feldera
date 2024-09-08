@@ -155,6 +155,7 @@ public class RustFileWriter {
                         string::*,
                         operators::*,
                         aggregates::*,
+                        variant::*,
                     };
                     use sltsqlvalue::*;
                     #[cfg(test)]

@@ -1401,7 +1401,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     // The expression compiler does not actually have type information
                     // so the nulls produced will have the wrong type.
                     DBSPLiteral lit = expr.to(DBSPLiteral.class);
-                    if (lit.isNull)
+                    if (lit.isNull())
                         expr = DBSPLiteral.none(resultFieldType);
                 }
                 if (!expr.getType().sameType(resultFieldType)) {
