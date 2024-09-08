@@ -12,7 +12,11 @@ env:
   FORCE_COLOR: 1
 
 jobs:
-  benchmark:
+  # This needs to be called `build` like the ci-nightly and ci jobs because we want it to abort the PR if it fails
+  # while in the merge queue and having it named the same as the checks in pre-merge is the only way to do that :/.
+  #
+  # https://stackoverflow.com/questions/76655935/when-does-a-github-workflow-trigger-for-merge-group-and-is-it-restricted-by-bran
+  build:
     permissions:
       contents: read
       issues: write

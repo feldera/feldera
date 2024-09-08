@@ -25,6 +25,10 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/dbspmanager
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   pre_job:
     runs-on: ubuntu-latest
@@ -34,13 +38,11 @@ jobs:
       - id: skip_check
         uses: fkirc/skip-duplicate-actions@master
         with:
+          concurrent_skipping: "same_content_newer"
           cancel_others: "true"
           skip_after_successful_duplicate: "true"
           do_not_skip: '["workflow_dispatch", "schedule"]'
   build:
-    permissions:
-      contents: read
-      packages: write
     runs-on: [ self-hosted, skylake40 ]
     needs: [ pre_job ]
     if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
