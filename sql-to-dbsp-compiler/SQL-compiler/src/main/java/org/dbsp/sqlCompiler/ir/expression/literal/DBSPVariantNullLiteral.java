@@ -1,0 +1,66 @@
+package org.dbsp.sqlCompiler.ir.expression.literal;
+
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
+import org.dbsp.util.IIndentStream;
+
+import javax.annotation.Nullable;
+
+/** The Variant.null value, the only value of native type VARIANT */
+public class DBSPVariantNullLiteral extends DBSPLiteral {
+    private DBSPVariantNullLiteral() {
+        super(CalciteObject.EMPTY, new DBSPTypeVariant(CalciteObject.EMPTY, false), false);
+        assert type.is(DBSPTypeVariant.class);
+    }
+
+    public static final DBSPVariantNullLiteral INSTANCE = new DBSPVariantNullLiteral();
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        VisitDecision decision = visitor.preorder(this);
+        if (decision.stop()) return;
+        visitor.push(this);
+        visitor.pop(this);
+        visitor.postorder(this);
+    }
+
+    @Override
+    public boolean sameValue(@Nullable DBSPLiteral o) {
+        if (this == o) return true;
+        return o != null && getClass() == o.getClass();
+    }
+
+    @Override
+    public DBSPLiteral getWithNullable(boolean mayBeNull) {
+        throw new UnimplementedException("getWithNullable");
+    }
+
+    @Override
+    public String toSqlString() {
+        return "null";
+    }
+
+    @Override
+    public DBSPExpression deepCopy() {
+        return this;
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        return builder.append("Variant::VariantNull");
+    }
+
+    /** The value representing the VARIANT null  */
+    public static DBSPLiteral variantNull() {
+        return DBSPVariantNullLiteral.INSTANCE;
+    }
+
+    /** The variant object representing the null literal */
+    public static DBSPLiteral nullVariant() {
+        return DBSPVariantNullLiteral.INSTANCE;
+    }
+}

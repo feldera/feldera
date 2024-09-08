@@ -65,6 +65,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPKeywordLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
@@ -77,6 +78,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComment;
@@ -420,6 +423,32 @@ public abstract class InnerRewriteVisitor
         DBSPExpression result = new DBSPRealLiteral(
                 expression.getNode(), type, expression.value, expression.raw);
         this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPVariantLiteral expression) {
+        this.push(expression);
+        DBSPExpression value = null;
+        if (expression.value != null)
+            value = this.transform(expression.value);
+        this.pop(expression);
+        DBSPExpression result;
+        if (expression.isSqlNull) {
+            result = DBSPVariantLiteral.sqlNull(expression.mayBeNull());
+        } else {
+            result = new DBSPVariantLiteral(
+                    value != null ? value.to(DBSPLiteral.class) : null, expression.type.mayBeNull);
+        }
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPVariantNullLiteral expression) {
+        this.push(expression);
+        this.pop(expression);
+        this.map(expression, expression);
         return VisitDecision.STOP;
     }
 

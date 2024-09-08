@@ -56,7 +56,7 @@ public class ExpandWriteLog extends InnerRewriteVisitor {
                 if (!format.is(DBSPStringLiteral.class))
                     throw new UnsupportedException("Expected a string literal for the format", format.getNode());
                 DBSPStringLiteral formatString = format.to(DBSPStringLiteral.class);
-                if (formatString.isNull) {
+                if (formatString.isNull()) {
                     result = DBSPLiteral.none(expression.type);
                 } else {
                     // Split the pattern by preserving the empty sequences

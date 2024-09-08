@@ -36,6 +36,7 @@ public class RegressionTests extends SqlIoTest {
                 FROM TAB2 AS COR0
                 WHERE NOT - COR0.COL2 * + CAST(+ COR0.COL0 AS REAL) >= + (- COR0.COL2)
                 """;
+        this.compileRustTestCase(sql);
     }
 
     @Test

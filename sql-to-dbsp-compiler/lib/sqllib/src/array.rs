@@ -1,6 +1,6 @@
 // Array operations
 
-use crate::{some_function2, some_generic_function2, Weight};
+use crate::{some_function2, some_generic_function2, Variant, Weight};
 use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
 use std::ops::Index;
@@ -612,4 +612,39 @@ where
         None => None,
         Some(value) => map_index_N_(value, map_index),
     }
+}
+
+/////////////// Variant index
+
+// Return type is always Option<Variant>, but result is never None, always a Variant
+pub fn indexV__<T>(value: Variant, index: T) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    Some(value.index(index.into()))
+}
+
+pub fn indexV_N<T>(value: Variant, index: Option<T>) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    let index = index?;
+    indexV__(value, index)
+}
+
+pub fn indexVN_<T>(value: Option<Variant>, index: T) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    let value = value?;
+    indexV__(value, index)
+}
+
+pub fn indexVNN<T>(value: Option<Variant>, index: Option<T>) -> Option<Variant>
+where
+    T: Into<Variant>,
+{
+    let value = value?;
+    let index = index?;
+    indexV__(value, index)
 }

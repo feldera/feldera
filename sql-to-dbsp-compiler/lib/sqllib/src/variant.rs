@@ -120,69 +120,120 @@ impl<D: Fallible> rkyv::Deserialize<Box<dyn StructVariant>, D> for Box<dyn Struc
 pub enum Variant {
     #[default]
     SqlNull,
-    Boolean(Option<bool>),
-    TinyInt(Option<i8>),
-    SmallInt(Option<i16>),
-    Int(Option<i32>),
-    BigInt(Option<i64>),
-    Real(Option<F32>),
-    Double(Option<F64>),
-    Decimal(Option<Decimal>),
-    String(Option<String>),
-    Date(Option<Date>),
-    Time(Option<Time>),
-    Timestamp(Option<Timestamp>),
-    ShortInterval(Option<ShortInterval>),
-    LongInterval(Option<LongInterval>),
-    Geometry(Option<GeoPoint>),
+    VariantNull,
+    Boolean(bool),
+    TinyInt(i8),
+    SmallInt(i16),
+    Int(i32),
+    BigInt(i64),
+    Real(F32),
+    Double(F64),
+    Decimal(Decimal),
+    String(String),
+    Date(Date),
+    Time(Time),
+    Timestamp(Timestamp),
+    ShortInterval(ShortInterval),
+    LongInterval(LongInterval),
+    Geometry(GeoPoint),
     #[size_of(skip, skip_bounds)]
-    Array(#[omit_bounds] Option<Vec<Variant>>),
+    Array(#[omit_bounds] Vec<Variant>),
     #[size_of(skip, skip_bounds)]
-    Map(#[omit_bounds] Option<BTreeMap<String, Variant>>),
+    Map(#[omit_bounds] BTreeMap<Variant, Variant>),
+    // Special case for string maps
+    // StringMap(#[omit_bounds] BTreeMap<String, Variant>),
     //Struct(Option<Box<dyn StructVariant>>),
 }
 
-// A macro for TryInto<Option<T>> for Variant
-macro_rules! try_into_option {
-    ($variant:ident, $type:ty) => {
-        impl TryInto<Option<$type>> for Variant {
-            type Error = &'static str;
+impl Variant {
+    fn getTypeString(&self) -> String {
+        match self {
+            Variant::SqlNull => "NULL",
+            Variant::VariantNull => "VARIANT",
+            Variant::Boolean(_) => "BOOLEAN",
+            Variant::TinyInt(_) => "TINYINT",
+            Variant::SmallInt(_) => "SMALLINT",
+            Variant::Int(_) => "INTEGER",
+            Variant::BigInt(_) => "BIGINT",
+            Variant::Real(_) => "REAL",
+            Variant::Double(_) => "DOUBLE",
+            Variant::Decimal(_) => "DECIMAL",
+            Variant::String(_) => "VARCHAR",
+            Variant::Date(_) => "DATE",
+            Variant::Time(_) => "TIME",
+            Variant::Timestamp(_) => "TIMESTAMP",
+            Variant::ShortInterval(_) => "SHORTINTERVAL",
+            Variant::LongInterval(_) => "LONGINTERVAL",
+            Variant::Geometry(_) => "GEOPOINT",
+            Variant::Array(_) => "ARRAY",
+            Variant::Map(_) => "MAP",
+            // Variant::StringMap(_) => "MAP",
+        }
+        .to_string()
+    }
 
-            fn try_into(self) -> Result<Option<$type>, Self::Error> {
-                match self {
-                    Variant::$variant(value) => Ok(value),
-                    _ => Err(concat!("Variant is not a ", stringify!($variant))),
+    pub fn index_string(&self, index: String) -> Variant {
+        match self {
+            /*
+            Variant::StringMap(value) => {
+                match value.get(index) {
+                    None => Variant::SqlNull,
+                    Some(result) => result,
                 }
             }
+             */
+            Variant::Map(value) => match value.get(&Variant::String(index)) {
+                None => Variant::SqlNull,
+                Some(result) => result.clone(),
+            },
+            _ => Variant::SqlNull,
         }
-    };
-}
+    }
 
-try_into_option!(Boolean, bool);
-try_into_option!(TinyInt, i8);
-try_into_option!(SmallInt, i16);
-try_into_option!(Int, i32);
-try_into_option!(BigInt, i64);
-try_into_option!(Real, F32);
-try_into_option!(Double, F64);
-try_into_option!(Decimal, Decimal);
-try_into_option!(String, String);
-try_into_option!(Date, Date);
-try_into_option!(Time, Time);
-try_into_option!(Timestamp, Timestamp);
-try_into_option!(ShortInterval, ShortInterval);
-try_into_option!(LongInterval, LongInterval);
-try_into_option!(Geometry, GeoPoint);
-try_into_option!(Array, Vec<Variant>);
-try_into_option!(Map, BTreeMap<String, Variant>);
-//try_into_option!(Struct, Box<dyn StructVariant>);
+    pub fn index(&self, index: Variant) -> Variant {
+        match self {
+            /*
+            Variant::StringMap(value) => {
+                match index {
+                    Variant::String(index) => {
+                        match value.get(index) {
+                            None => Variant::SqlNull,
+                            Some(result) => result,
+                        }
+                    }
+                    _ => Variant::SqlNull,
+                }
+            }
+             */
+            Variant::Array(value) => {
+                let index = match index {
+                    Variant::TinyInt(index) => index as isize,
+                    Variant::SmallInt(index) => index as isize,
+                    Variant::Int(index) => index as isize,
+                    Variant::BigInt(index) => index as isize,
+                    _ => 0, // out of bounds
+                } - 1; // Array indexes in SQL start from 1!
+                if (index < 0) || (index as usize >= value.len()) {
+                    Variant::SqlNull
+                } else {
+                    value[index as usize].clone()
+                }
+            }
+            Variant::Map(value) => match value.get(&index) {
+                None => Variant::SqlNull,
+                Some(result) => result.clone(),
+            },
+            _ => Variant::SqlNull,
+        }
+    }
+}
 
 // A macro for From<T> for Variant
 macro_rules! from {
     ($variant:ident, $type:ty) => {
         impl From<$type> for Variant {
             fn from(value: $type) -> Self {
-                Variant::$variant(Some(value))
+                Variant::$variant(value)
             }
         }
     };
@@ -203,13 +254,44 @@ from!(Timestamp, Timestamp);
 from!(ShortInterval, ShortInterval);
 from!(LongInterval, LongInterval);
 from!(Geometry, GeoPoint);
-from!(Array, Vec<Variant>);
-from!(Map, BTreeMap<String, Variant>);
 //from!(Struct, Box<dyn StructVariant>);
 
-impl From<()> for Variant {
-    fn from(_: ()) -> Self {
-        Variant::SqlNull
+impl<T> From<Vec<T>> for Variant
+where
+    Variant: From<T>,
+{
+    fn from(vec: Vec<T>) -> Self {
+        Variant::Array(vec.into_iter().map(Variant::from).collect())
+    }
+}
+
+/*
+impl<T> From<BTreeMap<String, T>> for Variant
+    where Variant: From<T>
+{
+    fn from(map: BTreeMap<String, T>) -> Self {
+        // Iterate over key-value pairs and apply a function
+        let mut result = BTreeMap::new();
+        for (key, value) in map.iter() {
+            result.insert(key, value.into())
+        }
+        Variant::StringMap(result)
+    }
+}
+*/
+
+impl<K, V> From<BTreeMap<K, V>> for Variant
+where
+    Variant: From<K> + From<V>,
+    K: Clone,
+    V: Clone,
+{
+    fn from(map: BTreeMap<K, V>) -> Self {
+        let mut result = BTreeMap::new();
+        for (key, value) in map.iter() {
+            result.insert(key.clone().into(), value.clone().into());
+        }
+        Variant::Map(result)
     }
 }
 
@@ -226,4 +308,19 @@ mod test {
         })
         .unwrap();
     }
+}
+
+pub fn typeof_(value: Variant) -> String {
+    value.getTypeString()
+}
+
+pub fn typeofN(value: Option<Variant>) -> String {
+    match value {
+        None => "NULL".to_string(),
+        Some(value) => value.getTypeString(),
+    }
+}
+
+pub fn variantnull() -> Variant {
+    Variant::VariantNull
 }

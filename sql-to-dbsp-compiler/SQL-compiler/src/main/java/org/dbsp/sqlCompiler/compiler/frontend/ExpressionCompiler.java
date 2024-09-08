@@ -85,6 +85,7 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -894,7 +895,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         }
 
                         if (rightType.is(DBSPTypeNull.class) ||
-                                (right.is(DBSPLiteral.class) && right.to(DBSPLiteral.class).isNull)) {
+                                (right.is(DBSPLiteral.class) && right.to(DBSPLiteral.class).isNull())) {
                             this.compiler.reportWarning(node.getPositionRange(),
                                     "evaluates to NULL", node + ": always returns NULL");
                             return type.nullValue();
@@ -958,7 +959,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         if (argument.is(DBSPDecimalLiteral.class)) {
                             DBSPDecimalLiteral dec = argument.to(DBSPDecimalLiteral.class);
                             BigDecimal pointFive = new BigDecimal(5).movePointLeft(1);
-                            if (!dec.isNull && Objects.requireNonNull(dec.value).equals(pointFive)) {
+                            if (!dec.isNull() && Objects.requireNonNull(dec.value).equals(pointFive)) {
                                 ops = Linq.list(ops.get(0));
                                 if (ops.get(0).getType().is(DBSPTypeNull.class)) {
                                     ops.set(0, ops.get(0).cast(type));
@@ -1088,12 +1089,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
                     case "now":
                     case "array":
+                    case "variantnull":
                         return compileFunction(call, node, type, ops, 0);
                     case "gunzip":
                         DBSPExpression arg = ops.get(0);
                         ops.set(0, arg.cast(new DBSPTypeBinary(arg.getNode(), arg.type.mayBeNull)));
                         return compileFunction(call, node, type, ops, 1);
                     case "to_int":
+                    case "typeof":
                         return compileFunction(call, node, type, ops, 1);
                     case "sequence":
                         for (int i = 0; i < ops.size(); i++)
@@ -1229,6 +1232,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                     index = index.cast(map.getKeyType());
                     opcode = DBSPOpcode.MAP_INDEX;
+                }
+                if (collectionType.is(DBSPTypeVariant.class)) {
+                    opcode = DBSPOpcode.VARIANT_INDEX;
                 }
                 return new DBSPBinaryExpression(node, type, opcode, ops.get(0), index);
             }

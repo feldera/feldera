@@ -92,7 +92,7 @@ public class ToCsvVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTimestampLiteral literal) {
-        if (!literal.isNull)
+        if (!literal.isNull())
             this.appendable.append(Objects.requireNonNull(literal.getTimestampString()));
         else
             this.appendable.append(this.nullRepresentation.get());
@@ -101,7 +101,7 @@ public class ToCsvVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPDateLiteral literal) {
-        if (!literal.isNull)
+        if (!literal.isNull())
             this.appendable.append(Objects.requireNonNull(literal.getDateString()));
         else
             this.appendable.append(this.nullRepresentation.get());
@@ -110,7 +110,7 @@ public class ToCsvVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTimeLiteral literal) {
-        if (!literal.isNull)
+        if (!literal.isNull())
             this.appendable.append(Objects.requireNonNull(literal.value));
         else
             this.appendable.append(this.nullRepresentation.get());
