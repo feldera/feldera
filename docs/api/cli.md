@@ -32,9 +32,7 @@ cargo install --path .
 ### Optional: Shell completion
 
 Once the `fda` binary is installed, you can enable shell command completion for `fda`
-by adding the following line to your shell init script. We recommend generating the
-shell code anew on shell startup so that it is “self-correcting” on shell launch,
-rather than writing the generated completions to a file.
+by adding the following line to your shell init script.
 
 * Bash
 
