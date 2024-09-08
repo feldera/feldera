@@ -4,10 +4,11 @@ use std::convert::Infallible;
 use std::io::Read;
 
 use clap::{CommandFactory, Parser};
+use clap_complete::CompleteEnv;
 use feldera_types::config::RuntimeConfig;
 use feldera_types::error::ErrorResponse;
 use log::{debug, error, info, trace};
-use reqwest::header::HeaderValue;
+use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use reqwest::StatusCode;
 use tabled::builder::Builder;
 use tabled::settings::Style;
@@ -28,6 +29,30 @@ use crate::cd::types::*;
 use crate::cd::*;
 use crate::cli::*;
 use crate::shell::shell;
+
+/// Adds the API key to the headers if it was supplied
+fn make_auth_headers(auth: &Option<String>) -> Result<HeaderMap, InvalidHeaderValue> {
+    let mut headers = HeaderMap::new();
+    if let Some(key) = auth {
+        let mut header_value = HeaderValue::from_str(format!("Bearer {}", key).as_str())?;
+        header_value.set_sensitive(true);
+        headers.insert(reqwest::header::AUTHORIZATION, header_value);
+    }
+    Ok(headers)
+}
+
+/// Create a client with the given host, auth, and timeout.
+pub(crate) fn make_client(
+    host: String,
+    auth: Option<String>,
+    timeout: u64,
+) -> Result<Client, Box<dyn std::error::Error>> {
+    let client_builder = reqwest::ClientBuilder::new()
+        .timeout(Duration::from_secs(timeout))
+        .default_headers(make_auth_headers(&auth)?);
+    let client = client_builder.build()?;
+    Ok(Client::new_with_client(host.as_str(), client))
+}
 
 fn handle_errors_fatal(
     msg: &'static str,
@@ -238,13 +263,14 @@ async fn read_program_code(program_path: String, stdin: bool) -> Result<String, 
     }
 }
 
-async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
+async fn pipeline(action: PipelineAction, client: Client) {
     match action {
-        Some(PipelineAction::Create {
+        PipelineAction::Create {
+            name,
             program_path,
             profile,
             stdin,
-        }) => {
+        } => {
             if let Ok(program_code) = read_program_code(program_path, stdin).await {
                 let response = client
                     .post_pipeline()
@@ -266,12 +292,12 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                 std::process::exit(1);
             }
         }
-        Some(PipelineAction::Start { recompile }) => {
+        PipelineAction::Start { name, recompile } => {
             if recompile {
                 // Force recompilation by adding/removing a space at the end of the program code.
                 let pc = client
                     .get_pipeline()
-                    .pipeline_name(name)
+                    .pipeline_name(name.clone())
                     .send()
                     .await
                     .map_err(handle_errors_fatal("Failed to get program config", 1))
@@ -285,7 +311,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
 
                 client
                     .patch_pipeline()
-                    .pipeline_name(name)
+                    .pipeline_name(name.clone())
                     .body(PatchPipeline {
                         description: None,
                         name: None,
@@ -305,7 +331,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
             while compiling {
                 let pc = client
                     .get_pipeline()
-                    .pipeline_name(name)
+                    .pipeline_name(name.clone())
                     .send()
                     .await
                     .map_err(handle_errors_fatal("Failed to get program config", 1))
@@ -332,7 +358,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
             println!("Pipeline started successfully.");
             trace!("{:#?}", response);
         }
-        Some(PipelineAction::Pause) => {
+        PipelineAction::Pause { name } => {
             let response = client
                 .post_pipeline_action()
                 .pipeline_name(name)
@@ -344,10 +370,10 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
             println!("Pipeline paused successfully.");
             trace!("{:#?}", response);
         }
-        Some(PipelineAction::Restart { recompile }) => {
+        PipelineAction::Restart { name, recompile } => {
             let _r = client
                 .post_pipeline_action()
-                .pipeline_name(name)
+                .pipeline_name(name.clone())
                 .action("shutdown")
                 .send()
                 .await
@@ -359,7 +385,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
             while shutting_down {
                 let pc = client
                     .get_pipeline()
-                    .pipeline_name(name)
+                    .pipeline_name(name.clone())
                     .send()
                     .await
                     .map_err(handle_errors_fatal("Failed to get program config", 1))
@@ -373,14 +399,9 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
             }
             println!("Pipeline shutdown successful.");
 
-            let _ = Box::pin(pipeline(
-                name,
-                Some(PipelineAction::Start { recompile }),
-                client,
-            ))
-            .await;
+            let _ = Box::pin(pipeline(PipelineAction::Start { name, recompile }, client)).await;
         }
-        Some(PipelineAction::Shutdown) => {
+        PipelineAction::Shutdown { name } => {
             let response = client
                 .post_pipeline_action()
                 .pipeline_name(name)
@@ -392,7 +413,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
             println!("Pipeline shutdown successful.");
             trace!("{:#?}", response);
         }
-        Some(PipelineAction::Stats) => {
+        PipelineAction::Stats { name } => {
             let response = client
                 .get_pipeline_stats()
                 .pipeline_name(name)
@@ -406,7 +427,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                     .expect("Failed to serialize pipeline stats")
             );
         }
-        Some(PipelineAction::Delete) => {
+        PipelineAction::Delete { name } => {
             let response = client
                 .delete_pipeline()
                 .pipeline_name(name)
@@ -417,7 +438,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
             println!("Pipeline deleted successfully.");
             trace!("{:#?}", response);
         }
-        Some(PipelineAction::Status) => {
+        PipelineAction::Status { name } => {
             let response = client
                 .get_pipeline()
                 .pipeline_name(name)
@@ -455,7 +476,7 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                 Builder::from_iter(rows).build().with(Style::rounded())
             );
         }
-        Some(PipelineAction::Config) => {
+        PipelineAction::Config { name } => {
             let response = client
                 .get_pipeline()
                 .pipeline_name(name)
@@ -469,10 +490,10 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                     .expect("Failed to serialize pipeline stats")
             );
         }
-        Some(PipelineAction::SetConfig { key, value }) => {
+        PipelineAction::SetConfig { name, key, value } => {
             let mut rc = client
                 .get_pipeline()
-                .pipeline_name(name)
+                .pipeline_name(name.clone())
                 .send()
                 .await
                 .map_err(handle_errors_fatal("Failed to get pipeline config", 1))
@@ -508,42 +529,31 @@ async fn pipeline(name: &str, action: Option<PipelineAction>, client: Client) {
                     .expect("Failed to serialize pipeline stats")
             );
         }
-        Some(PipelineAction::Program { action }) => program(name, action, client).await,
-        Some(PipelineAction::Endpoint {
+        PipelineAction::Program { name, action } => program(name, action, client).await,
+        PipelineAction::Endpoint {
+            name,
             endpoint_name,
             action,
-        }) => endpoint(name, endpoint_name.as_str(), action, client).await,
-        Some(PipelineAction::Shell { start }) => {
+        } => endpoint(name, endpoint_name.as_str(), action, client).await,
+        PipelineAction::Shell { name, start } => {
             let client2 = client.clone();
             if start {
                 let _ = Box::pin(pipeline(
-                    name,
-                    Some(PipelineAction::Start { recompile: false }),
+                    PipelineAction::Start {
+                        name: name.clone(),
+                        recompile: false,
+                    },
                     client,
                 ))
                 .await;
             }
             shell(name, client2).await
         }
-        None => {
-            let response = client
-                .get_pipeline()
-                .pipeline_name(name)
-                .send()
-                .await
-                .map_err(handle_errors_fatal("Failed to get pipeline", 1))
-                .unwrap();
-            println!(
-                "{}",
-                serde_json::to_string_pretty(response.as_ref())
-                    .expect("Failed to serialize pipeline stats")
-            );
-        }
     }
 }
 
 async fn endpoint(
-    pipeline_name: &str,
+    pipeline_name: String,
     endpoint_name: &str,
     action: EndpointAction,
     client: Client,
@@ -576,7 +586,7 @@ async fn endpoint(
     };
 }
 
-async fn program(name: &str, action: Option<ProgramAction>, client: Client) {
+async fn program(name: String, action: Option<ProgramAction>, client: Client) {
     match action {
         None => {
             let response = client
@@ -666,50 +676,21 @@ async fn program(name: &str, action: Option<ProgramAction>, client: Client) {
 
 #[tokio::main]
 async fn main() {
-    let _r = env_logger::try_init();
+    CompleteEnv::with_factory(Cli::command).complete();
+
     let cli = Cli::parse();
+    let _r = env_logger::try_init();
 
-    // Add the API key to the headers if it was supplied
-    let mut headers = reqwest::header::HeaderMap::new();
-    if let Some(key) = &cli.auth {
-        let header_value = HeaderValue::from_str(format!("Bearer {}", key).as_str());
-        match header_value {
-            Ok(mut header_value) => {
-                header_value.set_sensitive(true);
-                headers.insert(reqwest::header::AUTHORIZATION, header_value);
-            }
-            Err(e) => {
-                eprintln!("Failed to parse supplied API key: {}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-
-    let client_builder = reqwest::ClientBuilder::new()
-        .connect_timeout(Duration::from_secs(cli.timeout))
-        .timeout(Duration::from_secs(cli.timeout))
-        .default_headers(headers);
-    let client = client_builder
-        .build()
+    let client = make_client(cli.host, cli.auth, cli.timeout)
         .map_err(|e| {
             eprintln!("Failed to create HTTP client: {}", e);
             std::process::exit(1);
         })
         .unwrap();
-    let client = Client::new_with_client(cli.host.as_str(), client);
 
     match cli.command {
         Commands::Apikey { action } => api_key_commands(action, client).await,
         Commands::Pipelines => pipelines(client).await,
-        Commands::Pipeline { name, action } => pipeline(name.as_str(), action, client).await,
-        Commands::ShellCompletion => {
-            use clap_complete::{generate, shells::Shell};
-            generate(
-                Shell::from_env().unwrap_or(Shell::Bash),
-                &mut Cli::command(),
-                "fda",
-                &mut std::io::stdout(),
-            );
-        }
+        Commands::Pipeline(action) => pipeline(action, client).await,
     }
 }

@@ -11,8 +11,8 @@ include = ["openapi.json", "/src", "build.rs", "COPYRIGHT", "README.md"]
 
 [dependencies]
 log = "0.4"
-clap = { version = "4.5.16", features = ["derive", "env", "color"] }
-clap_complete = "4.5.23"
+clap = { version = "4.5.17", features = ["derive", "env", "color"] }
+clap_complete = { version = "4.5.26", features = ["unstable-dynamic"] }
 progenitor-client = { version = "0.7.0" }
 reqwest = { version = "0.11", features = ["json", "stream"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -26,13 +26,14 @@ tabled = { version = "0.16.0", features = ["macros", "ansi"] }
 rustyline = { version = "14", features = ["with-file-history"] }
 directories = { version = "5" }
 futures-util = "0.3.30"
-tokio-util = "0.7.11"
+futures = "0.3"
+tokio-util = "0.7.12"
 
 [build-dependencies]
-prettyplease = "0.2.21"
+prettyplease = "0.2.22"
 progenitor = { version = "0.7.0" }
 serde_json = "1.0"
-syn = "2.0.76"
+syn = "2.0.77"
 reqwest = { version = "0.11", features = ["json", "stream"] }
 
 [package.metadata.cargo-machete]
