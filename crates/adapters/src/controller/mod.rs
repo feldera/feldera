@@ -50,7 +50,6 @@ use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
 };
-use datafusion::datasource::TableType;
 use datafusion::prelude::*;
 use dbsp::circuit::{CircuitConfig, Layout};
 use dbsp::profile::GraphProfile;
@@ -646,7 +645,7 @@ impl Controller {
                         let mut consistent_snapshot = controller.trace_snapshot.blocking_lock();
                         for (name, clh) in controller.catalog.output_iter() {
                             if let Some(ih) = &clh.integrate_handle {
-                                consistent_snapshot.insert(name.to_string(), ih.take_from_all());
+                                consistent_snapshot.insert(name.clone(), ih.take_from_all());
                             }
                         }
 
@@ -1040,7 +1039,8 @@ impl OutputBuffer {
     }
 }
 
-pub type ConsistentSnapshots = Arc<TokioMutex<BTreeMap<String, Vec<Arc<dyn SyncSerBatchReader>>>>>;
+pub type ConsistentSnapshots =
+    Arc<TokioMutex<BTreeMap<SqlIdentifier, Vec<Arc<dyn SyncSerBatchReader>>>>>;
 
 /// Controller state sharable across threads.
 ///
@@ -1128,17 +1128,13 @@ impl ControllerInner {
         // Sync feldera catalog with datafusion catalog
         for (name, clh) in catalog.output_iter() {
             if clh.integrate_handle.is_some() {
-                debug!("registering datafusion table: name={}", clh.schema.name);
-                let typ = if catalog.input_collection_handle(&clh.schema.name).is_some() {
-                    TableType::Base
-                } else {
-                    TableType::View
-                };
-
                 let arrow_fields = relation_to_arrow_fields(&clh.schema.fields, false);
+                let input_handle = catalog
+                    .input_collection_handle(name)
+                    .map(|ich| ich.handle.fork());
                 let adhoc_tbl = Arc::new(AdHocTable::new(
-                    typ,
-                    clh.schema.name.to_string(),
+                    input_handle,
+                    clh.schema.name.clone(),
                     Arc::new(Schema::new(arrow_fields)),
                     self.trace_snapshot.clone(),
                 ));

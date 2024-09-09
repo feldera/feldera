@@ -7847,8 +7847,8 @@ dependencies = [
  "paste",
  "rkyv",
  "serde",
+ "sltsqlvalue",
  "sqllib",
- "sqlvalue",
 ]
 
 [[package]]
@@ -8988,6 +8988,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sltsqlvalue"
+version = "0.1.0"
+dependencies = [
+ "dbsp",
+ "feldera_rust_decimal",
+ "sqllib",
+]
+
+[[package]]
 name = "smallvec"
 version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9126,15 +9135,6 @@ dependencies = [
  "proc-macro2 1.0.86",
  "quote 1.0.37",
  "syn 2.0.77",
-]
-
-[[package]]
-name = "sqlvalue"
-version = "0.1.0"
-dependencies = [
- "dbsp",
- "feldera_rust_decimal",
- "sqllib",
 ]
 
 [[package]]
