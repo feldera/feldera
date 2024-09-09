@@ -476,7 +476,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     persons_stream
                         .insert(b"Tom,20,false")
                         .expect("Failed to insert data");  // Insert twice
-                    persons_stream.flush();
+                    persons_stream.flush_all();
                     // Execute the circuit on these inputs
                     circuit
                         .step()
