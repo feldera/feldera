@@ -118,7 +118,9 @@ impl InputReader for InputGenerator {
         // saves it for `flush` to use here.
         let consumable_batches = self.inner.consumable_batches.load(Ordering::Acquire);
         let options = self.inner.options.get().unwrap();
-        let max_batches = options.max_step_size.div_ceil(options.batch_size);
+        let max_batches = options
+            .max_step_size
+            .div_ceil(options.batch_size_per_thread * options.threads as u64);
 
         let mut total = 0;
         for _ in 0..max_batches {
@@ -337,14 +339,13 @@ impl Inner {
     ) {
         let options = self.options.get().unwrap();
 
-        // Per-thread batch size.
-        let thread_batch_size = options.batch_size.div_ceil(options.threads as u64);
-
         // Calculate the exact number of times to wait on `barrier`. If we wait
         // any fewer times than that, the other threads will get stuck (if we
         // wait more, we'll get stuck). It's harmless if it's greater than the
         // number of batches.
-        let n_batches = options.events.div_ceil(options.batch_size);
+        let n_batches = options
+            .events
+            .div_ceil(options.batch_size_per_thread * options.threads as u64);
 
         let generator_options = GeneratorOptions {
             max_events: options.events,
@@ -384,7 +385,7 @@ impl Inner {
                     Event::Bid(bid) => writers[NexmarkTable::Bid].serialize(bid).unwrap(),
                 }
                 n += 1;
-                if n >= thread_batch_size {
+                if n >= options.batch_size_per_thread {
                     break;
                 }
             }
