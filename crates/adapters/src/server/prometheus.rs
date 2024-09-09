@@ -55,7 +55,6 @@ impl PrometheusMetrics {
     ) -> AnyResult<()> {
         let total_bytes = self.create_gauge("input_total_bytes", &status.endpoint_name)?;
         let total_records = self.create_gauge("input_total_records", &status.endpoint_name)?;
-        let buffered_bytes = self.create_gauge("input_buffered_bytes", &status.endpoint_name)?;
         let buffered_records =
             self.create_gauge("input_buffered_records", &status.endpoint_name)?;
         let num_transport_errors =
@@ -66,7 +65,6 @@ impl PrometheusMetrics {
         let input_metrics = InputMetrics {
             total_bytes,
             total_records,
-            buffered_bytes,
             buffered_records,
             num_transport_errors,
             num_parse_errors,
@@ -91,9 +89,6 @@ impl PrometheusMetrics {
         metrics
             .total_records
             .set(status.metrics.total_records.load(Ordering::Acquire) as i64);
-        metrics
-            .buffered_bytes
-            .set(status.metrics.buffered_bytes.load(Ordering::Acquire) as i64);
         metrics
             .buffered_records
             .set(status.metrics.buffered_records.load(Ordering::Acquire) as i64);
@@ -204,7 +199,6 @@ impl PrometheusMetrics {
 struct InputMetrics {
     total_bytes: IntGauge,
     total_records: IntGauge,
-    buffered_bytes: IntGauge,
     buffered_records: IntGauge,
     num_transport_errors: IntGauge,
     num_parse_errors: IntGauge,

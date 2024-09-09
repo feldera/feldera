@@ -74,7 +74,6 @@ export const accumulatePipelineMetrics =
                   return {
                     total_bytes: acc.total_bytes + metrics.total_bytes,
                     total_records: acc.total_records + metrics.total_records,
-                    buffered_bytes: acc.buffered_bytes + metrics.buffered_bytes,
                     buffered_records: acc.buffered_records + metrics.buffered_records,
                     num_transport_errors: acc.num_transport_errors + metrics.num_transport_errors,
                     num_parse_errors: acc.num_parse_errors + metrics.num_parse_errors,
@@ -84,7 +83,6 @@ export const accumulatePipelineMetrics =
                 {
                   total_bytes: 0,
                   total_records: 0,
-                  buffered_bytes: 0,
                   buffered_records: 0,
                   num_transport_errors: 0,
                   num_parse_errors: 0,

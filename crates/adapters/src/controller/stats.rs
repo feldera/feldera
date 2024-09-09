@@ -818,10 +818,6 @@ pub struct InputEndpointMetrics {
     /// Total records pushed to the endpoint since it was created.
     pub total_records: AtomicU64,
 
-    /// Number of bytes currently buffered by the endpoint
-    /// (not yet consumed by the circuit).
-    pub buffered_bytes: AtomicU64,
-
     /// Number of records currently buffered by the endpoint
     /// (not yet consumed by the circuit).
     pub buffered_records: AtomicU64,
@@ -882,7 +878,6 @@ impl InputEndpointStatus {
     }
 
     pub(crate) fn consume_buffered(&self, num_records: u64) {
-        self.metrics.buffered_bytes.store(0, Ordering::Release);
         self.metrics
             .buffered_records
             .fetch_sub(num_records, Ordering::Release);
@@ -897,9 +892,6 @@ impl InputEndpointStatus {
             self.metrics
                 .total_bytes
                 .fetch_add(num_bytes, Ordering::Relaxed);
-            self.metrics
-                .buffered_bytes
-                .fetch_add(num_bytes, Ordering::AcqRel);
         }
 
         self.metrics
