@@ -97,7 +97,6 @@ export type InputEndpointStatus = {
 export interface InputEndpointMetrics {
   total_bytes: number
   total_records: number
-  buffered_bytes: number
   buffered_records: number
   num_transport_errors: number
   num_parse_errors: number
