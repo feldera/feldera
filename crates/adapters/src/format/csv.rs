@@ -104,6 +104,15 @@ impl CsvParser {
     /// A CSV record is usually one line that ends in a new-line, but it can
     /// span multiple lines if new-lines are enclosed in double quotes.
     fn split_record<'a>(&mut self, buffer: &'a [u8]) -> Option<(&'a [u8], &'a [u8])> {
+        // This uses the simple rule that a new-line ends a record if it is not
+        // in double quotes.  The "standard" format for CSV escapes double
+        // quotes by doubling them (e.g. `"a""b""c"` unescapes to `a"b"c`), so
+        // that any even number of quotes followed by a new-line ends a reocrd,
+        // but any odd number followed by a new-line is a continuation of the
+        // field.  This means that this rule properly handles escapes.
+        //
+        // If we allow the user to configure the CSV format used, we'll need to
+        // adjust this to match the configuration.
         let mut quoted = false;
         for (offset, c) in buffer.iter().enumerate() {
             match c {
