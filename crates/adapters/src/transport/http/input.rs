@@ -1,11 +1,10 @@
-use crate::format::flush_vecdeque_queue;
-use crate::transport::InputEndpoint;
+use crate::transport::{InputEndpoint, InputQueue};
 use crate::{
     server::{PipelineError, MAX_REPORTED_PARSE_ERRORS},
     transport::{InputReader, Step},
     ControllerError, InputConsumer, PipelineState, TransportConfig, TransportInputEndpoint,
 };
-use crate::{InputBuffer, ParseError, Parser};
+use crate::{ParseError, Parser};
 use actix_web::{web::Payload, HttpResponse};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
@@ -14,7 +13,6 @@ use feldera_types::program_schema::Relation;
 use futures_util::StreamExt;
 use log::debug;
 use serde::Deserialize;
-use std::collections::VecDeque;
 use std::{
     sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
@@ -62,7 +60,7 @@ struct HttpInputEndpointInner {
     status_notifier: watch::Sender<()>,
     #[allow(clippy::type_complexity)]
     cp: Mutex<Option<(Box<dyn InputConsumer>, Box<dyn Parser>)>>,
-    queue: Mutex<VecDeque<Box<dyn InputBuffer>>>,
+    queue: InputQueue,
     /// Ingest data even if the pipeline is paused.
     force: bool,
 }
@@ -78,7 +76,7 @@ impl HttpInputEndpointInner {
             }),
             status_notifier: watch::channel(()).0,
             cp: Mutex::new(None),
-            queue: Mutex::new(VecDeque::new()),
+            queue: InputQueue::new(),
             force,
         }
     }
@@ -118,9 +116,7 @@ impl HttpInputEndpoint {
         };
         let buffer = parser.take();
         drop(guard);
-        if let Some(buffer) = buffer {
-            self.inner.queue.lock().unwrap().push_back(buffer);
-        }
+        self.inner.queue.push(buffer);
 
         let num_errors = new_errors.len();
         for error in new_errors.drain(..) {
@@ -248,6 +244,6 @@ impl InputReader for HttpInputEndpoint {
     }
 
     fn flush(&self, n: usize) -> usize {
-        flush_vecdeque_queue(&self.inner.queue, n)
+        self.inner.queue.flush(n)
     }
 }

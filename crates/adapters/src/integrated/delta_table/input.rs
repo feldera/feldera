@@ -1,8 +1,8 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::controller::{ControllerInner, EndpointId};
-use crate::format::{flush_vecdeque_queue, InputBuffer};
+use crate::format::InputBuffer;
 use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
-use crate::transport::{InputEndpoint, IntegratedInputEndpoint, Step};
+use crate::transport::{InputEndpoint, InputQueue, IntegratedInputEndpoint, Step};
 use crate::{
     ControllerError, InputConsumer, InputReader, ParseError, PipelineState, RecordFormat,
     TransportInputEndpoint,
@@ -271,7 +271,7 @@ impl InputReader for DeltaTableInputReader {
     }
 
     fn flush(&self, n: usize) -> usize {
-        flush_vecdeque_queue(&self.inner.queue, n)
+        self.inner.queue.flush(n)
     }
 }
 
@@ -287,7 +287,7 @@ struct DeltaTableInputEndpointInner {
     config: DeltaTableReaderConfig,
     controller: Weak<ControllerInner>,
     datafusion: SessionContext,
-    queue: Mutex<VecDeque<Box<dyn InputBuffer>>>,
+    queue: InputQueue,
 }
 
 impl DeltaTableInputEndpointInner {
@@ -303,7 +303,7 @@ impl DeltaTableInputEndpointInner {
             config,
             controller,
             datafusion: SessionContext::new(),
-            queue: Mutex::new(VecDeque::new()),
+            queue: InputQueue::new(),
         }
     }
 
@@ -554,9 +554,7 @@ impl DeltaTableInputEndpointInner {
             } else {
                 input_stream.delete(&batch)
             };
-            if let Some(buffer) = input_stream.take() {
-                self.queue.lock().unwrap().push_back(buffer);
-            }
+            self.queue.push(input_stream.take());
 
             match result {
                 Ok(()) => {

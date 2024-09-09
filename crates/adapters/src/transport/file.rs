@@ -1,15 +1,13 @@
 use super::{
-    InputConsumer, InputEndpoint, InputReader, OutputEndpoint, Step, TransportInputEndpoint,
+    InputConsumer, InputEndpoint, InputQueue, InputReader, OutputEndpoint, Step,
+    TransportInputEndpoint,
 };
-use crate::format::{flush_vecdeque_queue, InputBuffer};
 use crate::{Parser, PipelineState};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use crossbeam::sync::{Parker, Unparker};
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
-use std::collections::VecDeque;
-use std::sync::Mutex;
 use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
@@ -55,7 +53,7 @@ impl TransportInputEndpoint for FileInputEndpoint {
 struct FileInputReader {
     status: Arc<Atomic<PipelineState>>,
     unparker: Option<Unparker>,
-    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+    queue: Arc<InputQueue>,
 }
 
 impl FileInputReader {
@@ -75,7 +73,7 @@ impl FileInputReader {
         let parker = Parker::new();
         let unparker = Some(parker.unparker().clone());
         let status = Arc::new(Atomic::new(PipelineState::Paused));
-        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let queue = Arc::new(InputQueue::new());
         spawn({
             let follow = config.follow;
             let status = status.clone();
@@ -100,7 +98,7 @@ impl FileInputReader {
         mut reader: BufReader<File>,
         mut consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
-        queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+        queue: Arc<InputQueue>,
         parker: Parker,
         status: Arc<Atomic<PipelineState>>,
         follow: bool,
@@ -118,9 +116,7 @@ impl FileInputReader {
                         Ok([]) => {
                             if !follow {
                                 let _ = parser.end_of_fragments();
-                                if let Some(buffer) = parser.take() {
-                                    queue.lock().unwrap().push_back(buffer);
-                                }
+                                queue.push(parser.take());
                                 consumer.eoi();
                                 return;
                             } else {
@@ -133,9 +129,7 @@ impl FileInputReader {
                             // Leave it to the controller to handle errors.  There is noone we can
                             // forward the error to upstream.
                             let _ = parser.input_fragment(data);
-                            if let Some(buffer) = parser.take() {
-                                queue.lock().unwrap().push_back(buffer);
-                            }
+                            queue.push(parser.take());
                             let len = data.len();
                             reader.consume(len);
                         }
@@ -172,7 +166,7 @@ impl InputReader for FileInputReader {
     }
 
     fn flush(&self, n: usize) -> usize {
-        flush_vecdeque_queue(&self.queue, n)
+        self.queue.flush(n)
     }
 }
 

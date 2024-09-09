@@ -1,5 +1,4 @@
-use crate::format::{flush_vecdeque_queue, InputBuffer};
-use crate::transport::InputEndpoint;
+use crate::transport::{InputEndpoint, InputQueue};
 use crate::Parser;
 use crate::{
     transport::{
@@ -22,7 +21,6 @@ use rdkafka::{
     error::{KafkaError, KafkaResult},
     ClientConfig, ClientContext, Message,
 };
-use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{channel, Sender};
@@ -118,7 +116,7 @@ struct KafkaInputReaderInner {
     state: Atomic<PipelineState>,
     kafka_consumer: BaseConsumer<KafkaInputContext>,
     errors: ArrayQueue<(KafkaError, String)>,
-    queue: Mutex<VecDeque<Box<dyn InputBuffer>>>,
+    queue: Arc<InputQueue>,
 }
 
 impl KafkaInputReaderInner {
@@ -152,9 +150,7 @@ impl KafkaInputReaderInner {
                     // Leave it to the controller to handle errors.  There is noone we can
                     // forward the error to upstream.
                     let _ = parser.input_chunk(payload);
-                    if let Some(buffer) = parser.take() {
-                        self.queue.lock().unwrap().push_back(buffer);
-                    }
+                    self.queue.push(parser.take());
                 }
             }
         }
@@ -250,7 +246,7 @@ impl KafkaInputReader {
             state: Atomic::new(PipelineState::Paused),
             kafka_consumer: BaseConsumer::from_config_and_context(&client_config, context)?,
             errors: ArrayQueue::new(ERROR_BUFFER_SIZE),
-            queue: Mutex::new(VecDeque::new()),
+            queue: Arc::new(InputQueue::new()),
         });
 
         *inner.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&inner);
@@ -288,9 +284,7 @@ impl KafkaInputReader {
                         // Leave it to the controller to handle errors.  There is noone we can
                         // forward the error to upstream.
                         let _ = parser.input_chunk(payload);
-                        if let Some(buffer) = parser.take() {
-                            inner.queue.lock().unwrap().push_back(buffer);
-                        }
+                        inner.queue.push(parser.take());
                     }
                 }
                 _ => (),
@@ -553,7 +547,7 @@ impl InputReader for KafkaInputReader {
     }
 
     fn flush(&self, n: usize) -> usize {
-        flush_vecdeque_queue(&self.0.queue, n)
+        self.0.queue.flush(n)
     }
 }
 

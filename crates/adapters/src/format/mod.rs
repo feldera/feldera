@@ -12,8 +12,6 @@ use feldera_types::serde_with_context::FieldParseError;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde_yaml::Value as YamlValue;
-use std::collections::VecDeque;
-use std::sync::Mutex;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
@@ -431,26 +429,6 @@ pub trait InputBuffer: Send {
     /// This is useful for extracting the records from one of several parser
     /// threads to send to a single common thread to be pushed later.
     fn take(&mut self) -> Option<Box<dyn InputBuffer>>;
-}
-
-/// An implementation of [InputBuffer::flush] for a common pattern where worker
-/// threads append [InputBuffer]s to a common queue.
-pub(crate) fn flush_vecdeque_queue(
-    queue: &Mutex<VecDeque<Box<dyn InputBuffer>>>,
-    n: usize,
-) -> usize {
-    let mut total = 0;
-    while total < n {
-        let Some(mut buffer) = queue.lock().unwrap().pop_front() else {
-            break;
-        };
-        total += buffer.flush(n - total);
-        if !buffer.is_empty() {
-            queue.lock().unwrap().push_front(buffer);
-            break;
-        }
-    }
-    total
 }
 
 /// An empty [InputBuffer].

@@ -20,13 +20,15 @@
 //! let endpoint = input_transport_config_to_endpoint(config.clone());
 //! let reader = endpoint.open(consumer, 0);
 //! ```
-use crate::Parser;
+use crate::{InputBuffer, Parser};
 use anyhow::{Error as AnyError, Result as AnyResult};
 use dyn_clone::DynClone;
 #[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
+use std::collections::VecDeque;
 use std::ops::Range;
 use std::sync::atomic::AtomicU64;
+use std::sync::Mutex;
 
 mod file;
 pub mod http;
@@ -235,6 +237,47 @@ pub trait InputReader: Send {
     /// data buffers may be pushed downstream before the endpoint gets
     /// disconnected.
     fn disconnect(&self);
+}
+
+/// A thread-safe queue for collecting and flushing input buffers.
+///
+/// Commonly used by `InputReader` implementations for staging buffers from
+/// worker threads.
+pub struct InputQueue(pub Mutex<VecDeque<Box<dyn InputBuffer>>>);
+
+impl Default for InputQueue {
+    fn default() -> Self {
+        Self(Mutex::new(VecDeque::new()))
+    }
+}
+
+impl InputQueue {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Appends `buffer`, if non-`None` to the queue.
+    pub fn push(&self, buffer: Option<Box<dyn InputBuffer>>) {
+        if let Some(buffer) = buffer {
+            self.0.lock().unwrap().push_back(buffer);
+        }
+    }
+
+    /// Implements [InputBuffer::flush] for `InputQueue`-based endpoints.
+    pub fn flush(&self, n: usize) -> usize {
+        let mut total = 0;
+        while total < n {
+            let Some(mut buffer) = self.0.lock().unwrap().pop_front() else {
+                break;
+            };
+            total += buffer.flush(n - total);
+            if !buffer.is_empty() {
+                self.0.lock().unwrap().push_front(buffer);
+                break;
+            }
+        }
+        total
+    }
 }
 
 /// Input stream consumer.
