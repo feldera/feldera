@@ -173,7 +173,7 @@ pub trait AvroStream: Send {
 
 /// A handle to an input collection that can be used to feed serialized data
 /// to the collection.
-pub trait DeCollectionHandle: Send {
+pub trait DeCollectionHandle: Send + Sync {
     /// Create a [`DeCollectionStream`] object to parse input data encoded
     /// using the format specified in `RecordFormat`.
     fn configure_deserializer(
@@ -515,7 +515,7 @@ impl<'a> SerCursor for CursorWithPolarity<'a> {
 }
 
 /// A catalog of input and output stream handles of a circuit.
-pub trait CircuitCatalog: Send {
+pub trait CircuitCatalog: Send + Sync {
     /// Look up an input stream handle by name.
     fn input_collection_handle(&self, name: &SqlIdentifier) -> Option<&InputCollectionHandle>;
 

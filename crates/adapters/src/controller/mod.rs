@@ -174,29 +174,23 @@ impl Controller {
         let backpressure_thread_unparker = backpressure_thread_parker.unparker().clone();
 
         let (profile_request_sender, profile_request_receiver) = channel();
-        let inner = Arc::new(ControllerInner::new(
+        let inner = ControllerInner::new(
             config,
             circuit_thread_unparker,
             backpressure_thread_unparker,
             error_cb,
             profile_request_sender,
-        ));
+        );
 
-        let backpressure_thread_handle = {
-            let inner = inner.clone();
-            spawn(move || Self::backpressure_thread(inner, backpressure_thread_parker))
-        };
-
-        let circuit_thread_handle = {
-            let inner = inner.clone();
-
+        let (circuit_thread_handle, inner) = {
             // A channel to communicate circuit initialization status.
             // The `circuit_factory` closure must be invoked in the context of
             // the circuit thread, because the circuit handle it returns doesn't
             // implement `Send`.  So we need this channel to communicate circuit
-            // initialization status back to this thread.
+            // initialization status back to this thread.  On success, the worker
+            // thread adds a catalog to `inner`, and returns it wrapped in an `Arc`.
             let (init_status_sender, init_status_receiver) =
-                sync_channel::<Result<(), ControllerError>>(0);
+                sync_channel::<Result<Arc<ControllerInner>, ControllerError>>(0);
             let handle = spawn(move || {
                 Self::circuit_thread(
                     circuit_factory,
@@ -208,10 +202,15 @@ impl Controller {
             });
             // If `recv` fails, it indicates that the circuit thread panicked
             // during initialization.
-            init_status_receiver
+            let inner = init_status_receiver
                 .recv()
                 .map_err(|_| ControllerError::dbsp_panic())??;
-            handle
+            (handle, inner)
+        };
+
+        let backpressure_thread_handle = {
+            let inner = inner.clone();
+            spawn(move || Self::backpressure_thread(inner, backpressure_thread_parker))
         };
 
         for (input_name, input_config) in config.inputs.iter() {
@@ -428,7 +427,7 @@ impl Controller {
         &self.inner.status
     }
 
-    pub fn catalog(&self) -> &Arc<Mutex<Box<dyn CircuitCatalog>>> {
+    pub fn catalog(&self) -> &Arc<Box<dyn CircuitCatalog>> {
         &self.inner.catalog
     }
 
@@ -496,9 +495,9 @@ impl Controller {
     /// produced by the circuit to output pipelines.
     fn circuit_thread<F>(
         circuit_factory: F,
-        controller: Arc<ControllerInner>,
+        mut controller: ControllerInner,
         parker: Parker,
-        init_status_sender: SyncSender<Result<(), ControllerError>>,
+        init_status_sender: SyncSender<Result<Arc<ControllerInner>, ControllerError>>,
         profile_request_receiver: Receiver<GraphProfileCallbackFn>,
     ) -> Result<(), ControllerError>
     where
@@ -525,13 +524,14 @@ impl Controller {
             min_storage_bytes,
             init_checkpoint: Uuid::nil(),
         };
-        let mut circuit = match circuit_factory(config) {
+        let (mut circuit, controller) = match circuit_factory(config) {
             Ok((circuit, catalog)) => {
                 // Complete initialization before sending back the confirmation to
                 // prevent a race.
                 controller.set_catalog(catalog);
-                let _ = init_status_sender.send(Ok(()));
-                circuit
+                let controller = Arc::new(controller);
+                let _ = init_status_sender.send(Ok(controller.clone()));
+                (circuit, controller)
             }
             Err(e) => {
                 let _ = init_status_sender.send(Err(e));
@@ -643,9 +643,8 @@ impl Controller {
                             .set_num_total_processed_records(processed_records);
 
                         // Update `trace_snapshot` to the latest traces
-                        let catalog = controller.catalog.lock().unwrap();
                         let mut consistent_snapshot = controller.trace_snapshot.blocking_lock();
-                        for (name, clh) in catalog.output_iter() {
+                        for (name, clh) in controller.catalog.output_iter() {
                             if let Some(ih) = &clh.integrate_handle {
                                 consistent_snapshot.insert(name.to_string(), ih.take_from_all());
                             }
@@ -1051,7 +1050,7 @@ pub struct ControllerInner {
     pub status: Arc<ControllerStatus>,
     num_api_connections: AtomicU64,
     profile_request: Sender<GraphProfileCallbackFn>,
-    catalog: Arc<Mutex<Box<dyn CircuitCatalog>>>,
+    catalog: Arc<Box<dyn CircuitCatalog>>,
     // Always lock this after the catalog is locked to avoid deadlocks
     trace_snapshot: ConsistentSnapshots,
     inputs: Mutex<BTreeMap<EndpointId, InputEndpointDescr>>,
@@ -1094,7 +1093,7 @@ impl ControllerInner {
             status,
             num_api_connections: AtomicU64::new(0),
             profile_request,
-            catalog: Arc::new(Mutex::new(Box::new(Catalog::new()))),
+            catalog: Arc::new(Box::new(Catalog::new())),
             trace_snapshot: Arc::new(TokioMutex::new(BTreeMap::new())),
             inputs: Mutex::new(BTreeMap::new()),
             outputs: ShardedLock::new(OutputEndpoints::new()),
@@ -1125,7 +1124,7 @@ impl ControllerInner {
         Err(ControllerError::unknown_input_endpoint(endpoint_name))
     }
 
-    fn set_catalog(&self, catalog: Box<dyn CircuitCatalog>) {
+    fn set_catalog(&mut self, catalog: Box<dyn CircuitCatalog>) {
         // Sync feldera catalog with datafusion catalog
         for (name, clh) in catalog.output_iter() {
             if clh.integrate_handle.is_some() {
@@ -1153,7 +1152,7 @@ impl ControllerInner {
             }
         }
 
-        *self.catalog.lock().unwrap() = catalog;
+        *Arc::get_mut(&mut self.catalog).unwrap() = catalog;
     }
 
     /// Sets the global metrics recorder and returns a `Snapshotter` and
@@ -1223,8 +1222,8 @@ impl ControllerInner {
         // │endpoint├──►│InputProbe├──►│parser├──►
         // └────────┘   └──────────┘   └──────┘
 
-        let catalog = self.catalog.lock().unwrap();
-        let input_handle = catalog
+        let input_handle = self
+            .catalog
             .input_collection_handle(&SqlIdentifier::from(&endpoint_config.stream))
             .ok_or_else(|| {
                 ControllerError::unknown_input_stream(endpoint_name, &endpoint_config.stream)
@@ -1407,8 +1406,6 @@ impl ControllerInner {
         // Lookup output handle in catalog.
         let handles = self
             .catalog
-            .lock()
-            .unwrap()
             .output_query_handles(
                 &SqlIdentifier::from(&endpoint_config.stream),
                 endpoint_config.query,
