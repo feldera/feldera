@@ -63,6 +63,7 @@ impl Catalog {
             + Clone
             + Debug
             + Send
+            + Sync
             + 'static,
         Z: ZSet + Debug + Send + Sync,
         Z::InnerBatch: Send,
@@ -94,6 +95,7 @@ impl Catalog {
             + Clone
             + Debug
             + Send
+            + Sync
             + 'static,
         Z: ZSet + Debug + Send + Sync,
         Z::InnerBatch: Send,
@@ -128,6 +130,7 @@ impl Catalog {
             + Clone
             + Debug
             + Send
+            + Sync
             + 'static,
         Z: ZSet + Debug + Send + Sync,
         Z::InnerBatch: Send,
@@ -159,6 +162,7 @@ impl Catalog {
             + Clone
             + Debug
             + Send
+            + Sync
             + 'static,
         Z: ZSet + Debug + Send + Sync,
         Z::InnerBatch: Send,

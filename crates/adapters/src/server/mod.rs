@@ -973,8 +973,6 @@ async fn output_endpoint(
 
                     if let Err(e) = controller
                         .catalog()
-                        .lock()
-                        .unwrap()
                         .output_handles(&SqlIdentifier::from(config.stream))
                         // The following `unwrap` is safe because `table_name` was previously
                         // validated by `add_output_endpoint`.
@@ -998,8 +996,6 @@ async fn output_endpoint(
                 OutputQuery::Quantiles => {
                     controller
                         .catalog()
-                        .lock()
-                        .unwrap()
                         .output_handles(&SqlIdentifier::from(config.stream))
                         .unwrap()
                         .num_quantiles_handle
@@ -1094,7 +1090,6 @@ mod test_with_kafka {
     use tempfile::NamedTempFile;
 
     #[actix_web::test]
-    #[ignore = "This test is flaky and needs to be fixed"]
     async fn test_server() {
         ensure_default_crypto_provider();
 
