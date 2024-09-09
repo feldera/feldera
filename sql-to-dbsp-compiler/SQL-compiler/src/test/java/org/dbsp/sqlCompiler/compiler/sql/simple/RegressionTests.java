@@ -41,7 +41,6 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void testTPCHQ5Simple() {
-        this.showFinal();
         String sql = """
                 CREATE TABLE LINEITEM ( L_ORDERKEY    INTEGER NOT NULL,
                                         L_PARTKEY     INTEGER NOT NULL,

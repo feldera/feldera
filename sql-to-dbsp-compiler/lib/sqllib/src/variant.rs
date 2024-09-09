@@ -140,13 +140,11 @@ pub enum Variant {
     Array(#[omit_bounds] Vec<Variant>),
     #[size_of(skip, skip_bounds)]
     Map(#[omit_bounds] BTreeMap<Variant, Variant>),
-    // Special case for string maps
-    // StringMap(#[omit_bounds] BTreeMap<String, Variant>),
     //Struct(Option<Box<dyn StructVariant>>),
 }
 
 impl Variant {
-    fn getTypeString(&self) -> String {
+    fn get_type_string(&self) -> &'static str {
         match self {
             Variant::SqlNull => "NULL",
             Variant::VariantNull => "VARIANT",
@@ -167,22 +165,12 @@ impl Variant {
             Variant::Geometry(_) => "GEOPOINT",
             Variant::Array(_) => "ARRAY",
             Variant::Map(_) => "MAP",
-            // Variant::StringMap(_) => "MAP",
         }
-        .to_string()
     }
 
-    pub fn index_string(&self, index: String) -> Variant {
+    pub fn index_string<I: AsRef<str>>(&self, index: I) -> Variant {
         match self {
-            /*
-            Variant::StringMap(value) => {
-                match value.get(index) {
-                    None => Variant::SqlNull,
-                    Some(result) => result,
-                }
-            }
-             */
-            Variant::Map(value) => match value.get(&Variant::String(index)) {
+            Variant::Map(value) => match value.get(&Variant::String(index.as_ref().to_string())) {
                 None => Variant::SqlNull,
                 Some(result) => result.clone(),
             },
@@ -192,19 +180,6 @@ impl Variant {
 
     pub fn index(&self, index: Variant) -> Variant {
         match self {
-            /*
-            Variant::StringMap(value) => {
-                match index {
-                    Variant::String(index) => {
-                        match value.get(index) {
-                            None => Variant::SqlNull,
-                            Some(result) => result,
-                        }
-                    }
-                    _ => Variant::SqlNull,
-                }
-            }
-             */
             Variant::Array(value) => {
                 let index = match index {
                     Variant::TinyInt(index) => index as isize,
@@ -265,21 +240,6 @@ where
     }
 }
 
-/*
-impl<T> From<BTreeMap<String, T>> for Variant
-    where Variant: From<T>
-{
-    fn from(map: BTreeMap<String, T>) -> Self {
-        // Iterate over key-value pairs and apply a function
-        let mut result = BTreeMap::new();
-        for (key, value) in map.iter() {
-            result.insert(key, value.into())
-        }
-        Variant::StringMap(result)
-    }
-}
-*/
-
 impl<K, V> From<BTreeMap<K, V>> for Variant
 where
     Variant: From<K> + From<V>,
@@ -311,13 +271,13 @@ mod test {
 }
 
 pub fn typeof_(value: Variant) -> String {
-    value.getTypeString()
+    value.get_type_string().to_string()
 }
 
 pub fn typeofN(value: Option<Variant>) -> String {
     match value {
         None => "NULL".to_string(),
-        Some(value) => value.getTypeString(),
+        Some(value) => value.get_type_string().to_string(),
     }
 }
 
