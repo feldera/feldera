@@ -1,10 +1,11 @@
+use crate::format::flush_vecdeque_queue;
 use crate::transport::InputEndpoint;
 use crate::{
     server::{PipelineError, MAX_REPORTED_PARSE_ERRORS},
     transport::{InputReader, Step},
     ControllerError, InputConsumer, PipelineState, TransportConfig, TransportInputEndpoint,
 };
-use crate::{ParseError, Parser};
+use crate::{InputBuffer, ParseError, Parser};
 use actix_web::{web::Payload, HttpResponse};
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
@@ -13,7 +14,7 @@ use feldera_types::program_schema::Relation;
 use futures_util::StreamExt;
 use log::debug;
 use serde::Deserialize;
-use std::sync::atomic::AtomicUsize;
+use std::collections::VecDeque;
 use std::{
     sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
@@ -61,7 +62,7 @@ struct HttpInputEndpointInner {
     status_notifier: watch::Sender<()>,
     #[allow(clippy::type_complexity)]
     cp: Mutex<Option<(Box<dyn InputConsumer>, Box<dyn Parser>)>>,
-    queued: AtomicUsize,
+    queue: Mutex<VecDeque<Box<dyn InputBuffer>>>,
     /// Ingest data even if the pipeline is paused.
     force: bool,
 }
@@ -77,7 +78,7 @@ impl HttpInputEndpointInner {
             }),
             status_notifier: watch::channel(()).0,
             cp: Mutex::new(None),
-            queued: AtomicUsize::new(0),
+            queue: Mutex::new(VecDeque::new()),
             force,
         }
     }
@@ -111,13 +112,15 @@ impl HttpInputEndpoint {
     fn push(&self, bytes: Option<&[u8]>, errors: &mut CircularQueue<ParseError>) -> usize {
         let mut guard = self.inner.cp.lock().unwrap();
         let parser = &mut guard.as_mut().unwrap().1;
-        let (num_records, mut new_errors) = match bytes {
+        let (_num_records, mut new_errors) = match bytes {
             Some(bytes) => parser.input_fragment(bytes),
             None => parser.end_of_fragments(),
         };
-        self.inner.queued.fetch_add(num_records, Ordering::SeqCst);
-        parser.flush_all();
+        let buffer = parser.take();
         drop(guard);
+        if let Some(buffer) = buffer {
+            self.inner.queue.lock().unwrap().push_back(buffer);
+        }
 
         let num_errors = new_errors.len();
         for error in new_errors.drain(..) {
@@ -244,7 +247,7 @@ impl InputReader for HttpInputEndpoint {
         self.notify();
     }
 
-    fn flush(&self, _n: usize) -> usize {
-        self.inner.queued.swap(0, Ordering::SeqCst)
+    fn flush(&self, n: usize) -> usize {
+        flush_vecdeque_queue(&self.inner.queue, n)
     }
 }
