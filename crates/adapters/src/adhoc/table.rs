@@ -1,45 +1,52 @@
 use std::any::Any;
+use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use crate::catalog::SyncSerBatchReader;
 use crate::controller::ConsistentSnapshots;
-use crate::RecordFormat;
+use crate::{DeCollectionHandle, RecordFormat};
 use arrow::datatypes::{Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use datafusion::catalog::{Session, TableProvider};
+use datafusion::common::{exec_err, not_impl_err, plan_err, SchemaExt};
 use datafusion::datasource::TableType;
 use datafusion::error::DataFusionError;
 use datafusion::execution::{SendableRecordBatchStream, TaskContext};
 use datafusion::logical_expr::Expr;
 use datafusion::physical_expr::EquivalenceProperties;
+use datafusion::physical_plan::insert::{DataSink, DataSinkExec};
+use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::stream::{
     RecordBatchReceiverStreamBuilder, RecordBatchStreamAdapter,
 };
 use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
 };
+use feldera_types::program_schema::SqlIdentifier;
+use feldera_types::serde_with_context::SqlSerdeConfig;
+use futures_util::StreamExt;
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
 use tokio::sync::mpsc::Sender;
 
 pub struct AdHocTable {
-    typ: TableType,
-    name: String,
+    input_handle: Option<Box<dyn DeCollectionHandle>>,
+    name: SqlIdentifier,
     schema: Arc<Schema>,
     snapshots: ConsistentSnapshots,
 }
 
 impl AdHocTable {
     pub fn new(
-        typ: TableType,
-        name: String,
+        input_handle: Option<Box<dyn DeCollectionHandle>>,
+        name: SqlIdentifier,
         schema: Arc<Schema>,
         snapshots: ConsistentSnapshots,
     ) -> Self {
         Self {
-            typ,
+            input_handle,
             name,
             schema,
             snapshots,
@@ -58,7 +65,11 @@ impl TableProvider for AdHocTable {
     }
 
     fn table_type(&self) -> TableType {
-        self.typ
+        if self.input_handle.is_some() {
+            TableType::Base
+        } else {
+            TableType::View
+        }
     }
 
     async fn scan(
@@ -84,6 +95,95 @@ impl TableProvider for AdHocTable {
             projection,
             limit,
         )))
+    }
+
+    async fn insert_into(
+        &self,
+        _state: &dyn Session,
+        input: Arc<dyn ExecutionPlan>,
+        overwrite: bool,
+    ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
+        if !self
+            .schema()
+            .logically_equivalent_names_and_types(&input.schema())
+        {
+            return plan_err!("Inserting query must have the same schema with the table.");
+        }
+
+        if overwrite {
+            return not_impl_err!("Overwrite not implemented for AdHocTable yet");
+        }
+
+        match &self.input_handle {
+            Some(ih) => {
+                let sink = Arc::new(AdHocTableSink::new(ih.fork()));
+                Ok(Arc::new(DataSinkExec::new(
+                    input,
+                    sink,
+                    self.schema.clone(),
+                    None,
+                )))
+            }
+            None => exec_err!("Called insert_into on a view, this is a bug in the feldera ad-hoc query implementation."),
+        }
+    }
+}
+
+struct AdHocTableSink {
+    collection_handle: Box<dyn DeCollectionHandle>,
+}
+
+impl AdHocTableSink {
+    fn new(collection_handle: Box<dyn DeCollectionHandle>) -> Self {
+        Self { collection_handle }
+    }
+}
+
+impl Debug for AdHocTableSink {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "AdHocTableSink")
+    }
+}
+
+impl DisplayAs for AdHocTableSink {
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut Formatter<'_>) -> fmt::Result {
+        match t {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
+                write!(f, "AdHocTableSink")
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl DataSink for AdHocTableSink {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn metrics(&self) -> Option<MetricsSet> {
+        None
+    }
+
+    async fn write_all(
+        &self,
+        mut data: SendableRecordBatchStream,
+        _context: &Arc<TaskContext>,
+    ) -> datafusion::common::Result<u64> {
+        let mut arrow_inserter = self
+            .collection_handle
+            .configure_arrow_deserializer(SqlSerdeConfig::default())
+            .map_err(|e| DataFusionError::External(e.into()))?;
+
+        let mut row_count = 0;
+        while let Some(batch) = data.next().await.transpose()? {
+            arrow_inserter
+                .insert(&batch)
+                .map_err(|e| DataFusionError::External(e.into()))?;
+            row_count += batch.num_rows();
+        }
+
+        Ok(row_count as u64)
     }
 }
 
@@ -125,13 +225,13 @@ impl AdHocQueryExecution {
 }
 
 impl DisplayAs for AdHocQueryExecution {
-    fn fmt_as(&self, _t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
+    fn fmt_as(&self, _t: DisplayFormatType, f: &mut Formatter) -> fmt::Result {
         write!(f, "AdHocQueryExecution")
     }
 }
 
 impl Debug for AdHocQueryExecution {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "AdHocQueryExecution")
     }
 }

@@ -1919,4 +1919,39 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
         .adhoc_query("/v0/pipelines/test/query", "SELECT * FROM table1", "text")
         .await;
     assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+
+    // Test insert statements
+    const ADHOC_SQL_COUNT: &str = "SELECT COUNT(*) from t1";
+    const ADHOC_SQL_INSERT: &str = "INSERT INTO t1 VALUES (99, '2020-01-01'), (100, '2020-01-01')";
+
+    let mut r = config
+        .adhoc_query("/v0/pipelines/test/query", ADHOC_SQL_COUNT, "json")
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
+    let cnt_body = r.body().await.unwrap();
+    let cnt_ret = std::str::from_utf8(cnt_body.as_ref()).unwrap();
+    let cnt_ret_json = serde_json::from_str::<Value>(cnt_ret).unwrap();
+    assert_eq!(cnt_ret_json, json!({"count(*)": 5}));
+
+    let mut r = config
+        .adhoc_query("/v0/pipelines/test/query", ADHOC_SQL_INSERT, "json")
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
+    let ins_body = r.body().await.unwrap();
+    let ins_ret = std::str::from_utf8(ins_body.as_ref()).unwrap();
+    let ins_ret_json = serde_json::from_str::<Value>(ins_ret).unwrap();
+    assert_eq!(ins_ret_json, json!({"count": 2}));
+
+    // Wait for circuit to step, maybe instead the server
+    // endpoint should call request_step when insert is done.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let mut r = config
+        .adhoc_query("/v0/pipelines/test/query", ADHOC_SQL_COUNT, "json")
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
+    let cnt_body = r.body().await.unwrap();
+    let cnt_ret = std::str::from_utf8(cnt_body.as_ref()).unwrap();
+    let cnt_ret_json = serde_json::from_str::<Value>(cnt_ret).unwrap();
+    assert_eq!(cnt_ret_json, json!({"count(*)": 7}));
 }
