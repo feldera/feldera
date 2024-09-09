@@ -1,9 +1,5 @@
-use super::{InputConsumer, InputEndpoint, InputReader, Step, TransportInputEndpoint};
-use crate::{
-    ensure_default_crypto_provider,
-    format::{flush_vecdeque_queue, InputBuffer},
-    Parser, PipelineState,
-};
+use super::{InputConsumer, InputEndpoint, InputQueue, InputReader, Step, TransportInputEndpoint};
+use crate::{ensure_default_crypto_provider, Parser, PipelineState};
 use actix::System;
 use actix_web::http::header::{ByteRangeSpec, ContentRangeSpec, Range, CONTENT_RANGE};
 use anyhow::{anyhow, Result as AnyResult};
@@ -11,14 +7,7 @@ use awc::{Client, Connector};
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::url::UrlInputConfig;
 use futures::StreamExt;
-use std::{
-    cmp::Ordering,
-    collections::VecDeque,
-    str::FromStr,
-    sync::{Arc, Mutex},
-    thread::spawn,
-    time::Duration,
-};
+use std::{cmp::Ordering, str::FromStr, sync::Arc, thread::spawn, time::Duration};
 use tokio::{
     select,
     sync::watch::{channel, Receiver, Sender},
@@ -61,7 +50,7 @@ impl TransportInputEndpoint for UrlInputEndpoint {
 
 struct UrlInputReader {
     sender: Sender<PipelineState>,
-    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+    queue: Arc<InputQueue>,
 }
 
 impl UrlInputReader {
@@ -71,7 +60,7 @@ impl UrlInputReader {
         mut parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
         let (sender, receiver) = channel(PipelineState::Paused);
-        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let queue = Arc::new(InputQueue::new());
         spawn({
             let config = config.clone();
             let receiver = receiver.clone();
@@ -97,7 +86,7 @@ impl UrlInputReader {
         config: Arc<UrlInputConfig>,
         parser: &mut Box<dyn Parser>,
         mut receiver: Receiver<PipelineState>,
-        queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+        queue: Arc<InputQueue>,
     ) -> AnyResult<()> {
         ensure_default_crypto_provider();
 
@@ -244,9 +233,7 @@ impl UrlInputReader {
                                     if !chunk.is_empty() {
                                         consumed_bytes += chunk.len() as u64;
                                         let _ = parser.input_fragment(chunk);
-                                        if let Some(buffer) = parser.take() {
-                                            queue.lock().unwrap().push_back(buffer);
-                                        }
+                                        queue.push(parser.take());
                                     }
                                     offset += data_len;
                                 },
@@ -281,7 +268,7 @@ impl InputReader for UrlInputReader {
     }
 
     fn flush(&self, n: usize) -> usize {
-        flush_vecdeque_queue(&self.queue, n)
+        self.queue.flush(n)
     }
 }
 

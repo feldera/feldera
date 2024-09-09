@@ -1,14 +1,13 @@
 //! A datagen input adapter that generates random data based on a schema and config.
 
 use std::cmp::min;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use crate::format::{flush_vecdeque_queue, InputBuffer};
 use crate::transport::Step;
 use crate::{
     InputConsumer, InputEndpoint, InputReader, Parser, PipelineState, TransportInputEndpoint,
@@ -33,6 +32,8 @@ use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Zipf};
 use serde_json::{to_writer, Map, Value};
 use tokio::sync::Notify;
+
+use super::InputQueue;
 
 fn range_as_i64(
     field: &SqlIdentifier,
@@ -254,7 +255,7 @@ struct InputGenerator {
     config: DatagenInputConfig,
     /// Amount of records generated so far.
     generated: Arc<AtomicUsize>,
-    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+    queue: Arc<InputQueue>,
     notifier: Arc<Notify>,
 }
 
@@ -313,7 +314,7 @@ impl InputGenerator {
                 && p.limit.unwrap_or(usize::MAX) > 10_000_000
         });
 
-        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let queue = Arc::new(InputQueue::new());
         for worker in 0..config.workers {
             let config = config.clone();
             let status = status.clone();
@@ -393,7 +394,7 @@ impl InputGenerator {
         schema: Relation,
         mut consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
-        queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+        queue: Arc<InputQueue>,
         notifier: Arc<Notify>,
         status: Arc<Atomic<PipelineState>>,
         generated: Arc<AtomicUsize>,
@@ -453,9 +454,7 @@ impl InputGenerator {
                             if batch_idx % batch_size == 0 {
                                 buffer.extend(END_ARR);
                                 parser.input_chunk(&buffer);
-                                if let Some(b) = parser.take() {
-                                    queue.lock().unwrap().push_back(b);
-                                }
+                                queue.push(parser.take());
                                 buffer.clear();
                                 buffer.extend(START_ARR);
                                 batch_idx = 0;
@@ -475,9 +474,7 @@ impl InputGenerator {
                 if !buffer.is_empty() {
                     buffer.extend(END_ARR);
                     parser.input_chunk(&buffer);
-                    if let Some(b) = parser.take() {
-                        queue.lock().unwrap().push_back(b);
-                    }
+                    queue.push(parser.take());
                 }
                 // Update global progress after we created all records for a batch
                 //eprintln!("adding {} to generated", generate_range.len());
@@ -513,7 +510,7 @@ impl InputReader for InputGenerator {
     }
 
     fn flush(&self, n: usize) -> usize {
-        flush_vecdeque_queue(&self.queue, n)
+        self.queue.flush(n)
     }
 }
 

@@ -1,7 +1,4 @@
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
 use log::error;
@@ -10,10 +7,7 @@ use tokio::sync::{
     watch::{channel, Receiver, Sender},
 };
 
-use crate::{
-    format::{flush_vecdeque_queue, InputBuffer},
-    InputConsumer, InputReader, Parser, PipelineState, TransportInputEndpoint,
-};
+use crate::{InputConsumer, InputReader, Parser, PipelineState, TransportInputEndpoint};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::program_schema::Relation;
 #[cfg(test)]
@@ -21,6 +15,8 @@ use mockall::automock;
 
 use crate::transport::InputEndpoint;
 use feldera_types::transport::s3::{AwsCredentials, ConsumeStrategy, ReadStrategy, S3InputConfig};
+
+use super::InputQueue;
 
 pub struct S3InputEndpoint {
     config: Arc<S3InputConfig>,
@@ -124,7 +120,7 @@ trait S3Api: Send {
 
 struct S3InputReader {
     sender: Sender<PipelineState>,
-    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+    queue: Arc<InputQueue>,
 }
 
 impl InputReader for S3InputReader {
@@ -143,7 +139,7 @@ impl InputReader for S3InputReader {
     }
 
     fn flush(&self, n: usize) -> usize {
-        flush_vecdeque_queue(&self.queue, n)
+        self.queue.flush(n)
     }
 }
 
@@ -175,7 +171,7 @@ impl S3InputReader {
         let (sender, receiver) = channel(PipelineState::Paused);
         let config_clone = config.clone();
         let receiver_clone = receiver.clone();
-        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let queue = Arc::new(InputQueue::new());
         std::thread::spawn({
             let queue = queue.clone();
             move || {
@@ -200,7 +196,7 @@ impl S3InputReader {
         config: Arc<S3InputConfig>,
         mut consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
-        queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+        queue: Arc<InputQueue>,
         mut receiver: Receiver<PipelineState>,
     ) -> anyhow::Result<()> {
         // The worker thread fetches objects in the background while already retrieved
@@ -271,9 +267,7 @@ impl S3InputReader {
                                                 Err(e) => consumer.error(false, e.into())
                                         }
                                     }
-                                    if let Some(buffer) = parser.take() {
-                                        queue.lock().unwrap().push_back(buffer);
-                                    }
+                                    queue.push(parser.take());
                                 }
                                 Some(Err(e)) => {
                                     match e.downcast_ref::<ListObjectsV2Error>() {

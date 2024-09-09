@@ -1,6 +1,5 @@
 use crate::{
-    format::{flush_vecdeque_queue, InputBuffer},
-    transport::Step,
+    transport::{InputQueue, Step},
     InputConsumer, InputEndpoint, InputReader, Parser, PipelineState, TransportInputEndpoint,
 };
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
@@ -15,8 +14,7 @@ use google_cloud_pubsub::{
 };
 use log::{debug, warn};
 use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
+    sync::Arc,
     thread,
     time::{Duration, SystemTime},
 };
@@ -66,7 +64,7 @@ impl TransportInputEndpoint for PubSubInputEndpoint {
 
 struct PubSubReader {
     state_sender: Sender<PipelineState>,
-    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+    queue: Arc<InputQueue>,
 }
 
 impl PubSubReader {
@@ -77,7 +75,7 @@ impl PubSubReader {
     ) -> AnyResult<Self> {
         let (state_sender, state_receiver) = channel(PipelineState::Paused);
         let subscription = TOKIO.block_on(Self::subscribe(&config))?;
-        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let queue = Arc::new(InputQueue::new());
         thread::spawn({
             let queue = queue.clone();
             move || {
@@ -134,7 +132,7 @@ impl PubSubReader {
         subscription: Subscription,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+        queue: Arc<InputQueue>,
         mut state_receiver: Receiver<PipelineState>,
     ) -> Result<(), AnyError> {
         let mut state = PipelineState::Paused;
@@ -172,9 +170,7 @@ impl PubSubReader {
                             // None if the stream is cancelled
                             while let Some(message) = stream.next().await {
                                 parser.input_chunk(&message.message.data);
-                                if let Some(buffer) = parser.take() {
-                                    queue.lock().unwrap().push_back(buffer);
-                                }
+                                queue.push(parser.take());
                                 message.ack().await.unwrap_or_else(|e| {
                                     consumer.error(
                                         false,
@@ -214,7 +210,7 @@ impl InputReader for PubSubReader {
     }
 
     fn flush(&self, n: usize) -> usize {
-        flush_vecdeque_queue(&self.queue, n)
+        self.queue.flush(n)
     }
 }
 

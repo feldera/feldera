@@ -1,7 +1,6 @@
 use super::{count_partitions_in_topic, Ctp, DataConsumerContext, ErrorHandler, POLL_TIMEOUT};
-use crate::format::{flush_vecdeque_queue, InputBuffer};
 use crate::transport::kafka::ft::check_fatal_errors;
-use crate::transport::{InputEndpoint, InputReader, Step};
+use crate::transport::{InputEndpoint, InputQueue, InputReader, Step};
 use crate::{InputConsumer, Parser, TransportInputEndpoint};
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
@@ -22,7 +21,7 @@ use serde::ser::SerializeTuple;
 use serde::{Deserialize, Serialize, Serializer};
 use std::cmp::{max, Ordering};
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::thread::{self};
@@ -136,7 +135,7 @@ struct Reader {
     complete_step: Arc<Mutex<Option<Step>>>,
     unparker: Unparker,
     join_handle: Option<JoinHandle<()>>,
-    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+    queue: Arc<InputQueue>,
 }
 
 impl Reader {
@@ -176,7 +175,7 @@ impl InputReader for Reader {
     }
 
     fn flush(&self, n: usize) -> usize {
-        flush_vecdeque_queue(&self.queue, n)
+        self.queue.flush(n)
     }
 }
 
@@ -205,7 +204,7 @@ impl Reader {
         let unparker = parker.unparker().clone();
         let action = Arc::new(Mutex::new(Ok(OkAction::Pause)));
         let complete_step = Arc::new(Mutex::new(None));
-        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let queue = Arc::new(InputQueue::new());
         let join_handle = {
             let queue = queue.clone();
             Some(WorkerThread::spawn(
@@ -300,7 +299,7 @@ struct WorkerThread {
     config: Arc<Config>,
     receiver: Arc<Mutex<Box<dyn InputConsumer>>>,
     parser: Box<dyn Parser>,
-    queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+    queue: Arc<InputQueue>,
 }
 
 impl WorkerThread {
@@ -313,7 +312,7 @@ impl WorkerThread {
         config: &Arc<Config>,
         receiver: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        queue: Arc<Mutex<VecDeque<Box<dyn InputBuffer>>>>,
+        queue: Arc<InputQueue>,
     ) -> JoinHandle<()> {
         let receiver = Arc::new(Mutex::new(receiver));
         let worker_thread = Self {
@@ -536,9 +535,7 @@ impl WorkerThread {
                     }
                     if let Some(payload) = data_message.payload() {
                         let _ = self.parser.input_chunk(payload);
-                        if let Some(buffer) = self.parser.take() {
-                            self.queue.lock().unwrap().push_back(buffer);
-                        }
+                        self.queue.push(self.parser.take());
                     }
                     p.next_offset = data_message.offset() + 1;
                 }
@@ -588,9 +585,7 @@ impl WorkerThread {
 
                             if let Some(payload) = data_message.payload() {
                                 let _ = self.parser.input_chunk(payload);
-                                if let Some(buffer) = self.parser.take() {
-                                    self.queue.lock().unwrap().push_back(buffer);
-                                }
+                                self.queue.push(self.parser.take());
                             }
                             n_messages += 1;
                             n_bytes += data_message.payload_len();
