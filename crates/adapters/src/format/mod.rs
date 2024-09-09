@@ -480,7 +480,7 @@ impl InputBuffer for EmptyInputBuffer {
 pub trait Parser: Send + InputBuffer {
     /// Push a fragment of the input stream to the parser.
     ///
-    /// The parser breaks `data` up into records and add the records to its
+    /// The parser breaks `data` up into records and adds the records to its
     /// buffers using the [`DeCollectionHandle`](`crate::DeCollectionHandle`)
     /// API.  `data` is not guaranteed to start or end on a record boundary.
     /// The parser is responsible for identifying record boundaries and
