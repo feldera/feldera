@@ -28,11 +28,12 @@ We support several Avro-based formats:
   deletions.
 
 * **Debezium** (input only) - used to synchronize a Feldera table with an external database using
-  [Debezium](https://debezium.io/).  See [Debezium source connector documentation](/docs/connectors/sources/debezium.md)
+  [Debezium](https://debezium.io/).  See [Debezium source connector documentation](/docs/connectors/sources/debezium)
   for more details.
 
 * **Confluent JDBC** (output only) - used to send incremental changes computed by Feldera
-  to an external database using the [Confluent JDBC connector](https://docs.confluent.io/kafka-connectors/jdbc/current/sink-connector/)
+  to an external database using the [Confluent JDBC connector](https://docs.confluent.io/kafka-connectors/jdbc/current/sink-connector/).
+  See [Confluent JDBC sink documentation](/docs/connectors/sinks/confluent-jdbc) for details.
 
 
 ## Avro input

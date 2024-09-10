@@ -73,9 +73,8 @@ def main():
 
     avro_config = {
             "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
-            "errors.log.include.messages": "true",
+            "errors.log.include.messages": True,
             "dialect.name": "PostgreSqlDatabaseDialect",
-            "tasks.max": "1",
             "connection.url": f"jdbc:postgresql://postgres:5432/{DATABASE_NAME}",
             "connection.user": "postgres",
             "connection.password": "postgres",
@@ -85,7 +84,6 @@ def main():
             "auto.create": True,
             "auto.evolve": True,
             "schema.evolution": "basic",
-            "database.time_zone": "UTC",
             "topics": AVRO_TABLE_NAME,
             "errors.deadletterqueue.topic.name": "dlq",
             "errors.deadletterqueue.context.headers.enable": True,
@@ -95,8 +93,8 @@ def main():
             "value.converter.value.subject.name.strategy": "io.confluent.kafka.serializers.subject.TopicNameStrategy",
             "key.converter": "io.confluent.connect.avro.AvroConverter",
             "value.converter": "io.confluent.connect.avro.AvroConverter",
-            "key.converter.schemas.enable": "true",
-            "value.converter.schemas.enable": "true",
+            "key.converter.schemas.enable": True,
+            "value.converter.schemas.enable": True,
             "key.converter.schema.registry.url": args.registry_url_from_connect,
             "value.converter.schema.registry.url": args.registry_url_from_connect,
         }

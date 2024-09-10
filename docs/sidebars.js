@@ -193,6 +193,11 @@ const sidebars = {
                           label: 'Kafka'
                       },
                       {
+                        type: 'doc',
+                        id: 'connectors/sinks/confluent-jdbc',
+                        label: 'Confluent JDBC Connector'
+                      },
+                      {
                           type: 'doc',
                           id: 'connectors/sinks/snowflake',
                           label: 'Snowflake (experimental)'
