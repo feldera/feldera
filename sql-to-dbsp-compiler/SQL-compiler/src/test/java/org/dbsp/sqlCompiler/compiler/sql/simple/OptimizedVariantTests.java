@@ -1,0 +1,14 @@
+package org.dbsp.sqlCompiler.compiler.sql.simple;
+
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+
+// Runs the VariantTests with optimizations
+public class OptimizedVariantTests extends VariantTests {
+    @Override
+    public DBSPCompiler testCompiler() {
+        // Do not optimize, esp in Calcite
+        CompilerOptions options = this.testOptions(false, true);
+        return new DBSPCompiler(options);
+    }
+}

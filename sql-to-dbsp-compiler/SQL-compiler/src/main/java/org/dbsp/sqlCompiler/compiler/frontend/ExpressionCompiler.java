@@ -1098,6 +1098,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "to_int":
                     case "typeof":
                         return compileFunction(call, node, type, ops, 1);
+                    case "parse_json":
+                    case "unparse_json":
+                        return compilePolymorphicFunction(call, node, type, ops, 1);
                     case "sequence":
                         for (int i = 0; i < ops.size(); i++)
                             this.ensureInteger(ops, i, 32);

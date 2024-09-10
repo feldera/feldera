@@ -8,10 +8,11 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
@@ -111,7 +112,7 @@ public class VariantTests extends BaseSQLTests {
                                 )))));
         // Variant values allow access by index, but return null if they are not arrays
         this.testQuery("SELECT (CAST(1 AS VARIANT))[1]",
-                DBSPVariantLiteral.sqlNull(true));
+                DBSPZSetLiteral.none(new DBSPTypeVariant(true)));
         this.testQuery("SELECT CAST(ARRAY[1,2,3] AS VARIANT)[1]",
                 new DBSPVariantLiteral(new DBSPI32Literal(1), true));
         // Acessing items in a VARIANT array returns VARIANT values,
@@ -126,11 +127,11 @@ public class VariantTests extends BaseSQLTests {
         // One can access fields by name in a VARIANT, even if the
         // variant does not have named fields
         this.testQuery("SELECT CAST(ARRAY[1,2,3] AS VARIANT)['name']",
-            DBSPVariantLiteral.sqlNull(true));
+            DBSPLiteral.none(new DBSPTypeVariant(true)));
         // One can access fields by name in a VARIANT, even if the
         // variant does not have named fields
         this.testQuery("SELECT CAST(ARRAY[1,2,3] AS VARIANT).\"name\"",
-                DBSPVariantLiteral.sqlNull(true));
+                DBSPLiteral.none(new DBSPTypeVariant(true)));
         // One can access fields by index in a VARIANT
         this.testQuery("SELECT CAST(Map[1,'a',2,'b',3,'c'] AS VARIANT)[1]",
                 new DBSPVariantLiteral(new DBSPStringLiteral("a"), true));
@@ -141,7 +142,7 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPVariantLiteral(new DBSPI32Literal(1), true));
         // Unquoted field may not match, depending on dialect
         this.testQuery("SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT).a",
-                DBSPVariantLiteral.sqlNull(true));
+                DBSPLiteral.none(new DBSPTypeVariant(true)));
         // The safest way is to use an index
         this.testQuery("SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT)['a']",
                 new DBSPVariantLiteral(new DBSPI32Literal(1), true));
@@ -154,5 +155,77 @@ public class VariantTests extends BaseSQLTests {
                 "                             'b', CAST('abc' AS VARIANT), " +
                 "                             'c', CAST(ARRAY[1,2,3] AS VARIANT)]['c'][1] AS INTEGER)",
                 new DBSPI32Literal(1, true));
+    }
+
+    @Test
+    public void parseJsonTests() {
+        this.testQuery("SELECT PARSE_JSON(1)",
+                new DBSPVariantLiteral(
+                        new DBSPDecimalLiteral(1)));
+        this.testQuery("SELECT PARSE_JSON('1')",
+                new DBSPVariantLiteral(
+                        new DBSPDecimalLiteral(1)));
+        this.testQuery("SELECT TYPEOF(PARSE_JSON('1'))",
+                new DBSPStringLiteral("DECIMAL"));
+        this.testQuery("SELECT PARSE_JSON('\"a\"')",
+                new DBSPVariantLiteral(
+                        new DBSPStringLiteral("a")));
+        this.testQuery("SELECT PARSE_JSON('false')",
+                new DBSPVariantLiteral(
+                        new DBSPBoolLiteral(false)));
+        this.testQuery("SELECT PARSE_JSON('null')",
+                DBSPVariantNullLiteral.variantNull());
+        this.testQuery("SELECT TYPEOF(PARSE_JSON('null'))",
+                new DBSPStringLiteral("VARIANT"));
+        this.testQuery("SELECT PARSE_JSON(null)",
+                DBSPVariantLiteral.none(new DBSPTypeVariant(CalciteObject.EMPTY, true)));
+        this.testQuery("SELECT PARSE_JSON('[1,2,3]')",
+                new DBSPVariantLiteral(
+                        new DBSPVecLiteral(
+                                new DBSPVariantLiteral(new DBSPDecimalLiteral(1)),
+                                new DBSPVariantLiteral(new DBSPDecimalLiteral(2)),
+                                new DBSPVariantLiteral(new DBSPDecimalLiteral(3)))));
+        this.testQuery("SELECT PARSE_JSON('{\"a\": 1, \"b\": 2}')",
+                new DBSPVariantLiteral(
+                        new DBSPMapLiteral(
+                                new DBSPTypeMap(
+                                        new DBSPTypeVariant(false),
+                                        new DBSPTypeVariant(false), false),
+                                Linq.list(
+                                        new DBSPVariantLiteral(new DBSPStringLiteral("a")),
+                                        new DBSPVariantLiteral(new DBSPDecimalLiteral(1)),
+                                        new DBSPVariantLiteral(new DBSPStringLiteral("b")),
+                                        new DBSPVariantLiteral(new DBSPDecimalLiteral(2))))));
+    }
+
+    @Test
+    public void unparseJsonTests() {
+        DBSPExpression NULL = DBSPStringLiteral.none(DBSPTypeString.varchar(true));
+
+        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON(1))",
+                new DBSPStringLiteral("1", true));
+        this.testQuery("SELECT UNPARSE_JSON(null)",
+                NULL);
+        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('1'))",
+                new DBSPStringLiteral("1", true));
+        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('\"a\"'))",
+                new DBSPStringLiteral("\"a\"", true));
+        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('false'))",
+                        new DBSPStringLiteral("false", true));
+        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('null'))",
+                new DBSPStringLiteral("null", true));
+        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON(null))",
+                DBSPVariantLiteral.none(DBSPTypeString.varchar(true)));
+        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('[1,2,3]'))",
+                new DBSPStringLiteral("[1, 2, 3]", true));
+        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('{ \"a\": 1, \"b\": 2 }'))",
+                new DBSPStringLiteral("{\"a\": 1, \"b\": 2}", true));
+
+        this.testQuery("SELECT PARSE_JSON('{ \"a\": 1, \"b\": 2 }') = PARSE_JSON('{\"b\":2,\"a\":1}')",
+                new DBSPBoolLiteral(true));
+
+        // Illegal Variant
+        this.testQuery("SELECT UNPARSE_JSON(CAST(DATE '2020-01-01' AS VARIANT))",
+                NULL);
     }
 }

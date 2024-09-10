@@ -50,10 +50,8 @@ import static java.util.Objects.requireNonNull;
 
 /** Represents a function that is implemented by the user in Rust */
 public class ExternalFunction extends SqlFunction {
-    /**
-     * A variant ot OperandTypes.TypeNameChecker which does not extend the interface
-     * ImplicitCastOperandTypeChecker.  We do not want to allow implicit casts for these operands.
-     */
+    /** A variant of OperandTypes.TypeNameChecker which does not extend the interface
+     * ImplicitCastOperandTypeChecker.  We do not want to allow implicit casts for these operands. */
     private record ExactTypeNameChecker(SqlTypeName typeName) implements SqlSingleOperandTypeChecker {
         private ExactTypeNameChecker(SqlTypeName typeName) {
             this.typeName = requireNonNull(typeName, "typeName");

@@ -52,6 +52,10 @@ public final class DBSPDecimalLiteral extends DBSPLiteral implements IsNumericLi
         this(type.getNode(), type, value);
     }
 
+    public DBSPDecimalLiteral(int value) {
+        this(DBSPTypeDecimal.getDefault(), BigDecimal.valueOf(value));
+    }
+
     @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);

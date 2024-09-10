@@ -10,9 +10,12 @@ use rust_decimal::Decimal;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use size_of::{Context, SizeOf};
-use std::collections::BTreeMap;
-use std::fmt::Debug;
-use std::hash::Hash;
+use std::{
+    collections::BTreeMap,
+    fmt::{Debug, Write},
+    hash::Hash,
+    str::FromStr,
+};
 
 pub trait StructVariant: Send + Sync + 'static {
     fn get(&self, key: &str) -> Option<Variant>;
@@ -143,6 +146,31 @@ pub enum Variant {
     //Struct(Option<Box<dyn StructVariant>>),
 }
 
+fn json_string_escape(src: &str, buffer: &mut String) -> Result<(), Box<dyn std::error::Error>> {
+    let mut utf16_buf = [0u16; 2];
+    *buffer += "\"";
+    for c in src.chars() {
+        match c {
+            '\x08' => *buffer += "\\b",
+            '\x0c' => *buffer += "\\f",
+            '\n' => *buffer += "\\n",
+            '\r' => *buffer += "\\r",
+            '\t' => *buffer += "\\t",
+            '"' => *buffer += "\\\"",
+            '\\' => *buffer += "\\",
+            c if c.is_ascii_graphic() => buffer.push(c),
+            c => {
+                let encoded = c.encode_utf16(&mut utf16_buf);
+                for utf16 in encoded {
+                    write!(buffer, "\\u{:04X}", utf16)?;
+                }
+            }
+        }
+    }
+    *buffer += "\"";
+    Ok(())
+}
+
 impl Variant {
     fn get_type_string(&self) -> &'static str {
         match self {
@@ -178,7 +206,7 @@ impl Variant {
         }
     }
 
-    pub fn index(&self, index: Variant) -> Variant {
+    pub fn index(&self, index: Variant) -> Option<Variant> {
         match self {
             Variant::Array(value) => {
                 let index = match index {
@@ -189,16 +217,120 @@ impl Variant {
                     _ => 0, // out of bounds
                 } - 1; // Array indexes in SQL start from 1!
                 if (index < 0) || (index as usize >= value.len()) {
-                    Variant::SqlNull
+                    None
                 } else {
-                    value[index as usize].clone()
+                    Some(value[index as usize].clone())
                 }
             }
-            Variant::Map(value) => match value.get(&index) {
-                None => Variant::SqlNull,
-                Some(result) => result.clone(),
-            },
-            _ => Variant::SqlNull,
+            Variant::Map(value) => value.get(&index).cloned(),
+            _ => None,
+        }
+    }
+
+    pub fn to_json_string(&self, buffer: &mut String) -> Result<(), Box<dyn std::error::Error>> {
+        match self {
+            Variant::VariantNull => {
+                write!(buffer, "null")?;
+                Ok(())
+            }
+            Variant::Boolean(b) => {
+                write!(buffer, "{}", b)?;
+                Ok(())
+            }
+            Variant::TinyInt(i) => {
+                write!(buffer, "{}", i)?;
+                Ok(())
+            }
+            Variant::SmallInt(i) => {
+                write!(buffer, "{}", i)?;
+                Ok(())
+            }
+            Variant::Int(i) => {
+                write!(buffer, "{}", i)?;
+                Ok(())
+            }
+            Variant::BigInt(i) => {
+                write!(buffer, "{}", i)?;
+                Ok(())
+            }
+            Variant::Real(f) => {
+                write!(buffer, "{}", f)?;
+                Ok(())
+            }
+            Variant::Double(f) => {
+                write!(buffer, "{}", f)?;
+                Ok(())
+            }
+            Variant::Decimal(d) => {
+                write!(buffer, "{}", d)?;
+                Ok(())
+            }
+            Variant::String(s) => {
+                json_string_escape(s, buffer)?;
+                Ok(())
+            }
+            Variant::Array(v) => {
+                write!(buffer, "[")?;
+                let mut first = true;
+                for e in v {
+                    if !first {
+                        write!(buffer, ", ")?;
+                    }
+                    first = false;
+                    e.to_json_string(buffer)?;
+                }
+                write!(buffer, "]")?;
+                Ok(())
+            }
+            Variant::Map(m) => {
+                write!(buffer, "{{")?;
+                let mut first = true;
+                for (k, v) in m {
+                    if !first {
+                        write!(buffer, ", ")?;
+                    }
+                    first = false;
+                    match k {
+                        Variant::String(_) => k.to_json_string(buffer),
+                        _ => return Err(Box::from("Not a JSON value (label is not a string)")),
+                    }?;
+                    write!(buffer, ": ")?;
+                    v.to_json_string(buffer)?;
+                }
+                write!(buffer, "}}")?;
+                Ok(())
+            }
+            _ => Err(Box::from("Not a JSON value (not a json type)")),
+        }
+    }
+}
+
+impl TryFrom<serde_json::Value> for Variant {
+    type Error = rust_decimal::Error;
+
+    fn try_from(value: serde_json::Value) -> Result<Self, rust_decimal::Error> {
+        match value {
+            serde_json::Value::Null => Ok(Variant::VariantNull),
+            serde_json::Value::Bool(b) => Ok(Variant::Boolean(b)),
+            serde_json::Value::String(s) => Ok(Variant::String(s)),
+            serde_json::Value::Number(n) => {
+                let decimal = Decimal::from_str(n.as_str())?;
+                Ok(Variant::Decimal(decimal))
+            }
+            serde_json::Value::Array(v) => {
+                let mut result = Vec::new();
+                for e in v {
+                    result.push(Variant::try_from(e)?);
+                }
+                Ok(Variant::Array(result))
+            }
+            serde_json::Value::Object(m) => {
+                let mut result = BTreeMap::<Variant, Variant>::new();
+                for (key, v) in m.iter() {
+                    result.insert(Variant::String(key.clone()), Variant::try_from(v.clone())?);
+                }
+                Ok(Variant::Map(result))
+            }
         }
     }
 }

@@ -130,18 +130,6 @@ public class EndToEndTests extends BaseSQLTests {
             new DBSPDoubleLiteral(0.0, true)
     );
 
-    public static final DBSPTupleExpression e0NoDouble = new DBSPTupleExpression(
-            new DBSPI32Literal(10),
-            new DBSPBoolLiteral(true),
-            new DBSPStringLiteral("Hi"),
-            DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))
-    );
-    public static final DBSPTupleExpression e1NoDouble = new DBSPTupleExpression(
-            new DBSPI32Literal(10),
-            new DBSPBoolLiteral(false),
-            new DBSPStringLiteral("Hi"),
-            new DBSPI32Literal(1, true)
-    );
     static final DBSPZSetLiteral z0 = new DBSPZSetLiteral(e0);
     static final DBSPZSetLiteral z1 = new DBSPZSetLiteral(e1);
     static final DBSPZSetLiteral empty = DBSPZSetLiteral.emptyWithElementType(z0.getElementType());

@@ -21,7 +21,7 @@ size-of = { version = "0.1.5", package = "feldera-size-of" }
 geo = { version = "0.26.0" }
 geo-types = { version = "0.7" }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1" }
-serde_json = { version = "1.0.127" }
+serde_json = { version = "1.0.127", features = ["arbitrary_precision"] }
 chrono = { version = "0.4.38" }
 rkyv = { version = "0.7.45", default-features = false, features = ["std", "size_64"] }
 num = { version = "0.4.1" }
@@ -32,7 +32,6 @@ tikv-jemallocator = { version = "0.5.4", features = ["profiling", "unprefixed_ma
 [dev-dependencies]
 hashing = { path = "../lib/hashing" }
 readers = { path = "../lib/readers" }
-sqlx = { version = "0.6", features = ["runtime-async-std-native-tls", "sqlite", "any"] }
 uuid = { version = "1.6.1" }
 # Used only in some unit tests
 metrics = { version = "0.23.0" }
