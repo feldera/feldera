@@ -70,8 +70,6 @@ def main():
         "database.dbname": "postgres",
         "table.include.list": f"{TEST_SCHEMA}.*",
         "topic.prefix": f"avro",
-        "decimal.handling.mode": "string",
-        "time.precision.mode": "connect",
         "key.converter": "io.confluent.connect.avro.AvroConverter",
         "value.converter": "io.confluent.connect.avro.AvroConverter",
         "key.converter.schemas.enable": "true",
@@ -80,7 +78,6 @@ def main():
         "slot.name": "debezium_slot_1",
         "key.converter.schema.registry.url": args.registry_url_from_connect,
         "value.converter.schema.registry.url": args.registry_url_from_connect,
-        "time.precision.mode": "adaptive_time_microseconds"
     }
 
     create_debezium_postgres_connector("test-connector-avro", args.kafka_url_from_script, avro_config, [f"avro.{TEST_SCHEMA}.{TEST_TABLE}"])
