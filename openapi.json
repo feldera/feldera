@@ -298,6 +298,33 @@
         ]
       }
     },
+    "/v0/metrics": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Returns the metrics of all running pipelines belonging to this tenant",
+        "operationId": "get_metrics",
+        "responses": {
+          "200": {
+            "description": "Returns the metrics of all running pipelines belonging to this tenant.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines": {
       "get": {
         "tags": [
@@ -4403,6 +4430,10 @@
     {
       "name": "API keys",
       "description": "Manage API keys."
+    },
+    {
+      "name": "Metrics",
+      "description": "Retrieve pipeline metrics."
     }
   ]
 }
