@@ -1,4 +1,4 @@
-use crate::transport::{InputEndpoint, InputQueue};
+use crate::transport::InputEndpoint;
 use crate::{
     server::{PipelineError, MAX_REPORTED_PARSE_ERRORS},
     transport::{InputReader, Step},
@@ -13,6 +13,7 @@ use feldera_types::program_schema::Relation;
 use futures_util::StreamExt;
 use log::debug;
 use serde::Deserialize;
+use std::sync::atomic::AtomicUsize;
 use std::{
     sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
@@ -60,7 +61,7 @@ struct HttpInputEndpointInner {
     status_notifier: watch::Sender<()>,
     #[allow(clippy::type_complexity)]
     cp: Mutex<Option<(Box<dyn InputConsumer>, Box<dyn Parser>)>>,
-    queue: InputQueue,
+    queued: AtomicUsize,
     /// Ingest data even if the pipeline is paused.
     force: bool,
 }
@@ -76,7 +77,7 @@ impl HttpInputEndpointInner {
             }),
             status_notifier: watch::channel(()).0,
             cp: Mutex::new(None),
-            queue: InputQueue::new(),
+            queued: AtomicUsize::new(0),
             force,
         }
     }
@@ -110,13 +111,21 @@ impl HttpInputEndpoint {
     fn push(&self, bytes: Option<&[u8]>, errors: &mut CircularQueue<ParseError>) -> usize {
         let mut guard = self.inner.cp.lock().unwrap();
         let parser = &mut guard.as_mut().unwrap().1;
-        let (_num_records, mut new_errors) = match bytes {
+        let (num_records, mut new_errors) = match bytes {
             Some(bytes) => parser.input_fragment(bytes),
             None => parser.end_of_fragments(),
         };
-        let buffer = parser.take();
+
+        // Unlike the other input connectors, we have to flush our data
+        // immediately to the circuit.  That's because this connector is
+        // ephemeral: [crate::server::input_endpoint] creates and destroys it
+        // within a single REST API call, which means that the controller never
+        // gets a chance to call our `flush` method. If we queued input buffers,
+        // they'd just get discarded.
+        parser.flush_all();
+
+        self.inner.queued.fetch_add(num_records, Ordering::SeqCst);
         drop(guard);
-        self.inner.queue.push(buffer);
 
         let num_errors = new_errors.len();
         for error in new_errors.drain(..) {
@@ -243,7 +252,9 @@ impl InputReader for HttpInputEndpoint {
         self.notify();
     }
 
-    fn flush(&self, n: usize) -> usize {
-        self.inner.queue.flush(n)
+    fn flush(&self, _n: usize) -> usize {
+        // This method will probably never get called, but if it does we can
+        // report how many records we already flushed.
+        self.inner.queued.swap(0, Ordering::SeqCst)
     }
 }
