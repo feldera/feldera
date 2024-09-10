@@ -55,12 +55,14 @@ pub struct NexmarkInputOptions {
     /// batches of size `threads × batch_size_per_thread`.
     pub batch_size_per_thread: u64,
 
-    /// Maximum number of events to submit in a single step.  This should be a
-    /// multiple of `batch_size`.
+    /// Maximum number of events to submit in a single step, per thread.
+    ///
+    /// This should really be per worker thread, not per generator thread, but
+    /// the connector does not know how many worker threads there are.
     ///
     /// This stands in for `max_batch_size` from the connector configuration
     /// because it must be a constant across all three of the nexmark tables.
-    pub max_step_size: u64,
+    pub max_step_size_per_thread: u64,
 }
 
 impl Default for NexmarkInputOptions {
@@ -69,7 +71,7 @@ impl Default for NexmarkInputOptions {
             events: 100_000_000,
             threads: 4,
             batch_size_per_thread: 1_000,
-            max_step_size: 4_000_000,
+            max_step_size_per_thread: 10_000,
         }
     }
 }

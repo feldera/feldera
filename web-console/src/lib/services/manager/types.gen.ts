@@ -950,13 +950,15 @@ export type NexmarkInputOptions = {
    */
   events?: number
   /**
-   * Maximum number of events to submit in a single step.  This should be a
-   * multiple of `batch_size`.
+   * Maximum number of events to submit in a single step, per thread.
+   *
+   * This should really be per worker thread, not per generator thread, but
+   * the connector does not know how many worker threads there are.
    *
    * This stands in for `max_batch_size` from the connector configuration
    * because it must be a constant across all three of the nexmark tables.
    */
-  max_step_size?: number
+  max_step_size_per_thread?: number
   /**
    * Number of event generator threads.
    *
