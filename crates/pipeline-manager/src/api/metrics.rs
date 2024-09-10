@@ -39,7 +39,7 @@ pub(crate) async fn get_metrics(
     let mut result = Vec::new();
 
     for pipeline in pipelines {
-        if pipeline.deployment_status == PipelineStatus::Running {
+        if pipeline.deployment_status == PipelineStatus::Running || pipeline.deployment_status == PipelineStatus::Paused {
             if let Ok(res) = state
                 .runner
                 .forward_to_pipeline(*tenant_id, &pipeline.name, Method::GET, "metrics", "", None)
