@@ -91,7 +91,7 @@ impl TableProvider for AdHocTable {
         Ok(Arc::new(AdHocQueryExecution::new(
             self.schema.clone(),
             projected_schema,
-            self.snapshots.lock().await.get(&self.name).unwrap().clone(),
+            self.snapshots.lock().await.get(&self.name).cloned(),
             projection,
             limit,
         )))
@@ -190,7 +190,7 @@ impl DataSink for AdHocTableSink {
 struct AdHocQueryExecution {
     table_schema: Arc<Schema>,
     projected_schema: Arc<Schema>,
-    readers: Vec<Arc<dyn SyncSerBatchReader>>,
+    readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
     projection: Option<Vec<usize>>,
     limit: usize,
     plan_properties: PlanProperties,
@@ -201,13 +201,13 @@ impl AdHocQueryExecution {
     fn new(
         table_schema: Arc<Schema>,
         projected_schema: Arc<Schema>,
-        readers: Vec<Arc<dyn SyncSerBatchReader>>,
+        readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
         projection: Option<&Vec<usize>>,
         limit: Option<usize>,
     ) -> Self {
         // TODO: we could do much better here by encoding our data partitioning schema
         // and using the correct equivalence properties.
-        let num_partitions = readers.len();
+        let num_partitions = readers.as_ref().map(|r| r.len()).unwrap_or(1);
         let eq_props = EquivalenceProperties::new(projected_schema.clone());
         let partitioning = Partitioning::UnknownPartitioning(num_partitions);
         let plan_properties = PlanProperties::new(eq_props, partitioning, ExecutionMode::Bounded);
@@ -300,84 +300,98 @@ impl ExecutionPlan for AdHocQueryExecution {
             Ok(())
         }
 
-        let mut builder = RecordBatchReceiverStreamBuilder::new(self.projected_schema.clone(), 10);
-        // Returns a single batch when the returned stream is polled
-        let batch_reader = self.readers[partition].clone();
-        let schema = self.table_schema.clone();
-        let tx = builder.tx();
-        let projection = self.projection.clone();
+        if let Some(readers) = &self.readers {
+            let mut builder =
+                RecordBatchReceiverStreamBuilder::new(self.projected_schema.clone(), 10);
+            // Returns a single batch when the returned stream is polled
+            let batch_reader = readers[partition].clone();
+            let schema = self.table_schema.clone();
+            let tx = builder.tx();
+            let projection = self.projection.clone();
 
-        let sas: SerdeArrowSchema = schema.fields().iter().as_slice().try_into().map_err(|e| {
-            DataFusionError::Internal(format!(
-                "Unable to construct SerdeArrowSchema for the provided schema: {}.",
-                e
-            ))
-        })?;
+            let sas: SerdeArrowSchema =
+                schema.fields().iter().as_slice().try_into().map_err(|e| {
+                    DataFusionError::Internal(format!(
+                        "Unable to construct SerdeArrowSchema for the provided schema: {}.",
+                        e
+                    ))
+                })?;
 
-        builder.spawn(async move {
-            let mut cursor = batch_reader
-                .cursor(RecordFormat::Parquet(sas.clone()))
-                .map_err(|e| DataFusionError::External(Box::new(e)))?;
-            let mut insert_builder = SendableArrowBuilder::new(sas)?;
+            builder.spawn(async move {
+                let mut cursor = batch_reader
+                    .cursor(RecordFormat::Parquet(sas.clone()))
+                    .map_err(|e| DataFusionError::External(Box::new(e)))?;
+                let mut insert_builder = SendableArrowBuilder::new(sas)?;
 
-            let mut cur_batch_size = 0;
-            while cursor.key_valid() {
-                if !cursor.val_valid() {
-                    cursor.step_key();
-                    continue;
-                }
-                let mut w = cursor.weight();
-
-                // Skip deleted records.
-                if w < 0 {
-                    cursor.step_key();
-                    continue;
-                }
-
-                while w != 0 {
-                    cursor
-                        .serialize_key_to_arrow(&mut insert_builder.builder)
-                        .map_err(|e| {
-                            DataFusionError::Execution(format!(
-                                "Unable to serialize record to arrow: {}",
-                                e
-                            ))
-                        })?;
-                    cur_batch_size += 1;
-                    w -= 1;
-
-                    // `256` turned out to be a good compromise of performance and fast response latency.
-                    // If too high, the HTTP server will wait too long esp. until the first results are sent out.
-                    const MAX_BATCH_SIZE: usize = 256;
-                    if cur_batch_size >= MAX_BATCH_SIZE {
-                        let batch = insert_builder.builder.to_record_batch().map_err(|e| {
-                            DataFusionError::Execution(format!(
-                                "Unable to convert ArrayBuilder to RecordBatch: {}",
-                                e
-                            ))
-                        })?;
-                        send_batch(&tx, &projection, batch).await?;
-                        cur_batch_size = 0;
+                let mut cur_batch_size = 0;
+                while cursor.key_valid() {
+                    if !cursor.val_valid() {
+                        cursor.step_key();
+                        continue;
                     }
+                    let mut w = cursor.weight();
+
+                    // Skip deleted records.
+                    if w < 0 {
+                        cursor.step_key();
+                        continue;
+                    }
+
+                    while w != 0 {
+                        cursor
+                            .serialize_key_to_arrow(&mut insert_builder.builder)
+                            .map_err(|e| {
+                                DataFusionError::Execution(format!(
+                                    "Unable to serialize record to arrow: {}",
+                                    e
+                                ))
+                            })?;
+                        cur_batch_size += 1;
+                        w -= 1;
+
+                        // `256` turned out to be a good compromise of performance and fast response latency.
+                        // If too high, the HTTP server will wait too long esp. until the first results are sent out.
+                        const MAX_BATCH_SIZE: usize = 256;
+                        if cur_batch_size >= MAX_BATCH_SIZE {
+                            let batch = insert_builder.builder.to_record_batch().map_err(|e| {
+                                DataFusionError::Execution(format!(
+                                    "Unable to convert ArrayBuilder to RecordBatch: {}",
+                                    e
+                                ))
+                            })?;
+                            send_batch(&tx, &projection, batch).await?;
+                            cur_batch_size = 0;
+                        }
+                    }
+                    cursor.step_key();
                 }
-                cursor.step_key();
-            }
 
-            let batch = insert_builder.builder.to_record_batch().map_err(|e| {
-                DataFusionError::Execution(format!(
-                    "Unable to convert ArrayBuilder to RecordBatch: {}",
-                    e
-                ))
-            })?;
-            send_batch(&tx, &projection, batch).await?;
+                let batch = insert_builder.builder.to_record_batch().map_err(|e| {
+                    DataFusionError::Execution(format!(
+                        "Unable to convert ArrayBuilder to RecordBatch: {}",
+                        e
+                    ))
+                })?;
+                send_batch(&tx, &projection, batch).await?;
 
-            Ok(())
-        });
+                Ok(())
+            });
 
-        Ok(Box::pin(RecordBatchStreamAdapter::new(
-            self.projected_schema.clone(),
-            builder.build(),
-        )))
+            Ok(Box::pin(RecordBatchStreamAdapter::new(
+                self.projected_schema.clone(),
+                builder.build(),
+            )))
+        } else {
+            // The case of no readers can happen if the table has never received any input &
+            // the circuit has never stepped so the correct response is to send an empty batch
+            let fut =
+                futures::future::ready(Ok(RecordBatch::new_empty(self.projected_schema.clone())));
+            let stream = futures::stream::once(fut);
+            Ok(Box::pin(RecordBatchStreamAdapter::new(
+                self.projected_schema.clone(),
+                stream,
+            )))
+        }
     }
 }
 

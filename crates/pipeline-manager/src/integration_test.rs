@@ -1955,3 +1955,29 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
     let cnt_ret_json = serde_json::from_str::<Value>(cnt_ret).unwrap();
     assert_eq!(cnt_ret_json, json!({"count(*)": 7}));
 }
+
+/// We should be able to query a table that never received any input.
+///
+/// This is a regression test for a bug where we called unwrap on the persistent snapshots,
+/// which were not yet initialized/set because the circuit has never stepped.
+#[actix_web::test]
+#[serial]
+async fn pipeline_adhoc_query_empty() {
+    const PROGRAM: &str = r#"
+CREATE TABLE "TaBle1"(id bigint not null) with ('materialized' = 'true');
+"#;
+    let config = setup().await;
+    create_and_deploy_test_pipeline(&config, PROGRAM).await;
+    let resp = config.post_no_body("/v0/pipelines/test/start").await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+    const ADHOC_SQL_EMPTY: &str = "SELECT COUNT(*) from \"TaBle1\"";
+    let mut r = config
+        .adhoc_query("/v0/pipelines/test/query", ADHOC_SQL_EMPTY, "json")
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
+    let cnt_body = r.body().await.unwrap();
+    let cnt_ret = std::str::from_utf8(cnt_body.as_ref()).unwrap();
+    let cnt_ret_json = serde_json::from_str::<Value>(cnt_ret).unwrap();
+    assert_eq!(cnt_ret_json, json!({"count(*)": 0}));
+}
