@@ -37,9 +37,9 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -369,7 +369,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 expression, new MonotoneType(expression.getType()), expression);
         this.constantExpressions.add(expression);
         if (expression.is(IsNumericLiteral.class)) {
-            if (!expression.to(DBSPLiteral.class).isNull &&
+            if (!expression.to(DBSPLiteral.class).isNull() &&
                     expression.to(IsNumericLiteral.class).gt0())
                 this.positiveExpressions.add(expression);
         }

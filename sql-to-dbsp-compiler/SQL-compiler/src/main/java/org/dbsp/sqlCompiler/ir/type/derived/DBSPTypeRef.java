@@ -21,42 +21,57 @@
  * SOFTWARE.
  */
 
-package org.dbsp.sqlCompiler.ir.type;
+package org.dbsp.sqlCompiler.ir.type.derived;
 
-import org.apache.commons.lang3.NotImplementedException;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
 import java.util.Objects;
 
-/**
- * An unknown type, represented in code as _.
- */
-public class DBSPTypeAny extends DBSPType {
-    public DBSPTypeAny() {
-        super(CalciteObject.EMPTY, DBSPTypeCode.ANY, false);
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.REF;
+
+/** A type of the form &type. */
+public class DBSPTypeRef extends DBSPType {
+    public final DBSPType type;
+    public final boolean mutable;
+
+    public DBSPTypeRef(DBSPType type, boolean mutable, boolean mayBeNull) {
+        super(type.getNode(), REF, mayBeNull);
+        this.type = type;
+        this.mutable = mutable;
     }
 
-    public static DBSPTypeAny getDefault() {
-        return new DBSPTypeAny();
+    public DBSPTypeRef(DBSPType type) {
+        this(type, false, false);
     }
 
     @Override
     public DBSPType setMayBeNull(boolean mayBeNull) {
-        return this;
+        if (this.mayBeNull == mayBeNull)
+            return this;
+        return new DBSPTypeRef(this.type, this.mutable, mayBeNull);
     }
 
     @Override
     public DBSPExpression defaultValue() {
-        throw new NotImplementedException();
+        return this.type.defaultValue().borrow();
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(this.mayBeNull, 1);
+        return Objects.hash(super.hashCode(), type.hashCode(), mutable);
+    }
+
+    public boolean sameType(DBSPType other) {
+        if (!super.sameNullability(other))
+            return false;
+        DBSPTypeRef oRef = other.as(DBSPTypeRef.class);
+        if (oRef == null)
+            return false;
+        return this.type.sameType(oRef.type);
     }
 
     @Override
@@ -64,19 +79,18 @@ public class DBSPTypeAny extends DBSPType {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
+        this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }
 
     @Override
-    public boolean sameType(DBSPType other) {
-        if (!super.sameNullability(other))
-            return false;
-        return other.is(DBSPTypeAny.class);
-    }
-
-    @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("_");
+        return builder
+                .append(this.mayBeNull ? "Option<" : "")
+                .append("&")
+                .append(this.mutable ? "mut " : "")
+                .append(this.type)
+                .append(this.mayBeNull ? ">" : "");
     }
 }

@@ -33,8 +33,8 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 
@@ -43,13 +43,17 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 public abstract class DBSPLiteral extends DBSPExpression {
-    public final boolean isNull;
+    protected final boolean isNull;
 
     protected DBSPLiteral(CalciteObject node, DBSPType type, boolean isNull) {
         super(node, type);
         this.isNull = isNull;
         if (this.isNull && !type.mayBeNull && !type.is(DBSPTypeAny.class))
             throw new UnsupportedException("Type " + type + " cannot represent null", node);
+    }
+
+    public boolean isNull() {
+        return this.isNull;
     }
 
     /** Represents a "null" value of the specified type. */

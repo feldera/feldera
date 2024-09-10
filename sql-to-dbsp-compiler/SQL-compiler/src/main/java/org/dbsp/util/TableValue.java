@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 
+/** Represents the contents of a table as produced by INSERT and REMOVE statements */
 public class TableValue {
     public final String tableName;
     public final DBSPZSetLiteral contents;

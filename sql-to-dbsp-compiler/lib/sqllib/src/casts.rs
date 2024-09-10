@@ -4,12 +4,14 @@
 
 use std::cmp::Ordering;
 
-use crate::{binary::ByteArray, geopoint::*, interval::*, timestamp::*};
+use crate::{binary::ByteArray, geopoint::*, interval::*, timestamp::*, variant::*};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
 use num_traits::cast::NumCast;
 use rust_decimal::{Decimal, RoundingStrategy};
+use std::collections::BTreeMap;
+use std::string::String;
 
 const FLOAT_DISPLAY_PRECISION: usize = 6;
 const DOUBLE_DISPLAY_PRECISION: usize = 15;
@@ -956,6 +958,14 @@ pub fn cast_to_s_u(value: usize, size: i32, fixed: bool) -> String {
     limit_or_size_string(result, size, fixed)
 }
 
+#[inline]
+pub fn cast_to_sN_V(value: Variant, size: i32, fixed: bool) -> Option<String> {
+    match value {
+        Variant::String(v) => Some(limit_or_size_string(v, size, fixed)),
+        _ => None,
+    }
+}
+
 /////////// cast to StringN
 
 #[inline]
@@ -1424,4 +1434,105 @@ cast_function!(i, isize, i64, i64);
 
 pub fn cast_to_bytesN_nullN(_value: Option<()>) -> Option<ByteArray> {
     None
+}
+
+///////////////////// Cast to Variant
+
+// Synthesizes 6 functions for the argument type, e.g.:
+// cast_to_V_i32
+// cast_to_VN_i32
+// cast_to_V_i32N
+// cast_to_VN_i32N
+macro_rules! cast_to_variant {
+    ($result_name: ident, $result_type: ty, $enum: ident) => {
+        ::paste::paste! {
+            // cast_to_V_i32
+            #[inline]
+            pub fn [<cast_to_ V_ $result_name >]( value: $result_type ) -> Variant {
+                Variant::from(value)
+            }
+
+            // cast_to_VN_i32
+            pub fn [<cast_to_ VN_ $result_name >]( value: $result_type ) -> Option<Variant> {
+                Some(Variant::from(value))
+            }
+
+            // cast_to_V_i32N
+            pub fn [<cast_to_ V_ $result_name N>]( value: Option<$result_type> ) -> Variant {
+                match value {
+                    None => Variant::SqlNull,
+                    Some(value) => Variant::from(value),
+                }
+            }
+
+            // cast_to_VN_i32N
+            pub fn [<cast_to_ VN_ $result_name N>]( value: Option<$result_type> ) -> Option<Variant> {
+                Some([ <cast_to_ V_ $result_name N >](value))
+            }
+        }
+    };
+}
+
+// Synthesizes 2 functions
+// cast_to_i32N_VN
+// cast_to_i32N_V
+macro_rules! cast_from_variant {
+    ($result_name: ident, $result_type: ty, $enum: ident) => {
+        ::paste::paste! {
+            // cast_to_i32N_V
+            #[inline]
+            pub fn [< cast_to_ $result_name N _V >](value: Variant) -> Option<$result_type> {
+                match value {
+                    Variant::$enum(value) => Some(value),
+                    _            => None,
+                }
+            }
+
+            // cast_to_i32N_VN
+            #[inline]
+            pub fn [<cast_to_ $result_name N_ VN >]( value: Option<Variant> ) -> Option<$result_type> {
+                let value = value?;
+                [<cast_to_ $result_name N_V >](value)
+            }
+        }
+    };
+}
+
+macro_rules! cast_variant {
+    ($result_name: ident, $result_type: ty, $enum: ident) => {
+        cast_to_variant!($result_name, $result_type, $enum);
+        cast_from_variant!($result_name, $result_type, $enum);
+    };
+}
+
+cast_variant!(bool, bool, Boolean);
+cast_variant!(i8, i8, TinyInt);
+cast_variant!(i16, i16, SmallInt);
+cast_variant!(i32, i32, Int);
+cast_variant!(i64, i64, BigInt);
+cast_variant!(f, F32, Real);
+cast_variant!(d, F64, Double);
+cast_variant!(Decimal, Decimal, Decimal);
+cast_to_variant!(s, String, String); // The other two are different
+cast_variant!(Date, Date, Date);
+cast_variant!(Time, Time, Time);
+cast_variant!(Timestamp, Timestamp, Timestamp);
+cast_variant!(ShortInterval, ShortInterval, ShortInterval);
+cast_variant!(LongInterval, LongInterval, LongInterval);
+cast_variant!(GeoPoint, GeoPoint, Geometry);
+
+pub fn cast_to_V_vec<T>(vec: Vec<T>) -> Variant
+where
+    Variant: From<T>,
+{
+    vec.into()
+}
+
+pub fn cast_to_V_map<K, V>(map: BTreeMap<K, V>) -> Variant
+where
+    Variant: From<K> + From<V>,
+    K: Clone,
+    V: Clone,
+{
+    map.into()
 }

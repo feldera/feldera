@@ -14,7 +14,7 @@ dbsp_adapters = { path = "../../crates/adapters", default-features = false }
 feldera-types = { path = "../../crates/feldera-types" }
 sqllib = { path = "../lib/sqllib" }
 json = { path = "../lib/json" }
-sqlvalue = { path = "../lib/sqlvalue" }
+sltsqlvalue = { path = "../lib/sltsqlvalue" }
 serde = { version = "1.0", features = ["derive"] }
 compare = { version = "0.1.0" }
 size-of = { version = "0.1.5", package = "feldera-size-of" }

@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner.monotone;
 
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 
 public abstract class ScalarMonotoneType
         extends BaseMonotoneType {

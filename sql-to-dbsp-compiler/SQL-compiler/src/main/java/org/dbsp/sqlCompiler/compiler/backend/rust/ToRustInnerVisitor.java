@@ -102,6 +102,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
@@ -115,18 +117,19 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeFunction;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeRef;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
@@ -162,7 +165,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     public VisitDecision doNull(DBSPLiteral literal) {
-        if (!literal.isNull)
+        if (!literal.isNull())
             throw new UnsupportedException(literal.getNode());
         return this.doNullExpression(literal);
     }
@@ -295,7 +298,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTimestampLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
@@ -312,7 +315,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPDateLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
@@ -329,7 +332,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPTimeLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
@@ -347,7 +350,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIntervalMonthsLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
@@ -361,7 +364,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIntervalMillisLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
@@ -375,7 +378,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPGeoPointLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
@@ -391,7 +394,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPBoolLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         this.builder.append(literal.wrapSome(Boolean.toString(Objects.requireNonNull(literal.value))));
         return VisitDecision.STOP;
@@ -399,7 +402,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPVecLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
@@ -417,7 +420,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPMapLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
@@ -439,7 +442,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPBinaryLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         if (literal.mayBeNull())
             this.builder.append("Some(");
@@ -478,7 +481,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPRealLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         float value = Objects.requireNonNull(literal.value);
         String val = Float.toString(value);
@@ -519,7 +522,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPDoubleLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         double value = Objects.requireNonNull(literal.value);
         String val = Double.toString(value);
@@ -550,6 +553,35 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPVariantLiteral literal) {
+        if (literal.isNull())
+            return this.doNull(literal);
+        if (literal.mayBeNull())
+            this.builder.append("Some(");
+        if (literal.isSqlNull) {
+            this.builder.append("Variant::SqlNull");
+        } else {
+            this.builder.append("Variant::from(");
+            assert literal.value != null;
+            literal.value.accept(this);
+            this.builder.append(")");
+        }
+        if (literal.mayBeNull())
+            this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPVariantNullLiteral literal) {
+        if (literal.mayBeNull())
+            this.builder.append("Some(");
+        this.builder.append("Variant::VariantNull");
+        if (literal.mayBeNull())
+            this.builder.append(")");
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPISizeLiteral literal) {
         String val = Long.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + "isize"));
@@ -558,7 +590,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPI8Literal literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         String val = Byte.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
@@ -568,7 +600,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPI16Literal literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         String val = Short.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
@@ -577,7 +609,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPI32Literal literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         String val = Integer.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
@@ -600,7 +632,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPI64Literal literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         String val = Long.toString(Objects.requireNonNull(literal.value));
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
@@ -609,7 +641,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPI128Literal literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         String val = Objects.requireNonNull(literal.value).toString();
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
@@ -632,7 +664,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPStringLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         Objects.requireNonNull(literal.value);
         byte[] bytes = literal.value.getBytes(literal.charset);
@@ -645,7 +677,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPStrLiteral literal) {
-        if (literal.isNull) {
+        if (literal.isNull()) {
             this.builder.append("None");
             return VisitDecision.STOP;
         }
@@ -661,7 +693,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPDecimalLiteral literal) {
-        if (literal.isNull)
+        if (literal.isNull())
             return this.doNull(literal);
         DBSPTypeDecimal type = literal.getType().to(DBSPTypeDecimal.class);
         if (type.mayBeNull)
@@ -682,22 +714,30 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
         /* Default implementation of cast of a source expression to the 'this' type.
-         * For example, to cast source which is an Option[i16] to a bool
+         * For example, to cast source which is an Option<i16> to a bool
          * the function called will be cast_to_b_i16N. */
         DBSPType destType = expression.getType();
         DBSPType sourceType = expression.source.getType();
+        String functionName;
 
-        // Handle cast Vec<i> to Vec<i>?
         if (sourceType.is(DBSPTypeVec.class)) {
+            if (destType.is(DBSPTypeVariant.class)) {
+                functionName = "cast_to_" + destType.baseTypeWithSuffix() + "_vec" + sourceType.nullableSuffix();
+                this.builder.append(functionName).increase().append("(");
+                expression.source.accept(this);
+                this.builder.decrease().append(")");
+                return VisitDecision.STOP;
+            }
+
             DBSPTypeVec sourceVec = sourceType.to(DBSPTypeVec.class);
             DBSPTypeVec destVec = destType.as(DBSPTypeVec.class);
             if (destVec == null)
                 throw new UnsupportedException("Cast from " + sourceType + " to " + destType, expression.getNode());
-            // TODO: This should probably be handled in Simplify
             if (destVec.getElementType().sameType(sourceVec.getElementType()) &&
                 destVec.mayBeNull && !sourceVec.mayBeNull) {
                 // TODO: This can happen when source is an empty vector literal with unknown type.
                 // Can anything else happen?
+                // Handle cast Vec<i> to Vec<i>?
                 expression.source.some().accept(this);
             } else {
                 expression.source.accept(this);
@@ -705,14 +745,24 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return VisitDecision.STOP;
         }
 
-        String functionName = "cast_to_" + destType.baseTypeWithSuffix() +
+        if (sourceType.is(DBSPTypeMap.class)) {
+            if (destType.is(DBSPTypeVariant.class)) {
+                functionName = "cast_to_" + destType.baseTypeWithSuffix() + "_map" + sourceType.nullableSuffix();
+                this.builder.append(functionName).increase().append("(");
+                expression.source.accept(this);
+                this.builder.decrease().append(")");
+                return VisitDecision.STOP;
+            }
+        }
+
+        functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                 "_" + sourceType.baseTypeWithSuffix();
-        this.builder.append(functionName).append("(");
+        this.builder.append(functionName).increase().append("(");
         expression.source.accept(this);
         DBSPTypeDecimal dec = destType.as(DBSPTypeDecimal.class);
         if (dec != null) {
             // pass precision and scale as arguments to cast method too
-            this.builder.append(", ")
+            this.builder.append(",").newline()
                     .append(dec.precision)
                     .append(", ")
                     .append(dec.scale);
@@ -720,12 +770,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
         DBSPTypeString str = destType.as(DBSPTypeString.class);
         if (str != null) {
             // pass precision and scale as arguments to cast method too
-            this.builder.append(", ")
+            this.builder.append(",")
                     .append(str.precision)
                     .append(", ")
                     .append(Boolean.toString(str.fixed));
         }
-        this.builder.append(")");
+        this.builder.decrease().append(")");
         return VisitDecision.STOP;
     }
 
@@ -779,6 +829,17 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     expression.right, indexType.to(IsNumericType.class).getOne());
             sub1 = sub1.cast(new DBSPTypeISize(CalciteObject.EMPTY, indexType.mayBeNull));
             sub1.accept(this);
+            this.builder.append(")");
+            return VisitDecision.STOP;
+        } else if (expression.operation == DBSPOpcode.VARIANT_INDEX) {
+            DBSPType indexType = expression.right.getType();
+            this.builder.append("indexV")
+                    .append(expression.left.getType().nullableUnderlineSuffix())
+                    .append(indexType.nullableUnderlineSuffix())
+                    .append("(");
+            expression.left.accept(this);
+            this.builder.append(", ");
+            expression.right.accept(this);
             this.builder.append(")");
             return VisitDecision.STOP;
         } else if (expression.operation == DBSPOpcode.MAP_INDEX) {
@@ -963,15 +1024,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
         expression.function.accept(this);
-        this.builder.append("(");
+        this.builder.append("(").increase();
         boolean first = true;
         for (DBSPExpression arg: expression.arguments) {
             if (!first)
-                this.builder.append(", ");
+                this.builder.append(",").newline();
             first = false;
             arg.accept(this);
         }
-        this.builder.append(")");
+        this.builder.decrease().append(")");
         return VisitDecision.STOP;
     }
 
@@ -980,15 +1041,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
         expression.self.accept(this);
         this.builder.append(".");
         expression.function.accept(this);
-        this.builder.append("(");
+        this.builder.append("(").increase();
         boolean first = true;
         for (DBSPExpression arg: expression.arguments) {
             if (!first)
-                this.builder.append(", ");
+                this.builder.append(",").newline();
             first = false;
             arg.accept(this);
         }
-        this.builder.append(")");
+        this.builder.decrease().append(")");
         return VisitDecision.STOP;
     }
 

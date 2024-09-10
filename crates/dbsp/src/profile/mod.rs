@@ -448,7 +448,7 @@ impl Profiler {
                     (
                         Cow::Borrowed("time%"),
                         MetaItem::Percent(
-                            profile.total_time().as_secs_f64() / total_time.as_secs_f64(),
+                            profile.total_time().as_secs_f64() / total_time.as_secs_f64() * 100.0,
                         ),
                     ),
                 ];

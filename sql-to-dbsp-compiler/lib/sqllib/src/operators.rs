@@ -7,7 +7,7 @@ use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, ToPrimitive};
 use crate::{
     for_all_comparable_operator, for_all_compare, for_all_int_compare, for_all_int_operator,
     for_all_numeric_compare, for_all_numeric_operator, some_existing_operator, some_operator, Date,
-    LongInterval, ShortInterval, Time, Timestamp,
+    LongInterval, ShortInterval, Time, Timestamp, Variant,
 };
 
 use rust_decimal::Decimal;

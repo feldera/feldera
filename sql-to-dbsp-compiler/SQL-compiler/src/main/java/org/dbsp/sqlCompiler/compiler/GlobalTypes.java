@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler;
 
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
 

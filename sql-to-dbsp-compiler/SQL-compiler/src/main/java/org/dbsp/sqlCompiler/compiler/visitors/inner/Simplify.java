@@ -148,7 +148,7 @@ public class Simplify extends InnerRewriteVisitor {
                 // Casting to VARCHAR may change a string even if the source is the same type
                 // Cast from type to Option<type>
                 result = lit.getWithNullable(type.mayBeNull);
-            } else if (lit.isNull) {
+            } else if (lit.isNull()) {
                 if (type.mayBeNull) {
                     result = DBSPLiteral.none(type);
                 }
@@ -272,7 +272,7 @@ public class Simplify extends InnerRewriteVisitor {
                 if (type.is(DBSPTypeDecimal.class)) {
                     result = new DBSPDecimalLiteral(source.getNode(), type, new BigDecimal(i.value));
                 } else if (type.is(DBSPTypeInteger.class)) {
-                    if (i.isNull) {
+                    if (i.isNull()) {
                         result = DBSPLiteral.none(type);
                     } else {
                         switch (type.code) {
@@ -397,7 +397,7 @@ public class Simplify extends InnerRewriteVisitor {
         DBSPExpression result = new DBSPIfExpression(expression.getNode(), condition, positive, negative);
         if (condition.is(DBSPBoolLiteral.class)) {
             DBSPBoolLiteral cond = condition.to(DBSPBoolLiteral.class);
-            if (!cond.isNull) {
+            if (!cond.isNull()) {
                 if (Objects.requireNonNull(cond.value)) {
                     result = positive;
                 } else {
@@ -454,7 +454,7 @@ public class Simplify extends InnerRewriteVisitor {
             if (expression.operation.equals(DBSPOpcode.AND)) {
                 if (left.is(DBSPBoolLiteral.class)) {
                     DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
-                    if (!bLeft.isNull) {
+                    if (!bLeft.isNull()) {
                         if (Objects.requireNonNull(bLeft.value)) {
                             result = right;
                         } else {
@@ -463,7 +463,7 @@ public class Simplify extends InnerRewriteVisitor {
                     }
                 } else if (right.is(DBSPBoolLiteral.class)) {
                     DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
-                    if (!bRight.isNull) {
+                    if (!bRight.isNull()) {
                         if (Objects.requireNonNull(bRight.value)) {
                             result = left;
                         } else {
@@ -474,7 +474,7 @@ public class Simplify extends InnerRewriteVisitor {
             } else if (expression.operation.equals(DBSPOpcode.OR)) {
                 if (left.is(DBSPBoolLiteral.class)) {
                     DBSPBoolLiteral bLeft = left.to(DBSPBoolLiteral.class);
-                    if (!bLeft.isNull) {
+                    if (!bLeft.isNull()) {
                         if (Objects.requireNonNull(bLeft.value)) {
                             result = left;
                         } else {
@@ -483,7 +483,7 @@ public class Simplify extends InnerRewriteVisitor {
                     }
                 } else if (right.is(DBSPBoolLiteral.class)) {
                     DBSPBoolLiteral bRight = right.to(DBSPBoolLiteral.class);
-                    if (!bRight.isNull) {
+                    if (!bRight.isNull()) {
                         if (Objects.requireNonNull(bRight.value)) {
                             result = right;
                         } else {
@@ -498,7 +498,7 @@ public class Simplify extends InnerRewriteVisitor {
                     if (iLeftType != null) {
                         if (iLeftType.isZero(leftLit)) {
                             result = right;
-                        } else if (leftLit.isNull) {
+                        } else if (leftLit.isNull()) {
                             // null + anything is null
                             result = left;
                         }
@@ -509,7 +509,7 @@ public class Simplify extends InnerRewriteVisitor {
                     if (iRightType != null) {
                         if (iRightType.isZero(rightLit)) {
                             result = left;
-                        } else if (rightLit.isNull) {
+                        } else if (rightLit.isNull()) {
                             result = right;
                         }
                     }
@@ -524,7 +524,7 @@ public class Simplify extends InnerRewriteVisitor {
                     } else if (iLeftType.isZero(leftLit) && !rightMayBeNull) {
                         // This is not true for null values
                         result = left;
-                    } else if (leftLit.isNull) {
+                    } else if (leftLit.isNull()) {
                         result = left;
                     } else if (leftLit.is(DBSPIntLiteral.class) && right.is(IsIntervalLiteral.class)) {
                         result = right.to(IsIntervalLiteral.class)
@@ -539,7 +539,7 @@ public class Simplify extends InnerRewriteVisitor {
                     } else if (iRightType.isZero(rightLit) && !leftMayBeNull) {
                         // This is not true for null values
                         result = right;
-                    } else if (rightLit.isNull) {
+                    } else if (rightLit.isNull()) {
                         result = right;
                     } else if (rightLit.is(DBSPIntLiteral.class) && left.is(IsIntervalLiteral.class)) {
                         result = left.to(IsIntervalLiteral.class)

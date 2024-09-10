@@ -10,13 +10,14 @@ pub mod operators;
 pub mod source;
 pub mod string;
 pub mod timestamp;
-mod variant;
+pub mod variant;
 
 use casts::cast_to_decimal_decimal;
 pub use geopoint::GeoPoint;
 pub use interval::{LongInterval, ShortInterval};
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::{Date, Time, Timestamp};
+pub use variant::Variant;
 
 use dbsp::{
     algebra::{
@@ -614,6 +615,7 @@ macro_rules! for_all_compare {
         for_all_numeric_compare!($func_name, bool);
         some_operator!($func_name, b, bool, bool);
         some_operator!($func_name, s, String, bool);
+        some_operator!($func_name, V, Variant, bool);
     };
 }
 

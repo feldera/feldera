@@ -1460,7 +1460,6 @@ impl<T: Ord> Ord for LeanVec<T> {
 impl<T: Hash> Hash for LeanVec<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.vec.hash(&mut |x| x.hash(state));
-        state.finish();
     }
 }
 

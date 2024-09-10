@@ -73,7 +73,6 @@ public class IncrementalizeVisitor extends CircuitCloneVisitor {
         this.map(operator, sink);
     }
 
-
     @Override
     public void postorder(DBSPConstantOperator operator) {
         DBSPOperator replacement;

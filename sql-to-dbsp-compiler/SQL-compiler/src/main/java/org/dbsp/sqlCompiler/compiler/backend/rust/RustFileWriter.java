@@ -11,8 +11,8 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeStruct;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.ProgramAndTester;
@@ -155,8 +155,9 @@ public class RustFileWriter {
                         string::*,
                         operators::*,
                         aggregates::*,
+                        variant::*,
                     };
-                    use sqlvalue::*;
+                    use sltsqlvalue::*;
                     #[cfg(test)]
                     use readers::*;
 
@@ -307,7 +308,7 @@ public class RustFileWriter {
         }
         stream.append("\n");
 
-        stream.append("sqlvalue::to_sql_row_impl! {").increase();
+        stream.append("sltsqlvalue::to_sql_row_impl! {").increase();
         for (int i: used.tupleSizesUsed) {
             if (i <= 10)
                 // These are already pre-declared
