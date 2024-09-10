@@ -9,6 +9,8 @@ import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
+import org.apache.calcite.sql.type.SqlOperandTypeChecker;
+import org.apache.calcite.sql.type.SqlReturnTypeInference;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeTransforms;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
@@ -37,6 +39,8 @@ public class CustomFunctions {
         this.initial.add(new SequenceFunction());
         this.initial.add(new ToIntFunction());
         this.initial.add(new NowFunction());
+        this.initial.add(new ParseJsonFunction());
+        this.initial.add(new UnparseJsonFunction());
         this.udf = new HashMap<>();
     }
 
@@ -46,15 +50,23 @@ public class CustomFunctions {
         this.udf = new HashMap<>(other.udf);
     }
 
-    /** RLIKE used as a function.  RLIKE in SQL uses infix notation */
-    static class RlikeFunction extends SqlFunction {
-        public RlikeFunction() {
-            super("RLIKE",
-                    SqlKind.RLIKE,
-                    ReturnTypes.BOOLEAN_NULLABLE,
-                    null,
-                    OperandTypes.STRING_STRING,
-                    SqlFunctionCategory.STRING);
+    /** Function that has no implementation for the optimizer */
+    static abstract class NonOptimizedFunction extends SqlFunction {
+        public NonOptimizedFunction(
+                String name, SqlKind kind,
+                @org.checkerframework.checker.nullness.qual.Nullable SqlReturnTypeInference returnTypeInference,
+                @org.checkerframework.checker.nullness.qual.Nullable SqlOperandTypeChecker operandTypeChecker,
+                SqlFunctionCategory category) {
+            super(name, kind, returnTypeInference, null, operandTypeChecker, category);
+        }
+
+        public NonOptimizedFunction(
+                String name,
+                @org.checkerframework.checker.nullness.qual.Nullable SqlReturnTypeInference returnTypeInference,
+                @org.checkerframework.checker.nullness.qual.Nullable SqlOperandTypeChecker operandTypeChecker,
+                SqlFunctionCategory category) {
+            super(name, SqlKind.OTHER_FUNCTION, returnTypeInference,
+                    null, operandTypeChecker, category);
         }
 
         @Override
@@ -64,100 +76,91 @@ public class CustomFunctions {
         }
     }
 
-    static class NowFunction extends SqlFunction {
+    static class ParseJsonFunction extends NonOptimizedFunction {
+        public ParseJsonFunction() {
+            super("PARSE_JSON",
+                    ReturnTypes.VARIANT.andThen(SqlTypeTransforms.TO_NULLABLE),
+                    OperandTypes.STRING,
+                    SqlFunctionCategory.STRING);
+        }
+    }
+
+    static class UnparseJsonFunction extends NonOptimizedFunction {
+        public UnparseJsonFunction() {
+            super("UNPARSE_JSON",
+                    ReturnTypes.VARCHAR.andThen(SqlTypeTransforms.FORCE_NULLABLE),
+                    OperandTypes.VARIANT,
+                    SqlFunctionCategory.STRING);
+        }
+    }
+
+    /** RLIKE used as a function.  RLIKE in SQL uses infix notation */
+    static class RlikeFunction extends NonOptimizedFunction {
+        public RlikeFunction() {
+            super("RLIKE",
+                    SqlKind.RLIKE,
+                    ReturnTypes.BOOLEAN_NULLABLE,
+                    OperandTypes.STRING_STRING,
+                    SqlFunctionCategory.STRING);
+        }
+    }
+
+    static class NowFunction extends NonOptimizedFunction {
         public NowFunction() {
             super("NOW",
-                    SqlKind.OTHER_FUNCTION,
                     ReturnTypes.TIMESTAMP,
-                    null,
                     OperandTypes.NILADIC,
                     SqlFunctionCategory.TIMEDATE);
         }
-
-        @Override
-        public boolean isDeterministic() {
-            return false;
-        }
     }
 
-    /**
-     * GUNZIP(binary) returns the string that results from decompressing the
+    /** GUNZIP(binary) returns the string that results from decompressing the
      * input binary using the GZIP algorithm.  The input binary must be a
-     * valid GZIP binary string.
-     */
-    public static class GunzipFunction extends SqlFunction {
+     * valid GZIP binary string. */
+    public static class GunzipFunction extends NonOptimizedFunction {
         public GunzipFunction() {
             super("GUNZIP",
-                    SqlKind.OTHER_FUNCTION,
                     ReturnTypes.VARCHAR
                             .andThen(SqlTypeTransforms.TO_NULLABLE),
-                    null,
                     OperandTypes.BINARY,
                     SqlFunctionCategory.USER_DEFINED_FUNCTION);
         }
-
-        @Override
-        public boolean isDeterministic() {
-            return false;
-        }
     }
 
-    /**
-     * WRITELOG(format, arg) returns its argument 'arg' unchanged but also logs
+    /** WRITELOG(format, arg) returns its argument 'arg' unchanged but also logs
      * its value to stdout.  Used for debugging.  In the format string
      * each occurrence of %% is replaced with the arg */
-    public static class WriteLogFunction extends SqlFunction {
+    public static class WriteLogFunction extends NonOptimizedFunction {
         public WriteLogFunction() {
             super("WRITELOG",
-                    SqlKind.OTHER_FUNCTION,
                     ARG1,
-                    null,
                     family(SqlTypeFamily.CHARACTER, SqlTypeFamily.ANY),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION);
-        }
-
-        @Override
-        public boolean isDeterministic() {
-            return false;
         }
     }
 
     /** SEQUENCE(start, end) returns an array of integers from start to end (inclusive).
      * The array is empty if start > end. */
-    public static class SequenceFunction extends SqlFunction {
+    public static class SequenceFunction extends NonOptimizedFunction {
         public SequenceFunction() {
             super("SEQUENCE",
-                    SqlKind.OTHER_FUNCTION,
                     ReturnTypes.INTEGER
                             .andThen(SqlTypeTransforms.TO_ARRAY)
                             .andThen(SqlTypeTransforms.TO_NULLABLE),
-                    null,
                     family(SqlTypeFamily.INTEGER, SqlTypeFamily.INTEGER),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION);
-        }
-
-        @Override
-        public boolean isDeterministic() {
-            return false;
         }
     }
 
     /** TO_INT(BINARY) returns an integers from a BINARY object which has less than 4 bytes.
      * For VARBINARY objects it converts only the first 4 bytes. */
-    public static class ToIntFunction extends SqlFunction {
+    public static class ToIntFunction extends NonOptimizedFunction {
         public ToIntFunction() {
             super("TO_INT",
-                    SqlKind.OTHER_FUNCTION,
                     ReturnTypes.INTEGER
                             .andThen(SqlTypeTransforms.TO_NULLABLE),
-                    null,
                     OperandTypes.BINARY,
                     SqlFunctionCategory.USER_DEFINED_FUNCTION);
-        }
-
-        @Override
-        public boolean isDeterministic() {
-            return false;
         }
     }
 

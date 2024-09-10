@@ -13,6 +13,7 @@ geo = { version = "0.26.0" }
 geo-types = { version = "0.7" }
 size-of = { version = "0.1.5", package = "feldera-size-of", features = ["rust_decimal"] }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0.127", features = ["arbitrary_precision"] }
 num = { version = "0.4.1" }
 # Go back to a version once commit containing 849932 is released:
 chrono = { version = "0.4.38" }

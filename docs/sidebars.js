@@ -233,6 +233,7 @@ const sidebars = {
                 'sql/boolean',
                 'sql/comparisons',
                 'sql/integer',
+                'sql/json',
                 'sql/float',
                 'sql/decimal',
                 'sql/string',

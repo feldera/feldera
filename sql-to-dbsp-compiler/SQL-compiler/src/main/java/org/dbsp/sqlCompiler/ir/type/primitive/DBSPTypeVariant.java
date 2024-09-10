@@ -16,6 +16,10 @@ public class DBSPTypeVariant extends DBSPTypeBaseType {
         super(node, DBSPTypeCode.VARIANT, mayBeNull);
     }
 
+    public DBSPTypeVariant(boolean mayBeNull) {
+        this(CalciteObject.EMPTY, mayBeNull);
+    }
+
     @Override
     public boolean sameType(DBSPType other) {
         if (!super.sameNullability(other))

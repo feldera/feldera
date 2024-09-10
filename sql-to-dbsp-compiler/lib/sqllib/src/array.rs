@@ -621,7 +621,7 @@ pub fn indexV__<T>(value: Variant, index: T) -> Option<Variant>
 where
     T: Into<Variant>,
 {
-    Some(value.index(index.into()))
+    value.index(index.into())
 }
 
 pub fn indexV_N<T>(value: Variant, index: Option<T>) -> Option<Variant>

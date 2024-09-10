@@ -106,6 +106,8 @@ public abstract class DBSPLiteral extends DBSPExpression {
             return new DBSPTimestampLiteral();
         } else if (type.is(DBSPTypeBinary.class)) {
             return new DBSPBinaryLiteral(type.getNode(), type, null);
+        } else if (type.is(DBSPTypeVariant.class)) {
+            return new DBSPVariantLiteral(null, type);
         }
         throw new UnimplementedException(type);
     }

@@ -2,7 +2,8 @@
 
 #![allow(non_snake_case)]
 use crate::{
-    some_function1, some_function2, some_function3, some_function4, some_polymorphic_function2,
+    some_function1, some_function2, some_function3, some_function4, some_polymorphic_function1,
+    some_polymorphic_function2, Variant,
 };
 
 use like::{Escape, Like};
@@ -312,4 +313,38 @@ pub fn writelog<T: std::fmt::Display>(format: String, argument: T) -> T {
     let formatted = format.replace("%%", &format_arg);
     print!("{}", formatted);
     argument
+}
+
+pub fn parse_json_s(value: String) -> Variant {
+    let v: Result<serde_json::Value, serde_json::Error> = serde_json::from_str(&value);
+    match v {
+        Ok(value) => match Variant::try_from(value) {
+            Ok(value) => value,
+            _ => Variant::SqlNull,
+        },
+        _ => Variant::SqlNull,
+    }
+}
+
+pub fn parse_json_nullN(_value: Option<()>) -> Option<Variant> {
+    None
+}
+
+some_polymorphic_function1!(parse_json, s, String, Variant);
+
+pub fn unparse_json_V(value: Variant) -> Option<String> {
+    let mut result = String::new();
+    match value.to_json_string(&mut result) {
+        Ok(()) => Some(result),
+        _ => None,
+    }
+}
+
+pub fn unparse_json_VN(value: Option<Variant>) -> Option<String> {
+    let value = value?;
+    unparse_json_V(value)
+}
+
+pub fn unparse_json_nullN(_value: Option<()>) -> Option<String> {
+    None
 }

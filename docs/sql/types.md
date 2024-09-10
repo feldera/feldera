@@ -25,6 +25,7 @@ The compiler supports the following SQL data types:
 | `GEOMETRY`                  | A geographic data type (only rudimentary support at this point).                                                                                                   |                            |
 | `ARRAY`                     | An array with element of the specified type. Used as a suffix for another type (e.g., `INT ARRAY`)                                                                 |                            |
 | `MAP`                       | A map with keys and values of specified types. The syntax is `MAP<KEYTYPE, VALUETYPE>`                                                                             |                            |
+| `VARIANT`                   | A dynamically-typed value that can have as value any other SQL type  |                            |
 
 - For `DECIMAL` types: 23.456 has a precision of 5 and a scale of 3.
   If scale is missing it is assumed to be 0.
@@ -129,6 +130,7 @@ sqlTypeName:
   |   BIGINT
   |   REAL
   |   double
+  |   VARIANT
 
 collectionsTypeName:
       ARRAY
