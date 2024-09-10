@@ -21,7 +21,7 @@ use crate::{
     security(("JSON web token (JWT) or API key" = [])),
     responses(
         (status = OK
-        , description = "Returns the metrics of all running pipelines belonging to this tenant."
+        , description = "Returns the metrics of all running pipelines belonging to this tenant in Prometheus format."
         , content_type = "text/plain"
         , body = Vec<u8>),
     ),
