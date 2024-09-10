@@ -20,6 +20,7 @@ mod api_key;
 mod config_api;
 mod examples;
 mod http_io;
+mod metrics;
 mod pipeline;
 
 use crate::auth::JwkCache;
@@ -116,6 +117,9 @@ The program version is used internally by the compiler to know when to recompile
         config_api::get_config_authentication,
         config_api::get_config_demos,
         config_api::get_config,
+
+        // Metrics
+        metrics::get_metrics,
     ),
     components(schemas(
         // Authentication
@@ -220,6 +224,7 @@ The program version is used internally by the compiler to know when to recompile
         (name = "Authentication", description = "Retrieve authentication configuration."),
         (name = "Configuration", description = "Retrieve general configuration."),
         (name = "API keys", description = "Manage API keys."),
+        (name = "Metrics", description = "Retrieve pipeline metrics."),
     ),
 )]
 pub struct ApiDoc;
@@ -271,6 +276,8 @@ fn api_scope() -> Scope {
         // Configuration endpoints
         .service(config_api::get_config_authentication)
         .service(config_api::get_config_demos)
+        // Metrics of all pipelines belonging to this tenant
+        .service(metrics::get_metrics)
 }
 
 struct SecurityAddon;
