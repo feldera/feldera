@@ -119,8 +119,8 @@ impl InputReader for InputGenerator {
         let consumable_batches = self.inner.consumable_batches.load(Ordering::Acquire);
         let options = self.inner.options.get().unwrap();
         let max_batches = options
-            .max_step_size
-            .div_ceil(options.batch_size_per_thread * options.threads as u64);
+            .max_step_size_per_thread
+            .div_ceil(options.batch_size_per_thread);
 
         let mut total = 0;
         for _ in 0..max_batches {
