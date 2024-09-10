@@ -2999,11 +2999,11 @@
             "default": 100000000,
             "minimum": 0
           },
-          "max_step_size": {
+          "max_step_size_per_thread": {
             "type": "integer",
             "format": "int64",
-            "description": "Maximum number of events to submit in a single step.  This should be a\nmultiple of `batch_size`.\n\nThis stands in for `max_batch_size` from the connector configuration\nbecause it must be a constant across all three of the nexmark tables.",
-            "default": 4000000,
+            "description": "Maximum number of events to submit in a single step, per thread.\n\nThis should really be per worker thread, not per generator thread, but\nthe connector does not know how many worker threads there are.\n\nThis stands in for `max_batch_size` from the connector configuration\nbecause it must be a constant across all three of the nexmark tables.",
+            "default": 10000,
             "minimum": 0
           },
           "threads": {
