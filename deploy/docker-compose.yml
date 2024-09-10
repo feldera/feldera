@@ -187,3 +187,36 @@ services:
       - bash
       - -c
       - "sleep 1 && cd demo/simple-count && python3 run.py --api-url http://pipeline-manager:8080"
+
+  prometheus:
+    profiles: [ "monitoring" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+    image: prom/prometheus:latest
+    ports:
+      - 9090:9090
+    volumes:
+      - ./prometheus:/etc/prometheus
+    command: --web.enable-lifecycle --config.file=/etc/prometheus/prometheus.yml
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 50s
+
+  grafana:
+    profiles: [ "monitoring" ]
+    depends_on:
+      pipeline-manager:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    image: grafana/grafana:latest
+    ports:
+      - 3000:3000
+    restart: unless-stopped
+    volumes:
+        - ./grafana/prometheus_docker.yaml:/etc/grafana/provisioning/datasources/prometheus.yaml
+
