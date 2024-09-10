@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    # Set uid so we can refer to it from the dashboard.
+    uid: prometheus_docker
+    # Access mode - proxy (server in the UI) or direct (browser in the UI).
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      # Grafana will scrape data from Prometheus every 5s.
+      timeInterval: 5s
+
