@@ -159,13 +159,8 @@ const sidebars = {
                       },
                       {
                           type: 'doc',
-                          id: 'connectors/sources/debezium-mysql',
-                          label: 'Debezium-MySQL'
-                      },
-                      {
-                          type: 'doc',
-                          id: 'connectors/sources/debezium-postgres',
-                          label: 'Debezium-Postgres'
+                          id: 'connectors/sources/debezium',
+                          label: 'Debezium'
                       },
                       {
                           type: 'doc',
