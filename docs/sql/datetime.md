@@ -213,6 +213,16 @@ result is as follows:
 - Adding a interval of hours, minutes, or seconds to a `DATE` produces a `TIMESTAMP` result
 - Adding a an interval of days, months, or longer to a `DATE` produces a `DATE` result
 
+To create a timestamp using the Unix EPOCH in seconds as a base, you
+can use the `TIMESTAMPADD` function.  The following code creates a
+MAKE_TIMESTAMP function which creates a `TIMESTAMP` given a number of
+seconds:
+
+```sql
+CREATE FUNCTION MAKE_TIMESTAMP(SECONDS BIGINT) RETURNS TIMESTAMP AS
+TIMESTAMPADD(SECOND, SECONDS, DATE '1970-01-01');
+```
+
 ## Time intervals
 
 ### The interval types
