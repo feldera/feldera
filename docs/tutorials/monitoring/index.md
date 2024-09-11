@@ -32,6 +32,26 @@ is then used to visualize these metrics.
       documentation](https://prometheus.io/docs/visualization/grafana/#creating-a-prometheus-data-source)
       to add Prometheus as a data source.
 
+### Setup with Docker
+
+Alternatively, with docker, you can avoid installing Prometheus and Grafana to your local machine.
+To run Feldera with both Prometheus and Grafana:
+
+```sh
+docker compose -f deploy/docker-compose.yml up grafana --force-recreate
+```
+
+This spins up:
+1. Feldera
+2. Prometheus
+3. Grafana
+
+If you want to run Prometheus without Grafana:
+
+```sh
+docker compose -f deploy/docker-compose.yml up prometheus --force-recreate
+```
+
 ### Set up the monitoring Dashboard
 
 1. **Copy the JSON of
