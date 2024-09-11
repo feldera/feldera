@@ -1872,12 +1872,7 @@ impl Parser for InputProbe {
 
     fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
         let (num_records, errors) = self.parser.end_of_fragments();
-        for error in errors.iter() {
-            self.controller
-                .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
-        }
-
-        (num_records, errors)
+        self.input_common(&[], num_records, errors)
     }
 
     fn fork(&self) -> Box<dyn Parser> {
