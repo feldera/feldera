@@ -7,7 +7,7 @@ from kafka.admin import KafkaAdminClient, NewTopic
 
 from feldera import PipelineBuilder, Pipeline
 from feldera.enums import PipelineStatus
-from tests import TEST_CLIENT
+from tests import TEST_CLIENT, KAFKA_SERVER, PIPELINE_TO_KAFKA_SERVER
 
 
 class TestPipelineBuilder(unittest.TestCase):
@@ -272,8 +272,6 @@ class TestPipelineBuilder(unittest.TestCase):
     def test_kafka(self):
         import json
 
-        KAFKA_SERVER = "localhost:19092"
-        PIPELINE_TO_KAFKA_SERVER = "redpanda:9092"
 
         in_ci = os.environ.get("IN_CI")
 
@@ -422,9 +420,6 @@ class TestPipelineBuilder(unittest.TestCase):
 
     def test_avro_format(self):
         import json
-
-        PIPELINE_TO_KAFKA_SERVER = "redpanda:9092"
-        KAFKA_SERVER = "localhost:19092"
 
         TOPIC = "test_avro_format"
 
