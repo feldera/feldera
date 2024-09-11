@@ -68,6 +68,9 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         @Parameter(names = "--lenient",
                 description = "Lenient SQL validation.  If true it allows duplicate column names in a view")
         public boolean lenient = false;
+        @Parameter(names = "--no-restrict-io",
+                description = "Do not restrict the types of columns allowed in tables and views")
+        public boolean unrestrictedIOTypes = false;
         @Parameter(names = "--unquotedCasing",
                 description = "How unquoted identifiers are treated.  Choices are: 'upper', 'lower', 'unchanged'")
         public String unquotedCasing = "upper";
@@ -89,6 +92,7 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
                     ", optimizationLevel=" + this.optimizationLevel +
                     ", throwOnError=" + this.throwOnError +
                     ", generateInputForEveryTable=" + this.generateInputForEveryTable +
+                    ", unrestrictedIOTypes=" + this.unrestrictedIOTypes +
                     ", lexicalRules=" + this.lexicalRules +
                     ", lenient=" + this.lenient +
                     ", unquotedCasing=" + this.unquotedCasing +

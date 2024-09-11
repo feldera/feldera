@@ -1724,6 +1724,7 @@ export type SqlType =
   | 'STRUCT'
   | 'MAP'
   | 'NULL'
+  | 'VARIANT'
 
 /**
  * How to cache access to storage within a Feldera pipeline.

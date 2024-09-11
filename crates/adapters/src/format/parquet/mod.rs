@@ -277,6 +277,7 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
             SqlType::Interval(
                 IntervalUnit::YearToMonth | IntervalUnit::Year | IntervalUnit::Month,
             ) => DataType::Interval(ArrowIntervalUnit::YearMonth),
+            SqlType::Variant => unimplemented!(),
             SqlType::Interval(_) => DataType::Interval(ArrowIntervalUnit::DayTime),
             SqlType::Array => {
                 // SqlType::Array implies c.component.is_some()

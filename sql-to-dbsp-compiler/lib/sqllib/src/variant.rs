@@ -274,7 +274,7 @@ impl Variant {
                 let mut first = true;
                 for e in v {
                     if !first {
-                        write!(buffer, ", ")?;
+                        write!(buffer, ",")?;
                     }
                     first = false;
                     e.to_json_string(buffer)?;
@@ -287,14 +287,14 @@ impl Variant {
                 let mut first = true;
                 for (k, v) in m {
                     if !first {
-                        write!(buffer, ", ")?;
+                        write!(buffer, ",")?;
                     }
                     first = false;
                     match k {
                         Variant::String(_) => k.to_json_string(buffer),
                         _ => return Err(Box::from("Not a JSON value (label is not a string)")),
                     }?;
-                    write!(buffer, ": ")?;
+                    write!(buffer, ":")?;
                     v.to_json_string(buffer)?;
                 }
                 write!(buffer, "}}")?;

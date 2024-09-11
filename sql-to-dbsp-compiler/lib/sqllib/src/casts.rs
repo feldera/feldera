@@ -294,6 +294,26 @@ pub fn cast_to_decimal_sN(value: Option<String>, precision: u32, scale: u32) -> 
     cast_to_decimal_decimal(result, precision, scale)
 }
 
+#[inline]
+pub fn cast_to_decimalN_V(value: Variant, precision: u32, scale: u32) -> Option<Decimal> {
+    match value {
+        Variant::TinyInt(i) => Some(cast_to_decimal_i8(i, precision, scale)),
+        Variant::SmallInt(i) => Some(cast_to_decimal_i16(i, precision, scale)),
+        Variant::Int(i) => Some(cast_to_decimal_i32(i, precision, scale)),
+        Variant::BigInt(i) => Some(cast_to_decimal_i64(i, precision, scale)),
+        Variant::Real(f) => Some(cast_to_decimal_f(f, precision, scale)),
+        Variant::Double(f) => Some(cast_to_decimal_d(f, precision, scale)),
+        Variant::Decimal(d) => Some(cast_to_decimal_decimal(d, precision, scale)),
+        _ => None,
+    }
+}
+
+#[inline]
+pub fn cast_to_decimalN_VN(value: Option<Variant>, precision: u32, scale: u32) -> Option<Decimal> {
+    let value = value?;
+    cast_to_decimalN_V(value, precision, scale)
+}
+
 macro_rules! cast_to_decimal {
     ($type_name: ident, $arg_type: ty) => {
         ::paste::paste! {
@@ -958,14 +978,6 @@ pub fn cast_to_s_u(value: usize, size: i32, fixed: bool) -> String {
     limit_or_size_string(result, size, fixed)
 }
 
-#[inline]
-pub fn cast_to_sN_V(value: Variant, size: i32, fixed: bool) -> Option<String> {
-    match value {
-        Variant::String(v) => Some(limit_or_size_string(v, size, fixed)),
-        _ => None,
-    }
-}
-
 /////////// cast to StringN
 
 #[inline]
@@ -1078,6 +1090,20 @@ pub fn cast_to_sN_i64N(value: Option<i64>, size: i32, fixed: bool) -> Option<Str
 pub fn cast_to_sN_u(value: usize, size: i32, fixed: bool) -> Option<String> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
+}
+
+#[inline]
+pub fn cast_to_sN_V(value: Variant, size: i32, fixed: bool) -> Option<String> {
+    match value {
+        Variant::String(v) => Some(limit_or_size_string(v, size, fixed)),
+        _ => None,
+    }
+}
+
+#[inline]
+pub fn cast_to_sN_VN(value: Option<Variant>, size: i32, fixed: bool) -> Option<String> {
+    let value = value?;
+    cast_to_sN_V(value, size, fixed)
 }
 
 /////////// cast to integer
@@ -1505,15 +1531,51 @@ macro_rules! cast_variant {
     };
 }
 
+macro_rules! cast_from_variant_numeric {
+    ($result_name: ident, $result_type: ty) => {
+        ::paste::paste! {
+            // cast_to_i32N_V
+            #[inline]
+            pub fn [< cast_to_ $result_name N _V >](value: Variant) -> Option<$result_type> {
+                match value {
+                    Variant::TinyInt(value) => Some([< cast_to_ $result_name _i8 >](value)),
+                    Variant::SmallInt(value) => Some([< cast_to_ $result_name _i16 >](value)),
+                    Variant::Int(value) => Some([< cast_to_ $result_name _i32 >](value)),
+                    Variant::BigInt(value) => Some([< cast_to_ $result_name _i64 >](value)),
+                    Variant::Real(value) => Some([< cast_to_ $result_name _f >](value)),
+                    Variant::Double(value) => Some([< cast_to_ $result_name _d >](value)),
+                    Variant::Decimal(value) => Some([< cast_to_ $result_name _decimal >](value)),
+                    _            => None,
+                }
+            }
+
+            // cast_to_i32N_VN
+            #[inline]
+            pub fn [<cast_to_ $result_name N_ VN >]( value: Option<Variant> ) -> Option<$result_type> {
+                let value = value?;
+                [<cast_to_ $result_name N_V >](value)
+            }
+        }
+
+    };
+}
+
+macro_rules! cast_variant_numeric {
+    ($result_name: ident, $result_type: ty, $enum: ident) => {
+        cast_to_variant!($result_name, $result_type, $enum);
+        cast_from_variant_numeric!($result_name, $result_type);
+    };
+}
+
 cast_variant!(bool, bool, Boolean);
-cast_variant!(i8, i8, TinyInt);
-cast_variant!(i16, i16, SmallInt);
-cast_variant!(i32, i32, Int);
-cast_variant!(i64, i64, BigInt);
-cast_variant!(f, F32, Real);
-cast_variant!(d, F64, Double);
-cast_variant!(Decimal, Decimal, Decimal);
-cast_to_variant!(s, String, String); // The other two are different
+cast_variant_numeric!(i8, i8, TinyInt);
+cast_variant_numeric!(i16, i16, SmallInt);
+cast_variant_numeric!(i32, i32, Int);
+cast_variant_numeric!(i64, i64, BigInt);
+cast_variant_numeric!(f, F32, Real);
+cast_variant_numeric!(d, F64, Double);
+cast_to_variant!(decimal, Decimal, Decimal); // The other two take extra arguments
+cast_to_variant!(s, String, String); // The other two take extra arguments
 cast_variant!(Date, Date, Date);
 cast_variant!(Time, Time, Time);
 cast_variant!(Timestamp, Timestamp, Timestamp);

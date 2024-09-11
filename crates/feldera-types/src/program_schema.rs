@@ -404,6 +404,9 @@ pub enum SqlType {
     /// SQL `NULL` type.
     #[serde(rename = "NULL")]
     Null,
+    /// SQL `VARIANT` type.
+    #[serde(rename = "VARIANT")]
+    Variant,
 }
 
 impl Display for SqlType {
@@ -444,6 +447,7 @@ impl<'de> Deserialize<'de> for SqlType {
             "varchar" => Ok(SqlType::Varchar),
             "binary" => Ok(SqlType::Binary),
             "varbinary" => Ok(SqlType::Varbinary),
+            "variant" => Ok(SqlType::Variant),
             "time" => Ok(SqlType::Time),
             "date" => Ok(SqlType::Date),
             "timestamp" => Ok(SqlType::Timestamp),
@@ -481,6 +485,7 @@ impl From<SqlType> for &'static str {
             SqlType::Array => "ARRAY",
             SqlType::Struct => "STRUCT",
             SqlType::Map => "MAP",
+            SqlType::Variant => "VARIANT",
             SqlType::Null => "NULL",
         }
     }

@@ -125,6 +125,9 @@ export const sqlValueToXgressJSON = (type: ColumnType, value: SQLValueJS): JSONX
     .with({ type: 'VARBINARY' }, () => {
       invariant(false, 'VARBINARY type is not implemented for ingress')
     })
+    .with({ type: 'VARIANT' }, () => {
+      invariant(false, 'VARIANT type is not implemented for ingress')
+    })
     .with({ type: { Interval: P._ } }, () => {
       invariant(false, 'INTERVAL type is not supported for ingress')
     })
@@ -219,6 +222,9 @@ export const xgressJSONToSQLValue = (type: ColumnType, value: JSONXgressValue): 
     })
     .with({ type: 'VARBINARY' }, () => {
       invariant(false, 'VARBINARY type is not implemented for ingress')
+    })
+    .with({ type: 'VARIANT' }, () => {
+      invariant(false, 'VARIANT type is not implemented for ingress')
     })
     .with({ type: { Interval: P._ } }, () => {
       invariant(typeof value === 'number' || BigNumber.isBigNumber(value))
@@ -386,6 +392,7 @@ export const sqlValueComparator = (sqlType: ColumnType) => {
     })
     .with('BINARY', () => () => 0)
     .with('VARBINARY', () => () => 0)
+    .with('VARIANT', () => () => 0)
     .with('STRUCT', () => () => 0)
     .with('NULL', () => () => 0)
     .exhaustive()

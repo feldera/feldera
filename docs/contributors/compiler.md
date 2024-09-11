@@ -75,6 +75,9 @@ Usage: sql-to-dbsp [options] Input file to compile
       How unquoted identifiers are treated.  Choices are: 'upper', 'lower',
       'unchanged'
       Default: upper
+    --no-restrict-io
+      Do not restrict the types of columns allowed in tables and views
+      Default: false
     -O
       Optimization level (0, 1, or 2)
       Default: 2
