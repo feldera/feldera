@@ -4063,6 +4063,13 @@
             "enum": [
               "NULL"
             ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `VARIANT` type.",
+            "enum": [
+              "VARIANT"
+            ]
           }
         ],
         "description": "The available SQL types as specified in `CREATE` statements."
