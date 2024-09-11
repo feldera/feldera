@@ -278,6 +278,10 @@ impl InputQueue {
         }
         total
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.lock().unwrap().is_empty()
+    }
 }
 
 /// Input stream consumer.
