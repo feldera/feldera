@@ -2012,3 +2012,49 @@ async fn pipeline_shutdown_after_start() {
             .await;
     }
 }
+
+#[actix_web::test]
+#[serial]
+async fn test_get_metrics() {
+    let config = setup().await;
+    // Basic test pipeline with a SQL program which is known to panic
+    create_and_deploy_test_pipeline(
+        &config,
+        "CREATE TABLE t1(c1 INTEGER) with ('materialized' = 'true'); CREATE VIEW v1 AS SELECT * FROM t1;",
+    ).await;
+
+    // Again pause the pipeline before it is started
+    let response = config.post_no_body("/v0/pipelines/test/pause").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+    // Start the pipeline
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Running, config.resume_timeout)
+        .await;
+
+    // Push some data
+    let response = config
+        .post_csv("/v0/pipelines/test/ingress/t1", "1\n2\n3\n".to_string())
+        .await;
+    assert!(response.status().is_success());
+
+    let mut response = config.get("/v0/metrics").await;
+
+    let resp = response.body().await.unwrap_or_default();
+    let s = String::from_utf8(resp.to_vec()).unwrap_or_default();
+
+    assert!(s.contains("# TYPE"));
+
+    // Shutdown the pipeline
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+
+    // Delete the pipeline
+    let response = config.delete("/v0/pipelines/test").await;
+    assert_eq!(StatusCode::OK, response.status());
+}
