@@ -1945,10 +1945,6 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
     let ins_ret_json = serde_json::from_str::<Value>(ins_ret).unwrap();
     assert_eq!(ins_ret_json, json!({"count": 2}));
 
-    /*
-    // This needs to ensure we step() before we return from insert
-    // for the assert to hold
-
     let mut r = config
         .adhoc_query("/v0/pipelines/test/query", ADHOC_SQL_COUNT, "json")
         .await;
@@ -1956,8 +1952,9 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
     let cnt_body = r.body().await.unwrap();
     let cnt_ret = std::str::from_utf8(cnt_body.as_ref()).unwrap();
     let cnt_ret_json = serde_json::from_str::<Value>(cnt_ret).unwrap();
+    // This needs to ensure we step() the circuit before we return from insert
+    // for the assert to hold
     assert_eq!(cnt_ret_json, json!({"count(*)": 7}));
-     */
 }
 
 /// We should be able to query a table that never received any input.

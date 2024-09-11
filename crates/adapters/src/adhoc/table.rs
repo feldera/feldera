@@ -1,10 +1,10 @@
 use std::any::Any;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use crate::catalog::SyncSerBatchReader;
-use crate::controller::ConsistentSnapshots;
+use crate::controller::{ConsistentSnapshots, ControllerInner};
 use crate::{DeCollectionHandle, RecordFormat};
 use arrow::datatypes::{Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
@@ -27,11 +27,17 @@ use datafusion::physical_plan::{
 use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::serde_with_context::SqlSerdeConfig;
 use futures_util::StreamExt;
+use log::warn;
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
 use tokio::sync::mpsc::Sender;
+use tokio::time::{sleep, Duration, Instant};
 
 pub struct AdHocTable {
+    // We use a weak reference to avoid a reference cycle.
+    // e.g., controller owns datafusion SessionContext, which in turn owns
+    // the table somewhere underneath.
+    controller: Weak<ControllerInner>,
     input_handle: Option<Box<dyn DeCollectionHandle>>,
     name: SqlIdentifier,
     schema: Arc<Schema>,
@@ -40,12 +46,14 @@ pub struct AdHocTable {
 
 impl AdHocTable {
     pub fn new(
+        controller: Weak<ControllerInner>,
         input_handle: Option<Box<dyn DeCollectionHandle>>,
         name: SqlIdentifier,
         schema: Arc<Schema>,
         snapshots: ConsistentSnapshots,
     ) -> Self {
         Self {
+            controller,
             input_handle,
             name,
             schema,
@@ -116,7 +124,7 @@ impl TableProvider for AdHocTable {
 
         match &self.input_handle {
             Some(ih) => {
-                let sink = Arc::new(AdHocTableSink::new(ih.fork()));
+                let sink = Arc::new(AdHocTableSink::new(self.controller.clone(), ih.fork()));
                 Ok(Arc::new(DataSinkExec::new(
                     input,
                     sink,
@@ -130,12 +138,19 @@ impl TableProvider for AdHocTable {
 }
 
 struct AdHocTableSink {
+    controller: Weak<ControllerInner>,
     collection_handle: Box<dyn DeCollectionHandle>,
 }
 
 impl AdHocTableSink {
-    fn new(collection_handle: Box<dyn DeCollectionHandle>) -> Self {
-        Self { collection_handle }
+    fn new(
+        controller: Weak<ControllerInner>,
+        collection_handle: Box<dyn DeCollectionHandle>,
+    ) -> Self {
+        Self {
+            controller,
+            collection_handle,
+        }
     }
 }
 
@@ -181,6 +196,28 @@ impl DataSink for AdHocTableSink {
                 .insert(&batch)
                 .map_err(|e| DataFusionError::External(e.into()))?;
             row_count += batch.num_rows();
+        }
+
+        // If we have a controller, we wait for the circuit to step.
+        // This is necessary to ensure that the data is available for subsequent queries.
+        if let Some(controller) = self.controller.upgrade() {
+            controller.input_batch(None, row_count);
+            controller.request_step();
+            let total_input = controller.status.num_total_input_records();
+
+            let now = Instant::now();
+            while controller.status.num_total_processed_records() >= total_input {
+                // We don't have a better notification mechanism for now.
+                sleep(Duration::from_millis(100)).await;
+                const WAIT_FOR_PROCESSING_TIMEOUT: Duration = Duration::from_secs(120);
+                if now.elapsed() > WAIT_FOR_PROCESSING_TIMEOUT {
+                    // If we take more than 2min clearly something is wrong or extremely busy so we just return for now,
+                    // we can't return an error since the insertion is still eventually going to "commit".
+                    warn!("The submitted `INSERT INTO` statement took an unusual amount of time ({}s) waiting for the Feldera circuit to process it. \
+        We return before confirming insertion completed, if you want to make sure the statement was fully processed monitor the `total_processed_records` metric and wait until it reaches '{}'.", WAIT_FOR_PROCESSING_TIMEOUT.as_secs(), total_input);
+                    break;
+                }
+            }
         }
 
         Ok(row_count as u64)
