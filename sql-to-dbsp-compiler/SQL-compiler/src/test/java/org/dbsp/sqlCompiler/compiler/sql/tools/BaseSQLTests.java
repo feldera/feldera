@@ -71,10 +71,6 @@ public class BaseSQLTests {
         Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 4);
     }
 
-    protected void showFinalDetail() {
-        Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 4);
-    }
-
     protected void showFinalVerbose() {
         Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 4);
     }
@@ -307,6 +303,7 @@ public class BaseSQLTests {
         options.ioOptions.quiet = true;
         options.ioOptions.emitHandles = true;
         options.languageOptions.incrementalize = incremental;
+        options.languageOptions.unrestrictedIOTypes = true;
         options.languageOptions.optimizationLevel = optimize ? 2 : 1;
         return options;
     }

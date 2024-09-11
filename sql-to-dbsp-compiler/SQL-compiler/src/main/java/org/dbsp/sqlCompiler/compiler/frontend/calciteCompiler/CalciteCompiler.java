@@ -87,6 +87,7 @@ import org.apache.calcite.sql.pretty.SqlPrettyWriter;
 import org.apache.calcite.sql.type.ArraySqlType;
 import org.apache.calcite.sql.type.MapSqlType;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
+import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.util.SqlShuttle;
@@ -615,7 +616,7 @@ public class CalciteCompiler implements IWritesLogs {
         return result;
     }
 
-    List<RelColumnMetadata> createTableColumnsMetadata(SqlNodeList list) {
+    List<RelColumnMetadata> createTableColumnsMetadata(SqlNodeList list, SqlIdentifier table) {
         List<RelColumnMetadata> result = new ArrayList<>();
         int index = 0;
         Map<String, SqlNode> columnDefinition = new HashMap<>();
@@ -720,10 +721,11 @@ public class CalciteCompiler implements IWritesLogs {
                 columnDefinition.put(colName, col);
             }
             RelDataType type = this.specToRel(typeSpec, false);
+            SourcePositionRange position = new SourcePositionRange(typeSpec.getParserPosition());
             if (isPrimaryKey) {
                 if (type.isNullable()) {
                     // This is either an error or a warning, depending on the value of the 'lenient' flag
-                    this.errorReporter.reportProblem(new SourcePositionRange(typeSpec.getParserPosition()),
+                    this.errorReporter.reportProblem(position,
                             this.options.languageOptions.lenient,
                             "PRIMARY KEY cannot be nullable",
                             "PRIMARY KEY column " + Utilities.singleQuote(name.getSimple()) +
@@ -738,6 +740,9 @@ public class CalciteCompiler implements IWritesLogs {
                             "PRIMARY KEY column " + Utilities.singleQuote(name.getSimple()) +
                                     " cannot have type " + type);
                 }
+            }
+            if (!this.options.languageOptions.unrestrictedIOTypes) {
+                this.validateColumnType(false, position, type, name.getSimple(), table);
             }
             RelDataTypeField field = new RelDataTypeFieldImpl(
                     name.getSimple(), index++, type);
@@ -760,15 +765,32 @@ public class CalciteCompiler implements IWritesLogs {
         return result;
     }
 
-    public List<RelColumnMetadata> createColumnsMetadata(CalciteObject node,
-            SqlIdentifier objectName, boolean view, RelRoot relRoot, @Nullable SqlNodeList columnNames) {
+    private void validateColumnType(boolean view, SourcePositionRange position, RelDataType type,
+                                    String columnName, SqlIdentifier tableName) {
+        SqlTypeFamily family = type.getSqlTypeName().getFamily();
+        boolean illegal = family == SqlTypeFamily.INTERVAL_DAY_TIME ||
+                family == SqlTypeFamily.INTERVAL_YEAR_MONTH ||
+                family == SqlTypeFamily.VARIANT;
+        if (illegal) {
+            this.errorReporter.reportError(position,
+                    "Unsupported column type",
+                    "Column " + Utilities.singleQuote(columnName) + " of " + (view ? "view " : "table ") +
+                            Utilities.singleQuote(tableName.getSimple()) +
+                            " has type " + Utilities.singleQuote(type.getFullTypeString()) +
+                            " which is currently unsupported");
+        }
+    }
+
+    public List<RelColumnMetadata> createViewColumnsMetadata(
+            CalciteObject node, SqlIdentifier viewName, RelRoot relRoot, @Nullable SqlNodeList columnNames,
+            SqlCreateView.ViewKind kind) {
         List<RelColumnMetadata> columns = new ArrayList<>();
         RelDataType rowType = relRoot.rel.getRowType();
+        SourcePositionRange position = new SourcePositionRange(viewName.getParserPosition());
         if (columnNames != null && columnNames.size() != relRoot.fields.size()) {
-            this.errorReporter.reportError(
-                    new SourcePositionRange(objectName.getParserPosition()),
+            this.errorReporter.reportError(position,
                     "Column count mismatch",
-                    (view ? "View " : " Table ") + objectName.getSimple() +
+                    "View " + Utilities.singleQuote(viewName.getSimple()) +
                             " specifies " + columnNames.size() + " columns " +
                             " but query computes " + relRoot.fields.size() + " columns");
             return columns;
@@ -791,17 +813,15 @@ public class CalciteCompiler implements IWritesLogs {
             if (specifiedName != null) {
                 if (colByName.containsKey(specifiedName)) {
                     if (!this.options.languageOptions.lenient) {
-                        this.errorReporter.reportError(
-                                new SourcePositionRange(objectName.getParserPosition()),
+                        this.errorReporter.reportError(position,
                                 "Duplicate column",
-                                (view ? "View " : "Table ") + objectName.getSimple() +
+                                "View " + Utilities.singleQuote(viewName.getSimple()) +
                                         " contains two columns with the same name " + Utilities.singleQuote(specifiedName) + "\n" +
                                         "You can allow this behavior using the --lenient compiler flag");
                     } else {
-                        this.errorReporter.reportWarning(
-                                new SourcePositionRange(objectName.getParserPosition()),
+                        this.errorReporter.reportWarning(position,
                                 "Duplicate column",
-                                (view ? "View " : "Table ") + objectName.getSimple() +
+                                "View " + Utilities.singleQuote(viewName.getSimple()) +
                                         " contains two columns with the same name " + Utilities.singleQuote(specifiedName) + "\n" +
                                         "Some columns will be renamed in the produced output.");
                     }
@@ -810,6 +830,8 @@ public class CalciteCompiler implements IWritesLogs {
             }
             RelColumnMetadata meta = new RelColumnMetadata(node,
                     field, false, nameIsQuoted, null, null, null);
+            if (kind != SqlCreateView.ViewKind.LOCAL && !this.options.languageOptions.unrestrictedIOTypes)
+                this.validateColumnType(true, position, field.getType(), field.getName(), viewName);
             columns.add(meta);
             index++;
         }
@@ -961,7 +983,8 @@ public class CalciteCompiler implements IWritesLogs {
                 if (ct.ifNotExists)
                     throw new UnsupportedException("IF NOT EXISTS not supported", object);
                 String tableName = ct.name.getSimple();
-                List<RelColumnMetadata> cols = this.createTableColumnsMetadata(Objects.requireNonNull(ct.columnsOrForeignKeys));
+                List<RelColumnMetadata> cols = this.createTableColumnsMetadata(
+                        Objects.requireNonNull(ct.columnsOrForeignKeys), ct.name);
                 @Nullable PropertyList properties = this.createConnectorProperties(ct.connectorProperties);
                 if (properties != null)
                     properties.checkDuplicates(this.errorReporter);
@@ -1004,8 +1027,8 @@ public class CalciteCompiler implements IWritesLogs {
                         .append(query.toString())
                         .newline();
                 RelRoot relRoot = converter.convertQuery(query, true, true);
-                List<RelColumnMetadata> columns = this.createColumnsMetadata(CalciteObject.create(node),
-                        cv.name, true, relRoot, cv.columnList);
+                List<RelColumnMetadata> columns = this.createViewColumnsMetadata(CalciteObject.create(node),
+                        cv.name, relRoot, cv.columnList, cv.viewKind);
                 @Nullable PropertyList connectorProperties = this.createConnectorProperties(cv.connectorProperties);
                 if (connectorProperties != null) {
                     connectorProperties.checkDuplicates(this.errorReporter);

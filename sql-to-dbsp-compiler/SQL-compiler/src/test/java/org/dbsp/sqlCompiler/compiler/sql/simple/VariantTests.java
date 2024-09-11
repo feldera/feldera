@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.apache.calcite.util.TimeString;
+import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -9,18 +11,25 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMonthsLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPMapLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.util.Linq;
@@ -58,9 +67,9 @@ public class VariantTests extends BaseSQLTests {
         // Converting something to VARIANT and back works
         this.testQuery("SELECT CAST(CAST(1 AS VARIANT) AS INT)",
                 new DBSPI32Literal(1, true));
-        // However, you have to use the right type, or you get NULL
+        // However, you have to use the right type
         this.testQuery("SELECT CAST(CAST(1 AS VARIANT) AS TINYINT)",
-                new DBSPTypeInteger(CalciteObject.EMPTY, 8, true, true).nullValue());
+                new DBSPI8Literal((byte) 1, true));
         // Some VARIANT objects when output receive double quotes
         this.testQuery("select CAST('string' as VARIANT)",
                 new DBSPVariantLiteral(new DBSPStringLiteral("string")));
@@ -120,6 +129,24 @@ public class VariantTests extends BaseSQLTests {
         // (Otherwise TYPEOF would not compile)
         this.testQuery("SELECT TYPEOF(CAST(ARRAY[1,2,3] AS VARIANT)[1])",
                 new DBSPStringLiteral("INTEGER"));
+        this.testQuery("SELECT CAST(DATE '2020-01-01' AS VARIANT)",
+                new DBSPVariantLiteral(new DBSPDateLiteral("2020-01-01")));
+        this.testQuery("SELECT CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT)",
+                new DBSPVariantLiteral(new DBSPTimestampLiteral(
+                        CalciteObject.EMPTY,
+                        new DBSPTypeTimestamp(CalciteObject.EMPTY, false),
+                        new TimestampString("2020-01-01 10:00:00"))));
+        this.testQuery("SELECT CAST(TIME '10:01:01' AS VARIANT)",
+                new DBSPVariantLiteral(new DBSPTimeLiteral(
+                        CalciteObject.EMPTY,
+                        new DBSPTypeTime(CalciteObject.EMPTY, false),
+                        new TimeString("10:01:01"))));
+        this.testQuery("SELECT CAST(INTERVAL '4-1' YEARS TO MONTHS AS VARIANT)",
+                new DBSPVariantLiteral(new DBSPIntervalMonthsLiteral(49)));
+        this.testQuery("SELECT CAST(INTERVAL '4 10:01' DAYS TO MINUTES AS VARIANT)",
+                new DBSPVariantLiteral(new DBSPIntervalMillisLiteral(1000L * (4 * 86400 + 10 * 3600 + 60), false)));
+        this.testQuery("SELECT CAST(CAST(1 AS VARIANT) AS VARIANT)",
+                new DBSPVariantLiteral(new DBSPI32Literal(1)));
     }
 
     @Test
@@ -196,6 +223,17 @@ public class VariantTests extends BaseSQLTests {
                                         new DBSPVariantLiteral(new DBSPDecimalLiteral(1)),
                                         new DBSPVariantLiteral(new DBSPStringLiteral("b")),
                                         new DBSPVariantLiteral(new DBSPDecimalLiteral(2))))));
+        this.testQuery("""
+                SELECT PARSE_JSON('{"a": 1, "b": [2, 3.3, null]}') = CAST(
+                   MAP[
+                      CAST('a' AS VARIANT), CAST(1.0 AS VARIANT),
+                      CAST('b' AS VARIANT), CAST(ARRAY[
+                          CAST(2.0 AS VARIANT),
+                          CAST(3.3 AS VARIANT),
+                          VARIANTNULL()
+                                                      ] AS VARIANT)
+                      ] AS VARIANT)""",
+                new DBSPBoolLiteral(true));
     }
 
     @Test
@@ -217,9 +255,9 @@ public class VariantTests extends BaseSQLTests {
         this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON(null))",
                 DBSPVariantLiteral.none(DBSPTypeString.varchar(true)));
         this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('[1,2,3]'))",
-                new DBSPStringLiteral("[1, 2, 3]", true));
-        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('{ \"a\": 1, \"b\": 2 }'))",
-                new DBSPStringLiteral("{\"a\": 1, \"b\": 2}", true));
+                new DBSPStringLiteral("[1,2,3]", true));
+        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('{\"a\":1,\"b\":2}'))",
+                new DBSPStringLiteral("{\"a\":1,\"b\":2}", true));
 
         this.testQuery("SELECT PARSE_JSON('{ \"a\": 1, \"b\": 2 }') = PARSE_JSON('{\"b\":2,\"a\":1}')",
                 new DBSPBoolLiteral(true));

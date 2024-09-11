@@ -22,7 +22,14 @@ public class CatalogTests extends BaseSQLTests {
     public CompilerOptions testOptions(boolean incremental, boolean optimize) {
         CompilerOptions result = super.testOptions(incremental, optimize);
         result.ioOptions.emitHandles = false;
+        result.languageOptions.unrestrictedIOTypes = false;
         return result;
+    }
+
+    @Test
+    public void unsupportedColumn() {
+        this.statementsFailingInCompilation("CREATE TABLE T(v VARIANT)",
+                "Unsupported column type");
     }
 
     @Test

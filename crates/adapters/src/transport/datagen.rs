@@ -542,6 +542,7 @@ impl RecordGenerator {
             | SqlType::Varchar
             | SqlType::Timestamp
             | SqlType::Date
+            | SqlType::Variant
             | SqlType::Time => Value::String(String::new()),
             SqlType::Interval(_unit) => Value::Null,
             SqlType::Array => Value::Array(Vec::new()),
@@ -612,6 +613,11 @@ impl RecordGenerator {
             SqlType::Date => self.generate_date(field, settings, rng, obj),
             SqlType::Time => self.generate_time(field, settings, rng, obj),
             SqlType::Interval(_unit) => {
+                // I don't think this can show up in a table schema
+                *obj = Value::Null;
+                Ok(())
+            }
+            SqlType::Variant => {
                 // I don't think this can show up in a table schema
                 *obj = Value::Null;
                 Ok(())

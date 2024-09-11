@@ -7,14 +7,40 @@ Any such value holds at runtime two pieces of information:
 - the data type
 - the data value
 
-Values of `VARIANT` type can be created by casting any other value to a `VARIANT`: e.g.
-`SELECT CAST(x AS VARIANT)`.  Conversely, values of type `VARIANT` can be cast to any other data type
-`SELECT CAST(variant AS INT)`.  A cast of a value of type `VARIANT` to target type T
-will compare the runtime type with T.  If the types are identical, the
-original value is returned.  Otherwise the `CAST` returns `NULL`.
+::: warning
 
-Values of type `ARRAY`, `MAP`, and `ROW` type can be cast to `VARIANT`.  `VARIANT` values
-also offer the following operations:
+Currently `VARIANT` values are not supported in table or output views;
+they can only be used in intermediate computations.
+
+:::
+
+
+Values of `VARIANT` type can be created by casting any other value to
+a `VARIANT`: e.g.  `SELECT CAST(x AS VARIANT)`.  Conversely, values of
+type `VARIANT` can be cast to any other data type `SELECT CAST(variant
+AS INT)`.  A cast of a value of type `VARIANT` to target type T will
+compare the runtime type with T.  If the types are identical or there
+is a natural conversion from the runtime type to T, the original value
+is returned.  Otherwise the `CAST` returns `NULL`.
+
+::: warning
+
+Remember that the `DECIMAL` type specified without precision is the
+same as `DECIMAL(0)`, with no digits after the decimal point.  When
+you cast a `VARIANT` value to `DECIMAL` you should specify a precision
+and scale good enough for the values that you expect in the data.
+
+:::
+
+Values of type `ARRAY` and `MAP` can be cast to `VARIANT`.
+
+There exists a special value of `VARIANT` type called `null`.  This
+value is different from the SQL `NULL` value.  It is used to implement
+the JSON `null` value.  An important difference is that two `VARIANT`
+`null` values are equal, whereas `NULL` in SQL is not equal (or
+different!) to anything.
+
+`VARIANT` values also offer the following operations:
 
 - indexing using array indexing notation `variant[index]`.  If the `VARIANT` is
   obtained from an `ARRAY` value, the indexing operation returns a `VARIANT` whose value element
@@ -30,11 +56,7 @@ also offer the following operations:
   is subject to the capitalization rules of the SQL dialect, so for correct
   operation the field may need to be quoted: `variant."field"`
 
-The runtime types do not need to match exactly the compile-time types.
-As a compiler front-end, Calcite does not mandate exactly how the runtime types
-are represented.  Calcite does include one particular implementation in
-Java runtime, which is used for testing.  In this representation
-the runtime types are represented as follows:
+The runtime types do not match exactly the compile-time types:
 
 - The scalar types do not include information about precision and scale.  Thus all `DECIMAL`
   compile-time types are represented by a single run-time type.
@@ -43,20 +65,64 @@ the runtime types are represented as follows:
 - `FLOAT` and `DOUBLE` are both represented by the same runtime type.
 - All "short interval" types (from days to seconds) are represented by a single type.
 - All "long interval" types (from years to months) are represented by a single type.
-- Generic types such as `INT ARRAY`, `MULTISET`, and `MAP` do carry runtime
+- Generic types such as `INT ARRAY`, `MULTISET`, and `MAP` do not carry runtime
   information about the element types
-- The `ROW` type does have information about all field types (currently not yet supported)
 
 ## Functions that operate on `VARIANT` values
 
 | Function | Description |
 | `VARIANTNULL()` | Can be used to create an instance of the `VARIANT` `null` value. |
-| `TYPEOF(` _variant_ `)` | Argument must be a `VARIANT` value.  Returns the runtime type of the value |
+| `TYPEOF(` _variant_ `)` | Argument must be a `VARIANT` value.  Returns a string describing the runtime type of the value |
 | `PARSE_JSON(` _string_ `)` | Parses a string that represents a JSON value, returns a `VARIANT` object, or `NULL` if parsing fails |
-| `UNPARSE_JSON(` _variant_ `)` | Returns a string that represents the serialization of a `VARIANT` value. If the value cannot be represented as JSON, the result is `NULL` |
+| `UNPARSE_JSON(` _variant_ `)` | Argument must be a `VARIANT` value.  Returns a string that represents the serialization of a `VARIANT` value. If the value cannot be represented as JSON, the result is `NULL` |
 
-Here are some examples using `VARIANT` and `JSON` values:
+### `PARSE_JSON`
 
+`PARSE_JSON` converts a JSON value as follows:
+
+- JSON `null` is converted to a `VARIANT` `null` value (not a SQL `NULL`!); see above the description of `VARIANT` `null`
+- JSON Booleans are converted to `BOOLEAN` values (wrapped in `VARIANT` values)
+- JSON numbers are converted to `DECIMAL` values (wrapped in `VARIANT` values)
+- JSON strings are converted to `VARCHAR` values (wrapped in `VARIANT` values)
+- JSON arrays are converted to `VARIANT ARRAY` values (wrapped in `VARIANT` values).  Each array element is a `VARIANT`
+- JSON objects are converted to `MAP<VARIANT, VARIANT>` values (wrapped in `VARIANT` values).  Each key and each value is a `VARIANT`
+
+For example, `PARSE_JSON("{"a": 1, "b": [2, 3.3, null]}")` generates the same SQL value that would be generated by the following code:
+
+```sql
+SELECT CAST(
+   MAP[
+      CAST('a' AS VARIANT), CAST(1.0 AS VARIANT),
+      CAST('b' AS VARIANT), CAST(ARRAY[
+          CAST(2.0 AS VARIANT),
+          CAST(3.3 AS VARIANT),
+          VARIANTNULL()
+                                      ] AS VARIANT)
+      ] AS VARIANT)
+```
+
+
+### `UNPARSE_JSON`
+
+`PARSE_JSON` converts a `VARIANT` value to a `VARCHAR`.  The
+assumption is that the `VARIANT` was has the structure as produced by
+the `PARSE_JSON` function:
+
+- the `VARIANT` `null` value is converted to the string `null`
+- a `VARIANT` wrapping a Boolean value is converted to the respective Boolean string `true` or `false`
+- a `VARIANT` wrapping any numeric value (`DECIMAL`, `TINYINT`, `SMALLINT`, `INTEGER`, `BIGINT`, `REAL`, `DOUBLE`, `DECIMAL`) is converted to the string representation of the value as produced using a `CAST(value AS VARCHAR)`
+- a `VARIANT` wrapping a `VARCHAR` value is converted to a string with double quotes, and with escape sequences, as mandated by the JSON grammar
+- a `VARIANT` wrapping an `ARRAY` with elements of any type is converted to a JSON array, and the elements are recursively converted
+- a `VARIANT` wrapping a `MAP` whose keys have any SQL `CHAR` type, or `VARIANT` values wrapping `CHAR` values will generate a JSON object, by recursively converting each key-value pair.
+- any other data value is a conversion error, and causes the `UNPARSE_JSON` function to produce a `NULL` result
+
+## Examples
+
+Here are some simple SQL query examples using `VARIANT` and JSON
+values and the expected output values.  (Note that these examples
+cannot be executed directly, since they involve no views.)
+
+```sql
 SELECT CAST(1 AS VARIANT)
 1
 
@@ -128,7 +194,7 @@ null
 SELECT CAST(ARRAY[1,2,3] AS VARIANT)[1]
 1
 
--- Acessing items in a VARIANT array returns VARIANT values,
+-- Accessing items in a VARIANT array returns VARIANT values,
 -- even if the array itself does not contain VARIANT values
 -- (Otherwise TYPEOF would not compile)
 SELECT TYPEOF(CAST(ARRAY[1,2,3] AS VARIANT)[1])
@@ -241,3 +307,32 @@ true
 -- JSON cannot contain dates, result is NULL
 SELECT UNPARSE_JSON(CAST(DATE '2020-01-01' AS VARIANT))
 NULL
+```
+
+### Example SQL program manipulating JSON values
+
+```sql
+CREATE TABLE json (json VARCHAR);
+
+CREATE LOCAL VIEW tmp AS SELECT PARSE_JSON(json) AS json FROM json;
+
+CREATE VIEW average AS SELECT
+CAST(json['name'] AS VARCHAR) as name,
+((CAST(json['scores'][1] AS DECIMAL(8, 2)) + CAST(json['scores'][2] AS DECIMAL(8, 2))) / 2) as average
+FROM tmp;
+```
+
+The input table has a single column, with type `VARCHAR`.
+
+The input data in table is parsed using `PARSE_JSON` and stored in the
+intermediate view `tmp`.
+
+The query that defines the output view `average` accesses fields of
+the JSON values of `tmp`.  Note how object fields are accessed using
+map indexing operators `['scores']`, `['name']`, and how array
+elements are accessed using indexing with numeric values `[1]`.
+Recall that array indexes in SQL start from 1!
+
+Finally, notice how the `DECIMAL` values that are retrieved need to
+specify the precision and scale: `CAST(... AS DECIMAL(8, 2))`.  Using
+`CAST(... AS DECIMAL)` would loose all digits after the decimal point.
