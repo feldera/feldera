@@ -7,7 +7,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 public class OptimizedVariantTests extends VariantTests {
     @Override
     public DBSPCompiler testCompiler() {
-        // Do not optimize, esp in Calcite
         CompilerOptions options = this.testOptions(false, true);
         return new DBSPCompiler(options);
     }

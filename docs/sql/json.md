@@ -37,19 +37,18 @@ Values of type `ARRAY` and `MAP` can be cast to `VARIANT`.
 There exists a special value of `VARIANT` type called `null`.  This
 value is different from the SQL `NULL` value.  It is used to implement
 the JSON `null` value.  An important difference is that two `VARIANT`
-`null` values are equal, whereas `NULL` in SQL is not equal (or
-different!) to anything.
+`null` values are equal, whereas `NULL` in SQL is not equal to anything.
 
 `VARIANT` values also offer the following operations:
 
 - indexing using array indexing notation `variant[index]`.  If the `VARIANT` is
-  obtained from an `ARRAY` value, the indexing operation returns a `VARIANT` whose value element
+  obtained from an `ARRAY` value, the indexing operation returns a `VARIANT` whose value
   is the element at the specified index.  Otherwise, this operation returns `NULL`
 - indexing using map element access notation `variant[key]`, where `key` can have
   any legal `MAP` key type.  If the `VARIANT` is obtained from a `MAP` value
   that has en element with this key, a `VARIANT` value holding the associated value in
-  the `MAP` is returned.  Otherwise `NULL` is returned.  If the `VARIANT` is obtained from `ROW` value
-  which has a field with the name `key`, this operation returns a `VARIANT` value holding
+  the `MAP` is returned.  Otherwise `NULL` is returned.  If the `VARIANT` is obtained from
+  user-defined structure which has a field with the name `key`, this operation returns a `VARIANT` value holding
   the corresponding field value.  Otherwise `NULL` is returned.
 - field access using the dot notation: `variant.field`.  This operation is interpreted
   as equivalent to `variant['field']`.  Note, however, that the field notation
@@ -111,7 +110,7 @@ the `PARSE_JSON` function:
 - the `VARIANT` `null` value is converted to the string `null`
 - a `VARIANT` wrapping a Boolean value is converted to the respective Boolean string `true` or `false`
 - a `VARIANT` wrapping any numeric value (`DECIMAL`, `TINYINT`, `SMALLINT`, `INTEGER`, `BIGINT`, `REAL`, `DOUBLE`, `DECIMAL`) is converted to the string representation of the value as produced using a `CAST(value AS VARCHAR)`
-- a `VARIANT` wrapping a `VARCHAR` value is converted to a string with double quotes, and with escape sequences, as mandated by the JSON grammar
+- a `VARIANT` wrapping a `VARCHAR` value is converted to a string with double quotes, and with escape sequences for special characters (e.g., quotes), as mandated by the JSON grammar
 - a `VARIANT` wrapping an `ARRAY` with elements of any type is converted to a JSON array, and the elements are recursively converted
 - a `VARIANT` wrapping a `MAP` whose keys have any SQL `CHAR` type, or `VARIANT` values wrapping `CHAR` values will generate a JSON object, by recursively converting each key-value pair.
 - any other data value is a conversion error, and causes the `UNPARSE_JSON` function to produce a `NULL` result
@@ -140,9 +139,9 @@ TINYINT
 SELECT CAST(CAST(1 AS VARIANT) AS INT)
 1
 
--- However, you have to use the right type, or you get NULL
+-- Conversions between numeric types are allowed
 SELECT CAST(CAST(1 AS VARIANT) AS TINYINT)
-null
+1
 
 -- Some VARIANT objects when output receive double quotes
 select CAST('string' as VARIANT)
@@ -296,10 +295,10 @@ SELECT UNPARSE_JSON(PARSE_JSON(null))
 null
 
 SELECT UNPARSE_JSON(PARSE_JSON('[1,2,3]'))
-[1, 2, 3]
+[1,2,3]
 
 SELECT UNPARSE_JSON(PARSE_JSON('{ \"a\": 1, \"b\": 2 }'))
-{\"a\": 1, \"b\": 2}
+{\"a\":1,\"b\":2}
 
 SELECT PARSE_JSON('{ \"a\": 1, \"b\": 2 }') = PARSE_JSON('{\"b\":2,\"a\":1}')
 true
@@ -325,7 +324,8 @@ FROM tmp;
 The input table has a single column, with type `VARCHAR`.
 
 The input data in table is parsed using `PARSE_JSON` and stored in the
-intermediate view `tmp`.
+intermediate view `tmp`.  An example legal record is: `{"name":
+"Bob", "scores": [8, 10]}`.
 
 The query that defines the output view `average` accesses fields of
 the JSON values of `tmp`.  Note how object fields are accessed using

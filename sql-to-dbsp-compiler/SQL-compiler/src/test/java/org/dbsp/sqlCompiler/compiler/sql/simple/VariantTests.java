@@ -67,7 +67,7 @@ public class VariantTests extends BaseSQLTests {
         // Converting something to VARIANT and back works
         this.testQuery("SELECT CAST(CAST(1 AS VARIANT) AS INT)",
                 new DBSPI32Literal(1, true));
-        // However, you have to use the right type
+        // Numeric type conversions are performed automatically
         this.testQuery("SELECT CAST(CAST(1 AS VARIANT) AS TINYINT)",
                 new DBSPI8Literal((byte) 1, true));
         // Some VARIANT objects when output receive double quotes
