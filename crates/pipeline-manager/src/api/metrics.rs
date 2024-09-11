@@ -15,13 +15,17 @@ use crate::{
     error::ManagerError,
 };
 
-/// Returns the metrics of all running pipelines belonging to this tenant
+/// Retrieve the metrics of all running pipelines belonging to this tenant.
+///
+/// The metrics are collected by making individual HTTP requests to `/metrics`
+/// endpoint of each pipeline, of which only successful responses are included
+/// in the returned list.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     responses(
         (status = OK
-        , description = "Returns the metrics of all running pipelines belonging to this tenant in Prometheus format."
+        , description = "Metrics of all running pipelines belonging to this tenant in Prometheus format"
         , content_type = "text/plain"
         , body = Vec<u8>),
     ),
@@ -35,7 +39,6 @@ pub(crate) async fn get_metrics(
     let pipelines = state.db.lock().await.list_pipelines(*tenant_id).await?;
 
     const NEWLINE: u8 = b'\n';
-
     let mut result = Vec::new();
 
     for pipeline in pipelines {

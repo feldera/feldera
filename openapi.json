@@ -303,11 +303,12 @@
         "tags": [
           "Metrics"
         ],
-        "summary": "Returns the metrics of all running pipelines belonging to this tenant",
+        "summary": "Retrieve the metrics of all running pipelines belonging to this tenant.",
+        "description": "The metrics are collected by making individual HTTP requests to `/metrics`\nendpoint of each pipeline, of which only successful responses are included\nin the returned list.",
         "operationId": "get_metrics",
         "responses": {
           "200": {
-            "description": "Returns the metrics of all running pipelines belonging to this tenant.",
+            "description": "Metrics of all running pipelines belonging to this tenant in Prometheus format",
             "content": {
               "text/plain": {
                 "schema": {
