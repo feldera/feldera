@@ -36,8 +36,18 @@ To clean the build, run `make clean`.
 
 ## Testing
 
+To run unit tests:
 
 ```bash
-cd python
-python3 -m unittest
+(cd python && python3 -m unittest)
+```
+
+The following command runs end-to-end tests.  You'll need a pipeline
+manager running at `http://localhost:8080`.  For the pipeline builder
+tests, you'll also need a broker available at `localhost:9092` and
+(from the pipelines) `redpanda:19092`.  (To change those locations,
+set the environment variables listed in `python/tests/__init__.py`.)
+
+```bash
+(cd python/tests && python3 -m pytest .)
 ```
