@@ -527,8 +527,9 @@ impl Controller {
             Ok((circuit, catalog)) => {
                 // Complete initialization before sending back the confirmation to
                 // prevent a race.
-                controller.set_catalog(catalog);
+                controller.catalog = Arc::new(catalog);
                 let controller = Arc::new(controller);
+                controller.initialize_adhoc_queries();
                 let _ = init_status_sender.send(Ok(controller.clone()));
                 (circuit, controller)
             }
@@ -1124,15 +1125,17 @@ impl ControllerInner {
         Err(ControllerError::unknown_input_endpoint(endpoint_name))
     }
 
-    fn set_catalog(&mut self, catalog: Box<dyn CircuitCatalog>) {
+    fn initialize_adhoc_queries(self: &Arc<Self>) {
         // Sync feldera catalog with datafusion catalog
-        for (name, clh) in catalog.output_iter() {
+        for (name, clh) in self.catalog.output_iter() {
             if clh.integrate_handle.is_some() {
                 let arrow_fields = relation_to_arrow_fields(&clh.schema.fields, false);
-                let input_handle = catalog
+                let input_handle = self
+                    .catalog
                     .input_collection_handle(name)
                     .map(|ich| ich.handle.fork());
                 let adhoc_tbl = Arc::new(AdHocTable::new(
+                    Arc::downgrade(self),
                     input_handle,
                     clh.schema.name.clone(),
                     Arc::new(Schema::new(arrow_fields)),
@@ -1147,8 +1150,6 @@ impl ControllerInner {
                 assert!(r.is_none(), "table {name} already registered");
             }
         }
-
-        *Arc::get_mut(&mut self.catalog).unwrap() = catalog;
     }
 
     /// Sets the global metrics recorder and returns a `Snapshotter` and
@@ -1754,14 +1755,18 @@ impl ControllerInner {
     /// Update counters after receiving a new input batch.
     ///
     /// See [ControllerStatus::input_batch].
-    pub fn input_batch(&self, endpoint_id: EndpointId, num_bytes: usize, num_records: usize) {
-        self.status.input_batch(
-            endpoint_id,
-            num_bytes,
-            num_records,
-            &self.circuit_thread_unparker,
-            &self.backpressure_thread_unparker,
-        )
+    pub fn input_batch(&self, endpoint_id: Option<(EndpointId, usize)>, num_records: usize) {
+        self.status
+            .input_batch_global(num_records, &self.circuit_thread_unparker);
+
+        if let Some((endpoint_id, num_bytes)) = endpoint_id {
+            self.status.input_batch_from_endpoint(
+                endpoint_id,
+                num_bytes,
+                num_records,
+                &self.backpressure_thread_unparker,
+            )
+        }
     }
 
     /// Update counters after receiving an end-of-input event on an input
@@ -1834,7 +1839,7 @@ impl InputProbe {
                 .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
         }
         self.controller
-            .input_batch(self.endpoint_id, data.len(), num_records);
+            .input_batch(Some((self.endpoint_id, data.len())), num_records);
 
         errors
     }

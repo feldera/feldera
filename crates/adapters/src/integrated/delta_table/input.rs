@@ -547,7 +547,7 @@ impl DeltaTableInputEndpointInner {
             match result {
                 Ok(()) => {
                     if let Some(controller) = self.controller.upgrade() {
-                        controller.input_batch(self.endpoint_id, bytes, rows)
+                        controller.input_batch(Some((self.endpoint_id, bytes)), rows)
                     }
                 }
                 Err(e) => {

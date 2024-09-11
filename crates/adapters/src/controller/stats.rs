@@ -546,6 +546,28 @@ impl ControllerStatus {
         }
     }
 
+    /// Update the global counters after receiving a new input batch.
+    ///
+    /// This method is used for inserts that don't belong to an endpoint, e.g.,
+    /// happen by executing an ad-hoc INSERT query.
+    pub(super) fn input_batch_global(
+        &self,
+        num_records: usize,
+        circuit_thread_unparker: &Unparker,
+    ) {
+        let num_records = num_records as u64;
+        // Increment buffered_records; unpark circuit thread once
+        // `min_batch_size_records` is exceeded.
+        let old = self.global_metrics.input_batch(num_records);
+
+        if old == 0
+            || (old <= self.pipeline_config.global.min_batch_size_records
+                && old + num_records > self.pipeline_config.global.min_batch_size_records)
+        {
+            circuit_thread_unparker.unpark();
+        }
+    }
+
     /// Update counters after receiving a new input batch.
     ///
     /// # Arguments
@@ -559,28 +581,15 @@ impl ControllerStatus {
     ///   `min_batch_size_records`.
     /// * `backpressure_thread_unparker` - unparker used to wake up the
     ///   backpressure thread if the endpoint is full.
-    pub fn input_batch(
+    pub(super) fn input_batch_from_endpoint(
         &self,
         endpoint_id: EndpointId,
         num_bytes: usize,
         num_records: usize,
-        circuit_thread_unparker: &Unparker,
         backpressure_thread_unparker: &Unparker,
     ) {
         let num_records = num_records as u64;
         let num_bytes = num_bytes as u64;
-
-        // Increment buffered_records; unpark circuit thread once
-        // `min_batch_size_records` is exceeded.
-        let old = self.global_metrics.input_batch(num_records);
-
-        if old == 0
-            || (old <= self.pipeline_config.global.min_batch_size_records
-                && old + num_records > self.pipeline_config.global.min_batch_size_records)
-        {
-            circuit_thread_unparker.unpark();
-        }
-
         let inputs = self.inputs.read().unwrap();
 
         // Update endpoint counters; unpark backpressure thread if endpoint's
