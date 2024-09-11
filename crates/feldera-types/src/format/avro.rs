@@ -62,33 +62,46 @@ impl AvroUpdateFormat {
 /// Schema registry configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, Default, ToSchema)]
 pub struct AvroSchemaRegistryConfig {
-    /// List of schema registry URLs. When non-empty, the connector will
-    /// post the schema to the registry and use the schema id returned
-    /// by the registry.  Otherwise, schema id 0 is used.
+    /// List of schema registry URLs.
+    ///
+    /// * **Input connector**: When non-empty, the connector retrieves Avro
+    ///   message schemas from the registry.
+    ///
+    /// * **Output connector**: When non-empty, the connector will
+    ///   post the schema to the registry and embed the schema id returned
+    ///   by the registry in Avro messages.  Otherwise, schema id 0 is used.
     #[serde(default)]
     pub registry_urls: Vec<String>,
+
     /// Custom headers that will be added to every call to the schema registry.
     ///
-    /// This option requires `registry_urls` to be set.
+    /// This property is only applicable to output connectors.
+    ///
+    /// Requires `registry_urls` to be set.
     #[serde(default)]
     pub registry_headers: HashMap<String, String>,
+
     /// Proxy that will be used to access the schema registry.
     ///
     /// Requires `registry_urls` to be set.
     pub registry_proxy: Option<String>,
+
     /// Timeout in seconds used to connect to the registry.
     ///
     /// Requires `registry_urls` to be set.
     pub registry_timeout_secs: Option<u64>,
+
     /// Username used to authenticate with the registry.
     ///
     /// Requires `registry_urls` to be set. This option is mutually exclusive with
     /// token-based authentication (see `registry_authorization_token`).
     pub registry_username: Option<String>,
+
     /// Password used to authenticate with the registry.
     ///
     /// Requires `registry_urls` to be set.
     pub registry_password: Option<String>,
+
     /// Token used to authenticate with the registry.
     ///
     /// Requires `registry_urls` to be set. This option is mutually exclusive with
@@ -106,20 +119,21 @@ pub struct AvroParserConfig {
     #[serde(default)]
     pub update_format: AvroUpdateFormat,
 
-    /// Avro schema used to encode input records.
+    /// Avro schema used to encode all records in this stream, specified as a JSON-encoded string.
     ///
-    /// Specified as a string containing schema definition in JSON format.
-    /// This schema must match precisely the SQL view definition, including
-    /// nullability of columns.
+    /// When this property is set, the connector uses the provided schema instead of
+    /// retrieving the schema from the schema registry. This setting is mutually exclusive
+    /// with `registry_urls`.
     pub schema: Option<String>,
 
     /// `true` if serialized messages only contain raw data without the
     /// header carrying schema ID.
-    /// `False` by default.
     ///
     /// See <https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format>
+    ///
+    /// The default value is `false`.
     #[serde(default)]
-    pub no_schema_id: bool,
+    pub skip_schema_id: bool,
 
     /// Schema registry configuration.
     #[serde(flatten)]

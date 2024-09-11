@@ -215,6 +215,7 @@ const sidebars = {
               },
               items: [
                 'formats/json',
+                'formats/avro',
                 'formats/parquet',
                 'formats/csv',
               ],

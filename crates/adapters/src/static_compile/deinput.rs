@@ -99,7 +99,7 @@ const MAX_REUSABLE_CAPACITY: usize = 100_000;
 
 /// An input handle that allows pushing serialized data to an
 /// [`InputHandle`].
-pub trait DeScalarHandle: Send {
+pub trait DeScalarHandle: Send + Sync {
     /// Create a [`DeScalarStream`] object to parse input data encoded
     /// using the format specified in `RecordFormat`.
     fn configure_deserializer(
@@ -166,7 +166,7 @@ impl<T, D, F> DeScalarHandle for DeScalarHandleImpl<T, D, F>
 where
     T: Default + Send + Clone + 'static,
     D: Default + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Clone + 'static,
-    F: Fn(D) -> T + Send + Clone + 'static,
+    F: Fn(D) -> T + Send + Sync + Clone + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -295,7 +295,7 @@ impl<K, D> DeZSetHandle<K, D> {
 impl<K, D> DeCollectionHandle for DeZSetHandle<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -559,7 +559,7 @@ impl<K, D> DeSetHandle<K, D> {
 impl<K, D> DeCollectionHandle for DeSetHandle<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -847,8 +847,8 @@ where
     VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
     U: DBData + From<UD>,
     UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    VF: Fn(&V) -> K + Clone + Send + 'static,
-    UF: Fn(&U) -> K + Clone + Send + 'static,
+    VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
+    UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
     fn configure_deserializer(
         &self,

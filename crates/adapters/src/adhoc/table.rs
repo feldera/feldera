@@ -1,45 +1,52 @@
 use std::any::Any;
+use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use crate::catalog::SyncSerBatchReader;
 use crate::controller::ConsistentSnapshots;
-use crate::RecordFormat;
+use crate::{DeCollectionHandle, RecordFormat};
 use arrow::datatypes::{Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use datafusion::catalog::{Session, TableProvider};
+use datafusion::common::{exec_err, not_impl_err, plan_err, SchemaExt};
 use datafusion::datasource::TableType;
 use datafusion::error::DataFusionError;
 use datafusion::execution::{SendableRecordBatchStream, TaskContext};
 use datafusion::logical_expr::Expr;
 use datafusion::physical_expr::EquivalenceProperties;
+use datafusion::physical_plan::insert::{DataSink, DataSinkExec};
+use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::stream::{
     RecordBatchReceiverStreamBuilder, RecordBatchStreamAdapter,
 };
 use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
 };
+use feldera_types::program_schema::SqlIdentifier;
+use feldera_types::serde_with_context::SqlSerdeConfig;
+use futures_util::StreamExt;
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
 use tokio::sync::mpsc::Sender;
 
 pub struct AdHocTable {
-    typ: TableType,
-    name: String,
+    input_handle: Option<Box<dyn DeCollectionHandle>>,
+    name: SqlIdentifier,
     schema: Arc<Schema>,
     snapshots: ConsistentSnapshots,
 }
 
 impl AdHocTable {
     pub fn new(
-        typ: TableType,
-        name: String,
+        input_handle: Option<Box<dyn DeCollectionHandle>>,
+        name: SqlIdentifier,
         schema: Arc<Schema>,
         snapshots: ConsistentSnapshots,
     ) -> Self {
         Self {
-            typ,
+            input_handle,
             name,
             schema,
             snapshots,
@@ -58,7 +65,11 @@ impl TableProvider for AdHocTable {
     }
 
     fn table_type(&self) -> TableType {
-        self.typ
+        if self.input_handle.is_some() {
+            TableType::Base
+        } else {
+            TableType::View
+        }
     }
 
     async fn scan(
@@ -80,17 +91,106 @@ impl TableProvider for AdHocTable {
         Ok(Arc::new(AdHocQueryExecution::new(
             self.schema.clone(),
             projected_schema,
-            self.snapshots.lock().await.get(&self.name).unwrap().clone(),
+            self.snapshots.lock().await.get(&self.name).cloned(),
             projection,
             limit,
         )))
+    }
+
+    async fn insert_into(
+        &self,
+        _state: &dyn Session,
+        input: Arc<dyn ExecutionPlan>,
+        overwrite: bool,
+    ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
+        if !self
+            .schema()
+            .logically_equivalent_names_and_types(&input.schema())
+        {
+            return plan_err!("Inserting query must have the same schema with the table.");
+        }
+
+        if overwrite {
+            return not_impl_err!("Overwrite not implemented for AdHocTable yet");
+        }
+
+        match &self.input_handle {
+            Some(ih) => {
+                let sink = Arc::new(AdHocTableSink::new(ih.fork()));
+                Ok(Arc::new(DataSinkExec::new(
+                    input,
+                    sink,
+                    self.schema.clone(),
+                    None,
+                )))
+            }
+            None => exec_err!("Called insert_into on a view, this is a bug in the feldera ad-hoc query implementation."),
+        }
+    }
+}
+
+struct AdHocTableSink {
+    collection_handle: Box<dyn DeCollectionHandle>,
+}
+
+impl AdHocTableSink {
+    fn new(collection_handle: Box<dyn DeCollectionHandle>) -> Self {
+        Self { collection_handle }
+    }
+}
+
+impl Debug for AdHocTableSink {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "AdHocTableSink")
+    }
+}
+
+impl DisplayAs for AdHocTableSink {
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut Formatter<'_>) -> fmt::Result {
+        match t {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
+                write!(f, "AdHocTableSink")
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl DataSink for AdHocTableSink {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn metrics(&self) -> Option<MetricsSet> {
+        None
+    }
+
+    async fn write_all(
+        &self,
+        mut data: SendableRecordBatchStream,
+        _context: &Arc<TaskContext>,
+    ) -> datafusion::common::Result<u64> {
+        let mut arrow_inserter = self
+            .collection_handle
+            .configure_arrow_deserializer(SqlSerdeConfig::default())
+            .map_err(|e| DataFusionError::External(e.into()))?;
+
+        let mut row_count = 0;
+        while let Some(batch) = data.next().await.transpose()? {
+            arrow_inserter
+                .insert(&batch)
+                .map_err(|e| DataFusionError::External(e.into()))?;
+            row_count += batch.num_rows();
+        }
+
+        Ok(row_count as u64)
     }
 }
 
 struct AdHocQueryExecution {
     table_schema: Arc<Schema>,
     projected_schema: Arc<Schema>,
-    readers: Vec<Arc<dyn SyncSerBatchReader>>,
+    readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
     projection: Option<Vec<usize>>,
     limit: usize,
     plan_properties: PlanProperties,
@@ -101,13 +201,13 @@ impl AdHocQueryExecution {
     fn new(
         table_schema: Arc<Schema>,
         projected_schema: Arc<Schema>,
-        readers: Vec<Arc<dyn SyncSerBatchReader>>,
+        readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
         projection: Option<&Vec<usize>>,
         limit: Option<usize>,
     ) -> Self {
         // TODO: we could do much better here by encoding our data partitioning schema
         // and using the correct equivalence properties.
-        let num_partitions = readers.len();
+        let num_partitions = readers.as_ref().map(|r| r.len()).unwrap_or(1);
         let eq_props = EquivalenceProperties::new(projected_schema.clone());
         let partitioning = Partitioning::UnknownPartitioning(num_partitions);
         let plan_properties = PlanProperties::new(eq_props, partitioning, ExecutionMode::Bounded);
@@ -125,13 +225,13 @@ impl AdHocQueryExecution {
 }
 
 impl DisplayAs for AdHocQueryExecution {
-    fn fmt_as(&self, _t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
+    fn fmt_as(&self, _t: DisplayFormatType, f: &mut Formatter) -> fmt::Result {
         write!(f, "AdHocQueryExecution")
     }
 }
 
 impl Debug for AdHocQueryExecution {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "AdHocQueryExecution")
     }
 }
@@ -200,84 +300,98 @@ impl ExecutionPlan for AdHocQueryExecution {
             Ok(())
         }
 
-        let mut builder = RecordBatchReceiverStreamBuilder::new(self.projected_schema.clone(), 10);
-        // Returns a single batch when the returned stream is polled
-        let batch_reader = self.readers[partition].clone();
-        let schema = self.table_schema.clone();
-        let tx = builder.tx();
-        let projection = self.projection.clone();
+        if let Some(readers) = &self.readers {
+            let mut builder =
+                RecordBatchReceiverStreamBuilder::new(self.projected_schema.clone(), 10);
+            // Returns a single batch when the returned stream is polled
+            let batch_reader = readers[partition].clone();
+            let schema = self.table_schema.clone();
+            let tx = builder.tx();
+            let projection = self.projection.clone();
 
-        let sas: SerdeArrowSchema = schema.fields().iter().as_slice().try_into().map_err(|e| {
-            DataFusionError::Internal(format!(
-                "Unable to construct SerdeArrowSchema for the provided schema: {}.",
-                e
-            ))
-        })?;
+            let sas: SerdeArrowSchema =
+                schema.fields().iter().as_slice().try_into().map_err(|e| {
+                    DataFusionError::Internal(format!(
+                        "Unable to construct SerdeArrowSchema for the provided schema: {}.",
+                        e
+                    ))
+                })?;
 
-        builder.spawn(async move {
-            let mut cursor = batch_reader
-                .cursor(RecordFormat::Parquet(sas.clone()))
-                .map_err(|e| DataFusionError::External(Box::new(e)))?;
-            let mut insert_builder = SendableArrowBuilder::new(sas)?;
+            builder.spawn(async move {
+                let mut cursor = batch_reader
+                    .cursor(RecordFormat::Parquet(sas.clone()))
+                    .map_err(|e| DataFusionError::External(Box::new(e)))?;
+                let mut insert_builder = SendableArrowBuilder::new(sas)?;
 
-            let mut cur_batch_size = 0;
-            while cursor.key_valid() {
-                if !cursor.val_valid() {
-                    cursor.step_key();
-                    continue;
-                }
-                let mut w = cursor.weight();
-
-                // Skip deleted records.
-                if w < 0 {
-                    cursor.step_key();
-                    continue;
-                }
-
-                while w != 0 {
-                    cursor
-                        .serialize_key_to_arrow(&mut insert_builder.builder)
-                        .map_err(|e| {
-                            DataFusionError::Execution(format!(
-                                "Unable to serialize record to arrow: {}",
-                                e
-                            ))
-                        })?;
-                    cur_batch_size += 1;
-                    w -= 1;
-
-                    // `256` turned out to be a good compromise of performance and fast response latency.
-                    // If too high, the HTTP server will wait too long esp. until the first results are sent out.
-                    const MAX_BATCH_SIZE: usize = 256;
-                    if cur_batch_size >= MAX_BATCH_SIZE {
-                        let batch = insert_builder.builder.to_record_batch().map_err(|e| {
-                            DataFusionError::Execution(format!(
-                                "Unable to convert ArrayBuilder to RecordBatch: {}",
-                                e
-                            ))
-                        })?;
-                        send_batch(&tx, &projection, batch).await?;
-                        cur_batch_size = 0;
+                let mut cur_batch_size = 0;
+                while cursor.key_valid() {
+                    if !cursor.val_valid() {
+                        cursor.step_key();
+                        continue;
                     }
+                    let mut w = cursor.weight();
+
+                    // Skip deleted records.
+                    if w < 0 {
+                        cursor.step_key();
+                        continue;
+                    }
+
+                    while w != 0 {
+                        cursor
+                            .serialize_key_to_arrow(&mut insert_builder.builder)
+                            .map_err(|e| {
+                                DataFusionError::Execution(format!(
+                                    "Unable to serialize record to arrow: {}",
+                                    e
+                                ))
+                            })?;
+                        cur_batch_size += 1;
+                        w -= 1;
+
+                        // `256` turned out to be a good compromise of performance and fast response latency.
+                        // If too high, the HTTP server will wait too long esp. until the first results are sent out.
+                        const MAX_BATCH_SIZE: usize = 256;
+                        if cur_batch_size >= MAX_BATCH_SIZE {
+                            let batch = insert_builder.builder.to_record_batch().map_err(|e| {
+                                DataFusionError::Execution(format!(
+                                    "Unable to convert ArrayBuilder to RecordBatch: {}",
+                                    e
+                                ))
+                            })?;
+                            send_batch(&tx, &projection, batch).await?;
+                            cur_batch_size = 0;
+                        }
+                    }
+                    cursor.step_key();
                 }
-                cursor.step_key();
-            }
 
-            let batch = insert_builder.builder.to_record_batch().map_err(|e| {
-                DataFusionError::Execution(format!(
-                    "Unable to convert ArrayBuilder to RecordBatch: {}",
-                    e
-                ))
-            })?;
-            send_batch(&tx, &projection, batch).await?;
+                let batch = insert_builder.builder.to_record_batch().map_err(|e| {
+                    DataFusionError::Execution(format!(
+                        "Unable to convert ArrayBuilder to RecordBatch: {}",
+                        e
+                    ))
+                })?;
+                send_batch(&tx, &projection, batch).await?;
 
-            Ok(())
-        });
+                Ok(())
+            });
 
-        Ok(Box::pin(RecordBatchStreamAdapter::new(
-            self.projected_schema.clone(),
-            builder.build(),
-        )))
+            Ok(Box::pin(RecordBatchStreamAdapter::new(
+                self.projected_schema.clone(),
+                builder.build(),
+            )))
+        } else {
+            // The case of no readers can happen if the table has never received any input &
+            // the circuit has never stepped so the correct response is to send an empty batch
+            let fut =
+                futures::future::ready(Ok(RecordBatch::new_empty(self.projected_schema.clone())));
+            let stream = futures::stream::once(fut);
+            Ok(Box::pin(RecordBatchStreamAdapter::new(
+                self.projected_schema.clone(),
+                stream,
+            )))
+        }
     }
 }
 
