@@ -96,7 +96,7 @@ impl FileInputReader {
 
     fn worker_thread(
         mut reader: BufReader<File>,
-        mut consumer: Box<dyn InputConsumer>,
+        consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
         queue: Arc<InputQueue>,
         parker: Parker,

@@ -410,10 +410,10 @@ where
 
 impl<De, K, D, C> DeCollectionStream for DeZSetStream<De, K, D, C>
 where
-    De: DeserializerFromBytes<C> + Send + 'static,
-    C: Clone + Send + 'static,
+    De: DeserializerFromBytes<C> + Send + Sync + 'static,
+    C: Clone + Send + Sync + 'static,
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
@@ -561,7 +561,7 @@ impl<K, D> AvroZSetStream<K, D> {
 impl<K, D> AvroStream for AvroZSetStream<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
         let v: D =
@@ -590,7 +590,7 @@ where
 impl<K, D> InputBuffer for AvroZSetStream<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn flush(&mut self, n: usize) -> usize {
         self.buffer.flush(n)
@@ -755,10 +755,10 @@ where
 
 impl<De, K, D, C> DeCollectionStream for DeSetStream<De, K, D, C>
 where
-    De: DeserializerFromBytes<C> + Send + 'static,
-    C: Clone + Send + 'static,
+    De: DeserializerFromBytes<C> + Send + Sync + 'static,
+    C: Clone + Send + Sync + 'static,
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
@@ -906,7 +906,7 @@ impl<K, D> AvroSetStream<K, D> {
 impl<K, D> AvroStream for AvroSetStream<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
         let v: D =
@@ -996,11 +996,11 @@ where
 impl<K, KD, V, VD, U, UD, VF, UF> DeCollectionHandle for DeMapHandle<K, KD, V, VD, U, UD, VF, UF>
 where
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     U: DBData + From<UD>,
-    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
     UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
@@ -1185,16 +1185,16 @@ where
 impl<De, K, KD, V, VD, U, UD, VF, UF, C> DeCollectionStream
     for DeMapStream<De, K, KD, V, VD, U, UD, VF, UF, C>
 where
-    De: DeserializerFromBytes<C> + Send + 'static,
-    C: Clone + Send + 'static,
+    De: DeserializerFromBytes<C> + Send + Sync + 'static,
+    C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     U: DBData + From<UD>,
-    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    VF: Fn(&V) -> K + Clone + Send + 'static,
-    UF: Fn(&U) -> K + Clone + Send + 'static,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
+    UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let val = V::from(self.deserializer.deserialize::<VD>(data)?);
@@ -1240,16 +1240,16 @@ where
 impl<De, K, KD, V, VD, U, UD, VF, UF, C> InputBuffer
     for DeMapStream<De, K, KD, V, VD, U, UD, VF, UF, C>
 where
-    De: DeserializerFromBytes<C> + Send + 'static,
-    C: Clone + Send + 'static,
+    De: DeserializerFromBytes<C> + Send + Sync + 'static,
+    C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     U: DBData + From<UD>,
-    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    VF: Fn(&V) -> K + Clone + Send + 'static,
-    UF: Fn(&U) -> K + Clone + Send + 'static,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
+    UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
     fn flush(&mut self, n: usize) -> usize {
         self.buffer.flush(n)
@@ -1295,13 +1295,13 @@ where
 
 impl<K, KD, V, VD, U, VF, C> ArrowStream for ArrowMapStream<K, KD, V, VD, U, VF, C>
 where
-    C: Clone + Send + 'static,
+    C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    KD: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    VD: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
     U: DBData,
-    VF: Fn(&V) -> K + Clone + Send + 'static,
+    VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &RecordBatch) -> AnyResult<()> {
         let deserializer = ArrowDeserializer::from_record_batch(data)?;
@@ -1336,13 +1336,13 @@ where
 
 impl<K, KD, V, VD, U, VF, C> InputBuffer for ArrowMapStream<K, KD, V, VD, U, VF, C>
 where
-    C: Clone + Send + 'static,
+    C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    KD: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, C> + Send + 'static,
+    VD: for<'de> DeserializeWithContext<'de, C> + Send + Sync + 'static,
     U: DBData,
-    VF: Fn(&V) -> K + Clone + Send + 'static,
+    VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
     fn flush(&mut self, n: usize) -> usize {
         self.buffer.flush(n)
@@ -1404,11 +1404,11 @@ where
 impl<K, KD, V, VD, U, VF> AvroStream for AvroMapStream<K, KD, V, VD, U, VF>
 where
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     U: DBData,
-    VF: Fn(&V) -> K + Clone + Send + 'static,
+    VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
         let v: VD =
@@ -1443,11 +1443,11 @@ where
 impl<K, KD, V, VD, U, VF> InputBuffer for AvroMapStream<K, KD, V, VD, U, VF>
 where
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     U: DBData,
-    VF: Fn(&V) -> K + Clone + Send + 'static,
+    VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
     fn flush(&mut self, n: usize) -> usize {
         self.buffer.flush(n)

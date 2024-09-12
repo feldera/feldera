@@ -315,7 +315,7 @@ where
 
 fn run_parser_test<T>(test_cases: Vec<TestCase<T>>)
 where
-    T: Debug + Eq + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    T: Debug + Eq + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     for test in test_cases {
         let format_config = FormatConfig {

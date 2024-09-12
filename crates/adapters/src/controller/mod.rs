@@ -1900,20 +1900,20 @@ impl InputBuffer for InputProbe {
 }
 
 impl InputConsumer for InputProbe {
-    fn error(&mut self, fatal: bool, error: AnyError) {
+    fn error(&self, fatal: bool, error: AnyError) {
         self.controller
             .input_transport_error(self.endpoint_id, &self.endpoint_name, fatal, error);
     }
 
-    fn eoi(&mut self) {
+    fn eoi(&self) {
         self.controller.eoi(self.endpoint_id);
     }
 
-    fn start_step(&mut self, step: Step) {
+    fn start_step(&self, step: Step) {
         self.controller.start_step(self.endpoint_id, step);
     }
 
-    fn committed(&mut self, step: Step) {
+    fn committed(&self, step: Step) {
         self.controller.committed(self.endpoint_id, step);
     }
 }

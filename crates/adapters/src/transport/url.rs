@@ -56,7 +56,7 @@ struct UrlInputReader {
 impl UrlInputReader {
     fn new(
         config: &Arc<UrlInputConfig>,
-        mut consumer: Box<dyn InputConsumer>,
+        consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
         let (sender, receiver) = channel(PipelineState::Paused);
