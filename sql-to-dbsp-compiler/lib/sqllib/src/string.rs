@@ -329,9 +329,8 @@ pub fn parse_json_nullN(_value: Option<()>) -> Option<Variant> {
 some_polymorphic_function1!(parse_json, s, String, Variant);
 
 pub fn unparse_json_V(value: Variant) -> Option<String> {
-    let mut result = String::new();
-    match value.to_json_string(&mut result) {
-        Ok(()) => Some(result),
+    match value.to_json_string() {
+        Ok(s) => Some(s),
         _ => None,
     }
 }

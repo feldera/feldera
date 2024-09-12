@@ -3,6 +3,7 @@
 
 use crate::{casts::*, Date, GeoPoint, LongInterval, ShortInterval, Time, Timestamp};
 use dbsp::algebra::{F32, F64};
+use feldera_types::serde_with_context::{SerializeWithContext, SqlSerdeConfig};
 use num::FromPrimitive;
 use rkyv::collections::ArchivedBTreeMap;
 use rkyv::string::ArchivedString;
@@ -15,11 +16,7 @@ use size_of::{Context, SizeOf};
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
-use std::{
-    collections::BTreeMap,
-    fmt::{Debug, Write},
-    hash::Hash,
-};
+use std::{collections::BTreeMap, fmt::Debug, hash::Hash};
 use thiserror::Error;
 
 pub trait StructVariant: Send + Sync + 'static {
@@ -117,7 +114,6 @@ impl<D: Fallible> rkyv::Deserialize<Box<dyn StructVariant>, D> for Box<dyn Struc
     PartialEq,
     PartialOrd,
     SizeOf,
-    Serialize,
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
@@ -340,29 +336,45 @@ impl<'de> de::Deserialize<'de> for NumberFromString {
     }
 }
 
-fn json_string_escape(src: &str, buffer: &mut String) -> Result<(), Box<dyn std::error::Error>> {
-    let mut utf16_buf = [0u16; 2];
-    *buffer += "\"";
-    for c in src.chars() {
-        match c {
-            '\x08' => *buffer += "\\b",
-            '\x0c' => *buffer += "\\f",
-            '\n' => *buffer += "\\n",
-            '\r' => *buffer += "\\r",
-            '\t' => *buffer += "\\t",
-            '"' => *buffer += "\\\"",
-            '\\' => *buffer += "\\",
-            c if c.is_ascii_graphic() => buffer.push(c),
-            c => {
-                let encoded = c.encode_utf16(&mut utf16_buf);
-                for utf16 in encoded {
-                    write!(buffer, "\\u{:04X}", utf16)?;
-                }
-            }
+impl Serialize for Variant {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.serialize_with_context(serializer, &SqlSerdeConfig::default())
+    }
+}
+
+impl SerializeWithContext<SqlSerdeConfig> for Variant {
+    fn serialize_with_context<S>(
+        &self,
+        serializer: S,
+        context: &SqlSerdeConfig,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Variant::SqlNull | Variant::VariantNull => serializer.serialize_none(),
+            Variant::Boolean(v) => v.serialize_with_context(serializer, context),
+            Variant::TinyInt(v) => v.serialize_with_context(serializer, context),
+            Variant::SmallInt(v) => v.serialize_with_context(serializer, context),
+            Variant::Int(v) => v.serialize_with_context(serializer, context),
+            Variant::BigInt(v) => v.serialize_with_context(serializer, context),
+            Variant::Real(v) => v.serialize_with_context(serializer, context),
+            Variant::Double(v) => v.serialize_with_context(serializer, context),
+            Variant::Decimal(v) => v.serialize_with_context(serializer, context),
+            Variant::String(v) => v.serialize_with_context(serializer, context),
+            Variant::Date(v) => v.serialize_with_context(serializer, context),
+            Variant::Time(v) => v.serialize_with_context(serializer, context),
+            Variant::Timestamp(v) => v.serialize_with_context(serializer, context),
+            Variant::ShortInterval(v) => v.serialize_with_context(serializer, context),
+            Variant::LongInterval(v) => v.serialize_with_context(serializer, context),
+            Variant::Geometry(v) => v.serialize_with_context(serializer, context),
+            Variant::Array(a) => a.serialize_with_context(serializer, context),
+            Variant::Map(m) => m.serialize_with_context(serializer, context),
         }
     }
-    *buffer += "\"";
-    Ok(())
 }
 
 impl Variant {
@@ -421,81 +433,8 @@ impl Variant {
         }
     }
 
-    pub fn to_json_string(&self, buffer: &mut String) -> Result<(), Box<dyn std::error::Error>> {
-        match self {
-            Variant::VariantNull => {
-                write!(buffer, "null")?;
-                Ok(())
-            }
-            Variant::Boolean(b) => {
-                write!(buffer, "{}", b)?;
-                Ok(())
-            }
-            Variant::TinyInt(i) => {
-                write!(buffer, "{}", i)?;
-                Ok(())
-            }
-            Variant::SmallInt(i) => {
-                write!(buffer, "{}", i)?;
-                Ok(())
-            }
-            Variant::Int(i) => {
-                write!(buffer, "{}", i)?;
-                Ok(())
-            }
-            Variant::BigInt(i) => {
-                write!(buffer, "{}", i)?;
-                Ok(())
-            }
-            Variant::Real(f) => {
-                write!(buffer, "{}", f)?;
-                Ok(())
-            }
-            Variant::Double(f) => {
-                write!(buffer, "{}", f)?;
-                Ok(())
-            }
-            Variant::Decimal(d) => {
-                write!(buffer, "{}", d)?;
-                Ok(())
-            }
-            Variant::String(s) => {
-                json_string_escape(s, buffer)?;
-                Ok(())
-            }
-            Variant::Array(v) => {
-                write!(buffer, "[")?;
-                let mut first = true;
-                for e in v {
-                    if !first {
-                        write!(buffer, ",")?;
-                    }
-                    first = false;
-                    e.to_json_string(buffer)?;
-                }
-                write!(buffer, "]")?;
-                Ok(())
-            }
-            Variant::Map(m) => {
-                write!(buffer, "{{")?;
-                let mut first = true;
-                for (k, v) in m {
-                    if !first {
-                        write!(buffer, ",")?;
-                    }
-                    first = false;
-                    match k {
-                        Variant::String(_) => k.to_json_string(buffer),
-                        _ => return Err(Box::from("Not a JSON value (label is not a string)")),
-                    }?;
-                    write!(buffer, ":")?;
-                    v.to_json_string(buffer)?;
-                }
-                write!(buffer, "}}")?;
-                Ok(())
-            }
-            _ => Err(Box::from("Not a JSON value (not a json type)")),
-        }
+    pub fn to_json_string(&self) -> Result<String, Box<dyn std::error::Error>> {
+        Ok(serde_json::to_string(self)?)
     }
 }
 
@@ -797,8 +736,14 @@ pub fn variantnull() -> Variant {
 mod test {
     use std::str::FromStr;
 
+    use crate::{Date, Time, Timestamp};
+
     use super::Variant;
-    use dbsp::RootCircuit;
+    use chrono::{DateTime, NaiveDate, NaiveTime};
+    use dbsp::{
+        algebra::{F32, F64},
+        RootCircuit,
+    };
     use num::FromPrimitive;
     use rust_decimal::Decimal;
 
@@ -926,5 +871,127 @@ mod test {
             .collect(),
         );
         assert_eq!(v, expected);
+    }
+
+    #[test]
+    fn serialize_fractional() {
+        assert_eq!(
+            "5",
+            &serde_json::to_string(&Variant::Decimal(Decimal::from(5))).unwrap()
+        );
+
+        assert_eq!(
+            "123.45",
+            &serde_json::to_string(&Variant::Decimal(Decimal::from_str("123.45").unwrap()))
+                .unwrap()
+        );
+
+        assert_eq!(
+            "1.23",
+            &serde_json::to_string(&Variant::Decimal(
+                Decimal::from_scientific("123E-2").unwrap()
+            ))
+            .unwrap()
+        );
+
+        assert_eq!(
+            "0.00001",
+            &serde_json::to_string(&Variant::Real(F32::new(1E-5))).unwrap()
+        );
+
+        assert_eq!(
+            "-1e-20",
+            &serde_json::to_string(&Variant::Double(F64::new(-1E-20))).unwrap()
+        );
+    }
+
+    #[test]
+    fn serialize_map() {
+        let v = Variant::Map(
+            [
+                (Variant::String("b".to_string()), Variant::Boolean(true)),
+                (
+                    Variant::String("i".to_string()),
+                    Variant::Decimal(Decimal::from(12345)),
+                ),
+                (
+                    Variant::String("f".to_string()),
+                    Variant::Double(F64::new(0.00123)),
+                ),
+                (
+                    Variant::String("d".to_string()),
+                    Variant::Decimal(Decimal::from_str("123.45").unwrap()),
+                ),
+                (
+                    Variant::String("s".to_string()),
+                    Variant::String("foo\nbar".to_string()),
+                ),
+                (Variant::String("n".to_string()), Variant::VariantNull),
+                (
+                    Variant::String("nested".to_string()),
+                    Variant::Map(
+                        [
+                            (
+                                Variant::String("arr".to_string()),
+                                Variant::Array(vec![
+                                    Variant::Decimal(Decimal::from(1)),
+                                    Variant::String("foo".to_string()),
+                                    Variant::VariantNull,
+                                ]),
+                            ),
+                            (
+                                Variant::String("ts".to_string()),
+                                Variant::Timestamp(Timestamp::from_dateTime(
+                                    DateTime::parse_from_rfc3339("2024-12-19T16:39:57Z")
+                                        .unwrap()
+                                        .to_utc(),
+                                )),
+                            ),
+                            (
+                                Variant::String("d".to_string()),
+                                Variant::Date(Date::from_date(
+                                    NaiveDate::from_ymd_opt(2024, 01, 01).unwrap(),
+                                )),
+                            ),
+                            (
+                                Variant::String("t".to_string()),
+                                Variant::Time(Time::from_time(
+                                    NaiveTime::from_hms_opt(17, 30, 40).unwrap(),
+                                )),
+                            ),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+
+        let s = serde_json::to_string(&v).unwrap();
+
+        let expected = serde_json::from_str::<serde_json::Value>(
+            r#"{
+                "b": true,
+                "i": 12345,
+                "f": 0.00123,
+                "d": 123.45,
+                "s": "foo\nbar",
+                "n": null,
+                "nested": {
+                    "arr": [1, "foo", null],
+                    "ts": "2024-12-19T16:39:57+00:00",
+                    "d": "2024-01-01",
+                    "t": "17:30:40"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            expected,
+            serde_json::from_str::<serde_json::Value>(&s).unwrap()
+        );
     }
 }
