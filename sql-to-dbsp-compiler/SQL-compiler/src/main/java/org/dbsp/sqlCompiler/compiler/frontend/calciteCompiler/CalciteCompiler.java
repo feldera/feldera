@@ -769,8 +769,7 @@ public class CalciteCompiler implements IWritesLogs {
                                     String columnName, SqlIdentifier tableName) {
         SqlTypeFamily family = type.getSqlTypeName().getFamily();
         boolean illegal = family == SqlTypeFamily.INTERVAL_DAY_TIME ||
-                family == SqlTypeFamily.INTERVAL_YEAR_MONTH ||
-                family == SqlTypeFamily.VARIANT;
+                family == SqlTypeFamily.INTERVAL_YEAR_MONTH;
         if (illegal) {
             this.errorReporter.reportError(position,
                     "Unsupported column type",

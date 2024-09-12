@@ -26,7 +26,7 @@ public class CatalogTests extends BaseSQLTests {
         return result;
     }
 
-    @Test
+    @Test @Ignore("we allow VARIANT in tables now")
     public void unsupportedColumn() {
         this.statementsFailingInCompilation("CREATE TABLE T(v VARIANT)",
                 "Unsupported column type");
