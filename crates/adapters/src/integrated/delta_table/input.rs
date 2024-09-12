@@ -60,19 +60,17 @@ pub struct DeltaTableInputEndpoint {
 
 impl DeltaTableInputEndpoint {
     pub fn new(
-        endpoint_id: EndpointId,
         endpoint_name: &str,
         config: &DeltaTableReaderConfig,
-        controller: Weak<ControllerInner>,
+        consumer: Box<dyn InputConsumer>,
     ) -> Self {
         register_storage_handlers();
 
         Self {
             inner: Arc::new(DeltaTableInputEndpointInner::new(
-                endpoint_id,
                 endpoint_name,
                 config.clone(),
-                controller,
+                consumer,
             )),
         }
     }
@@ -237,20 +235,14 @@ impl DeltaTableInputReader {
                             .await;
                     }
                     Err(e) => {
-                        if let Some(controller) = endpoint.controller.upgrade() {
-                            controller.input_transport_error(
-                                endpoint.endpoint_id,
-                                &endpoint.endpoint_name,
-                                false,
-                                anyhow!("error reading the next log entry (current table version: {version}): {e}"),
-                            )
-                        }
+                        endpoint.consumer.error(
+                            false,anyhow!("error reading the next log entry (current table version: {version}): {e}"));
                         sleep(RETRY_INTERVAL).await;
                     }
                 }
             }
-        } else if let Some(controller) = endpoint.controller.upgrade() {
-            controller.eoi(endpoint.endpoint_id)
+        } else {
+            endpoint.consumer.eoi();
         }
     }
 }
@@ -282,28 +274,26 @@ impl Drop for DeltaTableInputReader {
 }
 
 struct DeltaTableInputEndpointInner {
-    endpoint_id: EndpointId,
     endpoint_name: String,
     config: DeltaTableReaderConfig,
-    controller: Weak<ControllerInner>,
+    consumer: Box<dyn InputConsumer>,
     datafusion: SessionContext,
     queue: InputQueue,
 }
 
 impl DeltaTableInputEndpointInner {
     fn new(
-        endpoint_id: EndpointId,
         endpoint_name: &str,
         config: DeltaTableReaderConfig,
-        controller: Weak<ControllerInner>,
+        consumer: Box<dyn InputConsumer>,
     ) -> Self {
+        let queue = InputQueue::new(consumer.clone());
         Self {
-            endpoint_id,
             endpoint_name: endpoint_name.to_string(),
             config,
-            controller,
+            consumer,
             datafusion: SessionContext::new(),
-            queue: InputQueue::new(),
+            queue,
         }
     }
 
@@ -515,14 +505,8 @@ impl DeltaTableInputEndpointInner {
 
         let mut stream = match dataframe.execute_stream().await {
             Err(e) => {
-                if let Some(controller) = self.controller.upgrade() {
-                    controller.input_transport_error(
-                        self.endpoint_id,
-                        &self.endpoint_name,
-                        true,
-                        anyhow!("error retrieving {descr}: {e}"),
-                    )
-                }
+                self.consumer
+                    .error(true, anyhow!("error retrieving {descr}: {e}"));
                 return;
             }
             Ok(stream) => stream,
@@ -534,14 +518,10 @@ impl DeltaTableInputEndpointInner {
             let batch = match batch {
                 Ok(batch) => batch,
                 Err(e) => {
-                    if let Some(controller) = self.controller.upgrade() {
-                        controller.input_transport_error(
-                            self.endpoint_id,
-                            &self.endpoint_name,
-                            false,
-                            anyhow!("error retrieving batch {num_batches} of {descr}: {e}"),
-                        )
-                    }
+                    self.consumer.error(
+                        false,
+                        anyhow!("error retrieving batch {num_batches} of {descr}: {e}"),
+                    );
                     continue;
                 }
             };
@@ -554,28 +534,17 @@ impl DeltaTableInputEndpointInner {
             } else {
                 input_stream.delete(&batch)
             };
-            self.queue.push(input_stream.take());
-
-            match result {
-                Ok(()) => {
-                    if let Some(controller) = self.controller.upgrade() {
-                        controller.input_batch(Some((self.endpoint_id, bytes)), rows)
-                    }
-                }
-                Err(e) => {
-                    if let Some(controller) = self.controller.upgrade() {
-                        controller.parse_error(
-                            self.endpoint_id,
-                            &self.endpoint_name,
-                            ParseError::bin_envelope_error(
-                                format!("error deserializing table records from Parquet data: {e}"),
-                                &[],
-                                None,
-                            ),
-                        )
-                    }
-                }
-            }
+            let errors = result.map_or_else(
+                |e| {
+                    vec![ParseError::bin_envelope_error(
+                        format!("error deserializing table records from Parquet data: {e}"),
+                        &[],
+                        None,
+                    )]
+                },
+                |()| Vec::new(),
+            );
+            self.queue.push(input_stream.take(), bytes, errors);
         }
     }
 
@@ -634,14 +603,10 @@ impl DeltaTableInputEndpointInner {
             .await
         {
             Err(e) => {
-                if let Some(controller) = self.controller.upgrade() {
-                    controller.input_transport_error(
-                        self.endpoint_id,
-                        &self.endpoint_name,
-                        true,
-                        anyhow!("error reading Parquet file '{path}' listed in table log: {e}"),
-                    );
-                }
+                self.consumer.error(
+                    true,
+                    anyhow!("error reading Parquet file '{path}' listed in table log: {e}"),
+                );
                 return;
             }
             Ok(df) => df,

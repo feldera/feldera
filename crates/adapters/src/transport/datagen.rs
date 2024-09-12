@@ -314,7 +314,7 @@ impl InputGenerator {
                 && p.limit.unwrap_or(usize::MAX) > 10_000_000
         });
 
-        let queue = Arc::new(InputQueue::new());
+        let queue = Arc::new(InputQueue::new(consumer.clone()));
         for worker in 0..config.workers {
             let config = config.clone();
             let status = status.clone();
@@ -453,8 +453,8 @@ impl InputGenerator {
 
                             if batch_idx % batch_size == 0 {
                                 buffer.extend(END_ARR);
-                                parser.input_chunk(&buffer);
-                                queue.push(parser.take());
+                                let errors = parser.input_chunk(&buffer);
+                                queue.push(parser.take(), buffer.len(), errors);
                                 buffer.clear();
                                 buffer.extend(START_ARR);
                                 batch_idx = 0;
@@ -473,8 +473,8 @@ impl InputGenerator {
                 }
                 if !buffer.is_empty() {
                     buffer.extend(END_ARR);
-                    parser.input_chunk(&buffer);
-                    queue.push(parser.take());
+                    let errors = parser.input_chunk(&buffer);
+                    queue.push(parser.take(), buffer.len(), errors);
                 }
                 // Update global progress after we created all records for a batch
                 //eprintln!("adding {} to generated", generate_range.len());

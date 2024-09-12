@@ -75,7 +75,7 @@ impl PubSubReader {
     ) -> AnyResult<Self> {
         let (state_sender, state_receiver) = channel(PipelineState::Paused);
         let subscription = TOKIO.block_on(Self::subscribe(&config))?;
-        let queue = Arc::new(InputQueue::new());
+        let queue = Arc::new(InputQueue::new(consumer.clone()));
         thread::spawn({
             let queue = queue.clone();
             move || {
@@ -169,8 +169,8 @@ impl PubSubReader {
                         async move {
                             // None if the stream is cancelled
                             while let Some(message) = stream.next().await {
-                                parser.input_chunk(&message.message.data);
-                                queue.push(parser.take());
+                                let errors = parser.input_chunk(&message.message.data);
+                                queue.push(parser.take(), message.message.data.len(), errors);
                                 message.ack().await.unwrap_or_else(|e| {
                                     consumer.error(
                                         false,

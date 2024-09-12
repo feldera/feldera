@@ -171,7 +171,7 @@ impl S3InputReader {
         let (sender, receiver) = channel(PipelineState::Paused);
         let config_clone = config.clone();
         let receiver_clone = receiver.clone();
-        let queue = Arc::new(InputQueue::new());
+        let queue = Arc::new(InputQueue::new(consumer.clone()));
         std::thread::spawn({
             let queue = queue.clone();
             move || {
@@ -254,7 +254,8 @@ impl S3InputReader {
                                     match consume_strategy {
                                         ConsumeStrategy::Fragment => match object.body.next().await {
                                             Some(Ok(bytes)) => {
-                                                parser.input_fragment(&bytes);
+                                                let errors = parser.input_fragment(&bytes);
+                                                queue.push(parser.take(), bytes.len(), errors);
                                             }
                                             None => break,
                                             Some(Err(e)) => consumer.error(false, e.into())
@@ -262,12 +263,12 @@ impl S3InputReader {
                                         ConsumeStrategy::Object =>
                                             match object.body.collect().await.map(|c| c.into_bytes()) {
                                                 Ok(bytes) => {
-                                                    parser.input_chunk(&bytes);
+                                                let errors = parser.input_chunk(&bytes);
+                                                queue.push(parser.take(), bytes.len(), errors);
                                                 }
                                                 Err(e) => consumer.error(false, e.into())
                                         }
                                     }
-                                    queue.push(parser.take());
                                 }
                                 Some(Err(e)) => {
                                     match e.downcast_ref::<ListObjectsV2Error>() {

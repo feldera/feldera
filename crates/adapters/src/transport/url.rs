@@ -60,7 +60,7 @@ impl UrlInputReader {
         mut parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
         let (sender, receiver) = channel(PipelineState::Paused);
-        let queue = Arc::new(InputQueue::new());
+        let queue = Arc::new(InputQueue::new(consumer.clone()));
         spawn({
             let config = config.clone();
             let receiver = receiver.clone();
@@ -232,8 +232,8 @@ impl UrlInputReader {
                                     };
                                     if !chunk.is_empty() {
                                         consumed_bytes += chunk.len() as u64;
-                                        let _ = parser.input_fragment(chunk);
-                                        queue.push(parser.take());
+                                        let errors = parser.input_fragment(chunk);
+                                        queue.push(parser.take(), chunk.len(), errors);
                                     }
                                     offset += data_len;
                                 },

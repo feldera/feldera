@@ -283,12 +283,10 @@ impl JsonParser {
         })
     }
 
-    fn apply_update<'de, F>(&mut self, update: &'de RawValue, errors: &mut Vec<ParseError>) -> usize
+    fn apply_update<'de, F>(&mut self, update: &'de RawValue, errors: &mut Vec<ParseError>)
     where
         F: UpdateFormat + Deserialize<'de>,
     {
-        let mut num_updates = 0;
-
         if self.config.array {
             match serde_json::from_str::<Vec<F>>(update.get()) {
                 Err(e) => {
@@ -302,14 +300,9 @@ impl JsonParser {
                     let mut error = false;
                     let old_len = self.len();
                     for update in updates {
-                        match update.apply(self) {
-                            Err(e) => {
-                                error = true;
-                                errors.push(e);
-                            }
-                            Ok(nupdates) => {
-                                num_updates += nupdates;
-                            }
+                        if let Err(e) = update.apply(self) {
+                            error = true;
+                            errors.push(e);
                         }
                         self.last_event_number += 1;
                     }
@@ -329,23 +322,17 @@ impl JsonParser {
                         F::example().map(Cow::from),
                     ));
                 }
-                Ok(update) => match update.apply(self) {
-                    Err(e) => {
+                Ok(update) => {
+                    if let Err(e) = update.apply(self) {
                         errors.push(e);
                     }
-                    Ok(nupdates) => {
-                        num_updates += nupdates;
-                    }
-                },
+                }
             }
             self.last_event_number += 1;
         }
-
-        num_updates
     }
 
-    fn input_from_slice(&mut self, bytes: &[u8]) -> (usize, Vec<ParseError>) {
-        let mut num_updates = 0;
+    fn input_from_slice(&mut self, bytes: &[u8]) -> Vec<ParseError> {
         let mut errors = Vec::new();
 
         let mut stream = serde_json::Deserializer::from_slice(bytes).into_iter::<&RawValue>();
@@ -359,12 +346,12 @@ impl JsonParser {
                         &json_str,
                         None,
                     ));
-                    return (num_updates, errors);
+                    return errors;
                 }
                 Ok(update) => update,
             };
 
-            num_updates += match self.config.update_format {
+            match self.config.update_format {
                 JsonUpdateFormat::InsertDelete => {
                     self.apply_update::<InsDelUpdate<_>>(update, &mut errors)
                 }
@@ -381,12 +368,12 @@ impl JsonParser {
             }
         }
 
-        (num_updates, errors)
+        errors
     }
 }
 
 impl Parser for JsonParser {
-    fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
         // println!("input_fragment {}", std::str::from_utf8(data).unwrap());
         let leftover = split_on_newline(data);
 
@@ -395,35 +382,34 @@ impl Parser for JsonParser {
             // the `leftover` buffer so it gets processed with the next input
             // buffer.
             self.leftover.extend_from_slice(data);
-            (0, Vec::new())
+            Vec::new()
         } else {
             self.leftover.extend_from_slice(&data[0..leftover]);
             let mut leftover_data = take(&mut self.leftover);
-            let res = self.input_from_slice(&leftover_data);
+            let errors = self.input_from_slice(&leftover_data);
             leftover_data.clear();
             leftover_data.extend_from_slice(&data[leftover..]);
             self.leftover = leftover_data;
-            res
+            errors
         }
     }
 
-    fn input_chunk(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
         self.input_from_slice(data)
     }
 
-    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
+    fn end_of_fragments(&mut self) -> Vec<ParseError> {
         /*println!(
             "eoi: leftover: {}",
             std::str::from_utf8(&self.leftover).unwrap()
         );*/
         if self.leftover.is_empty() {
-            return (0, Vec::new());
+            return Vec::new();
         }
 
         // Try to interpret the leftover chunk as a complete JSON.
         let leftover = take(&mut self.leftover);
-        let res = self.input_from_slice(leftover.as_slice());
-        res
+        self.input_from_slice(leftover.as_slice())
     }
 
     fn fork(&self) -> Box<dyn Parser> {
@@ -527,7 +513,7 @@ mod test {
         config: JsonParserConfig,
         /// Input data, expected result.
         input_batches: Vec<(String, Vec<ParseError>)>,
-        final_result: Vec<ParseError>,
+        final_errors: Vec<ParseError>,
         /// Expected contents at the end of the test.
         expected_output: Vec<MockUpdate<T, U>>,
     }
@@ -558,16 +544,16 @@ mod test {
                 mock_parser_pipeline(&Relation::empty(), &format_config).unwrap();
             consumer.on_error(Some(Box::new(|_, _| {})));
             parser.on_error(Some(Box::new(|_, _| {})));
-            for (json, expected_result) in test.input_batches {
-                let res = if test.chunks {
+            for (json, expected_errors) in test.input_batches {
+                let errors = if test.chunks {
                     parser.input_chunk(json.as_bytes())
                 } else {
                     parser.input_fragment(json.as_bytes())
                 };
-                assert_eq!(&res.1, &expected_result);
+                assert_eq!(&errors, &expected_errors);
             }
-            let res = parser.end_of_fragments();
-            assert_eq!(&res.1, &test.final_result);
+            let errors = parser.end_of_fragments();
+            assert_eq!(&errors, &test.final_errors);
             consumer.eoi();
             parser.flush_all();
             assert_eq!(&test.expected_output, &outputs.state().flushed);
@@ -589,7 +575,7 @@ mod test {
                 config,
                 input_batches,
                 expected_output,
-                final_result,
+                final_errors: final_result,
             }
         }
     }

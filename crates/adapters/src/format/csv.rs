@@ -79,9 +79,9 @@ impl CsvParser {
         }
     }
 
-    fn parse_record(&mut self, record: &[u8], res: &mut (usize, Vec<ParseError>)) {
-        match self.input_stream.insert(record).map_err(|e| {
-            ParseError::text_event_error(
+    fn parse_record(&mut self, record: &[u8], errors: &mut Vec<ParseError>) {
+        if let Err(e) = self.input_stream.insert(record) {
+            errors.push(ParseError::text_event_error(
                 "failed to deserialize CSV record",
                 e,
                 self.last_event_number + 1,
@@ -92,10 +92,7 @@ impl CsvParser {
                         .to_string(),
                 ),
                 None,
-            )
-        }) {
-            Ok(()) => res.0 += 1,
-            Err(error) => res.1.push(error),
+            ));
         }
     }
 
@@ -129,22 +126,19 @@ impl CsvParser {
     /// Parses `buffer` into a series of zero or more CSV records followed by
     /// any remaining text.  Returns the remainder and the results of parsing
     /// the records.
-    fn parse_from_buffer<'a>(
-        &mut self,
-        mut buffer: &'a [u8],
-    ) -> (&'a [u8], (usize, Vec<ParseError>)) {
-        let mut res = (0, Vec::new());
+    fn parse_from_buffer<'a>(&mut self, mut buffer: &'a [u8]) -> (&'a [u8], Vec<ParseError>) {
+        let mut errors = Vec::new();
         while let Some((record, rest)) = self.split_record(buffer) {
-            self.parse_record(record, &mut res);
+            self.parse_record(record, &mut errors);
             self.last_event_number += 1;
             buffer = rest;
         }
-        (buffer, res)
+        (buffer, errors)
     }
 }
 
 impl Parser for CsvParser {
-    fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
         if self.leftover.is_empty() {
             let (rest, res) = self.parse_from_buffer(data);
             self.leftover.extend(rest);
@@ -159,13 +153,13 @@ impl Parser for CsvParser {
         }
     }
 
-    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
-        let mut res = (0, Vec::new());
+    fn end_of_fragments(&mut self) -> Vec<ParseError> {
+        let mut errors = Vec::new();
         let leftover = take(&mut self.leftover);
         if !leftover.is_empty() {
-            self.parse_record(leftover.as_slice(), &mut res);
+            self.parse_record(leftover.as_slice(), &mut errors);
         }
-        res
+        errors
     }
 
     fn fork(&self) -> Box<dyn Parser> {

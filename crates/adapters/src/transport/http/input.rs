@@ -54,13 +54,18 @@ impl HttpInputTransport {
     }
 }
 
+struct HttpInputEndpointDetails {
+    consumer: Box<dyn InputConsumer>,
+    parser: Box<dyn Parser>,
+    queue: InputQueue,
+}
+
 struct HttpInputEndpointInner {
     name: String,
     state: Atomic<PipelineState>,
     status_notifier: watch::Sender<()>,
     #[allow(clippy::type_complexity)]
-    cp: Mutex<Option<(Box<dyn InputConsumer>, Box<dyn Parser>)>>,
-    queue: InputQueue,
+    details: Mutex<Option<HttpInputEndpointDetails>>,
     /// Ingest data even if the pipeline is paused.
     force: bool,
 }
@@ -75,8 +80,7 @@ impl HttpInputEndpointInner {
                 PipelineState::Paused
             }),
             status_notifier: watch::channel(()).0,
-            cp: Mutex::new(None),
-            queue: InputQueue::new(),
+            details: Mutex::new(None),
             force,
         }
     }
@@ -108,15 +112,17 @@ impl HttpInputEndpoint {
     }
 
     fn push(&self, bytes: Option<&[u8]>, errors: &mut CircularQueue<ParseError>) -> usize {
-        let mut guard = self.inner.cp.lock().unwrap();
-        let parser = &mut guard.as_mut().unwrap().1;
-        let (_num_records, mut new_errors) = match bytes {
-            Some(bytes) => parser.input_fragment(bytes),
-            None => parser.end_of_fragments(),
+        let mut guard = self.inner.details.lock().unwrap();
+        let details = guard.as_mut().unwrap();
+        let mut new_errors = match bytes {
+            Some(bytes) => details.parser.input_fragment(bytes),
+            None => details.parser.end_of_fragments(),
         };
-        let buffer = parser.take();
+        let buffer = details.parser.take();
+        details
+            .queue
+            .push(buffer, bytes.map_or(0, |b| b.len()), new_errors.clone());
         drop(guard);
-        self.inner.queue.push(buffer);
 
         let num_errors = new_errors.len();
         for error in new_errors.drain(..) {
@@ -127,12 +133,12 @@ impl HttpInputEndpoint {
 
     fn error(&self, fatal: bool, error: AnyError) {
         self.inner
-            .cp
+            .details
             .lock()
             .unwrap()
             .as_mut()
             .unwrap()
-            .0
+            .consumer
             .error(fatal, error);
     }
 
@@ -187,9 +193,19 @@ impl HttpInputEndpoint {
         // Wait for the controller to process all of our records. Otherwise, the
         // queue would get destroyed when the caller drops us, which could lead
         // to some of our records never getting processed.
-        while !self.inner.queue.is_empty() {
+        while !self
+            .inner
+            .details
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .queue
+            .is_empty()
+        {
             status_watch.changed().await.unwrap();
         }
+        println!("all flushed");
 
         debug!(
             "HTTP input endpoint '{}': end of request, {num_bytes} received",
@@ -217,7 +233,11 @@ impl TransportInputEndpoint for HttpInputEndpoint {
         _start_step: Step,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
-        *self.inner.cp.lock().unwrap() = Some((consumer, parser));
+        *self.inner.details.lock().unwrap() = Some(HttpInputEndpointDetails {
+            queue: InputQueue::new(consumer.clone()),
+            consumer,
+            parser,
+        });
         Ok(Box::new(self.clone()))
     }
 }
@@ -251,10 +271,12 @@ impl InputReader for HttpInputEndpoint {
     }
 
     fn flush(&self, n: usize) -> usize {
-        let n = self.inner.queue.flush(n);
-        if self.inner.queue.is_empty() {
+        let mut guard = self.inner.details.lock().unwrap();
+        let details = guard.as_mut().unwrap();
+        let total = details.queue.flush(n);
+        if details.queue.is_empty() {
             self.notify();
         }
-        n
+        total
     }
 }

@@ -149,8 +149,8 @@ impl KafkaInputReaderInner {
                 if let Some(payload) = message.payload() {
                     // Leave it to the controller to handle errors.  There is noone we can
                     // forward the error to upstream.
-                    let _ = parser.input_chunk(payload);
-                    self.queue.push(parser.take());
+                    let errors = parser.input_chunk(payload);
+                    self.queue.push(parser.take(), payload.len(), errors);
                 }
             }
         }
@@ -246,7 +246,7 @@ impl KafkaInputReader {
             state: Atomic::new(PipelineState::Paused),
             kafka_consumer: BaseConsumer::from_config_and_context(&client_config, context)?,
             errors: ArrayQueue::new(ERROR_BUFFER_SIZE),
-            queue: Arc::new(InputQueue::new()),
+            queue: Arc::new(InputQueue::new(consumer.clone())),
         });
 
         *inner.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&inner);
@@ -281,10 +281,8 @@ impl KafkaInputReader {
                     // Hopefully, this guarantees that we won't see any messages from it, but if
                     // that's not the case, there shouldn't be any harm in sending them downstream.
                     if let Some(payload) = message.payload() {
-                        // Leave it to the controller to handle errors.  There is noone we can
-                        // forward the error to upstream.
-                        let _ = parser.input_chunk(payload);
-                        inner.queue.push(parser.take());
+                        let errors = parser.input_chunk(payload);
+                        inner.queue.push(parser.take(), payload.len(), errors);
                     }
                 }
                 _ => (),

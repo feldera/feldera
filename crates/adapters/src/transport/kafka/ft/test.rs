@@ -426,6 +426,7 @@ enum ConsumerCall {
     StartStep(Step),
     InputFragment(String),
     InputChunk(String),
+    Queued(usize, usize, Vec<ParseError>),
     Error(bool),
     Eoi,
 }
@@ -555,24 +556,27 @@ impl InputConsumer for DummyInputConsumer {
         *completed = Some(step);
         self.0.unparker.unpark();
     }
+    fn queued(&self, num_bytes: usize, num_records: usize, errors: Vec<ParseError>) {
+        self.called(ConsumerCall::Queued(num_bytes, num_records, errors));
+    }
 }
 
 impl Parser for DummyInputConsumer {
-    fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
         self.called(ConsumerCall::InputFragment(
             String::from_utf8(data.into()).unwrap(),
         ));
-        (0, vec![])
+        Vec::new()
     }
-    fn input_chunk(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
         self.called(ConsumerCall::InputChunk(
             String::from_utf8(data.into()).unwrap(),
         ));
-        (0, vec![])
+        Vec::new()
     }
-    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
+    fn end_of_fragments(&mut self) -> Vec<ParseError> {
         self.called(ConsumerCall::Eoi);
-        (0, vec![])
+        Vec::new()
     }
 
     fn fork(&self) -> Box<dyn Parser> {

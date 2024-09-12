@@ -204,7 +204,7 @@ impl Reader {
         let unparker = parker.unparker().clone();
         let action = Arc::new(Mutex::new(Ok(OkAction::Pause)));
         let complete_step = Arc::new(Mutex::new(None));
-        let queue = Arc::new(InputQueue::new());
+        let queue = Arc::new(InputQueue::new(consumer.clone()));
         let join_handle = {
             let queue = queue.clone();
             Some(WorkerThread::spawn(
@@ -532,8 +532,8 @@ impl WorkerThread {
                         continue;
                     }
                     if let Some(payload) = data_message.payload() {
-                        let _ = self.parser.input_chunk(payload);
-                        self.queue.push(self.parser.take());
+                        let errors = self.parser.input_chunk(payload);
+                        self.queue.push(self.parser.take(), payload.len(), errors);
                     }
                     p.next_offset = data_message.offset() + 1;
                 }
@@ -582,8 +582,8 @@ impl WorkerThread {
                             // step).
 
                             if let Some(payload) = data_message.payload() {
-                                let _ = self.parser.input_chunk(payload);
-                                self.queue.push(self.parser.take());
+                                let errors = self.parser.input_chunk(payload);
+                                self.queue.push(self.parser.take(), payload.len(), errors);
                             }
                             n_messages += 1;
                             n_bytes += data_message.payload_len();
