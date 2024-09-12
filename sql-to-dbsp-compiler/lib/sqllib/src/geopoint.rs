@@ -4,8 +4,10 @@ use crate::{casts::cast_to_d_decimal, some_polymorphic_function2, Decimal};
 use ::serde::{Deserialize, Serialize};
 use dbsp::algebra::{F32, F64};
 use dbsp::num_entries_scalar;
+use feldera_types::serde_with_context::SerializeWithContext;
 use geo::EuclideanDistance;
 use geo::Point;
+use serde::ser::Error;
 use size_of::*;
 
 #[derive(
@@ -27,6 +29,17 @@ use size_of::*;
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
 pub struct GeoPoint(F64, F64);
+
+impl<C> SerializeWithContext<C> for GeoPoint {
+    fn serialize_with_context<S>(&self, _serializer: S, _context: &C) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        Err(S::Error::custom(
+            "serialization is not implemented for the GEORGRAPHY type",
+        ))
+    }
+}
 
 num_entries_scalar! {
     GeoPoint,

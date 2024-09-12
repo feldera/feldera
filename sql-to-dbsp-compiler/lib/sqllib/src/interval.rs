@@ -11,9 +11,11 @@ use crate::{
     some_existing_operator, some_operator,
 };
 use dbsp::num_entries_scalar;
-use feldera_types::{deserialize_without_context, serialize_without_context};
+use feldera_types::serde_with_context::{
+    DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+};
 use num::PrimInt;
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, ser::Error as _, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{fmt::Debug, ops::Mul};
 
@@ -111,8 +113,34 @@ where
     }
 }
 
-serialize_without_context!(ShortInterval);
-deserialize_without_context!(ShortInterval);
+impl SerializeWithContext<SqlSerdeConfig> for ShortInterval {
+    fn serialize_with_context<S>(
+        &self,
+        _serializer: S,
+        _context: &SqlSerdeConfig,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        Err(S::Error::custom(
+            "serialization is not implemented for the INTERVAL type",
+        ))
+    }
+}
+
+impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ShortInterval {
+    fn deserialize_with_context<D>(
+        _deserializer: D,
+        _context: &'de SqlSerdeConfig,
+    ) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Err(D::Error::custom(
+            "deserialization is not implemented for the INTERVAL type",
+        ))
+    }
+}
 
 some_operator!(lt, ShortInterval, ShortInterval, bool);
 some_operator!(gt, ShortInterval, ShortInterval, bool);
@@ -188,8 +216,34 @@ num_entries_scalar! {
     LongInterval,
 }
 
-serialize_without_context!(LongInterval);
-deserialize_without_context!(LongInterval);
+impl SerializeWithContext<SqlSerdeConfig> for LongInterval {
+    fn serialize_with_context<S>(
+        &self,
+        _serializer: S,
+        _context: &SqlSerdeConfig,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        Err(S::Error::custom(
+            "serialization is not implemented for the INTERVAL type",
+        ))
+    }
+}
+
+impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for LongInterval {
+    fn deserialize_with_context<D>(
+        _deserializer: D,
+        _context: &'de SqlSerdeConfig,
+    ) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Err(D::Error::custom(
+            "deserialization is not implemented for the INTERVAL type",
+        ))
+    }
+}
 
 some_operator!(lt, LongInterval, LongInterval, bool);
 some_operator!(gt, LongInterval, LongInterval, bool);
