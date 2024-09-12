@@ -82,6 +82,8 @@ impl InputConsumer for MockInputConsumer {
     fn start_step(&self, _step: Step) {}
 
     fn committed(&self, _step: Step) {}
+
+    fn queued(&self, _num_bytes: usize, _num_records: usize, _errors: Vec<ParseError>) {}
 }
 
 pub struct MockInputParserState {
@@ -89,7 +91,7 @@ pub struct MockInputParserState {
     pub data: Vec<u8>,
 
     /// The last result returned by the parser.
-    pub parser_result: Option<(usize, Vec<ParseError>)>,
+    pub parser_result: Option<Vec<ParseError>>,
 
     /// Parser to push data to.
     parser: Box<dyn Parser>,
@@ -143,10 +145,10 @@ impl MockInputParser {
         state.error_cb = error_cb;
     }
 
-    fn input(&self, data: &[u8], fragment: bool) -> (usize, Vec<ParseError>) {
+    fn input(&self, data: &[u8], fragment: bool) -> Vec<ParseError> {
         let mut state = self.0.lock().unwrap();
         state.data.extend_from_slice(data);
-        let (num_records, errors) = if fragment {
+        let errors = if fragment {
             state.parser.input_fragment(data)
         } else {
             state.parser.input_chunk(data)
@@ -161,23 +163,23 @@ impl MockInputParser {
             }
         }
 
-        state.parser_result = Some((num_records, errors.clone()));
-        (num_records, errors)
+        state.parser_result = Some(errors.clone());
+        errors
     }
 }
 
 impl Parser for MockInputParser {
-    fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
         self.input(data, true)
     }
 
-    fn input_chunk(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
         self.input(data, false)
     }
 
-    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
+    fn end_of_fragments(&mut self) -> Vec<ParseError> {
         let mut state = self.0.lock().unwrap();
-        let (num_records, errors) = state.parser.end_of_fragments();
+        let errors = state.parser.end_of_fragments();
         for error in errors.iter() {
             if let Some(error_cb) = &mut state.error_cb {
                 error_cb(false, &anyhow!(error.clone()));
@@ -185,7 +187,7 @@ impl Parser for MockInputParser {
                 panic!("mock_input_consumer: parse error '{error}'");
             }
         }
-        (num_records, errors)
+        errors
     }
 
     fn fork(&self) -> Box<dyn Parser> {

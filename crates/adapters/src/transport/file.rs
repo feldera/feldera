@@ -73,7 +73,7 @@ impl FileInputReader {
         let parker = Parker::new();
         let unparker = Some(parker.unparker().clone());
         let status = Arc::new(Atomic::new(PipelineState::Paused));
-        let queue = Arc::new(InputQueue::new());
+        let queue = Arc::new(InputQueue::new(consumer.clone()));
         spawn({
             let follow = config.follow;
             let status = status.clone();
@@ -115,8 +115,8 @@ impl FileInputReader {
                         }
                         Ok([]) => {
                             if !follow {
-                                let _ = parser.end_of_fragments();
-                                queue.push(parser.take());
+                                let errors = parser.end_of_fragments();
+                                queue.push(parser.take(), 0, errors);
                                 consumer.eoi();
                                 return;
                             } else {
@@ -128,8 +128,8 @@ impl FileInputReader {
 
                             // Leave it to the controller to handle errors.  There is noone we can
                             // forward the error to upstream.
-                            let _ = parser.input_fragment(data);
-                            queue.push(parser.take());
+                            let errors = parser.input_fragment(data);
+                            queue.push(parser.take(), data.len(), errors);
                             let len = data.len();
                             reader.consume(len);
                         }
@@ -388,7 +388,7 @@ format:
                 endpoint.flush_all();
                 let state = parser.state();
                 // println!("result: {:?}", state.parser_result);
-                state.parser_result.is_some() && !state.parser_result.as_ref().unwrap().1.is_empty()
+                state.parser_result.is_some() && !state.parser_result.as_ref().unwrap().is_empty()
             },
             DEFAULT_TIMEOUT_MS,
         )

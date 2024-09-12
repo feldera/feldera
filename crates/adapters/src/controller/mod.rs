@@ -15,25 +15,9 @@
 //! user request.
 //!
 //! Both tasks require monitoring the state of the input buffers.  To this end,
-//! the controller injects `InputProbe`s between each input endpoint and format
-//! parser:
-//!
-//! ```text
-//!                ┌────────────┐
-//!                │ controller │
-//!                └────────────┘
-//!                      ▲
-//!                      │stats
-//!   ┌────────┐   ┌─────┴────┐   ┌──────┐   ┌──────┐
-//!   │endpoint├──►│InputProbe├──►│parser├──►│handle│
-//!   └────────┘   └──────────┘   └──────┘   └──────┘
-//! ```
-//!
-//! The probe passes the data through to the parser, while counting the number
-//! of transmitted bytes and records and updating respective performance
-//! counters in the controller.
+//! the controller expects transports to report the number of bytes and records
+//! buffered via `InputConsumer::queued`.
 
-use crate::format::InputBuffer;
 use crate::transport::InputReader;
 use crate::transport::Step;
 use crate::transport::{
@@ -41,8 +25,8 @@ use crate::transport::{
 };
 use crate::{
     catalog::SerBatch, Catalog, CircuitCatalog, Encoder, InputConsumer, InputFormat,
-    OutputConsumer, OutputEndpoint, OutputFormat, OutputQueryHandles, ParseError, Parser,
-    PipelineState, TransportInputEndpoint,
+    OutputConsumer, OutputEndpoint, OutputFormat, OutputQueryHandles, ParseError, PipelineState,
+    TransportInputEndpoint,
 };
 use crate::{create_integrated_output_endpoint, DbspCircuitHandle};
 use anyhow::Error as AnyError;
@@ -1222,12 +1206,7 @@ impl ControllerInner {
             Err(ControllerError::duplicate_input_endpoint(endpoint_name))?;
         }
 
-        // Create input pipeline, consisting of a transport endpoint, controller
-        // probe, and parser.
-        //
-        // ┌────────┐   ┌──────────┐   ┌──────┐
-        // │endpoint├──►│InputProbe├──►│parser├──►
-        // └────────┘   └──────────┘   └──────┘
+        // Create input pipeline, consisting of a transport endpoint and parser.
 
         let input_handle = self
             .catalog
@@ -1236,10 +1215,10 @@ impl ControllerInner {
                 ControllerError::unknown_input_stream(endpoint_name, &endpoint_config.stream)
             })?;
 
-        // Create probe.
         let endpoint_id = inputs.keys().next_back().map(|k| k + 1).unwrap_or(0);
 
         let max_batch_size = endpoint_config.connector_config.max_batch_size;
+        let probe = Box::new(InputProbe::new(endpoint_id, endpoint_name, self.clone()));
         let reader = match endpoint {
             Some(endpoint) => {
                 // Create parser.
@@ -1277,13 +1256,6 @@ impl ControllerInner {
 
                 let parser =
                     format.new_parser(endpoint_name, input_handle, &format_config.config)?;
-                let probe = Box::new(InputProbe::new(
-                    endpoint_id,
-                    endpoint_name,
-                    parser,
-                    self.clone(),
-                ));
-
                 // Initialize endpoint stats.
                 self.status.add_input(
                     &endpoint_id,
@@ -1293,16 +1265,12 @@ impl ControllerInner {
                 );
 
                 endpoint
-                    .open(probe.clone(), probe, 0, input_handle.schema.clone())
+                    .open(probe, parser, 0, input_handle.schema.clone())
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?
             }
             None => {
-                let endpoint = create_integrated_input_endpoint(
-                    endpoint_id,
-                    endpoint_name,
-                    &endpoint_config,
-                    Arc::downgrade(self),
-                )?;
+                let endpoint =
+                    create_integrated_input_endpoint(endpoint_name, &endpoint_config, probe)?;
 
                 // Initialize endpoint stats.
                 self.status.add_input(
@@ -1806,96 +1774,21 @@ impl ControllerInner {
     }
 }
 
-/// An input probe inserted between the transport endpoint and the parser to
-/// track stats and errors.
+/// An [InputConsumer] for an input adapter to use.
+#[derive(Clone)]
 struct InputProbe {
     endpoint_id: EndpointId,
     endpoint_name: String,
-    parser: Box<dyn Parser>,
     controller: Arc<ControllerInner>,
 }
 
-impl Clone for InputProbe {
-    fn clone(&self) -> Self {
-        Self::new(
-            self.endpoint_id,
-            &self.endpoint_name,
-            self.parser.fork(),
-            self.controller.clone(),
-        )
-    }
-}
-
 impl InputProbe {
-    fn new(
-        endpoint_id: EndpointId,
-        endpoint_name: &str,
-        parser: Box<dyn Parser>,
-        controller: Arc<ControllerInner>,
-    ) -> Self {
+    fn new(endpoint_id: EndpointId, endpoint_name: &str, controller: Arc<ControllerInner>) -> Self {
         Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
-            parser,
             controller,
         }
-    }
-
-    fn input_common(
-        &mut self,
-        data: &[u8],
-        num_records: usize,
-        errors: Vec<ParseError>,
-    ) -> (usize, Vec<ParseError>) {
-        for error in errors.iter() {
-            self.controller
-                .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
-        }
-        self.controller
-            .input_batch(Some((self.endpoint_id, data.len())), num_records);
-
-        (num_records, errors)
-    }
-}
-
-/// `InputConsumer` interface exposed to the transport endpoint.
-impl Parser for InputProbe {
-    fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
-        let (num_records, errors) = self.parser.input_fragment(data);
-        self.input_common(data, num_records, errors)
-    }
-
-    fn input_chunk(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
-        let (num_records, errors) = self.parser.input_chunk(data);
-        self.input_common(data, num_records, errors)
-    }
-
-    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
-        let (num_records, errors) = self.parser.end_of_fragments();
-        self.input_common(&[], num_records, errors)
-    }
-
-    fn fork(&self) -> Box<dyn Parser> {
-        Box::new(Self::new(
-            self.endpoint_id,
-            &self.endpoint_name,
-            self.parser.fork(),
-            self.controller.clone(),
-        ))
-    }
-}
-
-impl InputBuffer for InputProbe {
-    fn flush(&mut self, n: usize) -> usize {
-        self.parser.flush(n)
-    }
-
-    fn len(&self) -> usize {
-        self.parser.len()
-    }
-
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.parser.take()
     }
 }
 
@@ -1915,6 +1808,15 @@ impl InputConsumer for InputProbe {
 
     fn committed(&self, step: Step) {
         self.controller.committed(self.endpoint_id, step);
+    }
+
+    fn queued(&self, num_bytes: usize, num_records: usize, errors: Vec<ParseError>) {
+        for error in errors.iter() {
+            self.controller
+                .parse_error(self.endpoint_id, &self.endpoint_name, error.clone());
+        }
+        self.controller
+            .input_batch(Some((self.endpoint_id, num_bytes)), num_records);
     }
 }
 

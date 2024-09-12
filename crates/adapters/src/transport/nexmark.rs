@@ -86,10 +86,10 @@ impl InputGenerator {
 impl InputReader for InputGenerator {
     fn start(&self, _step: Step) -> AnyResult<()> {
         self.inner.status[self.table].store(PipelineState::Running, Ordering::Release);
-        self.inner.consumable_batches.store(
-            self.inner.queued_batches.load(Ordering::Acquire),
-            Ordering::Release,
-        );
+        let queued_batches = *self.inner.queued_batches.lock().unwrap();
+        self.inner
+            .consumable_batches
+            .store(queued_batches, Ordering::Release);
         self.inner.unpark();
         Ok(())
     }
@@ -170,7 +170,7 @@ struct Inner {
     queue: Mutex<EnumMap<NexmarkTable, VecDeque<(usize, Box<dyn InputBuffer>)>>>,
 
     consumable_batches: AtomicUsize,
-    queued_batches: AtomicUsize,
+    queued_batches: Mutex<usize>,
 
     /// The threads to wake up when we unpark.
     ///
@@ -189,7 +189,7 @@ impl Inner {
             cps: Mutex::new(EnumMap::default()),
             queue: Mutex::new(EnumMap::from_fn(|_| VecDeque::new())),
             consumable_batches: AtomicUsize::new(0),
-            queued_batches: AtomicUsize::new(0),
+            queued_batches: Mutex::new(0),
             threads: Mutex::new(Vec::new()),
         });
         thread::Builder::new()
@@ -287,7 +287,10 @@ impl Inner {
         // Grab the consumers. We know they're all there because `self.status()`
         // returned `PipelineStatus::Running`.
         let mut guard = self.cps.lock().unwrap();
-        let mut cps = EnumMap::from_fn(|table| guard[table].take().unwrap());
+        let mut cps = EnumMap::from_fn(|table| {
+            let (consumer, parser) = guard[table].take().unwrap();
+            (consumer, parser, Arc::new(AtomicUsize::new(0)))
+        });
         drop(guard);
 
         // Start all the generator threads.
@@ -296,8 +299,8 @@ impl Inner {
         let generators = (0..options.threads)
             .map(|index| {
                 let cps = EnumMap::from_fn(|table| {
-                    let (consumer, parser) = &cps[table];
-                    (consumer.clone(), parser.fork())
+                    let (consumer, parser, count) = &cps[table];
+                    (consumer.clone(), parser.fork(), count.clone())
                 });
                 let barrier = barrier.clone();
                 let inner = Arc::clone(&self);
@@ -324,7 +327,7 @@ impl Inner {
         }
 
         // Input is exhausted.
-        for (_table, (consumer, parser)) in cps.iter_mut() {
+        for (_table, (consumer, parser, _count)) in cps.iter_mut() {
             parser.end_of_fragments();
             consumer.eoi();
         }
@@ -333,7 +336,7 @@ impl Inner {
     #[allow(clippy::type_complexity)]
     fn generate_thread(
         self: Arc<Self>,
-        mut cps: EnumMap<NexmarkTable, (Box<dyn InputConsumer>, Box<dyn Parser>)>,
+        mut cps: EnumMap<NexmarkTable, (Box<dyn InputConsumer>, Box<dyn Parser>, Arc<AtomicUsize>)>,
         index: usize,
         barrier: Arc<Barrier>,
     ) {
@@ -393,9 +396,11 @@ impl Inner {
             // Parse the batch into per-table InputBuffers.
             let buffers = writers.map(|table, writer| {
                 let data = writer.into_inner().unwrap().into_inner();
-                let (_consumer, parser) = &mut cps[table];
+                let (_consumer, parser, count) = &mut cps[table];
                 parser.input_chunk(data.as_slice());
-                parser.take().unwrap_or(Box::new(EmptyInputBuffer))
+                let buffer = parser.take().unwrap_or(Box::new(EmptyInputBuffer));
+                count.fetch_add(buffer.len(), Ordering::SeqCst);
+                buffer
             });
 
             // Append the batch to the queues.
@@ -407,7 +412,11 @@ impl Inner {
 
             // Synchronize with the other threads.
             if barrier.wait().is_leader() {
-                self.queued_batches.store(i as usize + 1, Ordering::Release);
+                let mut guard = self.queued_batches.lock().unwrap();
+                for (_table, (consumer, _parser, count)) in &cps {
+                    consumer.queued(0, count.swap(0, Ordering::SeqCst), Vec::new());
+                }
+                *guard += 1;
             }
         }
     }

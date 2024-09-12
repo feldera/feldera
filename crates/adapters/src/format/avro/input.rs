@@ -429,26 +429,20 @@ impl AvroParser {
 }
 
 impl Parser for AvroParser {
-    fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
-        (
-            0,
-            vec![ParseError::bin_envelope_error(
+    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
+        vec![ParseError::bin_envelope_error(
                 "Avro streaming parser received an incomplete data fragment. This parser should only be used with message-based transports like Kafka.".to_string(),
                 data,
                 None,
-            )],
-        )
+            )]
     }
 
-    fn input_chunk(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
-        match self.input(data) {
-            Ok(()) => (1, vec![]),
-            Err(e) => (1, vec![e]),
-        }
+    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
+        self.input(data).map_or_else(|e| vec![e], |_| Vec::new())
     }
 
-    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
-        (0, vec![])
+    fn end_of_fragments(&mut self) -> Vec<ParseError> {
+        Vec::new()
     }
 
     fn fork(&self) -> Box<dyn Parser> {

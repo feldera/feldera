@@ -473,9 +473,8 @@ pub trait Parser: Send + Sync + InputBuffer {
     /// HTTP adapters (for some configurations of the adapter), where the
     /// underlying transport does not enforce message boundaries.
     ///
-    /// Returns the number of records in the parsed representation or an error
-    /// if parsing fails.
-    fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>);
+    /// Returns parse errors, if any.
+    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError>;
 
     /// Notifies the parser that the preceding fragment(s) are complete.
     ///
@@ -486,9 +485,8 @@ pub trait Parser: Send + Sync + InputBuffer {
     /// This shouldn't have any work to do if the data was pushed via
     /// [Self::input_chunk], since each chunk is complete and independent.
     ///
-    /// Returns the number of records in the parsed representation or an error
-    /// if parsing fails.
-    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>);
+    /// Returns parse errors, if any.
+    fn end_of_fragments(&mut self) -> Vec<ParseError>;
 
     /// Push a chunk of data to the parser.
     ///
@@ -497,9 +495,8 @@ pub trait Parser: Send + Sync + InputBuffer {
     /// API.  The chunk is expected to contain complete records only, so the
     /// parser need not maintain any state from `data` for the next call.
     ///
-    /// Returns the number of records in the parsed representation and the list
-    /// of errors encountered during parsing.
-    fn input_chunk(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+    /// Returns parse errors, if any.
+    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
         self.input_fragment(data)
     }
 

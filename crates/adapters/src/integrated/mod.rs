@@ -4,7 +4,7 @@
 #![allow(unreachable_code)]
 
 use crate::controller::{ControllerInner, EndpointId};
-use crate::{ControllerError, Encoder, OutputEndpoint, TransportInputEndpoint};
+use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint, TransportInputEndpoint};
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
 use std::sync::Weak;
@@ -81,18 +81,16 @@ pub fn create_integrated_output_endpoint(
 }
 
 pub fn create_integrated_input_endpoint(
-    endpoint_id: EndpointId,
     endpoint_name: &str,
     config: &InputEndpointConfig,
-    controller: Weak<ControllerInner>,
+    consumer: Box<dyn InputConsumer>,
 ) -> Result<Box<dyn IntegratedInputEndpoint>, ControllerError> {
     let ep: Box<dyn IntegratedInputEndpoint> = match &config.connector_config.transport {
         #[cfg(feature = "with-deltalake")]
         DeltaTableInput(config) => Box::new(DeltaTableInputEndpoint::new(
-            endpoint_id,
             endpoint_name,
             config,
-            controller,
+            consumer,
         )),
         transport => {
             return Err(ControllerError::unknown_input_transport(

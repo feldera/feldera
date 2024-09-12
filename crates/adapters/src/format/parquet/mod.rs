@@ -82,15 +82,15 @@ impl ParquetParser {
             last_event_number: 0,
         }
     }
-    fn parse(&mut self) -> (usize, Vec<ParseError>) {
+    fn parse(&mut self) -> Vec<ParseError> {
         if self.buf.is_empty() {
-            return (0, vec![]);
+            return Vec::new();
         }
 
         let bytes = Bytes::from(take(&mut self.buf));
         match SerializedFileReader::new(bytes) {
             Ok(reader) => {
-                let (mut cnt, mut errors) = (0, vec![]);
+                let mut errors = Vec::new();
                 match reader.get_row_iter(None) {
                     Ok(iter) => {
                         for maybe_record in iter {
@@ -100,19 +100,17 @@ impl ParquetParser {
                                     // the overhead of converting the record to JSON we can use serde_arrow
                                     // as well here.
                                     let record_json = record.to_json_value().to_string();
-                                    match self.input_stream.insert(record_json.as_bytes()) {
-                                        Ok(_) => cnt += 1,
-                                        Err(e) => {
-                                            errors.push(ParseError::bin_event_error(
-                                                format!(
-                                                    "Error parsing JSON record from parquet file: {}",
-                                                    e
-                                                ),
-                                                self.last_event_number + 1,
-                                                record_json.as_bytes(),
-                                                None,
-                                            ));
-                                        }
+                                    if let Err(e) = self.input_stream.insert(record_json.as_bytes())
+                                    {
+                                        errors.push(ParseError::bin_event_error(
+                                            format!(
+                                                "Error parsing JSON record from parquet file: {}",
+                                                e
+                                            ),
+                                            self.last_event_number + 1,
+                                            record_json.as_bytes(),
+                                            None,
+                                        ));
                                     }
                                 }
                                 Err(e) => {
@@ -126,28 +124,22 @@ impl ParquetParser {
                             }
                             self.last_event_number += 1;
                         }
-                        (cnt, errors)
+                        errors
                     }
-                    Err(e) => (
-                        0,
-                        vec![ParseError::bin_envelope_error(
-                            format!("Unable to iterate over parquet file: {}.", e),
-                            &[],
-                            None,
-                        )],
-                    ),
+                    Err(e) => vec![ParseError::bin_envelope_error(
+                        format!("Unable to iterate over parquet file: {}.", e),
+                        &[],
+                        None,
+                    )],
                 }
             }
-            Err(e) => (
-                0,
-                vec![ParseError::bin_envelope_error(
-                    format!("Unable to read parquet file: {}.", e),
-                    &[],
-                    Some(Cow::from(
-                        "Make sure the provided file is a valid parquet file.",
-                    )),
-                )],
-            ),
+            Err(e) => vec![ParseError::bin_envelope_error(
+                format!("Unable to read parquet file: {}.", e),
+                &[],
+                Some(Cow::from(
+                    "Make sure the provided file is a valid parquet file.",
+                )),
+            )],
         }
     }
 }
@@ -157,18 +149,18 @@ impl Parser for ParquetParser {
     /// parse any data.
     ///
     /// Happens for example with the file connector.
-    fn input_fragment(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
         self.buf.extend_from_slice(data);
-        (0, vec![])
+        Vec::new()
     }
 
     /// In the chunk case, we got an entire file in `data` and parse it immediately.
-    fn input_chunk(&mut self, data: &[u8]) -> (usize, Vec<ParseError>) {
+    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
         self.buf.extend_from_slice(data);
         self.parse()
     }
 
-    fn end_of_fragments(&mut self) -> (usize, Vec<ParseError>) {
+    fn end_of_fragments(&mut self) -> Vec<ParseError> {
         self.parse()
     }
 
