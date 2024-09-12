@@ -9,7 +9,7 @@ dbsp = { path = "../../../crates/dbsp" }
 feldera-types = { path = "../../../crates/feldera-types" }
 itertools = { version = "0.13.0" }
 # `serde-with-arbitrary-precision` is needed because we enable `arbitrary_precision` in `serde_json`.
-rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["maths", "rkyv", "serde-with-arbitrary-precision"] }
+rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["maths", "rkyv", "serde-float", "serde-arbitrary-precision"] }
 geo = { version = "0.26.0" }
 geo-types = { version = "0.7" }
 size-of = { version = "0.1.5", package = "feldera-size-of", features = ["rust_decimal"] }
