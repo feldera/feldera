@@ -7,14 +7,16 @@ use rkyv::collections::ArchivedBTreeMap;
 use rkyv::string::ArchivedString;
 use rkyv::Fallible;
 use rust_decimal::Decimal;
+use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use size_of::{Context, SizeOf};
+use std::fmt;
+use std::str::FromStr;
 use std::{
     collections::BTreeMap,
     fmt::{Debug, Write},
     hash::Hash,
-    str::FromStr,
 };
 
 pub trait StructVariant: Send + Sync + 'static {
@@ -113,7 +115,6 @@ impl<D: Fallible> rkyv::Deserialize<Box<dyn StructVariant>, D> for Box<dyn Struc
     PartialOrd,
     SizeOf,
     Serialize,
-    Deserialize,
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
@@ -144,6 +145,196 @@ pub enum Variant {
     #[size_of(skip, skip_bounds)]
     Map(#[omit_bounds] BTreeMap<Variant, Variant>),
     //Struct(Option<Box<dyn StructVariant>>),
+}
+
+impl<'de> Deserialize<'de> for Variant {
+    fn deserialize<D>(deserializer: D) -> Result<Variant, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct VariantVisitor;
+
+        impl<'de> Visitor<'de> for VariantVisitor {
+            type Value = Variant;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("any valid JSON value")
+            }
+
+            #[inline]
+            fn visit_bool<E>(self, value: bool) -> Result<Variant, E> {
+                Ok(Variant::Boolean(value))
+            }
+
+            #[inline]
+            fn visit_i64<E>(self, value: i64) -> Result<Variant, E> {
+                Ok(Variant::Decimal(Decimal::from(value)))
+            }
+
+            #[inline]
+            fn visit_u64<E>(self, value: u64) -> Result<Variant, E> {
+                Ok(Variant::Decimal(Decimal::from(value)))
+            }
+
+            #[inline]
+            fn visit_f64<E>(self, value: f64) -> Result<Variant, E> {
+                Ok(Variant::Double(F64::new(value)))
+            }
+
+            #[inline]
+            fn visit_str<E>(self, value: &str) -> Result<Variant, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_string(String::from(value))
+            }
+
+            #[inline]
+            fn visit_string<E>(self, value: String) -> Result<Variant, E> {
+                Ok(Variant::String(value))
+            }
+
+            #[inline]
+            fn visit_none<E>(self) -> Result<Variant, E> {
+                Ok(Variant::VariantNull)
+            }
+
+            #[inline]
+            fn visit_some<D>(self, deserializer: D) -> Result<Variant, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                Deserialize::deserialize(deserializer)
+            }
+
+            #[inline]
+            fn visit_unit<E>(self) -> Result<Variant, E> {
+                Ok(Variant::VariantNull)
+            }
+
+            #[inline]
+            fn visit_seq<V>(self, mut visitor: V) -> Result<Variant, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let mut vec = Vec::new();
+
+                while let Some(elem) = visitor.next_element()? {
+                    vec.push(elem);
+                }
+
+                Ok(Variant::Array(vec))
+            }
+
+            #[inline]
+            fn visit_map<V>(self, mut visitor: V) -> Result<Variant, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                match visitor.next_key_seed(KeyClassifier)? {
+                    Some(KeyClass::Number) => {
+                        let number: NumberFromString = visitor.next_value()?;
+                        Ok(Variant::Decimal(number.value))
+                    }
+                    Some(KeyClass::Map(first_key)) => {
+                        let mut values = BTreeMap::new();
+
+                        values.insert(Variant::String(first_key), visitor.next_value()?);
+                        while let Some((key, value)) = visitor.next_entry::<String, Variant>()? {
+                            values.insert(Variant::String(key), value);
+                        }
+
+                        Ok(Variant::Map(values))
+                    }
+                    None => Ok(Variant::Map(BTreeMap::new())),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(VariantVisitor)
+    }
+}
+
+struct KeyClassifier;
+
+enum KeyClass {
+    Map(String),
+    Number,
+}
+
+impl<'de> DeserializeSeed<'de> for KeyClassifier {
+    type Value = KeyClass;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(self)
+    }
+}
+
+// This is defined in serde_json, but not exported.
+const DECIMAL_KEY_TOKEN: &str = "$serde_json::private::Number";
+
+impl<'de> Visitor<'de> for KeyClassifier {
+    type Value = KeyClass;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a string key")
+    }
+
+    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        match s {
+            DECIMAL_KEY_TOKEN => Ok(KeyClass::Number),
+            _ => Ok(KeyClass::Map(s.to_owned())),
+        }
+    }
+
+    fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        match s.as_str() {
+            DECIMAL_KEY_TOKEN => Ok(KeyClass::Number),
+            _ => Ok(KeyClass::Map(s)),
+        }
+    }
+}
+
+pub struct NumberFromString {
+    pub value: Decimal,
+}
+
+impl<'de> de::Deserialize<'de> for NumberFromString {
+    fn deserialize<D>(deserializer: D) -> Result<NumberFromString, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = NumberFromString;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("string containing a decimal number")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<NumberFromString, E>
+            where
+                E: de::Error,
+            {
+                let d = Decimal::from_str(s)
+                    .or_else(|_| Decimal::from_scientific(s))
+                    .map_err(serde::de::Error::custom)?;
+                Ok(NumberFromString { value: d })
+            }
+        }
+
+        deserializer.deserialize_str(Visitor)
+    }
 }
 
 fn json_string_escape(src: &str, buffer: &mut String) -> Result<(), Box<dyn std::error::Error>> {
@@ -305,36 +496,6 @@ impl Variant {
     }
 }
 
-impl TryFrom<serde_json::Value> for Variant {
-    type Error = rust_decimal::Error;
-
-    fn try_from(value: serde_json::Value) -> Result<Self, rust_decimal::Error> {
-        match value {
-            serde_json::Value::Null => Ok(Variant::VariantNull),
-            serde_json::Value::Bool(b) => Ok(Variant::Boolean(b)),
-            serde_json::Value::String(s) => Ok(Variant::String(s)),
-            serde_json::Value::Number(n) => {
-                let decimal = Decimal::from_str(n.as_str())?;
-                Ok(Variant::Decimal(decimal))
-            }
-            serde_json::Value::Array(v) => {
-                let mut result = Vec::new();
-                for e in v {
-                    result.push(Variant::try_from(e)?);
-                }
-                Ok(Variant::Array(result))
-            }
-            serde_json::Value::Object(m) => {
-                let mut result = BTreeMap::<Variant, Variant>::new();
-                for (key, v) in m.iter() {
-                    result.insert(Variant::String(key.clone()), Variant::try_from(v.clone())?);
-                }
-                Ok(Variant::Map(result))
-            }
-        }
-    }
-}
-
 // A macro for From<T> for Variant
 macro_rules! from {
     ($variant:ident, $type:ty) => {
@@ -387,21 +548,6 @@ where
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::Variant;
-    use dbsp::RootCircuit;
-
-    #[test]
-    fn circuit_accepts_variant() {
-        let (_circuit, _input_handle) = RootCircuit::build(move |circuit| {
-            let (_stream, input_handle) = circuit.add_input_zset::<Variant>();
-            Ok(input_handle)
-        })
-        .unwrap();
-    }
-}
-
 pub fn typeof_(value: Variant) -> String {
     value.get_type_string().to_string()
 }
@@ -415,4 +561,140 @@ pub fn typeofN(value: Option<Variant>) -> String {
 
 pub fn variantnull() -> Variant {
     Variant::VariantNull
+}
+
+#[cfg(test)]
+mod test {
+    use std::str::FromStr;
+
+    use super::Variant;
+    use dbsp::RootCircuit;
+    use num::FromPrimitive;
+    use rust_decimal::Decimal;
+
+    #[test]
+    fn circuit_accepts_variant() {
+        let (_circuit, _input_handle) = RootCircuit::build(move |circuit| {
+            let (_stream, input_handle) = circuit.add_input_zset::<Variant>();
+            Ok(input_handle)
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn deserialize_ints() {
+        assert_eq!(
+            serde_json::from_str::<Variant>("5").unwrap(),
+            Variant::Decimal(Decimal::from(5))
+        );
+
+        assert_eq!(
+            serde_json::from_str::<Variant>("-5").unwrap(),
+            Variant::Decimal(Decimal::from(-5))
+        );
+
+        assert_eq!(
+            serde_json::from_str::<Variant>("18446744073709551615").unwrap(),
+            Variant::Decimal(Decimal::from(u64::MAX))
+        );
+
+        // u64::MAX * 10
+        assert_eq!(
+            serde_json::from_str::<Variant>("184467440737095516150").unwrap(),
+            Variant::Decimal(Decimal::from_str_exact("184467440737095516150").unwrap())
+        );
+
+        // -u64::MAX * 10
+        assert_eq!(
+            serde_json::from_str::<Variant>("-184467440737095516150").unwrap(),
+            Variant::Decimal(Decimal::from_str_exact("-184467440737095516150").unwrap())
+        );
+    }
+
+    #[test]
+    fn deserialize_fractional() {
+        assert_eq!(
+            serde_json::from_str::<Variant>("5.0").unwrap(),
+            Variant::Decimal(Decimal::from_f32(5.0).unwrap())
+        );
+
+        assert_eq!(
+            serde_json::from_str::<Variant>("-5.0").unwrap(),
+            Variant::Decimal(Decimal::from_f32(-5.0).unwrap())
+        );
+
+        assert_eq!(
+            serde_json::from_str::<Variant>("0.1").unwrap(),
+            Variant::Decimal(Decimal::from_str("0.1").unwrap())
+        );
+
+        assert_eq!(
+            serde_json::from_str::<Variant>("123E-5").unwrap(),
+            Variant::Decimal(Decimal::from_str("0.00123").unwrap())
+        );
+
+        assert_eq!(
+            serde_json::from_str::<Variant>("10e10").unwrap(),
+            Variant::Decimal(Decimal::from_str("100_000_000_000").unwrap())
+        );
+    }
+
+    #[test]
+    fn deserialize_map() {
+        let v = serde_json::from_str::<Variant>(
+            r#"{
+                "b": true,
+                "i": 12345,
+                "f": 123e-5,
+                "d": 123.45,
+                "s": "foo\nbar",
+                "n": null,
+                "nested": {
+                    "arr": [1, "foo", null]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let expected = Variant::Map(
+            [
+                (Variant::String("b".to_string()), Variant::Boolean(true)),
+                (
+                    Variant::String("i".to_string()),
+                    Variant::Decimal(Decimal::from(12345)),
+                ),
+                (
+                    Variant::String("f".to_string()),
+                    Variant::Decimal(Decimal::from_str("0.00123").unwrap()),
+                ),
+                (
+                    Variant::String("d".to_string()),
+                    Variant::Decimal(Decimal::from_str("123.45").unwrap()),
+                ),
+                (
+                    Variant::String("s".to_string()),
+                    Variant::String("foo\nbar".to_string()),
+                ),
+                (Variant::String("n".to_string()), Variant::VariantNull),
+                (
+                    Variant::String("nested".to_string()),
+                    Variant::Map(
+                        [(
+                            Variant::String("arr".to_string()),
+                            Variant::Array(vec![
+                                Variant::Decimal(Decimal::from(1)),
+                                Variant::String("foo".to_string()),
+                                Variant::VariantNull,
+                            ]),
+                        )]
+                        .into_iter()
+                        .collect(),
+                    ),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert_eq!(v, expected);
+    }
 }

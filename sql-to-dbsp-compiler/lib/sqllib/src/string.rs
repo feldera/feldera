@@ -316,13 +316,9 @@ pub fn writelog<T: std::fmt::Display>(format: String, argument: T) -> T {
 }
 
 pub fn parse_json_s(value: String) -> Variant {
-    let v: Result<serde_json::Value, serde_json::Error> = serde_json::from_str(&value);
-    match v {
-        Ok(value) => match Variant::try_from(value) {
-            Ok(value) => value,
-            _ => Variant::SqlNull,
-        },
-        _ => Variant::SqlNull,
+    match serde_json::from_str::<Variant>(&value) {
+        Ok(v) => v,
+        Err(_) => Variant::SqlNull,
     }
 }
 
