@@ -718,10 +718,24 @@ public class ToRustInnerVisitor extends InnerVisitor {
          * the function called will be cast_to_b_i16N. */
         DBSPType destType = expression.getType();
         DBSPType sourceType = expression.source.getType();
+        DBSPTypeVec sourceVec = sourceType.as(DBSPTypeVec.class);
+        DBSPTypeVec destVec = destType.as(DBSPTypeVec.class);
         String functionName;
 
-        if (sourceType.is(DBSPTypeVec.class)) {
+        if (destVec != null) {
+            if (sourceType.is(DBSPTypeVariant.class)) {
+                // Cast variant to vec
+                functionName = "cast_to_vec" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
+                this.builder.append(functionName).increase().append("(");
+                expression.source.accept(this);
+                this.builder.decrease().append(")");
+                return VisitDecision.STOP;
+            }
+        }
+
+        if (sourceVec != null) {
             if (destType.is(DBSPTypeVariant.class)) {
+                // cast vec to variant
                 functionName = "cast_to_" + destType.baseTypeWithSuffix() + "_vec" + sourceType.nullableSuffix();
                 this.builder.append(functionName).increase().append("(");
                 expression.source.accept(this);
@@ -729,8 +743,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 return VisitDecision.STOP;
             }
 
-            DBSPTypeVec sourceVec = sourceType.to(DBSPTypeVec.class);
-            DBSPTypeVec destVec = destType.as(DBSPTypeVec.class);
             if (destVec == null)
                 throw new UnsupportedException("Cast from " + sourceType + " to " + destType, expression.getNode());
             if (destVec.getElementType().sameType(sourceVec.getElementType()) &&

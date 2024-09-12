@@ -52,4 +52,9 @@ public class DBSPTypeVariant extends DBSPTypeBaseType {
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("VARIANT");
     }
+
+    @Override
+    public boolean hasCopy() {
+        return false;
+    }
 }

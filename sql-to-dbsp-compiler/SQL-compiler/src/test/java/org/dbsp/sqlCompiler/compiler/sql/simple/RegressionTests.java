@@ -28,6 +28,16 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void testVariantCast() {
+        String sql = """
+                CREATE TABLE variant_table(val VARIANT);
+                CREATE VIEW typed_view AS SELECT
+                    CAST(val['scores'] AS DECIMAL ARRAY) as scores
+                FROM variant_table;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void timestamp() {
         String sql = """
                 CREATE FUNCTION MAKE_TIMESTAMP(SECONDS BIGINT) RETURNS TIMESTAMP AS

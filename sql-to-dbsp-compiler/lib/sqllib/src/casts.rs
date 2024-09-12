@@ -1598,3 +1598,77 @@ where
 {
     map.into()
 }
+
+pub fn cast_to_vec_V<T>(value: Variant) -> Vec<T>
+where
+    Vec<T>: TryFrom<Variant>,
+{
+    value
+        .try_into()
+        .unwrap_or_else(|_| panic!("Cannot convert to vector"))
+}
+
+pub fn cast_to_vec_VN<T>(value: Option<Variant>) -> Option<Vec<T>>
+where
+    Vec<T>: TryFrom<Variant>,
+{
+    let value = value?;
+    Some(cast_to_vec_V(value))
+}
+
+pub fn cast_to_vecN_V<T>(value: Variant) -> Option<Vec<T>>
+where
+    Vec<T>: TryFrom<Variant>,
+{
+    let result = value.try_into();
+    match result {
+        Ok(value) => Some(value),
+        _ => None,
+    }
+}
+
+pub fn cast_to_vecN_VN<T>(value: Option<Variant>) -> Option<Vec<T>>
+where
+    Vec<T>: TryFrom<Variant>,
+{
+    let value = value?;
+    cast_to_vecN_V(value)
+}
+
+/////// cast variant to map
+
+pub fn cast_to_map_V<K, V>(value: Variant) -> BTreeMap<K, V>
+where
+    BTreeMap<K, V>: TryFrom<Variant>,
+{
+    value
+        .try_into()
+        .unwrap_or_else(|_| panic!("Cannot convert to map"))
+}
+
+pub fn cast_to_map_VN<K, V>(value: Option<Variant>) -> Option<BTreeMap<K, V>>
+where
+    BTreeMap<K, V>: TryFrom<Variant>,
+{
+    let value = value?;
+    Some(cast_to_map_V(value))
+}
+
+pub fn cast_to_mapN_V<K, V>(value: Variant) -> Option<BTreeMap<K, V>>
+where
+    BTreeMap<K, V>: TryFrom<Variant>,
+{
+    let result = value.try_into();
+    match result {
+        Ok(value) => Some(value),
+        _ => None,
+    }
+}
+
+pub fn cast_to_mapN_VN<K, V>(value: Option<Variant>) -> Option<BTreeMap<K, V>>
+where
+    BTreeMap<K, V>: TryFrom<Variant>,
+{
+    let value = value?;
+    cast_to_mapN_V(value)
+}
