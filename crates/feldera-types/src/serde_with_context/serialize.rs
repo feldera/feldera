@@ -131,7 +131,8 @@ impl SerializeWithContext<SqlSerdeConfig> for Decimal {
         S: Serializer,
     {
         match context.decimal_format {
-            DecimalFormat::String => Serialize::serialize(self, serializer),
+            DecimalFormat::Numeric => Serialize::serialize(self, serializer),
+            DecimalFormat::String => serializer.serialize_str(&self.to_string()),
             DecimalFormat::U128 => serializer.serialize_u128(u128::from_be_bytes(self.serialize())),
         }
     }

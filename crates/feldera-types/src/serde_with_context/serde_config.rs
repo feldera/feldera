@@ -66,20 +66,21 @@ pub enum TimestampFormat {
 
 impl Default for TimestampFormat {
     fn default() -> Self {
-        Self::String("%F %T%.f")
+        Self::Rfc3339
     }
 }
 
 // Representation of the SQL `DECIMAL` type.
 #[derive(Clone, Debug)]
 pub enum DecimalFormat {
+    Numeric,
     String,
     U128,
 }
 
 impl Default for DecimalFormat {
     fn default() -> Self {
-        Self::String
+        Self::Numeric
     }
 }
 
