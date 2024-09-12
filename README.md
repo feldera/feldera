@@ -1,4 +1,4 @@
-# Feldera: Incremental Computation Engine
+# The Feldera Incremental Computation Engine
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![CI workflow](https://github.com/feldera/feldera/actions/workflows/ci.yml/badge.svg?event=merge_group)](https://github.com/feldera/feldera/actions)
