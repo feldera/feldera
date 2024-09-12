@@ -306,23 +306,23 @@ impl InputQueue {
 ///     completed step that has been written to stable storage.  The reader
 ///     indicates that `step`, and all prior steps, have committed by calling
 ///     `InputConsumer::committed(step)`.
-pub trait InputConsumer: Send + DynClone {
+pub trait InputConsumer: Send + Sync + DynClone {
     /// Indicates that upcoming calls are for `step`.
-    fn start_step(&mut self, step: Step);
+    fn start_step(&self, step: Step);
 
     /// Steps numbered less than `step` been durably recorded.  (If recording a
     /// step fails, then [`InputConsumer::error`] is called instead.)
-    fn committed(&mut self, step: Step);
+    fn committed(&self, step: Step);
 
     /// Endpoint failed.
     ///
     /// Endpoint failed; no more data will be received from this endpoint.
-    fn error(&mut self, fatal: bool, error: AnyError);
+    fn error(&self, fatal: bool, error: AnyError);
 
     /// End-of-input-stream notification.
     ///
     /// No more data will be received from the endpoint.
-    fn eoi(&mut self);
+    fn eoi(&self);
 }
 
 dyn_clone::clone_trait_object!(InputConsumer);

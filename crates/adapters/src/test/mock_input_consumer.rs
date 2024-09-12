@@ -60,7 +60,7 @@ impl MockInputConsumer {
 }
 
 impl InputConsumer for MockInputConsumer {
-    fn error(&mut self, fatal: bool, error: AnyError) {
+    fn error(&self, fatal: bool, error: AnyError) {
         let mut state = self.state();
 
         if let Some(error_cb) = &mut state.error_cb {
@@ -74,14 +74,14 @@ impl InputConsumer for MockInputConsumer {
         state.endpoint_error = Some(error);
     }
 
-    fn eoi(&mut self) {
+    fn eoi(&self) {
         let mut state = self.state();
         state.eoi = true;
     }
 
-    fn start_step(&mut self, _step: Step) {}
+    fn start_step(&self, _step: Step) {}
 
-    fn committed(&mut self, _step: Step) {}
+    fn committed(&self, _step: Step) {}
 }
 
 pub struct MockInputParserState {

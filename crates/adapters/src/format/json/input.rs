@@ -534,8 +534,18 @@ mod test {
 
     fn run_test_cases<T, U>(test_cases: Vec<TestCase<T, U>>)
     where
-        T: Debug + Eq + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-        U: Debug + Eq + for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+        T: Debug
+            + Eq
+            + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + Send
+            + Sync
+            + 'static,
+        U: Debug
+            + Eq
+            + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + Send
+            + Sync
+            + 'static,
     {
         for test in test_cases {
             trace!("test: {test:?}");
@@ -544,7 +554,7 @@ mod test {
                 config: serde_yaml::to_value(test.config).unwrap(),
             };
 
-            let (mut consumer, mut parser, outputs) =
+            let (consumer, mut parser, outputs) =
                 mock_parser_pipeline(&Relation::empty(), &format_config).unwrap();
             consumer.on_error(Some(Box::new(|_, _| {})));
             parser.on_error(Some(Box::new(|_, _| {})));

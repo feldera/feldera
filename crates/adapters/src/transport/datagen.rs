@@ -392,7 +392,7 @@ impl InputGenerator {
             )>,
         >,
         schema: Relation,
-        mut consumer: Box<dyn InputConsumer>,
+        consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
         queue: Arc<InputQueue>,
         notifier: Arc<Notify>,
@@ -1574,8 +1574,8 @@ mod test {
         fields: Vec<Field>,
     ) -> AnyResult<(Box<dyn InputReader>, MockInputConsumer, MockDeZSet<T, U>)>
     where
-        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-        U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+        U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
     {
         let relation = Relation::new("test_input".into(), fields, true, BTreeMap::new());
         let (endpoint, consumer, _parser, zset) =

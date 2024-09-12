@@ -98,8 +98,8 @@ pub fn mock_parser_pipeline<T, U>(
     config: &FormatConfig,
 ) -> AnyResult<(MockInputConsumer, MockInputParser, MockDeZSet<T, U>)>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     let input_handle = <MockDeZSet<T, U>>::new();
     let consumer = MockInputConsumer::new();
@@ -132,8 +132,8 @@ pub fn mock_input_pipeline<T, U>(
     MockDeZSet<T, U>,
 )>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     let default_format = FormatConfig {
         name: Cow::from("json"),

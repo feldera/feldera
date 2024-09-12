@@ -117,8 +117,8 @@ impl<T, U> MockDeZSet<T, U> {
 
 impl<T, U> DeCollectionHandle for MockDeZSet<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -182,8 +182,8 @@ impl<T, U> MockDeZSetStreamBuffer<T, U> {
 
 impl<T, U> InputBuffer for MockDeZSetStreamBuffer<T, U>
 where
-    T: Send + 'static,
-    U: Send + 'static,
+    T: Send + Sync + 'static,
+    U: Send + Sync + 'static,
 {
     fn flush(&mut self, n: usize) -> usize {
         let n = min(n, self.len());
@@ -211,8 +211,8 @@ where
 #[derive(Clone)]
 pub struct MockDeZSetStream<De, T, U>
 where
-    T: Send,
-    U: Send,
+    T: Send + Sync,
+    U: Send + Sync,
 {
     buffer: MockDeZSetStreamBuffer<T, U>,
     deserializer: De,
@@ -222,8 +222,8 @@ where
 impl<De, T, U> MockDeZSetStream<De, T, U>
 where
     De: DeserializerFromBytes<SqlSerdeConfig>,
-    T: Send,
-    U: Send,
+    T: Send + Sync,
+    U: Send + Sync,
 {
     pub fn new(handle: MockDeZSet<T, U>, config: SqlSerdeConfig) -> Self {
         Self {
@@ -236,9 +236,9 @@ where
 
 impl<De, T, U> DeCollectionStream for MockDeZSetStream<De, T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    De: DeserializerFromBytes<SqlSerdeConfig> + Send + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    De: DeserializerFromBytes<SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data)?;
@@ -271,9 +271,9 @@ where
 
 impl<De, T, U> InputBuffer for MockDeZSetStream<De, T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    De: DeserializerFromBytes<SqlSerdeConfig> + Send + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    De: DeserializerFromBytes<SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn flush(&mut self, n: usize) -> usize {
         self.buffer.flush(n)
@@ -307,8 +307,8 @@ impl<T, U> MockAvroStream<T, U> {
 
 impl<T, U> AvroStream for MockAvroStream<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &AvroValue) -> AnyResult<()> {
         let v: T =
@@ -332,8 +332,8 @@ where
 
 impl<T, U> InputBuffer for MockAvroStream<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
     fn flush(&mut self, n: usize) -> usize {
         let n = min(n, self.updates.len());

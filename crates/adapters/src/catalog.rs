@@ -78,7 +78,7 @@ where
 /// The input handle internally buffers the deserialized records. Use the
 /// `InputBuffer` supertrait to push them to the circuit or extract them for
 /// later use.
-pub trait DeCollectionStream: Send + InputBuffer {
+pub trait DeCollectionStream: Send + Sync + InputBuffer {
     /// Buffer a new insert update.
     ///
     /// Returns an error if deserialization fails, i.e., the serialized
@@ -146,7 +146,7 @@ pub trait ArrowStream: InputBuffer + Send {
 /// Like `DeCollectionStream`, but deserializes Avro-encoded records before pushing them to a
 /// stream.
 #[cfg(feature = "with-avro")]
-pub trait AvroStream: InputBuffer + Send {
+pub trait AvroStream: InputBuffer + Send + Sync {
     fn insert(&mut self, data: &AvroValue) -> AnyResult<()>;
 
     fn delete(&mut self, data: &AvroValue) -> AnyResult<()>;

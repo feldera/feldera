@@ -455,7 +455,7 @@ impl InputBuffer for EmptyInputBuffer {
 ///
 /// The [InputBuffer] supertrait allows the client to access the buffered
 /// records.
-pub trait Parser: Send + InputBuffer {
+pub trait Parser: Send + Sync + InputBuffer {
     /// Push a fragment of the input stream to the parser.
     ///
     /// The parser breaks `data` up into records and adds the records to its

@@ -211,6 +211,7 @@ impl Catalog {
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
+            + Sync
             + 'static,
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
@@ -219,11 +220,13 @@ impl Catalog {
             + Debug
             + Default
             + Send
+            + Sync
             + 'static,
         UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<U>
             + Send
+            + Sync
             + 'static,
         K: DBData + Sync + From<KD>,
         V: DBData + Sync + From<VD>,
@@ -257,6 +260,7 @@ impl Catalog {
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
+            + Sync
             + 'static,
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
@@ -265,11 +269,13 @@ impl Catalog {
             + Debug
             + Default
             + Send
+            + Sync
             + 'static,
         UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<U>
             + Send
+            + Sync
             + 'static,
         K: DBData + Sync + From<KD>,
         V: DBData + Sync + From<VD>,
@@ -296,6 +302,7 @@ impl Catalog {
             + Clone
             + Debug
             + Send
+            + Sync
             + 'static,
         Z: ZSet + Debug + Send + Sync,
         Z::InnerBatch: Send,

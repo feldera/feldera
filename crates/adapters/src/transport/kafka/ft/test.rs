@@ -528,7 +528,7 @@ impl DummyInputReceiver {
 struct DummyInputConsumer(Arc<DummyInputReceiverInner>);
 
 impl DummyInputConsumer {
-    fn called(&mut self, call: ConsumerCall) {
+    fn called(&self, call: ConsumerCall) {
         info!("{call:?}");
         self.0.calls.lock().unwrap().push(call);
         self.0.unparker.unpark();
@@ -536,17 +536,17 @@ impl DummyInputConsumer {
 }
 
 impl InputConsumer for DummyInputConsumer {
-    fn start_step(&mut self, step: Step) {
+    fn start_step(&self, step: Step) {
         self.called(ConsumerCall::StartStep(step));
     }
-    fn error(&mut self, fatal: bool, error: AnyError) {
+    fn error(&self, fatal: bool, error: AnyError) {
         info!("error: {error}");
         self.called(ConsumerCall::Error(fatal));
     }
-    fn eoi(&mut self) {
+    fn eoi(&self) {
         self.called(ConsumerCall::Eoi);
     }
-    fn committed(&mut self, step: Step) {
+    fn committed(&self, step: Step) {
         info!("step {step} committed");
         let mut completed = self.0.committed.lock().unwrap();
         if let Some(committed) = *completed {

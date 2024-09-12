@@ -194,7 +194,7 @@ impl S3InputReader {
     async fn worker_task(
         client: Box<dyn S3Api>,
         config: Arc<S3InputConfig>,
-        mut consumer: Box<dyn InputConsumer>,
+        consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
         queue: Arc<InputQueue>,
         mut receiver: Receiver<PipelineState>,

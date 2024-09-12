@@ -70,7 +70,7 @@ struct PubSubReader {
 impl PubSubReader {
     fn new(
         config: Arc<PubSubInputConfig>,
-        mut consumer: Box<dyn InputConsumer>,
+        consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
         let (state_sender, state_receiver) = channel(PipelineState::Paused);
@@ -161,7 +161,7 @@ impl PubSubReader {
                         .await
                         .map_err(|e| anyhow!("error subscribing to messages: {e}"))?;
 
-                    let mut consumer = consumer.clone();
+                    let consumer = consumer.clone();
                     let mut parser = parser.fork();
                     let token = stream.cancellable();
                     let handle = tokio::spawn({

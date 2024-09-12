@@ -236,7 +236,7 @@ struct PollerThread {
 impl PollerThread {
     fn new<C: ConsumerContext + 'static>(
         consumer: &Arc<BaseConsumer<C>>,
-        receiver: &Arc<Mutex<Box<dyn InputConsumer>>>,
+        receiver: &Arc<Box<dyn InputConsumer>>,
     ) -> Self {
         let exit_request = Arc::new(AtomicBool::new(false));
         let join_handle = Some(
@@ -258,7 +258,7 @@ impl PollerThread {
 
     fn run<C: ConsumerContext>(
         consumer: Arc<BaseConsumer<C>>,
-        receiver: Arc<Mutex<Box<dyn InputConsumer>>>,
+        receiver: Arc<Box<dyn InputConsumer>>,
         exit_request: Arc<AtomicBool>,
     ) {
         while !exit_request.load(AtomicOrdering::Acquire) {
@@ -274,7 +274,7 @@ impl PollerThread {
                         .rdkafka_error_code()
                         .is_some_and(|code| code == RDKafkaErrorCode::Fatal);
                     if !fatal {
-                        receiver.lock().unwrap().error(false, error.into())
+                        receiver.error(false, error.into())
                     } else {
                         // The client will detect this later.
                     }
@@ -297,7 +297,7 @@ struct WorkerThread {
     start_step: Step,
     parker: Parker,
     config: Arc<Config>,
-    receiver: Arc<Mutex<Box<dyn InputConsumer>>>,
+    receiver: Arc<Box<dyn InputConsumer>>,
     parser: Box<dyn Parser>,
     queue: Arc<InputQueue>,
 }
@@ -314,7 +314,7 @@ impl WorkerThread {
         parser: Box<dyn Parser>,
         queue: Arc<InputQueue>,
     ) -> JoinHandle<()> {
-        let receiver = Arc::new(Mutex::new(receiver));
+        let receiver = Arc::new(receiver);
         let worker_thread = Self {
             action: action.clone(),
             complete_step: complete_step.clone(),
@@ -338,7 +338,7 @@ impl WorkerThread {
                         // Normal termination because of a requested exit.
                     } else {
                         error!("Fault-tolerant Kafka input endpoint failed due to: {error:#}");
-                        receiver.lock().unwrap().error(true, error);
+                        receiver.error(true, error);
                     }
                 }
             })
@@ -379,7 +379,7 @@ impl WorkerThread {
         for data_topic in &self.config.data_topics {
             let index_topic = format!("{data_topic}{index_suffix}");
             let index = IndexReader::new(data_topic, &self.config, |error| {
-                self.receiver.lock().unwrap().error(false, error)
+                self.receiver.error(false, error)
             })
             .with_context(|| format!("Failed to read index topic {index_topic}"))?;
             let positions = index.find_step(self.start_step).with_context(|| {
@@ -409,9 +409,7 @@ impl WorkerThread {
         let consumer = Arc::new(
             BaseConsumer::from_config_and_context(
                 &self.config.common.data_consumer_config,
-                DataConsumerContext::new(move |error| {
-                    receiver_clone.lock().unwrap().error(false, error)
-                }),
+                DataConsumerContext::new(move |error| receiver_clone.error(false, error)),
             )
             .context("Failed to create consumer")?,
         );
@@ -478,7 +476,7 @@ impl WorkerThread {
         let mut next_partition = 0;
         let mut saved_message = None;
         for step in self.start_step.. {
-            self.receiver.lock().unwrap().start_step(step);
+            self.receiver.start_step(step);
             self.wait_for_pipeline_start(step)?;
             check_fatal_errors(consumer.client()).context("Consumer reported fatal error")?;
             check_fatal_errors(producer.client()).context("Producer reported fatal error")?;
@@ -659,7 +657,7 @@ impl WorkerThread {
                 }
             } else {
                 // This is a fully pre-existing step that has already committed.
-                self.receiver.lock().unwrap().committed(step);
+                self.receiver.committed(step);
             }
         }
         unreachable!()
@@ -720,7 +718,7 @@ impl TransportInputEndpoint for Endpoint {
 }
 
 struct IndexProducerContext {
-    consumer: Arc<Mutex<Box<dyn InputConsumer>>>,
+    consumer: Arc<Box<dyn InputConsumer>>,
 
     /// Maps from a step number to the number of messages that remain to be
     /// delivered before that step is considered committed.
@@ -729,7 +727,7 @@ struct IndexProducerContext {
 
 impl IndexProducerContext {
     fn new(
-        consumer: &Arc<Mutex<Box<dyn InputConsumer>>>,
+        consumer: &Arc<Box<dyn InputConsumer>>,
         expected_deliveries: &Arc<Mutex<HashMap<Step, usize>>>,
     ) -> Self {
         Self {
@@ -745,10 +743,7 @@ impl ClientContext for IndexProducerContext {
             .rdkafka_error_code()
             .is_some_and(|code| code == RDKafkaErrorCode::Fatal);
         if !fatal {
-            self.consumer
-                .lock()
-                .unwrap()
-                .error(false, anyhow!(reason.to_string()));
+            self.consumer.error(false, anyhow!(reason.to_string()));
         } else {
             // The caller will detect this later and bail out with it as its
             // final action.
@@ -777,7 +772,7 @@ impl ProducerContext for IndexProducerContext {
 
                 // We do this after the above to avoid holding the lock on
                 // `expected_deliveries`.
-                self.consumer.lock().unwrap().committed(*step);
+                self.consumer.committed(*step);
             }
             Err(_) => {
                 // If there's an error, we don't want to ever report that the
