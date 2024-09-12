@@ -25,7 +25,7 @@ pub struct ErrorResponse {
 /// Error trait which internal errors must implement such that it
 /// can be transformed to a complete JSON error response.
 pub trait DetailedError: StdError + ResponseError + Serialize {
-    /// HTTP status code.
+    /// Identifying name of the error.
     fn error_code(&self) -> Cow<'static, str>;
 }
 

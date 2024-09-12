@@ -5,7 +5,7 @@ use crate::db::operations::utils::{
 use crate::db::types::common::{validate_name, Version};
 use crate::db::types::pipeline::{
     validate_deployment_desired_status_transition, validate_deployment_status_transition,
-    ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, PipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{
     validate_program_status_transition, ProgramConfig, ProgramInfo, ProgramStatus,
@@ -391,14 +391,8 @@ pub(crate) async fn set_deployment_desired_status(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_name: &str,
-    new_desired_status: PipelineStatus,
+    new_desired_status: PipelineDesiredStatus,
 ) -> Result<(), DBError> {
-    assert!(
-        new_desired_status == PipelineStatus::Running
-            || new_desired_status == PipelineStatus::Paused
-            || new_desired_status == PipelineStatus::Shutdown
-    );
-
     // The pipeline must be fully compiled to change deployment desired status
     let current = get_pipeline(txn, tenant_id, pipeline_name).await?;
 
@@ -410,7 +404,7 @@ pub(crate) async fn set_deployment_desired_status(
     )?;
 
     // The program must be fully compiled for any desired status besides shutdown
-    if new_desired_status != PipelineStatus::Shutdown {
+    if new_desired_status != PipelineDesiredStatus::Shutdown {
         // Program must not have failed to compiled
         if current.program_status.has_failed_to_compile() {
             return Err(DBError::ProgramFailedToCompile);
@@ -454,7 +448,7 @@ pub(crate) async fn set_deployment_status(
     txn: &Transaction<'_>,
     tenant_id: TenantId,
     pipeline_id: PipelineId,
-    deployment_status: PipelineStatus,
+    new_deployment_status: PipelineStatus,
     new_deployment_error: Option<ErrorResponse>,
     new_deployment_config: Option<PipelineConfig>,
     new_deployment_location: Option<String>,
@@ -473,37 +467,38 @@ pub(crate) async fn set_deployment_status(
     }
 
     // Check that the transition from the current status to the new status is permitted
-    validate_deployment_status_transition(&current.deployment_status, &deployment_status)?;
+    validate_deployment_status_transition(&current.deployment_status, &new_deployment_status)?;
 
     // Determine the final values of the additional fields using the current default.
     // Note that None becomes NULL as there is no coalescing in the query.
 
-    // Deployment configuration is set when becoming...
+    // Deployment error is set when becoming...
     // - Failed: a value
     // - Shutdown: NULL
-    // - Otherwise: current value
-    let final_deployment_error = if deployment_status == PipelineStatus::Failed {
+    // - Otherwise: NULL
+    let final_deployment_error = if new_deployment_status == PipelineStatus::Failed {
         assert!(new_deployment_error.is_some());
         new_deployment_error
-    } else if deployment_status == PipelineStatus::Shutdown {
+    } else if new_deployment_status == PipelineStatus::Shutdown {
         assert!(new_deployment_error.is_none());
         None
     } else {
+        // Failed can only transition to Shutdown, as such
+        // the current deployment status cannot be Failed
+        // and the current deployment error must be None
+        assert_ne!(current.deployment_status, PipelineStatus::Failed);
+        assert!(current.deployment_error.is_none());
         assert!(new_deployment_error.is_none());
-        assert!(
-            current.deployment_status == PipelineStatus::Failed
-                || current.deployment_error.is_none()
-        );
-        current.deployment_error
+        None
     };
 
     // Deployment configuration is set when becoming...
     // - Provisioning: a value
     // - Shutdown: NULL
     // - Otherwise: current value
-    let final_deployment_config = if deployment_status == PipelineStatus::Provisioning {
+    let final_deployment_config = if new_deployment_status == PipelineStatus::Provisioning {
         new_deployment_config
-    } else if deployment_status == PipelineStatus::Shutdown {
+    } else if new_deployment_status == PipelineStatus::Shutdown {
         None
     } else {
         current.deployment_config
@@ -513,10 +508,10 @@ pub(crate) async fn set_deployment_status(
     // - Initializing: a value
     // - Shutdown: NULL
     // - Otherwise: current value
-    let final_deployment_location = if deployment_status == PipelineStatus::Initializing {
+    let final_deployment_location = if new_deployment_status == PipelineStatus::Initializing {
         assert!(new_deployment_location.is_some());
         new_deployment_location
-    } else if deployment_status == PipelineStatus::Shutdown {
+    } else if new_deployment_status == PipelineStatus::Shutdown {
         assert!(new_deployment_location.is_none());
         None
     } else {
@@ -540,7 +535,7 @@ pub(crate) async fn set_deployment_status(
         .execute(
             &stmt,
             &[
-                &deployment_status.to_string(),
+                &new_deployment_status.to_string(),
                 &final_deployment_error.map(|v| v.to_yaml()),
                 &final_deployment_config.map(|v| v.to_yaml()),
                 &final_deployment_location,

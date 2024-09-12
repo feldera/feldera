@@ -2,7 +2,8 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineStatus;
 use crate::error::ManagerError;
-use crate::runner::RunnerApi;
+use crate::runner::error::RunnerError;
+use crate::runner::interaction::RunnerInteraction;
 use ::metrics::{describe_histogram, Unit};
 use actix_web::{
     get,
@@ -69,28 +70,32 @@ async fn metrics(
     manager_metrics: web::Data<PrometheusHandle>,
 ) -> Result<impl Responder, ManagerError> {
     let mut buffer = String::new();
-
     let db = db.lock().await;
-    let pipelines = db.list_pipeline_ids_across_all_tenants().await?;
-    for (tenant_id, pipeline_id) in pipelines {
-        let rts = db.get_pipeline_by_id(tenant_id, pipeline_id).await?;
-
-        // Get the metrics for all running pipelines, don't write anything
-        // if the request fails.
-        if rts.deployment_status == PipelineStatus::Running {
-            if let Ok(r) = RunnerApi::pipeline_http_request(
-                pipeline_id,
+    let pipelines = db.list_pipelines_across_all_tenants().await?;
+    for (_tenant_id, pipeline) in pipelines {
+        // Get the metrics for all running pipelines,
+        // don't write anything if the request fails.
+        if pipeline.deployment_status == PipelineStatus::Running {
+            let location = pipeline.deployment_location.ok_or(
+                RunnerError::PipelineMissingDeploymentLocation {
+                    pipeline_id: pipeline.id,
+                    pipeline_name: pipeline.name.clone(),
+                },
+            )?;
+            if let Ok((_url, response)) = RunnerInteraction::http_request_to_pipeline(
+                pipeline.id,
+                Some(pipeline.name.clone()),
+                &location,
                 Method::GET,
                 "metrics",
-                &rts.deployment_location.unwrap(),
                 "",
                 None,
-            ) // TODO: unwrap
+            )
             .await
             {
-                if r.status().is_success() {
-                    if let Ok(r) = r.text().await {
-                        buffer += &r;
+                if response.status().is_success() {
+                    if let Ok(response_text) = response.text().await {
+                        buffer += &response_text;
                     }
                 }
             }

@@ -1077,10 +1077,11 @@
                 },
                 "example": {
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
+                    "pipeline_name": "example"
                   },
                   "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
                 }
               }
             }
@@ -1263,10 +1264,11 @@
                 },
                 "example": {
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
+                    "pipeline_name": "example"
                   },
                   "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
                 }
               }
             }
@@ -1328,10 +1330,11 @@
                 },
                 "example": {
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
+                    "pipeline_name": "example"
                   },
                   "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
                 }
               }
             }
@@ -1465,10 +1468,11 @@
                 },
                 "example": {
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
+                    "pipeline_name": "example"
                   },
                   "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
                 }
               }
             }
@@ -1607,10 +1611,11 @@
                 },
                 "example": {
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
+                    "pipeline_name": "example"
                   },
                   "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
                 }
               }
             }
@@ -1641,11 +1646,13 @@
                 },
                 "example": {
                   "details": {
-                    "error": "Error forwarding HTTP request to pipeline 67e55044-10b1-426f-9247-bb680e5fe0c8: Failed to connect to host: Internal error: connector has been disconnected",
-                    "pipeline_id": "67e55044-10b1-426f-9247-bb680e5fe0c8"
+                    "error": "Failed to connect to host: Internal error: connector has been disconnected",
+                    "pipeline_id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                    "pipeline_name": "example",
+                    "url": "https://localhost:1234/query"
                   },
-                  "error_code": "HttpForwardError",
-                  "message": "Error forwarding HTTP request to pipeline 67e55044-10b1-426f-9247-bb680e5fe0c8: Error forwarding HTTP request to pipeline 67e55044-10b1-426f-9247-bb680e5fe0c8: Failed to connect to host: Internal error: connector has been disconnected"
+                  "error_code": "PipelineEndpointSendError",
+                  "message": "Sending request to URL https://localhost:1234/query of pipeline example (67e55044-10b1-426f-9247-bb680e5fe0c8) failed: Failed to connect to host: Internal error: connector has been disconnected"
                 }
               }
             }
@@ -1696,10 +1703,11 @@
                 },
                 "example": {
                   "details": {
-                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0",
+                    "pipeline_name": "example"
                   },
                   "error_code": "PipelineNotRunningOrPaused",
-                  "message": "Pipeline 2e79afe1-ff4d-44d3-af5f-9397de7746c0 is not currently running or paused."
+                  "message": "Pipeline example (2e79afe1-ff4d-44d3-af5f-9397de7746c0) is not currently running or paused."
                 }
               }
             }
@@ -2421,7 +2429,7 @@
             "nullable": true
           },
           "deployment_desired_status": {
-            "$ref": "#/components/schemas/PipelineStatus"
+            "$ref": "#/components/schemas/PipelineDesiredStatus"
           },
           "deployment_error": {
             "allOf": [
@@ -2526,7 +2534,7 @@
             "nullable": true
           },
           "deployment_desired_status": {
-            "$ref": "#/components/schemas/PipelineStatus"
+            "$ref": "#/components/schemas/PipelineDesiredStatus"
           },
           "deployment_error": {
             "allOf": [
@@ -3289,6 +3297,14 @@
           }
         }
       },
+      "PipelineDesiredStatus": {
+        "type": "string",
+        "enum": [
+          "Shutdown",
+          "Paused",
+          "Running"
+        ]
+      },
       "PipelineId": {
         "type": "string",
         "format": "uuid",
@@ -3296,7 +3312,7 @@
       },
       "PipelineStatus": {
         "type": "string",
-        "description": "Pipeline status.\n\nThis type represents the state of the pipeline tracked by the pipeline\nrunner and observed by the API client via the `GET /pipeline` endpoint.\n\n### The lifecycle of a pipeline\n\nThe following automaton captures the lifecycle of the pipeline.  Individual\nstates and transitions of the automaton are described below.\n\n* In addition to the transitions shown in the diagram, all states have an\nimplicit \"forced shutdown\" transition to the `Shutdown` state.  This\ntransition is triggered when the pipeline runner is unable to communicate\nwith the pipeline and thereby forces a shutdown.\n\n* States labeled with the hourglass symbol (⌛) are **timed** states.  The\nautomaton stays in timed state until the corresponding operation completes\nor until the runner performs a forced shutdown of the pipeline after a\npre-defined timeout period.\n\n* State transitions labeled with API endpoint names (`/deploy`, `/start`,\n`/pause`, `/shutdown`) are triggered by invoking corresponding endpoint,\ne.g., `POST /v0/pipelines/{pipeline_id}/start`.\n\n```text\nShutdown◄────┐\n│         │\n/deploy│         │\n│   ⌛ShuttingDown\n▼         ▲\n⌛Provisioning    │\n│         │\nProvisioned        │         │\n▼         │/shutdown\n⌛Initializing    │\n│         │\n┌────────┴─────────┴─┐\n│        ▼           │\n│      Paused        │\n│      │    ▲        │\n│/start│    │/pause  │\n│      ▼    │        │\n│     Running        │\n└──────────┬─────────┘\n│\n▼\nFailed\n```\n\n### Desired and actual status\n\nWe use the desired state model to manage the lifecycle of a pipeline.\nIn this model, the pipeline has two status attributes associated with\nit at runtime: the **desired** status, which represents what the user\nwould like the pipeline to do, and the **current** status, which\nrepresents the actual state of the pipeline.  The pipeline runner\nservice continuously monitors both fields and steers the pipeline\ntowards the desired state specified by the user.\nOnly three of the states in the pipeline automaton above can be\nused as desired statuses: `Paused`, `Running`, and `Shutdown`.\nThese statuses are selected by invoking REST endpoints shown\nin the diagram.\n\nThe user can monitor the current state of the pipeline via the\n`/status` endpoint, which returns an object of type `Pipeline`.\nIn a typical scenario, the user first sets\nthe desired state, e.g., by invoking the `/deploy` endpoint, and\nthen polls the `GET /pipeline` endpoint to monitor the actual status\nof the pipeline until its `state.current_status` attribute changes\nto \"paused\" indicating that the pipeline has been successfully\ninitialized, or \"failed\", indicating an error.",
+        "description": "Pipeline status.\n\nThis type represents the state of the pipeline tracked by the pipeline\nrunner and observed by the API client via the `GET /v0/pipelines/{name}` endpoint.\n\n### The lifecycle of a pipeline\n\nThe following automaton captures the lifecycle of the pipeline.  Individual\nstates and transitions of the automaton are described below.\n\n* In addition to the transitions shown in the diagram, all states have an\nimplicit \"forced shutdown\" transition to the `Shutdown` state.  This\ntransition is triggered when the pipeline runner is unable to communicate\nwith the pipeline and thereby forces a shutdown.\n\n* States labeled with the hourglass symbol (⌛) are **timed** states.  The\nautomaton stays in timed state until the corresponding operation completes\nor until the runner performs a forced shutdown of the pipeline after a\npre-defined timeout period.\n\n* State transitions labeled with API endpoint names (`/start`, `/pause`,\n`/shutdown`) are triggered by invoking corresponding endpoint,\ne.g., `POST /v0/pipelines/{name}/start`.\n\n```text\nShutdown◄────┐\n│         │\n/deploy│         │\n│   ⌛ShuttingDown\n▼         ▲\n⌛Provisioning     │\n│         │\n│         │\n▼         │/shutdown\n⌛Initializing     │\n│         │\n┌────────┴─────────┴─┐\n│        ▼           │\n│      Paused        │\n│      │    ▲        │\n│/start│    │/pause  │\n│      ▼    │        │\n│     Running        │\n└──────────┬─────────┘\n│\n▼\nFailed\n```\n\n### Desired and actual status\n\nWe use the desired state model to manage the lifecycle of a pipeline.\nIn this model, the pipeline has two status attributes associated with\nit at runtime: the **desired** status, which represents what the user\nwould like the pipeline to do, and the **current** status, which\nrepresents the actual state of the pipeline.  The pipeline runner\nservice continuously monitors both fields and steers the pipeline\ntowards the desired state specified by the user.\nOnly three of the states in the pipeline automaton above can be\nused as desired statuses: `Paused`, `Running`, and `Shutdown`.\nThese statuses are selected by invoking REST endpoints shown\nin the diagram.\n\nThe user can monitor the current state of the pipeline via the\n`GET /v0/pipelines/{name}` endpoint, which returns an object of type `ExtendedPipelineDescr`.\nIn a typical scenario, the user first sets\nthe desired state, e.g., by invoking the `/deploy` endpoint, and\nthen polls the `GET /v0/pipelines/{name}` endpoint to monitor the actual status\nof the pipeline until its `deployment_status` attribute changes\nto \"paused\" indicating that the pipeline has been successfully\ninitialized, or \"failed\", indicating an error.",
         "enum": [
           "Shutdown",
           "Provisioning",

@@ -98,7 +98,7 @@ async fn http_input(
 
     state
         .runner
-        .forward_to_pipeline_as_stream(
+        .forward_streaming_http_request_to_pipeline_by_name(
             *tenant_id,
             &pipeline_name,
             &endpoint,
@@ -198,7 +198,7 @@ async fn http_output(
     let endpoint = format!("egress/{table_name}");
     state
         .runner
-        .forward_to_pipeline_as_stream(
+        .forward_streaming_http_request_to_pipeline_by_name(
             *tenant_id,
             &pipeline_name,
             &endpoint,

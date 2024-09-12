@@ -9,7 +9,8 @@ use pipeline_manager::config::{
     ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig,
 };
 use pipeline_manager::db::storage_postgres::StoragePostgres;
-use pipeline_manager::{ensure_default_crypto_provider, init_fd_limit, local_runner};
+use pipeline_manager::runner::local_runner;
+use pipeline_manager::{ensure_default_crypto_provider, init_fd_limit};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use utoipa::OpenApi;

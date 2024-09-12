@@ -1,5 +1,5 @@
 use crate::db::types::common::Version;
-use crate::db::types::pipeline::{PipelineId, PipelineStatus};
+use crate::db::types::pipeline::{PipelineDesiredStatus, PipelineId, PipelineStatus};
 use crate::db::types::program::ProgramStatus;
 use crate::db::types::tenant::TenantId;
 use actix_web::{
@@ -116,8 +116,8 @@ pub enum DBError {
     IllegalPipelineStateTransition {
         hint: String,
         status: PipelineStatus,
-        desired_status: PipelineStatus,
-        requested_desired_status: PipelineStatus,
+        desired_status: PipelineDesiredStatus,
+        requested_desired_status: PipelineDesiredStatus,
     },
 }
 

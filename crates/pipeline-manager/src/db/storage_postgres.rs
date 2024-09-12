@@ -8,7 +8,7 @@ use crate::db::storage::Storage;
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, PipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus, SqlCompilerMessage};
 use crate::db::types::tenant::TenantId;
@@ -442,7 +442,7 @@ impl Storage for StoragePostgres {
             &txn,
             tenant_id,
             pipeline_name,
-            PipelineStatus::Running,
+            PipelineDesiredStatus::Running,
         )
         .await?;
         txn.commit().await?;
@@ -460,7 +460,7 @@ impl Storage for StoragePostgres {
             &txn,
             tenant_id,
             pipeline_name,
-            PipelineStatus::Paused,
+            PipelineDesiredStatus::Paused,
         )
         .await?;
         txn.commit().await?;
@@ -478,7 +478,7 @@ impl Storage for StoragePostgres {
             &txn,
             tenant_id,
             pipeline_name,
-            PipelineStatus::Shutdown,
+            PipelineDesiredStatus::Shutdown,
         )
         .await?;
         txn.commit().await?;

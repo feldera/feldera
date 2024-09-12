@@ -163,7 +163,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
                 });
                 let db_clone = db.clone();
                 let _local_runner = tokio::spawn(async move {
-                    crate::local_runner::run(db_clone, &local_runner_config.clone()).await;
+                    crate::runner::local_runner::run(db_clone, &local_runner_config.clone()).await;
                 });
                 // The api-server blocks forever
                 crate::api::run(db, api_config).await.unwrap();
@@ -502,7 +502,10 @@ impl TestConfig {
 
             // Print an update every 60 seconds approximately
             if last_update.elapsed().as_secs() >= 60 {
-                println!("Pipeline:\n{pipeline:#?}");
+                println!(
+                    "Pipeline status: {}",
+                    pipeline.as_object().unwrap()["deployment_status"]
+                );
                 println!(
                     "Waiting for pipeline status {status:?} since {} seconds",
                     start.elapsed().as_secs()
@@ -1980,4 +1983,34 @@ CREATE TABLE "TaBle1"(id bigint not null) with ('materialized' = 'true');
     let cnt_ret = std::str::from_utf8(cnt_body.as_ref()).unwrap();
     let cnt_ret_json = serde_json::from_str::<Value>(cnt_ret).unwrap();
     assert_eq!(cnt_ret_json, json!({"count(*)": 0}));
+}
+
+/// The pipeline should transition to Shutdown status when being shutdown after starting.
+/// This test will take at least 20 seconds due to various waiting times after starting.
+#[actix_web::test]
+#[serial]
+async fn pipeline_shutdown_after_start() {
+    let config = setup().await;
+    create_and_deploy_test_pipeline(&config, "CREATE TABLE t1(c1 INTEGER);").await;
+
+    // Test a variety of waiting before shutdown to capture the various states
+    for duration_ms in [
+        0, 50, 100, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 5000, 10000,
+    ] {
+        // Start pipeline in paused state
+        let response = config.post_no_body("/v0/pipelines/test/start").await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+        // Shortly wait for the pipeline to transition to next state(s)
+        sleep(Duration::from_millis(duration_ms)).await;
+
+        // Shut it down
+        let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+        // Check that the pipeline becomes Shutdown
+        config
+            .wait_for_deployment_status("test", PipelineStatus::Shutdown, Duration::from_secs(10))
+            .await;
+    }
 }

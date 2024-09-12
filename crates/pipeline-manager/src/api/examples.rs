@@ -3,11 +3,11 @@ use crate::api::pipeline::{ExtendedPipelineDescrOptionalCode, PatchPipeline};
 use crate::db::error::DBError;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, PipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramStatus};
 use crate::error::ManagerError;
-use crate::runner::RunnerError;
+use crate::runner::error::RunnerError;
 use feldera_types::config::ResourceConfig;
 use feldera_types::{config::RuntimeConfig, error::ErrorResponse};
 use uuid::uuid;
@@ -30,9 +30,12 @@ pub(crate) fn error_unknown_api_key() -> ErrorResponse {
 }
 
 pub(crate) fn error_stream_terminated() -> ErrorResponse {
-    ErrorResponse::from_error_nolog(&RunnerError::HttpForwardError {
+    ErrorResponse::from_error_nolog(&RunnerError::PipelineEndpointSendError {
         pipeline_id: PipelineId(uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")),
-        error: "Error forwarding HTTP request to pipeline 67e55044-10b1-426f-9247-bb680e5fe0c8: Failed to connect to host: Internal error: connector has been disconnected".to_string(),
+        pipeline_name: Some("example".to_string()),
+        url: "https://localhost:1234/query".to_string(),
+        error: "Failed to connect to host: Internal error: connector has been disconnected"
+            .to_string(),
     })
 }
 
@@ -91,7 +94,7 @@ pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr {
         deployment_location: None,
         deployment_status: PipelineStatus::Shutdown,
         deployment_status_since: Default::default(),
-        deployment_desired_status: PipelineStatus::Shutdown,
+        deployment_desired_status: PipelineDesiredStatus::Shutdown,
         deployment_error: None,
     }
 }
@@ -135,7 +138,7 @@ pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr {
         deployment_location: None,
         deployment_status: PipelineStatus::Shutdown,
         deployment_status_since: Default::default(),
-        deployment_desired_status: PipelineStatus::Shutdown,
+        deployment_desired_status: PipelineDesiredStatus::Shutdown,
         deployment_error: None,
     }
 }
@@ -174,6 +177,7 @@ pub(crate) fn error_cannot_delete_non_shutdown_pipeline() -> ErrorResponse {
 pub(crate) fn error_pipeline_not_running_or_paused() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineNotRunningOrPaused {
         pipeline_id: PipelineId(uuid!("2e79afe1-ff4d-44d3-af5f-9397de7746c0")),
+        pipeline_name: "example".to_string(),
     })
 }
 
@@ -195,8 +199,8 @@ pub(crate) fn error_illegal_pipeline_action() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::IllegalPipelineStateTransition {
             hint: "Cannot restart the pipeline while it is shutting down. Wait for the shutdown to complete before starting a new instance of the pipeline.".to_string(),
             status: PipelineStatus::ShuttingDown,
-            desired_status: PipelineStatus::Shutdown,
-            requested_desired_status: PipelineStatus::Running,
+            desired_status: PipelineDesiredStatus::Shutdown,
+            requested_desired_status: PipelineDesiredStatus::Running,
     })
 }
 

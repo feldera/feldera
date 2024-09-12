@@ -19,7 +19,7 @@
 
 use crate::db::error::DBError;
 use crate::demo::DemoError;
-use crate::runner::RunnerError;
+use crate::runner::error::RunnerError;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
 };
