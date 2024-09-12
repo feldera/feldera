@@ -1,8 +1,9 @@
 //! Variant is a dynamically-typed object that can represent
 //! the values in a SQL program.
 
-use crate::{Date, GeoPoint, LongInterval, ShortInterval, Time, Timestamp};
+use crate::{casts::*, Date, GeoPoint, LongInterval, ShortInterval, Time, Timestamp};
 use dbsp::algebra::{F32, F64};
+use num::FromPrimitive;
 use rkyv::collections::ArchivedBTreeMap;
 use rkyv::string::ArchivedString;
 use rkyv::Fallible;
@@ -11,6 +12,7 @@ use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use size_of::{Context, SizeOf};
+use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 use std::{
@@ -18,6 +20,7 @@ use std::{
     fmt::{Debug, Write},
     hash::Hash,
 };
+use thiserror::Error;
 
 pub trait StructVariant: Send + Sync + 'static {
     fn get(&self, key: &str) -> Option<Variant>;
@@ -545,6 +548,233 @@ where
             result.insert(key.clone().into(), value.clone().into());
         }
         Variant::Map(result)
+    }
+}
+
+//////////////////// Reverse conversions Variant -> T
+
+#[derive(Error, Debug)]
+pub enum MyError {
+    #[error("{0}")]
+    CustomError(String),
+}
+
+impl MyError {
+    pub fn from_string(message: String) -> Box<Self> {
+        Box::new(MyError::CustomError(message))
+    }
+
+    pub fn from_strng(message: &str) -> Box<Self> {
+        Box::new(MyError::CustomError(message.to_string()))
+    }
+}
+
+macro_rules! into {
+    ($variant:ident, $type:ty) => {
+        impl TryFrom<Variant> for $type {
+            type Error = Box<dyn Error>;
+
+            fn try_from(value: Variant) -> Result<Self, Self::Error> {
+                match value {
+                    Variant::$variant(x) => Ok(x),
+                    _ => Err(MyError::from_strng(concat!(
+                        "Not an ",
+                        stringify!($variant)
+                    ))),
+                }
+            }
+        }
+
+        impl TryFrom<Variant> for Option<$type> {
+            type Error = Box<dyn Error>;
+
+            fn try_from(value: Variant) -> Result<Self, Self::Error> {
+                match value {
+                    Variant::SqlNull => Ok(None),
+                    Variant::VariantNull => Ok(None),
+                    _ => match <$type>::try_from(value) {
+                        Ok(result) => Ok(Some(result)),
+                        Err(e) => Err(e),
+                    },
+                }
+            }
+        }
+    };
+}
+
+into!(Boolean, bool);
+into!(String, String);
+into!(Date, Date);
+into!(Time, Time);
+into!(Timestamp, Timestamp);
+into!(ShortInterval, ShortInterval);
+into!(LongInterval, LongInterval);
+into!(Geometry, GeoPoint);
+
+macro_rules! into_numeric {
+    ($type:ty, $type_name: ident) => {
+        impl TryFrom<Variant> for $type {
+            type Error = Box<dyn Error>;
+
+            ::paste::paste! {
+                fn try_from(value: Variant) -> Result<Self, Self::Error> {
+                    match value {
+                        Variant::TinyInt(x) => Ok([< cast_to_ $type_name _i8>](x)),
+                        Variant::SmallInt(x) => Ok([< cast_to_ $type_name _i16>](x)),
+                        Variant::Int(x) => Ok([< cast_to_ $type_name _i32 >](x)),
+                        Variant::BigInt(x) => Ok([< cast_to_ $type_name _i64 >](x)),
+                        Variant::Real(x) => Ok([< cast_to_ $type_name _f >](x)),
+                        Variant::Double(x) => Ok([< cast_to_ $type_name _d >](x)) ,
+                        Variant::Decimal(x) => Ok([< cast_to_ $type_name _decimal >](x)),
+                        _ => Err(MyError::from_strng(concat!("Not an ", stringify!($variant)))),
+                    }
+                }
+            }
+        }
+
+        impl TryFrom<Variant> for Option<$type> {
+            type Error = Box<dyn Error>;
+
+            ::paste::paste! {
+                fn try_from(value: Variant) -> Result<Self, Self::Error> {
+                    match value {
+                        Variant::VariantNull => Ok(None),
+                        Variant::SqlNull => Ok(None),
+                        _ => match <$type>::try_from(value) {
+                            Ok(result) => Ok(Some(result)),
+                            Err(e) => Err(e),
+                        }
+                    }
+                }
+            }
+        }
+    };
+}
+
+into_numeric!(i8, i8);
+into_numeric!(i16, i16);
+into_numeric!(i32, i32);
+into_numeric!(i64, i64);
+into_numeric!(F32, f);
+into_numeric!(F64, d);
+
+impl TryFrom<Variant> for Decimal {
+    type Error = Box<dyn Error>;
+
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        match value {
+            Variant::TinyInt(x) => Decimal::from_i8(x).ok_or(MyError::from_strng("Out of range")),
+            Variant::SmallInt(x) => Decimal::from_i16(x).ok_or(MyError::from_strng("Out of range")),
+            Variant::Int(x) => Decimal::from_i32(x).ok_or(MyError::from_strng("Out of range")),
+            Variant::BigInt(x) => Decimal::from_i64(x).ok_or(MyError::from_strng("Out of range")),
+            Variant::Real(x) => {
+                Decimal::from_f32(x.into_inner()).ok_or(MyError::from_strng("Out of range"))
+            }
+            Variant::Double(x) => {
+                Decimal::from_f64(x.into_inner()).ok_or(MyError::from_strng("Out of range"))
+            }
+            Variant::Decimal(x) => Ok(x),
+            _ => Err(MyError::from_strng(concat!(
+                "Not an ",
+                stringify!($variant)
+            ))),
+        }
+    }
+}
+
+impl TryFrom<Variant> for Option<Decimal> {
+    type Error = Box<dyn Error>;
+
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        match value {
+            Variant::VariantNull => Ok(None),
+            Variant::SqlNull => Ok(None),
+            _ => match Decimal::try_from(value) {
+                Ok(result) => Ok(Some(result)),
+                Err(e) => Err(e),
+            },
+        }
+    }
+}
+
+impl<T> TryFrom<Variant> for Vec<T>
+where
+    T: TryFrom<Variant, Error = Box<dyn Error>>,
+{
+    type Error = Box<dyn Error>;
+
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        match value {
+            Variant::Array(a) => {
+                let mut result = vec![];
+                for e in a {
+                    let converted = T::try_from(e)?;
+                    result.push(converted);
+                }
+                Ok(result)
+            }
+            _ => Err(Box::new(MyError::CustomError("Not an array".to_string()))),
+        }
+    }
+}
+
+impl<T> TryFrom<Variant> for Option<Vec<T>>
+where
+    T: TryFrom<Variant, Error = Box<dyn Error>>,
+{
+    type Error = Box<dyn Error>;
+
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        match value {
+            Variant::VariantNull => Ok(None),
+            Variant::SqlNull => Ok(None),
+            _ => match Vec::<T>::try_from(value) {
+                Ok(result) => Ok(Some(result)),
+                Err(e) => Err(e),
+            },
+        }
+    }
+}
+
+impl<K, V> TryFrom<Variant> for BTreeMap<K, V>
+where
+    K: TryFrom<Variant, Error = Box<dyn Error>> + Ord,
+    V: TryFrom<Variant, Error = Box<dyn Error>>,
+{
+    type Error = Box<dyn Error>;
+
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        match value {
+            Variant::Map(map) => {
+                let mut result = BTreeMap::<K, V>::new();
+                for (key, value) in map.into_iter() {
+                    let convertedKey = K::try_from(key)?;
+                    let convertedValue = V::try_from(value)?;
+                    result.insert(convertedKey, convertedValue);
+                }
+                Ok(result)
+            }
+            _ => Err(Box::new(MyError::CustomError("Not a map".to_string()))),
+        }
+    }
+}
+
+impl<K, V> TryFrom<Variant> for Option<BTreeMap<K, V>>
+where
+    K: TryFrom<Variant, Error = Box<dyn Error>> + Ord,
+    V: TryFrom<Variant, Error = Box<dyn Error>>,
+{
+    type Error = Box<dyn Error>;
+
+    fn try_from(value: Variant) -> Result<Self, Self::Error> {
+        match value {
+            Variant::VariantNull => Ok(None),
+            Variant::SqlNull => Ok(None),
+            _ => match BTreeMap::<K, V>::try_from(value) {
+                Ok(result) => Ok(Some(result)),
+                Err(e) => Err(e),
+            },
+        }
     }
 }
 
