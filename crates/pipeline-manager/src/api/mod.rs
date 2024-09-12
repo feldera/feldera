@@ -27,7 +27,7 @@ use crate::config::ApiServerConfig;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::error::ManagerError;
 use crate::probe::Probe;
-use crate::runner::RunnerApi;
+use crate::runner::interaction::RunnerInteraction;
 use actix_http::body::BoxBody;
 use actix_http::StatusCode;
 use actix_web::body::MessageBody;
@@ -132,6 +132,7 @@ The program version is used internally by the compiler to know when to recompile
         crate::db::types::pipeline::PipelineDescr,
         crate::db::types::pipeline::ExtendedPipelineDescr,
         crate::db::types::pipeline::PipelineStatus,
+        crate::db::types::pipeline::PipelineDesiredStatus,
         crate::api::pipeline::ListPipelinesQueryParameters,
         crate::api::pipeline::PatchPipeline,
         crate::api::pipeline::ExtendedPipelineDescrOptionalCode,
@@ -317,7 +318,7 @@ pub(crate) struct ServerState {
     // The server must avoid holding this lock for a long time to avoid blocking concurrent
     // requests.
     pub db: Arc<Mutex<StoragePostgres>>,
-    runner: RunnerApi,
+    runner: RunnerInteraction,
     _config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
     probe: Arc<Mutex<Probe>>,
@@ -325,7 +326,7 @@ pub(crate) struct ServerState {
 
 impl ServerState {
     pub async fn new(config: ApiServerConfig, db: Arc<Mutex<StoragePostgres>>) -> AnyResult<Self> {
-        let runner = RunnerApi::new(db.clone());
+        let runner = RunnerInteraction::new(db.clone());
         let db_copy = db.clone();
         Ok(Self {
             db,

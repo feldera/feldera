@@ -1,18 +1,23 @@
 //! A local runner that watches for pipeline objects in the API
 //! and instantiates them locally as processes.
 
+use crate::config::LocalRunnerConfig;
 use crate::db::storage_postgres::StoragePostgres;
+use crate::db::types::common::Version;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
 use crate::db::types::program::generate_pipeline_config;
 use crate::db_notifier::{DbNotification, Operation};
 use crate::error::ManagerError;
-use crate::pipeline_automata::{fetch_binary_ref, PipelineAutomaton};
-use crate::pipeline_automata::{PipelineExecutionDesc, PipelineExecutor};
-use crate::{config::LocalRunnerConfig, runner::RunnerError};
+use crate::runner::error::RunnerError;
+use crate::runner::pipeline_automata::{
+    PipelineAutomaton, PipelineExecutionDesc, PipelineExecutor,
+};
 use async_trait::async_trait;
 use feldera_types::config::{StorageCacheConfig, StorageConfig};
-use log::trace;
+use log::{debug, info, trace};
+use std::time::Duration;
 use std::{collections::BTreeMap, process::Stdio, sync::Arc};
+use tokio::io::AsyncWriteExt;
 use tokio::process::{Child, Command};
 use tokio::sync::Notify;
 use tokio::{
@@ -22,8 +27,106 @@ use tokio::{
     sync::Mutex,
 };
 
-/// A handle to the pipeline process that kills the pipeline
-/// on `drop`.
+// Provisioning is over once the pipeline port file has been detected.
+const PROVISIONING_TIMEOUT: Duration = Duration::from_millis(10_000);
+const PROVISIONING_POLL_PERIOD: Duration = Duration::from_millis(300);
+
+// Shutdown is over once the process has exited.
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(10_000);
+const SHUTDOWN_POLL_PERIOD: Duration = Duration::from_millis(300);
+
+/// Retrieve the binary executable using its URL.
+pub async fn fetch_binary_ref(
+    config: &LocalRunnerConfig,
+    binary_ref: &str,
+    pipeline_id: PipelineId,
+    program_version: Version,
+) -> Result<String, ManagerError> {
+    let parsed =
+        url::Url::parse(binary_ref).expect("Can only be invoked with valid URLs created by us");
+    match parsed.scheme() {
+        // A file scheme assumes the binary is available locally where
+        // the runner is located.
+        "file" => {
+            let exists = fs::try_exists(parsed.path()).await;
+            match exists {
+                Ok(true) => Ok(parsed.path().to_string()),
+                Ok(false) => Err(RunnerError::BinaryFetchError {
+                    pipeline_id,
+                    error: format!(
+                        "Binary required by pipeline {pipeline_id} does not exist at URL {}",
+                        parsed.path()
+                    ),
+                }.into()),
+                Err(e) => Err(RunnerError::BinaryFetchError {
+                    pipeline_id,
+                    error: format!(
+                        "Accessing URL {} for binary required by pipeline {pipeline_id} returned an error: {}",
+                        parsed.path(),
+                        e
+                    ),
+                }.into()),
+            }
+        }
+        // Access a file over HTTP/HTTPS
+        // TODO: implement retries
+        "http" | "https" => {
+            let resp = reqwest::get(binary_ref).await;
+            match resp {
+                Ok(resp) => {
+                    let resp = resp.bytes().await.expect("Binary reference should be accessible as bytes");
+                    let resp_ref = resp.as_ref();
+                    let path = config.binary_file_path(pipeline_id, program_version);
+                    let mut file = tokio::fs::File::options()
+                        .create(true)
+                        .truncate(true)
+                        .write(true)
+                        .read(true)
+                        .mode(0o760)
+                        .open(path.clone())
+                        .await
+                        .map_err(|e|
+                            ManagerError::io_error(
+                                format!("File creation failed ({:?}) while saving {pipeline_id} binary fetched from '{}'", path, parsed.path()),
+                                e,
+                            )
+                        )?;
+                    file.write_all(resp_ref).await.map_err(|e|
+                        ManagerError::io_error(
+                            format!("File write failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
+                            e,
+                        )
+                    )?;
+                    file.flush().await.map_err(|e|
+                        ManagerError::io_error(
+                            format!("File flush() failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
+                            e,
+                        )
+                    )?;
+                    Ok(path.into_os_string().into_string().expect("Path should be valid Unicode"))
+                }
+                Err(e) => {
+                    Err(RunnerError::BinaryFetchError {
+                        pipeline_id,
+                        error: format!(
+                            "Fetching URL {} for binary required by pipeline {pipeline_id} returned an error: {}",
+                            parsed.path(), e
+                        ),
+                    }.into())
+                }
+            }
+        }
+        _ => todo!("Unsupported URL scheme for binary ref"),
+    }
+}
+
+/// A runner handle to run a pipeline using a local process.
+/// * Start: spawn a process
+/// * Retrieve its location (port)
+/// * Shutdown: kill the spawned process
+///
+/// In addition, it attempts to non-blocking kill the spawned process upon
+/// `drop` (which occurs when the owning automaton exits its run loop).
 pub struct ProcessRunner {
     pipeline_id: PipelineId,
     pipeline_process: Option<Child>,
@@ -51,17 +154,40 @@ impl ProcessRunner {
 
 #[async_trait]
 impl PipelineExecutor for ProcessRunner {
-    /// Convert a PipelineRevision into a PipelineExecutionDesc.
+    /// Converts a pipeline descriptor into a self-contained execution descriptor.
     async fn to_execution_desc(
         &self,
         pipeline: &ExtendedPipelineDescr,
     ) -> Result<PipelineExecutionDesc, ManagerError> {
-        let mut deployment_config = generate_pipeline_config(
-            pipeline.id,
-            &pipeline.runtime_config,
-            &pipeline.program_info.clone().unwrap().input_connectors, // TODO: unwrap
-            &pipeline.program_info.clone().unwrap().output_connectors, // TODO: unwrap
-        );
+        // Handle optional fields
+        let (inputs, outputs) = match pipeline.program_info.clone() {
+            None => {
+                return Err(ManagerError::from(
+                    RunnerError::PipelineMissingProgramInfo {
+                        pipeline_name: pipeline.name.clone(),
+                        pipeline_id: pipeline.id,
+                    },
+                ))
+            }
+            Some(program_info) => (
+                program_info.input_connectors,
+                program_info.output_connectors,
+            ),
+        };
+        let program_binary_url = match pipeline.program_binary_url.clone() {
+            None => {
+                return Err(ManagerError::from(
+                    RunnerError::PipelineMissingProgramBinaryUrl {
+                        pipeline_name: pipeline.name.clone(),
+                        pipeline_id: pipeline.id,
+                    },
+                ))
+            }
+            Some(program_binary_url) => program_binary_url,
+        };
+
+        let mut deployment_config =
+            generate_pipeline_config(pipeline.id, &pipeline.runtime_config, &inputs, &outputs);
 
         // The deployment configuration must be modified to fill in the details for storage,
         // which varies for each pipeline executor
@@ -80,16 +206,19 @@ impl PipelineExecutor for ProcessRunner {
             pipeline_id: pipeline.id,
             pipeline_name: pipeline.name.clone(),
             program_version: pipeline.program_version,
-            program_binary_url: pipeline.program_binary_url.clone().unwrap(), // TODO: unwrap
+            program_binary_url,
             deployment_config,
         })
     }
 
+    /// Starting is done by creating a data directory, followed by writing a configuration file
+    /// to it and copying over the binary executable. Finally, a process running the
+    /// binary executable is launched.
     async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError> {
         let pipeline_id = ped.pipeline_id;
         let program_version = ped.program_version;
 
-        log::debug!("Pipeline config is '{:?}'", ped.deployment_config);
+        debug!("Pipeline config is '{:?}'", ped.deployment_config);
 
         // Create pipeline directory (delete old directory if exists); write metadata
         // and config files to it.
@@ -116,7 +245,7 @@ impl PipelineExecutor for ProcessRunner {
         }
 
         let config_file_path = self.config.config_file_path(pipeline_id);
-        let expanded_config = serde_yaml::to_string(&ped.deployment_config).unwrap();
+        let expanded_config = serde_yaml::to_string(&ped.deployment_config).unwrap(); // TODO: unwrap
         fs::write(&config_file_path, &expanded_config)
             .await
             .map_err(|e| {
@@ -150,6 +279,7 @@ impl PipelineExecutor for ProcessRunner {
         Ok(())
     }
 
+    /// Pipeline location is determined by finding and reading its port file.
     async fn get_location(&mut self) -> Result<Option<String>, ManagerError> {
         let port_file_path = self.config.port_file_path(self.pipeline_id);
         let host = &self.config.pipeline_host;
@@ -169,13 +299,7 @@ impl PipelineExecutor for ProcessRunner {
         }
     }
 
-    async fn check_if_shutdown(&mut self) -> bool {
-        self.pipeline_process
-            .as_mut()
-            .map(|p| p.try_wait().is_ok())
-            .unwrap_or(true)
-    }
-
+    /// Shutdown by killing the process and removing the pipeline directory.
     async fn shutdown(&mut self) -> Result<(), ManagerError> {
         self.kill_pipeline().await;
         match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
@@ -190,40 +314,57 @@ impl PipelineExecutor for ProcessRunner {
         }
         Ok(())
     }
+
+    /// A pipeline is shutdown when the process has exited.
+    async fn check_if_shutdown(&mut self) -> bool {
+        self.pipeline_process
+            .as_mut()
+            .map(|p| p.try_wait().is_ok())
+            .unwrap_or(true)
+    }
 }
 
-/// Starts a runner that executes pipelines locally
+/// Starts a runner that executes pipelines locally using processes.
 ///
 /// # Starting a pipeline
 ///
 /// Starting a pipeline amounts to running the compiled executable with
 /// selected config, and monitoring the pipeline log file for either
 /// "Started HTTP server on port XXXXX" or "Failed to create server
-/// [detailed error message]".  In the former case, the port number is
-/// recorded in the database.  In the latter case, the error message is
+/// [detailed error message]". In the former case, the port number is
+/// recorded in the database. In the latter case, the error message is
 /// returned to the client.
 ///
 /// # Shutting down a pipeline
 ///
 /// To shutdown the pipeline, the runner sends a `/shutdown` HTTP request to the
-/// pipeline.  This request is asynchronous: the pipeline may continue running
+/// pipeline. This request is asynchronous: the pipeline may continue running
 /// for a few seconds after the request succeeds.
 pub async fn run(db: Arc<Mutex<StoragePostgres>>, config: &LocalRunnerConfig) {
     let runner_task = spawn(reconcile(db, Arc::new(config.clone())));
-    runner_task.await.unwrap().unwrap();
+    runner_task.await.unwrap().unwrap(); // TODO: unwrap
 }
 
+/// Continuous reconciliation loop between what is stored about the pipelines in the database and
+/// the local process runner managing their deployment as processes.
 async fn reconcile(
     db: Arc<Mutex<StoragePostgres>>,
     config: Arc<LocalRunnerConfig>,
 ) -> Result<(), ManagerError> {
+    // Mapping of the present pipelines to a notifier to the pipeline automaton
     let pipelines: Mutex<BTreeMap<PipelineId, Arc<Notify>>> = Mutex::new(BTreeMap::new());
+
+    // Channel between the listener which listens to any database-triggered notifications
+    // regarding whether pipelines should be added, updated or deleted
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    tokio::spawn(crate::db_notifier::listen(db.clone(), tx));
+    spawn(crate::db_notifier::listen(db.clone(), tx));
+
+    // Continuously wait and act on pipeline operation notifications
+    info!("Local runner is ready");
     loop {
-        trace!("Waiting for notification");
+        trace!("Waiting for pipeline operation notification from database...");
         if let Some(DbNotification::Pipeline(op, tenant_id, pipeline_id)) = rx.recv().await {
-            trace!("Received DbNotification {op:?} {tenant_id} {pipeline_id}");
+            debug!("Received pipeline operation notification: operation={op:?} tenant_id={tenant_id} pipeline_id={pipeline_id}");
             match op {
                 Operation::Add | Operation::Update => {
                     pipelines
@@ -244,6 +385,10 @@ async fn reconcile(
                                     db.clone(),
                                     notifier.clone(),
                                     pipeline_handle,
+                                    PROVISIONING_TIMEOUT,
+                                    PROVISIONING_POLL_PERIOD,
+                                    SHUTDOWN_TIMEOUT,
+                                    SHUTDOWN_POLL_PERIOD,
                                 )
                                 .run(),
                             );

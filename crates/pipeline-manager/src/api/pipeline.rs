@@ -5,7 +5,7 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, PipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{ProgramConfig, ProgramInfo, ProgramStatus};
 use crate::db::types::tenant::TenantId;
@@ -46,7 +46,7 @@ pub struct ExtendedPipelineDescrOptionalCode {
     pub program_binary_url: Option<String>,
     pub deployment_status: PipelineStatus,
     pub deployment_status_since: DateTime<Utc>,
-    pub deployment_desired_status: PipelineStatus,
+    pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
     pub deployment_config: Option<PipelineConfig>,
     pub deployment_location: Option<String>,
@@ -474,7 +474,7 @@ pub(crate) async fn post_pipeline_action(
     }
 
     info!(
-        "Accepted '{action}' action for pipeline {pipeline_name} (tenant: {})",
+        "Accepted {action} action for pipeline {pipeline_name} (tenant: {})",
         *tenant_id
     );
     Ok(HttpResponse::Accepted().finish())
@@ -519,7 +519,7 @@ pub(crate) async fn input_endpoint_action(
 
     state
         .runner
-        .forward_to_pipeline(
+        .forward_http_request_to_pipeline_by_name(
             *tenant_id,
             &pipeline_name,
             Method::GET,
@@ -569,7 +569,7 @@ pub(crate) async fn get_pipeline_stats(
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     state
         .runner
-        .forward_to_pipeline(
+        .forward_http_request_to_pipeline_by_name(
             *tenant_id,
             &pipeline_name,
             Method::GET,
@@ -612,7 +612,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     state
         .runner
-        .forward_to_pipeline(
+        .forward_http_request_to_pipeline_by_name(
             *tenant_id,
             &pipeline_name,
             Method::GET,
@@ -655,7 +655,7 @@ pub(crate) async fn get_pipeline_heap_profile(
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     state
         .runner
-        .forward_to_pipeline(
+        .forward_http_request_to_pipeline_by_name(
             *tenant_id,
             &pipeline_name,
             Method::GET,
@@ -706,7 +706,7 @@ pub(crate) async fn pipeline_adhoc_sql(
     let pipeline_name = parse_string_param(&request, "pipeline_name")?;
     state
         .runner
-        .forward_to_pipeline_as_stream(
+        .forward_streaming_http_request_to_pipeline_by_name(
             *tenant_id,
             &pipeline_name,
             "query",

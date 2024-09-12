@@ -6,7 +6,7 @@ use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
 use crate::db::types::common::{validate_name, Version};
 use crate::db::types::pipeline::{
     validate_deployment_desired_status_transition, validate_deployment_status_transition,
-    ExtendedPipelineDescr, PipelineDescr, PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, PipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{
     generate_pipeline_config, validate_program_status_transition, CompilationProfile,
@@ -478,7 +478,10 @@ async fn pipeline_creation() {
     // System-decided deployment fields
     assert_eq!(actual.deployment_status, PipelineStatus::Shutdown);
     // actual.deployment_status_since
-    assert_eq!(actual.deployment_desired_status, PipelineStatus::Shutdown);
+    assert_eq!(
+        actual.deployment_desired_status,
+        PipelineDesiredStatus::Shutdown
+    );
     assert_eq!(actual.deployment_error, None);
     assert_eq!(actual.deployment_config, None);
     assert_eq!(actual.deployment_location, None);
@@ -1644,7 +1647,7 @@ trait ModelHelpers {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-        new_desired_status: &PipelineStatus,
+        new_desired_status: &PipelineDesiredStatus,
     ) -> Result<ExtendedPipelineDescr, DBError>;
 }
 
@@ -1707,7 +1710,7 @@ impl ModelHelpers for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-        new_desired_status: &PipelineStatus,
+        new_desired_status: &PipelineDesiredStatus,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         // Fetch existing pipeline
         let pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
@@ -1720,7 +1723,7 @@ impl ModelHelpers for Mutex<DbModel> {
         )?;
 
         // Check program is compiled
-        if *new_desired_status != PipelineStatus::Shutdown {
+        if *new_desired_status != PipelineDesiredStatus::Shutdown {
             if pipeline.program_status.has_failed_to_compile() {
                 return Err(DBError::ProgramFailedToCompile);
             }
@@ -1925,7 +1928,7 @@ impl Storage for Mutex<DbModel> {
             program_binary_url: None,
             deployment_status: PipelineStatus::Shutdown,
             deployment_status_since: now,
-            deployment_desired_status: PipelineStatus::Shutdown,
+            deployment_desired_status: PipelineDesiredStatus::Shutdown,
             deployment_error: None,
             deployment_config: None,
             deployment_location: None,
@@ -2238,7 +2241,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<(), DBError> {
-        let new_desired_status = PipelineStatus::Running;
+        let new_desired_status = PipelineDesiredStatus::Running;
         let mut pipeline = self
             .help_transit_deployment_desired_status(tenant_id, pipeline_name, &new_desired_status)
             .await?;
@@ -2255,7 +2258,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<(), DBError> {
-        let new_desired_status = PipelineStatus::Paused;
+        let new_desired_status = PipelineDesiredStatus::Paused;
         let mut pipeline = self
             .help_transit_deployment_desired_status(tenant_id, pipeline_name, &new_desired_status)
             .await?;
@@ -2272,7 +2275,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<(), DBError> {
-        let new_desired_status = PipelineStatus::Shutdown;
+        let new_desired_status = PipelineDesiredStatus::Shutdown;
         let mut pipeline = self
             .help_transit_deployment_desired_status(tenant_id, pipeline_name, &new_desired_status)
             .await?;

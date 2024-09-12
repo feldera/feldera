@@ -27,7 +27,7 @@ impl Display for PipelineId {
 /// Pipeline status.
 ///
 /// This type represents the state of the pipeline tracked by the pipeline
-/// runner and observed by the API client via the `GET /pipeline` endpoint.
+/// runner and observed by the API client via the `GET /v0/pipelines/{name}` endpoint.
 ///
 /// ### The lifecycle of a pipeline
 ///
@@ -44,9 +44,9 @@ impl Display for PipelineId {
 ///   or until the runner performs a forced shutdown of the pipeline after a
 ///   pre-defined timeout period.
 ///
-/// * State transitions labeled with API endpoint names (`/deploy`, `/start`,
-///   `/pause`, `/shutdown`) are triggered by invoking corresponding endpoint,
-///   e.g., `POST /v0/pipelines/{pipeline_id}/start`.
+/// * State transitions labeled with API endpoint names (`/start`, `/pause`,
+///   `/shutdown`) are triggered by invoking corresponding endpoint,
+///   e.g., `POST /v0/pipelines/{name}/start`.
 ///
 /// ```text
 ///                  Shutdown◄────┐
@@ -54,11 +54,11 @@ impl Display for PipelineId {
 ///              /deploy│         │
 ///                     │   ⌛ShuttingDown
 ///                     ▼         ▲
-///             ⌛Provisioning    │
+///             ⌛Provisioning     │
 ///                     │         │
-///  Provisioned        │         │
+///                     │         │
 ///                     ▼         │/shutdown
-///             ⌛Initializing    │
+///             ⌛Initializing     │
 ///                     │         │
 ///            ┌────────┴─────────┴─┐
 ///            │        ▼           │
@@ -89,11 +89,11 @@ impl Display for PipelineId {
 /// in the diagram.
 ///
 /// The user can monitor the current state of the pipeline via the
-/// `/status` endpoint, which returns an object of type `Pipeline`.
+/// `GET /v0/pipelines/{name}` endpoint, which returns an object of type `ExtendedPipelineDescr`.
 /// In a typical scenario, the user first sets
 /// the desired state, e.g., by invoking the `/deploy` endpoint, and
-/// then polls the `GET /pipeline` endpoint to monitor the actual status
-/// of the pipeline until its `state.current_status` attribute changes
+/// then polls the `GET /v0/pipelines/{name}` endpoint to monitor the actual status
+/// of the pipeline until its `deployment_status` attribute changes
 /// to "paused" indicating that the pipeline has been successfully
 /// initialized, or "failed", indicating an error.
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone, Copy)]
@@ -234,6 +234,43 @@ impl Display for PipelineStatus {
     }
 }
 
+#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone, Copy)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub enum PipelineDesiredStatus {
+    Shutdown,
+    Paused,
+    Running,
+}
+
+impl TryFrom<String> for PipelineDesiredStatus {
+    type Error = DBError;
+    fn try_from(value: String) -> Result<Self, DBError> {
+        match value.as_str() {
+            "shutdown" => Ok(Self::Shutdown),
+            "paused" => Ok(Self::Paused),
+            "running" => Ok(Self::Running),
+            _ => Err(DBError::invalid_pipeline_status(value)),
+        }
+    }
+}
+
+impl From<PipelineDesiredStatus> for &'static str {
+    fn from(val: PipelineDesiredStatus) -> Self {
+        match val {
+            PipelineDesiredStatus::Shutdown => "shutdown",
+            PipelineDesiredStatus::Paused => "paused",
+            PipelineDesiredStatus::Running => "running",
+        }
+    }
+}
+
+impl Display for PipelineDesiredStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let status: &'static str = (*self).into();
+        write!(f, "{status}")
+    }
+}
+
 /// Validates the deployment status transition from current status to a new one.
 pub fn validate_deployment_status_transition(
     current_status: &PipelineStatus,
@@ -242,11 +279,12 @@ pub fn validate_deployment_status_transition(
     if matches!(
         (current_status, new_status),
         (PipelineStatus::Shutdown, PipelineStatus::Provisioning)
+            | (PipelineStatus::Shutdown, PipelineStatus::Failed)
             | (PipelineStatus::Provisioning, PipelineStatus::Initializing)
-            | (PipelineStatus::Provisioning, PipelineStatus::Shutdown)
+            | (PipelineStatus::Provisioning, PipelineStatus::ShuttingDown)
             | (PipelineStatus::Provisioning, PipelineStatus::Failed)
             | (PipelineStatus::Initializing, PipelineStatus::Paused)
-            | (PipelineStatus::Initializing, PipelineStatus::Shutdown)
+            | (PipelineStatus::Initializing, PipelineStatus::ShuttingDown)
             | (PipelineStatus::Initializing, PipelineStatus::Failed)
             | (PipelineStatus::Running, PipelineStatus::Paused)
             | (PipelineStatus::Running, PipelineStatus::ShuttingDown)
@@ -256,7 +294,6 @@ pub fn validate_deployment_status_transition(
             | (PipelineStatus::Paused, PipelineStatus::Failed)
             | (PipelineStatus::ShuttingDown, PipelineStatus::Shutdown)
             | (PipelineStatus::ShuttingDown, PipelineStatus::Failed)
-            | (PipelineStatus::Shutdown, PipelineStatus::Failed)
             | (PipelineStatus::Failed, PipelineStatus::Shutdown)
     ) {
         Ok(())
@@ -271,15 +308,15 @@ pub fn validate_deployment_status_transition(
 /// Validates the deployment desired status transition from current status to a new one.
 pub fn validate_deployment_desired_status_transition(
     current_status: &PipelineStatus,
-    current_desired_status: &PipelineStatus,
-    new_desired_status: &PipelineStatus,
+    current_desired_status: &PipelineDesiredStatus,
+    new_desired_status: &PipelineDesiredStatus,
 ) -> Result<(), DBError> {
     // Check that the desired status can be set
-    if *new_desired_status == PipelineStatus::Paused
-        || *new_desired_status == PipelineStatus::Running
+    if *new_desired_status == PipelineDesiredStatus::Paused
+        || *new_desired_status == PipelineDesiredStatus::Running
     {
         // Refuse to restart a pipeline that has not completed shutting down
-        if *current_desired_status == PipelineStatus::Shutdown
+        if *current_desired_status == PipelineDesiredStatus::Shutdown
             && *current_status != PipelineStatus::Shutdown
         {
             Err(DBError::IllegalPipelineStateTransition {
@@ -291,7 +328,7 @@ pub fn validate_deployment_desired_status_transition(
         };
 
         // Refuse to restart a pipeline which is failed or shutting down until it's in the shutdown state
-        if *current_desired_status != PipelineStatus::Shutdown
+        if *current_desired_status != PipelineDesiredStatus::Shutdown
             && (*current_status == PipelineStatus::ShuttingDown
                 || *current_status == PipelineStatus::Failed)
         {
@@ -379,12 +416,7 @@ pub struct ExtendedPipelineDescr {
     pub deployment_status_since: DateTime<Utc>,
 
     /// Desired pipeline status, i.e., the status requested by the user.
-    ///
-    /// Possible values are:
-    /// [`Shutdown`](`PipelineStatus::Shutdown`),
-    /// [`Paused`](`PipelineStatus::Paused`), and
-    /// [`Running`](`PipelineStatus::Running`).
-    pub deployment_desired_status: PipelineStatus,
+    pub deployment_desired_status: PipelineDesiredStatus,
 
     /// Error that caused the pipeline to fail.
     ///
@@ -407,6 +439,6 @@ impl ExtendedPipelineDescr {
     /// its current deployment status and desired status are `Shutdown`.
     pub(crate) fn is_fully_shutdown(&self) -> bool {
         self.deployment_status == PipelineStatus::Shutdown
-            && self.deployment_desired_status == PipelineStatus::Shutdown
+            && self.deployment_desired_status == PipelineDesiredStatus::Shutdown
     }
 }
