@@ -3,6 +3,7 @@
 
 use crate::{casts::*, Date, GeoPoint, LongInterval, ShortInterval, Time, Timestamp};
 use dbsp::algebra::{F32, F64};
+use feldera_types::deserialize_without_context;
 use feldera_types::serde_with_context::{SerializeWithContext, SqlSerdeConfig};
 use num::FromPrimitive;
 use rkyv::collections::ArchivedBTreeMap;
@@ -335,6 +336,8 @@ impl<'de> de::Deserialize<'de> for NumberFromString {
         deserializer.deserialize_str(Visitor)
     }
 }
+
+deserialize_without_context!(Variant);
 
 impl Serialize for Variant {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
