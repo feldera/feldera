@@ -34,30 +34,54 @@ fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
 }
 
 #[derive(Parser)]
-#[command(name = "fda")]
-#[command(about = "A CLI to interact with the Feldera REST API.")]
+#[command(name = "fda", about = "A CLI to interact with the Feldera REST API.")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
     /// The format in which the output should be displayed.
-    #[arg(long, default_value = "text", env = "FELDERA_OUTPUT_FORMAT")]
+    #[arg(
+        long,
+        env = "FELDERA_OUTPUT_FORMAT",
+        global = true,
+        help_heading = "Global Options",
+        default_value = "text"
+    )]
     pub format: OutputFormat,
     /// The Feldera host to connect to.
-    #[arg(long, env = "FELDERA_HOST", default_value_t = String::from("https://try.feldera.com"), value_hint = ValueHint::Url)]
+    #[arg(
+        long,
+        env = "FELDERA_HOST",
+        value_hint = ValueHint::Url,
+        global = true,
+        help_heading = "Global Options",
+        default_value_t = String::from("https://try.feldera.com")
+    )]
     pub host: String,
     /// Which API key to use for authentication.
     ///
     /// The provided string should start with "apikey:" followed by the random characters.
     ///
     /// If not specified, a request without authentication will be used.
-    #[arg(long, env = "FELDERA_API_KEY", hide_env_values = true)]
+    #[arg(
+        long,
+        env = "FELDERA_API_KEY",
+        global = true,
+        hide_env_values = true,
+        help_heading = "Global Options"
+    )]
     pub auth: Option<String>,
     /// The client timeout for requests in seconds.
     ///
     /// In almost all cases you should not need to change this value.
     /// It can be helpful to increase this if you want to evaluate long-running
     /// ad-hoc queries in the shell.
-    #[arg(long, default_value_t = 120, env = "FELDERA_REQUEST_TIMEOUT")]
+    #[arg(
+        long,
+        env = "FELDERA_REQUEST_TIMEOUT",
+        global = true,
+        help_heading = "Global Options",
+        default_value_t = 120
+    )]
     pub timeout: u64,
 }
 
