@@ -101,7 +101,8 @@ def populate_database():
                         b BOOLEAN,
                         ts TIMESTAMP,
                         dt DATE,
-                        json JSON,
+                        json1 JSON,
+                        json2 JSON,
                         uuid UUID)""")
             cur.execute(f"DELETE FROM {TEST_SCHEMA}.{TEST_TABLE}")
 
@@ -110,8 +111,8 @@ def populate_database():
             for i in range(NUM_RECORDS):
                 cur.execute(f"""
                             INSERT INTO {TEST_SCHEMA}.{TEST_TABLE}
-                                    (id, bi, s, d, f, i, b, ts, dt, json, uuid)
-                            VALUES({i}, {i * 100}, 'foo{i}', {i}.01, {i}.1, {i}, true, '2024-08-30 10:30:00', '2024-08-30', '{{"foo":"bar"}}', '123e4567-e89b-12d3-a456-426614174000')
+                                    (id, bi, s, d, f, i, b, ts, dt, json1, json2, uuid)
+                            VALUES({i}, {i * 100}, 'foo{i}', {i}.01, {i}.1, {i}, true, '2024-08-30 10:30:00', '2024-08-30', '{{"foo":"bar"}}', '{{"foo":"bar"}}', '123e4567-e89b-12d3-a456-426614174000')
                     """)
                 if i % 1000 == 0:
                     print(f"{i} records")

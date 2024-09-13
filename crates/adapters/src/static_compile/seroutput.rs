@@ -1,9 +1,12 @@
-use crate::catalog::{SerBatchReader, SerBatchReaderHandle, SerTrace, SyncSerBatchReader};
 #[cfg(feature = "with-avro")]
 use crate::format::avro::serializer::{avro_ser_config, AvroSchemaSerializer, AvroSerializerError};
 use crate::{
     catalog::{RecordFormat, SerBatch, SerCollectionHandle, SerCursor},
     ControllerError,
+};
+use crate::{
+    catalog::{SerBatchReader, SerBatchReaderHandle, SerTrace, SyncSerBatchReader},
+    format::parquet::arrow_serde_config,
 };
 use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
@@ -19,8 +22,7 @@ use dbsp::typed_batch::{DynBatchReader, DynSpine, DynTrace, Spine, TypedBatch};
 use dbsp::{trace::Cursor, Batch, BatchReader, OutputHandle, Trace};
 use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use feldera_types::serde_with_context::{
-    DateFormat, SerializationContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
-    TimestampFormat,
+    SerializationContext, SerializeWithContext, SqlSerdeConfig,
 };
 use serde_arrow::ArrayBuilder;
 use std::{any::Any, collections::HashSet};
@@ -427,14 +429,7 @@ where
                 SqlSerdeConfig,
             >>::new(
                 &self.batch,
-                ParquetSerializer::create(
-                    SqlSerdeConfig::default()
-                        .with_date_format(DateFormat::String("%Y-%m-%d"))
-                        .with_time_format(TimeFormat::Nanos)
-                        // DeltaLake only supports microsecond-based timestamp encoding, so we just
-                        // hardwire that for now.  See also `format/parquet/mod.rs`.
-                        .with_timestamp_format(TimestampFormat::MicrosSinceEpoch),
-                ),
+                ParquetSerializer::create(arrow_serde_config().clone()),
             )),
             #[cfg(feature = "with-avro")]
             RecordFormat::Avro => {

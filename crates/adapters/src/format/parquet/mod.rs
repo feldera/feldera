@@ -10,6 +10,8 @@ use arrow::datatypes::{
 use bytes::Bytes;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::ConnectorConfig;
+use feldera_types::serde_with_context::serde_config::{DecimalFormat, VariantFormat};
+use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use parquet::file::reader::{FileReader, SerializedFileReader};
@@ -34,6 +36,16 @@ use super::InputBuffer;
 
 #[cfg(test)]
 pub mod test;
+
+pub const fn arrow_serde_config() -> &'static SqlSerdeConfig {
+    &SqlSerdeConfig {
+        timestamp_format: TimestampFormat::MicrosSinceEpoch,
+        time_format: TimeFormat::Nanos,
+        date_format: DateFormat::String("%Y-%m-%d"),
+        decimal_format: DecimalFormat::String,
+        variant_format: VariantFormat::JsonString,
+    }
+}
 
 /// CSV format parser.
 pub struct ParquetInputFormat;
@@ -285,7 +297,8 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
             SqlType::Interval(
                 IntervalUnit::YearToMonth | IntervalUnit::Year | IntervalUnit::Month,
             ) => DataType::Interval(ArrowIntervalUnit::YearMonth),
-            SqlType::Variant => unimplemented!(),
+            // We serialize variants into JSON strings.
+            SqlType::Variant => DataType::Utf8,
             SqlType::Interval(_) => DataType::Interval(ArrowIntervalUnit::DayTime),
             SqlType::Array => {
                 // SqlType::Array implies c.component.is_some()

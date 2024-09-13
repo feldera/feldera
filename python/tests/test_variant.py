@@ -11,17 +11,17 @@ class TestVariant(unittest.TestCase):
     def test_local(self):
         sql = f"""
 -- Ingest JSON as string; output it as VARIANT.
-CREATE TABLE json_table (json VARCHAR);
-CREATE VIEW json_view AS SELECT PARSE_JSON(json) AS json FROM json_table;
-CREATE VIEW json_string_view AS SELECT UNPARSE_JSON(json) AS json FROM json_view;
+CREATE TABLE json_table (json VARCHAR) with ('materialized' = 'true');
+CREATE MATERIALIZED VIEW json_view AS SELECT PARSE_JSON(json) AS json FROM json_table;
+CREATE MATERIALIZED VIEW json_string_view AS SELECT UNPARSE_JSON(json) AS json FROM json_view;
 
-CREATE VIEW average_view AS SELECT
+CREATE MATERIALIZED VIEW average_view AS SELECT
 CAST(json['name'] AS VARCHAR) as name,
 ((CAST(json['scores'][1] AS DECIMAL(8, 2)) + CAST(json['scores'][2] AS DECIMAL(8, 2))) / 2) as average
 FROM json_view;
 
 -- Ingest JSON as variant; extract strongly types columns from it.
-CREATE TABLE variant_table(val VARIANT);
+CREATE TABLE variant_table(val VARIANT) with ('materialized' = 'true');
 
 CREATE MATERIALIZED VIEW typed_view AS SELECT
     CAST(val['name'] AS VARCHAR) as name,

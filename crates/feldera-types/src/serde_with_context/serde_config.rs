@@ -32,7 +32,7 @@ impl Default for TimeFormat {
     }
 }
 
-// Representation of the SQL `DATE` type.
+/// Representation of the SQL `DATE` type.
 #[derive(Clone, Debug)]
 pub enum DateFormat {
     // String formatted using the specified format:
@@ -49,7 +49,7 @@ impl Default for DateFormat {
     }
 }
 
-// Representation of the SQL `TIMESTAMP` type.
+/// Representation of the SQL `TIMESTAMP` type.
 #[derive(Clone, Debug)]
 pub enum TimestampFormat {
     /// String formatted using the specified format:
@@ -70,7 +70,7 @@ impl Default for TimestampFormat {
     }
 }
 
-// Representation of the SQL `DECIMAL` type.
+/// Representation of the SQL `DECIMAL` type.
 #[derive(Clone, Debug)]
 pub enum DecimalFormat {
     Numeric,
@@ -81,6 +81,21 @@ pub enum DecimalFormat {
 impl Default for DecimalFormat {
     fn default() -> Self {
         Self::Numeric
+    }
+}
+
+/// Representation of the SQL `VARIANT` type.
+#[derive(Clone, Debug)]
+pub enum VariantFormat {
+    /// Serialize VARIANT to/from a JSON value.
+    Json,
+    /// Represent variant type as a JSON-formatted string.
+    JsonString,
+}
+
+impl Default for VariantFormat {
+    fn default() -> Self {
+        Self::JsonString
     }
 }
 
@@ -95,6 +110,8 @@ pub struct SqlSerdeConfig {
     pub timestamp_format: TimestampFormat,
     /// `DECIMAL` format.
     pub decimal_format: DecimalFormat,
+    /// `VARIANT` format
+    pub variant_format: VariantFormat,
 }
 
 impl SqlSerdeConfig {
@@ -119,44 +136,53 @@ impl SqlSerdeConfig {
         self.decimal_format = decimal_format;
         self
     }
+
+    pub fn with_variant_format(mut self, variant_format: VariantFormat) -> Self {
+        self.variant_format = variant_format;
+        self
+    }
 }
 
 impl From<JsonFlavor> for SqlSerdeConfig {
     fn from(flavor: JsonFlavor) -> Self {
         match flavor {
-            JsonFlavor::Default => Default::default(),
-            JsonFlavor::Datagen => {
-                SqlSerdeConfig::default().with_timestamp_format(TimestampFormat::Rfc3339)
+            JsonFlavor::Default | JsonFlavor::Datagen => {
+                SqlSerdeConfig::default().with_variant_format(VariantFormat::Json)
             }
             JsonFlavor::KafkaConnectJsonConverter { .. } => Self {
                 time_format: TimeFormat::Millis,
                 date_format: DateFormat::DaysSinceEpoch,
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
+                variant_format: VariantFormat::JsonString,
             },
             JsonFlavor::DebeziumMySql => Self {
                 time_format: TimeFormat::Micros,
                 date_format: DateFormat::DaysSinceEpoch,
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%Z"),
                 decimal_format: DecimalFormat::String,
+                variant_format: VariantFormat::JsonString,
             },
             JsonFlavor::DebeziumPostgres => Self {
                 time_format: TimeFormat::Micros,
                 date_format: DateFormat::DaysSinceEpoch,
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
+                variant_format: VariantFormat::JsonString,
             },
             JsonFlavor::Snowflake => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
                 date_format: DateFormat::String("%Y-%m-%d"),
                 timestamp_format: TimestampFormat::String("%Y-%m-%dT%H:%M:%S%.f%:z"),
                 decimal_format: DecimalFormat::String,
+                variant_format: VariantFormat::JsonString,
             },
             JsonFlavor::Pandas => Self {
                 time_format: TimeFormat::String("%H:%M:%S%.f"),
                 date_format: DateFormat::String("%Y-%m-%d"),
                 timestamp_format: TimestampFormat::MillisSinceEpoch,
                 decimal_format: DecimalFormat::String,
+                variant_format: VariantFormat::JsonString,
             },
             JsonFlavor::ParquetConverter => Self {
                 time_format: TimeFormat::Nanos,
@@ -168,6 +194,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
                 // the right way is probably to use serde_arrow for deserialization and serialization
                 timestamp_format: TimestampFormat::String("%Y-%m-%d %H:%M:%S %:z"), // 2023-11-04 15:33:47 +00:00
                 decimal_format: DecimalFormat::String,
+                variant_format: VariantFormat::JsonString,
             },
         }
     }
