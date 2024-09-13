@@ -158,9 +158,20 @@ pub async fn shell(name: String, client: Client) {
                                             return;
                                         }
                                         let mut buffer = Vec::new();
-                                        buffer.extend_from_slice(
-                                            &chunk.expect("Reading Chunk should succeed"),
-                                        );
+                                        match chunk {
+                                            Ok(chunk) => buffer.extend_from_slice(&chunk),
+                                            Err(e) => {
+                                                printer.print(NEWLINE.to_string()).unwrap();
+                                                printer
+                                                    .print(format!(
+                                                        "ERROR: Unable to read server response: {}",
+                                                        e
+                                                    ))
+                                                    .unwrap();
+                                                printer.print(NEWLINE.to_string()).unwrap();
+                                                return;
+                                            }
+                                        }
                                         let text = String::from_utf8_lossy(&buffer);
                                         printer.print(text.to_string()).unwrap();
                                     }
