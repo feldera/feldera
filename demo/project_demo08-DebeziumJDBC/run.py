@@ -215,7 +215,8 @@ create table test_table(
     f6 time,
     f7 timestamp,
     f8 date,
-    f9 binary
+    f9 binary,
+    f10 variant
 );
 
 create view test_view
@@ -295,6 +296,7 @@ def generate_inputs(pipeline: Pipeline):
                     "f7": date_time.strftime("%F %T"),
                     "f8": date_time.strftime("%F"),
                     #"f9": list("bar".encode('utf-8')),
+                    "f10": {"id": i + batch, "f1": True, "f2": "foo", "f4": 10.5}
                 })
         inserts = [{"insert": element} for element in data]
         pipeline.input_json("test_table", inserts, update_format="insert_delete")

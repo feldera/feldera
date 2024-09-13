@@ -8,7 +8,8 @@ CREATE TABLE json_test_table (
     b BOOLEAN,
     ts TIMESTAMP,
     dt DATE,
-    json VARCHAR,
+    json1 VARCHAR,
+    json2 VARIANT,
     uuid VARCHAR
 ) with (
   'materialized' = 'true',
@@ -40,7 +41,8 @@ CREATE TABLE avro_test_table (
     b BOOLEAN,
     ts TIMESTAMP,
     dt DATE,
-    json VARCHAR,
+    json1 VARCHAR,
+    json2 VARIANT,
     uuid VARCHAR
 ) with (
   'materialized' = 'true',

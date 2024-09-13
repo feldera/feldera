@@ -3,17 +3,20 @@
 
 use crate::{casts::*, Date, GeoPoint, LongInterval, ShortInterval, Time, Timestamp};
 use dbsp::algebra::{F32, F64};
-use feldera_types::deserialize_without_context;
-use feldera_types::serde_with_context::{SerializeWithContext, SqlSerdeConfig};
+use feldera_types::serde_with_context::serde_config::VariantFormat;
+use feldera_types::serde_with_context::{
+    DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+};
 use num::FromPrimitive;
 use rkyv::collections::ArchivedBTreeMap;
 use rkyv::string::ArchivedString;
 use rkyv::Fallible;
 use rust_decimal::Decimal;
-use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
-use serde::ser::SerializeMap;
+use serde::de::{self, DeserializeSeed, Error as _, MapAccess, SeqAccess, Visitor};
+use serde::ser::{self, Error as _, SerializeMap};
 use serde::{Deserialize, Serialize};
 use size_of::{Context, SizeOf};
+use std::borrow::Cow;
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
@@ -255,6 +258,28 @@ impl<'de> Deserialize<'de> for Variant {
     }
 }
 
+impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Variant {
+    fn deserialize_with_context<D>(
+        deserializer: D,
+        context: &'de SqlSerdeConfig,
+    ) -> Result<Variant, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match context.variant_format {
+            VariantFormat::Json => Variant::deserialize(deserializer),
+            VariantFormat::JsonString => {
+                let s = Cow::<String>::deserialize(deserializer)?;
+                serde_json::from_str::<Variant>(&s).map_err(|e| {
+                    D::Error::custom(format!(
+                        "error deserializing VARIANT type from a JSON string: {e}"
+                    ))
+                })
+            }
+        }
+    }
+}
+
 struct KeyClassifier;
 
 enum KeyClass {
@@ -337,14 +362,15 @@ impl<'de> de::Deserialize<'de> for NumberFromString {
     }
 }
 
-deserialize_without_context!(Variant);
-
 impl Serialize for Variant {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        self.serialize_with_context(serializer, &SqlSerdeConfig::default())
+        self.serialize_with_context(
+            serializer,
+            &SqlSerdeConfig::default().with_variant_format(VariantFormat::Json),
+        )
     }
 }
 
@@ -356,26 +382,34 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
     ) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
+        S::Error: ser::Error,
     {
-        match self {
-            Variant::SqlNull | Variant::VariantNull => serializer.serialize_none(),
-            Variant::Boolean(v) => v.serialize_with_context(serializer, context),
-            Variant::TinyInt(v) => v.serialize_with_context(serializer, context),
-            Variant::SmallInt(v) => v.serialize_with_context(serializer, context),
-            Variant::Int(v) => v.serialize_with_context(serializer, context),
-            Variant::BigInt(v) => v.serialize_with_context(serializer, context),
-            Variant::Real(v) => v.serialize_with_context(serializer, context),
-            Variant::Double(v) => v.serialize_with_context(serializer, context),
-            Variant::Decimal(v) => v.serialize_with_context(serializer, context),
-            Variant::String(v) => v.serialize_with_context(serializer, context),
-            Variant::Date(v) => v.serialize_with_context(serializer, context),
-            Variant::Time(v) => v.serialize_with_context(serializer, context),
-            Variant::Timestamp(v) => v.serialize_with_context(serializer, context),
-            Variant::ShortInterval(v) => v.serialize_with_context(serializer, context),
-            Variant::LongInterval(v) => v.serialize_with_context(serializer, context),
-            Variant::Geometry(v) => v.serialize_with_context(serializer, context),
-            Variant::Array(a) => a.serialize_with_context(serializer, context),
-            Variant::Map(m) => m.serialize_with_context(serializer, context),
+        match context.variant_format {
+            VariantFormat::JsonString => {
+                serializer.serialize_str(&self.to_json_string().map_err(|e| {
+                    S::Error::custom(format!("error serializing VARIANT to JSON string: {e}"))
+                })?)
+            }
+            VariantFormat::Json => match self {
+                Variant::SqlNull | Variant::VariantNull => serializer.serialize_none(),
+                Variant::Boolean(v) => v.serialize_with_context(serializer, context),
+                Variant::TinyInt(v) => v.serialize_with_context(serializer, context),
+                Variant::SmallInt(v) => v.serialize_with_context(serializer, context),
+                Variant::Int(v) => v.serialize_with_context(serializer, context),
+                Variant::BigInt(v) => v.serialize_with_context(serializer, context),
+                Variant::Real(v) => v.serialize_with_context(serializer, context),
+                Variant::Double(v) => v.serialize_with_context(serializer, context),
+                Variant::Decimal(v) => v.serialize_with_context(serializer, context),
+                Variant::String(v) => v.serialize_with_context(serializer, context),
+                Variant::Date(v) => v.serialize_with_context(serializer, context),
+                Variant::Time(v) => v.serialize_with_context(serializer, context),
+                Variant::Timestamp(v) => v.serialize_with_context(serializer, context),
+                Variant::ShortInterval(v) => v.serialize_with_context(serializer, context),
+                Variant::LongInterval(v) => v.serialize_with_context(serializer, context),
+                Variant::Geometry(v) => v.serialize_with_context(serializer, context),
+                Variant::Array(a) => a.serialize_with_context(serializer, context),
+                Variant::Map(m) => m.serialize_with_context(serializer, context),
+            },
         }
     }
 }
