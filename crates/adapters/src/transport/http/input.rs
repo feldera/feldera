@@ -205,7 +205,6 @@ impl HttpInputEndpoint {
         {
             status_watch.changed().await.unwrap();
         }
-        println!("all flushed");
 
         debug!(
             "HTTP input endpoint '{}': end of request, {num_bytes} received",
