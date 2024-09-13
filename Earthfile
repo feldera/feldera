@@ -107,6 +107,7 @@ clippy:
 
 install-python-deps:
     FROM +install-deps
+    RUN curl -LsSf https://astral.sh/uv/install.sh | sh
     RUN pip install wheel
     COPY --dir python ./
     RUN pip install --upgrade pip
