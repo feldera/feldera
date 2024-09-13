@@ -1,6 +1,6 @@
 use crate::cd::Client;
 use crate::cli::{Cli, Commands};
-use crate::{pipeline, UGPRADE_NOTICE};
+use crate::{handle_errors_fatal, pipeline, UGPRADE_NOTICE};
 use clap::Parser;
 use directories::ProjectDirs;
 use feldera_types::error::ErrorResponse;
@@ -39,6 +39,26 @@ materialized view.
 
 /// Start an interactive shell for a pipeline.
 pub async fn shell(name: String, client: Client) {
+    let found_pipeline_name = client
+        .list_pipelines()
+        .send()
+        .await
+        .map_err(handle_errors_fatal(
+            client.baseurl.clone(),
+            "Failed to connect",
+            1,
+        ))
+        .unwrap()
+        .iter()
+        .any(|r| r.name == name);
+    if !found_pipeline_name {
+        eprintln!(
+            "ERROR: Pipeline does not exist, use `fda create {}` to create it",
+            name
+        );
+        std::process::exit(1);
+    }
+
     println!(
         "fda shell ({}). Type \"help\" for help. Use Ctrl-D (i.e. EOF) to exit.",
         env!("CARGO_PKG_VERSION")
