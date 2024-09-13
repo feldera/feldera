@@ -7,7 +7,7 @@ use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
 use feldera_types::config::RuntimeConfig;
 use feldera_types::error::ErrorResponse;
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use reqwest::StatusCode;
 use tabled::builder::Builder;
@@ -55,6 +55,7 @@ pub(crate) fn make_client(
 }
 
 fn handle_errors_fatal(
+    server: String,
     msg: &'static str,
     exit_code: i32,
 ) -> Box<dyn Fn(Error<ErrorResponse>) -> Infallible + Send> {
@@ -66,9 +67,9 @@ fn handle_errors_fatal(
                 debug!("Details: {:#?}", e.details);
             }
             Error::InvalidRequest(s) => {
-                eprint!("{}: ", msg);
-                error!("Invalid request ({})", s);
-                error!("{}", UGPRADE_NOTICE);
+                eprintln!("{}: ", msg);
+                warn!("Invalid request ({})", s);
+                warn!("{}", UGPRADE_NOTICE);
             }
             Error::CommunicationError(e) => {
                 eprint!("{}: ", msg);
@@ -83,37 +84,42 @@ fn handle_errors_fatal(
                 );
             }
             Error::ResponseBodyError(e) => {
-                eprint!("{}: ", msg);
-                error!("Unable to read the error returned from the server ({})", e);
-                error!("{}", UGPRADE_NOTICE);
+                eprintln!("{}: ", msg);
+                warn!(
+                    "Unable to read the detailed error returned from {server} ({})",
+                    e
+                );
+                warn!("{}", UGPRADE_NOTICE);
             }
             Error::InvalidResponsePayload(b, e) => {
                 eprintln!("{}", msg);
+                warn!("Unable to parse the detailed response returned from {server}");
                 if !b.is_empty() {
-                    error!(
-                        "Unable to parse the error returned from the server ({})",
-                        e.to_string()
-                    );
-                    error!("{}", UGPRADE_NOTICE);
+                    error!("Unable to parse the response returned from {server}");
+                    debug!("Parse Error: {:?}", e.to_string());
+                    debug!("Response payload: {:?}", String::from_utf8_lossy(b));
                 }
+                warn!("{}", UGPRADE_NOTICE);
             }
             Error::UnexpectedResponse(r) => {
                 if r.status() == StatusCode::UNAUTHORIZED {
                     // The unauthorized error is often missing in the spec, and we can't currently have multiple
                     // return types until https://github.com/oxidecomputer/progenitor/pull/857 lands.
                     eprint!("{}: ", msg);
-                    eprintln!("Unauthorized. Check your API key.");
-                    std::process::exit(1);
+                    eprintln!("Unauthorized. Check your API key for {server}.");
+                    if server.starts_with("http://") {
+                        eprintln!("Did you mean to use https?");
+                    }
                 } else {
-                    eprint!("{}: ", msg);
-                    error!("Unexpected response from the server: {:?}", r);
-                    error!("{}", UGPRADE_NOTICE);
+                    eprintln!("{}: ", msg);
+                    warn!("Unexpected response from {server}: {:?}", r);
+                    warn!("{}", UGPRADE_NOTICE);
                 }
             }
             Error::PreHookError(e) => {
-                eprint!("{}: ", msg);
+                eprintln!("{}: ", msg);
                 error!("Unable to execute authentication pre-hook ({})", e);
-                error!("{}", UGPRADE_NOTICE);
+                warn!("{}", UGPRADE_NOTICE);
             }
         };
         std::process::exit(exit_code);
@@ -129,7 +135,11 @@ async fn api_key_commands(action: ApiKeyActions, client: Client) {
                 .body(NewApiKeyRequest { name })
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to create API key", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to create API key",
+                    1,
+                ))
                 .unwrap();
             println!("API key '{}' created: {}", response.name, response.api_key);
         }
@@ -140,7 +150,11 @@ async fn api_key_commands(action: ApiKeyActions, client: Client) {
                 .api_key_name(name.as_str())
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to delete API key", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to delete API key",
+                    1,
+                ))
                 .unwrap();
             println!("API key '{}' deleted", name);
         }
@@ -150,7 +164,11 @@ async fn api_key_commands(action: ApiKeyActions, client: Client) {
                 .list_api_keys()
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to list API keys", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to list API keys",
+                    1,
+                ))
                 .unwrap();
             let mut rows = vec![];
             rows.push(["name".to_string(), "id".to_string()]);
@@ -171,7 +189,11 @@ async fn pipelines(client: Client) {
         .list_pipelines()
         .send()
         .await
-        .map_err(handle_errors_fatal("Failed to list pipelines", 1))
+        .map_err(handle_errors_fatal(
+            client.baseurl,
+            "Failed to list pipelines",
+            1,
+        ))
         .unwrap();
     let mut rows = vec![];
     rows.push(["name".to_string(), "status".to_string()]);
@@ -283,7 +305,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     })
                     .send()
                     .await
-                    .map_err(handle_errors_fatal("Failed to create pipeline", 1))
+                    .map_err(handle_errors_fatal(
+                        client.baseurl,
+                        "Failed to create pipeline",
+                        1,
+                    ))
                     .unwrap();
                 println!("Pipeline created successfully.");
                 debug!("{:#?}", response);
@@ -300,7 +326,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     .pipeline_name(name.clone())
                     .send()
                     .await
-                    .map_err(handle_errors_fatal("Failed to get program config", 1))
+                    .map_err(handle_errors_fatal(
+                        client.baseurl.clone(),
+                        "Failed to get program config",
+                        1,
+                    ))
                     .unwrap();
 
                 let new_program = if pc.program_code.ends_with(|c: char| c.is_whitespace()) {
@@ -321,7 +351,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     })
                     .send()
                     .await
-                    .map_err(handle_errors_fatal("Failed to recompile pipeline", 1))
+                    .map_err(handle_errors_fatal(
+                        client.baseurl.clone(),
+                        "Failed to recompile pipeline",
+                        1,
+                    ))
                     .unwrap();
                 info!("Forcing recompilation this may take a few seconds...");
             }
@@ -334,7 +368,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     .pipeline_name(name.clone())
                     .send()
                     .await
-                    .map_err(handle_errors_fatal("Failed to get program config", 1))
+                    .map_err(handle_errors_fatal(
+                        client.baseurl.clone(),
+                        "Failed to get program config",
+                        1,
+                    ))
                     .unwrap();
                 compiling = matches!(pc.program_status, ProgramStatus::Pending)
                     || matches!(pc.program_status, ProgramStatus::CompilingRust)
@@ -353,7 +391,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 .action("start")
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to start pipeline", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to start pipeline",
+                    1,
+                ))
                 .unwrap();
             println!("Pipeline started successfully.");
             trace!("{:#?}", response);
@@ -365,7 +407,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 .action("pause")
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to pause pipeline", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to pause pipeline",
+                    1,
+                ))
                 .unwrap();
             println!("Pipeline paused successfully.");
             trace!("{:#?}", response);
@@ -377,7 +423,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 .action("shutdown")
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to stop pipeline", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl.clone(),
+                    "Failed to stop pipeline",
+                    1,
+                ))
                 .unwrap();
 
             let mut print_every_30_seconds = tokio::time::Instant::now();
@@ -388,7 +438,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     .pipeline_name(name.clone())
                     .send()
                     .await
-                    .map_err(handle_errors_fatal("Failed to get program config", 1))
+                    .map_err(handle_errors_fatal(
+                        client.baseurl.clone(),
+                        "Failed to get program config",
+                        1,
+                    ))
                     .unwrap();
                 shutting_down = !matches!(pc.deployment_status, PipelineStatus::Shutdown);
                 if print_every_30_seconds.elapsed().as_secs() > 30 {
@@ -408,7 +462,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 .action("shutdown")
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to stop pipeline", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to stop pipeline",
+                    1,
+                ))
                 .unwrap();
             println!("Pipeline shutdown successful.");
             trace!("{:#?}", response);
@@ -419,7 +477,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to get pipeline stats", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to get pipeline stats",
+                    1,
+                ))
                 .unwrap();
             println!(
                 "{}",
@@ -433,7 +495,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to delete the pipeline", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to delete the pipeline",
+                    1,
+                ))
                 .unwrap();
             println!("Pipeline deleted successfully.");
             trace!("{:#?}", response);
@@ -444,7 +510,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to get pipeline status", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to get pipeline status",
+                    1,
+                ))
                 .unwrap();
 
             let mut rows = vec![];
@@ -482,7 +552,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to get pipeline config", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to get pipeline config",
+                    1,
+                ))
                 .unwrap();
             println!(
                 "{}",
@@ -496,7 +570,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 .pipeline_name(name.clone())
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to get pipeline config", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl.clone(),
+                    "Failed to get pipeline config",
+                    1,
+                ))
                 .map(|response| response.runtime_config.clone())
                 .unwrap();
 
@@ -520,7 +598,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 })
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to set runtime config", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl.clone(),
+                    "Failed to set runtime config",
+                    1,
+                ))
                 .unwrap();
             println!("Runtime config updated successfully.");
             println!(
@@ -567,7 +649,11 @@ async fn endpoint(
                 .action("start")
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to start endpoint", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to start endpoint",
+                    1,
+                ))
                 .unwrap();
             println!("Endpoint {} started successfully.", endpoint_name);
         }
@@ -579,7 +665,11 @@ async fn endpoint(
                 .action("pause")
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to pause endpoint", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to pause endpoint",
+                    1,
+                ))
                 .unwrap();
             println!("Endpoint {} paused successfully.", endpoint_name);
         }
@@ -594,7 +684,11 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to get program", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to get program",
+                    1,
+                ))
                 .unwrap();
             println!("{}", response.program_code);
         }
@@ -604,7 +698,11 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to get program config", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to get program config",
+                    1,
+                ))
                 .unwrap();
             println!(
                 "{}",
@@ -628,7 +726,11 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
                 .body(pp)
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to set program config", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to set program config",
+                    1,
+                ))
                 .unwrap();
             println!("Program config updated successfully.");
         }
@@ -638,7 +740,11 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
                 .pipeline_name(name)
                 .send()
                 .await
-                .map_err(handle_errors_fatal("Failed to get program status", 1))
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to get program status",
+                    1,
+                ))
                 .unwrap();
             println!(
                 "{:#?} (version {}, last updated {})",
@@ -663,7 +769,11 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
                     .body(pp)
                     .send()
                     .await
-                    .map_err(handle_errors_fatal("Failed to set program code", 1))
+                    .map_err(handle_errors_fatal(
+                        client.baseurl,
+                        "Failed to set program code",
+                        1,
+                    ))
                     .unwrap();
                 println!("Program updated successfully.");
             } else {
