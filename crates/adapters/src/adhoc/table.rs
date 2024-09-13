@@ -206,7 +206,7 @@ impl DataSink for AdHocTableSink {
             let total_input = controller.status.num_total_input_records();
 
             let now = Instant::now();
-            while controller.status.num_total_processed_records() >= total_input {
+            while controller.status.num_total_processed_records() < total_input {
                 // We don't have a better notification mechanism for now.
                 sleep(Duration::from_millis(100)).await;
                 const WAIT_FOR_PROCESSING_TIMEOUT: Duration = Duration::from_secs(120);
