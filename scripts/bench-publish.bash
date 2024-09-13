@@ -63,14 +63,7 @@ if [ "$SMOKE" = "" ]; then
     git add .
     git commit -a -m "Added benchmark results for $PR_COMMIT_SHA."
     git push origin main
-    if [ "$CI_MACHINE_TYPE" != "cloud" ]; then
-        uv run --locked _scripts/compare_nexmark.py --machines ${CI_MACHINE_TYPE} > ../nexmark_comment.txt
-    fi
     cd ..
     rm -rf gh-pages
     git clean -f
-else
-    if [ "$CI_MACHINE_TYPE" != "cloud" ]; then
-        uv run --locked _scripts/compare_nexmark.py --machines ${CI_MACHINE_TYPE} > ../nexmark_comment.txt
-    fi
 fi
