@@ -113,6 +113,7 @@ the `PARSE_JSON` function:
 - a `VARIANT` wrapping a `VARCHAR` value is converted to a string with double quotes, and with escape sequences for special characters (e.g., quotes), as mandated by the JSON grammar
 - a `VARIANT` wrapping an `ARRAY` with elements of any type is converted to a JSON array, and the elements are recursively converted
 - a `VARIANT` wrapping a `MAP` whose keys have any SQL `CHAR` type, or `VARIANT` values wrapping `CHAR` values will generate a JSON object, by recursively converting each key-value pair.
+- a `VARIANT` wrapping a `DATE`, `TIME`, or `DATETIME` value will be serialized as a JSON string
 - any other data value is a conversion error, and causes the `UNPARSE_JSON` function to produce a `NULL` result
 
 ## Examples
@@ -303,9 +304,13 @@ SELECT UNPARSE_JSON(PARSE_JSON('{ \"a\": 1, \"b\": 2 }'))
 SELECT PARSE_JSON('{ \"a\": 1, \"b\": 2 }') = PARSE_JSON('{\"b\":2,\"a\":1}')
 true
 
--- JSON cannot contain dates, result is NULL
+-- dates are unparsed as strings
 SELECT UNPARSE_JSON(CAST(DATE '2020-01-01' AS VARIANT))
-NULL
+"2020-01-01"
+
+-- timestamps are unparsed as strings (timezone is always +00)
+SELECT UNPARSE_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))
+"2020-01-01T10:00:00+00:00"
 ```
 
 ### Example SQL program manipulating JSON values

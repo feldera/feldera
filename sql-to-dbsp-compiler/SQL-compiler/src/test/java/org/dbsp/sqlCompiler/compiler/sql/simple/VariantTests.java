@@ -26,7 +26,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -262,8 +261,11 @@ public class VariantTests extends BaseSQLTests {
         this.testQuery("SELECT PARSE_JSON('{ \"a\": 1, \"b\": 2 }') = PARSE_JSON('{\"b\":2,\"a\":1}')",
                 new DBSPBoolLiteral(true));
 
-        // Illegal Variant
+        // Dates are deserialized as strings
         this.testQuery("SELECT UNPARSE_JSON(CAST(DATE '2020-01-01' AS VARIANT))",
-                NULL);
+                new DBSPStringLiteral("\"2020-01-01\"", true));
+        // timestamps are unparsed as strings (timezone is always +00)
+        this.testQuery("SELECT UNPARSE_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))",
+                new DBSPStringLiteral("\"2020-01-01T10:00:00+00:00\"", true));
     }
 }
