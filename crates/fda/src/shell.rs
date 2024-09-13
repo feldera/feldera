@@ -25,6 +25,7 @@ Type:  \h for help with fda shell commands
        - pause
        - restart [-r, --recompile]
        - shutdown / stop
+       - program
 "#;
 
 const SQL_HELP_TEXT: &str = r#"Send SQL commands to the pipeline.
@@ -104,7 +105,8 @@ pub async fn shell(name: String, client: Client) {
                         || line.starts_with("pause")
                         || line.starts_with("stop")
                         || line.starts_with("restart")
-                        || line.starts_with("shutdown") =>
+                        || line.starts_with("shutdown")
+                        || trimmed_line == "program" =>
                     {
                         let mut args = trimmed_line.split(' ').collect::<Vec<&str>>();
                         args.insert(0, "fda");

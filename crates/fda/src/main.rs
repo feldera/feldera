@@ -23,7 +23,7 @@ mod cd {
 }
 
 pub(crate) const UGPRADE_NOTICE: &str =
-    "Try upgrading to the latest CLI version or report the issue on github.com/feldera/feldera.";
+    "Try upgrading to the latest CLI version to resolve this issue or report it on github.com/feldera/feldera if you're already on the latest version.";
 
 use crate::cd::types::*;
 use crate::cd::*;
@@ -95,7 +95,6 @@ fn handle_errors_fatal(
                 eprintln!("{}", msg);
                 warn!("Unable to parse the detailed response returned from {server}");
                 if !b.is_empty() {
-                    error!("Unable to parse the response returned from {server}");
                     debug!("Parse Error: {:?}", e.to_string());
                     debug!("Response payload: {:?}", String::from_utf8_lossy(b));
                 }
@@ -517,33 +516,10 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 ))
                 .unwrap();
 
-            let mut rows = vec![];
-            rows.push([
-                "status".to_string(),
-                "desired_status".to_string(),
-                "program_status".to_string(),
-                "error".to_string(),
-                "location".to_string(),
-                "status_since".to_string(),
-            ]);
-            rows.push([
-                response.deployment_status.to_string(),
-                response.deployment_desired_status.to_string(),
-                format!("{:?}", response.program_status).to_string(),
-                response
-                    .deployment_error
-                    .as_ref()
-                    .map(|e| e.message.to_string())
-                    .unwrap_or(String::from("n/a")),
-                response
-                    .deployment_location
-                    .clone()
-                    .unwrap_or(String::from("n/a")),
-                response.deployment_status_since.to_string(),
-            ]);
             println!(
                 "{}",
-                Builder::from_iter(rows).build().with(Style::rounded())
+                serde_json::to_string_pretty(&response.into_inner())
+                    .expect("Failed to serialize pipeline stats")
             );
         }
         PipelineAction::Config { name } => {
