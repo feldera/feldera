@@ -1613,18 +1613,14 @@ where
     Vec<T>: TryFrom<Variant>,
 {
     let value = value?;
-    Some(cast_to_vec_V(value))
+    cast_to_vecN_V(value)
 }
 
 pub fn cast_to_vecN_V<T>(value: Variant) -> Option<Vec<T>>
 where
     Vec<T>: TryFrom<Variant>,
 {
-    let result = value.try_into();
-    match result {
-        Ok(value) => Some(value),
-        _ => None,
-    }
+    value.try_into().ok()
 }
 
 pub fn cast_to_vecN_VN<T>(value: Option<Variant>) -> Option<Vec<T>>
@@ -1651,18 +1647,14 @@ where
     BTreeMap<K, V>: TryFrom<Variant>,
 {
     let value = value?;
-    Some(cast_to_map_V(value))
+    cast_to_mapN_V(value)
 }
 
 pub fn cast_to_mapN_V<K, V>(value: Variant) -> Option<BTreeMap<K, V>>
 where
     BTreeMap<K, V>: TryFrom<Variant>,
 {
-    let result = value.try_into();
-    match result {
-        Ok(value) => Some(value),
-        _ => None,
-    }
+    value.try_into().ok()
 }
 
 pub fn cast_to_mapN_VN<K, V>(value: Option<Variant>) -> Option<BTreeMap<K, V>>
