@@ -22,8 +22,6 @@ NEXMARK_PERSISTENCE_CSV_FILE='persistence_nexmark_results.csv'
 GALEN_CSV_FILE='galen_results.csv'
 LDBC_CSV_FILE='ldbc_results.csv'
 
-pip3 install -r gh-pages/requirements.txt
-
 # If you change this, adjust the command also in the append_csv function in utils.py:
 DATE_PREFIX=`date +"%Y-%m-%d-%H-%M/"`
 if [ -z "${PR_COMMIT_SHA}" ]; then
@@ -53,11 +51,11 @@ done
 
 
 # Update CI history plots
-python3 gh-pages/_scripts/ci_history.py --append --machine $CI_MACHINE_TYPE
+cd gh-pages
+uv run --locked _scripts/ci_history.py --append --machine $CI_MACHINE_TYPE
 
 # Push results to gh-pages repo
 if [ "$SMOKE" = "" ]; then
-    cd gh-pages
     if [ "$CI" = true ] ; then
         git config user.email "no-reply@dbsp.systems"
         git config user.name "dbsp-ci"
@@ -65,14 +63,14 @@ if [ "$SMOKE" = "" ]; then
     git add .
     git commit -a -m "Added benchmark results for $PR_COMMIT_SHA."
     git push origin main
-    cd ..
     if [ "$CI_MACHINE_TYPE" != "cloud" ]; then
-        python3 gh-pages/_scripts/compare_nexmark.py --machines ${CI_MACHINE_TYPE} > nexmark_comment.txt
+        uv run --locked _scripts/compare_nexmark.py --machines ${CI_MACHINE_TYPE} > ../nexmark_comment.txt
     fi
+    cd ..
     rm -rf gh-pages
     git clean -f
 else
     if [ "$CI_MACHINE_TYPE" != "cloud" ]; then
-        python3 gh-pages/_scripts/compare_nexmark.py --machines ${CI_MACHINE_TYPE} > nexmark_comment.txt
+        uv run --locked _scripts/compare_nexmark.py --machines ${CI_MACHINE_TYPE} > ../nexmark_comment.txt
     fi
 fi

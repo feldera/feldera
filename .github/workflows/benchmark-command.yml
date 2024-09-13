@@ -37,12 +37,15 @@ jobs:
       - name: Run Benchmarks
         run: earthly --verbose -P +benchmark
 
+      - name: Install the default version of uv
+        id: setup-uv
+        uses: astral-sh/setup-uv@v2
+
       - name: Fetch previous results
         run: bash ./scripts/clone-gh-pages.bash
-        
+
       - name: Publish results
         run: bash ./scripts/bench-publish.bash
-
 
       # Find the PR associated with this push, if there is one. Note that this
       # is needed because `${{ github.event.pull_request.number }}` does not get
