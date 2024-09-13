@@ -496,18 +496,18 @@ where
 //////////////////// Reverse conversions Variant -> T
 
 #[derive(Error, Debug)]
-pub enum MyError {
+pub enum ConversionError {
     #[error("{0}")]
     CustomError(String),
 }
 
-impl MyError {
+impl ConversionError {
     pub fn from_string(message: String) -> Box<Self> {
-        Box::new(MyError::CustomError(message))
+        Box::new(ConversionError::CustomError(message))
     }
 
     pub fn from_strng(message: &str) -> Box<Self> {
-        Box::new(MyError::CustomError(message.to_string()))
+        Box::new(ConversionError::CustomError(message.to_string()))
     }
 }
 
@@ -519,8 +519,8 @@ macro_rules! into {
             fn try_from(value: Variant) -> Result<Self, Self::Error> {
                 match value {
                     Variant::$variant(x) => Ok(x),
-                    _ => Err(MyError::from_strng(concat!(
-                        "Not an ",
+                    _ => Err(ConversionError::from_strng(concat!(
+                        "not an ",
                         stringify!($variant)
                     ))),
                 }
@@ -568,7 +568,7 @@ macro_rules! into_numeric {
                         Variant::Real(x) => Ok([< cast_to_ $type_name _f >](x)),
                         Variant::Double(x) => Ok([< cast_to_ $type_name _d >](x)) ,
                         Variant::Decimal(x) => Ok([< cast_to_ $type_name _decimal >](x)),
-                        _ => Err(MyError::from_strng(concat!("Not an ", stringify!($variant)))),
+                        _ => Err(ConversionError::from_strng(concat!("not an ", stringify!($variant)))),
                     }
                 }
             }
@@ -577,15 +577,13 @@ macro_rules! into_numeric {
         impl TryFrom<Variant> for Option<$type> {
             type Error = Box<dyn Error>;
 
-            ::paste::paste! {
-                fn try_from(value: Variant) -> Result<Self, Self::Error> {
-                    match value {
-                        Variant::VariantNull => Ok(None),
-                        Variant::SqlNull => Ok(None),
-                        _ => match <$type>::try_from(value) {
-                            Ok(result) => Ok(Some(result)),
-                            Err(e) => Err(e),
-                        }
+            fn try_from(value: Variant) -> Result<Self, Self::Error> {
+                match value {
+                    Variant::VariantNull => Ok(None),
+                    Variant::SqlNull => Ok(None),
+                    _ => match <$type>::try_from(value) {
+                        Ok(result) => Ok(Some(result)),
+                        Err(e) => Err(e),
                     }
                 }
             }
@@ -605,19 +603,27 @@ impl TryFrom<Variant> for Decimal {
 
     fn try_from(value: Variant) -> Result<Self, Self::Error> {
         match value {
-            Variant::TinyInt(x) => Decimal::from_i8(x).ok_or(MyError::from_strng("Out of range")),
-            Variant::SmallInt(x) => Decimal::from_i16(x).ok_or(MyError::from_strng("Out of range")),
-            Variant::Int(x) => Decimal::from_i32(x).ok_or(MyError::from_strng("Out of range")),
-            Variant::BigInt(x) => Decimal::from_i64(x).ok_or(MyError::from_strng("Out of range")),
+            Variant::TinyInt(x) => {
+                Decimal::from_i8(x).ok_or(ConversionError::from_strng("out of range"))
+            }
+            Variant::SmallInt(x) => {
+                Decimal::from_i16(x).ok_or(ConversionError::from_strng("out of range"))
+            }
+            Variant::Int(x) => {
+                Decimal::from_i32(x).ok_or(ConversionError::from_strng("out of range"))
+            }
+            Variant::BigInt(x) => {
+                Decimal::from_i64(x).ok_or(ConversionError::from_strng("out of range"))
+            }
             Variant::Real(x) => {
-                Decimal::from_f32(x.into_inner()).ok_or(MyError::from_strng("Out of range"))
+                Decimal::from_f32(x.into_inner()).ok_or(ConversionError::from_strng("out of range"))
             }
             Variant::Double(x) => {
-                Decimal::from_f64(x.into_inner()).ok_or(MyError::from_strng("Out of range"))
+                Decimal::from_f64(x.into_inner()).ok_or(ConversionError::from_strng("out of range"))
             }
             Variant::Decimal(x) => Ok(x),
-            _ => Err(MyError::from_strng(concat!(
-                "Not an ",
+            _ => Err(ConversionError::from_strng(concat!(
+                "not an ",
                 stringify!($variant)
             ))),
         }
@@ -648,14 +654,16 @@ where
     fn try_from(value: Variant) -> Result<Self, Self::Error> {
         match value {
             Variant::Array(a) => {
-                let mut result = vec![];
+                let mut result = Vec::with_capacity(a.len());
                 for e in a {
                     let converted = T::try_from(e)?;
                     result.push(converted);
                 }
                 Ok(result)
             }
-            _ => Err(Box::new(MyError::CustomError("Not an array".to_string()))),
+            _ => Err(Box::new(ConversionError::CustomError(
+                "not an array".to_string(),
+            ))),
         }
     }
 }
@@ -696,7 +704,9 @@ where
                 }
                 Ok(result)
             }
-            _ => Err(Box::new(MyError::CustomError("Not a map".to_string()))),
+            _ => Err(Box::new(ConversionError::CustomError(
+                "not a map".to_string(),
+            ))),
         }
     }
 }
