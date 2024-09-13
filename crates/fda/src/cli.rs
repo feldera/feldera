@@ -238,7 +238,15 @@ pub enum PipelineAction {
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
     },
-    /// Retrieve the deployment status of a pipeline.
+    /// Retrieve the entire state of a pipeline.
+    ///
+    /// EXAMPLES:
+    ///
+    /// - `fda status test | jq .program_info.schema`
+    ///
+    /// - `fda status test | jq .program_info.input_connectors`
+    ///
+    /// - `fda status test | jq .deployment_config`
     Status {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
