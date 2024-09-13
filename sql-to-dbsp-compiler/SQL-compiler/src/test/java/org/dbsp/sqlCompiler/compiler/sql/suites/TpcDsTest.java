@@ -29,7 +29,7 @@ public class TpcDsTest extends BaseSQLTests {
         DBSPCompiler compiler = new DBSPCompiler(options);
         options.languageOptions.ignoreOrderBy = true;
         options.languageOptions.lenient = true;
-        options.ioOptions.quiet = false;
+        options.ioOptions.quiet = true;  // lots of warnings
         compiler.compileStatements(tpcds);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         ccs.showErrors();
