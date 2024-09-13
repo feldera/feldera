@@ -189,6 +189,7 @@ services:
       - "sleep 1 && cd demo/simple-count && python3 run.py --api-url http://pipeline-manager:8080"
 
   prometheus:
+    profiles: [ "monitoring" ]
     depends_on:
       pipeline-manager:
         condition: service_healthy
@@ -206,6 +207,7 @@ services:
       start_period: 50s
 
   grafana:
+    profiles: [ "monitoring" ]
     depends_on:
       pipeline-manager:
         condition: service_healthy

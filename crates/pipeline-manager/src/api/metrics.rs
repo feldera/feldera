@@ -47,7 +47,14 @@ pub(crate) async fn get_metrics(
         {
             if let Ok(res) = state
                 .runner
-                .forward_to_pipeline(*tenant_id, &pipeline.name, Method::GET, "metrics", "", None)
+                .forward_http_request_to_pipeline_by_name(
+                    *tenant_id,
+                    &pipeline.name,
+                    Method::GET,
+                    "metrics",
+                    "",
+                    None,
+                )
                 .await
             {
                 if res.status().is_success() {
