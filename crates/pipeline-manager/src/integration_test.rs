@@ -1802,6 +1802,8 @@ async fn pipeline_name_invalid() {
 #[serial]
 async fn pipeline_adhoc_query() {
     const PROGRAM: &str = r#"
+CREATE TABLE not_materialized(id bigint not null);
+
 CREATE TABLE "TaBle1"(id bigint not null) with ('materialized' = 'true');
 
 CREATE TABLE t1 (
@@ -1837,6 +1839,7 @@ CREATE TABLE t2 (
   }]'
 );
 CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2 WHERE t1.id = t2.id );
+CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materialized );
 "#;
     const ADHOC_SQL_A: &str = "SELECT * FROM joined";
     const ADHOC_SQL_B: &str = "SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2 WHERE t1.id = t2.id";
@@ -1923,7 +1926,7 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
         .await;
     assert_eq!(r.status(), StatusCode::BAD_REQUEST);
 
-    // Test insert statements
+    // Test insert statements for materialized tables
     const ADHOC_SQL_COUNT: &str = "SELECT COUNT(*) from t1";
     const ADHOC_SQL_INSERT: &str = "INSERT INTO t1 VALUES (99, '2020-01-01'), (100, '2020-01-01')";
 
@@ -1955,6 +1958,46 @@ CREATE MATERIALIZED VIEW joined AS ( SELECT t1.dt AS c1, t2.st AS c2 FROM t1, t2
     // This needs to ensure we step() the circuit before we return from insert
     // for the assert to hold
     assert_eq!(cnt_ret_json, json!({"count(*)": 7}));
+
+    // Make sure we can insert into non-materialized tables too
+    let mut r = config
+        .adhoc_query(
+            "/v0/pipelines/test/query",
+            "SELECT COUNT(*) from view_of_not_materialized",
+            "json",
+        )
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
+    let cnt_body = r.body().await.unwrap();
+    let cnt_ret = std::str::from_utf8(cnt_body.as_ref()).unwrap();
+    let cnt_ret_json = serde_json::from_str::<Value>(cnt_ret).unwrap();
+    assert_eq!(cnt_ret_json, json!({"count(*)": 0}));
+
+    let mut r = config
+        .adhoc_query(
+            "/v0/pipelines/test/query",
+            "INSERT INTO not_materialized VALUES (99), (100)",
+            "json",
+        )
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
+    let ins_body = r.body().await.unwrap();
+    let ins_ret = std::str::from_utf8(ins_body.as_ref()).unwrap();
+    let ins_ret_json = serde_json::from_str::<Value>(ins_ret).unwrap();
+    assert_eq!(ins_ret_json, json!({"count": 2}));
+
+    let mut r = config
+        .adhoc_query(
+            "/v0/pipelines/test/query",
+            "SELECT COUNT(*) from view_of_not_materialized",
+            "json",
+        )
+        .await;
+    assert_eq!(r.status(), StatusCode::OK);
+    let cnt_body = r.body().await.unwrap();
+    let cnt_ret = std::str::from_utf8(cnt_body.as_ref()).unwrap();
+    let cnt_ret_json = serde_json::from_str::<Value>(cnt_ret).unwrap();
+    assert_eq!(cnt_ret_json, json!({"count(*)": 2}));
 }
 
 /// We should be able to query a table that never received any input.
