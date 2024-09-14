@@ -31,7 +31,8 @@ use log::warn;
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
 use tokio::sync::mpsc::Sender;
-use tokio::time::{sleep, Duration, Instant};
+use tokio::sync::oneshot;
+use tokio::time::{timeout, Duration};
 
 pub struct AdHocTable {
     // We use a weak reference to avoid a reference cycle.
@@ -195,29 +196,29 @@ impl DataSink for AdHocTableSink {
                 .insert(&batch)
                 .map_err(|e| DataFusionError::External(e.into()))?;
         }
-        let row_count = arrow_inserter.len();
 
-        // If we have a controller, we wait for the circuit to step.
-        // This is necessary to ensure that the data is available for subsequent queries.
-        if let Some(controller) = self.controller.upgrade() {
-            controller.input_batch(None, row_count);
-            arrow_inserter.flush_all();
-            controller.request_step();
-            let total_input = controller.status.num_total_input_records();
+        let Some(controller) = self.controller.upgrade() else {
+            return Ok(0);
+        };
+        let Some(buffer) = arrow_inserter.take() else {
+            return Ok(0);
+        };
 
-            let now = Instant::now();
-            while controller.status.num_total_processed_records() < total_input {
-                // We don't have a better notification mechanism for now.
-                sleep(Duration::from_millis(100)).await;
-                const WAIT_FOR_PROCESSING_TIMEOUT: Duration = Duration::from_secs(120);
-                if now.elapsed() > WAIT_FOR_PROCESSING_TIMEOUT {
-                    // If we take more than 2min clearly something is wrong or extremely busy so we just return for now,
-                    // we can't return an error since the insertion is still eventually going to "commit".
-                    warn!("The submitted `INSERT INTO` statement took an unusual amount of time ({}s) waiting for the Feldera circuit to process it. \
-        We return before confirming insertion completed, if you want to make sure the statement was fully processed monitor the `total_processed_records` metric and wait until it reaches '{}'.", WAIT_FOR_PROCESSING_TIMEOUT.as_secs(), total_input);
-                    break;
-                }
-            }
+        let row_count = buffer.len();
+        let (sender, receiver) = oneshot::channel();
+        controller.queue_buffer(buffer, sender);
+        controller.request_step();
+
+        let total_input = controller.status.num_total_input_records();
+        const WAIT_FOR_PROCESSING_TIMEOUT: Duration = Duration::from_secs(120);
+        if timeout(WAIT_FOR_PROCESSING_TIMEOUT, receiver)
+            .await
+            .is_err()
+        {
+            // If we take more than 2min clearly something is wrong or extremely busy so we just return for now,
+            // we can't return an error since the insertion is still eventually going to "commit".
+            warn!("The submitted `INSERT INTO` statement took an unusual amount of time ({}s) waiting for the Feldera circuit to process it. \
+                   We return before confirming insertion completed, if you want to make sure the statement was fully processed monitor the `total_processed_records` metric and wait until it reaches '{}'.", WAIT_FOR_PROCESSING_TIMEOUT.as_secs(), total_input);
         }
 
         Ok(row_count as u64)
