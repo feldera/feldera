@@ -328,18 +328,18 @@ pub fn parse_json_nullN(_value: Option<()>) -> Option<Variant> {
 
 some_polymorphic_function1!(parse_json, s, String, Variant);
 
-pub fn unparse_json_V(value: Variant) -> Option<String> {
+pub fn to_json_V(value: Variant) -> Option<String> {
     match value.to_json_string() {
         Ok(s) => Some(s),
         _ => None,
     }
 }
 
-pub fn unparse_json_VN(value: Option<Variant>) -> Option<String> {
+pub fn to_json_VN(value: Option<Variant>) -> Option<String> {
     let value = value?;
-    unparse_json_V(value)
+    to_json_V(value)
 }
 
-pub fn unparse_json_nullN(_value: Option<()>) -> Option<String> {
+pub fn to_json_nullN(_value: Option<()>) -> Option<String> {
     None
 }

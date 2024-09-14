@@ -13,7 +13,7 @@ class TestVariant(unittest.TestCase):
 -- Ingest JSON as string; output it as VARIANT.
 CREATE TABLE json_table (json VARCHAR) with ('materialized' = 'true');
 CREATE MATERIALIZED VIEW json_view AS SELECT PARSE_JSON(json) AS json FROM json_table;
-CREATE MATERIALIZED VIEW json_string_view AS SELECT UNPARSE_JSON(json) AS json FROM json_view;
+CREATE MATERIALIZED VIEW json_string_view AS SELECT TO_JSON(json) AS json FROM json_view;
 
 CREATE MATERIALIZED VIEW average_view AS SELECT
 CAST(json['name'] AS VARCHAR) as name,
