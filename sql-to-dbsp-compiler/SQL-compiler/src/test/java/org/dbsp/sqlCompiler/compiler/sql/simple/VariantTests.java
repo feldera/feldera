@@ -266,6 +266,6 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPStringLiteral("\"2020-01-01\"", true));
         // timestamps are unparsed as strings (timezone is always +00)
         this.testQuery("SELECT TO_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))",
-                new DBSPStringLiteral("\"2020-01-01T10:00:00+00:00\"", true));
+                new DBSPStringLiteral("\"2020-01-01 10:00:00\"", true));
     }
 }

@@ -1485,7 +1485,7 @@ mod test {
     fn default_json() {
         assert_eq!(
             deserialize_with_default_config::<TestStruct>(
-                r#"{"date": "2023-09-28", "time": "23:21:15.123", "timestamp": "2018-06-20T13:37:03Z"}"#
+                r#"{"date": "2023-09-28", "time": "23:21:15.123", "timestamp": "2018-06-20 13:37:03"}"#
             )
             .unwrap(),
             TestStruct {
@@ -1502,7 +1502,7 @@ mod test {
                 timestamp: Timestamp::new(1529501823000),
             })
             .unwrap(),
-            r#"{"date":"2023-09-28","time":"23:21:15.123","timestamp":"2018-06-20T13:37:03+00:00"}"#
+            r#"{"date":"2023-09-28","time":"23:21:15.123","timestamp":"2018-06-20 13:37:03"}"#
         );
     }
 }
