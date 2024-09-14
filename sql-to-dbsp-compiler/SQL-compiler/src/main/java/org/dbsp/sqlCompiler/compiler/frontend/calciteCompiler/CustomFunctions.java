@@ -87,7 +87,7 @@ public class CustomFunctions {
 
     static class UnparseJsonFunction extends NonOptimizedFunction {
         public UnparseJsonFunction() {
-            super("UNPARSE_JSON",
+            super("TO_JSON",
                     ReturnTypes.VARCHAR.andThen(SqlTypeTransforms.FORCE_NULLABLE),
                     OperandTypes.VARIANT,
                     SqlFunctionCategory.STRING);

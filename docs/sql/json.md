@@ -81,9 +81,9 @@ SELECT CAST(
       ] AS VARIANT)
 ```
 
-### `UNPARSE_JSON`
+### `TO_JSON`
 
-`UNPARSE_JSON` converts a `VARIANT` value to a `VARCHAR`:
+`TO_JSON` converts a `VARIANT` value to a `VARCHAR`:
 
 - the `VARIANT` `null` value is converted to the string `null`
 - a `VARIANT` wrapping a Boolean value is converted to the respective Boolean string `true` or `false`
@@ -99,7 +99,7 @@ The `VARIANT` type enables efficient JSON processing in SQL.  In this sense it i
 the `JSONB` type in Postgres and other databases.  There are two ways to convert
 JSON data to and from `VARIANT`:
 
-1. Use `PARSE_JSON` and `UNPARSE_JSON` functions to convert strings to `VARIANT` and back.
+1. Use `PARSE_JSON` and `TO_JSON` functions to convert strings to `VARIANT` and back.
 2. Automatically, when ingesting data to or outputting data from columns of type `VARIANT`.
 
 The following example demonstrates the first approach. Here, input events
@@ -323,41 +323,41 @@ SELECT PARSE_JSON('{\"a\": 1, \"b\": 2}')
 {"a"=1,"b"=2}
 
 -- all the following are strings
-SELECT UNPARSE_JSON(PARSE_JSON(1))
+SELECT TO_JSON(PARSE_JSON(1))
 1
 
-SELECT UNPARSE_JSON(null)
+SELECT TO_JSON(null)
 NULL
 
-SELECT UNPARSE_JSON(PARSE_JSON('1'))
+SELECT TO_JSON(PARSE_JSON('1'))
 1
 
-SELECT UNPARSE_JSON(PARSE_JSON('\"a\"'))
+SELECT TO_JSON(PARSE_JSON('\"a\"'))
 a
 
-SELECT UNPARSE_JSON(PARSE_JSON('false'))
+SELECT TO_JSON(PARSE_JSON('false'))
 false
 
-SELECT UNPARSE_JSON(PARSE_JSON('null'))
+SELECT TO_JSON(PARSE_JSON('null'))
 NULL
 
-SELECT UNPARSE_JSON(PARSE_JSON(null))
+SELECT TO_JSON(PARSE_JSON(null))
 null
 
-SELECT UNPARSE_JSON(PARSE_JSON('[1,2,3]'))
+SELECT TO_JSON(PARSE_JSON('[1,2,3]'))
 [1,2,3]
 
-SELECT UNPARSE_JSON(PARSE_JSON('{ \"a\": 1, \"b\": 2 }'))
+SELECT TO_JSON(PARSE_JSON('{ \"a\": 1, \"b\": 2 }'))
 {\"a\":1,\"b\":2}
 
 SELECT PARSE_JSON('{ \"a\": 1, \"b\": 2 }') = PARSE_JSON('{\"b\":2,\"a\":1}')
 true
 
 -- dates are unparsed as strings
-SELECT UNPARSE_JSON(CAST(DATE '2020-01-01' AS VARIANT))
+SELECT TO_JSON(CAST(DATE '2020-01-01' AS VARIANT))
 "2020-01-01"
 
 -- timestamps are unparsed as strings (timezone is always +00)
-SELECT UNPARSE_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))
+SELECT TO_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))
 "2020-01-01T10:00:00+00:00"
 ```

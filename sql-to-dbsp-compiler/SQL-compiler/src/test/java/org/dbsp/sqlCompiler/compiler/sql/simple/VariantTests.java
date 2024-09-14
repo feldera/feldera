@@ -239,33 +239,33 @@ public class VariantTests extends BaseSQLTests {
     public void unparseJsonTests() {
         DBSPExpression NULL = DBSPStringLiteral.none(DBSPTypeString.varchar(true));
 
-        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON(1))",
+        this.testQuery("SELECT TO_JSON(PARSE_JSON(1))",
                 new DBSPStringLiteral("1", true));
-        this.testQuery("SELECT UNPARSE_JSON(null)",
+        this.testQuery("SELECT TO_JSON(null)",
                 NULL);
-        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('1'))",
+        this.testQuery("SELECT TO_JSON(PARSE_JSON('1'))",
                 new DBSPStringLiteral("1", true));
-        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('\"a\"'))",
+        this.testQuery("SELECT TO_JSON(PARSE_JSON('\"a\"'))",
                 new DBSPStringLiteral("\"a\"", true));
-        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('false'))",
+        this.testQuery("SELECT TO_JSON(PARSE_JSON('false'))",
                         new DBSPStringLiteral("false", true));
-        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('null'))",
+        this.testQuery("SELECT TO_JSON(PARSE_JSON('null'))",
                 new DBSPStringLiteral("null", true));
-        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON(null))",
+        this.testQuery("SELECT TO_JSON(PARSE_JSON(null))",
                 DBSPVariantLiteral.none(DBSPTypeString.varchar(true)));
-        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('[1,2,3]'))",
+        this.testQuery("SELECT TO_JSON(PARSE_JSON('[1,2,3]'))",
                 new DBSPStringLiteral("[1,2,3]", true));
-        this.testQuery("SELECT UNPARSE_JSON(PARSE_JSON('{\"a\":1,\"b\":2}'))",
+        this.testQuery("SELECT TO_JSON(PARSE_JSON('{\"a\":1,\"b\":2}'))",
                 new DBSPStringLiteral("{\"a\":1,\"b\":2}", true));
 
         this.testQuery("SELECT PARSE_JSON('{ \"a\": 1, \"b\": 2 }') = PARSE_JSON('{\"b\":2,\"a\":1}')",
                 new DBSPBoolLiteral(true));
 
         // Dates are deserialized as strings
-        this.testQuery("SELECT UNPARSE_JSON(CAST(DATE '2020-01-01' AS VARIANT))",
+        this.testQuery("SELECT TO_JSON(CAST(DATE '2020-01-01' AS VARIANT))",
                 new DBSPStringLiteral("\"2020-01-01\"", true));
         // timestamps are unparsed as strings (timezone is always +00)
-        this.testQuery("SELECT UNPARSE_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))",
+        this.testQuery("SELECT TO_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))",
                 new DBSPStringLiteral("\"2020-01-01T10:00:00+00:00\"", true));
     }
 }
