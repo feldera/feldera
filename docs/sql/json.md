@@ -359,5 +359,5 @@ SELECT TO_JSON(CAST(DATE '2020-01-01' AS VARIANT))
 
 -- timestamps are unparsed as strings (timezone is always +00)
 SELECT TO_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))
-"2020-01-01T10:00:00+00:00"
+"2020-01-01 10:00:00"
 ```

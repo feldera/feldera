@@ -66,7 +66,7 @@ pub enum TimestampFormat {
 
 impl Default for TimestampFormat {
     fn default() -> Self {
-        Self::Rfc3339
+        Self::String("%F %T%.f")
     }
 }
 
@@ -146,9 +146,12 @@ impl SqlSerdeConfig {
 impl From<JsonFlavor> for SqlSerdeConfig {
     fn from(flavor: JsonFlavor) -> Self {
         match flavor {
-            JsonFlavor::Default | JsonFlavor::Datagen => {
+            JsonFlavor::Default => {
                 SqlSerdeConfig::default().with_variant_format(VariantFormat::Json)
             }
+            JsonFlavor::Datagen => SqlSerdeConfig::default()
+                .with_variant_format(VariantFormat::Json)
+                .with_timestamp_format(TimestampFormat::Rfc3339),
             JsonFlavor::KafkaConnectJsonConverter { .. } => Self {
                 time_format: TimeFormat::Millis,
                 date_format: DateFormat::DaysSinceEpoch,

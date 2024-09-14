@@ -1300,8 +1300,8 @@ async fn parse_datetime() {
     let response = config
         .post_json(
             "/v0/pipelines/test/ingress/t1?format=json&update_format=raw",
-            r#"{"t":"13:22:00","ts": "2021-05-20T12:12:33Z","d": "2021-05-20"}
-            {"t":" 11:12:33.483221092 ","ts": " 2024-02-25T12:12:33Z ","d": " 2024-02-25 "}"#
+            r#"{"t":"13:22:00","ts": "2021-05-20 12:12:33","d": "2021-05-20"}
+            {"t":" 11:12:33.483221092 ","ts": " 2024-02-25 12:12:33 ","d": " 2024-02-25 "}"#
                 .to_string(),
         )
         .await;
@@ -1309,7 +1309,7 @@ async fn parse_datetime() {
 
     let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(quantiles.parse::<Value>().unwrap(),
-               "[{\"insert\":{\"d\":\"2024-02-25\",\"t\":\"11:12:33.483221092\",\"ts\":\"2024-02-25T12:12:33+00:00\"}},{\"insert\":{\"d\":\"2021-05-20\",\"t\":\"13:22:00\",\"ts\":\"2021-05-20T12:12:33+00:00\"}}]".parse::<Value>().unwrap());
+               "[{\"insert\":{\"d\":\"2024-02-25\",\"t\":\"11:12:33.483221092\",\"ts\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"d\":\"2021-05-20\",\"t\":\"13:22:00\",\"ts\":\"2021-05-20 12:12:33\"}}]".parse::<Value>().unwrap());
 
     // Shutdown the pipeline
     let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
