@@ -444,12 +444,18 @@ impl Controller {
         self.inner.graph_profile(cb)
     }
 
+    /// Initiate controller termination, but don't block waiting for it to finish.
+    /// Can be used inside callbacks invoked by the controller without risking a deadlock.
+    pub fn initiate_stop(&self) {
+        self.inner.stop();
+    }
+
     /// Terminate the controller, stop all input endpoints and destroy the
     /// circuit.
     pub fn stop(self) -> Result<(), ControllerError> {
         debug!("Stopping the circuit");
 
-        self.inner.stop();
+        self.initiate_stop();
         self.circuit_thread_handle
             .join()
             .map_err(|_| ControllerError::controller_panic())??;
@@ -1666,7 +1672,11 @@ impl ControllerInner {
     }
 
     fn stop(self: &Arc<Self>) {
-        let mut inputs = self.inputs.lock().unwrap();
+        // Prevent nested panic when stopping the pipeline in response to a panic.
+        let Ok(mut inputs) = self.inputs.lock() else {
+            error!("Error shutting down the pipeline: failed to acquire a poisoned lock. This indicates that the pipeline is an inconsistent state.");
+            return;
+        };
 
         for ep in inputs.values() {
             ep.reader.disconnect();

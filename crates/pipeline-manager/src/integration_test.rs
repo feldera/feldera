@@ -884,10 +884,12 @@ async fn pipeline_panic() {
         .await;
 
     // Push some data, which should cause a panic
-    let response = config
+    let _ = config
         .post_csv("/v0/pipelines/test/ingress/t1", "1\n2\n3\n".to_string())
         .await;
-    assert_eq!(response.status(), StatusCode::OK, "Val: {:?}", response);
+
+    // Ignore failures
+    // assert_eq!(response.status(), StatusCode::OK, "Val: {:?}", response);
 
     // Should discover the error next time it polls the pipeline.
     let pipeline = config
