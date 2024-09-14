@@ -41,12 +41,21 @@ pub struct AdHocTable {
     controller: Weak<ControllerInner>,
     input_handle: Option<Box<dyn DeCollectionHandle>>,
     name: SqlIdentifier,
+    materialized: bool,
     schema: Arc<Schema>,
+    /// Contains the current snapshots for tables.
+    ///
+    /// Note that not finding a snapshot in `snapshots` doesn't imply
+    /// that the table isn't materialized just that the table might have
+    /// never received any input. One is supposed to check `materialized` to
+    /// determine if the table is materialized and return an error on
+    /// scans if not.
     snapshots: ConsistentSnapshots,
 }
 
 impl AdHocTable {
     pub fn new(
+        materialized: bool,
         controller: Weak<ControllerInner>,
         input_handle: Option<Box<dyn DeCollectionHandle>>,
         name: SqlIdentifier,
@@ -54,6 +63,7 @@ impl AdHocTable {
         snapshots: ConsistentSnapshots,
     ) -> Self {
         Self {
+            materialized,
             controller,
             input_handle,
             name,
@@ -98,6 +108,8 @@ impl TableProvider for AdHocTable {
         };
 
         Ok(Arc::new(AdHocQueryExecution::new(
+            self.name.clone(),
+            self.materialized,
             self.schema.clone(),
             projected_schema,
             self.snapshots.lock().await.get(&self.name).cloned(),
@@ -226,6 +238,8 @@ impl DataSink for AdHocTableSink {
 }
 
 struct AdHocQueryExecution {
+    name: SqlIdentifier,
+    materialized: bool,
     table_schema: Arc<Schema>,
     projected_schema: Arc<Schema>,
     readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
@@ -237,6 +251,8 @@ struct AdHocQueryExecution {
 
 impl AdHocQueryExecution {
     fn new(
+        name: SqlIdentifier,
+        materialized: bool,
         table_schema: Arc<Schema>,
         projected_schema: Arc<Schema>,
         readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
@@ -251,6 +267,8 @@ impl AdHocQueryExecution {
         let plan_properties = PlanProperties::new(eq_props, partitioning, ExecutionMode::Bounded);
 
         Self {
+            name,
+            materialized,
             table_schema,
             projected_schema,
             readers,
@@ -303,6 +321,8 @@ impl ExecutionPlan for AdHocQueryExecution {
         children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
         Ok(Arc::new(AdHocQueryExecution {
+            name: self.name.clone(),
+            materialized: self.materialized,
             table_schema: self.table_schema.clone(),
             projected_schema: self.projected_schema.clone(),
             readers: self.readers.clone(),
@@ -318,6 +338,13 @@ impl ExecutionPlan for AdHocQueryExecution {
         partition: usize,
         _context: Arc<TaskContext>,
     ) -> datafusion::common::Result<SendableRecordBatchStream> {
+        if !self.materialized {
+            return Err(DataFusionError::Execution(
+                format!("Tried to SELECT from a non-materialized source. Make sure `{}` is configured as materialized: \
+use `with ('materialized' = 'true')` for tables, or `create materialized view` for views", self.name),
+            ));
+        }
+
         async fn send_batch(
             tx: &Sender<datafusion::common::Result<RecordBatch>>,
             projection: &Option<Vec<usize>>,

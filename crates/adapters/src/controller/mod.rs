@@ -1138,27 +1138,27 @@ impl ControllerInner {
     fn initialize_adhoc_queries(self: &Arc<Self>) {
         // Sync feldera catalog with datafusion catalog
         for (name, clh) in self.catalog.output_iter() {
-            if clh.integrate_handle.is_some() {
-                let arrow_fields = relation_to_arrow_fields(&clh.schema.fields, false);
-                let input_handle = self
-                    .catalog
-                    .input_collection_handle(name)
-                    .map(|ich| ich.handle.fork());
-                let adhoc_tbl = Arc::new(AdHocTable::new(
-                    Arc::downgrade(self),
-                    input_handle,
-                    clh.schema.name.clone(),
-                    Arc::new(Schema::new(arrow_fields)),
-                    self.trace_snapshot.clone(),
-                ));
+            let arrow_fields = relation_to_arrow_fields(&clh.schema.fields, false);
+            let input_handle = self
+                .catalog
+                .input_collection_handle(name)
+                .map(|ich| ich.handle.fork());
 
-                // This should never fail (we're not registering the same table twice).
-                let r = self
-                    .session_ctxt
-                    .register_table(clh.schema.name.sql_name(), adhoc_tbl)
-                    .expect("table registration failed");
-                assert!(r.is_none(), "table {name} already registered");
-            }
+            let adhoc_tbl = Arc::new(AdHocTable::new(
+                clh.integrate_handle.is_some(),
+                Arc::downgrade(self),
+                input_handle,
+                clh.schema.name.clone(),
+                Arc::new(Schema::new(arrow_fields)),
+                self.trace_snapshot.clone(),
+            ));
+
+            // This should never fail (we're not registering the same table twice).
+            let r = self
+                .session_ctxt
+                .register_table(clh.schema.name.sql_name(), adhoc_tbl)
+                .expect("table registration failed");
+            assert!(r.is_none(), "table {name} already registered");
         }
     }
 
