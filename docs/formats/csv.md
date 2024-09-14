@@ -48,6 +48,7 @@ interpreted as an empty string instead of `NULL`.
 | DATE                                    | `2024-02-25`                                    |
 | BIGINT ARRAY                            | `[1, 2]`                                        |
 | VARCHAR ARRAY ARRAY                     | `[[ 'abc', '123'], ['c', 'sql']]`               |
+| VARIANT                                 | `"{""foo"": ""bar""}"` (see [`VARIANT` documetation](/docs/sql/json))|
 
 ### `BOOLEAN`
 

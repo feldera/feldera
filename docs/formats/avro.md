@@ -88,6 +88,7 @@ A SQL column and a field in the Avro schema are compatible if the following cond
 | `TIMESTAMP`                   | `long`         | logical type must be set to `timestamp-millis` or `timestamp-micros`|
 | `ARRAY`                       | `array`        | Avro and SQL array element schemas must match                       |
 | `MAP`                         | `map`          | SQL map keys must be of type `CHAR` or `VARCHAR`; Avro and SQL value schemas must match|
+| `VARIANT`                     | `string`       | values of type `VARIANT` are deserialized from JSON-encoded strings (see [`VARIANT` documetation](/docs/sql/json)) |
 | user-defined types            | `record`       | Avro record schema must match SQL user-defined type definition according to the same schema compatibility rules as for SQL tables|
 
 ### Configuration

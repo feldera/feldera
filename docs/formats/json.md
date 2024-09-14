@@ -84,6 +84,7 @@ the JSON encoding of a row would look like this:
 | DATE                                    | `2024-02-25`                                            |
 | BIGINT ARRAY                            | `[1, 2]`                                                |
 | VARCHAR ARRAY ARRAY                     | `[[ 'abc', '123'], ['c', 'sql']]`                       |
+| VARIANT                                 | any JSON value (see [`VARIANT` documentation](/docs/sql/json.md/#processing-json-data-using-variant))|
 
 ### `BOOLEAN`
 
