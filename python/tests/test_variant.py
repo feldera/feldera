@@ -20,7 +20,7 @@ CAST(json['name'] AS VARCHAR) as name,
 ((CAST(json['scores'][1] AS DECIMAL(8, 2)) + CAST(json['scores'][2] AS DECIMAL(8, 2))) / 2) as average
 FROM json_view;
 
--- Ingest JSON as variant; extract strongly types columns from it.
+-- Ingest JSON as variant; extract strongly typed columns from it.
 CREATE TABLE variant_table(val VARIANT) with ('materialized' = 'true');
 
 CREATE MATERIALIZED VIEW typed_view AS SELECT

@@ -7,28 +7,20 @@ Any such value holds at runtime two pieces of information:
 - the data type
 - the data value
 
-::: warning
-
-Currently `VARIANT` values are not supported in table or output views;
-they can only be used in intermediate computations.
-
-:::
-
-
 Values of `VARIANT` type can be created by casting any other value to
-a `VARIANT`: e.g.  `SELECT CAST(x AS VARIANT)`.  Conversely, values of
-type `VARIANT` can be cast to any other data type `SELECT CAST(variant
-AS INT)`.  A cast of a value of type `VARIANT` to target type T will
-compare the runtime type with T.  If the types are identical or there
-is a natural conversion from the runtime type to T, the original value
+a `VARIANT`, e.g., `SELECT CAST(x AS VARIANT)`.  Conversely, values of
+type `VARIANT` can be cast to any other data type, e.g., `SELECT CAST(v AS INT)`.
+A cast of a value of type `VARIANT` to target type `T` will
+compare the runtime type with `T`.  If the types are identical or there
+is a natural conversion from the runtime type to `T`, the original value
 is returned.  Otherwise the `CAST` returns `NULL`.
 
-::: warning
+:::note
 
 Remember that the `DECIMAL` type specified without precision is the
 same as `DECIMAL(0)`, with no digits after the decimal point.  When
 you cast a `VARIANT` value to `DECIMAL` you should specify a precision
-and scale good enough for the values that you expect in the data.
+and scale large enough for the values that you expect in the data.
 
 :::
 
@@ -55,25 +47,14 @@ the JSON `null` value.  An important difference is that two `VARIANT`
   is subject to the capitalization rules of the SQL dialect, so for correct
   operation the field may need to be quoted: `variant."field"`
 
-The runtime types do not match exactly the compile-time types:
-
-- The scalar types do not include information about precision and scale.  Thus all `DECIMAL`
-  compile-time types are represented by a single run-time type.
-- `CHAR(N)` and `VARCHAR` are both represented by a single runtime `VARCHAR` type.
-- `BINARY(N)` and `VARBINARY` are both represented by a single runtime `VARBINARY` type.
-- `FLOAT` and `DOUBLE` are both represented by the same runtime type.
-- All "short interval" types (from days to seconds) are represented by a single type.
-- All "long interval" types (from years to months) are represented by a single type.
-- Generic types such as `INT ARRAY`, `MULTISET`, and `MAP` do not carry runtime
-  information about the element types
-
 ## Functions that operate on `VARIANT` values
 
-| Function | Description |
-| `VARIANTNULL()` | Can be used to create an instance of the `VARIANT` `null` value. |
-| `TYPEOF(` _variant_ `)` | Argument must be a `VARIANT` value.  Returns a string describing the runtime type of the value |
-| `PARSE_JSON(` _string_ `)` | Parses a string that represents a JSON value, returns a `VARIANT` object, or `NULL` if parsing fails |
-| `UNPARSE_JSON(` _variant_ `)` | Argument must be a `VARIANT` value.  Returns a string that represents the serialization of a `VARIANT` value. If the value cannot be represented as JSON, the result is `NULL` |
+| Function                      | Description |
+|-------------------------------|-------------|
+| `VARIANTNULL()`               | Can be used to create an instance of the `VARIANT` `null` value. |
+| `TYPEOF(variant)`             | Argument must be a `VARIANT` value.  Returns a string describing the runtime type of the value |
+| `PARSE_JSON(string)`          | Parses a string that represents a JSON value, returns a `VARIANT` object, or `NULL` if parsing fails (more details [below](#parse_json)) |
+| `TO_JSON(variant)`            | Argument must be a `VARIANT` value.  Returns a string that represents the serialization of a `VARIANT` value. If the value cannot be represented as JSON, the result is `NULL` (more details [below](#to_json)) |
 
 ### `PARSE_JSON`
 
@@ -100,12 +81,9 @@ SELECT CAST(
       ] AS VARIANT)
 ```
 
-
 ### `UNPARSE_JSON`
 
-`PARSE_JSON` converts a `VARIANT` value to a `VARCHAR`.  The
-assumption is that the `VARIANT` was has the structure as produced by
-the `PARSE_JSON` function:
+`UNPARSE_JSON` converts a `VARIANT` value to a `VARCHAR`:
 
 - the `VARIANT` `null` value is converted to the string `null`
 - a `VARIANT` wrapping a Boolean value is converted to the respective Boolean string `true` or `false`
@@ -114,7 +92,78 @@ the `PARSE_JSON` function:
 - a `VARIANT` wrapping an `ARRAY` with elements of any type is converted to a JSON array, and the elements are recursively converted
 - a `VARIANT` wrapping a `MAP` whose keys have any SQL `CHAR` type, or `VARIANT` values wrapping `CHAR` values will generate a JSON object, by recursively converting each key-value pair.
 - a `VARIANT` wrapping a `DATE`, `TIME`, or `DATETIME` value will be serialized as a JSON string
-- any other data value is a conversion error, and causes the `UNPARSE_JSON` function to produce a `NULL` result
+
+## Processing JSON data using `VARIANT`
+
+The `VARIANT` type enables efficient JSON processing in SQL.  In this sense it is similar to
+the `JSONB` type in Postgres and other databases.  There are two ways to convert
+JSON data to and from `VARIANT`:
+
+1. Use `PARSE_JSON` and `UNPARSE_JSON` functions to convert strings to `VARIANT` and back.
+2. Automatically, when ingesting data to or outputting data from columns of type `VARIANT`.
+
+The following example demonstrates the first approach. Here, input events
+contain a field called `json` of type string, which carries JSON-encoded data.
+We ingest this field as a string and use `PARSE_JSON` to convert it to a
+`VARIANT` and store the result in an intermediate view.
+
+```sql
+CREATE TABLE json (id INT, json VARCHAR);
+CREATE VIEW parsed_json AS SELECT id, PARSE_JSON(json) AS json FROM json;
+```
+
+Input events can use any [supported data format](/docs/formats/).  For instance, when
+ingesting a [JSON stream](/docs/formats/json), a valid input record could look like this
+(note the use of escaping in the `json` field):
+
+```json
+{"id": 123, "json": "{\"foo\": \"bar\"}"}
+```
+
+The second approach parses JSON into `VARIANT` directly during ingestion, eliminating
+the need for calling `PARSE_JSON` explicitly:
+
+```sql
+CREATE TABLE json (id INT, json VARIANT);
+```
+
+**Note** that this program has a subtly different semantics from the previous one
+depending on the input [format](/docs/formats/) used.  For most input formats, e.g.,
+[Avro](/docs/formats/avro), [Parquet](/docs/formats/parquet), or [CSV](/docs/formats/csv),
+it is equivalent, i.e., it converts an input field of type string into a `VARIANT`.
+However, when the input stream carries JSON data using [raw](#the-raw-format)
+or [insert/delete](#the-insertdelete-format) encoding, the `json` field can contain
+an arbitrary JSON value, which gets parsed into `VARIANT`:
+
+```json
+{"id": 123, "json": {"name": "John Doe", "scores": [8, 10]}}
+```
+
+This is useful for processing  **semi-structured** data, i.e., data whose schema is only
+partially fixed or is too complex to represent in SQL.
+In this case, the schema contains an integer field `id` and a field called `json`, whose
+schema is not specified. The `VARIANT` type allows us to parse this field and
+manipulate its contents.  For instance, the following query
+extracts `name` and `scores` fields, interpets the latter as an array of numbers
+and computes the average of the first two entries in the array:
+
+```sql
+CREATE TABLE json (id INT, json VARIANT);
+
+CREATE VIEW average AS SELECT
+CAST(json['name'] AS VARCHAR) as name,
+((CAST(json['scores'][1] AS DECIMAL(8, 2)) + CAST(json['scores'][2] AS DECIMAL(8, 2))) / 2) as average
+FROM json;
+```
+
+Note how object fields are accessed using
+map indexing operators `['scores']`, `['name']`, and how array
+elements are accessed using indexing with numeric values `[1]`.
+Recall that array indexes in SQL start from 1!
+
+Finally, notice how the `DECIMAL` values that are retrieved need to
+specify the precision and scale: `CAST(... AS DECIMAL(8, 2))`.  Using
+`CAST(... AS DECIMAL)` would lose all digits after the decimal point.
 
 ## Examples
 
@@ -312,32 +361,3 @@ SELECT UNPARSE_JSON(CAST(DATE '2020-01-01' AS VARIANT))
 SELECT UNPARSE_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))
 "2020-01-01T10:00:00+00:00"
 ```
-
-### Example SQL program manipulating JSON values
-
-```sql
-CREATE TABLE json (json VARCHAR);
-
-CREATE LOCAL VIEW tmp AS SELECT PARSE_JSON(json) AS json FROM json;
-
-CREATE VIEW average AS SELECT
-CAST(json['name'] AS VARCHAR) as name,
-((CAST(json['scores'][1] AS DECIMAL(8, 2)) + CAST(json['scores'][2] AS DECIMAL(8, 2))) / 2) as average
-FROM tmp;
-```
-
-The input table has a single column, with type `VARCHAR`.
-
-The input data in table is parsed using `PARSE_JSON` and stored in the
-intermediate view `tmp`.  An example legal record is: `{"name":
-"Bob", "scores": [8, 10]}`.
-
-The query that defines the output view `average` accesses fields of
-the JSON values of `tmp`.  Note how object fields are accessed using
-map indexing operators `['scores']`, `['name']`, and how array
-elements are accessed using indexing with numeric values `[1]`.
-Recall that array indexes in SQL start from 1!
-
-Finally, notice how the `DECIMAL` values that are retrieved need to
-specify the precision and scale: `CAST(... AS DECIMAL(8, 2))`.  Using
-`CAST(... AS DECIMAL)` would loose all digits after the decimal point.

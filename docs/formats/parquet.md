@@ -24,10 +24,11 @@ and [Arrow types](https://docs.rs/arrow/latest/arrow/datatypes/enum.DataType.htm
 | `BINARY`, `VARBINARY`                      | `DataType::Binary`                                                                 |
 | `TIME`                                     | `DataType::UInt64` (time in nanoseconds)                                           |
 | `TIMESTAMP`                                | `DataType::Timestamp(TimeUnit::Millisecond, None)` (milliseconds since unix epoch) |
-| `DATE`                                     | `DataType::Int32` (days since unix epoch)                                          |
+| `DATE`                                     | `DataType::Int32` (days since unix epoch)|
 | `ARRAY`                                    | `DataType::LargeList`                                                              |
 | `STRUCT`                                   | `DataType::Struct`                                                                 |
 | `MAP`                                      | `DataType::Dictionary`                                                             |
+| `VARIANT`                                  | `LargeUtf8` (JSON-encoded string, see [VARIANT documentation](/docs/sql/json))   |
 
 
 ## Example

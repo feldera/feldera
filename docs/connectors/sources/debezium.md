@@ -221,6 +221,28 @@ CREATE TABLE my_table (
 }]');
 ```
 
+## Table schema mapping
+
+In order to successfully ingest data change events from Debezium into a Feldera table, the schemas of the
+source database table and the destination Feldera table must match, i.e., they should consist of the same
+columns with the same types, with the following exceptions:
+
+* The Feldera table can contain additional **nullable** columns missing in the source table.  Such columns will be
+  set to NULL during ingestion.
+* The source table can contain fields missing in the Feldera table.  Feldera will ignore such fields during ingestion.
+* If the source table column is declared as non-nullable, the corresponding Feldera column can be nullable or non-nullable.
+  (the inverse is not true: a nullable column cannot be synced into a non-nullable column).
+
+### JSON columns
+
+Source database columns of type `JSON` and `JSONB` can be mapped to Feldera columns of
+either [`VARIANT`](/docs/sql/json) or `VARCHAR` type.  The former allows efficient manipulation
+of JSON values, similar to the `JSONB` type. The latter is preferable when working with JSON
+values as regular strings, when you don't need to parse or manipulate the JSON contents of the
+string.
+
+## Additional resources
+
 * For more details on JSON support in Feldera, please refer to the [JSON Format Documentation](/docs/formats/json).
 * For more details on Avro support in Feldera, please refer to the [Avro Format Documentation](/docs/formats/avro).
 * For more information on configuring Kafka transport, visit the [Kafka Source Connector Documentation](/docs/connectors/sources/kafka).
