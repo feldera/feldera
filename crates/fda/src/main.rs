@@ -7,7 +7,7 @@ use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
 use feldera_types::config::RuntimeConfig;
 use feldera_types::error::ErrorResponse;
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use reqwest::StatusCode;
 use tabled::builder::Builder;
@@ -47,9 +47,16 @@ pub(crate) fn make_client(
     auth: Option<String>,
     timeout: u64,
 ) -> Result<Client, Box<dyn std::error::Error>> {
-    let client_builder = reqwest::ClientBuilder::new()
-        .timeout(Duration::from_secs(timeout))
-        .default_headers(make_auth_headers(&auth)?);
+    let mut client_builder = reqwest::ClientBuilder::new().timeout(Duration::from_secs(timeout));
+
+    if host.starts_with("https://") {
+        client_builder = client_builder.default_headers(make_auth_headers(&auth)?);
+    } else if host.starts_with("http://") && auth.is_some() {
+        warn!(
+            "The provided API key is not added to the request because {host} does not use `https`."
+        );
+    }
+
     let client = client_builder.build()?;
     Ok(Client::new_with_client(host.as_str(), client))
 }
@@ -764,8 +771,21 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
 async fn main() {
     CompleteEnv::with_factory(Cli::command).complete();
 
-    let cli = Cli::parse();
-    let _r = env_logger::try_init();
+    let mut cli = Cli::parse();
+
+    let _r = env_logger::builder()
+        .filter_level(log::LevelFilter::Warn)
+        .format_target(false)
+        .format_timestamp(None)
+        .try_init();
+    // If a `/` is at the end of the host, the manager returns HTML,
+    // instead of an API response.
+    //
+    // Needs to be fixed in the manager routing but for compat reasons
+    // we remove it here.
+    if cli.host.ends_with("/") {
+        cli.host = cli.host.trim_end_matches('/').to_string();
+    }
 
     let client = make_client(cli.host, cli.auth, cli.timeout)
         .map_err(|e| {
