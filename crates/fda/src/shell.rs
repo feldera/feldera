@@ -46,7 +46,7 @@ pub async fn shell(name: String, client: Client) {
         .await
         .map_err(handle_errors_fatal(
             client.baseurl.clone(),
-            "Failed to connect",
+            format!("Failed to connect to {}", client.baseurl.clone()).leak(),
             1,
         ))
         .unwrap()
