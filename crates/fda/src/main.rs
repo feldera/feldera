@@ -7,7 +7,7 @@ use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
 use feldera_types::config::RuntimeConfig;
 use feldera_types::error::ErrorResponse;
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info, trace};
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use reqwest::StatusCode;
 use tabled::builder::Builder;
@@ -68,8 +68,8 @@ fn handle_errors_fatal(
             }
             Error::InvalidRequest(s) => {
                 eprintln!("{}: ", msg);
-                warn!("Invalid request ({})", s);
-                warn!("{}", UGPRADE_NOTICE);
+                error!("Invalid request ({})", s);
+                error!("{}", UGPRADE_NOTICE);
             }
             Error::CommunicationError(e) => {
                 eprint!("{}: ", msg);
@@ -85,20 +85,20 @@ fn handle_errors_fatal(
             }
             Error::ResponseBodyError(e) => {
                 eprintln!("{}: ", msg);
-                warn!(
+                error!(
                     "Unable to read the detailed error returned from {server} ({})",
                     e
                 );
-                warn!("{}", UGPRADE_NOTICE);
+                error!("{}", UGPRADE_NOTICE);
             }
             Error::InvalidResponsePayload(b, e) => {
                 eprintln!("{}", msg);
-                warn!("Unable to parse the detailed response returned from {server}");
+                error!("Unable to parse the detailed response returned from {server}");
                 if !b.is_empty() {
                     debug!("Parse Error: {:?}", e.to_string());
                     debug!("Response payload: {:?}", String::from_utf8_lossy(b));
                 }
-                warn!("{}", UGPRADE_NOTICE);
+                error!("{}", UGPRADE_NOTICE);
             }
             Error::UnexpectedResponse(r) => {
                 if r.status() == StatusCode::UNAUTHORIZED {
@@ -111,14 +111,14 @@ fn handle_errors_fatal(
                     }
                 } else {
                     eprintln!("{}: ", msg);
-                    warn!("Unexpected response from {server}: {:?}", r);
-                    warn!("{}", UGPRADE_NOTICE);
+                    error!("Unexpected response from {server}: {:?}", r);
+                    error!("{}", UGPRADE_NOTICE);
                 }
             }
             Error::PreHookError(e) => {
                 eprintln!("{}: ", msg);
                 error!("Unable to execute authentication pre-hook ({})", e);
-                warn!("{}", UGPRADE_NOTICE);
+                error!("{}", UGPRADE_NOTICE);
             }
         };
         std::process::exit(exit_code);
