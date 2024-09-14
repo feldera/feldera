@@ -138,7 +138,7 @@ pub async fn shell(name: String, client: Client) {
                             .expect("Failed to create external printer");
 
                         // Print the SQL response, aborting if Ctrl+C is pressed
-                        let req_handle = tokio::spawn(async move {
+                        let mut req_handle = tokio::spawn(async move {
                             match client
                                 .pipeline_adhoc_sql()
                                 .pipeline_name(name)
@@ -152,11 +152,6 @@ pub async fn shell(name: String, client: Client) {
                                     let mut byte_stream = response.into_inner();
                                     while let Some(chunk) = byte_stream.next().await {
                                         if cancel_token_child.is_cancelled() {
-                                            printer.print(NEWLINE.to_string()).unwrap();
-                                            printer.print(
-                                                "ERROR: canceling statement due to user request.".to_string(),
-                                            ).unwrap();
-                                            printer.print(NEWLINE.to_string()).unwrap();
                                             return;
                                         }
                                         let mut buffer = Vec::new();
@@ -189,16 +184,22 @@ pub async fn shell(name: String, client: Client) {
                         });
 
                         // Listen for Ctrl+C
+                        let cancel_token_parent = cancel_token.clone();
                         let abort_task = tokio::spawn(async move {
                             signal::ctrl_c().await.unwrap();
-                            cancel_token.cancel();
+                            cancel_token_parent.cancel();
                         });
 
                         // Wait for either the request to finish or Ctrl+C
                         tokio::select! {
-                            biased;
-                            _ = abort_task => {}
-                            _ = req_handle => {}
+                            _ = abort_task => {
+                                req_handle.abort_handle().abort();
+                                let _r = req_handle.await;
+                                println!();
+                                println!("ERROR: canceling statement due to user request.");
+                                println!();
+                            }
+                            _ = &mut req_handle => {}
                         }
                     }
                 }
