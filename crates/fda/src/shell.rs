@@ -80,7 +80,11 @@ pub async fn shell(name: String, client: Client) {
         let _r = rl.load_history(&config_dir.join(HISTORY_FILE));
     }
 
-    let prompt = format!("{}> ", name);
+    let hostname = client
+        .baseurl
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
+    let prompt = format!("{}/{}> ", hostname, name);
     loop {
         let readline = rl.readline(prompt.as_str());
         match readline {
