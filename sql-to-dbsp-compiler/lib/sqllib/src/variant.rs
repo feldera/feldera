@@ -1,7 +1,9 @@
 //! Variant is a dynamically-typed object that can represent
 //! the values in a SQL program.
 
-use crate::{casts::*, Date, GeoPoint, LongInterval, ShortInterval, Time, Timestamp};
+use crate::{
+    binary::ByteArray, casts::*, Date, GeoPoint, LongInterval, ShortInterval, Time, Timestamp,
+};
 use dbsp::algebra::{F32, F64};
 use feldera_types::serde_with_context::serde_config::VariantFormat;
 use feldera_types::serde_with_context::{
@@ -142,6 +144,7 @@ pub enum Variant {
     Timestamp(Timestamp),
     ShortInterval(ShortInterval),
     LongInterval(LongInterval),
+    Binary(ByteArray),
     Geometry(GeoPoint),
     #[size_of(skip, skip_bounds)]
     Array(#[omit_bounds] Vec<Variant>),
@@ -408,6 +411,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
                 Variant::LongInterval(v) => v.serialize_with_context(serializer, context),
                 Variant::Geometry(v) => v.serialize_with_context(serializer, context),
                 Variant::Array(a) => a.serialize_with_context(serializer, context),
+                Variant::Binary(a) => a.serialize_with_context(serializer, context),
                 Variant::Map(m) => m.serialize_with_context(serializer, context),
             },
         }
@@ -434,6 +438,7 @@ impl Variant {
             Variant::ShortInterval(_) => "SHORTINTERVAL",
             Variant::LongInterval(_) => "LONGINTERVAL",
             Variant::Geometry(_) => "GEOPOINT",
+            Variant::Binary(_) => "BINARY",
             Variant::Array(_) => "ARRAY",
             Variant::Map(_) => "MAP",
         }
@@ -501,6 +506,7 @@ from!(Timestamp, Timestamp);
 from!(ShortInterval, ShortInterval);
 from!(LongInterval, LongInterval);
 from!(Geometry, GeoPoint);
+from!(Binary, ByteArray);
 //from!(Struct, Box<dyn StructVariant>);
 
 impl<T> From<Vec<T>> for Variant
@@ -586,6 +592,7 @@ into!(Timestamp, Timestamp);
 into!(ShortInterval, ShortInterval);
 into!(LongInterval, LongInterval);
 into!(Geometry, GeoPoint);
+into!(Binary, ByteArray);
 
 macro_rules! into_numeric {
     ($type:ty, $type_name: ident) => {
@@ -783,7 +790,7 @@ pub fn variantnull() -> Variant {
 mod test {
     use std::str::FromStr;
 
-    use crate::{Date, Time, Timestamp};
+    use crate::{binary::ByteArray, Date, Time, Timestamp};
 
     use super::Variant;
     use chrono::{DateTime, NaiveDate, NaiveTime};
@@ -973,6 +980,10 @@ mod test {
                     Variant::String("s".to_string()),
                     Variant::String("foo\nbar".to_string()),
                 ),
+                (
+                    Variant::String("bytes".to_string()),
+                    Variant::Binary(ByteArray::new(b"hello")),
+                ),
                 (Variant::String("n".to_string()), Variant::VariantNull),
                 (
                     Variant::String("nested".to_string()),
@@ -1026,6 +1037,7 @@ mod test {
                 "d": 123.45,
                 "s": "foo\nbar",
                 "n": null,
+                "bytes": [104, 101, 108, 108, 111],
                 "nested": {
                     "arr": [1, "foo", null],
                     "ts": "2024-12-19 16:39:57",

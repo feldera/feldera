@@ -1578,6 +1578,7 @@ cast_to_variant!(decimal, Decimal, Decimal); // The other two take extra argumen
 cast_to_variant!(s, String, String); // The other two take extra arguments
 cast_variant!(Date, Date, Date);
 cast_variant!(Time, Time, Time);
+cast_variant!(bytes, ByteArray, Binary);
 cast_variant!(Timestamp, Timestamp, Timestamp);
 cast_variant!(ShortInterval, ShortInterval, ShortInterval);
 cast_variant!(LongInterval, LongInterval, LongInterval);
