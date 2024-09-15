@@ -231,7 +231,7 @@ impl<D> StreamValue<D> {
 ///     different kinds of input handles.
 ///
 /// Use [`RootCircuit::add_input_indexed_zset`] or
-/// [`RootCircuit::add_input_zset`] to crate an (indexed) Z-set input
+/// [`RootCircuit::add_input_zset`] to create an (indexed) Z-set input
 /// stream. There's also [`RootCircuit::add_input_set`] and
 /// [`RootCircuit::add_input_map`] to simplify cases where a regular set or
 /// map is easier to use than a Z-set.  The latter functions maintain an extra

@@ -12,6 +12,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.util.Linq;
 import org.junit.Test;
 
@@ -251,6 +255,28 @@ public class StructTests extends SqlIoTest {
         DBSPZSetLiteral input = new DBSPZSetLiteral(data);
         DBSPZSetLiteral output = new DBSPZSetLiteral(new DBSPTupleExpression(address0));
         ccs.addPair(new Change(input), new Change(output));
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void nullableStruct() {
+        String ddl = """
+            CREATE TYPE address_typ AS (
+               id       INTEGER,
+               code     VARCHAR);
+            CREATE TABLE Address(a ADDRESS_TYP);
+            CREATE VIEW V AS SELECT Address.a.code FROM Address WHERE Address.a.id = 1;
+            """;
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.compileStatements(ddl);
+        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        DBSPType tuple = new DBSPTypeTuple(
+                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true),
+                DBSPTypeString.varchar(true)
+        ).setMayBeNull(true);
+        DBSPExpression address0 = tuple.none();
+        DBSPZSetLiteral input = new DBSPZSetLiteral(new DBSPTupleExpression(address0));
+        ccs.addPair(new Change(input), new Change());
         this.addRustTestCase(ccs);
     }
 }

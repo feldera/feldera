@@ -49,11 +49,11 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));
         if (options.languageOptions.optimizationLevel < 2) {
-            if (!options.ioOptions.emitHandles)
-                passes.add(new IndexedInputs(reporter));
             if (options.languageOptions.incrementalize) {
                 passes.add(new IncrementalizeVisitor(this.compiler()));
             }
+            if (!options.ioOptions.emitHandles)
+                passes.add(new IndexedInputs(reporter));
         } else {
             // only on optimization level 2
             passes.add(new MergeSums(reporter));
