@@ -292,6 +292,35 @@ async fn read_program_code(program_path: String, stdin: bool) -> Result<String, 
     }
 }
 
+async fn wait_for_status(
+    client: &Client,
+    name: String,
+    wait_for: PipelineStatus,
+    waiting_text: &str,
+) {
+    let mut print_every_30_seconds = tokio::time::Instant::now();
+    let mut is_transitioning = true;
+    while is_transitioning {
+        let pc = client
+            .get_pipeline()
+            .pipeline_name(name.clone())
+            .send()
+            .await
+            .map_err(handle_errors_fatal(
+                client.baseurl.clone(),
+                "Failed to get program config",
+                1,
+            ))
+            .unwrap();
+        is_transitioning = pc.deployment_status != wait_for;
+        if print_every_30_seconds.elapsed().as_secs() > 30 {
+            info!("{}", waiting_text);
+            print_every_30_seconds = tokio::time::Instant::now();
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+}
+
 async fn pipeline(action: PipelineAction, client: Client) {
     match action {
         PipelineAction::Create {
@@ -410,16 +439,25 @@ async fn pipeline(action: PipelineAction, client: Client) {
         PipelineAction::Pause { name } => {
             let response = client
                 .post_pipeline_action()
-                .pipeline_name(name)
+                .pipeline_name(name.clone())
                 .action("pause")
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl.clone(),
                     "Failed to pause pipeline",
                     1,
                 ))
                 .unwrap();
+
+            wait_for_status(
+                &client,
+                name.clone(),
+                PipelineStatus::Paused,
+                "Pausing the pipeline...",
+            )
+            .await;
+
             println!("Pipeline paused successfully.");
             trace!("{:#?}", response);
         }
@@ -437,44 +475,39 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 ))
                 .unwrap();
 
-            let mut print_every_30_seconds = tokio::time::Instant::now();
-            let mut shutting_down = true;
-            while shutting_down {
-                let pc = client
-                    .get_pipeline()
-                    .pipeline_name(name.clone())
-                    .send()
-                    .await
-                    .map_err(handle_errors_fatal(
-                        client.baseurl.clone(),
-                        "Failed to get program config",
-                        1,
-                    ))
-                    .unwrap();
-                shutting_down = !matches!(pc.deployment_status, PipelineStatus::Shutdown);
-                if print_every_30_seconds.elapsed().as_secs() > 30 {
-                    info!("Shutting down the pipeline...");
-                    print_every_30_seconds = tokio::time::Instant::now();
-                }
-                sleep(Duration::from_millis(500)).await;
-            }
-            println!("Pipeline shutdown successful.");
+            wait_for_status(
+                &client,
+                name.clone(),
+                PipelineStatus::Shutdown,
+                "Shutting down the pipeline...",
+            )
+            .await;
 
+            println!("Pipeline shutdown successful.");
             let _ = Box::pin(pipeline(PipelineAction::Start { name, recompile }, client)).await;
         }
         PipelineAction::Shutdown { name } => {
             let response = client
                 .post_pipeline_action()
-                .pipeline_name(name)
+                .pipeline_name(name.clone())
                 .action("shutdown")
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl.clone(),
                     "Failed to stop pipeline",
                     1,
                 ))
                 .unwrap();
+
+            wait_for_status(
+                &client,
+                name.clone(),
+                PipelineStatus::Shutdown,
+                "Shutting down the pipeline...",
+            )
+            .await;
+
             println!("Pipeline shutdown successful.");
             trace!("{:#?}", response);
         }
