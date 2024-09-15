@@ -7,6 +7,7 @@ use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
 use feldera_types::config::RuntimeConfig;
 use feldera_types::error::ErrorResponse;
+use futures_util::StreamExt;
 use log::{debug, error, info, trace, warn};
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use reqwest::StatusCode;
@@ -613,6 +614,47 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 .await;
             }
             shell(name, client2).await
+        }
+        PipelineAction::Exec { name, sql, stdin } => {
+            let response = client
+                .pipeline_adhoc_sql()
+                .pipeline_name(name)
+                .format("text")
+                .sql(sql.unwrap_or_else(|| {
+                    assert!(stdin, "stdin and sql are mutually exclusive options");
+                    let mut program_code = String::new();
+                    let mut stdin = std::io::stdin();
+                    if stdin.read_to_string(&mut program_code).is_ok() {
+                        debug!("Read SQL from stdin");
+                        program_code
+                    } else {
+                        eprintln!("Failed to read SQL from stdin");
+                        std::process::exit(1);
+                    }
+                }))
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl,
+                    "Failed to execute SQL query",
+                    1,
+                ))
+                .unwrap();
+
+            let mut byte_stream = response.into_inner();
+            while let Some(chunk) = byte_stream.next().await {
+                let mut buffer = Vec::new();
+                match chunk {
+                    Ok(chunk) => buffer.extend_from_slice(&chunk),
+                    Err(e) => {
+                        eprintln!("ERROR: Unable to read server response: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+                let text = String::from_utf8_lossy(&buffer);
+                print!("{}", text);
+            }
+            println!()
         }
     }
 }

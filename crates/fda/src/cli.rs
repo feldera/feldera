@@ -313,6 +313,35 @@ pub enum PipelineAction {
         #[arg(long, short = 's', default_value_t = false)]
         start: bool,
     },
+    /// Execute an ad-hoc query against a pipeline and return the result.
+    Exec {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+
+        /// The SQL query to execute against the pipeline.
+        ///
+        /// EXAMPLES:
+        ///
+        /// * fda exec p1 "SELECT 1;"
+        #[arg(verbatim_doc_comment, conflicts_with = "stdin")]
+        sql: Option<String>,
+
+        /// Read the SQL query from stdin.
+        ///
+        /// EXAMPLES:
+        ///
+        /// * cat query.sql | fda exec p1 -s
+        /// * echo "SELECT 1" | fda exec p1 -s
+        #[arg(
+            verbatim_doc_comment,
+            short = 's',
+            long,
+            default_value_t = false,
+            conflicts_with = "sql"
+        )]
+        stdin: bool,
+    },
 }
 
 #[derive(Subcommand)]
