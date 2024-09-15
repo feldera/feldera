@@ -83,6 +83,9 @@ pub enum RunnerError {
         pipeline_id: PipelineId,
         error: String,
     },
+    PipelineUnreachable {
+        original_error: String,
+    },
 }
 
 impl DetailedError for RunnerError {
@@ -113,6 +116,7 @@ impl DetailedError for RunnerError {
             Self::PipelineShutdownError { .. } => Cow::from("PipelineShutdownError"),
             Self::PortFileParseError { .. } => Cow::from("PortFileParseError"),
             Self::BinaryFetchError { .. } => Cow::from("BinaryFetchError"),
+            Self::PipelineUnreachable { .. } => Cow::from("PipelineUnreachable"),
         }
     }
 }
@@ -261,6 +265,9 @@ impl Display for RunnerError {
                     "Failed to fetch binary executable for running pipeline {pipeline_id}: {error}"
                 )
             }
+            Self::PipelineUnreachable { original_error } => {
+                write!(f, "Pipeline is unreachable. This indicates that the pipeline ran out of memory or crashed unexpectedly (original error: {original_error}).")
+            }
         }
     }
 }
@@ -293,6 +300,7 @@ impl ResponseError for RunnerError {
             Self::PipelineShutdownTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PortFileParseError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::BinaryFetchError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PipelineUnreachable { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
