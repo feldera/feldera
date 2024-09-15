@@ -1206,17 +1206,31 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPFieldExpression expression) {
-        expression.expression.accept(this);
         DBSPType baseType = expression.expression.getType();
         if (baseType.mayBeNull) {
-            // TODO: this should be done differently
-            if (!baseType.hasCopy() &&
-                    !expression.expression.is(DBSPCloneExpression.class))
-                this.builder.append(".clone()");
-            this.builder.append(".unwrap()");
+            // Accessing a nullable struct is allowed
+            if (!expression.getType().mayBeNull) {
+                // If the result is not null, we need to unwrap()
+                expression.expression.accept(this);
+                if (!baseType.hasCopy() &&
+                        !expression.expression.is(DBSPCloneExpression.class))
+                    this.builder.append(".clone()");
+                this.builder.append(".unwrap().")
+                        .append(expression.fieldNo);
+            } else {
+                expression.expression.accept(this);
+                this.builder
+                        .append(".as_ref().and_then(|x| x.")
+                        .append(expression.fieldNo);
+                if (!baseType.hasCopy())
+                    this.builder.append(".clone()");
+                this.builder.append(")");
+            }
+        } else {
+            expression.expression.accept(this);
+            this.builder.append(".")
+                    .append(expression.fieldNo);
         }
-        this.builder.append(".")
-                .append(expression.fieldNo);
         return VisitDecision.STOP;
     }
 

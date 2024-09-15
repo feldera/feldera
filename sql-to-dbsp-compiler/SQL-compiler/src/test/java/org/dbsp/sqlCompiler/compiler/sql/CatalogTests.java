@@ -381,18 +381,4 @@ public class CatalogTests extends BaseSQLTests {
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
     }
-
-    @Test @Ignore("Cannot be run yet")
-    public void issue2316() {
-        String sql = """
-                CREATE TABLE sum(c1 TINYINT);
-                CREATE VIEW sum_view AS SELECT SUM(c1) AS c1 FROM sum;
-                """;
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        ccs.step("INSERT INTO sum VALUES (127), (1);",
-                " result" +
-                        "---------" +
-                        " -128");
-        this.addFailingRustTestCase("issue2316", "attempt to add with overflow", ccs);
-    }
 }
