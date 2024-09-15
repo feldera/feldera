@@ -314,7 +314,8 @@ pub enum PipelineAction {
         start: bool,
     },
     /// Execute an ad-hoc query against a pipeline and return the result.
-    Exec {
+    #[clap(aliases = &["exec"])]
+    Query {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
