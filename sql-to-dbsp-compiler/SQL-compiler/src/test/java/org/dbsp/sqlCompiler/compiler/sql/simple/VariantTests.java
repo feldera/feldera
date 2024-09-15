@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
@@ -146,6 +147,10 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPVariantLiteral(new DBSPIntervalMillisLiteral(1000L * (4 * 86400 + 10 * 3600 + 60), false)));
         this.testQuery("SELECT CAST(CAST(1 AS VARIANT) AS VARIANT)",
                 new DBSPVariantLiteral(new DBSPI32Literal(1)));
+        this.testQuery("SELECT CAST(x'0102' AS VARIANT)",
+                new DBSPVariantLiteral(new DBSPBinaryLiteral(new byte[] { 1, 2 })));
+        this.testQuery("SELECT CAST(CAST(x'0102' AS VARBINARY) AS VARIANT)",
+                new DBSPVariantLiteral(new DBSPBinaryLiteral(new byte[] { 1, 2 })));
     }
 
     @Test
