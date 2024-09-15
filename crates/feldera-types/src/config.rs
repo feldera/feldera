@@ -33,7 +33,7 @@ pub const fn default_max_batch_size() -> u64 {
 
 /// Default number of DBSP worker threads.
 const fn default_workers() -> u16 {
-    1
+    8
 }
 
 /// Default endpoint to send tracing data to.
