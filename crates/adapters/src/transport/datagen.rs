@@ -648,12 +648,19 @@ impl RecordGenerator {
             }
             SqlType::Array => self.generate_array(field, settings, rng, obj),
             SqlType::Map => self.generate_map(field, settings, rng, obj),
-            SqlType::Struct => self.generate_fields(
-                field.columntype.fields.as_ref().unwrap(),
-                settings.fields.as_ref().unwrap_or(&HashMap::new()),
-                rng,
-                obj,
-            ),
+            SqlType::Struct => {
+                if let Some(nl) = Self::maybe_null(field, settings, rng) {
+                    *obj = nl;
+                    return Ok(());
+                }
+
+                self.generate_fields(
+                    field.columntype.fields.as_ref().unwrap(),
+                    settings.fields.as_ref().unwrap_or(&HashMap::new()),
+                    rng,
+                    obj,
+                )
+            }
             SqlType::Null => {
                 *obj = Value::Null;
                 Ok(())
