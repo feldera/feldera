@@ -43,6 +43,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
@@ -430,8 +431,13 @@ public class ToRustVisitor extends CircuitVisitor {
             }
         }
 
+        // Process sources first, this will add them to the "streams" output in the right order
         for (IDBSPNode node : circuit.getAllOperators())
-            this.processNode(node);
+            if (node.is(DBSPSourceBaseOperator.class))
+                this.processNode(node);
+        for (IDBSPNode node : circuit.getAllOperators())
+            if (!node.is(DBSPSourceBaseOperator.class))
+                this.processNode(node);
 
         if (!this.useHandles)
             this.builder.append("Ok(catalog)");

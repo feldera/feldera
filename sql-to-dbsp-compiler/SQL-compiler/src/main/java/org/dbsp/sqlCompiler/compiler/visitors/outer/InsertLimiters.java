@@ -1109,8 +1109,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
     DBSPExpression eq(DBSPExpression left, DBSPExpression right) {
         DBSPType type = left.getType();
         if (type.is(DBSPTypeBaseType.class)) {
-            return ExpressionCompiler.makeBinaryExpression(left.getNode(),
-                    DBSPTypeBool.create(false), DBSPOpcode.EQ, left, right);
+            boolean mayBeNull = type.mayBeNull || right.getType().mayBeNull;
+            DBSPExpression compare = ExpressionCompiler.makeBinaryExpression(left.getNode(),
+                    DBSPTypeBool.create(mayBeNull), DBSPOpcode.EQ, left, right);
+            return ExpressionCompiler.wrapBoolIfNeeded(compare);
         } else if (type.is(DBSPTypeTupleBase.class)) {
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
             DBSPExpression result = new DBSPBoolLiteral(true);
@@ -1259,7 +1261,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
             // Window requires data to be indexed
             DBSPOperator ix = new DBSPMapIndexOperator(operator.getNode(),
-                    new DBSPRawTupleExpression(fields.get(0), t.deref()).closure(t.asParameter()),
+                    new DBSPRawTupleExpression(
+                            fields.get(0).applyCloneIfNeeded(),
+                            t.deref().applyCloneIfNeeded()).closure(t.asParameter()),
                     new DBSPTypeIndexedZSet(operator.getNode(),
                             fields.get(0).getType(), dataType), true, expansion);
             this.addOperator(ix);

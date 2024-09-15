@@ -15,6 +15,19 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
+    public void t() {
+        // Test that tables created after views
+        // are inserted in Rust before views
+        String sql = """
+               CREATE TABLE t(id int);
+               CREATE MATERIALIZED VIEW test AS
+               SELECT * FROM t;
+               CREATE TABLE s (id int);
+               """;
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void issue2316() {
         String sql = """
                 CREATE TABLE sum(c1 TINYINT);
