@@ -605,7 +605,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 }
             }
             Err(e) => State::TransitionToFailed {
-                error: ErrorResponse::from_error_nolog(&e),
+                error: ErrorResponse::from_error_nolog(&RunnerError::PipelineUnreachable {
+                    original_error: e.to_string(),
+                }),
             },
         }
     }
@@ -642,7 +644,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 }
             }
             Err(e) => State::TransitionToFailed {
-                error: ErrorResponse::from_error_nolog(&e),
+                error: ErrorResponse::from_error_nolog(&RunnerError::PipelineUnreachable {
+                    original_error: e.to_string(),
+                }),
             },
         }
     }
@@ -761,7 +765,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     pipeline.deployment_status, pipeline.id
                 );
                 State::TransitionToFailed {
-                    error: ErrorResponse::from_error_nolog(&e),
+                    error: ErrorResponse::from_error_nolog(&RunnerError::PipelineUnreachable {
+                        original_error: e.to_string(),
+                    }),
                 }
             }
         }
