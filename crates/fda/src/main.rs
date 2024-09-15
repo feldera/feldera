@@ -648,7 +648,7 @@ async fn pipeline(action: PipelineAction, client: Client) {
             }
             shell(name, client2).await
         }
-        PipelineAction::Exec { name, sql, stdin } => {
+        PipelineAction::Query { name, sql, stdin } => {
             let response = client
                 .pipeline_adhoc_sql()
                 .pipeline_name(name)
