@@ -23,6 +23,7 @@ project=
 bucket=
 region=us-west1
 core_quota=24
+batchsize=10000
 
 nextarg=
 for arg
@@ -68,6 +69,12 @@ do
             ;;
         --cores=*)
             cores=${arg#--cores=}
+            ;;
+        --batchsize=*)
+            batch=${arg#--batchsize=}
+            ;;
+        --batchsize)
+            nextarg=batchsize
             ;;
         --output|-o)
             nextarg=output
@@ -128,6 +135,7 @@ The following options are supported:
   -e, --events=EVENTS   Run EVENTS events (default: 100k)
   -L, --language=LANG   Use given query LANG: default sql
   -c, --cores=CORES     Use CORES cores for computation (default: min(16,nproc))
+      --batchsize=BS    Batch size to use for input (default 10000)
   -q, --query=QUERY     Queries to run (default: all)
   -o, --output=OUTPUT   Append CSV-formatted output to OUTPUT (default: nexmark.csv).
 
@@ -329,6 +337,7 @@ feldera2csv() {
                 esac
                 parse_time() {
                     case $1 in
+                        *ns) echo "${1%ns}/1000000000" | bc -l ;;
                         *ms) echo "${1%ms}/1000" | bc -l ;;
                         *s) echo "${1%s}" ;;
                     esac
@@ -443,6 +452,7 @@ Running Nexmark suite with configuration:
   events: $events
   query: $query
   cores: $cores
+  batchsize: $batchsize
 EOF
 case $runner:$language in
     feldera:default)
@@ -472,7 +482,8 @@ case $runner:$language in
             --cores $cores \
             --events $events \
             --csv results.csv \
-	    --circuit-profile \
+            --batchsize $batchsize \
+            --circuit-profile \
             $(if $storage; then printf "%s" --storage; fi) \
             --query $(if test $query = all; then echo all; else echo q$query; fi)
         ;;

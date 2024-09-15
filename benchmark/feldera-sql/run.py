@@ -30,7 +30,7 @@ def load_queries(dir):
             queries[f.split('.')[0]] = file.read()
     return queries
 
-def load_table(folder: str, with_lateness: bool, suffix, events, cores):
+def load_table(folder: str, with_lateness: bool, suffix, events, cores, batchsize):
     p = os.path.join(FILE_DIR, folder, 'table.sql')
     file = open(p, 'r')
     text = file.read()
@@ -48,6 +48,7 @@ def load_table(folder: str, with_lateness: bool, suffix, events, cores):
     subst["events"] = events
     subst["cores"] = cores
     subst["folder"] = os.path.join(FILE_DIR, folder)
+    subst["batchsize"] = batchsize
     return text.format(**subst)
 
 def sort_queries(queries):
@@ -144,6 +145,7 @@ def main():
     group.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
     group.add_argument("--api-key", required=False, help="Feldera API key (e.g., \"apikey:0123456789ABCDEF\")")
     group.add_argument("--cores", type=int, help="Number of cores to use for workers (default: 16)")
+    group.add_argument("--batchsize", type=int, help="Batch size to use for input (default: 10000)")
     group.add_argument('--storage', action=argparse.BooleanOptionalAction, help='whether to enable storage (default: --no-storage)')
     group.add_argument('--min-storage-bytes', type=int, help='If storage is enabled, the minimum number of bytes to write a batch to storage.')
     group.add_argument('--folder', help='Folder with table and queries, organized as folder/table.sql, folder/queries/qN.sql for numbers N (default: benchmarks/nexmark)')
@@ -163,7 +165,7 @@ def main():
                         help="Kafka options passed as -O option=value, e.g., -O bootstrap.servers=localhost:9092; ignored for Nexmark, required for other benchmarks")
     group.add_argument("--poller-threads", required=False, type=int, help="Override number of poller threads to use")
     group.add_argument('--input-topic-suffix', help='suffix to apply to input topic names (by default, "")')
-    parser.set_defaults(lateness=True, storage=False, cores=16, metrics_interval=1, folder='benchmarks/nexmark', events=100000)
+    parser.set_defaults(lateness=True, storage=False, batchsize=10000, cores=16, metrics_interval=1, folder='benchmarks/nexmark', events=100000)
 
 
     global api_url, kafka_options, headers
@@ -177,9 +179,10 @@ def main():
     suffix = parser.parse_args().input_topic_suffix or ''
     events = parser.parse_args().events
     cores = int(parser.parse_args().cores)
+    batchsize = int(parser.parse_args().batchsize)
 
     folder = parser.parse_args().folder
-    table = load_table(folder, parser.parse_args().lateness, suffix, events, cores)
+    table = load_table(folder, parser.parse_args().lateness, suffix, events, cores, batchsize)
     all_queries = load_queries(os.path.join(FILE_DIR, folder + '/queries/'))
     include_disabled = parser.parse_args().include_disabled or False
     disabled_folder = os.path.join(FILE_DIR, folder + '/disabled-queries/')
@@ -267,16 +270,20 @@ def main():
         while True:
             req = requests.get(f"{api_url}/v0/pipelines/{full_name}/stats", headers=headers)
             if req.status_code != 200:
-                print("Failed to get stats")
-                error = True
+                print("Failed to get stats: ", req)
+            if req.status_code == 400:
                 break
+
             stats = req.json()
+            #for input in stats["inputs"]:
+            #    print(input["endpoint_name"], input["metrics"]["end_of_input"])
             elapsed = time.time() - start
             if "global_metrics" in stats:
                 global_metrics = stats["global_metrics"]
                 processed = global_metrics["total_processed_records"]
                 peak_memory = max(peak_memory, global_metrics["rss_bytes"])
                 cpu_msecs = global_metrics.get("cpu_msecs", 0)
+                last_metrics = elapsed
                 metrics_dict = {"name":pipeline_name, "elapsed_seconds":elapsed}
                 for key, value in global_metrics.items():
                     metrics_seen.add(key)
@@ -298,6 +305,7 @@ def main():
                             metrics_dict[k] = value["Histogram"][v]
                 pipeline_metrics += [metrics_dict]
                 late_drops = metrics_dict.get("records_late", 0)
+                steps = metrics_dict.get("feldera_dbsp_step", 0)
                 if processed > last_processed:
                     before, after = ('\r', '') if os.isatty(1) else ('', '\n')
                     peak_gib = peak_memory / 1024 / 1024 / 1024
