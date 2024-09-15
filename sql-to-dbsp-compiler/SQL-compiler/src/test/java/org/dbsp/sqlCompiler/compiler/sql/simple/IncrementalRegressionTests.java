@@ -5,7 +5,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
@@ -46,8 +49,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
     @Test
     public void issue2243() {
         String sql = """
-                CREATE TABLE CUSTOMER (cc_num bigint not null, ts timestamp not null lateness interval 0 day);
-                CREATE TABLE TRANSACTION (cc_num bigint not null, ts timestamp not null lateness interval 0 day);
+                CREATE TABLE CUSTOMER (cc_num bigint not null, ts timestamp lateness interval 0 day);
+                CREATE TABLE TRANSACTION (cc_num bigint not null, ts timestamp lateness interval 0 day);
                 
                 CREATE VIEW V AS
                 SELECT t.*
@@ -63,26 +66,43 @@ public class IncrementalRegressionTests extends SqlIoTest {
         CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
-            int integrate_trace_keys = 0;
-            int integrate_trace_values = 0;
+            int integrateTraceKeys = 0;
+            int integrateTraceValues = 0;
 
             @Override
             public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
-                this.integrate_trace_keys++;
+                this.integrateTraceKeys++;
             }
 
             @Override
             public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) {
-                this.integrate_trace_values++;
+                this.integrateTraceValues++;
             }
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(1, this.integrate_trace_keys);
-                Assert.assertEquals(2, this.integrate_trace_values);
+                Assert.assertEquals(1, this.integrateTraceKeys);
+                Assert.assertEquals(2, this.integrateTraceValues);
+            }
+        };
+        InnerVisitor findBoolCasts = new InnerVisitor(new StderrErrorReporter()) {
+            int unsafeBoolCasts = 0;
+
+            @Override
+            public void postorder(DBSPCastExpression expression) {
+                if (!expression.getType().mayBeNull &&
+                        expression.getType().is(DBSPTypeBool.class) &&
+                        expression.source.getType().mayBeNull)
+                    unsafeBoolCasts++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(0, this.unsafeBoolCasts);
             }
         };
         visitor.apply(ccs.circuit);
+        findBoolCasts.getCircuitVisitor().apply(ccs.circuit);
     }
 
     @Test
