@@ -123,8 +123,8 @@ select Kafka Location: Confluent Cloud, and then go to the Configuration tab).
 ### Using Kafka as a Debezium transport
 
 The Kafka connector can be used to ingest data from a source via
-Debezium.  For information on how to setup Debezium for MySQL see the
-[Debezium MySQL](debezium-mysql.md) connector.
+Debezium.  For information on how to setup Debezium integration for Feldera, see
+[Debezium connector documentation](debezium).
 
 ## Additional resources
 

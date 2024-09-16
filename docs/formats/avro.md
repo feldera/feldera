@@ -137,7 +137,7 @@ CREATE TABLE my_table (
 }]');
 ```
 
-Configure the Avro parser to ingest data change events from Debezium (refer to [Debezium connector documentation](/docs/connectors/sources/debezium.md) for additional details on setting up the Debezium source connector).
+Configure the Avro parser to ingest data change events from Debezium (refer to [Debezium connector documentation](/docs/connectors/sources/debezium) for additional details on setting up the Debezium source connector).
 
 ```sql
 CREATE TABLE my_table (
