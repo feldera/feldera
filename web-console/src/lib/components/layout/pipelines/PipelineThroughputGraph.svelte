@@ -49,6 +49,12 @@
         formatter(val: number) {
           return formatQty(val)
         }
+      },
+      splitLine: {
+        lineStyle: {
+          color: 'gray',
+          opacity: 0.5
+        }
       }
     },
     tooltip: {

@@ -73,6 +73,12 @@
         showMinLabel: true,
         showMaxLabel: true,
         formatter: humanSize
+      },
+      splitLine: {
+        lineStyle: {
+          color: 'gray',
+          opacity: 0.5
+        }
       }
     },
     tooltip: {

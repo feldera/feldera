@@ -55,34 +55,36 @@
         </div>
       </div>
     </div>
-    <table class="max-w-[1000px]">
-      <thead class="border-b-2">
-        <tr>
-          <th class="text-center font-normal text-surface-600-400">Table</th>
-          <th class="text-center font-normal text-surface-600-400">Ingested records</th>
-          <th class="text-center font-normal text-surface-600-400">Ingested bytes</th>
-          <th class="text-center font-normal text-surface-600-400">Parse errors</th>
-          <th class="text-center font-normal text-surface-600-400">Transport errors</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each metrics.current.input.entries() as [relation, stats]}
+    {#if metrics.current.input.size}
+      <table class="max-w-[1000px]">
+        <thead class="border-b-2">
           <tr>
-            <td>
-              {relation}
-            </td>
-            <td class="text-end">
-              {formatQty(stats.total_records)}
-            </td>
-            <td class="text-end">
-              {humanSize(stats.total_bytes)}
-            </td>
-            <td class="text-end">{formatQty(stats.num_parse_errors)} </td>
-            <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+            <th class="text-center font-normal text-surface-600-400">Table</th>
+            <th class="text-center font-normal text-surface-600-400">Ingested records</th>
+            <th class="text-center font-normal text-surface-600-400">Ingested bytes</th>
+            <th class="text-center font-normal text-surface-600-400">Parse errors</th>
+            <th class="text-center font-normal text-surface-600-400">Transport errors</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each metrics.current.input.entries() as [relation, stats]}
+            <tr>
+              <td>
+                {relation}
+              </td>
+              <td class="text-end">
+                {formatQty(stats.total_records)}
+              </td>
+              <td class="text-end">
+                {humanSize(stats.total_bytes)}
+              </td>
+              <td class="text-end">{formatQty(stats.num_parse_errors)} </td>
+              <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
     {#if metrics.current.output.size}
       <table class="max-w-[1200px]">
         <thead class="border-b-2">

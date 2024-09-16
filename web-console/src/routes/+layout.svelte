@@ -9,6 +9,7 @@
   import { beforeNavigate, afterNavigate } from '$app/navigation'
 
   import type { Action } from 'svelte/action'
+  import 'virtual:vite-svg-2-webfont.css'
 
   export const classList: Action<Element, string | string[]> = (node, classes) => {
     const tokens = Array.isArray(classes) ? classes : [classes]

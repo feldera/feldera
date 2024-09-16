@@ -3,7 +3,9 @@ import { join } from 'path'
 import { skeleton } from '@skeletonlabs/skeleton/plugin'
 import forms from '@tailwindcss/forms'
 
-import { felderaTheme } from './src/felderaTheme'
+import { felderaClassic } from './src/lib/functions/themes/feldera-classic'
+
+import { felderaModern } from './src/lib/functions/themes/feldera-modern'
 
 import type { Config } from 'tailwindcss'
 
@@ -16,14 +18,15 @@ const config = {
   theme: {
     extend: {
       fontFamily: {
-        brands: '"Font Awesome 6 Brands"'
+        brands: '"Font Awesome 6 Brands"',
+        'dm-mono': '"DM Mono"'
       }
     }
   },
   plugins: [
     forms,
     skeleton({
-      themes: [felderaTheme]
+      themes: [felderaClassic, felderaModern]
     })
   ]
 } satisfies Config

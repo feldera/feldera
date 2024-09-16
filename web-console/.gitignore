@@ -22,3 +22,6 @@ vite.config.ts.timestamp-*
 
 # Pipeline Manager tmp build folder
 /pipeline-manager-*/
+
+# Asset preprocessing temporary directories
+/tmp/

@@ -7,14 +7,14 @@
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', () => 'preset-filled-secondary-400-600')
-      .with('Starting up', () => 'preset-filled-tertiary-400-600')
-      .with('Initializing', () => 'preset-filled-tertiary-400-600')
+      .with('Shutdown', () => 'preset-filled-surface-400-600')
+      .with('Starting up', () => 'preset-filled-primary-300-700')
+      .with('Initializing', () => 'preset-filled-primary-300-700')
       .with('Paused', () => 'preset-filled-warning-400-600')
       .with('Running', () => 'preset-filled-success-400-600')
-      .with('Pausing', () => 'preset-filled-tertiary-400-600')
-      .with('Resuming', () => 'preset-filled-tertiary-400-600')
-      .with('ShuttingDown', () => 'preset-filled-tertiary-400-600')
+      .with('Pausing', () => 'preset-filled-primary-300-700')
+      .with('Resuming', () => 'preset-filled-primary-300-700')
+      .with('ShuttingDown', () => 'preset-filled-primary-300-700')
       .with({ PipelineError: P.any }, () => 'preset-filled-error-400-600')
       .with('Compiling sql', () => 'preset-filled-warning-400-600')
       .with('Queued', () => 'preset-filled-warning-400-600')
@@ -30,9 +30,7 @@
 </script>
 
 <div class="p-2">
-  <div
-    class={'h-4 w-4 flex-none rounded-full text-[0.66rem] uppercase ' + chipClass + ' ' + _class}
-  ></div>
+  <div class="h-4 w-4 flex-none rounded-full text-[0.66rem] uppercase {chipClass} {_class}"></div>
 </div>
 <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="left"
   >{getPipelineStatusLabel(status)}</Tooltip

@@ -16,7 +16,7 @@
         {content.title}
       </h3>
       <div class="mt-2">
-        <p class="text-sm text-surface-500">
+        <p class="text-sm text-surface-600-400">
           {content.description}
         </p>
       </div>
