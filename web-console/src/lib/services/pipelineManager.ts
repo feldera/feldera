@@ -137,12 +137,17 @@ export const getPipeline = async (pipeline_name: string) => {
 
 export const getExtendedPipeline = async (
   pipeline_name: string,
-  options?: { fetch?: (request: Request) => ReturnType<typeof fetch> }
+  options?: { fetch?: (request: Request) => ReturnType<typeof fetch>; onNotFound?: () => void }
 ) => {
   return handled(_getPipeline)({
     path: { pipeline_name: encodeURIComponent(pipeline_name) },
     ...options
-  }).then(toExtendedPipeline)
+  }).then(toExtendedPipeline, (e) => {
+    if (typeof e === 'object' && 'error_code' in e && e.error_code === 'UnknownPipelineName') {
+      options?.onNotFound?.()
+    }
+    throw e
+  })
 }
 
 /**

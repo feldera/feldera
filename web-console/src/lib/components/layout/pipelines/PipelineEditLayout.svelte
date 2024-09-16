@@ -73,7 +73,7 @@
 
 <div class="h-full w-full">
   <PaneGroup direction="vertical" class="!overflow-visible">
-    <CodeEditor path={pipeline.current.name} {files}>
+    <CodeEditor path={pipeline.current.name} {files} {editDisabled}>
       {#snippet textEditor(children)}
         <Pane defaultSize={60} minSize={15} class="!overflow-visible">
           {@render children()}

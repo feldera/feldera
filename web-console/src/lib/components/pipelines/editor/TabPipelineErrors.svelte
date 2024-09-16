@@ -11,7 +11,11 @@
   {#each errors.current as systemError}
     <div class="whitespace-nowrap">
       <a href={systemError.cause.source}>
-        <span class=" bx bx-x-circle text-[20px] text-error-500"></span></a
+        <span
+          class=" text-[20px] {systemError.cause.warning
+            ? 'bx bx-error text-warning-500'
+            : 'bx bx-x-circle text-error-500'}"
+        ></span></a
       >
       <span class=" whitespace-pre-wrap break-words align-text-bottom font-mono">
         {systemError.message}
