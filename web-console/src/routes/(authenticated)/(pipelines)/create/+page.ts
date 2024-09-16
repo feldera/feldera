@@ -1,4 +1,5 @@
 import { goto } from '$app/navigation'
+import { base } from '$app/paths'
 import { useTryPipeline } from '$lib/compositions/pipelines/useTryPipeline'
 import type { PipelineDescr } from '$lib/services/manager'
 import { getDemos } from '$lib/services/pipelineManager'
@@ -23,7 +24,7 @@ export async function load({ url, parent }) {
     return getDemos().then((demos) => demos.find((demo) => demo.pipeline.name === name)?.pipeline)
   })()
   if (!pipeline) {
-    goto('/')
+    goto(`${base}/`)
     return
   }
   useTryPipeline()(pipeline)

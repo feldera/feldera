@@ -2,9 +2,9 @@
   import { page } from '$app/stores'
   import { pipelineTabEq, useOpenPipelines } from '$lib/compositions/useOpenPipelines'
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
-  import { asyncDebounced } from '$lib/compositions/asyncDebounced'
-  import { extractProgramError, programErrorReport } from '$lib/compositions/health/systemErrors'
   import { useWritablePipeline } from '$lib/compositions/useWritablePipeline.svelte.js'
+  import { goto } from '$app/navigation'
+  import { base } from '$app/paths'
 
   let { data } = $props()
 
@@ -25,7 +25,11 @@
     })
   }
 
-  const pipeline = useWritablePipeline(() => pipelineName, data.preloadedPipeline)
+  const pipeline = useWritablePipeline(
+    () => pipelineName,
+    data.preloadedPipeline,
+    () => goto(`${base}/`)
+  )
 </script>
 
 <PipelineEditLayout {pipeline}></PipelineEditLayout>

@@ -6,7 +6,11 @@ import {
 } from '$lib/services/pipelineManager'
 import invariant from 'tiny-invariant'
 
-export const useWritablePipeline = (pipelineName: () => string, preloaded: ExtendedPipeline) => {
+export const useWritablePipeline = (
+  pipelineName: () => string,
+  preloaded: ExtendedPipeline,
+  onNotFound?: () => void
+) => {
   if (!pipelineName()) {
     throw new Error('Cannot use pipeline without specifying its name')
   }
@@ -14,7 +18,7 @@ export const useWritablePipeline = (pipelineName: () => string, preloaded: Exten
   let pipeline = $state(preloaded)
 
   const reload = async () => {
-    pipeline = await getExtendedPipeline(pipelineName())
+    pipeline = await getExtendedPipeline(pipelineName(), { onNotFound })
   }
 
   $effect(() => {

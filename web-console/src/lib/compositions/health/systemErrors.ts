@@ -21,6 +21,7 @@ export type SystemError<T = any, Report = ReportDetails> = Error & {
     report: Report
     tag: string
     body: T
+    warning?: boolean
   }
 }
 
@@ -147,7 +148,8 @@ export const extractProgramError =
                 e.start_line_number +
                 (e.start_column > 1 ? ':' + e.start_column.toString() : ''),
               report: getReport(pipeline.name, e.message),
-              body: e
+              body: e,
+              warning: e.warning
             }
           }))
       )
