@@ -2,8 +2,10 @@
   import Drawer from '$lib/components/layout/Drawer.svelte'
   import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import FelderaLogoColor from '$assets/images/feldera/LogoSolid.svg?component'
-  import FelderaLogoWhite from '$assets/images/feldera/LogoWhite.svg?component'
+  import FelderaClassicLogoColor from '$assets/images/feldera-classic/LogoSolid.svg?component'
+  import FelderaClassicLogoWhite from '$assets/images/feldera-classic/LogoWhite.svg?component'
+  import FelderaModernLogoColorDark from '$assets/images/feldera-modern/Feldera Logo Color Dark.svg?component'
+  import FelderaModernLogoColorLight from '$assets/images/feldera-modern/Feldera Logo Color Light.svg?component'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import PipelinesList from '$lib/components/pipelines/List.svelte'
   import type { Snippet } from 'svelte'
@@ -14,14 +16,16 @@
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { base } from '$app/paths'
   import { page } from '$app/stores'
+  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
 
   const dialog = useGlobalDialog()
 
   let { children, data }: { children: Snippet; data: LayoutData } = $props()
-  let { darkMode } = useDarkMode()
+  let { darkMode, toggleDarkMode } = useDarkMode()
   let showDrawer = useLocalStorage('layout/drawer', true)
 
   let pipelines = usePipelineList(data.preloaded)
+  let theme = useSkeletonTheme()
 </script>
 
 <div class="flex h-full">
@@ -29,13 +33,19 @@
     <div class="flex h-full w-full flex-col gap-1">
       <span class="flex items-end">
         <a href="{base}/">
-          {#if darkMode.value === 'dark'}
-            <FelderaLogoWhite class="w-40 p-3"></FelderaLogoWhite>
+          {#if theme.current === 'feldera-modern-theme'}
+            {#if darkMode.value === 'dark'}
+              <FelderaModernLogoColorLight class="w-32 p-3"></FelderaModernLogoColorLight>
+            {:else}
+              <FelderaModernLogoColorDark class="w-32 p-3"></FelderaModernLogoColorDark>
+            {/if}
+          {:else if darkMode.value === 'dark'}
+            <FelderaClassicLogoWhite class="w-40 p-3"></FelderaClassicLogoWhite>
           {:else}
-            <FelderaLogoColor class="w-40 p-3"></FelderaLogoColor>
+            <FelderaClassicLogoColor class="w-40 p-3"></FelderaClassicLogoColor>
           {/if}
         </a>
-        <span class="pb-1 text-surface-500">{$page.data.felderaVersion}</span>
+        <span class="pb-1 text-surface-600-400">{$page.data.felderaVersion}</span>
       </span>
       <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
     </div>
@@ -67,10 +77,21 @@
           </a>
         {/each}
         <!-- <HealthPopup></HealthPopup> -->
-        <!-- <button
+        <button
           onclick={toggleDarkMode}
-          class={'btn-icon preset-tonal-surface text-[24px] ' +
-            (darkMode.value === 'dark' ? 'bx bx-sun ' : 'bx bx-moon ')}></button> -->
+          class="btn-icon text-[24px] preset-tonal-surface
+            {darkMode.value === 'dark' ? 'bx bx-sun' : 'bx bx-moon'}"
+        ></button>
+        <button
+          class="fd fd-swatch-book text-[24px]"
+          onclick={() => {
+            theme.current =
+              theme.current === 'feldera-modern-theme'
+                ? 'feldera-classic-theme'
+                : 'feldera-modern-theme'
+          }}
+        >
+        </button>
         <AuthButton compactBreakpoint="xl:"></AuthButton>
       </div>
     </div>

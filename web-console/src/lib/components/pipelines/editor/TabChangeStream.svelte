@@ -189,7 +189,7 @@
           <label class="flex-none overflow-hidden overflow-ellipsis">
             <input
               type="checkbox"
-              class="focus:ring-transparent"
+              class="bg-white-black focus:ring-transparent"
               checked={relation.selected}
               onchange={(e) => {
                 const follow = e.currentTarget.checked
@@ -211,19 +211,19 @@
           </label>
         {/snippet}
         {#if inputs.length}
-          <div class="text-surface-500">Tables:</div>
+          <div class="text-surface-600-400">Tables:</div>
         {/if}
         {#each inputs as relation}
           {@render relationItem({ ...relation, pipelineName })}
         {/each}
         {#if outputs.length}
-          <div class="text-surface-500">Views:</div>
+          <div class="text-surface-600-400">Views:</div>
         {/if}
         {#each outputs as relation}
           {@render relationItem({ ...relation, pipelineName })}
         {/each}
         {#if inputs.length + outputs.length === 0}
-          <div class="text-surface-500">No relations</div>
+          <div class="text-surface-600-400">No relations</div>
         {/if}
       </div>
     </Pane>
@@ -233,7 +233,7 @@
       {#if getChangeStream()[pipelineName]?.rows?.length}
         <ChangeStream changeStream={getChangeStream()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="p-2 text-surface-500">
+        <span class="p-2 text-surface-600-400">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}

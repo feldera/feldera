@@ -1,4 +1,6 @@
 @import '@fontsource-variable/public-sans';
+@import '@fontsource-variable/dm-sans';
+@import '@fontsource/dm-mono';
 @import url('boxicons/css/boxicons.min.css');
 @import url('@fortawesome/fontawesome-free/css/brands.min.css');
 
@@ -16,4 +18,12 @@
 
 .pane-divider-vertical {
   @apply z-[1] w-[2px] transition-colors before:-ml-[3px] before:flex before:h-full before:w-[8px] hover:bg-primary-500 active:bg-primary-500;
+}
+
+.bg-white-black {
+  @apply bg-white dark:bg-black;
+}
+
+.bg-black-white {
+  @apply bg-black dark:bg-white;
 }

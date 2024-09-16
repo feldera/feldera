@@ -7,6 +7,7 @@
   import { editor } from 'monaco-editor'
   import PipelineEditorStatusBar from '$lib/components/layout/pipelines/PipelineEditorStatusBar.svelte'
   import { page } from '$app/stores'
+  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
 
   let {
     path,
@@ -71,6 +72,7 @@
   })
 
   const mode = useDarkMode()
+  const theme = useSkeletonTheme()
 </script>
 
 {@render textEditor(x)}
@@ -78,7 +80,7 @@
   <div class="flex h-full flex-col">
     <div class="flex">
       {#each files as file}
-        <div class="py-1 pl-3 pr-8 {file.name === currentFileName ? 'bg-secondary-50' : ''}">
+        <div class="py-1 pl-3 pr-8 {file.name === currentFileName ? 'bg-white-black' : ''}">
           {file.name}
         </div>
       {/each}
@@ -98,6 +100,8 @@
           bind:editor={editorRef}
           bind:value={editedText.current}
           options={{
+            fontFamily: theme.config.monospaceFontFamily,
+            fontSize: 16,
             theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
             automaticLayout: true,
             lineNumbersMinChars: 3,

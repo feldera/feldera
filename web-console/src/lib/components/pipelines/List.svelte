@@ -97,7 +97,7 @@
         }
       }}
       placeholder="New Pipeline Name"
-      class="input placeholder-surface-700 outline-none bg-surface-50-950 dark:placeholder-surface-300"
+      class="input placeholder-surface-700 outline-none transition-none duration-0 bg-surface-50-950 dark:placeholder-surface-300"
     />
     <div class="py-2 text-surface-400-600">Press Enter to create</div>
   </div>
@@ -105,11 +105,11 @@
     <a
       class="-mx-4 -my-0.5 flex flex-nowrap items-center gap-2 border-2 border-transparent px-3.5 {$page
         .params.pipelineName === pipeline.name
-        ? 'bg-secondary-50-950'
+        ? 'bg-white-black'
         : 'border-transparent hover:!bg-opacity-30 hover:bg-surface-100-900'}"
       href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
     >
-      <div class="w-full overflow-ellipsis whitespace-break-spaces py-1 transition-none duration-0">
+      <div class="w-full overflow-ellipsis whitespace-break-spaces py-1">
         <!-- Insert a thin whitespace to help break names containing underscore -->
         {pipeline.name.replaceAll('_', `_ `)}
       </div>
