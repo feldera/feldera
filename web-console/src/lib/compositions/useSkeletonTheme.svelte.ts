@@ -3,8 +3,6 @@ let state = $state(document.body.getAttribute('data-theme') ?? '')
 const config = $derived({
   monospaceFontFamily: (() => {
     switch (state) {
-      case 'feldera-classic-theme':
-        return 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
       case 'feldera-modern-theme':
         return 'DM Mono'
       default:
