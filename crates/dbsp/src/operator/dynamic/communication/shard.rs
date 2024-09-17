@@ -9,7 +9,7 @@ use crate::{
     circuit_cache_key,
     dynamic::Data,
     operator::communication::new_exchange_operators,
-    trace::{merge_batches, Batch, BatchReader, BatchReaderFactories, Builder, Cursor},
+    trace::{merge_untimed_batches, Batch, BatchReader, BatchReaderFactories, Builder, Cursor},
     Circuit, Runtime, Stream,
 };
 
@@ -101,7 +101,7 @@ where
                                 self.circuit()
                                     .add_exchange(sender, receiver, self)
                                     .apply_owned_named("merge shards", move |batches| {
-                                        merge_batches(&factories_clone2, batches)
+                                        merge_untimed_batches(&factories_clone2, batches)
                                     })
                             });
 

@@ -33,10 +33,11 @@
 //! [`Antichain`].
 
 use crate::circuit::metadata::OperatorMeta;
-use crate::dynamic::ClonableTrait;
+use crate::dynamic::{ClonableTrait, Weight};
 pub use crate::storage::file::{Deserializable, Deserializer, Rkyv, Serializer};
 use crate::time::Antichain;
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
+use cursor::CursorList;
 use dyn_clone::DynClone;
 use rand::Rng;
 use size_of::SizeOf;
@@ -444,6 +445,51 @@ where
         batcher.seal()
     }
 
+    /// Creates a new batch as a copy of `batch`, using `timestamp` for all of
+    /// the new batch's timestamps This is useful for adding a timestamp to a
+    /// batch, or for converting between different batch implementations
+    /// (e.g. writing an in-memory batch to disk).
+    ///
+    /// TODO: for adding a timestamp to a batch, this could be implemented more
+    /// efficiently by having a special batch type where all updates have the same
+    /// timestamp, as this is the only kind of batch that we ever create directly in
+    /// DBSP; batches with multiple timestamps are only created as a result of
+    /// merging.  The main complication is that we will need to extend the trace
+    /// implementation to work with batches of multiple types.  This shouldn't be
+    /// too hard and is on the todo list.
+    fn from_batch<BI>(batch: &BI, timestamp: &Self::Time, factories: &Self::Factories) -> Self
+    where
+        BI: BatchReader<Key = Self::Key, Val = Self::Val, Time = (), R = Self::R>,
+    {
+        Self::from_cursor(batch.cursor(), timestamp, factories, batch.len())
+    }
+
+    /// Creates a new batch as a copy of the tuples accessible via `cursor``,
+    /// using `timestamp` for all of the new batch's timestamps.
+    fn from_cursor<C>(
+        mut cursor: C,
+        timestamp: &Self::Time,
+        factories: &Self::Factories,
+        capacity: usize,
+    ) -> Self
+    where
+        C: Cursor<Self::Key, Self::Val, (), Self::R>,
+    {
+        let mut builder = Self::Builder::with_capacity(factories, timestamp.clone(), capacity);
+        let mut weight = cursor.weight_factory().default_box();
+        while cursor.key_valid() {
+            while cursor.val_valid() {
+                cursor.weight().clone_to(&mut weight);
+                if !weight.is_zero() {
+                    builder.push_refs(cursor.key(), cursor.val(), &weight);
+                }
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        builder.done()
+    }
+
     /*
     /// Assemble an unordered vector of keys into a batch.
     ///
@@ -692,39 +738,38 @@ where
     batches.pop().unwrap_or(B::dyn_empty(factories))
 }
 
-/// Copies a batch.  This uses the [`Builder`] interface to produce the output
-/// batch, which only supports producing batches with a single fixed timestamp,
-/// which must be supplied as `timestamp`.  To avoid discarding meaningful
-/// timestamps in the input, the input batch's time type must be `()`.
+/// Merges all of the batches in `batches` and returns the merged result.
 ///
-/// This is useful for adding a timestamp to a batch, or for converting between
-/// different batch implementations (e.g. writing an in-memory batch to disk).
-///
-/// TODO: for adding a timestamp to a batch, this could be implemented more
-/// efficiently by having a special batch type where all updates have the same
-/// timestamp, as this is the only kind of batch that we ever create directly in
-/// DBSP; batches with multiple timestamps are only created as a result of
-/// merging.  The main complication is that we will need to extend the trace
-/// implementation to work with batches of multiple types.  This shouldn't be
-/// too hard and is on the todo list.
-pub fn copy_batch<BI, TS, BO>(batch: &BI, timestamp: &TS, factories: &BO::Factories) -> BO
+/// This implements a multiway merge rather than iterating a 2-way merge.  This
+/// is theoretically and asymptotically more efficient, but it is practically
+/// much more efficient for the case where cloning items in the batch is
+/// expensive, because 2-way merges will clone each data item `lg n` times
+/// whereas an N-way merge will only clone them once each. For a 16-way merge,
+/// that's a 4x reduction.
+pub fn merge_untimed_batches<B, T>(factories: &B::Factories, batches: T) -> B
 where
-    TS: Timestamp,
-    BI: BatchReader<Time = ()>,
-    BO: Batch<Key = BI::Key, Val = BI::Val, Time = TS, R = BI::R>,
+    T: IntoIterator<Item = B>,
+    B: Batch<Time = ()>,
 {
-    let mut builder = BO::Builder::with_capacity(factories, timestamp.clone(), batch.len());
-    let mut cursor = batch.cursor();
-    let mut weight = batch.factories().weight_factory().default_box();
-    while cursor.key_valid() {
-        while cursor.val_valid() {
-            cursor.weight().clone_to(&mut weight);
-            builder.push_refs(cursor.key(), cursor.val(), &weight);
-            cursor.step_val();
+    let mut batches: Vec<_> = batches.into_iter().filter(|b| !b.is_empty()).collect();
+    match batches.len() {
+        0 => B::dyn_empty(factories),
+        1 => batches.pop().unwrap(),
+        2 => {
+            // Presumably the specialized merge implementation for the batch
+            // type can do better than our general algorithm.
+            merge_batches(factories, batches)
         }
-        cursor.step_key();
+        _ => B::from_cursor(
+            CursorList::new(
+                factories.weight_factory(),
+                batches.iter().map(|b| b.cursor()).collect(),
+            ),
+            &(),
+            factories,
+            batches.iter().map(|b| b.len()).sum(),
+        ),
     }
-    builder.done()
 }
 
 /// Compares two batches for equality.  This works regardless of whether the

@@ -10,7 +10,7 @@ use crate::{
     },
     circuit_cache_key,
     dynamic::DataTrait,
-    trace::{copy_batch, Batch, BatchReader, Filter, Spine, Trace},
+    trace::{Batch, BatchReader, Filter, Spine, Trace},
     Error, Timestamp,
 };
 use dyn_clone::clone_box;
@@ -721,7 +721,7 @@ where
     fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
         // TODO: extend `trace` type to feed untimed batches directly
         // (adding fixed timestamp on the fly).
-        trace.insert(copy_batch(
+        trace.insert(T::Batch::from_batch(
             batch,
             &self.clock.time(),
             &self.output_factories,
@@ -737,7 +737,7 @@ where
 
     #[trace]
     fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
-        trace.insert(copy_batch(
+        trace.insert(T::Batch::from_batch(
             &batch,
             &self.clock.time(),
             &self.output_factories,
