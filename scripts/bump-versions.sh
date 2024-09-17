@@ -26,7 +26,12 @@ release() {
     # Update pipeline manager version
     old_version=`cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version'`
     case $1 in
-        major|minor|patch) cargo set-version --bump $1 -p pipeline-manager ;;
+        major|minor|patch) 
+          cargo set-version --bump $1 -p feldera-types
+          cargo set-version --bump $1 -p dbsp
+          cargo set-version --bump $1 -p fda
+          cargo set-version --bump $1 -p pipeline-manager
+        ;;
         *) echo >&2 "Argument must be 'major' or 'minor' or 'patch'"; exit 1 ;;
     esac
 
