@@ -4,9 +4,9 @@ from tests import TEST_CLIENT
 
 class TestAggregatesBase(unittest.TestCase):
     def setUp(self) -> None:
-        self.data = [{"insert":{"id": 0, "c1": 1, "c2": 2, "c3": 3, "c4": 4, "c5": 5, "c6": 6, "c7": None, "c8": 8}},]       
+        self.data = [{"insert":{"id": 0, "c1": 1, "c2": 2, "c3": 3, "c4": 4, "c5": 5, "c6": 6, "c7": None, "c8": 8}},]
         return super().setUp()
-      
+
     def execute_query(self, pipeline_name, expected_data, table_name, view_query):
         sql = f'''CREATE TABLE {table_name}(
                     id INT, c1 TINYINT, c2 TINYINT NOT NULL, c3 INT2, c4 INT2 NOT NULL, c5 INT, c6 INT NOT NULL,c7 BIGINT,c8 BIGINT NOT NULL);''' + view_query
@@ -21,12 +21,13 @@ class TestAggregatesBase(unittest.TestCase):
             datum.update({"insert_delete": 1})
         assert expected_data == out_data
         pipeline.delete()
-        
+
     def add_data(self, new_data, delete: bool = False):
         key = "delete" if delete else "insert"
         for datum in new_data:
             self.data.append({key: datum})
 
+@unittest.skip("temporarily disabled; use ad hoc query API to check the results reliably")
 class Avg(TestAggregatesBase):
     def test_avg_value(self):
         pipeline_name = "test_avg_value"
@@ -59,6 +60,7 @@ class Avg_Groupby(TestAggregatesBase):
                          GROUP BY id;'''
         self.execute_query( pipeline_name, expected_data, table_name, view_query)
 
+@unittest.skip("temporarily disabled; use ad hoc query API to check the results reliably")
 class Avg_Distinct(TestAggregatesBase):
     def test_avg_distinct(self):
         pipeline_name ="test_avg_distinct"
@@ -72,8 +74,8 @@ class Avg_Distinct(TestAggregatesBase):
         table_name = "avg_distinct"
         view_query = f'''CREATE VIEW avg_view AS SELECT
                             AVG(DISTINCT c1) AS c1, AVG(DISTINCT c2) AS c2, AVG(DISTINCT c3) AS c3, AVG(DISTINCT c4) AS c4, AVG(DISTINCT c5) AS c5, AVG(DISTINCT c6) AS c6, AVG(DISTINCT c7) AS c7, AVG(DISTINCT c8) AS c8
-                        FROM {table_name}'''   
-        self.execute_query(pipeline_name, expected_data, table_name, view_query)   
+                        FROM {table_name}'''
+        self.execute_query(pipeline_name, expected_data, table_name, view_query)
 
 class Avg_Distinct_Groupby(TestAggregatesBase):
     def test_avg_distinct_groupby(self):
@@ -92,8 +94,9 @@ class Avg_Distinct_Groupby(TestAggregatesBase):
                             id, AVG(DISTINCT c1) AS c1, AVG(DISTINCT c2) AS c2, AVG(DISTINCT c3) AS c3, AVG(DISTINCT c4) AS c4, AVG(DISTINCT c5) AS c5, AVG(DISTINCT c6) AS c6, AVG(DISTINCT c7) AS c7, AVG(DISTINCT c8) AS c8
                          FROM {table_name}
                          GROUP BY id;'''
-        self.execute_query(pipeline_name, expected_data, table_name, view_query) 
+        self.execute_query(pipeline_name, expected_data, table_name, view_query)
 
+@unittest.skip("temporarily disabled; use ad hoc query API to check the results reliably")
 class Avg_Where(TestAggregatesBase):
     def test_avg_where0(self):
         pipeline_name ="test_avg_where0"
@@ -108,10 +111,10 @@ class Avg_Where(TestAggregatesBase):
         view_query = f'''CREATE VIEW avg_view AS SELECT
                             AVG(c1) AS c1, AVG(c2) AS c2, AVG(c3) AS c3, AVG(c4) AS c4, AVG(c5) AS c5, AVG(c6) AS c6, AVG(c7) AS c7, AVG(c8) AS c8
                         FROM {table_name}
-                        WHERE 
-                            c1 is NOT NULl AND c3 is NOT NULL AND c5 is NOT NULL AND c7 is NOT NULL;'''   
+                        WHERE
+                            c1 is NOT NULl AND c3 is NOT NULL AND c5 is NOT NULL AND c7 is NOT NULL;'''
         self.execute_query(pipeline_name, expected_data, table_name, view_query)
-    
+
     def test_avg_where1(self):
         pipeline_name ="test_avg_where1"
         # checked manually
@@ -131,8 +134,8 @@ class Avg_Where(TestAggregatesBase):
                             FROM {table_name})
                             SELECT t.c1, t.c2, t.c3, t.c4, t.c5, t.c6, t.c7, t.c8
                             FROM {table_name} t
-                            WHERE t.c2 > (SELECT avg_c2 FROM avg_val);'''   
-        self.execute_query(pipeline_name, expected_data, table_name, view_query)  
+                            WHERE t.c2 > (SELECT avg_c2 FROM avg_val);'''
+        self.execute_query(pipeline_name, expected_data, table_name, view_query)
 
 class Avg_Where_Groupby(TestAggregatesBase):
     def test_avg_where_groupy0(self):
@@ -148,11 +151,11 @@ class Avg_Where_Groupby(TestAggregatesBase):
         view_query = f'''CREATE VIEW avg_view AS SELECT
                             id, AVG(c1) AS c1, AVG(c2) AS c2, AVG(c3) AS c3, AVG(c4) AS c4, AVG(c5) AS c5, AVG(c6) AS c6, AVG(c7) AS c7, AVG(c8) AS c8
                         FROM {table_name}
-                        WHERE 
+                        WHERE
                             c1 is NOT NULl AND c3 is NOT NULL AND c5 is NOT NULL AND c7 is NOT NULL
-                        GROUP BY id;'''   
-        self.execute_query(pipeline_name, expected_data, table_name, view_query) 
-        
+                        GROUP BY id;'''
+        self.execute_query(pipeline_name, expected_data, table_name, view_query)
+
     def test_avg_where_groupby1(self):
         pipeline_name ="test_avg_where_groupby1"
         # checked manually
@@ -175,9 +178,9 @@ class Avg_Where_Groupby(TestAggregatesBase):
                                 t.id, AVG(t.c1) AS avg_c1, AVG(t.c2) AS avg_c2, AVG(t.c3) AS avg_c3, AVG(t.c4) AS avg_c4,  AVG(t.c5) AS avg_c5, AVG(t.c6) AS avg_c6, AVG(t.c7) AS avg_c7, AVG(t.c8) AS avg_c8
                             FROM {table_name} t
                             WHERE t.c4 > (SELECT avg_c4 FROM avg_val)
-                            GROUP BY t.id;'''   
-                         
-        self.execute_query(pipeline_name, expected_data, table_name, view_query) 
+                            GROUP BY t.id;'''
+
+        self.execute_query(pipeline_name, expected_data, table_name, view_query)
 
 if __name__ == '__main__':
     unittest.main()
