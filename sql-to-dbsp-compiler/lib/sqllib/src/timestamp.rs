@@ -1305,6 +1305,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Time {
                 serializer.serialize_str(&time.format(format_string).to_string())
             }
             TimeFormat::Nanos => serializer.serialize_u64(self.nanoseconds),
+            TimeFormat::NanosSigned => serializer.serialize_i64(self.nanoseconds as i64),
             TimeFormat::Micros => serializer.serialize_u64(self.nanoseconds / 1_000),
             TimeFormat::Millis => serializer.serialize_u64(self.nanoseconds / 1_000_000),
         }
@@ -1331,6 +1332,9 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Time {
             }
             TimeFormat::Nanos => Ok(Self {
                 nanoseconds: u64::deserialize(deserializer)?,
+            }),
+            TimeFormat::NanosSigned => Ok(Self {
+                nanoseconds: i64::deserialize(deserializer)? as u64,
             }),
             TimeFormat::Micros => Ok(Self {
                 nanoseconds: u64::deserialize(deserializer)? * 1_000,

@@ -22,8 +22,10 @@ pub enum TimeFormat {
     Micros,
     /// Time specified in milliseconds from the start of the day.
     Millis,
-    /// Time specified in nanoseconds from the start of the day.
+    /// Time specified in nanoseconds from the start of the day as an unsigned 64-bit integer.
     Nanos,
+    /// Time specified in nanoseconds from the start of the day as a signed 64-bit integer.
+    NanosSigned,
 }
 
 impl Default for TimeFormat {
