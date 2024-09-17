@@ -5,7 +5,7 @@ use crate::{
         GlobalNodeId, OwnershipPreference, Scope,
     },
     circuit_cache_key,
-    trace::{merge_batches, Batch},
+    trace::{merge_untimed_batches, Batch},
     Circuit, Runtime, Stream,
 };
 use arc_swap::ArcSwap;
@@ -330,7 +330,7 @@ where
         // Safety: This is the gather thread
         debug_assert!(unsafe { self.gather.all_channels_ready() });
 
-        merge_batches(
+        merge_untimed_batches(
             &self.factories,
             (0..self.gather.workers()).map(|worker| unsafe { self.gather.pop(worker) }),
         )
