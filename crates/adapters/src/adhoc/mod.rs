@@ -1,6 +1,7 @@
 use crate::PipelineError;
 use actix_web::http::header;
 use actix_web::HttpResponse;
+use arrow::array::RecordBatch;
 use arrow::util::pretty::pretty_format_batches;
 use arrow_json::LineDelimitedWriter;
 use async_stream::{stream, try_stream};
@@ -52,6 +53,7 @@ pub async fn stream_adhoc_result(
     session: SessionContext,
 ) -> Result<HttpResponse, PipelineError> {
     let df = session.sql(&args.sql).await?;
+    let schema = df.schema().inner().clone();
 
     // Note that once we are in the stream!{} macros any error that occurs will lead to the connection
     // in the manager being terminated and a 500 error being returned to the client.
@@ -108,6 +110,27 @@ pub async fn stream_adhoc_result(
                             yield format!("ERROR: {}", e).into();
                             return;
                         }
+                    };
+
+                    // For some queries df.execute_stream() won't yield any batches
+                    // in case there aren't any results. When this happens we never sent the headers.
+                    // We correct it here and send an empty batch.
+                    // This isn't a problem in JSON. And in parquet the file writer will
+                    // produce an empty file with a schema by default.
+                    if !headers_sent {
+                        let batch = RecordBatch::new_empty(schema);
+                        let txt_table_format = pretty_format_batches(&[batch])
+                            .map_err(|e| PipelineError::AdHocQueryError { error: e.to_string(), df: None });
+                        match txt_table_format {
+                            Ok(txt_table) => {
+                                let txt_table = txt_table.to_string();
+                                yield txt_table.into();
+                            }
+                            Err(e) => {
+                                yield format!("ERROR: {}", e).into();
+                                return;
+                            }
+                        }
                     }
                 }))
         }
@@ -155,22 +178,20 @@ pub async fn stream_adhoc_result(
             let (tx, mut rx) = mpsc::channel(1024);
 
             let mut stream_job = Box::pin(async move {
+                let schema = df.schema().inner().clone();
                 let mut stream = df.execute_stream().await?;
-                let mut writer = None;
+
+                let mut writer = AsyncArrowWriter::try_new(
+                    ChannelWriter::new(tx),
+                    schema,
+                    Some(WriterProperties::builder().set_compression(Compression::SNAPPY).build()),
+                )?;
                 while let Some(batch) = stream.next().await {
                     let batch = batch.map_err(DataFusionError::from)?;
-                    if writer.is_none() {
-                        let tx = tx.clone();
-                        writer = Some(AsyncArrowWriter::try_new(
-                            ChannelWriter::new(tx),
-                            batch.schema(),
-                            Some(WriterProperties::builder().set_compression(Compression::SNAPPY).build()),
-                        )?);
-                    }
-                    writer.as_mut().unwrap().write(&batch).await?;
+                    writer.write(&batch).await?;
                 }
-                writer.as_mut().unwrap().flush().await?;
-                writer.unwrap().close().await?;
+                writer.flush().await?;
+                writer.close().await?;
                 <datafusion::common::Result<_>>::Ok(())
             }.fuse());
 
