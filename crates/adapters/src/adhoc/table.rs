@@ -448,8 +448,9 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
                         e
                     ))
                 })?;
-                send_batch(&tx, &projection, batch).await?;
-
+                if batch.num_rows() > 0 {
+                    send_batch(&tx, &projection, batch).await?;
+                }
                 Ok(())
             });
 
