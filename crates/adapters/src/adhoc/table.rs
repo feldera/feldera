@@ -25,7 +25,8 @@ use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
 };
 use feldera_types::program_schema::SqlIdentifier;
-use feldera_types::serde_with_context::SqlSerdeConfig;
+use feldera_types::serde_with_context::serde_config::{DecimalFormat, VariantFormat};
+use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use futures_util::StreamExt;
 use log::warn;
 use serde_arrow::schema::SerdeArrowSchema;
@@ -33,6 +34,16 @@ use serde_arrow::ArrayBuilder;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tokio::time::{timeout, Duration};
+
+pub const fn datafusion_arrow_serde_config() -> &'static SqlSerdeConfig {
+    &SqlSerdeConfig {
+        timestamp_format: TimestampFormat::String("%FT%T%.f"),
+        time_format: TimeFormat::String("%T"),
+        date_format: DateFormat::String("%Y-%m-%d"),
+        decimal_format: DecimalFormat::String,
+        variant_format: VariantFormat::JsonString,
+    }
+}
 
 pub struct AdHocTable {
     // We use a weak reference to avoid a reference cycle.
@@ -200,7 +211,7 @@ impl DataSink for AdHocTableSink {
     ) -> datafusion::common::Result<u64> {
         let mut arrow_inserter = self
             .collection_handle
-            .configure_arrow_deserializer(SqlSerdeConfig::default())
+            .configure_arrow_deserializer(datafusion_arrow_serde_config().clone())
             .map_err(|e| DataFusionError::External(e.into()))?;
 
         while let Some(batch) = data.next().await.transpose()? {
