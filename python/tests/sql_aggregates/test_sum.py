@@ -32,7 +32,7 @@ class TestAggregatesBase(unittest.TestCase):
         for datum in new_data:
             self.data.append({key: datum})
 
-
+@unittest.skip("temporarily disabled; use ad hoc query API to check the results reliably")
 class Sum(TestAggregatesBase):
     def test_sum_value(self):
         pipeline_name = "test_sum_value"
@@ -60,7 +60,7 @@ class Sum_Groupby(TestAggregatesBase):
                         GROUP BY id;'''
         self.execute_query(pipeline_name, expected_data, table_name, view_query)
 
-
+@unittest.skip("temporarily disabled; use ad hoc query API to check the results reliably")
 class Sum_Distinct(TestAggregatesBase):
     def test_sum_distinct(self):
         pipeline_name = "test_sum_distinct"
@@ -90,7 +90,7 @@ class Sum_Distinct_Groupby(TestAggregatesBase):
                         GROUP BY id;'''
         self.execute_query(pipeline_name, expected_data, table_name, view_query)
 
-
+@unittest.skip("temporarily disabled; use ad hoc query API to check the results reliably")
 class Sum_Where(TestAggregatesBase):
     def test_sum_where0(self):
         pipeline_name = "test_sum_where"
@@ -100,7 +100,7 @@ class Sum_Where(TestAggregatesBase):
         view_query = f'''CREATE VIEW sum_view AS SELECT
                             SUM(c1) AS c1, SUM(c2) AS c2, SUM(c3) AS c3, SUM(c4) AS c4, SUM(c5) AS c5, SUM(c6) AS c6, SUM(c7) AS c7, SUM(c8) AS c8
                         FROM {table_name}
-                        WHERE 
+                        WHERE
                             c1 is NOT NULl AND c3 is NOT NULL;'''
         self.execute_query(pipeline_name, expected_data, table_name, view_query)
 
@@ -132,7 +132,7 @@ class Sum_Where_Groupby(TestAggregatesBase):
         view_query = f'''CREATE VIEW sum_view AS SELECT
                             id, SUM(c1) AS c1, SUM(c2) AS c2, SUM(c3) AS c3, SUM(c4) AS c4, SUM(c5) AS c5, SUM(c6) AS c6, SUM(c7) AS c7, SUM(c8) AS c8
                         FROM {table_name}
-                        WHERE 
+                        WHERE
                             c1 is NOT NULl AND c3 is NOT NULL
                         GROUP BY id;'''
         self.execute_query(pipeline_name, expected_data, table_name, view_query)

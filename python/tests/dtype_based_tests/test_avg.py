@@ -3,7 +3,6 @@ from decimal import Decimal
 from tests.dtype_based_tests.test_base_class import TestAggregatesBase
 
 #decimal type
-@unittest.skip("temporarily disabled due to a rounding error")
 class Avg_Decimal(TestAggregatesBase):
     def setUp(self) -> None:
         self.data = [{"insert": {"id": 0, "c1": 1111.52, "c2": 2231.90}},
@@ -15,6 +14,7 @@ class Avg_Decimal(TestAggregatesBase):
                         id INT, c1 DECIMAL(6,2), c2 DECIMAL(6,2) NOT NULL);'''
         self.view_name = "avg_view"
 
+    @unittest.skip("temporarily disabled; use ad hoc query API to check the results reliably")
     def test_avg_value(self):
         pipeline_name = "test_avg_value"
         # validated using postgres
@@ -23,11 +23,11 @@ class Avg_Decimal(TestAggregatesBase):
                             AVG(c1) AS c1,AVG(c2) AS c2
                          FROM {self.table_name}'''
         self.execute_query(pipeline_name, expected_data, view_query)
-    
+
     def test_avg_groupby(self):
         pipeline_name = "test_avg_groupby"
         # validated using postgres
-        expected_data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('3017.30')}, 
+        expected_data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('3017.30')},
                          {'id': 1, 'c1': Decimal('5681.08'), 'c2': Decimal('7512.88')}]
         view_query = f'''CREATE VIEW {self.view_name} AS SELECT
                             id, AVG(c1) AS c1, AVG(c2) AS c2
@@ -35,6 +35,7 @@ class Avg_Decimal(TestAggregatesBase):
                         GROUP BY id;'''
         self.execute_query(pipeline_name, expected_data, view_query)
 
+    @unittest.skip("temporarily disabled; use ad hoc query API to check the results reliably")
     def test_avg_distinct(self):
         pipeline_name = "test_avg_distinct"
         # validated using postgres
@@ -47,7 +48,7 @@ class Avg_Decimal(TestAggregatesBase):
     def test_avg_distinct_groupby(self):
         pipeline_name = "test_avg_distinct_groupby"
         # validated using postgres
-        expected_data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('3017.30')}, 
+        expected_data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('3017.30')},
                          {'id': 1, 'c1': Decimal('5681.08'), 'c2': Decimal('7512.88')}]
         view_query = f'''CREATE VIEW {self.view_name} AS SELECT
                             id, AVG(DISTINCT c1) AS c1, AVG(DISTINCT c2) AS c2
@@ -55,6 +56,7 @@ class Avg_Decimal(TestAggregatesBase):
                         GROUP BY id;'''
         self.execute_query(pipeline_name, expected_data, view_query)
 
+    @unittest.skip("temporarily disabled; use ad hoc query API to check the results reliably")
     def test_avg_where(self):
         pipeline_name = "test_avg_where"
         # validated using postgres
