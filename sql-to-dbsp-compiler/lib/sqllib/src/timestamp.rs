@@ -129,7 +129,9 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Timestamp {
 
                 let timestamp =
                     DateTime::parse_from_rfc3339(timestamp_str.trim()).map_err(|e| {
-                        D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
+                        D::Error::custom(format!(
+                            "invalid RFC3339 timestamp string '{timestamp_str}': {e}"
+                        ))
                     })?;
 
                 Ok(Self::new(timestamp.timestamp_millis()))
@@ -141,7 +143,7 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Timestamp {
 
                 let timestamp = NaiveDateTime::parse_from_str(timestamp_str.trim(), format)
                     .map_err(|e| {
-                        D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
+                        D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e} (expected format: '{format}')"))
                     })?;
 
                 Ok(Self::new(timestamp.and_utc().timestamp_millis()))
@@ -171,7 +173,9 @@ impl<'de> Deserialize<'de> for Timestamp {
 
         let timestamp =
             NaiveDateTime::parse_from_str(timestamp_str.trim(), "%F %T%.f").map_err(|e| {
-                D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e}"))
+                D::Error::custom(format!(
+                    "invalid timestamp string '{timestamp_str}': {e} (expected format: '%F %T%.f')"
+                ))
             })?;
 
         Ok(Self::new(timestamp.and_utc().timestamp_millis()))
@@ -819,8 +823,11 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Date {
             DateFormat::String(format) => {
                 let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
 
-                let date = NaiveDate::parse_from_str(str.trim(), format)
-                    .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
+                let date = NaiveDate::parse_from_str(str.trim(), format).map_err(|e| {
+                    D::Error::custom(format!(
+                        "invalid date string '{str}': {e} (expected format: '{format}')"
+                    ))
+                })?;
                 Ok(Self::new(
                     (date.and_time(NaiveTime::default()).and_utc().timestamp() / 86400) as i32,
                 ))
@@ -839,8 +846,11 @@ impl<'de> Deserialize<'de> for Date {
         D: Deserializer<'de>,
     {
         let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
-        let date = NaiveDate::parse_from_str(str.trim(), "%Y-%m-%d")
-            .map_err(|e| D::Error::custom(format!("invalid date string '{str}': {e}")))?;
+        let date = NaiveDate::parse_from_str(str.trim(), "%Y-%m-%d").map_err(|e| {
+            D::Error::custom(format!(
+                "invalid date string '{str}': {e} (expected format: '%Y-%m-%d')"
+            ))
+        })?;
         Ok(Self::new(
             (date.and_time(NaiveTime::default()).and_utc().timestamp() / 86400) as i32,
         ))
@@ -1312,8 +1322,11 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for Time {
         match config.time_format {
             TimeFormat::String(format) => {
                 let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
-                let time = NaiveTime::parse_from_str(str.trim(), format)
-                    .map_err(|e| D::Error::custom(format!("invalid time string '{str}': {e}")))?;
+                let time = NaiveTime::parse_from_str(str.trim(), format).map_err(|e| {
+                    D::Error::custom(format!(
+                        "invalid time string '{str}': {e} (expected format: '{format}')"
+                    ))
+                })?;
                 Ok(Self::from_time(time))
             }
             TimeFormat::Nanos => Ok(Self {
@@ -1335,8 +1348,11 @@ impl<'de> Deserialize<'de> for Time {
         D: Deserializer<'de>,
     {
         let str: &'de str = Deserialize::deserialize(deserializer)?;
-        let time = NaiveTime::parse_from_str(str.trim(), "%H:%M:%S%.f")
-            .map_err(|e| D::Error::custom(format!("invalid time string '{str}': {e}")))?;
+        let time = NaiveTime::parse_from_str(str.trim(), "%H:%M:%S%.f").map_err(|e| {
+            D::Error::custom(format!(
+                "invalid time string '{str}': {e} (expected format: '%H:%M:%S%.f')"
+            ))
+        })?;
         Ok(Self::from_time(time))
     }
 }
