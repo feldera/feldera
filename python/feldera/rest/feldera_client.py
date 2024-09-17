@@ -2,6 +2,7 @@ from typing import Optional
 import logging
 import time
 import json
+from decimal import Decimal
 
 from feldera.rest.config import Config
 from feldera.rest.pipeline import Pipeline
@@ -389,4 +390,4 @@ class FelderaClient:
             if end and time.time() > end:
                 break
             if chunk:
-                yield json.loads(chunk)
+                yield json.loads(chunk, parse_float=Decimal)
