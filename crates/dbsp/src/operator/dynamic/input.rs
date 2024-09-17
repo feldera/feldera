@@ -617,12 +617,16 @@ pub struct CollectionHandle<K: DataTrait + ?Sized, V: DataTrait + ?Sized> {
     // workers will immediately repartition the inputs based on the hash
     // of the key; however this is more efficient than doing it here, as
     // the work will be evenly split across workers.
-    next_worker: AtomicUsize,
+    next_worker: Arc<AtomicUsize>,
 }
 
 impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> Clone for CollectionHandle<K, V> {
     fn clone(&self) -> Self {
-        Self::new(self.pair_factory, self.input_handle.clone())
+        Self {
+            pair_factory: self.pair_factory,
+            input_handle: self.input_handle.clone(),
+            next_worker: self.next_worker.clone(),
+        }
     }
 }
 
@@ -634,7 +638,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
         Self {
             pair_factory,
             input_handle,
-            next_worker: AtomicUsize::new(0),
+            next_worker: Arc::new(AtomicUsize::new(0)),
         }
     }
 
