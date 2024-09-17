@@ -40,7 +40,7 @@ pub mod test;
 pub const fn arrow_serde_config() -> &'static SqlSerdeConfig {
     &SqlSerdeConfig {
         timestamp_format: TimestampFormat::MicrosSinceEpoch,
-        time_format: TimeFormat::Nanos,
+        time_format: TimeFormat::NanosSigned,
         date_format: DateFormat::String("%Y-%m-%d"),
         decimal_format: DecimalFormat::String,
         variant_format: VariantFormat::JsonString,
