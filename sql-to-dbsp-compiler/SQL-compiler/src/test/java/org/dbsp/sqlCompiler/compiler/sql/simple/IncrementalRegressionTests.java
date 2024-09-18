@@ -7,11 +7,8 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.Monotonicity;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
-import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
@@ -22,7 +19,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
     public DBSPCompiler testCompiler() {
         CompilerOptions options = this.testOptions(true, true);
         // This causes the use of SourceSet operators
-        options.ioOptions.emitHandles = false;
+        // options.ioOptions.emitHandles = false;
         // Without the following ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
         return new DBSPCompiler(options);
@@ -31,21 +28,46 @@ public class IncrementalRegressionTests extends SqlIoTest {
     @Test
     public void issue2514() {
         String sql = """
-            CREATE TABLE transaction (
-                ts TIMESTAMP LATENESS INTERVAL 1 DAYS,
-                amt DOUBLE,
-                customer_id BIGINT NOT NULL,
-                state VARCHAR
-            );
-            
-            CREATE MATERIALIZED VIEW red_transactions AS
-            SELECT
-                *
-            FROM
-                transaction
-            WHERE
-                state = 'CA';""";
+                CREATE TABLE transaction (
+                    ts TIMESTAMP LATENESS INTERVAL 1 DAYS,
+                    amt DOUBLE,
+                    customer_id BIGINT NOT NULL,
+                    state VARCHAR
+                );
+                
+                CREATE MATERIALIZED VIEW red_transactions AS
+                SELECT
+                    *
+                FROM
+                    transaction
+                WHERE
+                    state = 'CA';""";
         this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue2517() {
+        String sql = """
+                CREATE TABLE transaction (
+                    ts TIMESTAMP LATENESS INTERVAL 1 DAYS,
+                    state VARCHAR
+                ) with ('materialized' = 'true');
+                
+                CREATE MATERIALIZED VIEW red_transactions AS
+                SELECT
+                    *
+                FROM
+                    transaction;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.step("insert into transaction values (NULL, 'CA');", """
+                 ts | state | weight
+                ---------------------
+                    | CA| 1""");
+        ccs.step("insert into transaction values (NULL, 'WA');", """
+                 ts | state | weight
+                ---------------------
+                    | WA| 1""");
+        this.addRustTestCase(ccs);
     }
 
     @Test

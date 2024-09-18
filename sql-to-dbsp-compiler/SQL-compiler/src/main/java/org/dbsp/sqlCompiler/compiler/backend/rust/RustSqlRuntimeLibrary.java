@@ -77,6 +77,7 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put("agg_xor", DBSPOpcode.AGG_XOR);
         this.arithmeticFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
         this.arithmeticFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
+        this.arithmeticFunctions.put("gte_left", DBSPOpcode.GTE_LEFT);
 
         this.dateFunctions.put("plus", DBSPOpcode.ADD);
         this.dateFunctions.put("minus", DBSPOpcode.SUB);
@@ -92,6 +93,7 @@ public class RustSqlRuntimeLibrary {
         this.dateFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
         this.dateFunctions.put("agg_min", DBSPOpcode.AGG_MIN);
         this.dateFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
+        this.dateFunctions.put("gte_left", DBSPOpcode.GTE_LEFT);
         this.dateFunctions.put("min", DBSPOpcode.MIN);
         this.dateFunctions.put("max", DBSPOpcode.MAX);
 
@@ -108,6 +110,7 @@ public class RustSqlRuntimeLibrary {
         this.stringFunctions.put("agg_max", DBSPOpcode.AGG_MAX);
         this.stringFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
         this.stringFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
+        this.stringFunctions.put("gte_left", DBSPOpcode.GTE_LEFT);
 
         this.booleanFunctions.put("eq", DBSPOpcode.EQ);
         this.booleanFunctions.put("neq", DBSPOpcode.NEQ);
@@ -125,6 +128,7 @@ public class RustSqlRuntimeLibrary {
         this.booleanFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
         this.booleanFunctions.put("is_same", DBSPOpcode.IS_NOT_DISTINCT);
         this.booleanFunctions.put("is_distinct", DBSPOpcode.IS_DISTINCT);
+        this.booleanFunctions.put("gte_left", DBSPOpcode.GTE_LEFT);
 
         // These are defined for VARBIT types
         this.otherFunctions.put("agg_and", DBSPOpcode.AGG_AND);
@@ -133,6 +137,7 @@ public class RustSqlRuntimeLibrary {
         this.otherFunctions.put("concat", DBSPOpcode.CONCAT);
         this.otherFunctions.put("agg_lte", DBSPOpcode.AGG_LTE);
         this.otherFunctions.put("agg_gte", DBSPOpcode.AGG_GTE);
+        this.otherFunctions.put("gte_left", DBSPOpcode.GTE_LEFT);
         // These are defined for all types
         this.otherFunctions.put("eq", DBSPOpcode.EQ);
         this.otherFunctions.put("neq", DBSPOpcode.NEQ);
@@ -227,7 +232,7 @@ public class RustSqlRuntimeLibrary {
             tsuffixr = "";
             suffixl = "";
             suffixr = "";
-        } else if (opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE) {
+        } else if (opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE || opcode == DBSPOpcode.GTE_LEFT) {
             tsuffixl = "";
             tsuffixr = "";
         } else {

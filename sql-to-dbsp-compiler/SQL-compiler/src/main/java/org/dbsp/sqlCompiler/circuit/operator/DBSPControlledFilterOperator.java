@@ -46,7 +46,7 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
         if (leftType.is(DBSPTypeBaseType.class)) {
             // Notice the comparison using AGG_GTE, which never returns NULL
             DBSPExpression comparison = new DBSPBinaryExpression(CalciteObject.EMPTY,
-                    new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.AGG_GTE, left, right);
+                    new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.GTE_LEFT, left, right);
             return new DBSPBinaryExpression(CalciteObject.EMPTY,
                     new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.AND, compare, comparison);
         } else if (leftType.is(DBSPTypeRef.class)) {
