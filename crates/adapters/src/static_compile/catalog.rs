@@ -350,12 +350,15 @@ impl Catalog {
 
         let circuit = stream.circuit();
 
+        // The integral of this stream is used by the ad hoc query engine. The engine treats the integral
+        // computed by each worker as a separate partition.  This means that integrals should not contain
+        // negative weights, since datafusion cannot handle those.  Negative weights can arise from operators
+        // like antijoin that can produce the same record with +1 and -1 weights in different workers.
+        // To avoid this, we shard the stream, so that such records get canceled out.
+        let stream = stream.shard();
+
         // Create handle for the stream itself.
         let delta_handle = stream.output();
-
-        // Improve the odds that `integrate_trace` below reuses the trace of `stream`
-        // if one exists.
-        let stream = stream.try_sharded_version();
 
         // Create handles for the neighborhood query.
         let (neighborhood_descr_stream, neighborhood_descr_handle) =
