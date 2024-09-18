@@ -369,10 +369,14 @@ where
     }
 
     fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        Some(Box::new(Self {
-            updates: take(&mut self.updates),
-            handle: self.handle.clone(),
-        }))
+        if !self.updates.is_empty() {
+            Some(Box::new(Self {
+                updates: take(&mut self.updates),
+                handle: self.handle.clone(),
+            }))
+        } else {
+            None
+        }
     }
 }
 

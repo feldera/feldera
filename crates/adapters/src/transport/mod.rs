@@ -267,13 +267,14 @@ impl InputQueue {
         num_bytes: usize,
         errors: Vec<ParseError>,
     ) {
-        if let Some(buffer) = buffer {
-            let num_records = buffer.len();
-            let mut guard = self.queue.lock().unwrap();
-            guard.push_back(buffer);
-            self.consumer.queued(num_bytes, num_records, errors);
-        } else {
-            self.consumer.queued(num_bytes, 0, errors);
+        match buffer {
+            Some(buffer) if !buffer.is_empty() => {
+                let num_records = buffer.len();
+                let mut guard = self.queue.lock().unwrap();
+                guard.push_back(buffer);
+                self.consumer.queued(num_bytes, num_records, errors);
+            }
+            _ => self.consumer.queued(num_bytes, 0, errors),
         }
     }
 
