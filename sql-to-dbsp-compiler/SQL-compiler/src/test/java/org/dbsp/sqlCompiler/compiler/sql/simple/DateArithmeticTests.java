@@ -355,4 +355,52 @@ public class DateArithmeticTests extends SqlIoTest {
                  2024-01-03
                 (1 row)""");
     }
+
+    @Test
+    public void testDateSub() {
+        this.qs("""
+                SELECT (date '2023-12-01' - date '2022-12-01') days;
+                 diff
+                ------
+                 365 days
+                (1 row)
+                
+                SELECT (date '2023-12-01' - date '2022-12-01') year;
+                 diff
+                ------
+                 1 year
+                (1 row)
+                
+                SELECT (date '2022-12-01' - date '2023-12-01') year;
+                 diff
+                ------
+                 1 year ago
+                (1 row)
+                
+                SELECT (date '2023-12-01' - date '2023-01-01') month;
+                 diff
+                ------
+                 11 months
+                (1 row)
+                
+                SELECT (date '2023-01-01' - date '2023-12-01') month;
+                 diff
+                ------
+                 11 months ago
+                (1 row)
+                
+                SELECT (date '2023-01-01' - date '2023-12-01') days;
+                 diff
+                ------
+                 334 days ago
+                (1 row)""");
+        /*
+        this.qs("""
+                SELECT (TIMESTAMP '2023-01-01 10:00:00' - TIMESTAMP '2023-12-01 10:00:00') month;
+                 diff
+                ------
+                 334 days ago
+                (1 row)""");
+         */
+    }
 }

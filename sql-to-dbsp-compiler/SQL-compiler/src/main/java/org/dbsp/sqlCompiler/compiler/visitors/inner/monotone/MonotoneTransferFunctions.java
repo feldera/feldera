@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
@@ -365,6 +366,12 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
     @Override
     public void postorder(DBSPLiteral expression) {
+        if (expression.getType().is(DBSPTypeString.class)) {
+            IMaybeMonotoneType nmt = NonMonotoneType.nonMonotone(expression.getType());
+            MonotoneExpression result = new MonotoneExpression(expression, nmt, null);
+            this.set(expression, result);
+            return;
+        }
         MonotoneExpression result = new MonotoneExpression(
                 expression, new MonotoneType(expression.getType()), expression);
         this.constantExpressions.add(expression);
