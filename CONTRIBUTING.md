@@ -296,6 +296,14 @@ Add a link to the blog post if there is one.
 
 Add `deploy/docker-compose.yml` as an asset for the release.
 
+Finally, add new versions tn crates.io for the following crates:
+
+```
+cargo publish --package feldera-types
+cargo publish --package dbsp
+cargo publish --package fda
+```
+
 ### Phase 2: post-release commit
 
 Once the release is out, keep an eye on the CI on the main branch. It should
