@@ -57,9 +57,11 @@ public enum DBSPOpcode {
     AGG_MIN("agg_min", true),
     AGG_ADD("agg_plus", true),
     // > used in aggregation, for computing ARG_MAX.
-    // NULL compares in a special way.
+    // NULL compares in a special way, since it means "uninitialized"
     AGG_GTE("agg_gte", true),
-    AGG_LTE("agg_lte", true)
+    AGG_LTE("agg_lte", true),
+    // Yet another way to compare, where NULL on the left is always greater
+    GTE_LEFT("gte_left", true),
     ;
 
     private final String text;

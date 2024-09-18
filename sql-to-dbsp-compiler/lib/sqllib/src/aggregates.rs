@@ -384,3 +384,44 @@ where
         (Some(left), Some(right)) => left >= right,
     }
 }
+
+//////////////
+
+pub fn gte_left__<T>(left: T, right: T) -> bool
+where
+    T: Ord,
+{
+    left >= right
+}
+
+pub fn gte_left__N<T>(left: T, right: Option<T>) -> bool
+where
+    T: Ord,
+{
+    match right {
+        None => true,
+        Some(right) => left >= right,
+    }
+}
+
+pub fn gte_left_N_<T>(left: Option<T>, right: T) -> bool
+where
+    T: Ord,
+{
+    match left {
+        None => true,
+        Some(left) => left >= right,
+    }
+}
+
+pub fn gte_left_N_N<T>(left: Option<T>, right: Option<T>) -> bool
+where
+    T: Ord,
+{
+    match (left, right) {
+        (None, None) => true,
+        (None, _) => true,
+        (_, None) => false,
+        (Some(left), Some(right)) => left >= right,
+    }
+}
