@@ -7,8 +7,11 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.MonotoneAnalyzer;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Monotonicity;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
@@ -23,6 +26,26 @@ public class IncrementalRegressionTests extends SqlIoTest {
         // Without the following ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
         return new DBSPCompiler(options);
+    }
+
+    @Test
+    public void issue2514() {
+        String sql = """
+            CREATE TABLE transaction (
+                ts TIMESTAMP LATENESS INTERVAL 1 DAYS,
+                amt DOUBLE,
+                customer_id BIGINT NOT NULL,
+                state VARCHAR
+            );
+            
+            CREATE MATERIALIZED VIEW red_transactions AS
+            SELECT
+                *
+            FROM
+                transaction
+            WHERE
+                state = 'CA';""";
+        this.compileRustTestCase(sql);
     }
 
     @Test
