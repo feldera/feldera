@@ -1860,6 +1860,24 @@ CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materia
         .await;
 
     for format in &["text", "json"] {
+        let mut r0 = config
+            .adhoc_query(
+                "/v0/pipelines/test/query",
+                "SELECT * FROM \"TaBle1\"",
+                format,
+            )
+            .await;
+        assert_eq!(r0.status(), StatusCode::OK);
+        let r0_body = r0.body().await.unwrap();
+        let r0 = std::str::from_utf8(r0_body.as_ref()).unwrap();
+        let r0_sorted: Vec<String> = r0.split('\n').map(|s| s.to_string()).collect();
+        if format == &"text" {
+            // Empty table prints header in text format
+            assert_eq!(r0_sorted.len(), 4);
+        } else if format == &"json" {
+            assert_eq!(r0_sorted.len(), 1);
+        }
+
         let mut r1 = config
             .adhoc_query("/v0/pipelines/test/query", ADHOC_SQL_A, format)
             .await;
