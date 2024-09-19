@@ -159,7 +159,7 @@ outputs:
 fn test_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str, poller_threads: usize) {
     init_test_logger();
 
-    let kafka_resources = KafkaResources::create_topics(&[(topic1, 1), (topic2, 2)]);
+    let _kafka_resources = KafkaResources::create_topics(&[(topic1, 1), (topic2, 2)]);
 
     info!("proptest_kafka_input: Test: Specify invalid Kafka broker address");
 
@@ -224,6 +224,7 @@ transport:
         poller_threads: {poller_threads}
 format:
     name: csv
+max_batch_size: 10000000
 "#
     );
 
@@ -235,7 +236,7 @@ format:
     )
     .unwrap();
 
-    endpoint.start(0).unwrap();
+    endpoint.extend();
 
     let producer = TestProducer::new();
 
@@ -245,7 +246,7 @@ format:
     producer.send_to_topic(&data, topic1);
 
     let flush = || {
-        endpoint.flush_all();
+        endpoint.queue();
     };
     if poller_threads == 1 {
         // Make sure all records arrive in the original order.
@@ -263,25 +264,6 @@ format:
     producer.send_to_topic(&data, topic2);
 
     wait_for_output_unordered(&zset, &data, flush);
-    zset.reset();
-
-    info!("proptest_kafka_input: Test: pause/resume");
-    //println!("records before pause: {}", zset.state().flushed.len());
-
-    // Paused endpoint shouldn't receive any data.
-    endpoint.pause().unwrap();
-    sleep(Duration::from_millis(1000));
-
-    kafka_resources.add_partition(topic2);
-
-    producer.send_to_topic(&data, topic2);
-    sleep(Duration::from_millis(1000));
-    assert_eq!(zset.state().flushed.len(), 0);
-
-    // Receive everything after unpause.
-    endpoint.start(0).unwrap();
-    wait_for_output_unordered(&zset, &data, flush);
-
     zset.reset();
 
     info!("proptest_kafka_input: Test: Disconnect");

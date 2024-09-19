@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::mem::replace;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::trace::cursor::DelegatingCursor;
 use crate::trace::ord::file::val_batch::FileValBuilder;
@@ -8,6 +8,7 @@ use crate::trace::ord::vec::val_batch::VecValBuilder;
 use crate::trace::{BatchLocation, TimedBuilder};
 use crate::{
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
+    storage::file::reader::Error as ReaderError,
     time::AntichainRef,
     trace::{
         ord::{
@@ -340,6 +341,16 @@ where
             Inner::Vec(vec) => vec.persistent_id(),
             Inner::File(file) => file.persistent_id(),
         }
+    }
+
+    fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
+        Ok(Self {
+            factories: factories.clone(),
+            inner: Inner::File(FileValBatch::<K, V, T, R>::from_path(
+                &factories.file,
+                path,
+            )?),
+        })
     }
 }
 

@@ -1,11 +1,5 @@
 //! Fault-tolerant Kafka input and output transports.
 //!
-//! For input from Kafka to be repeatable, we need to ensure that a given worker
-//! reads the same messages from the same partitions in a given step.  To do
-//! that, we store the mapping from steps to Kafka offsets in a separate Kafka
-//! topic, called the "index topic", which the fault-tolerant input transport
-//! maintains automatically.
-//!
 //! For output to Kafka, we need to be able to discard duplicate output.  We do
 //! that by recording the step number as the key in each output message.  On
 //! initialization, we read the final step number and discard any output for
@@ -14,14 +8,13 @@
 mod input;
 mod output;
 
-use crate::transport::kafka::refine_kafka_error;
 use anyhow::{anyhow, bail, Context, Error as AnyError, Result as AnyResult};
 use feldera_types::transport::kafka::{default_redpanda_server, KafkaLogLevel};
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 use rdkafka::{
     client::Client as KafkaClient,
     config::RDKafkaLogLevel,
-    consumer::{base_consumer::PartitionQueue, BaseConsumer, Consumer, ConsumerContext},
+    consumer::{BaseConsumer, Consumer, ConsumerContext},
     error::{KafkaError, KafkaResult},
     message::BorrowedMessage,
     producer::{Producer, ProducerContext, ThreadedProducer},
@@ -31,7 +24,6 @@ use rdkafka::{
 };
 use std::{
     collections::BTreeMap,
-    error::Error as StdError,
     fmt::{Display, Formatter, Result as FmtResult},
     marker::PhantomData,
     ops::Range,
@@ -40,15 +32,13 @@ use std::{
 };
 use uuid::Uuid;
 
-pub use input::Endpoint as KafkaFtInputEndpoint;
+pub use input::KafkaFtInputEndpoint;
 pub use output::KafkaOutputEndpoint as KafkaFtOutputEndpoint;
 
 use super::{rdkafka_loglevel_from, DeferredLogging};
 
 #[cfg(test)]
 pub mod test;
-
-const POLL_TIMEOUT: Duration = Duration::from_millis(1);
 
 /// Set `option` to `val`; return an error if `option` is set to a different
 /// value.
@@ -129,17 +119,11 @@ fn kafka_config(
 /// endpoints.
 #[derive(Clone)]
 struct CommonConfig {
-    /// Kafka client configuration for reading `data_topic`.
-    data_consumer_config: ClientConfig,
-
     /// Kafka client configuration for reading with multiple seeks.
     seekable_consumer_config: ClientConfig,
 
     /// Kafka client configuration for writing to the data and index topics.
     producer_config: ClientConfig,
-
-    /// Kafka admin client configuration for adding new topics.
-    admin_config: ClientConfig,
 }
 
 impl CommonConfig {
@@ -188,20 +172,9 @@ impl CommonConfig {
         )?;
         producer_config.remove("group.id");
 
-        let admin_config = kafka_config(
-            kafka_options,
-            &BTreeMap::new(),
-            log_level,
-            &[],
-            false,
-            "admin",
-        )?;
-
         Ok(Self {
             seekable_consumer_config,
-            data_consumer_config,
             producer_config,
-            admin_config,
         })
     }
 }
@@ -274,25 +247,6 @@ where
                 low..high
             })
     }
-
-    /// Fetches the watermarks for this client, topic, and particular, and
-    /// returns them as a `Range`.
-    ///
-    /// This method will retry forever for errors that typically indicate that a
-    /// topic was just created and not yet available for use.
-    fn fetch_watermarks_patiently(&self) -> KafkaResult<Range<i64>> {
-        loop {
-            match self.fetch_watermarks(None) {
-                Ok(watermarks) => return Ok(watermarks),
-                Err(error)
-                    if error.rdkafka_error_code()
-                        == Some(RDKafkaErrorCode::NotLeaderForPartition) => {}
-                Err(error)
-                    if error.rdkafka_error_code() == Some(RDKafkaErrorCode::UnknownPartition) => {}
-                Err(error) => return Err(error),
-            }
-        }
-    }
 }
 
 /// Consumer, topic, and partition.
@@ -361,13 +315,6 @@ impl<'a, C: ClientContext + ConsumerContext> Ctp<'a, BaseConsumer<C>, C> {
             }
         }
         unreachable!();
-    }
-    fn read_at_offset(&self, offset: i64) -> AnyResult<BorrowedMessage<'a>> {
-        self.assign(offset)?;
-        self.client
-            .poll(None)
-            .expect("poll(None) should always return a message or an error")
-            .map_err(|err| err.into())
     }
 
     // Read the last message in the partition, which has the given `watermarks`.
@@ -466,128 +413,6 @@ fn make_topic_partition_list<'a>(
         list.add_partition_offset(topic, partition, offset)?;
     }
     Ok(list)
-}
-
-impl<'a, C: ClientContext + ConsumerContext> Ctp<'a, Arc<BaseConsumer<C>>, C> {
-    fn split_partition_queue(&self) -> AnyResult<PartitionQueue<C>> {
-        self.client
-            .split_partition_queue(self.topic, self.partition)
-            .ok_or_else(|| anyhow!("Failed to split {self} from consumer"))
-    }
-}
-
-fn check_fatal_errors<C: ClientContext>(client: &KafkaClient<C>) -> AnyResult<()> {
-    if let Some((_errcode, errstr)) = client.fatal_error() {
-        Err(AnyError::msg(errstr))
-    } else {
-        Ok(())
-    }
-}
-
-struct ErrorHandler<'a, C>
-where
-    C: ClientContext,
-{
-    client: &'a KafkaClient<C>,
-}
-
-impl<'a, C> ErrorHandler<'a, C>
-where
-    C: ClientContext,
-{
-    fn new(client: &'a KafkaClient<C>) -> Self {
-        Self { client }
-    }
-
-    /// Calls `f` until it returns success or a fatal error and returns the
-    /// result.  For non-fatal errors, refines the error with `client` and
-    /// reports it and calls `f` again.  Periodically calls `check_exit` to see
-    /// if there's an exit request, and if so then passes it on.
-    fn retry_errors<T, F, CE, CEF, CET>(
-        &self,
-        f: F,
-        client: &KafkaClient<C>,
-        check_exit: CE,
-    ) -> AnyResult<T>
-    where
-        F: Fn() -> KafkaResult<T>,
-        CE: Fn() -> Result<CET, CEF>,
-        CEF: Into<AnyError> + Send + Sync + StdError + 'static,
-    {
-        loop {
-            match f() {
-                Ok(result) => return Ok(result),
-                Err(error)
-                    if error.rdkafka_error_code() == Some(RDKafkaErrorCode::OperationTimedOut) => {}
-                Err(error) => match refine_kafka_error(client, error) {
-                    (true, error) => return Err(error),
-                    (false, error) => info!("Kafka non-fatal error: {error}"),
-                },
-            }
-            check_exit().map_err(|e| AnyError::from(e))?;
-        }
-    }
-
-    /// Checks for errors.  Passes non-fatal errors to the error callback and
-    /// returns fatal ones.
-    fn check_errors(&self) -> AnyResult<()> {
-        check_fatal_errors(self.client)
-    }
-
-    /// Calls `consumer.poll`, as must be done periodically, and checks for
-    /// errors reported to consumer and producer contexts.  Periodically calls
-    /// `check_exit` to see if there's an exit request, and if so then passes it
-    /// on.
-    fn poll_consumer<CE, CET, CEF>(
-        &self,
-        consumer: &BaseConsumer<C>,
-        check_exit: CE,
-    ) -> AnyResult<()>
-    where
-        C: ConsumerContext,
-        CE: Fn() -> Result<CET, CEF>,
-        CEF: Into<AnyError> + Send + Sync + StdError + 'static,
-    {
-        self.check_errors()?;
-
-        // Call `consumer.poll`.
-        match self.retry_errors(
-            || consumer.poll(Duration::ZERO).transpose(),
-            consumer.client(),
-            check_exit,
-        )? {
-            None => Ok(()),
-            Some(_message) => Err(anyhow!(
-                "Partition queues should be split off for all subscribed partitions"
-            )),
-        }
-    }
-
-    /// Reads a message from `consumer`, blocking if necessary.  Returns a
-    /// message or fatal error.  Periodically calls `check_exit` to see if
-    /// there's an exit request, and if so then passes it on.
-    fn read_partition_queue<CE, CET, CEF>(
-        &self,
-        consumer: &BaseConsumer<C>,
-        partition: &'a PartitionQueue<C>,
-        check_exit: CE,
-    ) -> AnyResult<BorrowedMessage<'a>>
-    where
-        C: ConsumerContext,
-        CE: Fn() -> Result<CET, CEF>,
-        CEF: Into<AnyError> + Send + Sync + StdError + 'static,
-    {
-        loop {
-            self.poll_consumer(consumer, &check_exit)?;
-            if let Some(result) = self.retry_errors(
-                || partition.poll(POLL_TIMEOUT).transpose(),
-                consumer.client(),
-                &check_exit,
-            )? {
-                return Ok(result);
-            }
-        }
-    }
 }
 
 struct DataConsumerContext<F>

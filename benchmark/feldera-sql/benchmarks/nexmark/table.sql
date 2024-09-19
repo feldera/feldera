@@ -20,8 +20,7 @@ CREATE TABLE person (
                 "options": {{
                     "events": {events},
                     "threads": {cores},
-                    "batch_size_per_thread": 1000,
-                    "max_step_size_per_thread": 10000
+                    "batch_size_per_thread": 1000
                 }}
             }}
         }}
@@ -71,7 +70,8 @@ CREATE TABLE bid (
             "config": {{
                 "table": "bid"
             }}
-        }}
+        }},
+	"max_batch_size": 160000
     }}
 ]');
 CREATE TABLE side_input (

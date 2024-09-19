@@ -1,5 +1,5 @@
 use crate::{
-    transport::{InputQueue, Step},
+    transport::{InputQueue, InputReaderCommand, NonFtInputReaderCommand},
     InputConsumer, InputEndpoint, InputReader, Parser, PipelineState, TransportInputEndpoint,
 };
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
@@ -12,14 +12,14 @@ use google_cloud_pubsub::{
     client::{google_cloud_auth::credentials::CredentialsFile, Client, ClientConfig},
     subscription::{SeekTo, Subscription},
 };
-use log::{debug, warn};
+use log::debug;
 use std::{
     sync::Arc,
     thread,
     time::{Duration, SystemTime},
 };
 use tokio::{
-    sync::watch::{channel, Receiver, Sender},
+    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
@@ -51,7 +51,6 @@ impl TransportInputEndpoint for PubSubInputEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        _start_step: Step,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(PubSubReader::new(
@@ -63,8 +62,7 @@ impl TransportInputEndpoint for PubSubInputEndpoint {
 }
 
 struct PubSubReader {
-    state_sender: Sender<PipelineState>,
-    queue: Arc<InputQueue>,
+    state_sender: UnboundedSender<NonFtInputReaderCommand>,
 }
 
 impl PubSubReader {
@@ -73,25 +71,20 @@ impl PubSubReader {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
-        let (state_sender, state_receiver) = channel(PipelineState::Paused);
+        let (state_sender, state_receiver) = unbounded_channel();
         let subscription = TOKIO.block_on(Self::subscribe(&config))?;
-        let queue = Arc::new(InputQueue::new(consumer.clone()));
         thread::spawn({
-            let queue = queue.clone();
             move || {
                 let consumer_clone = consumer.clone();
                 TOKIO.block_on(async {
-                    Self::worker_task(subscription, consumer_clone, parser, queue, state_receiver)
+                    Self::worker_task(subscription, consumer_clone, parser, state_receiver)
                         .await
                         .unwrap_or_else(|e| consumer.error(true, e));
                 })
             }
         });
 
-        Ok(Self {
-            state_sender,
-            queue,
-        })
+        Ok(Self { state_sender })
     }
 
     async fn subscribe(config: &PubSubInputConfig) -> Result<Subscription, AnyError> {
@@ -132,87 +125,64 @@ impl PubSubReader {
         subscription: Subscription,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        queue: Arc<InputQueue>,
-        mut state_receiver: Receiver<PipelineState>,
+        mut state_receiver: UnboundedReceiver<NonFtInputReaderCommand>,
     ) -> Result<(), AnyError> {
-        let mut state = PipelineState::Paused;
         let mut cancel: Option<(CancellationToken, JoinHandle<()>)> = None;
-
-        loop {
-            // Wait for state change.
-            if let Ok(s) = state_receiver.wait_for(|s| s != &state).await {
-                state = *s;
-            } else {
-                warn!("Pub/Sub input endpoint: connector terminated unexpectedly, exiting worker task");
-                return Ok(());
-            };
-
-            match state {
-                PipelineState::Paused => {
-                    if let Some((token, handle)) = cancel.take() {
-                        token.cancel();
-                        let _ = handle.await;
-                    }
-                }
-                PipelineState::Running => {
-                    // TODO: Do we need to tune the config (the parameter to subscribe)?
-                    let mut stream = subscription
-                        .subscribe(None)
-                        .await
-                        .map_err(|e| anyhow!("error subscribing to messages: {e}"))?;
-
-                    let consumer = consumer.clone();
-                    let mut parser = parser.fork();
-                    let token = stream.cancellable();
-                    let handle = tokio::spawn({
-                        let queue = queue.clone();
-                        async move {
-                            // None if the stream is cancelled
-                            while let Some(message) = stream.next().await {
-                                queue.push(
-                                    message.message.data.len(),
-                                    parser.parse(&message.message.data),
-                                );
-                                message.ack().await.unwrap_or_else(|e| {
-                                    consumer.error(
-                                        false,
-                                        anyhow!("gRPC error acknowledging Pub/Sub message: {e}"),
-                                    )
-                                });
+        let queue = Arc::new(InputQueue::new(consumer.clone()));
+        while let Some(command) = state_receiver.recv().await {
+            match command {
+                NonFtInputReaderCommand::Queue => queue.queue(),
+                NonFtInputReaderCommand::Transition(state) => {
+                    match state {
+                        PipelineState::Paused => {
+                            if let Some((token, handle)) = cancel.take() {
+                                token.cancel();
+                                let _ = handle.await;
                             }
                         }
-                    });
-                    cancel = Some((token, handle));
-                }
-                PipelineState::Terminated => {
-                    if let Some((token, handle)) = cancel.take() {
-                        token.cancel();
-                        let _ = handle.await;
+                        PipelineState::Running => {
+                            if cancel.is_none() {
+                                // TODO: Do we need to tune the config (the parameter to subscribe)?
+                                let mut stream = subscription
+                                    .subscribe(None)
+                                    .await
+                                    .map_err(|e| anyhow!("error subscribing to messages: {e}"))?;
+
+                                let consumer = consumer.clone();
+                                let mut parser = parser.fork();
+                                let token = stream.cancellable();
+                                let handle = tokio::spawn({
+                                    let queue = queue.clone();
+                                    async move {
+                                        // None if the stream is cancelled
+                                        while let Some(message) = stream.next().await {
+                                            let data = message.message.data.as_slice();
+                                            queue.push(parser.parse(data), data.len());
+                                            message.ack().await.unwrap_or_else(|e| {
+                                                consumer.error(false, anyhow!("gRPC error acknowledging Pub/Sub message: {e}"))
+                                            });
+                                        }
+                                    }
+                                });
+                                cancel = Some((token, handle));
+                            }
+                        }
+                        PipelineState::Terminated => break,
                     }
-                    return Ok(());
                 }
             }
         }
+        if let Some((token, handle)) = cancel.take() {
+            token.cancel();
+            let _ = handle.await;
+        }
+        Ok(())
     }
 }
 
 impl InputReader for PubSubReader {
-    fn start(&self, _step: Step) -> AnyResult<()> {
-        self.state_sender.send(PipelineState::Running)?;
-        Ok(())
-    }
-
-    fn pause(&self) -> AnyResult<()> {
-        self.state_sender.send(PipelineState::Paused)?;
-        Ok(())
-    }
-
-    fn disconnect(&self) {
-        let _ = self.state_sender.send(PipelineState::Terminated);
-    }
-
-    fn flush(&self, n: usize) -> usize {
-        self.queue.flush(n)
+    fn request(&self, command: InputReaderCommand) {
+        let _ = self.state_sender.send(command.as_nonft().unwrap());
     }
 }
 
