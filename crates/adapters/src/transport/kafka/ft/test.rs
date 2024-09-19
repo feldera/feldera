@@ -1,90 +1,30 @@
-#![allow(clippy::borrowed_box)]
-
-use crate::format::{InputBuffer, Sponge};
+use crate::format::{Splitter, Sponge};
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
     test::{
-        generate_test_batches,
-        kafka::{BufferConsumer, KafkaResources, TestProducer},
-        mock_input_pipeline, test_circuit, wait, MockDeZSet, TestStruct, DEFAULT_TIMEOUT_MS,
+        kafka::{KafkaResources, TestProducer},
+        test_circuit, TestStruct,
     },
-    transport::Step,
-    Controller, InputConsumer, PipelineConfig,
+    Controller, InputConsumer, ParseError, PipelineConfig,
 };
-use crate::{InputReader, ParseError, Parser};
+use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use env_logger::Env;
 use feldera_types::program_schema::Relation;
 use log::info;
-use proptest::prelude::*;
-use rdkafka::mocking::MockCluster;
+use serde_json::{json, Value as JsonValue};
+use std::ops::Range;
+use std::sync::atomic::AtomicUsize;
 use std::{
     io::Write,
+    mem,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    thread::sleep,
     time::{Duration, Instant},
 };
-use uuid::Uuid;
-
-/// Wait to receive all records in `data` in the same order.
-fn wait_for_output_ordered(
-    endpoint: &Box<dyn InputReader>,
-    zset: &MockDeZSet<TestStruct, TestStruct>,
-    data: &[Vec<TestStruct>],
-) {
-    let num_records: usize = data.iter().map(Vec::len).sum();
-
-    wait(
-        || {
-            endpoint.flush_all();
-            zset.state().flushed.len() == num_records
-        },
-        DEFAULT_TIMEOUT_MS,
-    )
-    .unwrap();
-
-    for (i, val) in data.iter().flat_map(|data| data.iter()).enumerate() {
-        assert_eq!(zset.state().flushed[i].unwrap_insert(), val);
-    }
-}
-
-/// Wait to receive all records in `data` in some order.
-fn wait_for_output_unordered(
-    endpoint: &Box<dyn InputReader>,
-    zset: &MockDeZSet<TestStruct, TestStruct>,
-    data: &[Vec<TestStruct>],
-) {
-    let num_records: usize = data.iter().map(Vec::len).sum();
-
-    wait(
-        || {
-            endpoint.flush_all();
-            zset.state().flushed.len() == num_records
-        },
-        DEFAULT_TIMEOUT_MS,
-    )
-    .unwrap();
-
-    let mut data_sorted = data
-        .iter()
-        .flat_map(|data| data.clone().into_iter())
-        .collect::<Vec<_>>();
-    data_sorted.sort();
-
-    let mut zset_sorted = zset
-        .state()
-        .flushed
-        .iter()
-        .map(|upd| upd.unwrap_insert().clone())
-        .collect::<Vec<_>>();
-    zset_sorted.sort();
-
-    assert_eq!(zset_sorted, data_sorted);
-}
 
 fn init_test_logger() {
     let _ = env_logger::Builder::from_env(Env::default().default_filter_or("debug"))
@@ -141,214 +81,20 @@ outputs:
     }
 }
 
-fn ft_kafka_end_to_end_test(
-    test_name: &str,
-    format: &str,
-    format_config: &str,
-    message_max_bytes: usize,
-    data: Vec<Vec<TestStruct>>,
+fn create_reader(
+    topic: &str,
+) -> (
+    Box<dyn TransportInputEndpoint>,
+    DummyInputReceiver,
+    Box<dyn InputReader>,
 ) {
-    init_test_logger();
-    let uuid = Uuid::new_v4();
-    let input_topic = format!("{test_name}_input_topic_{uuid}");
-    let input_index_topic = format!("{input_topic}_input-index");
-    let output_topic = format!("{test_name}_output_topic_{uuid}");
-
-    // Create topics.
-    let mut _kafka_resources = KafkaResources::create_topics(&[
-        (&input_topic, 1),
-        (&input_index_topic, 0),
-        (&output_topic, 1),
-    ]);
-
-    // Create controller.
-
-    // Set clock_resolution_usecs to null below, so that periodic clock ticks
-    // don't interfere with the test.
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-clock_resolution_usecs: null
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: kafka_input
-            config:
-                topics: ["{input_topic}"]
-                log_level: debug
-                fault_tolerance: {{}}
-        format:
-            name: csv
-outputs:
-    test_output2:
-        stream: test_output1
-        transport:
-            name: kafka_output
-            config:
-                topic: {output_topic}
-                message.max.bytes: "{message_max_bytes}"
-                fault_tolerance: {{}}
-        format:
-            name: {format}
-            config:
-                {format_config}
-"#
-    );
-
-    info!("{test_name}: Creating circuit. Config {config_str}");
-
-    info!("{test_name}: Starting controller");
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
-
-    let running = Arc::new(AtomicBool::new(true));
-    let running_clone = running.clone();
-    let test_name_clone = test_name.to_string();
-
-    let controller = Controller::with_config(
-        |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema())),
-        &config,
-        Box::new(move |e| if running_clone.load(Ordering::Acquire) {
-            panic!("{test_name_clone}: error: {e}")
-        } else {
-            info!("{test_name_clone}: error during shutdown (likely caused by Kafka topics being deleted): {e}")
-        }),
-    )
-        .unwrap();
-    assert!(controller.is_fault_tolerant());
-
-    let buffer_consumer = BufferConsumer::new(&output_topic, format, format_config, None);
-
-    info!("{test_name}: Sending inputs");
-    let producer = TestProducer::new();
-    producer.send_to_topic(&data, &input_topic);
-
-    info!("{test_name}: Starting controller");
-    // Start controller.
-    controller.start();
-
-    // Wait for output buffer to contain all of `data`.
-
-    info!("{test_name}: Waiting for output");
-    buffer_consumer.wait_for_output_unordered(&data);
-
-    drop(buffer_consumer);
-
-    controller.stop().unwrap();
-
-    // Endpoint threads might still be running (`controller.stop()` doesn't wait
-    // for them to terminate).  Once `KafkaResources` is dropped, these threads
-    // may start throwing errors due to deleted Kafka topics.  Make sure these
-    // errors don't cause panics.
-    running.store(false, Ordering::Release);
-}
-
-/// Test a topic that's empty and won't get any data.
-#[test]
-#[ignore]
-fn test_empty_input() {
-    init_test_logger();
-
-    let mock_cluster = MockCluster::new(1).unwrap();
-    let bootstrap_servers = mock_cluster.bootstrap_servers();
-    mock_cluster.create_topic("empty", 1, 1).unwrap();
-    mock_cluster
-        .create_topic("empty_input-index", 1, 1)
-        .unwrap();
-
-    let config_str = format!(
-        r#"
-name: kafka_input
-config:
-    bootstrap.servers: "{bootstrap_servers}"
-    topics: [empty]
-    log_level: debug
-    fault_tolerance: {{}}
-"#
-    );
-
-    let endpoint =
-        input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "")
-            .unwrap()
-            .unwrap();
-    assert!(endpoint.is_fault_tolerant());
-
-    info!("checking initial steps");
-    assert_eq!(endpoint.steps().unwrap(), 0..0);
-
-    // Initially there are no steps.  Reading step 0 should block because
-    // nothing is writing data.
-    info!("trying to read read step 0 (should time out)");
-    let receiver = DummyInputReceiver::new();
-    let reader = endpoint
-        .open(receiver.consumer(), receiver.parser(), 0, Relation::empty())
-        .unwrap();
-    reader.start(Step::MAX).unwrap();
-    receiver.expect(vec![ConsumerCall::StartStep(0)]);
-
-    // Five times, try to complete
-    for step in 0..=4 {
-        info!("completing and reading step {step}",);
-        reader.complete(step);
-        receiver.wait_to_complete(step);
-        receiver.expect(vec![ConsumerCall::StartStep(step + 1)]);
-        receiver.wait_to_complete(step);
-        assert_eq!(endpoint.steps().unwrap(), 0..(step + 1));
-    }
-
-    // Try to read multiple steps beyond the last available.
-    let mut step = 4;
-    for n in 2..10 {
-        let completions = (step + 1)..=(step + n);
-        step = *completions.end();
-        info!("completing up to step {step}");
-        reader.complete(step);
-        for step in completions {
-            receiver.expect(vec![ConsumerCall::StartStep(step + 1)])
-        }
-        receiver.wait_to_complete(step);
-        assert_eq!(endpoint.steps().unwrap(), 0..(step + 1));
-    }
-    receiver.expect_eof();
-
-    // Now open the same endpoint again and all the steps should be immediately
-    // available.
-    let receiver2 = DummyInputReceiver::new();
-    let reader2 = endpoint
-        .open(
-            receiver2.consumer(),
-            receiver2.parser(),
-            0,
-            Relation::empty(),
-        )
-        .unwrap();
-    reader2.start(step + 1).unwrap();
-    for step in 0..=step {
-        receiver2.expect(vec![ConsumerCall::StartStep(step)])
-    }
-    receiver2.wait_to_complete(step);
-    receiver2.expect(vec![ConsumerCall::StartStep(step + 1)]);
-    receiver2.expect_eof();
-}
-
-#[test]
-#[ignore]
-fn test_input() {
-    init_test_logger();
-
-    let topic = "durability";
-    let index_topic = &format!("{topic}_input-index");
-    let mut _kafka_resources = KafkaResources::create_topics(&[(topic, 1), (index_topic, 0)]);
-
     let config_str = format!(
         r#"
 name: kafka_input
 config:
     topics: [{topic}]
     log_level: debug
-    fault_tolerance:
-        max_step_messages: 5
+    fault_tolerance: true
 "#
     );
 
@@ -358,16 +104,50 @@ config:
             .unwrap();
     assert!(endpoint.is_fault_tolerant());
 
-    info!("checking initial steps");
-    assert_eq!(endpoint.steps().unwrap(), 0..0);
-
-    info!("trying to read read step 0 (should time out)");
     let receiver = DummyInputReceiver::new();
     let reader = endpoint
-        .open(receiver.consumer(), receiver.parser(), 0, Relation::empty())
+        .open(
+            receiver.consumer(),
+            Box::new(DummyParser::new(&receiver)),
+            Relation::empty(),
+        )
         .unwrap();
-    reader.start(0).unwrap();
-    receiver.expect(vec![ConsumerCall::StartStep(0)]);
+
+    (endpoint, receiver, reader)
+}
+
+#[test]
+fn single_input() {
+    test_input("single_input_ft", &[10]);
+}
+
+#[test]
+fn multiple_input() {
+    test_input("multiple_input_ft", &[10, 20, 30, 40, 50]);
+}
+
+#[test]
+fn empty_input() {
+    test_input("empty_input_ft", &[10, 0, 20, 0, 50, 0]);
+}
+
+#[test]
+fn empty_initial_input() {
+    test_input("empty_initial_input_ft", &[0, 10, 0, 20, 0, 50]);
+}
+
+#[test]
+fn big_input() {
+    test_input("big_input", &[100, 1000, 10000]);
+}
+
+fn test_input(topic: &str, batch_sizes: &[u32]) {
+    init_test_logger();
+
+    let mut _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+
+    let (_endpoint, receiver, reader) = create_reader(topic);
+    reader.extend();
 
     fn test(id: u32) -> TestStruct {
         TestStruct {
@@ -378,60 +158,168 @@ config:
         }
     }
 
-    info!("now write some data");
-    let producer = TestProducer::new();
-    producer.send_to_topic(&[vec![test(0)]], topic);
-
-    info!("now we should get that data in step 0");
-    receiver.expect(vec![ConsumerCall::InputChunk("0,false,,\n".into())]);
-
-    info!("complete step 0");
-    reader.complete(0);
-    receiver.expect(vec![ConsumerCall::StartStep(1)]);
-    receiver.wait_to_complete(0);
-    assert_eq!(endpoint.steps().unwrap(), 0..1);
-
-    info!("we shouldn't get more data yet because we didn't ask for step 1 yet");
-    let producer = TestProducer::new();
-    producer.send_to_topic(&[vec![test(1), test(2)]], topic);
-    receiver.expect_eof();
-
-    info!("ask for more steps and we should get that data");
-    reader.start(10).unwrap();
-    receiver.expect(vec![ConsumerCall::InputChunk(
-        "1,false,,\n2,false,,\n".into(),
-    )]);
-
-    info!("complete step 1");
-    reader.complete(1);
-    receiver.expect(vec![ConsumerCall::StartStep(2)]);
-    receiver.wait_to_complete(1);
-    assert_eq!(endpoint.steps().unwrap(), 0..2);
-
-    info!("writing 4 messages (with max_step_messages=5) should not force a step");
-    for i in 3..=6 {
-        producer.send_to_topic(&[vec![test(i)]], topic);
-        receiver.expect(vec![ConsumerCall::InputChunk(format!("{i},false,,\n"))]);
+    fn metadata(topic: &str, batch: &Range<u32>) -> JsonValue {
+        json! {
+            {"offsets": {topic: [{"start": batch.start, "end": batch.end}]}}
+        }
     }
-    receiver.expect_eof();
 
-    info!("writing a fifth message should force a step");
-    producer.send_to_topic(&[vec![test(7)]], topic);
-    receiver.expect(vec![ConsumerCall::InputChunk("7,false,,\n".into())]);
-    receiver.expect(vec![ConsumerCall::StartStep(3)]);
-    receiver.wait_to_complete(2);
-    assert_eq!(endpoint.steps().unwrap(), 0..3);
+    let n_batches = batch_sizes.len();
+    let mut batches: Vec<Range<u32>> = Vec::with_capacity(n_batches);
+    for batch_size in batch_sizes {
+        let start = batches.last().map_or(0, |b| b.end);
+        batches.push(start..start + batch_size);
+    }
 
-    receiver.expect_eof();
+    // First, write batches of the specified sizes.
+    let producer = TestProducer::new();
+    for batch in &batches {
+        let batch_size = batch.len();
+        println!();
+
+        // Write a batch to the topic and wait for the adapter to read it.
+        println!("producing {batch_size} messages {batch:?} to {topic}");
+        let input_batch = batch.clone().map(|id| vec![test(id)]).collect::<Vec<_>>();
+        producer.send_to_topic(&input_batch, topic);
+
+        println!("waiting for to buffer the {batch_size} messages {batch:?}.");
+        receiver.expect_buffering(batch.len());
+
+        // Tell the adapter to queue the batch and wait for it to do it.
+        println!("queuing and expecting {batch_size} records");
+        reader.queue();
+        receiver.expect(vec![ConsumerCall::Extended {
+            num_records: batch.len(),
+            metadata: metadata(topic, batch),
+        }]);
+
+        // Make sure that the flushed batches were what we expected.
+        println!("checking flushed batches against expectation");
+        receiver.expect_flushed(batch);
+    }
+    drop(_endpoint);
+    drop(receiver);
+    drop(reader);
+
+    // Then, execute all possible sequences that seek to a starting position,
+    // replay zero or more batches, and then extend through the rest of the
+    // data.
+    for seek in 0..n_batches {
+        for replay in 0..n_batches - seek {
+            println!();
+            println!("seeking to {seek}, replaying {replay} batches, and then reading the rest");
+            let (_endpoint, receiver, reader) = create_reader(topic);
+            receiver.inner.drop_buffered.store(true, Ordering::Release);
+
+            if seek > 0 {
+                println!("- seek to {seek}");
+                reader.seek(metadata(topic, &batches[seek - 1]));
+            }
+            for batch in &batches[seek..seek + replay] {
+                println!("- replaying {batch:?}");
+                reader.replay(metadata(topic, batch));
+                println!("expecting {} records", batch.len());
+                receiver.expect(vec![ConsumerCall::Replayed {
+                    num_records: batch.len(),
+                }]);
+                println!("checking {} flushed records {batch:?}", batch.len());
+                receiver.expect_flushed(batch);
+            }
+
+            let final_start = if seek + replay > 0 {
+                batches[seek + replay - 1].end
+            } else {
+                0
+            };
+            let final_end = batches.last().unwrap().end;
+            let final_batch = final_start..final_end;
+            println!("- reading the rest ({final_batch:?})");
+            reader.extend();
+            receiver.expect_n_buffers((final_batch.end - batches[seek].start) as usize);
+            reader.queue();
+            receiver.expect(vec![ConsumerCall::Extended {
+                num_records: final_batch.len(),
+                metadata: metadata(topic, &final_batch),
+            }]);
+            receiver.expect_flushed(&final_batch);
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
 enum ConsumerCall {
-    StartStep(Step),
-    InputChunk(String),
-    Queued(usize, usize, Vec<ParseError>),
+    ParseErrors,
+    Buffered {
+        num_records: usize,
+        num_bytes: usize,
+    },
+    Replayed {
+        num_records: usize,
+    },
+    Extended {
+        num_records: usize,
+        metadata: serde_json::Value,
+    },
     Error(bool),
     Eoi,
+}
+
+struct DummyParser(Arc<DummyInputReceiverInner>);
+
+impl DummyParser {
+    fn new(receiver: &DummyInputReceiver) -> Self {
+        Self(receiver.inner.clone())
+    }
+}
+
+impl Parser for DummyParser {
+    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+        (
+            Some(Box::new(DummyInputBuffer {
+                receiver: self.0.clone(),
+                data: Some(String::from_utf8_lossy(data).into_owned()),
+            })),
+            Vec::new(),
+        )
+    }
+
+    fn splitter(&self) -> Box<dyn Splitter> {
+        Box::new(Sponge)
+    }
+
+    fn fork(&self) -> Box<dyn Parser> {
+        Box::new(Self(self.0.clone()))
+    }
+}
+
+struct DummyInputBuffer {
+    receiver: Arc<DummyInputReceiverInner>,
+    data: Option<String>,
+}
+
+impl InputBuffer for DummyInputBuffer {
+    fn flush(&mut self, _n: usize) -> usize {
+        if let Some(s) = self.data.take() {
+            info!("flushing {:?}", s);
+            self.receiver.flushed.lock().unwrap().push(s);
+            1
+        } else {
+            0
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.data.as_ref().map_or(0, |_| 1)
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.data.take().map(|data| {
+            Box::new(Self {
+                receiver: self.receiver.clone(),
+                data: Some(data),
+            }) as Box<dyn InputBuffer>
+        })
+    }
 }
 
 struct DummyInputReceiver {
@@ -441,8 +329,10 @@ struct DummyInputReceiver {
 
 struct DummyInputReceiverInner {
     unparker: Unparker,
+    n_buffered: AtomicUsize,
+    drop_buffered: AtomicBool,
     calls: Mutex<Vec<ConsumerCall>>,
-    committed: Mutex<Option<Step>>,
+    flushed: Mutex<Vec<String>>,
 }
 
 impl DummyInputReceiver {
@@ -452,25 +342,71 @@ impl DummyInputReceiver {
         Self {
             inner: Arc::new(DummyInputReceiverInner {
                 unparker,
+                n_buffered: AtomicUsize::new(0),
+                drop_buffered: AtomicBool::new(false),
                 calls: Mutex::new(Vec::new()),
-                committed: Mutex::new(None),
+                flushed: Mutex::new(Vec::new()),
             }),
             parker,
         }
     }
 
-    /// Wait some time for the input consumer to report that `committed` was
-    /// called.  However, we don't expect it to have been called, so we panic
-    /// with an error if it has.
-    ///
-    /// The waiting time here is arbitrary, since we expect that we could wait
-    /// forever.
-    #[track_caller]
-    pub fn expect_eof(&self) {
-        sleep(Duration::from_millis(100));
+    pub fn expect_n_buffers(&self, n: usize) {
+        let start = Instant::now();
+        loop {
+            let received = self.inner.n_buffered.load(Ordering::Acquire);
+            if received == n {
+                return;
+            }
+            assert!(received < n);
 
-        let actual: Vec<_> = self.inner.calls.lock().unwrap().drain(..).collect();
-        assert_eq!(Vec::<ConsumerCall>::new(), actual);
+            if start.elapsed() >= Duration::from_secs(10) {
+                panic!("only buffered {received} out of {n} expected");
+            }
+            self.parker.park_timeout(Duration::from_millis(100));
+        }
+    }
+
+    pub fn expect_buffering(&self, n: usize) {
+        if n == 0 {
+            return;
+        }
+
+        let mut received = 0;
+        let start = Instant::now();
+        loop {
+            let mut current = self.inner.calls.lock().unwrap();
+            for call in current.drain(..) {
+                match call {
+                    ConsumerCall::Buffered {
+                        num_records,
+                        num_bytes: _,
+                    } => {
+                        assert!(received + num_records <= n);
+                        received += num_records;
+                        if received == n {
+                            return;
+                        }
+                    }
+                    _ => panic!("expected ConsumerCall::Buffered, received {call:?}"),
+                }
+            }
+            drop(current);
+
+            if start.elapsed() >= Duration::from_secs(10) {
+                panic!("only buffered {received} out of {n} expected");
+            }
+            self.parker.park_timeout(Duration::from_millis(100));
+        }
+    }
+
+    pub fn expect_flushed(&self, batches: &Range<u32>) {
+        let actual_flushed = mem::take(&mut *self.inner.flushed.lock().unwrap());
+        let expect_flushed = batches
+            .clone()
+            .map(|i| format!("{i},false,,\n"))
+            .collect::<Vec<_>>();
+        assert_eq!(actual_flushed, expect_flushed);
     }
 
     /// Wait until the input consumer receives `expected`. Panics if it receives
@@ -506,24 +442,7 @@ impl DummyInputReceiver {
         }
     }
 
-    pub fn wait_to_complete(&self, step: Step) {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            assert!(Instant::now() < deadline);
-            if let Some(committed) = *self.inner.committed.lock().unwrap() {
-                if committed >= step {
-                    return;
-                }
-            }
-            self.parker.park_deadline(deadline);
-        }
-    }
-
     pub fn consumer(&self) -> Box<dyn InputConsumer> {
-        Box::new(DummyInputConsumer(self.inner.clone()))
-    }
-
-    pub fn parser(&self) -> Box<dyn Parser> {
         Box::new(DummyInputConsumer(self.inner.clone()))
     }
 }
@@ -540,49 +459,55 @@ impl DummyInputConsumer {
 }
 
 impl InputConsumer for DummyInputConsumer {
-    fn start_step(&self, step: Step) {
-        self.called(ConsumerCall::StartStep(step));
+    fn max_batch_size(&self) -> usize {
+        usize::MAX
     }
+
+    fn parse_errors(&self, errors: Vec<ParseError>) {
+        if !errors.is_empty() {
+            for error in errors {
+                info!("parse error: {error}");
+            }
+            self.called(ConsumerCall::ParseErrors);
+        }
+    }
+
+    fn buffered(&self, num_records: usize, num_bytes: usize) {
+        let call = ConsumerCall::Buffered {
+            num_records,
+            num_bytes,
+        };
+        info!("{call:?}");
+        if !self.0.drop_buffered.load(Ordering::Acquire) {
+            self.0.calls.lock().unwrap().push(call);
+            self.0.unparker.unpark();
+        } else {
+            self.0.n_buffered.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
+    fn replayed(&self, num_records: usize) {
+        self.called(ConsumerCall::Replayed { num_records });
+    }
+
+    fn extended(&self, num_records: usize, metadata: serde_json::Value) {
+        self.called(ConsumerCall::Extended {
+            num_records,
+            metadata,
+        });
+    }
+
     fn error(&self, fatal: bool, error: AnyError) {
         info!("error: {error}");
         self.called(ConsumerCall::Error(fatal));
     }
+
     fn eoi(&self) {
         self.called(ConsumerCall::Eoi);
-    }
-    fn committed(&self, step: Step) {
-        info!("step {step} committed");
-        let mut completed = self.0.committed.lock().unwrap();
-        if let Some(committed) = *completed {
-            assert_eq!(committed + 1, step);
-        }
-        *completed = Some(step);
-        self.0.unparker.unpark();
-    }
-    fn queued(&self, num_bytes: usize, num_records: usize, errors: Vec<ParseError>) {
-        self.called(ConsumerCall::Queued(num_bytes, num_records, errors));
-    }
-}
-
-impl Parser for DummyInputConsumer {
-    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        self.called(ConsumerCall::InputChunk(
-            String::from_utf8(data.into()).unwrap(),
-        ));
-        (None, Vec::new())
-    }
-
-    fn fork(&self) -> Box<dyn Parser> {
-        todo!()
-    }
-
-    fn splitter(&self) -> Box<dyn crate::format::Splitter> {
-        Box::new(Sponge)
     }
 }
 
 #[test]
-#[ignore]
 fn output_test() {
     kafka_output_test(
         "ft_kafka_end_to_end_csv_large",
@@ -657,6 +582,7 @@ config:
     }
 }
 
+/*
 fn test_ft_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
     init_test_logger();
 
@@ -688,7 +614,7 @@ format:
 "#
     );
 
-    let (reader, consumer, _parser, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
+    let (reader, consumer, parser, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
@@ -715,7 +641,7 @@ format:
     name: csv
 "#;
 
-    let (reader, consumer, _parser, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
+    let (reader, consumer, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(config_str).unwrap(),
         Relation::empty(),
     )
@@ -744,7 +670,7 @@ format:
 
     info!("proptest_kafka_input: Building input pipeline");
 
-    let (endpoint, _consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
+    let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
@@ -768,7 +694,7 @@ format:
     // Make sure all records arrive in the original order.
     producer.send_to_topic(&data, topic1);
 
-    wait_for_output_ordered(&endpoint, &zset, &data);
+    wait_for_output_ordered(&zset, &data);
     zset.reset();
 
     info!("proptest_kafka_input: Test: Receive from a topic with multiple partitions");
@@ -778,7 +704,7 @@ format:
     // order.
     producer.send_to_topic(&data, topic2);
 
-    wait_for_output_unordered(&endpoint, &zset, &data);
+    wait_for_output_unordered(&zset, &data);
     zset.reset();
 
     info!("proptest_kafka_input: Test: pause/resume");
@@ -794,7 +720,7 @@ format:
 
     // Receive everything after unpause.
     endpoint.start(0).unwrap();
-    wait_for_output_unordered(&endpoint, &zset, &data);
+    wait_for_output_unordered(&zset, &data);
 
     zset.reset();
 
@@ -805,7 +731,6 @@ format:
 
     producer.send_to_topic(&data, topic1);
     sleep(Duration::from_millis(1000));
-    endpoint.flush_all();
     assert_eq!(zset.state().flushed.len(), 0);
 }
 
@@ -813,7 +738,6 @@ format:
 /// not functioning properly, it's good to fail quickly without printing a
 /// thousand records as part of the failure.
 #[test]
-#[ignore]
 fn kafka_input_trivial() {
     test_ft_kafka_input(Vec::new(), "trivial_test_topic1", "trivial_test_topic2");
 }
@@ -822,32 +746,28 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(2))]
 
     #[test]
-    #[ignore]
     fn proptest_kafka_input(data in generate_test_batches(0, 100, 1000)) {
         test_ft_kafka_input(data, "input_test_topic1", "input_test_topic2");
     }
 
     #[test]
-    #[ignore]
     fn proptest_kafka_end_to_end_csv_large(data in generate_test_batches(0, 30, 1000)) {
         ft_kafka_end_to_end_test("proptest_kafka_end_to_end_csv_large", "csv", "", 1000000, data);
     }
 
     #[test]
-    #[ignore]
     fn proptest_kafka_end_to_end_csv_small(data in generate_test_batches(0, 30, 1000)) {
         ft_kafka_end_to_end_test("proptest_kafka_end_to_end_csv_small", "csv", "", 1500, data);
     }
 
     #[test]
-    #[ignore]
     fn proptest_kafka_end_to_end_json_small(data in generate_test_batches(0, 30, 1000)) {
         ft_kafka_end_to_end_test("proptest_kafka_end_to_end_json_small", "json", "", 2048, data);
     }
 
     #[test]
-    #[ignore]
     fn proptest_kafka_end_to_end_json_array_small(data in generate_test_batches(0, 30, 1000)) {
         ft_kafka_end_to_end_test("proptest_kafka_end_to_end_json_array_small", "json", "array: true", 5000, data);
     }
 }
+*/

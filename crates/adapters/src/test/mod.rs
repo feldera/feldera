@@ -163,7 +163,6 @@ where
     let reader = endpoint.open(
         Box::new(consumer.clone()),
         Box::new(parser.clone()),
-        0,
         relation,
     )?;
 

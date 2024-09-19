@@ -1054,12 +1054,8 @@ export const $KafkaInputConfig = {
   required: ['topics'],
   properties: {
     fault_tolerance: {
-      allOf: [
-        {
-          $ref: '#/components/schemas/KafkaInputFtConfig'
-        }
-      ],
-      nullable: true
+      type: 'boolean',
+      description: 'If true, this enables fault tolerance in the Kafka input connector.'
     },
     group_join_timeout_secs: {
       type: 'integer',
@@ -1110,70 +1106,6 @@ this Kafka adapter:
 
 * "enable.auto.commit", if present, must be set to "false",
 * "enable.auto.offset.store", if present, must be set to "false"`
-  }
-} as const
-
-export const $KafkaInputFtConfig = {
-  type: 'object',
-  description: 'Fault tolerance configuration for Kafka input connector.',
-  properties: {
-    consumer_options: {
-      type: 'object',
-      description: `Options passed to \`rdkafka\` for consumers only, as documented at
-[\`librdkafka\`
-options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md).
-
-These options override \`kafka_options\` for consumers, and may be empty.`,
-      additionalProperties: {
-        type: 'string'
-      }
-    },
-    create_missing_index: {
-      type: 'boolean',
-      description: `If this is true or unset, then the connector will create missing index
-topics as needed.  If this is false, then a missing index topic is a
-fatal error.`,
-      nullable: true
-    },
-    index_suffix: {
-      type: 'string',
-      description: `Suffix to append to each data topic name, to give the name of a topic
-that the connector uses for recording the division of the corresponding
-data topic into steps.  Defaults to \`_input-index\`.
-
-An index topic must have the same number of partitions as its
-corresponding data topic.
-
-If two or more fault-tolerant Kafka endpoints read from overlapping sets
-of topics, they must specify different \`index_suffix\` values.`,
-      nullable: true
-    },
-    max_step_bytes: {
-      type: 'integer',
-      format: 'int64',
-      description: `Maximum number of bytes in a step.  Any individual message bigger than
-this will be given a step of its own.`,
-      nullable: true,
-      minimum: 0
-    },
-    max_step_messages: {
-      type: 'integer',
-      format: 'int64',
-      description: 'Maximum number of messages in a step.',
-      nullable: true,
-      minimum: 0
-    },
-    producer_options: {
-      type: 'object',
-      description: `Options passed to \`rdkafka\` for producers only, as documented at
-[\`librdkafka\`
-options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md).
-
-These options override \`kafka_options\` for producers, and may be empty.`,
-      additionalProperties: {
-        type: 'string'
-      }
-    }
   }
 } as const
 
@@ -2812,7 +2744,7 @@ export const $UrlInputConfig = {
     pause_timeout: {
       type: 'integer',
       format: 'int32',
-      description: `Timeout before disconnection when paused.
+      description: `Timeout before disconnection when paused, in seconds.
 
 If the pipeline is paused, or if the input adapter reads data faster
 than the pipeline can process it, then the controller will pause the

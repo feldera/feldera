@@ -43,6 +43,12 @@ pub struct TestStruct {
 }
 
 impl TestStruct {
+    pub fn for_id(id: u32) -> Self {
+        Self {
+            id,
+            ..Default::default()
+        }
+    }
     pub fn schema() -> Vec<Field> {
         vec![
             Field {

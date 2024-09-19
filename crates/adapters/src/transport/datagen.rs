@@ -8,8 +8,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use super::InputQueue;
-use crate::transport::Step;
 use crate::{
     InputConsumer, InputEndpoint, InputReader, Parser, PipelineState, TransportInputEndpoint,
 };
@@ -34,6 +32,8 @@ use rand_distr::{Distribution, Zipf};
 use serde_json::{to_writer, Map, Value};
 use tokio::sync::Notify;
 use tokio::time::{Duration as TokioDuration, Instant as TokioInstant};
+
+use super::{InputQueue, InputReaderCommand, NonFtInputReaderCommand};
 
 fn range_as_i64(
     field: &SqlIdentifier,
@@ -260,7 +260,6 @@ impl TransportInputEndpoint for GeneratorEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        _start_step: Step,
         schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(InputGenerator::new(
@@ -482,7 +481,7 @@ impl InputGenerator {
                                 || batch_creation_duration.elapsed() > BATCH_CREATION_TIMEOUT
                             {
                                 buffer.extend(END_ARR);
-                                queue.push(buffer.len(), parser.parse(&buffer));
+                                queue.push(parser.parse(&buffer), buffer.len());
                                 buffer.clear();
                                 buffer.extend(START_ARR);
                                 batch_idx = 0;
@@ -502,7 +501,7 @@ impl InputGenerator {
                 }
                 if !buffer.is_empty() {
                     buffer.extend(END_ARR);
-                    queue.push(buffer.len(), parser.parse(&buffer));
+                    queue.push(parser.parse(&buffer), buffer.len());
                 }
                 // Update global progress after we created all records for a batch
                 //eprintln!("adding {} to generated", generate_range.len());
@@ -514,37 +513,22 @@ impl InputGenerator {
 }
 
 impl InputReader for InputGenerator {
-    fn pause(&self) -> AnyResult<()> {
-        // Notify worker thread via the status flag.  The worker may
-        // send another buffer downstream before the flag takes effect.
-        self.status.store(PipelineState::Paused, Ordering::Release);
-        Ok(())
-    }
-
-    fn start(&self, _step: Step) -> AnyResult<()> {
-        self.status.store(PipelineState::Running, Ordering::Release);
-
-        // Wake up the worker if it's paused.
-        self.unpark();
-        Ok(())
-    }
-
-    fn disconnect(&self) {
-        self.status
-            .store(PipelineState::Terminated, Ordering::Release);
-
-        // Wake up the worker if it's paused.
-        self.unpark();
-    }
-
-    fn flush(&self, n: usize) -> usize {
-        self.queue.flush(n)
+    fn request(&self, command: InputReaderCommand) {
+        match command.as_nonft().unwrap() {
+            NonFtInputReaderCommand::Queue => self.queue.queue(),
+            NonFtInputReaderCommand::Transition(state) => {
+                self.status.store(state, Ordering::Release);
+                if state != PipelineState::Paused {
+                    self.unpark();
+                }
+            }
+        }
     }
 }
 
 impl Drop for InputGenerator {
     fn drop(&mut self) {
-        self.disconnect();
+        self.request(InputReaderCommand::Disconnect);
     }
 }
 
@@ -1744,8 +1728,18 @@ mod test {
         let relation = Relation::new("test_input".into(), fields, true, BTreeMap::new());
         let (endpoint, consumer, _parser, zset) =
             mock_input_pipeline::<T, U>(serde_yaml::from_str(config_str)?, relation)?;
-        endpoint.start(0)?;
+        endpoint.extend();
         Ok((endpoint, consumer, zset))
+    }
+
+    fn wait_for_data(endpoint: &dyn InputReader, consumer: &MockInputConsumer) {
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+        endpoint.queue();
+        while consumer.state().n_extended == 0 {
+            thread::sleep(Duration::from_millis(20));
+        }
     }
 
     #[test]
@@ -1760,11 +1754,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        thread::sleep(Duration::from_millis(20));
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let iter = zst.flushed.iter();
@@ -1792,10 +1782,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let iter = zst.flushed.iter();
@@ -1820,10 +1807,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<RealStruct, RealStruct>(config_str, RealStruct::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let iter = zst.flushed.iter();
@@ -1849,11 +1833,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<ByteStruct, ByteStruct>(config_str, ByteStruct::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        thread::sleep(Duration::from_millis(20));
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let iter = zst.flushed.iter();
@@ -1876,12 +1856,10 @@ transport:
     config:
         plan: [ { limit: 1, fields: { "id": { "strategy": "uniform", "range": [10, 20] } } } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let iter = zst.flushed.iter();
@@ -1900,12 +1878,10 @@ transport:
     config:
         plan: [ { limit: 4, fields: { "id": { values: [99, 100, 101] } } } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let mut next = 99;
         let zst = zset.state();
@@ -2066,12 +2042,10 @@ transport:
     config:
         plan: [ { limit: 10, fields: { "name": { null_percentage: 100 } } } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let iter = zst.flushed.iter();
@@ -2090,12 +2064,10 @@ transport:
     config:
         plan: [ { limit: 100, fields: { "name": { null_percentage: 50 } } } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let iter = zst.flushed.iter();
@@ -2118,12 +2090,10 @@ transport:
     config:
         plan: [ { limit: 2, fields: { "name": { "strategy": "word" } } } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let iter = zst.flushed.iter();
@@ -2145,11 +2115,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<ByteStruct, ByteStruct>(config_str, ByteStruct::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        thread::sleep(Duration::from_millis(20));
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();
@@ -2178,11 +2144,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<ByteStruct, ByteStruct>(config_str, ByteStruct::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        thread::sleep(Duration::from_millis(20));
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
 
@@ -2216,11 +2178,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<ByteStruct, ByteStruct>(config_str, ByteStruct::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        thread::sleep(Duration::from_millis(20));
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();
@@ -2328,10 +2286,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();
@@ -2360,11 +2315,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        thread::sleep(Duration::from_millis(20));
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();
@@ -2399,11 +2350,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        thread::sleep(Duration::from_millis(20));
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         for record in zst.flushed.iter() {
@@ -2478,11 +2425,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        thread::sleep(Duration::from_millis(20));
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();
@@ -2532,10 +2475,7 @@ transport:
         let (endpoint, consumer, zset) =
             mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema()).unwrap();
 
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(20));
-        }
-        endpoint.flush_all();
+        wait_for_data(endpoint.as_ref(), &consumer);
 
         let zst = zset.state();
         let mut iter = zst.flushed.iter();
@@ -2569,13 +2509,11 @@ transport:
         workers: {workers}
 "
         );
-        let (_endpoint, consumer, _zset) =
+        let (endpoint, consumer, _zset) =
             mk_pipeline::<TimeStuff, TimeStuff>(config_str.as_str(), TimeStuff::schema()).unwrap();
 
         let start = std::time::Instant::now();
-        while !consumer.state().eoi {
-            thread::sleep(Duration::from_millis(25));
-        }
+        wait_for_data(endpoint.as_ref(), &consumer);
         let elapsed = start.elapsed();
         let tput = size as f64 / elapsed.as_secs_f64();
         println!("Tput({workers}, {size}): {tput:.2} records/sec");

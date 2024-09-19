@@ -1,6 +1,5 @@
 use crate::catalog::InputCollectionHandle;
 use crate::format::{InputBuffer, Splitter};
-use crate::transport::Step;
 use crate::{controller::FormatConfig, InputConsumer, InputFormat, ParseError, Parser};
 use anyhow::{anyhow, Error as AnyError};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -11,6 +10,9 @@ pub type ErrorCallback = Box<dyn FnMut(bool, &AnyError) + Send>;
 pub struct MockInputConsumerState {
     /// `eoi` has been received since the last `reset`.
     pub eoi: bool,
+
+    /// Number of times `extended` has been called since the last `reset`.
+    pub n_extended: usize,
 
     /// The last error received from the endpoint since the last `reset`.
     pub endpoint_error: Option<AnyError>,
@@ -25,6 +27,7 @@ impl MockInputConsumerState {
     fn new() -> Self {
         Self {
             eoi: false,
+            n_extended: 0,
             endpoint_error: None,
             error_cb: None,
         }
@@ -33,6 +36,7 @@ impl MockInputConsumerState {
     /// Reset all fields to defaults.
     pub fn reset(&mut self) {
         self.eoi = false;
+        self.n_extended = 0;
         self.endpoint_error = None;
     }
 }
@@ -85,11 +89,19 @@ impl InputConsumer for MockInputConsumer {
         state.eoi = true;
     }
 
-    fn start_step(&self, _step: Step) {}
+    fn max_batch_size(&self) -> usize {
+        usize::MAX
+    }
 
-    fn committed(&self, _step: Step) {}
+    fn parse_errors(&self, _errors: Vec<ParseError>) {}
 
-    fn queued(&self, _num_bytes: usize, _num_records: usize, _errors: Vec<ParseError>) {}
+    fn buffered(&self, _num_records: usize, _num_bytes: usize) {}
+
+    fn replayed(&self, _num_records: usize) {}
+
+    fn extended(&self, _num_records: usize, _metadata: serde_json::Value) {
+        self.state().n_extended += 1;
+    }
 }
 
 pub struct MockInputParserState {

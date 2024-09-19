@@ -498,7 +498,6 @@ pub struct DBSPHandle {
     // Channels used to receive command completion status from
     // workers.
     status_receivers: Vec<Receiver<Result<Response, SchedulerError>>>,
-    step_id: u64,
     checkpointer: Checkpointer,
     fingerprint: Option<u64>,
 }
@@ -516,7 +515,6 @@ impl DBSPHandle {
             runtime: Some(runtime),
             command_senders,
             status_receivers,
-            step_id: 0,
             checkpointer,
             fingerprint: None,
         };
@@ -601,11 +599,7 @@ impl DBSPHandle {
     /// Evaluate the circuit for one clock cycle.
     pub fn step(&mut self) -> Result<(), DbspError> {
         counter!("feldera.dbsp.step").increment(1);
-        self.step_id += 1;
-        let span = Arc::new(
-            Span::root("step", SpanContext::random())
-                .with_properties(|| [("step", format!("{}", self.step_id))]),
-        );
+        let span = Arc::new(Span::root("step", SpanContext::random()));
         let _guard = span.set_local_parent();
         self.broadcast_command(Command::Step(span), |_, _| {})
     }
@@ -666,9 +660,9 @@ impl DBSPHandle {
     }
 
     /// Used by the checkpointer to initiate a commit on the circuit.
-    pub(super) fn send_commit(&mut self, uuid: Uuid) -> Result<u64, DbspError> {
+    pub(super) fn send_commit(&mut self, uuid: Uuid) -> Result<(), DbspError> {
         self.broadcast_command(Command::Commit(uuid), |_, _| {})?;
-        Ok(self.step_id)
+        Ok(())
     }
 
     /// Used to reset operator state to the point of the given Commit.
@@ -684,10 +678,8 @@ impl DBSPHandle {
     ) -> Result<CheckpointMetadata, DbspError> {
         let fingerprint = self.fingerprint()?;
         self.checkpointer.create_checkpoint_dir(uuid)?;
-        let step_id = self.send_commit(uuid)?;
-        let md = self
-            .checkpointer
-            .commit(uuid, identifier, fingerprint, step_id)?;
+        self.send_commit(uuid)?;
+        let md = self.checkpointer.commit(uuid, identifier, fingerprint)?;
         Ok(md)
     }
 
@@ -1051,7 +1043,7 @@ mod tests {
         let cconf = CircuitConfig {
             layout: Layout::new_solo(1),
             storage: Some(StorageConfig {
-                path: temp.path().to_str().unwrap().to_string(),
+                path: temp.path().to_string_lossy().into_owned(),
                 cache: StorageCacheConfig::default(),
             }),
             min_storage_bytes: 0,
@@ -1146,12 +1138,10 @@ mod tests {
         {
             let (mut dbsp, _) = mkcircuit(&cconf).unwrap();
             let cpm = &dbsp.checkpointer.list_checkpoints().unwrap()[0];
-            assert_eq!(cpm.step_id, 1);
             assert_ne!(cpm.uuid, Uuid::nil());
             assert_eq!(cpm.identifier, Some(String::from("test-commit")));
 
             let cpm2 = &dbsp.checkpointer.list_checkpoints().unwrap()[1];
-            assert_eq!(cpm2.step_id, 2);
             assert_ne!(cpm2.uuid, Uuid::nil());
             assert_ne!(cpm2.uuid, cpm.uuid);
             assert_eq!(cpm2.identifier, None);
