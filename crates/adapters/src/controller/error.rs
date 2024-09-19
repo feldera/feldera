@@ -11,6 +11,8 @@ use std::{
     string::ToString,
 };
 
+use super::metadata::StepError;
+
 /// Controller configuration error.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
@@ -484,6 +486,12 @@ pub enum ControllerError {
     /// Error validating program schema.
     SchemaValidationError { error: String },
 
+    /// Error parsing the checkpoint.
+    CheckpointParseError { error: String },
+
+    /// Error in steps metadata.
+    StepError(StepError),
+
     /// Feature is not supported.
     NotSupported { error: String },
 
@@ -549,7 +557,7 @@ pub enum ControllerError {
     /// Panic inside the DBSP controller.
     ControllerPanic,
 
-    /// Controller terminated before profile ran.
+    /// Controller terminated before command could be executed.
     ControllerExit,
 }
 
@@ -627,6 +635,8 @@ impl DetailedError for ControllerError {
             Self::NotSupported { .. } => Cow::from("NotSupported"),
             Self::SchemaParseError { .. } => Cow::from("SchemaParseError"),
             Self::SchemaValidationError { .. } => Cow::from("SchemaParseError"),
+            Self::CheckpointParseError { .. } => Cow::from("CheckpointParseError"),
+            Self::StepError { .. } => Cow::from("StepError"),
             Self::IrParseError { .. } => Cow::from("IrParseError"),
             Self::CliArgsError { .. } => Cow::from("ControllerCliArgsError"),
             Self::Config { config_error } => {
@@ -665,6 +675,10 @@ impl Display for ControllerError {
             Self::SchemaValidationError { error } => {
                 write!(f, "Error validating program schema: {error}")
             }
+            Self::CheckpointParseError { error } => {
+                write!(f, "Error parsing checkpoint file: {error}")
+            }
+            Self::StepError(error) => write!(f, "Error with persistent input steps: {error}"),
             Self::IrParseError { error } => {
                 write!(f, "Error parsing program IR: {error}")
             }
@@ -730,7 +744,7 @@ impl Display for ControllerError {
                 write!(f, "Panic inside the DBSP controller")
             }
             ControllerError::ControllerExit => {
-                write!(f, "Controller exited without running profile")
+                write!(f, "Controller exited before command could be executed")
             }
         }
     }

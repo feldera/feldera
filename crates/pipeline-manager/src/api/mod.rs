@@ -182,7 +182,6 @@ The program version is used internally by the compiler to know when to recompile
         feldera_types::transport::kafka::KafkaLogLevel,
         feldera_types::transport::kafka::KafkaInputConfig,
         feldera_types::transport::kafka::KafkaOutputConfig,
-        feldera_types::transport::kafka::KafkaInputFtConfig,
         feldera_types::transport::kafka::KafkaOutputFtConfig,
         feldera_types::transport::pubsub::PubSubInputConfig,
         feldera_types::transport::s3::S3InputConfig,
