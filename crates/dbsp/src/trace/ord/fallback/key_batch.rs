@@ -1,5 +1,6 @@
 use crate::{
     dynamic::{DataTrait, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
+    storage::file::reader::Error as ReaderError,
     time::AntichainRef,
     trace::{
         cursor::DelegatingCursor,
@@ -20,7 +21,7 @@ use size_of::SizeOf;
 use std::{
     fmt::{self, Debug},
     mem::replace,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use super::utils::{copy_to_builder, pick_merge_destination, BuildTo, GenericMerger};
@@ -337,6 +338,13 @@ where
             Inner::Vec(vec) => vec.persistent_id(),
             Inner::File(file) => file.persistent_id(),
         }
+    }
+
+    fn from_path(factories: &Self::Factories, path: &Path) -> Result<Self, ReaderError> {
+        Ok(Self {
+            factories: factories.clone(),
+            inner: Inner::File(FileKeyBatch::<K, T, R>::from_path(&factories.file, path)?),
+        })
     }
 }
 

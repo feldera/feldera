@@ -532,6 +532,7 @@ impl Splitter for LineSplitter {
 
 pub struct AppendSplitter {
     buffer: Vec<u8>,
+    start: u64,
     fragment: Range<usize>,
     fed: usize,
     splitter: Box<dyn Splitter>,
@@ -541,6 +542,7 @@ impl AppendSplitter {
     pub fn new(splitter: Box<dyn Splitter>) -> Self {
         Self {
             buffer: Vec::new(),
+            start: 0,
             fragment: 0..0,
             fed: 0,
             splitter,
@@ -567,10 +569,14 @@ impl AppendSplitter {
             }
         }
     }
+    pub fn position(&self) -> u64 {
+        self.start + self.fragment.start as u64
+    }
     pub fn final_chunk(&mut self) -> Option<&[u8]> {
         if !self.fragment.is_empty() {
             let chunk = &self.buffer[self.fragment.clone()];
-            self.fragment.end = self.fragment.start;
+            self.fragment.start = self.fragment.end;
+            self.fed = self.fragment.end;
             Some(chunk)
         } else {
             None
@@ -585,7 +591,14 @@ impl AppendSplitter {
         self.buffer.resize(self.fragment.len(), 0);
         self.buffer.extend(data);
         self.fed -= self.fragment.start;
+        self.start += self.fragment.start as u64;
         self.fragment = 0..self.buffer.len();
+    }
+    pub fn seek(&mut self, offset: u64) {
+        self.start = offset;
+        self.fragment = 0..0;
+        self.fed = 0;
+        self.splitter.clear();
     }
 }
 

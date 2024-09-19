@@ -133,8 +133,8 @@
 //! A fault-tolerant circuit requires all of its input and output endpoints to
 //! be fault-tolerant:
 //!
-//! * A fault-tolerant input endpoint divides input into numbered [`Step`]s that
-//!   can be retrieved repeatedly with the same content, despite crashes.
+//! * A fault-tolerant input endpoint divides input into steps that can be
+//!   replayed repeatedly with the same content, despite crashes.
 //!   [`InputEndpoint::is_fault_tolerant`] reports whether an input endpoint is
 //!   fault tolerant.
 //!

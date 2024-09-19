@@ -1,23 +1,26 @@
 use super::{
-    InputConsumer, InputEndpoint, InputQueue, InputReader, OutputEndpoint, Step,
+    InputConsumer, InputEndpoint, InputReader, InputReaderCommand, OutputEndpoint,
     TransportInputEndpoint,
 };
-use crate::{format::Splitter, Parser, PipelineState};
+use crate::format::Splitter;
+use crate::{InputBuffer, Parser};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
-use atomic::Atomic;
-use crossbeam::sync::{Parker, Unparker};
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
+use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::io::{Read, Seek, SeekFrom};
+use std::ops::Range;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::thread::{self, Thread};
 use std::{
     fs::File,
-    io::{Error as IoError, Read, Write},
-    ops::Range,
-    sync::{atomic::Ordering, Arc},
-    thread::{sleep, spawn},
+    io::{Error as IoError, Write},
+    thread::spawn,
     time::Duration,
 };
 
-const SLEEP_MS: u64 = 200;
+const SLEEP: Duration = Duration::from_millis(200);
 
 pub(crate) struct FileInputEndpoint {
     config: FileInputConfig,
@@ -31,7 +34,7 @@ impl FileInputEndpoint {
 
 impl InputEndpoint for FileInputEndpoint {
     fn is_fault_tolerant(&self) -> bool {
-        false
+        true
     }
 }
 
@@ -40,7 +43,6 @@ impl TransportInputEndpoint for FileInputEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        _start_step: Step,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(FileInputReader::new(
@@ -53,6 +55,7 @@ impl TransportInputEndpoint for FileInputEndpoint {
 
 struct FileSplitter {
     buffer: Vec<u8>,
+    start: u64,
     fragment: Range<usize>,
     fed: usize,
     splitter: Box<dyn Splitter>,
@@ -65,6 +68,7 @@ impl FileSplitter {
         buffer.resize(if buffer_size == 0 { 8192 } else { buffer_size }, 0);
         Self {
             buffer,
+            start: 0,
             fragment: 0..0,
             fed: 0,
             splitter,
@@ -91,26 +95,30 @@ impl FileSplitter {
             }
         }
     }
+    fn position(&self) -> u64 {
+        self.start + self.fragment.start as u64
+    }
     fn final_chunk(&mut self) -> Option<&[u8]> {
         if !self.fragment.is_empty() {
             let chunk = &self.buffer[self.fragment.clone()];
-            self.fragment.end = self.fragment.start;
+            self.fragment.start = self.fragment.end;
+            self.fed = self.fragment.end;
             Some(chunk)
         } else {
             None
         }
     }
     fn spare_capacity_mut(&mut self) -> &mut [u8] {
-        self.buffer.copy_within(self.fragment.clone(), 0);
-        self.fed -= self.fragment.start;
-        self.fragment = 0..self.fragment.len();
+        if self.fragment.start > 0 {
+            self.buffer.copy_within(self.fragment.clone(), 0);
+            self.start += self.fragment.start as u64;
+            self.fed -= self.fragment.start;
+            self.fragment = 0..self.fragment.len();
+        }
         if self.fragment.len() == self.buffer.len() {
             self.buffer.resize(self.buffer.capacity() * 2, 0);
         }
         &mut self.buffer[self.fragment.len()..]
-    }
-    fn added_data(&mut self, n: usize) {
-        self.fragment.end += n;
     }
     fn read(&mut self, file: &mut File, max: usize) -> Result<usize, IoError> {
         let mut space = self.spare_capacity_mut();
@@ -119,108 +127,173 @@ impl FileSplitter {
         }
         let result = file.read(space);
         if let Ok(n) = result {
-            self.added_data(n);
+            self.fragment.end += n;
         }
         result
+    }
+    fn seek(&mut self, offset: u64) {
+        self.start = offset;
+        self.fragment = 0..0;
+        self.fed = 0;
+        self.splitter.clear();
     }
 }
 
 struct FileInputReader {
-    status: Arc<Atomic<PipelineState>>,
-    unparker: Option<Unparker>,
-    queue: Arc<InputQueue>,
+    sender: Sender<InputReaderCommand>,
+    thread: Thread,
 }
 
 impl FileInputReader {
     fn new(
         config: &FileInputConfig,
         consumer: Box<dyn InputConsumer>,
-        mut parser: Box<dyn Parser>,
+        parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
-        let mut file = File::open(&config.path).map_err(|e| {
+        let file = File::open(&config.path).map_err(|e| {
             AnyError::msg(format!("Failed to open input file '{}': {e}", config.path))
         })?;
 
-        let parker = Parker::new();
-        let unparker = Some(parker.unparker().clone());
-        let status = Arc::new(Atomic::new(PipelineState::Paused));
-        let queue = Arc::new(InputQueue::new(consumer.clone()));
-        spawn({
+        let (sender, receiver) = channel();
+        let join_handle = spawn({
             let follow = config.follow;
             let buffer_size = config.buffer_size_bytes;
-            let status = status.clone();
-            let queue = queue.clone();
             move || {
-                let mut splitter = FileSplitter::new(parser.splitter(), buffer_size);
-                loop {
-                    match status.load(Ordering::Acquire) {
-                        PipelineState::Paused => parker.park(),
-                        PipelineState::Running => {
-                            let n = match splitter.read(&mut file, usize::MAX) {
-                                Ok(n) => n,
-                                Err(error) => {
-                                    consumer.error(true, AnyError::from(error));
-                                    break;
-                                }
-                            };
-
-                            while let Some(chunk) = splitter.next(n == 0 && !follow) {
-                                queue.push(0, parser.parse(chunk));
-                            }
-                            if n == 0 {
-                                if !follow {
-                                    consumer.eoi();
-                                    break;
-                                }
-                                sleep(Duration::from_millis(SLEEP_MS));
-                            }
-                        }
-                        PipelineState::Terminated => break,
-                    }
+                if let Err(error) = Self::worker_thread(
+                    file,
+                    buffer_size,
+                    consumer.as_ref(),
+                    parser,
+                    receiver,
+                    follow,
+                ) {
+                    consumer.error(true, error);
                 }
             }
         });
 
         Ok(Self {
-            status,
-            unparker,
-            queue,
+            sender,
+            thread: join_handle.thread().clone(),
         })
     }
 
-    fn unpark(&self) {
-        if let Some(unparker) = &self.unparker {
-            unparker.unpark();
+    fn worker_thread(
+        mut file: File,
+        buffer_size: Option<usize>,
+        consumer: &dyn InputConsumer,
+        mut parser: Box<dyn Parser>,
+        receiver: Receiver<InputReaderCommand>,
+        follow: bool,
+    ) -> AnyResult<()> {
+        let mut splitter = FileSplitter::new(parser.splitter(), buffer_size);
+
+        let mut queue = VecDeque::<(Range<u64>, Box<dyn InputBuffer>)>::new();
+        let mut extending = false;
+        let mut eof = false;
+        loop {
+            for command in receiver.try_iter() {
+                match command {
+                    InputReaderCommand::Extend => {
+                        extending = true;
+                    }
+                    InputReaderCommand::Pause => {
+                        extending = false;
+                    }
+                    InputReaderCommand::Queue => {
+                        let mut total = 0;
+                        let limit = consumer.max_batch_size();
+                        let mut range: Option<Range<u64>> = None;
+                        while let Some((offsets, mut buffer)) = queue.pop_front() {
+                            range = match range {
+                                Some(range) => Some(range.start..offsets.end),
+                                None => Some(offsets),
+                            };
+                            total += buffer.len();
+                            buffer.flush_all();
+                            if total >= limit {
+                                break;
+                            }
+                        }
+                        consumer.extended(
+                            total,
+                            serde_json::to_value(Metadata {
+                                offsets: range.unwrap_or_else(|| {
+                                    let ofs = splitter.position();
+                                    ofs..ofs
+                                }),
+                            })?,
+                        );
+                    }
+                    InputReaderCommand::Seek(metadata) => {
+                        let Metadata { offsets } = serde_json::from_value(metadata)?;
+                        let offset = offsets.end;
+                        file.seek(SeekFrom::Start(offset))?;
+                        splitter.seek(offset);
+                    }
+                    InputReaderCommand::Replay(metadata) => {
+                        let Metadata { offsets } = serde_json::from_value(metadata)?;
+                        file.seek(SeekFrom::Start(offsets.start))?;
+                        splitter.seek(offsets.start);
+                        let mut remainder = (offsets.end - offsets.start) as usize;
+                        let mut num_records = 0;
+                        while remainder > 0 {
+                            let n = splitter.read(&mut file, remainder)?;
+                            if n == 0 {
+                                todo!();
+                            }
+                            remainder -= n;
+                            while let Some(chunk) = splitter.next(remainder == 0) {
+                                let (mut buffer, errors) = parser.parse(chunk);
+                                consumer.parse_errors(errors);
+                                consumer.buffered(buffer.len(), chunk.len());
+                                num_records += buffer.flush_all();
+                            }
+                        }
+                        consumer.replayed(num_records);
+                    }
+                    InputReaderCommand::Disconnect => return Ok(()),
+                }
+            }
+
+            if !extending || eof {
+                thread::park();
+                continue;
+            }
+
+            let n = splitter.read(&mut file, usize::MAX)?;
+            if n == 0 {
+                if follow {
+                    thread::park_timeout(SLEEP);
+                    continue;
+                }
+                eof = true;
+            }
+            loop {
+                let start = splitter.position();
+                let Some(chunk) = splitter.next(eof) else {
+                    break;
+                };
+                let (buffer, errors) = parser.parse(chunk);
+                consumer.buffered(buffer.len(), chunk.len());
+                consumer.parse_errors(errors);
+
+                if let Some(buffer) = buffer {
+                    let end = splitter.position();
+                    queue.push_back((start..end, buffer));
+                }
+            }
+            if n == 0 {
+                consumer.eoi();
+            }
         }
     }
 }
 
 impl InputReader for FileInputReader {
-    fn pause(&self) -> AnyResult<()> {
-        // Notify worker thread via the status flag.  The worker may
-        // send another buffer downstream before the flag takes effect.
-        self.status.store(PipelineState::Paused, Ordering::Release);
-        Ok(())
-    }
-
-    fn start(&self, _step: Step) -> AnyResult<()> {
-        self.status.store(PipelineState::Running, Ordering::Release);
-
-        // Wake up the worker if it's paused.
-        self.unpark();
-        Ok(())
-    }
-
-    fn disconnect(&self) {
-        self.status
-            .store(PipelineState::Terminated, Ordering::Release);
-
-        // Wake up the worker if it's paused.
-        self.unpark();
-    }
-
-    fn flush(&self, n: usize) -> usize {
-        self.queue.flush(n)
+    fn request(&self, command: super::InputReaderCommand) {
+        let _ = self.sender.send(command);
+        self.thread.unpark();
     }
 }
 
@@ -348,10 +421,10 @@ format:
         assert!(!consumer.state().eoi);
 
         // Unpause the endpoint, wait for the data to appear at the output.
-        endpoint.start(0).unwrap();
+        endpoint.extend();
         wait(
             || {
-                endpoint.flush_all();
+                endpoint.queue();
                 zset.state().flushed.len() == test_data.len()
             },
             DEFAULT_TIMEOUT_MS,
@@ -399,6 +472,8 @@ format:
         )
         .unwrap();
 
+        endpoint.extend();
+
         for _ in 0..10 {
             for val in test_data.iter().cloned() {
                 writer.serialize(val).unwrap();
@@ -411,10 +486,9 @@ format:
             assert!(!consumer.state().eoi);
 
             // Unpause the endpoint, wait for the data to appear at the output.
-            endpoint.start(0).unwrap();
             wait(
                 || {
-                    endpoint.flush_all();
+                    endpoint.queue();
                     zset.state().flushed.len() == test_data.len()
                 },
                 DEFAULT_TIMEOUT_MS,
@@ -423,7 +497,6 @@ format:
             for (i, upd) in zset.state().flushed.iter().enumerate() {
                 assert_eq!(upd.unwrap_insert(), &test_data[i]);
             }
-            endpoint.pause().unwrap();
 
             consumer.reset();
             zset.reset();
@@ -436,10 +509,9 @@ format:
         temp_file.as_file().write_all(b"xxx\n").unwrap();
         temp_file.as_file().flush().unwrap();
 
-        endpoint.start(0).unwrap();
         wait(
             || {
-                endpoint.flush_all();
+                endpoint.queue();
                 let state = parser.state();
                 // println!("result: {:?}", state.parser_result);
                 state.parser_result.is_some() && !state.parser_result.as_ref().unwrap().is_empty()
@@ -452,4 +524,9 @@ format:
 
         endpoint.disconnect();
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Metadata {
+    offsets: Range<u64>,
 }
