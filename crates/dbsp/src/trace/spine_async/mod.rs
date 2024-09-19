@@ -1124,7 +1124,9 @@ where
         self.value_filter = None;
         for batch in committed.batches {
             let batch = B::from_path(&self.factories.clone(), Path::new(batch.as_str()))
-                .expect("Batch file for checkpoint must exist.");
+                .unwrap_or_else(|error| {
+                    panic!("Failed to read batch {batch} for checkpoint ({error}).")
+                });
             self.insert(batch);
         }
 

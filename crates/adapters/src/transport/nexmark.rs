@@ -3,13 +3,11 @@
 use std::collections::VecDeque;
 use std::io::Cursor;
 use std::mem;
-use std::sync::atomic::AtomicUsize;
 use std::sync::{atomic::Ordering, Arc, Mutex};
 use std::sync::{Barrier, OnceLock, Weak};
 use std::thread::{self, Thread};
 
-use crate::format::{EmptyInputBuffer, InputBuffer};
-use crate::transport::Step;
+use crate::format::InputBuffer;
 use crate::{
     InputConsumer, InputEndpoint, InputReader, Parser, PipelineState, TransportInputEndpoint,
 };
@@ -23,6 +21,8 @@ use enum_map::EnumMap;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::nexmark::{NexmarkInputConfig, NexmarkInputOptions, NexmarkTable};
 use rand::rngs::ThreadRng;
+
+use super::{InputReaderCommand, NonFtInputReaderCommand};
 
 pub(crate) struct NexmarkEndpoint {
     config: NexmarkInputConfig,
@@ -45,7 +45,6 @@ impl TransportInputEndpoint for NexmarkEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        _start_step: Step,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(InputGenerator::new(
@@ -58,6 +57,7 @@ impl TransportInputEndpoint for NexmarkEndpoint {
 
 struct InputGenerator {
     table: NexmarkTable,
+    consumer: Box<dyn InputConsumer>,
     inner: Arc<Inner>,
 }
 
@@ -75,81 +75,43 @@ impl InputGenerator {
         });
         drop(guard);
 
-        inner.merge(config, consumer, parser)?;
+        inner.merge(config, consumer.clone(), parser)?;
         Ok(Self {
             table: config.table,
+            consumer,
             inner,
         })
+    }
+
+    fn queue(&self) {
+        if self.table == NexmarkTable::Bid {
+            let mut total = 0;
+            let options = self.inner.options.get().unwrap();
+            let n = options.max_step_size_per_thread as usize * options.threads;
+            while total < n {
+                let Some(buffers) = self.inner.buffers.lock().unwrap().pop_front() else {
+                    break;
+                };
+                for mut buffer in buffers {
+                    total += buffer.flush_all();
+                }
+            }
+            self.consumer.extended(total, serde_json::Value::Null);
+        } else {
+            self.consumer.extended(0, serde_json::Value::Null);
+        }
     }
 }
 
 impl InputReader for InputGenerator {
-    fn start(&self, _step: Step) -> AnyResult<()> {
-        self.inner.status[self.table].store(PipelineState::Running, Ordering::Release);
-        let queued_batches = *self.inner.queued_batches.lock().unwrap();
-        self.inner
-            .consumable_batches
-            .store(queued_batches, Ordering::Release);
-        self.inner.unpark();
-        Ok(())
-    }
-
-    fn pause(&self) -> AnyResult<()> {
-        self.inner.status[self.table].store(PipelineState::Paused, Ordering::Release);
-        Ok(())
-    }
-
-    fn disconnect(&self) {
-        self.inner.status[self.table].store(PipelineState::Terminated, Ordering::Release);
-        self.inner.unpark();
-    }
-
-    fn flush(&self, _n: usize) -> usize {
-        // What batches are we permitted to flush?
-        //
-        // We need all of the tables to flush the events for the same event time
-        // range in a given step. To do that, we assume that the controller will
-        // call flush on each table exactly once per step, and we need each call
-        // to flush to be able to consume the same batches. However, if we just
-        // had each flush call look at the queue, then they might see different
-        // batches because InputBuffers are queued asynchronously. Thus, we
-        // introduce [Self::start], which is called once per step, as a
-        // synchronization point, where it looks at the available batches and
-        // saves it for `flush` to use here.
-        let consumable_batches = self.inner.consumable_batches.load(Ordering::Acquire);
-        let options = self.inner.options.get().unwrap();
-        let max_batches = options
-            .max_step_size_per_thread
-            .div_ceil(options.batch_size_per_thread);
-
-        let mut total = 0;
-        for _ in 0..max_batches {
-            // Find the earliest batch number and make sure that it's less than
-            // `consumable_batches`.
-            let mut buffers = Vec::with_capacity(options.threads);
-            let mut queue = self.inner.queue.lock().unwrap();
-            let batch_num = queue[self.table]
-                .front()
-                .map_or(usize::MAX, |front| front.0);
-            if batch_num >= consumable_batches {
-                break;
-            }
-
-            // Collect all the buffers in `batch_num` (there should be exactly
-            // `n_threads` of them) and drop the lock.
-            for _ in 0..options.threads {
-                let (_batch_num, buffer) = queue[self.table].pop_front().unwrap();
-                assert_eq!(_batch_num, batch_num);
-                buffers.push(buffer);
-            }
-            drop(queue);
-
-            // Flush it.
-            for mut buffer in buffers {
-                total += buffer.flush_all();
+    fn request(&self, command: InputReaderCommand) {
+        match command.as_nonft().unwrap() {
+            NonFtInputReaderCommand::Queue => self.queue(),
+            NonFtInputReaderCommand::Transition(state) => {
+                self.inner.status[self.table].store(state, Ordering::Release);
+                self.inner.unpark();
             }
         }
-        total
     }
 }
 
@@ -162,15 +124,13 @@ struct Inner {
     /// Options, which can be set from any of the tables but only from one of them.
     options: OnceLock<NexmarkInputOptions>,
 
-    /// The per-table consumers and parsers.
+    /// The per-table parsers.
     #[allow(clippy::type_complexity)]
-    cps: Mutex<EnumMap<NexmarkTable, Option<(Box<dyn InputConsumer>, Box<dyn Parser>)>>>,
+    parsers: Mutex<EnumMap<NexmarkTable, Option<Box<dyn Parser>>>>,
 
+    /// The per-table consumers.
     #[allow(clippy::type_complexity)]
-    queue: Mutex<EnumMap<NexmarkTable, VecDeque<(usize, Box<dyn InputBuffer>)>>>,
-
-    consumable_batches: AtomicUsize,
-    queued_batches: Mutex<usize>,
+    consumers: Mutex<EnumMap<NexmarkTable, Option<Box<dyn InputConsumer>>>>,
 
     /// The threads to wake up when we unpark.
     ///
@@ -179,6 +139,8 @@ struct Inner {
     /// thread. After that, we start the generator threads and they get
     /// populated here instead.
     threads: Mutex<Vec<Thread>>,
+
+    buffers: Mutex<VecDeque<Vec<Box<dyn InputBuffer>>>>,
 }
 
 impl Inner {
@@ -186,11 +148,10 @@ impl Inner {
         let inner = Arc::new(Self {
             status: EnumMap::from_fn(|_| Atomic::new(PipelineState::Paused)),
             options: OnceLock::new(),
-            cps: Mutex::new(EnumMap::default()),
-            queue: Mutex::new(EnumMap::from_fn(|_| VecDeque::new())),
-            consumable_batches: AtomicUsize::new(0),
-            queued_batches: Mutex::new(0),
+            parsers: Mutex::new(EnumMap::default()),
+            consumers: Mutex::new(EnumMap::default()),
             threads: Mutex::new(Vec::new()),
+            buffers: Mutex::new(VecDeque::new()),
         });
         thread::Builder::new()
             .name(String::from("nexmark"))
@@ -207,15 +168,17 @@ impl Inner {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
     ) -> AnyResult<()> {
-        let mut tables = self.cps.lock().unwrap();
-        if tables[config.table].is_some() {
+        let mut parsers = self.parsers.lock().unwrap();
+        if parsers[config.table].is_some() {
             return Err(anyhow!(
                 "more than one Nexmark input connector for {:?}",
                 config.table
             ));
         }
-        tables[config.table] = Some((consumer, parser));
-        drop(tables);
+        parsers[config.table] = Some(parser);
+        drop(parsers);
+
+        self.consumers.lock().unwrap()[config.table] = Some(consumer);
 
         if let Some(options) = config.options.as_ref() {
             if self.options.set(options.clone()).is_err() {
@@ -284,33 +247,30 @@ impl Inner {
             return;
         }
 
-        // Grab the consumers. We know they're all there because `self.status()`
-        // returned `PipelineStatus::Running`.
-        let mut guard = self.cps.lock().unwrap();
-        let mut cps = EnumMap::from_fn(|table| {
-            let (consumer, parser) = guard[table].take().unwrap();
-            (consumer, parser, Arc::new(AtomicUsize::new(0)))
-        });
-        drop(guard);
+        let parsers =
+            mem::take(&mut *self.parsers.lock().unwrap()).map(|_table, parser| parser.unwrap());
+        let consumers = mem::take(&mut *self.consumers.lock().unwrap())
+            .map(|_table, consumer| consumer.unwrap());
 
         // Start all the generator threads.
         let options = self.options.get_or_init(Default::default);
         let barrier = Arc::new(Barrier::new(options.threads));
+        let queue = Arc::new(Mutex::new(VecDeque::new()));
         let generators = (0..options.threads)
             .map(|index| {
-                let cps = EnumMap::from_fn(|table| {
-                    let (consumer, parser, count) = &cps[table];
-                    (consumer.clone(), parser.fork(), count.clone())
-                });
+                let parsers = EnumMap::from_fn(|table| parsers[table].fork());
+                let consumer = consumers[NexmarkTable::Bid].clone();
+                let queue = queue.clone();
                 let barrier = barrier.clone();
                 let inner = Arc::clone(&self);
                 thread::Builder::new()
                     .name(format!("nexmark-{index}"))
-                    .spawn(move || inner.generate_thread(cps, index, barrier))
+                    .spawn(move || inner.generate_thread(parsers, consumer, queue, index, barrier))
                     .unwrap()
             })
             .collect::<Vec<_>>();
         drop(barrier);
+        drop(parsers);
 
         // Make sure all the generator threads can get unparked, and then unpark
         // them for the first time to avoid a missed wakeup.
@@ -327,7 +287,7 @@ impl Inner {
         }
 
         // Input is exhausted.
-        for (_table, (consumer, _parser, _count)) in cps.iter_mut() {
+        for (_table, consumer) in consumers {
             consumer.eoi();
         }
     }
@@ -335,7 +295,9 @@ impl Inner {
     #[allow(clippy::type_complexity)]
     fn generate_thread(
         self: Arc<Self>,
-        mut cps: EnumMap<NexmarkTable, (Box<dyn InputConsumer>, Box<dyn Parser>, Arc<AtomicUsize>)>,
+        mut parsers: EnumMap<NexmarkTable, Box<dyn Parser>>,
+        consumer: Box<dyn InputConsumer>,
+        queue: Arc<Mutex<VecDeque<Option<Box<dyn InputBuffer>>>>>,
         index: usize,
         barrier: Arc<Barrier>,
     ) {
@@ -393,31 +355,28 @@ impl Inner {
             }
 
             // Parse the batch into per-table InputBuffers.
-            let buffers = writers.map(|table, writer| {
-                let data = writer.into_inner().unwrap().into_inner();
-                let (_consumer, parser, count) = &mut cps[table];
-                let buffer = parser
-                    .parse(data.as_slice())
-                    .0
-                    .unwrap_or(Box::new(EmptyInputBuffer));
-                count.fetch_add(buffer.len(), Ordering::SeqCst);
-                buffer
-            });
-
-            // Append the batch to the queues.
-            let mut queue = self.queue.lock().unwrap();
-            for (table, buffer) in buffers {
-                queue[table].push_back((i as usize, buffer))
-            }
-            drop(queue);
+            let buffers = writers
+                .into_iter()
+                .map(|(table, writer)| {
+                    let data = writer.into_inner().unwrap().into_inner();
+                    let parser = &mut parsers[table];
+                    let (buffer, _errors) = parser.parse(data.as_slice());
+                    buffer
+                })
+                .collect::<Vec<_>>();
+            queue.lock().unwrap().extend(buffers.into_iter());
 
             // Synchronize with the other threads.
             if barrier.wait().is_leader() {
-                let mut guard = self.queued_batches.lock().unwrap();
-                for (_table, (consumer, _parser, count)) in &cps {
-                    consumer.queued(0, count.swap(0, Ordering::SeqCst), Vec::new());
-                }
-                *guard += 1;
+                let buffers = queue
+                    .lock()
+                    .unwrap()
+                    .drain(..options.threads * 3)
+                    .flatten()
+                    .collect::<Vec<_>>();
+                let num_records = buffers.iter().map(|buffer| buffer.len()).sum();
+                self.buffers.lock().unwrap().push_back(buffers);
+                consumer.buffered(num_records, 0);
             }
         }
     }

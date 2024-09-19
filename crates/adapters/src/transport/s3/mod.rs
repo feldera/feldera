@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
 use log::error;
-use tokio::sync::{
-    mpsc,
-    watch::{channel, Receiver, Sender},
-};
+use tokio::sync::mpsc::{self, unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
     format::StreamSplitter, InputConsumer, InputReader, Parser, PipelineState,
@@ -20,7 +17,7 @@ use mockall::automock;
 use crate::transport::InputEndpoint;
 use feldera_types::transport::s3::S3InputConfig;
 
-use super::InputQueue;
+use super::{InputQueue, InputReaderCommand, NonFtInputReaderCommand};
 
 pub struct S3InputEndpoint {
     config: Arc<S3InputConfig>,
@@ -63,7 +60,6 @@ impl TransportInputEndpoint for S3InputEndpoint {
         &self,
         consumer: Box<dyn crate::InputConsumer>,
         parser: Box<dyn Parser>,
-        _start_step: super::Step,
         _schema: Relation,
     ) -> anyhow::Result<Box<dyn crate::InputReader>> {
         Ok(Box::new(S3InputReader::new(&self.config, consumer, parser)))
@@ -141,27 +137,12 @@ trait S3Api: Send {
 }
 
 struct S3InputReader {
-    sender: Sender<PipelineState>,
-    queue: Arc<InputQueue>,
+    sender: UnboundedSender<NonFtInputReaderCommand>,
 }
 
 impl InputReader for S3InputReader {
-    fn start(&self, _step: super::Step) -> anyhow::Result<()> {
-        self.sender.send_replace(PipelineState::Running);
-        Ok(())
-    }
-
-    fn pause(&self) -> anyhow::Result<()> {
-        self.sender.send_replace(PipelineState::Paused);
-        Ok(())
-    }
-
-    fn disconnect(&self) {
-        self.sender.send_replace(PipelineState::Terminated);
-    }
-
-    fn flush(&self, n: usize) -> usize {
-        self.queue.flush(n)
+    fn request(&self, command: InputReaderCommand) {
+        let _ = self.sender.send(command.as_nonft().unwrap());
     }
 }
 
@@ -190,27 +171,17 @@ impl S3InputReader {
         parser: Box<dyn Parser>,
         s3_client: Box<dyn S3Api>,
     ) -> S3InputReader {
-        let (sender, receiver) = channel(PipelineState::Paused);
+        let (sender, receiver) = unbounded_channel();
         let config_clone = config.clone();
-        let receiver_clone = receiver.clone();
-        let queue = Arc::new(InputQueue::new(consumer.clone()));
         std::thread::spawn({
-            let queue = queue.clone();
             move || {
                 TOKIO.block_on(async {
-                    let _ = Self::worker_task(
-                        s3_client,
-                        config_clone,
-                        consumer,
-                        parser,
-                        queue,
-                        receiver_clone,
-                    )
-                    .await;
+                    let _ = Self::worker_task(s3_client, config_clone, consumer, parser, receiver)
+                        .await;
                 })
             }
         });
-        S3InputReader { sender, queue }
+        S3InputReader { sender }
     }
 
     async fn worker_task(
@@ -218,14 +189,14 @@ impl S3InputReader {
         config: Arc<S3InputConfig>,
         consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
-        queue: Arc<InputQueue>,
-        mut receiver: Receiver<PipelineState>,
+        mut receiver: UnboundedReceiver<NonFtInputReaderCommand>,
     ) -> anyhow::Result<()> {
         // The worker thread fetches objects in the background while already retrieved
         // objects are being fed to the InputConsumer. We use a bounded channel
         // to make it so that no more than 8 objects are fetched while waiting
         // for object processing.
         let (tx, mut rx) = mpsc::channel(8);
+        let queue = InputQueue::new(consumer.clone());
         let mut splitter = config
             .streaming
             .then(|| StreamSplitter::new(parser.splitter()));
@@ -260,59 +231,76 @@ impl S3InputReader {
             }
             drop(tx); // We're done. Close the channel.
         });
+        let mut state = PipelineState::Paused;
         loop {
-            let state = *receiver.borrow();
-            match state {
-                PipelineState::Paused => {
-                    receiver.changed().await?;
-                }
-                PipelineState::Running => {
-                    tokio::select! {
-                        // If pipeline status has changed, exit the select
-                        _ = receiver.changed() => (),
-                        // Poll the object stream. If `None`, we have processed all objects.
-                        get_obj = rx.recv() => {
-                            match get_obj {
-                                Some(Ok(mut object)) => {
-                                    if let Some(splitter) = splitter.as_mut() {
-                                        match object.body.next().await {
-                                            Some(Ok(bytes)) => {
-                                                splitter.append(&bytes);
-                                                while let Some(chunk) = splitter.next(false) {
-                                                    queue.push(chunk.len(), parser.parse(chunk));
-                                                }
-                                            }
-                                            None => break,
-                                            Some(Err(e)) => consumer.error(false, e.into())
-                                        }
-                                    } else {
-                                            match object.body.collect().await.map(|c| c.into_bytes()) {
-                                                Ok(bytes) => {
-                                                queue.push(bytes.len(), parser.parse(&bytes));
-                                                }
-                                                Err(e) => consumer.error(false, e.into())
-                                        }
-                                    }
-                                }
-                                Some(Err(e)) => {
-                                    match e.downcast_ref::<ListObjectsV2Error>() {
-                                        // We consider a missing bucket a fatal error
-                                        Some(ListObjectsV2Error::NoSuchBucket(_)) => {
-                                            consumer.error(true, e)
-                                        },
-                                        _ => consumer.error(false, e)
-                                    }
-                                }
-                                None => {
-                                    // Channel is closed, exit.
-                                    consumer.eoi();
-                                    break
-                                 }
+            tokio::select! {
+                command = receiver.recv() => {
+                    match command {
+                        Some(NonFtInputReaderCommand::Transition(new_state)) => {
+                            if new_state == PipelineState::Terminated {
+                                break;
                             }
+                            state = new_state;
+                        },
+                        Some(NonFtInputReaderCommand::Queue) => queue.queue(),
+                        None => break,
+                    }
+                },
+                // Poll the object stream.
+                get_obj = rx.recv(), if state == PipelineState::Running => {
+                    match get_obj {
+                        Some(Ok(mut object)) => {
+                            if let Some(splitter) = splitter.as_mut() {
+                                match object.body.next().await {
+                                    Some(Ok(bytes)) => {
+                                        splitter.append(&bytes);
+                                        while let Some(chunk) = splitter.next(false) {
+                                            queue.push(parser.parse(chunk), chunk.len());
+                                        }
+                                    }
+                                    None => break,
+                                    Some(Err(e)) => consumer.error(false, e.into())
+                                }
+                            } else {
+                                    match object.body.collect().await.map(|c| c.into_bytes()) {
+                                        Ok(bytes) => {
+                                            queue.push(parser.parse(&bytes), bytes.len());
+                                        }
+                                        Err(e) => consumer.error(false, e.into())
+                                }
+                            }
+                        }
+                        Some(Err(e)) => {
+                            match e.downcast_ref::<ListObjectsV2Error>() {
+                                // We consider a missing bucket a fatal error
+                                Some(ListObjectsV2Error::NoSuchBucket(_)) => {
+                                    consumer.error(true, e)
+                                },
+                                _ => consumer.error(false, e)
+                            }
+                        }
+                        None => {
+                            // End of input.
+                            if let Some(splitter) = splitter.as_mut() {
+                                while let Some(chunk) = splitter.next(true) {
+                                    queue.push(parser.parse(chunk), chunk.len());
+                                }
+                            }
+                            consumer.eoi();
+                            while let Some(command) = receiver.recv().await {
+                                match command {
+                                    NonFtInputReaderCommand::Transition(new_state) => {
+                                        if new_state == PipelineState::Terminated {
+                                            break;
+                                        }
+                                    },
+                                    NonFtInputReaderCommand::Queue => queue.queue(),
+                                }
+                            }
+                            break;
                         }
                     }
                 }
-                PipelineState::Terminated => break,
             };
         }
         Ok(())
@@ -357,7 +345,7 @@ mod test {
     };
     use mockall::predicate::eq;
     use serde::{Deserialize, Serialize};
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
 
     #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
     struct TestStruct {
@@ -429,16 +417,15 @@ format:
 
     fn run_test(config_str: &str, mock: super::MockS3Client, test_data: Vec<TestStruct>) {
         let (reader, consumer, parser, input_handle) = test_setup(config_str, mock);
-        let _ = reader.pause();
         // No outputs should be produced at this point.
         assert!(parser.state().data.is_empty());
         assert!(!consumer.state().eoi);
 
         // Unpause the endpoint, wait for the data to appear at the output.
-        reader.start(0).unwrap();
+        reader.extend();
         wait(
             || {
-                reader.flush_all();
+                reader.queue();
                 input_handle.state().flushed.len() == test_data.len()
             },
             10000,
@@ -535,31 +522,10 @@ format:
             .return_once(|_, _, _| Ok((objs, None)));
         let test_data: Vec<TestStruct> = (0..1000).map(|i| TestStruct { i }).collect();
         let (reader, _consumer, _parser, input_handle) = test_setup(MULTI_KEY_CONFIG_STR, mock);
-        reader.start(0).unwrap();
-        // Pause after 50 rows are recorded.
+        reader.extend();
         wait(
             || {
-                reader.flush_all();
-                input_handle.state().flushed.len() > 50
-            },
-            10000,
-        )
-        .unwrap();
-        let _ = reader.pause();
-        // Wait a few milliseconds for the worker to pause and write any WIP object
-        std::thread::sleep(Duration::from_millis(10));
-        reader.flush_all();
-        let n = input_handle.state().flushed.len();
-        // Wait a few more milliseconds and make sure no more entries were written
-        std::thread::sleep(Duration::from_millis(100));
-        reader.flush_all();
-        assert_eq!(n, input_handle.state().flushed.len());
-        assert_ne!(input_handle.state().flushed.len(), test_data.len());
-        // Resume to completion
-        reader.start(0).unwrap();
-        wait(
-            || {
-                reader.flush_all();
+                reader.queue();
                 input_handle.state().flushed.len() == test_data.len()
             },
             10000,
@@ -585,7 +551,7 @@ format:
         consumer.on_error(Some(Box::new(move |fatal, err| {
             tx.send((fatal, format!("{err}"))).unwrap()
         })));
-        reader.start(0).unwrap();
+        reader.extend();
         assert_eq!((true, "NoSuchBucket".to_string()), rx.recv().unwrap());
     }
 

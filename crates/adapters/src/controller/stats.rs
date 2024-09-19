@@ -31,10 +31,7 @@
 //! pending.
 
 use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
-use crate::{
-    transport::{AtomicStep, Step},
-    PipelineState,
-};
+use crate::PipelineState;
 use anyhow::Error as AnyError;
 use atomic::Atomic;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
@@ -50,6 +47,7 @@ use ordered_float::OrderedFloat;
 use psutil::process::{Process, ProcessError};
 use rand::{seq::index::sample, thread_rng};
 use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde_json::Value as JsonValue;
 use std::{
     cmp::min,
     collections::BTreeMap,
@@ -141,7 +139,6 @@ impl GlobalControllerMetrics {
     pub(crate) fn consume_buffered_inputs(&self, num_records: u64) {
         self.buffered_input_records
             .fetch_sub(num_records, Ordering::Release);
-        self.step_requested.store(false, Ordering::Release);
     }
 
     pub(crate) fn processed_records(&self, num_records: u64) -> u64 {
@@ -161,8 +158,8 @@ impl GlobalControllerMetrics {
         self.total_processed_records.load(Ordering::Acquire)
     }
 
-    fn step_requested(&self) -> bool {
-        self.step_requested.load(Ordering::Acquire)
+    fn unset_step_requested(&self) -> bool {
+        self.step_requested.swap(false, Ordering::Acquire)
     }
 
     fn set_step_requested(&self) -> bool {
@@ -473,8 +470,8 @@ impl ControllerStatus {
         self.global_metrics.num_total_processed_records()
     }
 
-    pub fn step_requested(&self) -> bool {
-        self.global_metrics.step_requested()
+    pub fn unset_step_requested(&self) -> bool {
+        self.global_metrics.unset_step_requested()
     }
 
     pub fn request_step(&self, circuit_thread_unparker: &Unparker) {
@@ -572,24 +569,18 @@ impl ControllerStatus {
         num_records: usize,
         backpressure_thread_unparker: &Unparker,
     ) {
-        let num_records = num_records as u64;
-        let num_bytes = num_bytes as u64;
-        let inputs = self.inputs.read().unwrap();
-
-        // Update endpoint counters; unpark backpressure thread if endpoint's
-        // `max_queued_records` exceeded.
-        //
-        // There is a potential race condition if the endpoint is currently being
-        // removed. In this case, it's safe to ignore this operation.
-        if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-            let old = endpoint_stats.add_buffered(num_bytes, num_records);
-
-            if old < endpoint_stats.config.connector_config.max_queued_records
-                && old + num_records >= endpoint_stats.config.connector_config.max_queued_records
-            {
-                backpressure_thread_unparker.unpark();
+        // There is a potential race condition if the endpoint is currently
+        // being removed. In this case, it's safe to ignore this operation.
+        if num_bytes > 0 || num_records > 0 {
+            let inputs = self.inputs.read().unwrap();
+            if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
+                let old = endpoint_stats.add_buffered(num_bytes as u64, num_records as u64);
+                let threshold = endpoint_stats.config.connector_config.max_queued_records;
+                if old < threshold && old + num_records as u64 >= threshold {
+                    backpressure_thread_unparker.unpark();
+                }
             }
-        };
+        }
     }
 
     /// Update counters after receiving an end-of-input event on an input
@@ -615,41 +606,17 @@ impl ControllerStatus {
         };
     }
 
-    pub fn start_step(&self, endpoint_id: EndpointId, step: Step) {
+    pub fn completed(
+        &self,
+        endpoint_id: EndpointId,
+        num_records: u64,
+        metadata: Option<JsonValue>,
+    ) {
         let inputs = self.inputs.read().unwrap();
+        self.global_metrics.consume_buffered_inputs(num_records);
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-            endpoint_stats.start_step(step);
+            endpoint_stats.completed(num_records, metadata);
         };
-    }
-
-    pub fn committed(&self, endpoint_id: EndpointId, step: Step) {
-        let inputs = self.inputs.read().unwrap();
-        if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-            endpoint_stats.committed(step);
-        };
-    }
-
-    pub fn is_step_complete(&self, step: Step) -> bool {
-        self.inputs.read().unwrap().values().all(|status| {
-            !status.is_fault_tolerant || status.metrics.step.load(Ordering::Acquire) > step
-        })
-    }
-
-    pub fn is_step_committed(&self, step: Step) -> bool {
-        self.uncommitted_step()
-            .map_or(true, |uncommitted_step| step < uncommitted_step)
-    }
-
-    pub fn uncommitted_step(&self) -> Option<Step> {
-        let mut step = None;
-        for status in self.inputs.read().unwrap().values() {
-            if !status.is_fault_tolerant {
-                return None;
-            }
-            let new = status.metrics.uncommitted.load(Ordering::Acquire);
-            step = Some(step.map_or(new, |old| min(old, new)));
-        }
-        step
     }
 
     pub fn enqueue_batch(&self, endpoint_id: EndpointId, num_records: usize) {
@@ -827,12 +794,15 @@ pub struct InputEndpointMetrics {
     pub num_parse_errors: AtomicU64,
 
     pub end_of_input: AtomicBool,
+}
 
-    /// The step to which arriving input belongs.
-    pub step: AtomicStep,
-
-    /// The first step known not to have committed yet.
-    pub uncommitted: AtomicStep,
+pub enum StepProgress {
+    NotStarted,
+    Started,
+    Complete {
+        num_records: u64,
+        metadata: Option<JsonValue>,
+    },
 }
 
 /// Input endpoint status information.
@@ -851,6 +821,10 @@ pub struct InputEndpointStatus {
 
     /// Whether this input endpoint is [fault tolerant](crate#fault-tolerance).
     pub is_fault_tolerant: bool,
+
+    /// Progress within the latest step.
+    #[serde(skip)]
+    pub progress: Mutex<StepProgress>,
 
     /// Endpoint has been paused by the user.
     ///
@@ -873,14 +847,9 @@ impl InputEndpointStatus {
             metrics: Default::default(),
             fatal_error: Mutex::new(None),
             is_fault_tolerant,
+            progress: Mutex::new(StepProgress::NotStarted),
             paused: paused_by_user,
         }
-    }
-
-    pub(crate) fn consume_buffered(&self, num_records: u64) {
-        self.metrics
-            .buffered_records
-            .fetch_sub(num_records, Ordering::Release);
     }
 
     /// Increment the number of buffered bytes and records; return
@@ -929,12 +898,14 @@ impl InputEndpointStatus {
         }
     }
 
-    fn start_step(&self, step: Step) {
-        self.metrics.step.store(step, Ordering::Release);
-    }
-
-    fn committed(&self, step: Step) {
-        self.metrics.uncommitted.store(step + 1, Ordering::Release);
+    fn completed(&self, num_records: u64, metadata: Option<JsonValue>) {
+        *self.progress.lock().unwrap() = StepProgress::Complete {
+            num_records,
+            metadata,
+        };
+        self.metrics
+            .buffered_records
+            .fetch_sub(num_records, Ordering::Relaxed);
     }
 }
 

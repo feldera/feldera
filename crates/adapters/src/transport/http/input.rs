@@ -1,8 +1,8 @@
 use crate::format::StreamSplitter;
-use crate::transport::{InputEndpoint, InputQueue};
+use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, NonFtInputReaderCommand};
 use crate::{
     server::{PipelineError, MAX_REPORTED_PARSE_ERRORS},
-    transport::{InputReader, Step},
+    transport::InputReader,
     ControllerError, InputConsumer, PipelineState, TransportConfig, TransportInputEndpoint,
 };
 use crate::{ParseError, Parser};
@@ -18,7 +18,10 @@ use std::{
     sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
 };
-use tokio::{sync::watch, time::timeout};
+use tokio::{
+    sync::watch,
+    time::{sleep, timeout},
+};
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) enum HttpIngressMode {
@@ -66,7 +69,6 @@ struct HttpInputEndpointInner {
     name: String,
     state: Atomic<PipelineState>,
     status_notifier: watch::Sender<()>,
-    #[allow(clippy::type_complexity)]
     details: Mutex<Option<HttpInputEndpointDetails>>,
     /// Ingest data even if the pipeline is paused.
     force: bool,
@@ -121,12 +123,12 @@ impl HttpInputEndpoint {
         }
         let mut total_errors = 0;
         while let Some(chunk) = details.splitter.next(bytes.is_none()) {
-            let (buffer, mut new_errors) = details.parser.parse(chunk);
-            total_errors += new_errors.len();
+            let (buffer, new_errors) = details.parser.parse(chunk);
             details
                 .queue
-                .push(chunk.len(), (buffer, new_errors.clone()));
-            for error in new_errors.drain(..) {
+                .push((buffer, new_errors.clone()), chunk.len());
+            total_errors += new_errors.len();
+            for error in new_errors {
                 errors.push(error);
             }
         }
@@ -144,6 +146,17 @@ impl HttpInputEndpoint {
             .unwrap()
             .consumer
             .error(fatal, error);
+    }
+
+    fn queue_len(&self) -> usize {
+        self.inner
+            .details
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .queue
+            .len()
     }
 
     /// Read the `payload` stream and push it to the pipeline.
@@ -197,17 +210,8 @@ impl HttpInputEndpoint {
         // Wait for the controller to process all of our records. Otherwise, the
         // queue would get destroyed when the caller drops us, which could lead
         // to some of our records never getting processed.
-        while !self
-            .inner
-            .details
-            .lock()
-            .unwrap()
-            .as_mut()
-            .unwrap()
-            .queue
-            .is_empty()
-        {
-            status_watch.changed().await.unwrap();
+        while self.queue_len() > 0 {
+            sleep(Duration::from_millis(100)).await;
         }
 
         debug!(
@@ -233,14 +237,14 @@ impl TransportInputEndpoint for HttpInputEndpoint {
         &self,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        _start_step: Step,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
         let splitter = StreamSplitter::new(parser.splitter());
+        let queue = InputQueue::new(consumer.clone());
         *self.inner.details.lock().unwrap() = Some(HttpInputEndpointDetails {
-            queue: InputQueue::new(consumer.clone()),
             consumer,
             parser,
+            queue,
             splitter,
         });
         Ok(Box::new(self.clone()))
@@ -248,40 +252,19 @@ impl TransportInputEndpoint for HttpInputEndpoint {
 }
 
 impl InputReader for HttpInputEndpoint {
-    fn pause(&self) -> AnyResult<()> {
-        if !self.inner.force {
-            self.inner
-                .state
-                .store(PipelineState::Paused, Ordering::Release);
-            self.notify();
+    fn request(&self, command: InputReaderCommand) {
+        match command.as_nonft().unwrap() {
+            NonFtInputReaderCommand::Queue => {
+                let mut guard = self.inner.details.lock().unwrap();
+                let details = guard.as_mut().unwrap();
+                details.queue.queue();
+            }
+            NonFtInputReaderCommand::Transition(state) => {
+                if state != PipelineState::Paused || !self.inner.force {
+                    self.inner.state.store(state, Ordering::Release);
+                    self.notify();
+                }
+            }
         }
-
-        Ok(())
-    }
-
-    fn start(&self, _step: Step) -> AnyResult<()> {
-        self.inner
-            .state
-            .store(PipelineState::Running, Ordering::Release);
-        self.notify();
-
-        Ok(())
-    }
-
-    fn disconnect(&self) {
-        self.inner
-            .state
-            .store(PipelineState::Terminated, Ordering::Release);
-        self.notify();
-    }
-
-    fn flush(&self, n: usize) -> usize {
-        let mut guard = self.inner.details.lock().unwrap();
-        let details = guard.as_mut().unwrap();
-        let total = details.queue.flush(n);
-        if details.queue.is_empty() {
-            self.notify();
-        }
-        total
     }
 }

@@ -544,6 +544,7 @@ impl Splitter for LineSplitter {
 /// it into chunks.
 pub struct StreamSplitter {
     buffer: Vec<u8>,
+    start: u64,
     fragment: Range<usize>,
     fed: usize,
     splitter: Box<dyn Splitter>,
@@ -554,6 +555,7 @@ impl StreamSplitter {
     pub fn new(splitter: Box<dyn Splitter>) -> Self {
         Self {
             buffer: Vec::new(),
+            start: 0,
             fragment: 0..0,
             fed: 0,
             splitter,
@@ -578,7 +580,7 @@ impl StreamSplitter {
                 self.fed = self.fragment.end;
                 if eoi && !self.fragment.is_empty() {
                     let chunk = &self.buffer[self.fragment.clone()];
-                    self.fragment.end = self.fragment.start;
+                    self.fragment.start = self.fragment.end;
                     Some(chunk)
                 } else {
                     None
@@ -597,6 +599,7 @@ impl StreamSplitter {
         self.buffer.resize(self.fragment.len(), 0);
         self.buffer.extend(data);
         self.fed -= self.fragment.start;
+        self.start += self.fragment.start as u64;
         self.fragment = 0..self.buffer.len();
     }
 
@@ -613,6 +616,7 @@ impl StreamSplitter {
         if self.fragment.start != 0 {
             self.buffer.copy_within(self.fragment.clone(), 0);
             self.fed -= self.fragment.start;
+            self.start += self.fragment.start as u64;
             self.fragment = 0..self.fragment.len();
         }
 
@@ -632,6 +636,21 @@ impl StreamSplitter {
             self.fragment.end += n;
         }
         result
+    }
+
+    /// Returns the logical stream position of the next byte to be returned by
+    /// the splitter.
+    pub fn position(&self) -> u64 {
+        self.start + self.fragment.start as u64
+    }
+
+    /// Sets the logical stream position of the next byte to be returned by
+    /// the splitter to `offset`, and discards other state.
+    pub fn seek(&mut self, offset: u64) {
+        self.start = offset;
+        self.fragment = 0..0;
+        self.fed = 0;
+        self.splitter.clear();
     }
 }
 
