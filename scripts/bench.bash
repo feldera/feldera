@@ -75,7 +75,7 @@ sql_benchmark() {
 
 DIR="benchmark/feldera-sql/benchmarks/"
 if [[ -z "$CLOUD" ]]; then
-    TESTS="nexmark"
+    TESTS="nexmark tiktok"
 else
     TESTS="nexmark"
 fi
