@@ -962,11 +962,10 @@ impl OutputEndpoints {
     }
 
     fn remove(&mut self, endpoint_id: &EndpointId) -> Option<OutputEndpointDescr> {
-        self.by_id.remove(endpoint_id).map(|descr| {
+        self.by_id.remove(endpoint_id).inspect(|descr| {
             self.by_stream
                 .get_mut(&(descr.stream_name.clone(), descr.query))
                 .map(|(_, endpoints)| endpoints.remove(endpoint_id));
-            descr
         })
     }
 }
