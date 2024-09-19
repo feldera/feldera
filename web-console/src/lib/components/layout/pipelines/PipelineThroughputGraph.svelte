@@ -7,7 +7,7 @@
   import { GridComponent, TitleComponent, TooltipComponent } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
   import { format } from 'd3-format'
-  import type { EChartsOption } from 'echarts'
+  import type { EChartsInitOpts } from 'echarts/core'
 
   const formatQty = (v: number) => format(v >= 1000 ? '.3s' : '.0f')(v)
 
@@ -74,7 +74,7 @@
         data: throughput.series
       }
     ]
-  } satisfies EChartsOption)
+  } satisfies EChartsInitOpts)
 </script>
 
 <span class="absolute whitespace-nowrap pl-16">
