@@ -657,8 +657,6 @@ impl RuntimeHandle {
         #[allow(clippy::needless_collect)]
         let results: Vec<ThreadResult<()>> = self.workers.into_iter().map(|h| h.join()).collect();
 
-        self.runtime.local_store().clear();
-
         // Wait for the background threads. They will exit automatically without
         // explicit signaling from us because the worker threads removed all of
         // their background work.
@@ -671,6 +669,12 @@ impl RuntimeHandle {
             .for_each(|h| {
                 let _ = h.join();
             });
+
+        // This must happen after we wait for the background threads, because
+        // they might try to initiate another merge before they exit, which
+        // would require them to have access to storage, which is kept in the
+        // local store.
+        self.runtime.local_store().clear();
 
         let did_runtime_panic = results.iter().any(|r| r.is_err());
         RuntimeHandle::cleanup_storage_dir(&storage, did_runtime_panic);
