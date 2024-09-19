@@ -14,6 +14,7 @@
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { base } from '$app/paths'
   import { page } from '$app/stores'
+  import { SvelteKitTopLoader } from 'sveltekit-top-loader'
 
   const dialog = useGlobalDialog()
 
@@ -24,6 +25,8 @@
   let pipelines = usePipelineList(data.preloaded)
 </script>
 
+<SvelteKitTopLoader height={2} color={'rgb(var(--color-primary-500))'} showSpinner={false}
+></SvelteKitTopLoader>
 <div class="flex h-full">
   <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
     <div class="flex h-full w-full flex-col gap-1">

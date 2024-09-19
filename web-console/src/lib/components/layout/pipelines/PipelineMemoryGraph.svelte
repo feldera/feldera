@@ -13,7 +13,7 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { tuple } from '$lib/functions/common/tuple'
   import { humanSize } from '$lib/functions/common/string'
-  import type { EChartsOption } from 'echarts'
+  import type { EChartsInitOpts } from 'echarts/core'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { ECMouseEvent } from 'svelte-echarts'
   import { format } from 'd3-format'
@@ -119,7 +119,7 @@
         triggerLineEvent: true
       }
     ]
-  } as EChartsOption)
+  } as EChartsInitOpts)
 
   const handleSeriesHover = <T,>(setValue: (value: T | null) => void) => ({
     mouseover: (e: CustomEvent<ECMouseEvent>) => {

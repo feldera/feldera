@@ -1,4 +1,6 @@
 <script context="module" lang="ts">
+  loader.config({ monaco: monacoImport, 'vs/nls': { availableLanguages: { '*': 'en' } } })
+
   export const exportedThemes = Object.fromEntries(
     Object.entries(import.meta.glob('/node_modules/monaco-themes/themes/*.json')).map(([k, v]) => [
       k.toLowerCase().split('/').reverse()[0].slice(0, -'.json'.length).replaceAll(' ', '-'),
@@ -14,7 +16,8 @@
 </script>
 
 <script lang="ts">
-  import type Monaco from 'monaco-editor'
+  import type Monaco from 'monaco-editor/esm/vs/editor/editor.api'
+  import * as monacoImport from 'monaco-editor/esm/vs/editor/editor.api'
   import { onDestroy, onMount } from 'svelte'
   import { createEventDispatcher } from 'svelte'
   import loader from '@monaco-editor/loader'
