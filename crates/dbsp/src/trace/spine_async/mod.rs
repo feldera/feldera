@@ -26,7 +26,7 @@ use crate::trace::Merger;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
-use size_of::SizeOf;
+use size_of::{Context, SizeOf};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::{
@@ -541,28 +541,32 @@ impl MergeStats {
 /// could fetch them earlier, but it might be unfriendly to expose potentially
 /// one form of data to a given cursor and then a different form to the next one
 /// within a single step.)
-#[derive(SizeOf)]
 pub struct Spine<B>
 where
     B: Batch,
 {
-    #[size_of(skip)]
     factories: B::Factories,
 
     lower: Antichain<B::Time>,
     upper: Antichain<B::Time>,
-    #[size_of(skip)]
     dirty: bool,
-    #[size_of(skip)]
     lower_key_bound: Option<Box<B::Key>>,
-    #[size_of(skip)]
     key_filter: Option<Filter<B::Key>>,
-    #[size_of(skip)]
     value_filter: Option<Filter<B::Val>>,
 
     /// The asynchronous merger.
-    #[size_of(skip)]
     merger: AsyncMerger<B>,
+}
+
+impl<B> SizeOf for Spine<B>
+where
+    B: Batch,
+{
+    fn size_of_children(&self, context: &mut Context) {
+        self.lower.size_of_children(context);
+        self.upper.size_of_children(context);
+        self.merger.get_batches().size_of_with_context(context);
+    }
 }
 
 impl<B> Display for Spine<B>

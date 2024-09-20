@@ -1514,7 +1514,8 @@ public class StreamingTests extends StreamingTestBase {
     void profile(String sql, String main) throws SQLException, IOException, InterruptedException {
         Long[] p0 = this.measure(stripLateness(sql), main);
         Long[] p1 = this.measure(sql, main);
-        // Memory consumption of program with lateness is expected to be higher
+        // Memory consumption of program without lateness is expected to be higher
+        // (because it cannot discard old data).
         if (p0[1] < 1.5 * p1[1]) {
             System.err.println("Profile statistics without and with lateness:");
             System.err.println(Arrays.toString(p0));
