@@ -701,6 +701,7 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPFlatmap expression) {
         this.push(expression);
         DBSPTypeTuple inputElementType = this.transform(expression.inputElementType).to(DBSPTypeTuple.class);
+        DBSPType type = this.transform(expression.type);
         DBSPType indexType = null;
         if (expression.collectionIndexType != null)
             indexType = this.transform(expression.collectionIndexType);
@@ -711,10 +712,9 @@ public abstract class InnerRewriteVisitor
             rightProjections = Linq.map(expression.rightProjections,
                     e -> this.transform(e).to(DBSPClosureExpression.class));
         this.pop(expression);
-        DBSPExpression result = new DBSPFlatmap(expression.getNode(), inputElementType,
-                    collectionExpression, expression.leftCollectionIndexes,
-                    rightProjections,
-                    expression.emitIteratedElement, indexType, expression.shuffle);
+        DBSPExpression result = new DBSPFlatmap(expression.getNode(), type,
+                inputElementType, collectionExpression, expression.leftCollectionIndexes,
+                rightProjections, expression.emitIteratedElement, indexType, expression.shuffle);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

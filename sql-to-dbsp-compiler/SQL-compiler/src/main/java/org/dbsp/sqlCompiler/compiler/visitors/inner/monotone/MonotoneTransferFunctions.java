@@ -24,6 +24,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -33,10 +34,12 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -132,6 +135,57 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.resolver = new ResolveReferences(reporter, false);
         this.constantExpressions = new ExpressionSet();
         this.positiveExpressions = new ExpressionSet();
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPFlatmap expression) {
+        assert this.parameterTypes.length == 1;
+        assert this.argumentKind == ArgumentKind.ZSet;
+        // Synthesize a DBSPClosure expression that is much simpler than the Flatmap,
+        // but carries only the fields that are copied ad-literam in the output
+        // and analyze that expression.
+
+        // This logic parallels the one from LowerCircuitVisitor
+        DBSPVariablePath param = expression.inputElementType.ref().var();
+        List<DBSPExpression> outputFields = new ArrayList<>();
+        for (int index: expression.leftCollectionIndexes) {
+             DBSPExpression field = param.deepCopy().deref().field(index);
+             outputFields.add(field);
+        }
+
+        DBSPTypeTupleBase tupleType = expression.collectionElementType.as(DBSPTypeTupleBase.class);
+        if (expression.emitIteratedElement) {
+            if (expression.collectionIndexType != null) {
+                outputFields.add(new NoExpression(expression.collectionIndexType));
+            } else {
+                if (expression.rightProjections != null) {
+                    for (DBSPClosureExpression clo: expression.rightProjections) {
+                        outputFields.add(new NoExpression(clo.getResultType()));
+                    }
+                } else if (tupleType != null) {
+                    for (DBSPType elem: tupleType.tupFields) {
+                        outputFields.add(new NoExpression(elem));
+                    }
+                } else {
+                    outputFields.add(new NoExpression(expression.collectionElementType));
+                }
+            }
+        }
+        if (expression.collectionIndexType != null)
+            outputFields.add(new NoExpression(expression.collectionIndexType));
+        outputFields = expression.shuffle.shuffle(outputFields);
+        DBSPExpression tuple = new DBSPTupleExpression(outputFields, false);
+        DBSPType resultType = expression.getType().to(DBSPTypeFunction.class).resultType;
+        assert tuple.getType().sameType(resultType) :
+            "Flatmap result type " + resultType + " does not match computed type " + tuple.getType();
+        DBSPClosureExpression closure = tuple.closure(param.asParameter());
+        // This is the same as this.apply(closure)
+        this.resolver.apply(closure);
+        this.preorder(closure);
+        // The result applies to the original expression
+        MonotoneExpression result = this.maybeGet(closure);
+        this.maybeSet(expression, result);
+        return VisitDecision.STOP;
     }
 
     @Override

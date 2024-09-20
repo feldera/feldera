@@ -165,6 +165,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructWithHelperItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -403,7 +404,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Index field is always last
             indexType = type.getFieldType(type.size() - 1);
         }
-        DBSPFlatmap flatmap = new DBSPFlatmap(node, leftElementType, arrayExpression,
+        DBSPType functionType = new DBSPTypeFunction(type, leftElementType.ref());
+        DBSPFlatmap flatmap = new DBSPFlatmap(node, functionType, leftElementType, arrayExpression,
                 Linq.range(0, leftElementType.size()),
                 rightProjections,
                 emitIteratedElement, indexType, new IdShuffle());
@@ -552,7 +554,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         DBSPVariablePath data = new DBSPVariablePath(inputRowType.ref());
         DBSPClosureExpression getField0 = data.deref().field(0).closure(data.asParameter());
-        DBSPFlatmap function = new DBSPFlatmap(node, inputRowType, getField0,
+        DBSPType functionType = new DBSPTypeFunction(type, inputRowType.ref());
+        DBSPFlatmap function = new DBSPFlatmap(node, functionType, inputRowType, getField0,
                 Linq.list(), null, emitIteratedElement, indexType, new IdShuffle());
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(node, function,
                 TypeCompiler.makeZSet(type), opInput);

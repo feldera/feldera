@@ -1562,9 +1562,7 @@ public class StreamingTests extends StreamingTestBase {
             (SELECT metadata, event_date FROM series JOIN shift
              ON series.metadata = shift.person AND event_date > on_call);
             """;
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(script);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(script);
         this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int count = 0;
@@ -1646,6 +1644,44 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void issue2529() {
+        String sql = """
+                CREATE TABLE m(
+                   id bigint,
+                   ts timestamp not null lateness interval 1 days,
+                   data int array
+                );
+                create view agg1 as 
+                select max(id)
+                from m
+                group by ts;
+                create view flattened as 
+                select id, v, ts
+                from m, unnest(data) as v;
+                create view agg2 as
+                select max(id)
+                from flattened
+                group by ts;
+                """;
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int count = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.count++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(4, this.count);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
     public void testHopWindows() {
         String sql = """
                 CREATE TABLE DATA(
@@ -1674,9 +1710,7 @@ public class StreamingTests extends StreamingTestBase {
                   moment
                 FROM agg CROSS JOIN UNNEST(moments) as moment;
                 """;
-        DBSPCompiler compiler = testCompiler();
-        compiler.compileStatements(sql);
-        CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
+        CompilerCircuitStream ccs = this.getCCS(sql);
         this.addRustTestCase(ccs);
     }
 }

@@ -72,7 +72,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             DBSPVariablePath fieldClone = new DBSPVariablePath(field.getType());
             DBSPLetStatement stat = new DBSPLetStatement(fieldClone.variable, field);
             statements.add(stat);
-            resultColumns.add(fieldClone.applyClone());
+            resultColumns.add(fieldClone.applyCloneIfNeeded());
         }
 
         if (flatmap.emitIteratedElement) {
