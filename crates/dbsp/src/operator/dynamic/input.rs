@@ -1577,18 +1577,12 @@ mod test {
         dbsp.kill().unwrap();
     }
 
-    /// This test is ignored because the asynchronous merger sometimes finishes
-    /// merging (and dropping values that should not be retained) in the time
-    /// that the test expects, and sometimes does not.
     #[test]
     fn map_test_mt1() {
         map_test_mt(1, input_map_updates1, output_map_updates1);
         map_test_mt(1, input_map_updates2, output_map_updates2);
     }
 
-    /// This test is ignored because the asynchronous merger sometimes finishes
-    /// merging (and dropping values that should not be retained) in the time
-    /// that the test expects, and sometimes does not.
     #[test]
     fn map_test_mt4() {
         map_test_mt(4, input_map_updates1, output_map_updates1);
