@@ -14,6 +14,13 @@ Installation
 
 .. code-block:: bash
 
+   pip install feldera
+
+
+Installing from Github:
+
+.. code-block:: bash
+
    pip install git+https://github.com/feldera/feldera#subdirectory=python
 
 
