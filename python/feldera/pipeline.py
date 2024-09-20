@@ -118,6 +118,7 @@ class Pipeline:
     def listen(self, view_name: str) -> OutputHandler:
         """
         Listen to the output of the provided view so that it is available in the notebook / python code.
+        When the pipeline is shutdown, these listeners are dropped.
 
         :param view_name: The name of the view to listen to.
         """
@@ -303,8 +304,8 @@ class Pipeline:
         Shut down the pipeline.
         """
 
-        for view_queue in self.views_tx:
-            for view_name, queue in view_queue.items():
+        if len(self.views_tx) > 0:
+            for _, queue in self.views_tx.pop().items():
                 # sends a message to the callback runner to stop listening
                 queue.put(_CallbackRunnerInstruction.RanToCompletion)
                 # block until the callback runner has been stopped
