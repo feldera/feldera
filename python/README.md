@@ -5,6 +5,12 @@ Feldera Python is the Feldera SDK for Python developers.
 ## Installation
 
 ```bash
+pip install feldera
+```
+
+### Installing from Github
+
+```bash
 pip install git+https://github.com/feldera/feldera#subdirectory=python
 ```
 
