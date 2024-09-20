@@ -23,6 +23,7 @@ import java.util.List;
 /**
  * Optimizes patterns containing Map operators.
  * - Merge Maps operations into the previous operation (Map, Join) if possible.
+ Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 4);
  * - Swap Maps with operations such as Distinct, Integral, Differential, etc.
  * - Merge Maps with subsequent MapIndex operators
  * - Merge consecutive apply operators

@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.math3.util.Pair;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -23,6 +22,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.ExplicitShuffle;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
 
 import javax.annotation.Nullable;
@@ -56,11 +56,51 @@ public class Projection extends InnerVisitor {
     @Nullable
     ExplicitShuffle shuffle;
 
+    /** A pair containing an input (paramter) number (0, 1, 2, etc)
+     * and an index field in the tuple of the corresponding input .*/
+    public record InputAndFieldIndex(int inputIndex, int fieldIndex) {}
+
+    /**
+     * A list describing how each output of a projection is computed.
+     * This is used to encode projection functions.   For example, the function:
+     * |x: Tup2, y: Tup3, z:Tup2| (x.0, y.0, x.1, z.1)
+     * is encoded as:
+     * 0 -> (0, 0)  first output field comes from x (0), field 0
+     * 1 -> (1, 0)  second output field comes from y (0), field 0
+     * 2 -> (0, 1)  third output field comes from x (0), field 1
+     * 3 -> (2, 1)  fourth output field comes from z (2), field 1
+     */
+    public record IOMap(List<InputAndFieldIndex> fields) {
+        public IOMap() {
+            this(new ArrayList<>());
+        }
+
+        public void add(int inputIndex, int fieldIndex) {
+            this.fields.add(new InputAndFieldIndex(inputIndex, fieldIndex));
+        }
+
+        /** The fields of the specified input in the order they are used in the output */
+        public List<Integer> getFieldsOfInput(int input) {
+            return Linq.map(Linq.where(this.fields, f -> f.inputIndex() == input), InputAndFieldIndex::fieldIndex);
+        }
+
+        public int size() {
+            return this.fields.size();
+        }
+
+        /** If this input field is used as an output, return the first output using it.
+         * Otherwise, return -1. */
+        public int firstOutputField(int input, int field) {
+            InputAndFieldIndex ix = new InputAndFieldIndex(input, field);
+            return this.fields.indexOf(ix);
+        }
+    }
+
     /** A list indexed by output number.  For each output, the list
      * contains the input parameter index, and the field index, if the analyzed
      * function is a projection. */
     @Nullable
-    List<Pair<Integer, Integer>> outputs;
+    IOMap outputs;
 
     VisitDecision notProjection() {
         this.shuffle = null;
@@ -75,7 +115,7 @@ public class Projection extends InnerVisitor {
     public Projection(IErrorReporter reporter, boolean allowNoopCasts) {
         super(reporter);
         this.isProjection = true;
-        this.outputs = new ArrayList<>();
+        this.outputs = new IOMap();
         this.shuffle = new ExplicitShuffle();
         this.resolver = new ResolveReferences(reporter, false);
         this.allowNoopCasts = allowNoopCasts;
@@ -128,9 +168,10 @@ public class Projection extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
         DBSPType type = expression.getType();
-        if (!expression.source.getType().setMayBeNull(false).sameType(type) ||
+        if (!expression.source.getType().setMayBeNull(true)
+                .sameType(type.setMayBeNull(true)) ||
                 !this.allowNoopCasts) {
-            // A cast which only converts from nullable to non-nullable is
+            // A cast which only changes nullability is
             // considered an identity function
             return this.notProjection();
         }
@@ -152,7 +193,7 @@ public class Projection extends InnerVisitor {
     public void postorder(DBSPFieldExpression field) {
         if (this.outputs != null) {
             assert this.currentParameterIndex >= 0;
-            this.outputs.add(Pair.create(this.currentParameterIndex, field.fieldNo));
+            this.outputs.add(this.currentParameterIndex, field.fieldNo);
         }
     }
 
@@ -239,10 +280,9 @@ public class Projection extends InnerVisitor {
         return this.isProjection && this.outputs != null;
     }
 
-    /** @return A list indexed by output number.  For each output, the list
-     * contains the input parameter index, and the field index, if the analyzed
+    /** @return The IOMap, if the analyzed
      * function is a projection. */
-    public List<Pair<Integer, Integer>> getIoMap() {
+    public IOMap getIoMap() {
         return Objects.requireNonNull(this.outputs);
     }
 }

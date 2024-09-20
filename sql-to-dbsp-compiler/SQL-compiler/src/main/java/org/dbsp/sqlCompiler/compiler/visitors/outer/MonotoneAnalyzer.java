@@ -27,10 +27,10 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
 
         @Override
         public String getEdgeLabel(DBSPOperator source) {
-            String result = source.getOutputRowType().toString();
+            String result = source.id + " " + super.getEdgeLabel(source);
             MonotoneExpression expr = info.get(source);
             if (expr != null) {
-                result = source.getIdString() + " " + Monotonicity.getBodyType(expr);
+                result = source.id + " " + Monotonicity.getBodyType(expr);
             }
             return result;
         }

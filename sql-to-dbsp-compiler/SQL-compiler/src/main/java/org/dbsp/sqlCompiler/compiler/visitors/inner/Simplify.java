@@ -63,6 +63,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -421,7 +422,7 @@ public class Simplify extends InnerRewriteVisitor {
         this.pop(expression);
         DBSPExpression result = new DBSPUnaryExpression(
                 expression.getNode(), type, expression.operation, source);
-        if (expression.operation.equals(DBSPOpcode.NEG)) {
+        if (expression.operation == DBSPOpcode.NEG) {
             if (source.is(DBSPLiteral.class)) {
                 DBSPLiteral lit = source.to(DBSPLiteral.class);
                 if (lit.is(IsNumericLiteral.class)) {
@@ -430,6 +431,15 @@ public class Simplify extends InnerRewriteVisitor {
                     } catch (ArithmeticException ex) {
                         // ignore
                     }
+                }
+            }
+        } else if (expression.operation == DBSPOpcode.WRAP_BOOL) {
+            // wrap_bool(cast_to_bn_b(expression)) => expression
+            if (source.is(DBSPCastExpression.class)) {
+                DBSPCastExpression cast = source.to(DBSPCastExpression.class);
+                if (cast.source.getType().is(DBSPTypeBool.class) &&
+                    !cast.source.getType().mayBeNull) {
+                    result = cast.source;
                 }
             }
         }

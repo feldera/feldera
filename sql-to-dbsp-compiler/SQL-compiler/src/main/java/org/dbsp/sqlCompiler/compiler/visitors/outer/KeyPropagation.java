@@ -206,11 +206,9 @@ public class KeyPropagation extends CircuitVisitor {
             return;
         }
 
-        List<Pair<Integer, Integer>> ioMap = projection.getIoMap();
+        Projection.IOMap ioMap = projection.getIoMap();
         StreamDescription result = new StreamDescription();
-        for (Pair<Integer, Integer> source : ioMap) {
-            assert source.getFirst() == 0;
-            int sourceColumnIndex = source.getSecond();
+        for (int sourceColumnIndex: ioMap.getFieldsOfInput(0)) {
             FieldProperties fieldProperties = inputKeys.get(sourceColumnIndex);
             result.addProperties(fieldProperties);
         }
@@ -303,11 +301,11 @@ public class KeyPropagation extends CircuitVisitor {
         Projection projection = new Projection(this.errorReporter, true);
         projection.apply(operator.getFunction());
         if (projection.hasIoMap()) {
-            List<Pair<Integer, Integer>> ioMap = projection.getIoMap();
+            Projection.IOMap ioMap = projection.getIoMap();
             StreamDescription result = new StreamDescription();
-            for (Pair<Integer, Integer> source : ioMap) {
-                int input = source.getFirst();
-                int sourceColumnIndex = source.getSecond();
+            for (Projection.InputAndFieldIndex source : ioMap.fields()) {
+                int input = source.inputIndex();
+                int sourceColumnIndex = source.fieldIndex();
                 FieldProperties props = switch (input) {
                     case 0 -> foreignKeyIndex.get(sourceColumnIndex);
                     case 1 -> keyOnLeft ? new FieldProperties() : foreignKey.get(sourceColumnIndex);

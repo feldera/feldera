@@ -45,6 +45,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Logger;
@@ -114,7 +115,9 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
     }
 
     public String getEdgeLabel(DBSPOperator source) {
-        return source.getOutputRowType().toString();
+        DBSPType type = source.getOutputRowType();
+        return ToRustInnerVisitor.toRustString(
+                this.errorReporter, type, CompilerOptions.getDefault(), true);
     }
 
     void addInputs(DBSPOperator node) {
@@ -314,8 +317,8 @@ public class ToDotVisitor extends CircuitVisitor implements IWritesLogs {
         CircuitVisitor create(IndentStream stream);
     }
 
-    public static void toDot(String fileName,
-                      @Nullable String outputFormat, DBSPCircuit circuit, VisitorConstructor constructor) {
+    public static void toDot(String fileName, @Nullable String outputFormat,
+                             DBSPCircuit circuit, VisitorConstructor constructor) {
         if (circuit.isEmpty())
             return;
         System.out.println("Writing circuit to " + fileName);
