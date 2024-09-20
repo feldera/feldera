@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctIncrementalOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -386,6 +387,21 @@ public class Monotonicity extends CircuitVisitor {
                 this.errorReporter, node,
                 MonotoneTransferFunctions.ArgumentKind.Join,
                 keyType, leftValueType, rightValueType);
+        MonotoneExpression result = mm.applyAnalysis(node.getFunction());
+        if (result == null)
+            return;
+        this.set(node, result);
+    }
+
+    @Override
+    public void postorder(DBSPFlatMapOperator node) {
+        MonotoneExpression inputFunction = this.getMonotoneExpression(node.input());
+        if (inputFunction == null)
+            return;
+        MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
+                this.errorReporter, node,
+                MonotoneTransferFunctions.ArgumentKind.fromType(node.input().getType()),
+                getBodyType(inputFunction));
         MonotoneExpression result = mm.applyAnalysis(node.getFunction());
         if (result == null)
             return;

@@ -7,7 +7,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -22,7 +21,7 @@ import java.util.List;
 
 /**
  * Represents an expression of the form
- * |data| { data.field0.map(|e| { Tup::new(data.field1, data.field2, ..., e )} ) }
+ * |data| { data.field0.map(|e| { Tup::new(data.field1, data.field2, ..., rightProj1(e), rightProj2(e), ... )} ) }
  * If 'withOrdinality' is true, the output also contains indexes (1-based) of the
  * elements in the collection, i.e.:
  * |data| { data.field0.enumerate().map(|e| { Tup::new(data.field1, data.field2, ..., e.1, cast(e.0+1) )} ) }
@@ -34,10 +33,11 @@ import java.util.List;
  * - field0 is a collection-typed field
  * - field1, field2, etc. are other fields that are being selected.
  * - e iterates over the elements of the data.field0 collection.
+ * - rightProjN are functions applied to e
  * This represents a closure including another closure.
  * The type of this expression is FunctionType.
  * The argument type is the type of data.
- * The result type is not represented (we can't represent the type produced by an iterator).
+ * The result type is the output element type.
  */
 public final class DBSPFlatmap extends DBSPExpression {
     /** Type of the input row. */
@@ -68,7 +68,9 @@ public final class DBSPFlatmap extends DBSPExpression {
     /** Shuffle to apply to elements in the produced tuple */
     public final Shuffle shuffle;
 
-    public DBSPFlatmap(CalciteObject node, DBSPTypeTuple inputElementType,
+    public DBSPFlatmap(CalciteObject node,
+                       DBSPType resultElementType,
+                       DBSPTypeTuple inputElementType,
                        DBSPClosureExpression collectionExpression,
                        List<Integer> leftCollectionIndexes,
                        @Nullable
@@ -76,7 +78,7 @@ public final class DBSPFlatmap extends DBSPExpression {
                        boolean emitIteratedElement,
                        @Nullable DBSPType collectionIndexType,
                        Shuffle shuffle) {
-        super(node, DBSPTypeAny.getDefault());
+        super(node, resultElementType);
         this.inputElementType = inputElementType;
         this.rightProjections = rightProjections;
         this.emitIteratedElement = emitIteratedElement;
@@ -95,7 +97,7 @@ public final class DBSPFlatmap extends DBSPExpression {
     @Override
     public DBSPExpression deepCopy() {
         return new DBSPFlatmap(this.getNode(),
-                this.inputElementType, this.collectionExpression,
+                this.getType(), this.inputElementType, this.collectionExpression,
                 this.leftCollectionIndexes, this.rightProjections,
                 this.emitIteratedElement, this.collectionIndexType, this.shuffle);
     }
@@ -109,6 +111,7 @@ public final class DBSPFlatmap extends DBSPExpression {
                 this.emitIteratedElement == otherExpression.emitIteratedElement &&
                 Linq.same(this.leftCollectionIndexes, otherExpression.leftCollectionIndexes) &&
                 this.shuffle.equals(otherExpression.shuffle) &&
+                this.type.sameType(other.getType()) &&
                 new EquivalenceContext().equivalent(this.rightProjections, otherExpression.rightProjections);
     }
 
@@ -121,6 +124,10 @@ public final class DBSPFlatmap extends DBSPExpression {
         if (this.collectionIndexType != null)
             this.collectionIndexType.accept(visitor);
         this.collectionElementType.accept(visitor);
+        if (this.rightProjections != null) {
+            for (DBSPClosureExpression proj: this.rightProjections)
+                proj.accept(visitor);
+        }
         this.type.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
@@ -137,7 +144,8 @@ public final class DBSPFlatmap extends DBSPExpression {
         DBSPFlatmap o = other.as(DBSPFlatmap.class);
         if (o == null)
             return false;
-        return this.inputElementType == o.inputElementType &&
+        return this.type == o.type &&
+                this.inputElementType == o.inputElementType &&
                 this.collectionExpression == o.collectionExpression &&
                 Linq.same(this.leftCollectionIndexes, o.leftCollectionIndexes) &&
                 Linq.same(this.rightProjections, o.rightProjections) &&
