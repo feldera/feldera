@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.apache.commons.math3.util.Pair;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
@@ -811,12 +810,21 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // we can use these to GC the other input of the join using
         // DBSPIntegrateTraceRetainValuesOperator.
 
-        Projection proj = new Projection(this.errorReporter);
+        Projection proj = new Projection(this.errorReporter, true);
         proj.apply(join.getFunction());
         assert(proj.isProjection);
-        List<Pair<Integer, Integer>> outputs = proj.getIoMap();
-        int leftSize = Linq.where(outputs, o -> o.getFirst() == 1).size();
-        int rightSize = outputs.size() - leftSize;
+        Projection.IOMap iomap = proj.getIoMap();
+        // This will look something like.  Ordered by output field number.
+        // [input#, field#]
+        // [0, 0]
+        // [1, 0]
+        // [1, 2]
+        // [0, 1]
+        // [2, 0]
+        // [2, 1]
+        // input# is 0 = key, 1 = left, 2 = right
+        int leftValueSize = join.left().getOutputIndexedZSetType().elementType.to(DBSPTypeTuple.class).size();
+        int rightValueSize = join.right().getOutputIndexedZSetType().elementType.to(DBSPTypeTuple.class).size();
 
         DBSPTypeTuple keyType = join.getKeyType().to(DBSPTypeTuple.class);
         PartiallyMonotoneTuple keyPart = PartiallyMonotoneTuple.noMonotoneFields(keyType);
@@ -828,27 +836,26 @@ public class InsertLimiters extends CircuitCloneVisitor {
             IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(monotone));
             if (projection.mayBeMonotone()) {
                 PartiallyMonotoneTuple tuple = projection.to(PartiallyMonotoneTuple.class);
-                assert tuple.size() == outputs.size();
+                assert tuple.size() == iomap.size();
 
-                // Reorganize the tuple into two tuples for left and right fields
                 List<IMaybeMonotoneType> value = new ArrayList<>();
-                for (int i = 0; i < leftSize; i++)
-                    // keep the monotone fields from the value
-                    value.add(tuple.getField(i));
+                DBSPVariablePath var = Objects.requireNonNull(tuple.getProjectedType()).ref().var();
+                List<DBSPExpression> monotoneFields = new ArrayList<>();
+                for (int index = 0, field = 0; field < leftValueSize; field++) {
+                    int firstOutputField = iomap.firstOutputField(1, field);
+                    // We assume that every left input field is used as an output
+                    assert firstOutputField >= 0;
+                    IMaybeMonotoneType compareField = tuple.getField(firstOutputField);
+                    value.add(compareField);
+                    if (compareField.mayBeMonotone()) {
+                        monotoneFields.add(var.deref().field(index++));
+                    }
+                }
                 PartiallyMonotoneTuple valuePart = new PartiallyMonotoneTuple(value, false, false);
 
                 // Put the fields together
                 PartiallyMonotoneTuple together = new PartiallyMonotoneTuple(
                         Linq.list(keyPart, valuePart), true, false);
-
-                // From the leftLimiter we need to keep only the fields for the left part
-                DBSPVariablePath var = Objects.requireNonNull(tuple.getProjectedType()).ref().var();
-                List<DBSPExpression> monotoneFields = new ArrayList<>();
-                int index = 0;
-                for (int i = 0; i < leftSize; i++) {
-                    if (tuple.getField(i).mayBeMonotone())
-                        monotoneFields.add(var.deref().field(index++));
-                }
 
                 DBSPExpression func = new DBSPTupleExpression(monotoneFields, false);
                 DBSPApplyOperator extractLeft = this.createApply(
@@ -869,34 +876,30 @@ public class InsertLimiters extends CircuitCloneVisitor {
             IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(monotone));
             if (projection.mayBeMonotone()) {
                 PartiallyMonotoneTuple tuple = projection.to(PartiallyMonotoneTuple.class);
-                assert tuple.size() == outputs.size();
+                assert tuple.size() == iomap.size();
 
-                // Reorganize the tuple into two tuples for left and right fields
                 List<IMaybeMonotoneType> value = new ArrayList<>();
-                for (int i = 0; i < rightSize; i++)
-                    // keep the monotone fields from the value
-                    value.add(tuple.getField(leftSize + i));
+                DBSPVariablePath var = Objects.requireNonNull(tuple.getProjectedType()).ref().var();
+                List<DBSPExpression> monotoneFields = new ArrayList<>();
+                for (int field = 0, index = 0; field < rightValueSize; field++) {
+                    int firstOutputField = iomap.firstOutputField(2, field);
+                    // We assume that every left input field is used as an output
+                    assert firstOutputField >= 0;
+                    IMaybeMonotoneType compareField = tuple.getField(firstOutputField);
+                    value.add(compareField);
+                    if (compareField.mayBeMonotone()) {
+                        monotoneFields.add(var.deref().field(index++));
+                    }
+                }
                 PartiallyMonotoneTuple valuePart = new PartiallyMonotoneTuple(value, false, false);
 
                 // Put the fields together
                 PartiallyMonotoneTuple together = new PartiallyMonotoneTuple(
                         Linq.list(keyPart, valuePart), true, false);
 
-                // From the rightLimiter we need to keep only the fields for the right part
-                DBSPVariablePath var = Objects.requireNonNull(tuple.getProjectedType()).ref().var();
-                List<DBSPExpression> monotoneFields = new ArrayList<>();
-                int index = 0;
-                for (int i = 0; i < leftSize; i++) {
-                    if (tuple.getField(i).mayBeMonotone())
-                        index++;
-                }
-                for (int i = 0; i < rightSize; i++) {
-                    if (tuple.getField(leftSize + i).mayBeMonotone())
-                        monotoneFields.add(var.deref().field(index++));
-                }
-
                 DBSPExpression func = new DBSPTupleExpression(monotoneFields, false);
-                DBSPApplyOperator extractRight = this.createApply(rightLimiter, func.closure(var.asParameter()));
+                DBSPApplyOperator extractRight = this.createApply(
+                        rightLimiter, func.closure(var.asParameter()));
 
                 if (INSERT_RETAIN_VALUES) {
                     DBSPIntegrateTraceRetainValuesOperator r = DBSPIntegrateTraceRetainValuesOperator.create(

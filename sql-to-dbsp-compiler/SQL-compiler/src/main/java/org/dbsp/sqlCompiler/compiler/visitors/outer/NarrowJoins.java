@@ -1,6 +1,5 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
-import org.apache.commons.math3.util.Pair;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -142,9 +141,9 @@ public class NarrowJoins extends CircuitCloneVisitor {
         int rightSize = joinFunction.parameters[2].getType().deref().to(DBSPTypeTupleBase.class).size();
 
         // Create a projection map for each input which has unused fields
-        List<Pair<Integer, Integer>> outputMap = projection.getIoMap();
-        List<Integer> leftInputs = Linq.map(Linq.where(outputMap, p -> p.getFirst() == 1), Pair::getSecond);
-        List<Integer> rightInputs = Linq.map(Linq.where(outputMap, p -> p.getFirst() == 2), Pair::getSecond);
+        Projection.IOMap outputMap = projection.getIoMap();
+        List<Integer> leftInputs = outputMap.getFieldsOfInput(1);
+        List<Integer> rightInputs = outputMap.getFieldsOfInput(2);
         // If all the fields are used there is no point in optimizing this
         if (leftInputs.size() == leftSize && rightInputs.size() == rightSize)
             return false;

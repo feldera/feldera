@@ -37,7 +37,7 @@ public final class DBSPJoinFilterMapOperator extends DBSPBinaryOperator {
     }
 
     public DBSPType getKeyType() {
-        return left().getOutputIndexedZSetType().keyType;
+        return this.left().getOutputIndexedZSetType().keyType;
     }
 
     public DBSPExpression getFilter() {

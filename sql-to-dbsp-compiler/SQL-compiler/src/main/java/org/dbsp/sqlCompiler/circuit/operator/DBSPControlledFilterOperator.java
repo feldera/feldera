@@ -41,12 +41,14 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
 
     static DBSPExpression compareRecursive(DBSPExpression compare, DBSPExpression left, DBSPExpression right) {
         DBSPType leftType = left.getType();
-        DBSPType rightType = right.getType();
-        assert leftType.sameType(rightType): "Types differ: " + leftType + " vs " + rightType;
         if (leftType.is(DBSPTypeBaseType.class)) {
+            DBSPType rightType = right.getType();
+            assert leftType.setMayBeNull(true)
+                    .sameType(rightType.setMayBeNull(true)):
+                    "Types differ: " + leftType + " vs " + rightType;
             // Notice the comparison using AGG_GTE, which never returns NULL
             DBSPExpression comparison = new DBSPBinaryExpression(CalciteObject.EMPTY,
-                    new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.GTE_LEFT, left, right);
+                    DBSPTypeBool.create(false), DBSPOpcode.GTE_LEFT, left, right);
             return new DBSPBinaryExpression(CalciteObject.EMPTY,
                     new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.AND, compare, comparison);
         } else if (leftType.is(DBSPTypeRef.class)) {
@@ -60,14 +62,11 @@ public final class DBSPControlledFilterOperator extends DBSPBinaryOperator {
         return compare;
     }
 
-    /** Given two expressions that evaluate to tuples with the same type, generate an expression
+    /** Given two expressions that evaluate to tuples with the same type
+     * (ignoring nullability), generate an expression
      * that evaluates to 'true' only if all fields in the left tuple are bigger or equal (recursively)
      * than the corresponding fields in the right tuple. */
     static DBSPExpression generateTupleCompare(DBSPExpression left, DBSPExpression right) {
-        DBSPType leftType = left.getType();
-        DBSPType rightType = right.getType();
-        assert leftType.sameType(rightType):
-                "Types differ: " + leftType + " vs " + rightType;
         DBSPLetStatement leftVar = new DBSPLetStatement("left", left.borrow());
         DBSPLetStatement rightVar = new DBSPLetStatement("right", right.borrow());
         List<DBSPStatement> statements = Linq.list(leftVar, rightVar);

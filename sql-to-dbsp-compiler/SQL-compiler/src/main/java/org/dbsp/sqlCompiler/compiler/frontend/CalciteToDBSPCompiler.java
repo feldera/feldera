@@ -1013,9 +1013,20 @@ public class CalciteToDBSPCompiler extends RelVisitor
         int totalColumns = leftColumns + rightColumns;
         DBSPTypeTuple leftResultType = resultType.slice(0, leftColumns);
         DBSPTypeTuple rightResultType = resultType.slice(leftColumns, leftColumns + rightColumns);
+        // Map a left variable field that is used as key field into the corresponding key field index
+        Map<Integer, Integer> lkf = new HashMap<>();
+        Map<Integer, Integer> rkf = new HashMap<>();
+        {
+            int index = 0;
+            for (var x : decomposition.comparisons) {
+                Utilities.putNew(lkf, x.leftColumn(), index);
+                Utilities.putNew(rkf, x.rightColumn(), index);
+                index++;
+            }
+        }
 
         DBSPMapIndexOperator leftIndex, rightIndex;
-        DBSPType keyType;
+        DBSPType keyType, leftTupleType, rightTupleType;
         {
             DBSPVariablePath l = leftElementType.ref().var();
             DBSPVariablePath r = rightElementType.ref().var();
@@ -1028,21 +1039,36 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression leftKey = new DBSPTupleExpression(node, leftKeyFields);
             keyType = leftKey.getType();
 
-            DBSPTupleExpression tuple = DBSPTupleExpression.flatten(l.deref());
-            DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(leftKey, tuple)
+            // Copy all the fields from the except the partition fields
+            List<DBSPExpression> leftFields = new ArrayList<>();
+            List<DBSPExpression> rightFields = new ArrayList<>();
+            for (int i = 0; i < leftElementType.size(); i++) {
+                if (lkf.containsKey(i))
+                    continue;
+                leftFields.add(l.deepCopy().deref().field(i).applyCloneIfNeeded());
+            }
+            for (int i = 0; i < rightElementType.size(); i++) {
+                if (rkf.containsKey(i))
+                    continue;
+                rightFields.add(r.deepCopy().deref().field(i).applyCloneIfNeeded());
+            }
+            DBSPTupleExpression leftTuple = new DBSPTupleExpression(leftFields, false);
+            DBSPTupleExpression rightTuple = new DBSPTupleExpression(rightFields, false);
+            leftTupleType = leftTuple.getType();
+            rightTupleType = rightTuple.getType();
+            DBSPClosureExpression toLeftKey = new DBSPRawTupleExpression(leftKey, leftTuple)
                     .closure(l.asParameter());
             leftIndex = new DBSPMapIndexOperator(
                     node, toLeftKey,
-                    makeIndexedZSet(leftKey.getType(), leftElementType), false, filteredLeft);
+                    makeIndexedZSet(leftKey.getType(), leftTuple.getType()), false, filteredLeft);
             this.circuit.addOperator(leftIndex);
 
             DBSPExpression rightKey = new DBSPTupleExpression(node, rightKeyFields);
-            DBSPClosureExpression toRightKey = new DBSPRawTupleExpression(
-                    rightKey, DBSPTupleExpression.flatten(r.deref()))
+            DBSPClosureExpression toRightKey = new DBSPRawTupleExpression(rightKey, rightTuple)
                     .closure(r.asParameter());
             rightIndex = new DBSPMapIndexOperator(
                     node, toRightKey,
-                    makeIndexedZSet(rightKey.getType(), rightElementType), false, filteredRight);
+                    makeIndexedZSet(rightKey.getType(), rightTuple.getType()), false, filteredRight);
             this.circuit.addOperator(rightIndex);
         }
 
@@ -1050,9 +1076,30 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPOperator inner;
         DBSPTypeTuple lrType;
         {
-            DBSPVariablePath l0 = leftElementType.ref().var();
-            DBSPVariablePath r0 = rightElementType.ref().var();
-            DBSPTupleExpression lr = DBSPTupleExpression.flatten(l0.deref(), r0.deref());
+            DBSPVariablePath k = keyType.ref().var();
+            DBSPVariablePath l0 = leftTupleType.ref().var();
+            DBSPVariablePath r0 = rightTupleType.ref().var();
+
+            List<DBSPExpression> joinFields = new ArrayList<>();
+            int skipped = 0;
+            for (int i = 0; i < leftElementType.size(); i++) {
+                if (lkf.containsKey(i)) {
+                    joinFields.add(k.deepCopy().deref().field(lkf.get(i)).applyCloneIfNeeded());
+                    skipped++;
+                } else {
+                    joinFields.add(l0.deepCopy().deref().field(i - skipped).applyCloneIfNeeded());
+                }
+            }
+            skipped = 0;
+            for (int i = 0; i < rightElementType.size(); i++) {
+                if (rkf.containsKey(i)) {
+                    joinFields.add(k.deepCopy().deref().field(rkf.get(i)).applyCloneIfNeeded());
+                    skipped++;
+                } else {
+                    joinFields.add(r0.deepCopy().deref().field(i - skipped).applyCloneIfNeeded());
+                }
+            }
+            DBSPTupleExpression lr = new DBSPTupleExpression(joinFields, false);
             lrType = lr.getType().to(DBSPTypeTuple.class);
             @Nullable
             RexNode leftOver = decomposition.getLeftOver();
@@ -1067,7 +1114,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 originalCondition = condition;
                 condition = new DBSPClosureExpression(CalciteObject.create(join.getCondition()), condition, t.asParameter());
             }
-            DBSPVariablePath k = keyType.ref().var();
 
             DBSPClosureExpression makeTuple = lr.closure(k.asParameter(), l0.asParameter(), r0.asParameter());
              joinResult = new DBSPStreamJoinOperator(node, this.makeZSet(lr.getType()),
@@ -2026,7 +2072,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
             this.compiler.circuit.addOperator(integral);
 
             // Join the previous result with the aggregate
-
             DBSPOperator indexInput;
             DBSPType lastPartAndOrderType;
             DBSPType lastCopiedFieldsType;

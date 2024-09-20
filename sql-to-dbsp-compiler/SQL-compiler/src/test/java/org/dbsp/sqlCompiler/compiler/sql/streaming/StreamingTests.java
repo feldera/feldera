@@ -40,6 +40,91 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void issue2531() {
+        String sql = """
+                create table r(
+                    id BIGINT NOT NULL,
+                    ts timestamp NOT NULL LATENESS INTERVAL 0 days
+                );
+                
+                create table l (
+                    id BIGINT NOT NULL,
+                    ts timestamp NOT NULL LATENESS INTERVAL 0 days
+                );
+                
+                create view v as
+                select
+                    l.id as id,
+                    l.ts as lts,
+                    r.ts as rts
+                from l join r
+                ON
+                    l.id = r.id and
+                    r.ts = l.ts;
+                
+                CREATE VIEW agg1 as\s
+                SELECT
+                    MAX(id)
+                FROM
+                    v
+                GROUP BY lts;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int integrate_trace = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(4, this.integrate_trace);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
+    public void issue2532() {
+        String sql = """
+                create table t (
+                    x int,
+                    y int,
+                    z int,
+                    a int,
+                    ts timestamp not null lateness interval 1 hours
+                );
+                
+                create view v as
+                select
+                    a,
+                    AVG(distinct x),
+                    AVG(distinct y),
+                    AVG(distinct z)
+                from
+                    t
+                group by
+                    ts, a;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int integrate_trace = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrate_trace++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(10, this.integrate_trace);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
     public void tpchq14() {
         String sql = """
                 CREATE TABLE LINEITEM (
@@ -192,12 +277,12 @@ public class StreamingTests extends StreamingTestBase {
         OptimizeMaps.testIssue2228 = true;
         String sql = """
                 CREATE TABLE transaction (
-                    id bigint NOT NULL,
+                    id int NOT NULL,
                     unix_time BIGINT NOT NULL
                 );
                 
                 CREATE TABLE feedback (
-                    id bigint,
+                    id int,
                     unix_time bigint LATENESS 3600 * 24
                 );
                 
@@ -213,6 +298,7 @@ public class StreamingTests extends StreamingTestBase {
                 let _ = circuit.step().expect("could not run circuit");
                 """);
         this.measure(sql, main);
+        OptimizeMaps.testIssue2228 = false;
     }
 
     @Test
@@ -1651,11 +1737,7 @@ public class StreamingTests extends StreamingTestBase {
                    ts timestamp not null lateness interval 1 days,
                    data int array
                 );
-                create view agg1 as 
-                select max(id)
-                from m
-                group by ts;
-                create view flattened as 
+                create local view flattened as
                 select id, v, ts
                 from m, unnest(data) as v;
                 create view agg2 as
@@ -1664,7 +1746,6 @@ public class StreamingTests extends StreamingTestBase {
                 group by ts;
                 """;
         CompilerCircuitStream ccs = this.getCCS(sql);
-        this.addRustTestCase(ccs);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int count = 0;
 
@@ -1675,10 +1756,32 @@ public class StreamingTests extends StreamingTestBase {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(4, this.count);
+                Assert.assertEquals(2, this.count);
             }
         };
         visitor.apply(ccs.circuit);
+        ccs.step("INSERT INTO m VALUES(0, '2024-01-03 00:00:00', ARRAY[1, 2, 3])",
+                """
+                 max | weight
+                --------------
+                 0   | 1""");
+        // insert in the past, ignored
+        ccs.step("INSERT INTO m VALUES(3, '2024-01-01 00:00:00', ARRAY[4])",
+                """
+                 max | weight
+                --------------""");
+        // empty array: no records after unnest
+        ccs.step("INSERT INTO m VALUES(6, '2024-01-04 00:00:00', array_compact(ARRAY[null]))",
+                """
+                 max | weight
+                --------------""");
+        // grouped by a different invisible timestamp, so the previous one is not deleted
+        ccs.step("INSERT INTO m VALUES(5, '2024-01-04 00:00:00', ARRAY[null])",
+                """
+                 max | weight
+                --------------
+                 5   | 1""");
+        this.addRustTestCase(ccs);
     }
 
     @Test
