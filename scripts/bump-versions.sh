@@ -41,6 +41,9 @@ release() {
     # Regenerate OpenAPI JSON to have updated version
     (cd .. && cargo make --cwd crates/pipeline-manager openapi_json)
 
+    # Bump python version in pyproject.toml
+    sed -i.backup "s/version = \"${old_version}\"/version = \"${new_version}\"/g" ../python/pyproject.toml
+
     # Commit the new version
     release_branch="release-v$new_version"
     if git rev-parse "$release_branch" >/dev/null 2>&1; then
