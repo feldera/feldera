@@ -1,0 +1,20 @@
+on:
+  pull_request:
+  push:
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: 1.81.0
+          components: rustfmt clippy
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.x
+      - uses: Swatinem/rust-cache@v2
+      - uses: pre-commit/action@v3.0.1
+      - uses: pre-commit-ci/lite-action@v1.0.3
+        if: always()
