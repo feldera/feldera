@@ -15,7 +15,84 @@ import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
     @Test
-    public void t() {
+    public void issue2502() {
+        String sql = """
+                CREATE TABLE customer (
+                    id BIGINT NOT NULL,
+                    name varchar,
+                    state VARCHAR,
+                    ts TIMESTAMP LATENESS INTERVAL 7 DAYS
+                );
+                
+                -- Credit card transactions.
+                CREATE TABLE transaction (
+                    ts TIMESTAMP LATENESS INTERVAL 10 MINUTES,
+                    amt DOUBLE,
+                    customer_id BIGINT NOT NULL,\s
+                    cc_num BIGINT NOT NULL,
+                    state VARCHAR
+                );
+                
+                CREATE LOCAL VIEW enriched_transaction AS
+                SELECT
+                    transaction.*,
+                    CASE
+                        WHEN transaction.state = customer.state THEN FALSE ELSE TRUE
+                    END AS out_of_state
+                FROM
+                    transaction LEFT ASOF JOIN customer
+                    MATCH_CONDITION ( transaction.ts >= customer.ts )
+                    ON transaction.customer_id = customer.id;
+                
+                CREATE LOCAL VIEW transaction_with_history AS
+                SELECT
+                    *,
+                    COUNT(case when out_of_state then 1 else 0 end) OVER window_30_day as out_of_state_count
+                FROM
+                    enriched_transaction
+                WINDOW window_30_day AS (PARTITION BY customer_id ORDER BY ts RANGE BETWEEN INTERVAL 30 DAYS PRECEDING AND CURRENT ROW);
+                
+                CREATE LOCAL VIEW red_transactions AS
+                SELECT
+                    *
+                FROM
+                    transaction_with_history
+                WHERE
+                    out_of_state AND out_of_state_count < 5;
+                
+                CREATE LOCAL VIEW green_transactions AS
+                SELECT
+                    *
+                FROM
+                    transaction_with_history
+                WHERE
+                    (NOT out_of_state) OR out_of_state_count >= 5;
+                
+                -- This doesn't compile, but the error message simply says "Not supported"
+                
+                CREATE VIEW user_stats AS
+                SELECT
+                        customer_id,
+                        SUM(red_amt) as red_amt,
+                        SUM(green_amt) as green_amt,
+                        SUM(amt) as total_amt
+                FROM (
+                    SELECT customer_id, amt as red_amt, 0.0 as green_amt, 0.0 as amt FROM red_transactions
+                    UNION ALL
+                    SELECT customer_id, amt as green_amt, 0.0 as red_amt, 0.0 as amt FROM green_transactions
+                    UNION ALL
+                    SELECT customer_id, amt, 0.0 as green_amt, 0.0 as red_amt FROM transaction
+                ) AS combined_tables
+                GROUP BY customer_id;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("", """
+                  customer_id | red_amd | green_amt | total_amt
+                 -----------------------------------------------""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
+    public void tableAfterView() {
         // Test that tables created after views
         // are inserted in Rust before views
         String sql = """
