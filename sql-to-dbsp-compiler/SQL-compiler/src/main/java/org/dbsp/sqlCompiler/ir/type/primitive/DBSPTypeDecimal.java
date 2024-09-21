@@ -84,14 +84,24 @@ public class DBSPTypeDecimal extends DBSPTypeBaseType
         return this.precision;
     }
 
+    String getMaxLiteral() {
+        StringBuilder str = new StringBuilder();
+        for (int i = 0; i < this.precision; i++) {
+            str.append("9");
+            if (i == this.scale)
+                str.append(".");
+        }
+        return str.toString();
+    }
+
     @Override
     public DBSPExpression getMaxValue() {
-        throw new UnsupportedException(this.getNode());
+        return new DBSPDecimalLiteral(this.getNode(), this, new BigDecimal(this.getMaxLiteral()));
     }
 
     @Override
     public DBSPExpression getMinValue() {
-        throw new UnsupportedException(this.getNode());
+        return new DBSPDecimalLiteral(this.getNode(), this, new BigDecimal("-" + this.getMaxLiteral()));
     }
 
     @Override
