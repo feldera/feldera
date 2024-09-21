@@ -566,7 +566,6 @@ pub fn generate_program_info_from_schema(
             Cow::from(connector_unique_name),
             OutputEndpointConfig {
                 stream: Cow::from(stream),
-                query: Default::default(),
                 connector_config,
             },
         );

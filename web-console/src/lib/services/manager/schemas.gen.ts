@@ -626,11 +626,6 @@ export const $Demo = {
   }
 } as const
 
-export const $EgressMode = {
-  type: 'string',
-  enum: ['watch', 'snapshot']
-} as const
-
 export const $ErrorResponse = {
   type: 'object',
   description: 'Information returned by REST API endpoints on error.',
@@ -689,7 +684,7 @@ also has all additional fields generated and maintained by the back-end.`,
       nullable: true
     },
     deployment_desired_status: {
-      $ref: '#/components/schemas/PipelineStatus'
+      $ref: '#/components/schemas/PipelineDesiredStatus'
     },
     deployment_error: {
       allOf: [
@@ -797,7 +792,7 @@ export const $ExtendedPipelineDescrOptionalCode = {
       nullable: true
     },
     deployment_desired_status: {
-      $ref: '#/components/schemas/PipelineStatus'
+      $ref: '#/components/schemas/PipelineDesiredStatus'
     },
     deployment_error: {
       allOf: [
@@ -1293,30 +1288,6 @@ when frequently monitoring the endpoint over low bandwidth connections.`
   }
 } as const
 
-export const $NeighborhoodQuery = {
-  type: 'object',
-  description: `A request to output a specific neighborhood of a table or view.
-The neighborhood is defined in terms of its central point (\`anchor\`)
-and the number of rows preceding and following the anchor to output.`,
-  required: ['before', 'after'],
-  properties: {
-    after: {
-      type: 'integer',
-      format: 'int32',
-      minimum: 0
-    },
-    anchor: {
-      type: 'object',
-      nullable: true
-    },
-    before: {
-      type: 'integer',
-      format: 'int32',
-      minimum: 0
-    }
-  }
-} as const
-
 export const $NewApiKeyRequest = {
   type: 'object',
   description: 'Request to create a new API key.',
@@ -1503,15 +1474,6 @@ connected to.`
     }
   ],
   description: 'Describes an output connector configuration'
-} as const
-
-export const $OutputQuery = {
-  type: 'string',
-  description: `A query over an output stream.
-
-We currently do not support ad hoc queries.  Instead the client can use
-three pre-defined queries to inspect the contents of a table or view.`,
-  enum: ['table', 'neighborhood', 'quantiles']
 } as const
 
 export const $PatchPipeline = {
@@ -1714,6 +1676,11 @@ export const $PipelineDescr = {
   }
 } as const
 
+export const $PipelineDesiredStatus = {
+  type: 'string',
+  enum: ['Shutdown', 'Paused', 'Running']
+} as const
+
 export const $PipelineId = {
   type: 'string',
   format: 'uuid',
@@ -1725,7 +1692,7 @@ export const $PipelineStatus = {
   description: `Pipeline status.
 
 This type represents the state of the pipeline tracked by the pipeline
-runner and observed by the API client via the \`GET /pipeline\` endpoint.
+runner and observed by the API client via the \`GET /v0/pipelines/{name}\` endpoint.
 
 ### The lifecycle of a pipeline
 
@@ -1742,9 +1709,9 @@ automaton stays in timed state until the corresponding operation completes
 or until the runner performs a forced shutdown of the pipeline after a
 pre-defined timeout period.
 
-* State transitions labeled with API endpoint names (\`/deploy\`, \`/start\`,
-\`/pause\`, \`/shutdown\`) are triggered by invoking corresponding endpoint,
-e.g., \`POST /v0/pipelines/{pipeline_id}/start\`.
+* State transitions labeled with API endpoint names (\`/start\`, \`/pause\`,
+\`/shutdown\`) are triggered by invoking corresponding endpoint,
+e.g., \`POST /v0/pipelines/{name}/start\`.
 
 \`\`\`text
 Shutdown◄────┐
@@ -1752,11 +1719,11 @@ Shutdown◄────┐
 /deploy│         │
 │   ⌛ShuttingDown
 ▼         ▲
-⌛Provisioning    │
+⌛Provisioning     │
 │         │
-Provisioned        │         │
+│         │
 ▼         │/shutdown
-⌛Initializing    │
+⌛Initializing     │
 │         │
 ┌────────┴─────────┴─┐
 │        ▼           │
@@ -1786,11 +1753,11 @@ These statuses are selected by invoking REST endpoints shown
 in the diagram.
 
 The user can monitor the current state of the pipeline via the
-\`/status\` endpoint, which returns an object of type \`Pipeline\`.
+\`GET /v0/pipelines/{name}\` endpoint, which returns an object of type \`ExtendedPipelineDescr\`.
 In a typical scenario, the user first sets
 the desired state, e.g., by invoking the \`/deploy\` endpoint, and
-then polls the \`GET /pipeline\` endpoint to monitor the actual status
-of the pipeline until its \`state.current_status\` attribute changes
+then polls the \`GET /v0/pipelines/{name}\` endpoint to monitor the actual status
+of the pipeline until its \`deployment_status\` attribute changes
 to "paused" indicating that the pipeline has been successfully
 initialized, or "failed", indicating an error.`,
   enum: ['Shutdown', 'Provisioning', 'Initializing', 'Paused', 'Running', 'ShuttingDown', 'Failed']
@@ -2606,6 +2573,11 @@ export const $SqlType = {
       type: 'string',
       description: 'SQL `NULL` type.',
       enum: ['NULL']
+    },
+    {
+      type: 'string',
+      description: 'SQL `VARIANT` type.',
+      enum: ['VARIANT']
     }
   ],
   description: 'The available SQL types as specified in `CREATE` statements.'

@@ -1,41 +1,20 @@
 use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
 use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
 use crate::{
-    catalog::{NeighborhoodEntry, OutputCollectionHandles, SerCollectionHandle},
-    static_compile::{DeScalarHandle, DeScalarHandleImpl},
+    catalog::{OutputCollectionHandles, SerCollectionHandle},
     Catalog, ControllerError,
 };
 use dbsp::typed_batch::TypedBatch;
 use dbsp::{
-    operator::{
-        DelayedFeedback, MapHandle, NeighborhoodDescr, NeighborhoodDescrBox,
-        NeighborhoodDescrStream, SetHandle, ZSetHandle,
-    },
-    typed_batch::TypedBox,
-    utils::Tup2,
+    operator::{MapHandle, SetHandle, ZSetHandle},
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
 };
-use feldera_types::deserialize_struct;
 use feldera_types::program_schema::Relation;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
-use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::sync::Arc;
-
-#[derive(Serialize, Deserialize, Debug, Default, PartialEq, Eq, Clone)]
-pub struct NeighborhoodQuery<K> {
-    pub anchor: Option<K>,
-    pub before: u64,
-    pub after: u64,
-}
-
-deserialize_struct!(NeighborhoodQuery(K)[3]{
-    anchor: Option<K> = Some(None),
-    before: u64 = None,
-    after: u64 = None
-});
 
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
@@ -290,7 +269,7 @@ impl Catalog {
         .unwrap();
 
         // Inputs are also outputs.
-        self.register_materialized_output_map(stream, value_key_func, schema);
+        self.register_materialized_output_map(stream, schema);
     }
 
     /// Add an output stream of Z-sets to the catalog.
@@ -318,11 +297,6 @@ impl Catalog {
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
             integrate_handle: None,
-            neighborhood_descr_handle: None,
-            neighborhood_handle: None,
-            neighborhood_snapshot_handle: None,
-            num_quantiles_handle: None,
-            quantiles_handle: None,
         };
 
         self.register_output_batch_handles(handles).unwrap();
@@ -348,8 +322,6 @@ impl Catalog {
     {
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
 
-        let circuit = stream.circuit();
-
         // The integral of this stream is used by the ad hoc query engine. The engine treats the integral
         // computed by each worker as a separate partition.  This means that integrals should not contain
         // negative weights, since datafusion cannot handle those.  Negative weights can arise from operators
@@ -360,56 +332,6 @@ impl Catalog {
         // Create handle for the stream itself.
         let delta_handle = stream.output();
 
-        // Create handles for the neighborhood query.
-        let (neighborhood_descr_stream, neighborhood_descr_handle) =
-            circuit.add_input_stream::<(bool, Option<NeighborhoodQuery<D>>)>();
-        let neighborhood_stream = {
-            // Create a feedback loop to latch the latest neighborhood descriptor
-            // when `reset=true`.
-            let feedback =
-                <DelayedFeedback<RootCircuit, Option<NeighborhoodDescrBox<Z::Key, ()>>>>::new(
-                    stream.circuit(),
-                );
-            let new_neighborhood: NeighborhoodDescrStream<Z::Key, ()> =
-                feedback
-                    .stream()
-                    .apply2(&neighborhood_descr_stream, |old, (reset, new)| {
-                        if *reset {
-                            // Convert anchor of type `D` into `Z::Key`.
-                            new.clone().map(|new| {
-                                TypedBox::new(NeighborhoodDescr::new(
-                                    new.anchor.map(From::from),
-                                    (),
-                                    new.before,
-                                    new.after,
-                                ))
-                            })
-                        } else {
-                            old.clone()
-                        }
-                    });
-            feedback.connect(&new_neighborhood);
-            stream.neighborhood(&new_neighborhood)
-        };
-
-        // Neighborhood delta stream.
-        let neighborhood_handle = neighborhood_stream.output();
-
-        // Neighborhood snapshot stream.  The integral computation
-        // is essentially free thanks to stream caching.
-        let neighborhood_snapshot_stream = neighborhood_stream.integrate();
-        let neighborhood_snapshot_handle = neighborhood_snapshot_stream
-            .output_guarded(&neighborhood_descr_stream.apply(|(reset, _descr)| *reset));
-
-        // Handle for the quantiles query.
-        let (num_quantiles_stream, num_quantiles_handle) = circuit.add_input_stream::<usize>();
-
-        // Output of the quantiles query, only produced when `num_quantiles>0`.
-        let quantiles_stream = stream
-            .integrate_trace()
-            .stream_key_quantiles(&num_quantiles_stream);
-        let quantiles_handle = quantiles_stream
-            .output_guarded(&num_quantiles_stream.apply(|num_quantiles| *num_quantiles > 0));
         let integrate_handle = stream
             .integrate_trace()
             .apply(|t| TypedBatch::<Z::Key, (), ZWeight, _>::new(t.ro_snapshot()))
@@ -422,26 +344,6 @@ impl Catalog {
             )) as Arc<dyn SerBatchReaderHandle>),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
-
-            neighborhood_descr_handle: Some(Box::new(DeScalarHandleImpl::new(
-                neighborhood_descr_handle,
-                |x| x,
-            )) as Box<dyn DeScalarHandle>),
-            neighborhood_handle: Some(Box::new(
-                <SerCollectionHandleImpl<_, NeighborhoodEntry<D>, ()>>::new(neighborhood_handle),
-            ) as Box<dyn SerCollectionHandle>),
-            neighborhood_snapshot_handle: Some(Box::new(<SerCollectionHandleImpl<
-                _,
-                NeighborhoodEntry<D>,
-                (),
-            >>::new(
-                neighborhood_snapshot_handle
-            )) as Box<dyn SerCollectionHandle>),
-
-            num_quantiles_handle: Some(num_quantiles_handle),
-            quantiles_handle: Some(Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(
-                quantiles_handle,
-            )) as Box<dyn SerCollectionHandle>),
         };
 
         self.register_output_batch_handles(handles).unwrap();
@@ -450,11 +352,6 @@ impl Catalog {
     /// Add an output stream that carries updates to an indexed Z-set that
     /// behaves like a map (i.e., has exactly one key with weight 1 per value)
     /// to the catalog.
-    ///
-    /// Creates neighborhood and quantiles circuits.  Drops the key component
-    /// of the `(key,value)` tuple, so that delta, neighborhood, and quantiles
-    /// streams contain values only.  Clients, e.g., the web console, can
-    /// work with maps and z-sets in the same way.
     pub fn register_output_map<K, KD, V, VD, F>(
         &mut self,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
@@ -486,11 +383,6 @@ impl Catalog {
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
                 as Box<dyn SerCollectionHandle>,
             integrate_handle: None,
-            neighborhood_descr_handle: None,
-            neighborhood_handle: None,
-            neighborhood_snapshot_handle: None,
-            num_quantiles_handle: None,
-            quantiles_handle: None,
         };
 
         self.register_output_batch_handles(handles).unwrap();
@@ -498,13 +390,11 @@ impl Catalog {
 
     /// Like `register_output_map`, but additionally materializes the integral
     /// of the stream and makes it queryable.
-    pub fn register_materialized_output_map<K, KD, V, VD, F>(
+    pub fn register_materialized_output_map<K, KD, V, VD>(
         &mut self,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
-        key_func: F,
         schema: &str,
     ) where
-        F: Fn(&V) -> K + Clone + Send + Sync + 'static,
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>,
@@ -519,7 +409,6 @@ impl Catalog {
         K: DBData + Send + Sync + From<KD> + Default,
         V: DBData + Send + Sync + From<VD> + Default,
     {
-        let circuit = stream.circuit();
         let schema: Relation = Self::parse_relation_schema(schema).unwrap();
 
         // Create handle for the stream itself.
@@ -529,63 +418,6 @@ impl Catalog {
         // if one exists.
         let stream = stream.try_sharded_version();
 
-        // Create handles for the neighborhood query.
-        let (neighborhood_descr_stream, neighborhood_descr_handle) =
-            circuit.add_input_stream::<(bool, Option<NeighborhoodQuery<VD>>)>();
-        let neighborhood_stream = {
-            // Create a feedback loop to latch the latest neighborhood descriptor
-            // when `reset=true`.
-            let feedback = <DelayedFeedback<RootCircuit, Option<NeighborhoodDescrBox<K, V>>>>::new(
-                stream.circuit(),
-            );
-            let new_neighborhood: NeighborhoodDescrStream<K, V> = feedback.stream().apply2(
-                &neighborhood_descr_stream,
-                move |old: &Option<NeighborhoodDescrBox<K, V>>,
-                      (reset, new): &(bool, Option<NeighborhoodQuery<VD>>)| {
-                    if *reset {
-                        let key_func = key_func.clone();
-                        // Convert anchor of type `(VD, ())` into `(Z::Key, Z::Val)`.
-                        new.clone().map(move |new| {
-                            let val = new.anchor.map(V::from);
-                            let key = val.as_ref().map(key_func);
-                            TypedBox::new(NeighborhoodDescr::new(
-                                key,
-                                val.unwrap_or_default(),
-                                new.before,
-                                new.after,
-                            ))
-                        })
-                    } else {
-                        old.clone()
-                    }
-                },
-            );
-            feedback.connect(&new_neighborhood);
-            stream.neighborhood(&new_neighborhood)
-        };
-
-        // Neighborhood delta stream.
-        let neighborhood_handle = neighborhood_stream
-            .map(|Tup2(idx, Tup2(_k, v))| Tup2(*idx, Tup2(v.clone(), ())))
-            .output();
-
-        // Neighborhood snapshot stream.  The integral computation
-        // is essentially free thanks to stream caching.
-        let neighborhood_snapshot_stream = neighborhood_stream.integrate();
-        let neighborhood_snapshot_handle = neighborhood_snapshot_stream
-            .map(|Tup2(idx, Tup2(_k, v))| Tup2(*idx, Tup2(v.clone(), ())))
-            .output_guarded(&neighborhood_descr_stream.apply(|(reset, _descr)| *reset));
-
-        // Handle for the quantiles query.
-        let (num_quantiles_stream, num_quantiles_handle) = circuit.add_input_stream::<usize>();
-
-        // Output of the quantiles query, only produced when `num_quantiles>0`.
-        let quantiles_stream = stream
-            .integrate_trace()
-            .stream_unique_key_val_quantiles(&num_quantiles_stream);
-        let quantiles_handle = quantiles_stream
-            .map(|Tup2(_k, v)| v.clone())
-            .output_guarded(&num_quantiles_stream.apply(|num_quantiles| *num_quantiles > 0));
         let integrate_handle = stream
             .map(|(_k, v)| v.clone())
             .integrate_trace()
@@ -599,28 +431,6 @@ impl Catalog {
             integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, VD, ()>>::new(
                 integrate_handle,
             )) as Arc<dyn SerBatchReaderHandle>),
-            neighborhood_descr_handle: Some(Box::new(DeScalarHandleImpl::new(
-                neighborhood_descr_handle,
-                |x| x,
-            )) as Box<dyn DeScalarHandle>),
-            neighborhood_handle: Some(Box::new(<SerCollectionHandleImpl<
-                _,
-                NeighborhoodEntry<VD>,
-                (),
-            >>::new(neighborhood_handle))
-                as Box<dyn SerCollectionHandle>),
-            neighborhood_snapshot_handle: Some(Box::new(<SerCollectionHandleImpl<
-                _,
-                NeighborhoodEntry<VD>,
-                (),
-            >>::new(
-                neighborhood_snapshot_handle
-            )) as Box<dyn SerCollectionHandle>),
-
-            num_quantiles_handle: Some(num_quantiles_handle),
-            quantiles_handle: Some(Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(
-                quantiles_handle,
-            )) as Box<dyn SerCollectionHandle>),
         };
 
         self.register_output_batch_handles(handles).unwrap();
@@ -631,11 +441,7 @@ impl Catalog {
 mod test {
     use std::{io::Write, ops::Deref};
 
-    use crate::{
-        catalog::{OutputCollectionHandles, RecordFormat},
-        test::TestStruct,
-        Catalog, CircuitCatalog, SerBatch,
-    };
+    use crate::{catalog::RecordFormat, test::TestStruct, Catalog, CircuitCatalog, SerBatch};
     use dbsp::Runtime;
     use feldera_types::format::json::JsonFlavor;
 
@@ -653,56 +459,6 @@ mod test {
         }
 
         String::from_utf8(result).unwrap()
-    }
-
-    fn set_num_quantiles(output_handles: &OutputCollectionHandles, num_quantiles: usize) {
-        output_handles
-            .num_quantiles_handle
-            .as_ref()
-            .unwrap()
-            .set_for_all(num_quantiles);
-    }
-
-    fn get_quantiles(output_handles: &OutputCollectionHandles) -> String {
-        batch_to_json(
-            output_handles
-                .quantiles_handle
-                .as_ref()
-                .unwrap()
-                .consolidate()
-                .deref(),
-        )
-    }
-
-    fn get_hood(output_handles: &OutputCollectionHandles) -> String {
-        batch_to_json(
-            output_handles
-                .neighborhood_handle
-                .as_ref()
-                .unwrap()
-                .consolidate()
-                .deref(),
-        )
-    }
-
-    fn set_neighborhood_descr<T: serde::Serialize>(
-        output_handles: &OutputCollectionHandles,
-        anchor: &T,
-        before: usize,
-        after: usize,
-    ) {
-        let anchor = serde_json::to_string(anchor).unwrap();
-        output_handles
-            .neighborhood_descr_handle
-            .as_ref()
-            .unwrap()
-            .configure_deserializer(RECORD_FORMAT)
-            .unwrap()
-            .set_for_all(
-                format!(r#"[true, {{"anchor":{anchor},"before":{before},"after":{after}}}]"#)
-                    .as_bytes(),
-            )
-            .unwrap();
     }
 
     #[test]
@@ -744,9 +500,6 @@ mod test {
             .unwrap();
         input_stream_handle.flush_all();
 
-        set_num_quantiles(output_stream_handles, 5);
-        set_neighborhood_descr(output_stream_handles, &TestStruct::default(), 5, 5);
-
         circuit.step().unwrap();
 
         let delta = batch_to_json(output_stream_handles.delta_handle.consolidate().deref());
@@ -757,30 +510,12 @@ mod test {
 "#
         );
 
-        let quantiles = get_quantiles(output_stream_handles);
-        assert_eq!(
-            quantiles,
-            r#"1: {"id":1,"b":true,"i":null,"s":"1"}
-1: {"id":2,"b":true,"i":null,"s":"2"}
-"#
-        );
-
-        let hood = get_hood(output_stream_handles);
-        assert_eq!(
-            hood,
-            r#"1: {"index":0,"key":{"id":1,"b":true,"i":null,"s":"1"}}
-1: {"index":1,"key":{"id":2,"b":true,"i":null,"s":"2"}}
-"#
-        );
-
         // Step 2: replace an entry.
 
         input_stream_handle
             .insert(br#"{"id": 1, "b": true, "s": "1-modified"}"#)
             .unwrap();
         input_stream_handle.flush_all();
-
-        set_num_quantiles(output_stream_handles, 5);
 
         circuit.step().unwrap();
 
@@ -792,19 +527,10 @@ mod test {
 "#
         );
 
-        let quantiles = get_quantiles(output_stream_handles);
-        assert_eq!(
-            quantiles,
-            r#"1: {"id":1,"b":true,"i":null,"s":"1-modified"}
-1: {"id":2,"b":true,"i":null,"s":"2"}
-"#
-        );
-
         // Step 3: delete an entry.
 
         input_stream_handle.delete(br#"2"#).unwrap();
         input_stream_handle.flush_all();
-        set_num_quantiles(output_stream_handles, 5);
 
         circuit.step().unwrap();
 
@@ -812,13 +538,6 @@ mod test {
         assert_eq!(
             delta,
             r#"-1: {"id":2,"b":true,"i":null,"s":"2"}
-"#
-        );
-
-        let quantiles = get_quantiles(output_stream_handles);
-        assert_eq!(
-            quantiles,
-            r#"1: {"id":1,"b":true,"i":null,"s":"1-modified"}
 "#
         );
     }

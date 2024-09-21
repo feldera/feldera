@@ -332,10 +332,7 @@ class FelderaClient:
             pipeline_name: str,
             table_name: str,
             format: str,
-            mode: str = "watch",
             backpressure: bool = True,
-            query: Optional[str] = None,
-            quantiles: Optional[int] = None,
             array: bool = False,
             timeout: Optional[float] = None,
     ):
@@ -345,33 +342,20 @@ class FelderaClient:
         :param pipeline_name: The name of the pipeline
         :param table_name: The name of the table to listen to
         :param format: The format of the data, either "json" or "csv"
-        :param mode: The mode to listen in, either "watch" or "snapshot"
         :param backpressure: When the flag is True (the default), this method waits for the consumer to receive each
             chunk and blocks the pipeline if the consumer cannot keep up. When this flag is False, the pipeline drops
             data chunks if the consumer is not keeping up with its output. This prevents a slow consumer from slowing
             down the entire pipeline.
-        :param quantiles: For 'quantiles' queries: the number of quantiles to output. The default value is 100
-        :param query: Query to execute on the table, either "table", "neighborhood" or "quantiles"
         :param array: Set True to group updates in this stream into JSON arrays, used in conjunction with the
             "json" format, the default value is False
 
         :param timeout: The amount of time in seconds to listen to the stream for
         """
 
-        if mode not in ["watch", "snapshot"]:
-            raise ValueError("mode must be either 'watch' or 'snapshot'")
-
-        if query is not None and query not in ["table", "neighborhood", "quantiles"]:
-            raise ValueError("query must be either 'table', 'neighborhood' or 'quantiles'")
-
         params = {
-            "mode": mode,
             "format": format,
             "backpressure": _prepare_boolean_input(backpressure),
         }
-
-        if quantiles:
-            params["quantiles"] = quantiles
 
         if format == "json":
             params["array"] = _prepare_boolean_input(array)

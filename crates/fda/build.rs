@@ -124,12 +124,6 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
             "feldera_types::transport::delta_table::DeltaTableWriterConfig",
         ),
         ("Chunk", "feldera_types::transport::http::Chunk"),
-        ("EgressMode", "feldera_types::transport::http::EgressMode"),
-        ("OutputQuery", "feldera_types::query::OutputQuery"),
-        (
-            "NeighborhoodQuery",
-            "feldera_types::query::NeighborhoodQuery",
-        ),
         (
             "JsonUpdateFormat",
             "feldera_types::format::json::JsonUpdateFormat",

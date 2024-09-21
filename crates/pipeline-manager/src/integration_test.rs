@@ -216,6 +216,35 @@ impl TestConfig {
         r.send().await.expect("request is successful")
     }
 
+    /// Return the result of an ad hoc query as a JSON array.
+    ///
+    /// Doesn't sort the array; use `order by` to ensure deterministic results.
+    async fn adhoc_query_json(&self, endpoint: &str, query: &str) -> serde_json::Value {
+        let mut r = self.adhoc_query(endpoint, query, "json").await;
+        assert_eq!(r.status(), StatusCode::OK);
+
+        let body = r.body().await.unwrap();
+        let ret = std::str::from_utf8(body.as_ref()).unwrap();
+        let lines: Vec<String> = ret.split('\n').map(|s| s.to_string()).collect();
+        // sorted.sort();
+
+        serde_json::Value::Array(
+            lines
+                .iter()
+                .filter(|s| !s.is_empty())
+                .map(|s| {
+                    serde_json::from_str::<Value>(s)
+                        .map_err(|e| {
+                            format!(
+                            "ad hoc query returned an invalid JSON string: '{s}' (parse error: {e})"
+                        )
+                        })
+                        .unwrap()
+                })
+                .collect(),
+        )
+    }
+
     // TODO: currently unused
     // /// Performs GET request, asserts the status code is OK, and returns result.
     // async fn get_ok<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
@@ -296,40 +325,6 @@ impl TestConfig {
             .unwrap()
     }
 
-    async fn quantiles_csv(&self, name: &str, table: &str) -> String {
-        // this is a workaround for the fact that the server may not have processed the
-        // request before the response is returned and may return
-        // wrong/inconsistent results for future queries e.g., post data then do
-        // quantiles
-        tokio::time::sleep(Duration::from_millis(800)).await;
-
-        let mut resp = self
-            .post_no_body(format!(
-                "/v0/pipelines/{name}/egress/{table}?query=quantiles&mode=snapshot&format=csv"
-            ))
-            .await;
-        assert!(resp.status().is_success());
-        let resp: Value = resp.json().await.unwrap();
-        resp.get("text_data").unwrap().as_str().unwrap().to_string()
-    }
-
-    async fn quantiles_json(&self, name: &str, table: &str) -> String {
-        // this is a workaround for the fact that the server may not have processed the
-        // request before the response is returned and may return
-        // wrong/inconsistent results for future queries e.g., post data then do
-        // quantiles
-        tokio::time::sleep(Duration::from_millis(800)).await;
-
-        let mut resp = self
-            .post_no_body(format!(
-                "/v0/pipelines/{name}/egress/{table}?query=quantiles&mode=snapshot&format=json"
-            ))
-            .await;
-        assert!(resp.status().is_success());
-        let resp: Value = resp.json().await.unwrap();
-        resp.get("json_data").unwrap().to_string()
-    }
-
     async fn delta_stream_request_json(
         &self,
         name: &str,
@@ -392,27 +387,6 @@ impl TestConfig {
         }
 
         assert_eq!(expected_response, received);
-    }
-
-    async fn neighborhood_json(
-        &self,
-        name: &str,
-        table: &str,
-        anchor: Option<Value>,
-        before: u64,
-        after: u64,
-    ) -> String {
-        let mut resp = self
-            .post(
-                format!(
-                    "/v0/pipelines/{name}/egress/{table}?query=neighborhood&mode=snapshot&format=json"
-                ),
-                &json!({"before": before, "after": after, "anchor": anchor}),
-            )
-            .await;
-        assert!(resp.status().is_success());
-        let resp: Value = resp.json().await.unwrap();
-        resp.get("json_data").unwrap().to_string()
     }
 
     async fn delete<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
@@ -791,7 +765,7 @@ async fn pipeline_name_conflict() {
     assert_eq!(StatusCode::CONFLICT, response.status());
 }
 
-/// Tests pausing and resuming a pipeline, pushing ingress data and fetching quantiles.
+/// Tests pausing and resuming a pipeline, pushing ingress data, and validating the contents of the output view.
 #[actix_web::test]
 #[serial]
 async fn deploy_pipeline() {
@@ -833,9 +807,13 @@ async fn deploy_pipeline() {
         .wait_for_deployment_status("test", PipelineStatus::Paused, config.pause_timeout)
         .await;
 
-    // Querying quantiles should work in Paused state
-    let quantiles = config.quantiles_csv("test", "t1").await;
-    assert_eq!(&quantiles, "1,1\n2,1\n3,1\n4,1\n5,1\n6,1\n");
+    // Querying should work in Paused state
+    assert_eq!(
+        config
+            .adhoc_query_json("/v0/pipelines/test/query", "select * from t1 order by c1;")
+            .await,
+        json!([{"c1": 1}, {"c1": 2}, {"c1": 3}, {"c1": 4}, {"c1": 5}, {"c1": 6}])
+    );
 
     // Start the pipeline again
     let response = config.post_no_body("/v0/pipelines/test/start").await;
@@ -844,9 +822,13 @@ async fn deploy_pipeline() {
         .wait_for_deployment_status("test", PipelineStatus::Running, config.resume_timeout)
         .await;
 
-    // Querying quantiles should work in Running state
-    let quantiles = config.quantiles_csv("test", "t1").await;
-    assert_eq!(&quantiles, "1,1\n2,1\n3,1\n4,1\n5,1\n6,1\n");
+    // Querying should work in Running state
+    assert_eq!(
+        config
+            .adhoc_query_json("/v0/pipelines/test/query", "select * from t1 order by c1;")
+            .await,
+        json!([{"c1": 1}, {"c1": 2}, {"c1": 3}, {"c1": 4}, {"c1": 5}, {"c1": 6}])
+    );
 
     // Shutdown the pipeline
     let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
@@ -1089,19 +1071,15 @@ async fn json_ingress() {
         .await;
     assert!(response.status().is_success());
 
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"c1\":10,\"c2\":true,\"c3\":null}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}}]");
-
-    let hood = config
-        .neighborhood_json(
-            "test",
-            "T1",
-            Some(json!({"c1":10,"c2":true,"c3":null})),
-            10,
-            10,
-        )
-        .await;
-    assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"c1\":10,\"c2\":true,\"c3\":null}}},{\"insert\":{\"index\":1,\"key\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}}}]");
+    assert_eq!(
+        config
+            .adhoc_query_json(
+                "/v0/pipelines/test/query",
+                "select * from t1 order by c1, c2, c3;"
+            )
+            .await,
+        json!([{"c1": 10, "c2": true}, {"c1": 20, "c3": "foo"}])
+    );
 
     // Push more data using insert/delete format.
     let response = config
@@ -1114,8 +1092,15 @@ async fn json_ingress() {
         .await;
     assert!(response.status().is_success());
 
-    let quantiles = config.quantiles_json("test", "t1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}}]");
+    assert_eq!(
+        config
+            .adhoc_query_json(
+                "/v0/pipelines/test/query",
+                "select * from t1 order by c1, c2, c3;"
+            )
+            .await,
+        json!([{"c1": 20, "c3": "foo"}, {"c1": 30, "c3": "bar"}])
+    );
 
     // Format data as json array.
     let response = config
@@ -1135,8 +1120,15 @@ async fn json_ingress() {
         .await;
     assert!(response.status().is_success());
 
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":50,\"c2\":true,\"c3\":\"\"}}]");
+    assert_eq!(
+        config
+            .adhoc_query_json(
+                "/v0/pipelines/test/query",
+                "select * from T1 order by c1, c2, c3;"
+            )
+            .await,
+        json!([{"c1": 20, "c3": "foo"}, {"c1": 30, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
+    );
 
     // Trigger parse errors.
     let mut response = config
@@ -1152,8 +1144,15 @@ async fn json_ingress() {
 
     // Even records that are parsed successfully don't get ingested when
     // using array format.
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":50,\"c2\":true,\"c3\":\"\"}}]");
+    assert_eq!(
+        config
+            .adhoc_query_json(
+                "/v0/pipelines/test/query",
+                "select * from t1 order by c1, c2, c3;"
+            )
+            .await,
+        json!([{"c1": 20, "c3": "foo"}, {"c1": 30, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
+    );
 
     let mut response = config
         .post_json(
@@ -1168,8 +1167,15 @@ async fn json_ingress() {
 
     // Even records that are parsed successfully don't get ingested when
     // using array format.
-    let quantiles = config.quantiles_csv("test", "T1").await;
-    assert_eq!(quantiles, "20,,foo,1\n25,true,,1\n30,,bar,1\n50,true,,1\n");
+    assert_eq!(
+        config
+            .adhoc_query_json(
+                "/v0/pipelines/test/query",
+                "select * from t1 order by c1, c2, c3;"
+            )
+            .await,
+        json!([{"c1": 20, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c3": "bar"}, {"c1": 50, "c2": true, "c3": ""}])
+    );
 
     // Debezium CDC format
     let response = config
@@ -1181,10 +1187,14 @@ async fn json_ingress() {
         .await;
     assert!(response.status().is_success());
 
-    let quantiles = config.quantiles_csv("test", "t1").await;
     assert_eq!(
-        quantiles,
-        "20,,foo,1\n25,true,,1\n30,,bar,1\n60,true,hello,1\n"
+        config
+            .adhoc_query_json(
+                "/v0/pipelines/test/query",
+                "select * from t1 order by c1, c2, c3;"
+            )
+            .await,
+        json!([{"c1": 20, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c3": "bar"}, {"c1": 60, "c2": true, "c3": "hello"}])
     );
 
     // Push some CSV data (the second record is invalid, but the other two should
@@ -1203,10 +1213,14 @@ not_a_number,true,ΑαΒβΓγΔδ
     let error = std::str::from_utf8(&body).unwrap();
     assert_eq!(error, "{\"message\":\"Errors parsing input data (1 errors):\\n    Parse error (event #2): failed to deserialize CSV record: error parsing field 'c1': field 0: invalid digit found in string\\nInvalid fragment: 'not_a_number,true,ΑαΒβΓγΔδ\\n'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize CSV record: error parsing field 'c1': field 0: invalid digit found in string\",\"event_number\":2,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"not_a_number,true,ΑαΒβΓγΔδ\\n\",\"suggestion\":null}],\"num_errors\":1}}");
 
-    let quantiles = config.quantiles_json("test", "t1").await;
     assert_eq!(
-        quantiles,
-        "[{\"insert\":{\"c1\":15,\"c2\":true,\"c3\":\"foo\"}},{\"insert\":{\"c1\":16,\"c2\":false,\"c3\":\"unicode🚲\"}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":\"foo\"}},{\"insert\":{\"c1\":25,\"c2\":true,\"c3\":\"\"}},{\"insert\":{\"c1\":30,\"c2\":null,\"c3\":\"bar\"}},{\"insert\":{\"c1\":60,\"c2\":true,\"c3\":\"hello\"}}]"
+        config
+            .adhoc_query_json(
+                "/v0/pipelines/test/query",
+                "select * from t1 order by c1, c2, c3;"
+            )
+            .await,
+        json!([{"c1": 15, "c2": true, "c3": "foo"}, {"c1": 16, "c2": false, "c3": "unicode🚲"}, {"c1": 20, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c3": "bar"}, {"c1": 60, "c2": true, "c3": "hello"}])
     );
 
     // Shutdown the pipeline
@@ -1252,19 +1266,12 @@ async fn map_column() {
         .await;
     assert!(response.status().is_success());
 
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles, "[{\"insert\":{\"c1\":10,\"c2\":true,\"c3\":{\"bar\":\"2\",\"foo\":\"1\"}}},{\"insert\":{\"c1\":20,\"c2\":null,\"c3\":null}}]");
-
-    let hood = config
-        .neighborhood_json(
-            "test",
-            "T1",
-            Some(json!({"c1":10,"c2":true,"c3": {"foo": "1", "bar": "2"}})),
-            10,
-            10,
-        )
-        .await;
-    assert_eq!(hood, "[{\"insert\":{\"index\":0,\"key\":{\"c1\":10,\"c2\":true,\"c3\":{\"bar\":\"2\",\"foo\":\"1\"}}}},{\"insert\":{\"index\":1,\"key\":{\"c1\":20,\"c2\":null,\"c3\":null}}}]");
+    assert_eq!(
+        config
+            .adhoc_query_json("/v0/pipelines/test/query", "select * from t1 order by c1;")
+            .await,
+        json!([{"c1": 10, "c2": true, "c3": {"bar": "2", "foo": "1"}}, {"c1": 20}])
+    );
 
     // Shutdown the pipeline
     let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
@@ -1309,9 +1316,15 @@ async fn parse_datetime() {
         .await;
     assert!(response.status().is_success());
 
-    let quantiles = config.quantiles_json("test", "T1").await;
-    assert_eq!(quantiles.parse::<Value>().unwrap(),
-               "[{\"insert\":{\"d\":\"2024-02-25\",\"t\":\"11:12:33.483221092\",\"ts\":\"2024-02-25 12:12:33\"}},{\"insert\":{\"d\":\"2021-05-20\",\"t\":\"13:22:00\",\"ts\":\"2021-05-20 12:12:33\"}}]".parse::<Value>().unwrap());
+    assert_eq!(
+        config
+            .adhoc_query_json(
+                "/v0/pipelines/test/query",
+                "select * from t1 order by t, ts, d;"
+            )
+            .await,
+        json!([{"d": "2024-02-25", "t": "11:12:33.483221092", "ts": "2024-02-25T12:12:33"}, {"d": "2021-05-20", "t": "13:22:00", "ts": "2021-05-20T12:12:33"}])
+    );
 
     // Shutdown the pipeline
     let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
@@ -1353,12 +1366,14 @@ async fn quoted_columns() {
         .await;
     assert!(response.status().is_success());
 
-    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"C2\":true,\"c1\":10,\"αβγ\":true,\"δθ\":false,\"😁❤\":\"foo\"}}]"
-            .parse::<Value>()
-            .unwrap()
+        config
+            .adhoc_query_json(
+                "/v0/pipelines/test/query",
+                "select * from t1 order by \"c1\";"
+            )
+            .await,
+        json!([{"C2": true, "c1": 10, "αβγ": true, "δθ": false, "😁❤": "foo"}])
     );
 
     // Shutdown the pipeline
@@ -1403,22 +1418,11 @@ async fn primary_keys() {
         .await;
     assert!(response.status().is_success());
 
-    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"id\":1,\"s\":\"1\"}},{\"insert\":{\"id\":2,\"s\":\"2\"}}]"
-            .parse::<Value>()
-            .unwrap()
-    );
-
-    let hood = config
-        .neighborhood_json("test", "T1", Some(json!({"id":2,"s":"1"})), 10, 10)
-        .await;
-    assert_eq!(
-        hood.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"index\":-1,\"key\":{\"id\":1,\"s\":\"1\"}}},{\"insert\":{\"index\":0,\"key\":{\"id\":2,\"s\":\"2\"}}}]"
-            .parse::<Value>()
-            .unwrap()
+        config
+            .adhoc_query_json("/v0/pipelines/test/query", "select * from t1 order by id;")
+            .await,
+        json!([{"id": 1, "s": "1"}, {"id": 2, "s": "2"}])
     );
 
     // Make some changes.
@@ -1432,20 +1436,11 @@ async fn primary_keys() {
         .await;
     assert!(req.status().is_success());
 
-    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"id\":1,\"s\":\"1-modified\"}},{\"insert\":{\"id\":2,\"s\":\"2-modified\"}}]"
-            .parse::<Value>()
-            .unwrap()
-    );
-
-    let hood = config.neighborhood_json("test", "T1", None, 10, 10).await;
-    assert_eq!(
-        hood.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"index\":0,\"key\":{\"id\":1,\"s\":\"1-modified\"}}},{\"insert\":{\"index\":1,\"key\":{\"id\":2,\"s\":\"2-modified\"}}}]"
-            .parse::<Value>()
-            .unwrap()
+        config
+            .adhoc_query_json("/v0/pipelines/test/query", "select * from t1 order by id;")
+            .await,
+        json!([{"id": 1, "s": "1-modified"}, {"id": 2, "s": "2-modified"}])
     );
 
     // Delete a key
@@ -1457,12 +1452,11 @@ async fn primary_keys() {
         .await;
     assert!(response.status().is_success());
 
-    let quantiles = config.quantiles_json("test", "T1").await;
     assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"id\":1,\"s\":\"1-modified\"}}]"
-            .parse::<Value>()
-            .unwrap()
+        config
+            .adhoc_query_json("/v0/pipelines/test/query", "select * from t1 order by id;")
+            .await,
+        json!([ {"id": 1, "s": "1-modified"}])
     );
 
     // Shutdown the pipeline
@@ -1539,16 +1533,18 @@ create materialized view "v1" as select * from table1;"#,
         )
         .await;
 
-    let quantiles = config.quantiles_json("test", "\"V1\"").await;
     assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"id\":1}}]".parse::<Value>().unwrap()
+        config
+            .adhoc_query_json("/v0/pipelines/test/query", "select * from \"V1\";")
+            .await,
+        json!([{ "id": 1 }])
     );
 
-    let quantiles = config.quantiles_json("test", "\"v1\"").await;
     assert_eq!(
-        quantiles.parse::<Value>().unwrap(),
-        "[{\"insert\":{\"id\":2}}]".parse::<Value>().unwrap()
+        config
+            .adhoc_query_json("/v0/pipelines/test/query", "select * from v1;")
+            .await,
+        json!([{ "id": 2 }])
     );
 
     // Shutdown the pipeline

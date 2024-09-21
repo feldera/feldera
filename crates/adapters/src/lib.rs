@@ -191,8 +191,8 @@ pub use circuit_handle::DbspCircuitHandle;
 pub use server::{ErrorResponse, PipelineError};
 
 pub use catalog::{
-    Catalog, CircuitCatalog, DeCollectionHandle, DeCollectionStream, OutputQueryHandles,
-    RecordFormat, SerBatch, SerCollectionHandle, SerCursor,
+    Catalog, CircuitCatalog, DeCollectionHandle, DeCollectionStream, RecordFormat, SerBatch,
+    SerCollectionHandle, SerCursor,
 };
 pub use format::{
     Encoder, InputBuffer, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser,

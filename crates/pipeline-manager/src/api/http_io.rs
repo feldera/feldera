@@ -118,12 +118,6 @@ async fn http_input(
 ///
 /// The pipeline continues sending updates until the client closes the
 /// connection or the pipeline is shut down.
-///
-/// This API is a POST instead of a GET, because when performing neighborhood
-/// queries (query='neighborhood'), the call expects a request body which
-/// contains, among other things, a full row to execute a neighborhood search
-/// around. A row can be quite large and is not appropriate as a query
-/// parameter.
 #[utoipa::path(
     responses(
         (status = OK
@@ -161,18 +155,10 @@ async fn http_input(
         ("table_name" = String, Path,
             description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
         ("format" = String, Query, description = "Output data format, e.g., 'csv' or 'json'."),
-        ("query" = Option<OutputQuery>, Query, description = "Query to execute on the table. Must be one of 'table', 'neighborhood', or 'quantiles'. The default value is 'table'"),
-        ("mode" = Option<EgressMode>, Query, description = "Output mode. Must be one of 'watch' or 'snapshot'. The default value is 'watch'"),
-        ("quantiles" = Option<u32>, Query, description = "For 'quantiles' queries: the number of quantiles to output. The default value is 100."),
         ("array" = Option<bool>, Query, description = "Set to `true` to group updates in this stream into JSON arrays (used in conjunction with `format=json`). The default value is `false`"),
         ("backpressure" = Option<bool>, Query, description = r#"Apply backpressure on the pipeline when the HTTP client cannot receive data fast enough.
         When this flag is set to false (the default), the HTTP connector drops data chunks if the client is not keeping up with its output.  This prevents a slow HTTP client from slowing down the entire pipeline.
         When the flag is set to true, the connector waits for the client to receive each chunk and blocks the pipeline if the client cannot keep up."#)
-    ),
-    request_body(
-        content = Option<NeighborhoodQuery>,
-        description = "When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.",
-        content_type = "application/json",
     ),
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),

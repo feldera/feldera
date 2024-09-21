@@ -323,7 +323,7 @@ export const deleteApiKey = (name: string) =>
   handled(_deleteApiKey)({ path: { api_key_name: name } })
 
 export const relationEggressStream = async (pipelineName: string, relationName: string) => {
-  // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'mode': 'watch', 'array': false, 'query': 'table'}})
+  // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'array': false}})
   const fetch = (() => {
     try {
       const oidcClient = OidcClient.get()
@@ -333,7 +333,7 @@ export const relationEggressStream = async (pipelineName: string, relationName: 
     }
   })()
   const result = await fetch(
-    `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${relationName}?format=json&mode=watch&array=false&query=table`,
+    `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${relationName}?format=json&array=false`,
     {
       method: 'POST'
     }

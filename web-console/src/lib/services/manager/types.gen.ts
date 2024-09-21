@@ -456,8 +456,6 @@ export type Demo = {
   title: string
 }
 
-export type EgressMode = 'watch' | 'snapshot'
-
 /**
  * Information returned by REST API endpoints on error.
  */
@@ -489,7 +487,7 @@ export type ExtendedPipelineDescr = {
    */
   created_at: string
   deployment_config?: PipelineConfig | null
-  deployment_desired_status: PipelineStatus
+  deployment_desired_status: PipelineDesiredStatus
   deployment_error?: ErrorResponse | null
   /**
    * Location where the pipeline can be reached at runtime
@@ -537,7 +535,7 @@ export type ExtendedPipelineDescr = {
 export type ExtendedPipelineDescrOptionalCode = {
   created_at: string
   deployment_config?: PipelineConfig | null
-  deployment_desired_status: PipelineStatus
+  deployment_desired_status: PipelineDesiredStatus
   deployment_error?: ErrorResponse | null
   deployment_location?: string | null
   deployment_status: PipelineStatus
@@ -882,19 +880,6 @@ export type ListPipelinesQueryParameters = {
 }
 
 /**
- * A request to output a specific neighborhood of a table or view.
- * The neighborhood is defined in terms of its central point (`anchor`)
- * and the number of rows preceding and following the anchor to output.
- */
-export type NeighborhoodQuery = {
-  after: number
-  anchor?: {
-    [key: string]: unknown
-  } | null
-  before: number
-}
-
-/**
  * Request to create a new API key.
  */
 export type NewApiKeyRequest = {
@@ -1035,14 +1020,6 @@ export type OutputEndpointConfig = ConnectorConfig & {
 }
 
 /**
- * A query over an output stream.
- *
- * We currently do not support ad hoc queries.  Instead the client can use
- * three pre-defined queries to inspect the contents of a table or view.
- */
-export type OutputQuery = 'table' | 'neighborhood' | 'quantiles'
-
-/**
  * Patch (partially) update the pipeline.
  *
  * Note that the patching only applies to the main fields, not subfields.
@@ -1177,6 +1154,8 @@ export type PipelineDescr = {
   runtime_config: RuntimeConfig
 }
 
+export type PipelineDesiredStatus = 'Shutdown' | 'Paused' | 'Running'
+
 /**
  * Pipeline identifier.
  */
@@ -1186,7 +1165,7 @@ export type PipelineId = string
  * Pipeline status.
  *
  * This type represents the state of the pipeline tracked by the pipeline
- * runner and observed by the API client via the `GET /pipeline` endpoint.
+ * runner and observed by the API client via the `GET /v0/pipelines/{name}` endpoint.
  *
  * ### The lifecycle of a pipeline
  *
@@ -1203,9 +1182,9 @@ export type PipelineId = string
  * or until the runner performs a forced shutdown of the pipeline after a
  * pre-defined timeout period.
  *
- * * State transitions labeled with API endpoint names (`/deploy`, `/start`,
- * `/pause`, `/shutdown`) are triggered by invoking corresponding endpoint,
- * e.g., `POST /v0/pipelines/{pipeline_id}/start`.
+ * * State transitions labeled with API endpoint names (`/start`, `/pause`,
+ * `/shutdown`) are triggered by invoking corresponding endpoint,
+ * e.g., `POST /v0/pipelines/{name}/start`.
  *
  * ```text
  * Shutdown◄────┐
@@ -1213,11 +1192,11 @@ export type PipelineId = string
  * /deploy│         │
  * │   ⌛ShuttingDown
  * ▼         ▲
- * ⌛Provisioning    │
+ * ⌛Provisioning     │
  * │         │
- * Provisioned        │         │
+ * │         │
  * ▼         │/shutdown
- * ⌛Initializing    │
+ * ⌛Initializing     │
  * │         │
  * ┌────────┴─────────┴─┐
  * │        ▼           │
@@ -1247,11 +1226,11 @@ export type PipelineId = string
  * in the diagram.
  *
  * The user can monitor the current state of the pipeline via the
- * `/status` endpoint, which returns an object of type `Pipeline`.
+ * `GET /v0/pipelines/{name}` endpoint, which returns an object of type `ExtendedPipelineDescr`.
  * In a typical scenario, the user first sets
  * the desired state, e.g., by invoking the `/deploy` endpoint, and
- * then polls the `GET /pipeline` endpoint to monitor the actual status
- * of the pipeline until its `state.current_status` attribute changes
+ * then polls the `GET /v0/pipelines/{name}` endpoint to monitor the actual status
+ * of the pipeline until its `deployment_status` attribute changes
  * to "paused" indicating that the pipeline has been successfully
  * initialized, or "failed", indicating an error.
  */
@@ -1892,6 +1871,10 @@ export type GetConfigDemosResponse = Array<Demo>
 
 export type GetConfigDemosError = ErrorResponse
 
+export type GetMetricsResponse = Blob | File
+
+export type GetMetricsError = unknown
+
 export type ListPipelinesData = {
   query?: {
     /**
@@ -1985,10 +1968,6 @@ export type GetPipelineCircuitProfileResponse = {
 export type GetPipelineCircuitProfileError = ErrorResponse
 
 export type HttpOutputData = {
-  /**
-   * When the `query` parameter is set to 'neighborhood', the body of the request must contain a neighborhood specification.
-   */
-  body?: NeighborhoodQuery | null
   path: {
     /**
      * Unique pipeline name
@@ -2014,18 +1993,6 @@ export type HttpOutputData = {
      * Output data format, e.g., 'csv' or 'json'.
      */
     format: string
-    /**
-     * Output mode. Must be one of 'watch' or 'snapshot'. The default value is 'watch'
-     */
-    mode?: EgressMode | null
-    /**
-     * For 'quantiles' queries: the number of quantiles to output. The default value is 100.
-     */
-    quantiles?: number | null
-    /**
-     * Query to execute on the table. Must be one of 'table', 'neighborhood', or 'quantiles'. The default value is 'table'
-     */
-    query?: OutputQuery | null
   }
 }
 
@@ -2253,6 +2220,16 @@ export type $OpenApiTs = {
          * Failed to read demos from the demos directory.
          */
         '500': ErrorResponse
+      }
+    }
+  }
+  '/v0/metrics': {
+    get: {
+      res: {
+        /**
+         * Metrics of all running pipelines belonging to this tenant in Prometheus format
+         */
+        '200': Blob | File
       }
     }
   }
