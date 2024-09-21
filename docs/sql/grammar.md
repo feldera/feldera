@@ -408,25 +408,22 @@ See [Table functions](table.md#table-functions-1)
 ## `ASOF` joins
 
 An `ASOF JOIN` operation combines rows from two tables based on
-comparable timestamp values.  For each row in the left table, the join
+timestamp values.  For each row in the left table, the join
 finds at most a single row in the right table that has the "closest"
 timestamp value. The matched row on the right side is the closest
-match whose timestamp column is compared using one of the operations
-&lt;, &le;, &gt;, or &ge;, as specified by the comparison operator in
-the `MATCH_CONDITION` clause.  The comparison is performed using SQL
-semantics, which returns `false` when comparing `NULL` values with any
-other values.  Thus a 'NULL' timestamp in the left table will not
-match any timestamps in the right table.
+match whose timestamp column is compared using the comparison operator in
+the `MATCH_CONDITION` clause.  Currently, only `>=` is supported.
+The comparison is performed using SQL semantics, which returns `false`
+when comparing `NULL` values with any other values.  Thus a `NULL`
+timestamp in the left table will not match any timestamps in the right table.
 
-`ASOF JOIN` statements can also be `LEFT ASOF JOIN`.  In this case,
+Currently, only the `LEFT` form of the `ASOF JOIN` is supported.  In this case,
 when there is no match for a row in the left table, the columns from
 the right table are null-padded.
-
-There are no `RIGHT ASOF` joins.
 
 ```sql
 SELECT *
 FROM left_table LEFT ASOF JOIN right_table
-MATCH_CONDITION ( left_table.timecol &leq; right_table.timecol )
+MATCH_CONDITION ( left_table.timecol >= right_table.timecol )
 ON left_table.col = right_table.col
 ```
