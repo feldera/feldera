@@ -81,28 +81,17 @@ struct HttpOutputEndpointInner {
     backpressure: bool,
     total_buffers: AtomicU64,
     sender: ShardedLock<Option<mpsc::Sender<SendRequest>>>,
-    // This endpoint starts with sending a snapshot of a relation.
-    snapshot: bool,
-    stream: bool,
     // async_error_callback: RwLock<Option<AsyncErrorCallback>>,
 }
 
 impl HttpOutputEndpointInner {
-    pub(crate) fn new(
-        name: &str,
-        format: Format,
-        snapshot: bool,
-        stream: bool,
-        backpressure: bool,
-    ) -> Self {
+    pub(crate) fn new(name: &str, format: Format, backpressure: bool) -> Self {
         Self {
             name: name.to_string(),
             format,
             backpressure,
             total_buffers: AtomicU64::new(0),
             sender: ShardedLock::new(None),
-            snapshot,
-            stream,
             // async_error_callback: RwLock::new(None),
         }
     }
@@ -201,26 +190,14 @@ pub(crate) struct HttpOutputEndpoint {
 }
 
 impl HttpOutputEndpoint {
-    pub(crate) fn new(
-        name: &str,
-        format: &str,
-        snapshot: bool,
-        stream: bool,
-        backpressure: bool,
-    ) -> Self {
+    pub(crate) fn new(name: &str, format: &str, backpressure: bool) -> Self {
         let format = match format {
             "csv" => Format::Text,
             "json" => Format::Json,
             _ => Format::Binary,
         };
         Self {
-            inner: Arc::new(HttpOutputEndpointInner::new(
-                name,
-                format,
-                snapshot,
-                stream,
-                backpressure,
-            )),
+            inner: Arc::new(HttpOutputEndpointInner::new(name, format, backpressure)),
         }
     }
 
@@ -310,20 +287,6 @@ however the HTTP transport does not support this representation."
     }
 
     fn batch_end(&mut self) -> AnyResult<()> {
-        // If we're sending an empty snapshot, output an explicit empty
-        // batch to give the client a hint that the snapshot is empty
-        // (but any correct client must handle any number of batches in
-        // a snapshot, including 0, 1, and more).
-        // Drop the sender after receiving the first batch of updates in
-        // the snapshot mode.  The receiver will receive all buffered
-        // messages followed by a `RecvError::Closed` notification.
-        if self.inner.snapshot && self.inner.total_buffers.load(Ordering::Acquire) == 0 {
-            let _ = self.inner.push_buffer(Some(&[]), self.inner.backpressure);
-        }
-
-        if !self.inner.stream {
-            *self.inner.sender.write().unwrap() = None;
-        }
         Ok(())
     }
 

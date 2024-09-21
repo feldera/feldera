@@ -4,18 +4,15 @@ use std::fmt::{Debug, Formatter};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::format::InputBuffer;
-use crate::{static_compile::DeScalarHandle, ControllerError};
+use crate::ControllerError;
 use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
 use apache_avro::{schema::NamesRef, types::Value as AvroValue, Schema as AvroSchema};
 use arrow::record_batch::RecordBatch;
-use dbsp::{utils::Tup2, InputHandle};
+use dyn_clone::DynClone;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
-use feldera_types::query::OutputQuery;
 use feldera_types::serde_with_context::SqlSerdeConfig;
-use feldera_types::serialize_struct;
-use serde::{Deserialize, Serialize};
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
 
@@ -34,30 +31,6 @@ pub enum RecordFormat {
     Parquet(SerdeArrowSchema),
     #[cfg(feature = "with-avro")]
     Avro,
-}
-
-// Helper type only used to serialize neighborhoods as a map vs tuple.
-#[derive(Deserialize, Serialize, Debug)]
-pub struct NeighborhoodEntry<KD> {
-    index: i64,
-    key: KD,
-}
-
-serialize_struct!(NeighborhoodEntry(KD)[2]{
-    index["index"]: isize,
-    key["key"]: KD
-});
-
-impl<K, KD> From<Tup2<i64, Tup2<K, ()>>> for NeighborhoodEntry<KD>
-where
-    KD: From<K>,
-{
-    fn from(Tup2(index, Tup2(key, ())): Tup2<i64, Tup2<K, ()>>) -> Self {
-        Self {
-            index,
-            key: KD::from(key),
-        }
-    }
 }
 
 /// An input handle that deserializes and buffers records.
@@ -341,7 +314,7 @@ pub trait SerCursor: Send {
 /// A trait for a type that wraps around an
 /// [`OutputHandle`](`dbsp::OutputHandle`) and yields output batches produced by
 /// the circuit as [`SerBatchReader`]s.
-pub trait SerBatchReaderHandle: Send + Sync {
+pub trait SerBatchReaderHandle: Send + Sync + DynClone {
     /// See [`OutputHandle::num_nonempty_mailboxes`](`dbsp::OutputHandle::num_nonempty_mailboxes`)
     fn num_nonempty_mailboxes(&self) -> usize;
 
@@ -352,10 +325,9 @@ pub trait SerBatchReaderHandle: Send + Sync {
     /// Like [`OutputHandle::take_from_all`](`dbsp::OutputHandle::take_from_all`),
     /// but returns output batches as [`SyncSerBatchReader`] trait objects.
     fn take_from_all(&self) -> Vec<Arc<dyn SyncSerBatchReader>>;
-
-    /// Returns an alias to `self`.
-    fn fork(&self) -> Box<dyn SerBatchReaderHandle>;
 }
+
+dyn_clone::clone_trait_object!(SerBatchReaderHandle);
 
 /// A handle to an output stream of a circuit that yields type-erased
 /// output batches.
@@ -363,7 +335,7 @@ pub trait SerBatchReaderHandle: Send + Sync {
 /// A trait for a type that wraps around an
 /// [`OutputHandle`](`dbsp::OutputHandle`) and yields output batches produced by
 /// the circuit as [`SerBatch`]s.
-pub trait SerCollectionHandle: Send + Sync {
+pub trait SerCollectionHandle: Send + Sync + DynClone {
     /// See [`OutputHandle::num_nonempty_mailboxes`](`dbsp::OutputHandle::num_nonempty_mailboxes`)
     fn num_nonempty_mailboxes(&self) -> usize;
 
@@ -378,10 +350,9 @@ pub trait SerCollectionHandle: Send + Sync {
     /// Like [`OutputHandle::consolidate`](`dbsp::OutputHandle::consolidate`),
     /// but returns the output batch as a [`SerBatch`] trait object.
     fn consolidate(&self) -> Box<dyn SerBatch>;
-
-    /// Returns an alias to `self`.
-    fn fork(&self) -> Box<dyn SerCollectionHandle>;
 }
+
+dyn_clone::clone_trait_object!(SerCollectionHandle);
 
 /// Cursor that iterates over deletions before insertions.
 ///
@@ -510,40 +481,6 @@ pub trait CircuitCatalog: Send + Sync {
 
     /// Look up output stream handles by name.
     fn output_handles(&self, name: &SqlIdentifier) -> Option<&OutputCollectionHandles>;
-
-    /// Look up output query handles by stream name and query type.
-    fn output_query_handles(
-        &self,
-        name: &SqlIdentifier,
-        query: OutputQuery,
-    ) -> Option<OutputQueryHandles> {
-        self.output_handles(name).map(|handles| match query {
-            OutputQuery::Table => OutputQueryHandles {
-                schema: handles.schema.clone(),
-                delta: Some(handles.delta_handle.fork()),
-                snapshot: None,
-            },
-            OutputQuery::Neighborhood => OutputQueryHandles {
-                schema: handles.schema.clone(),
-                delta: handles
-                    .neighborhood_handle
-                    .as_ref()
-                    .map(|handle| handle.fork()),
-                snapshot: handles
-                    .neighborhood_snapshot_handle
-                    .as_ref()
-                    .map(|handle| handle.fork()),
-            },
-            OutputQuery::Quantiles => OutputQueryHandles {
-                schema: handles.schema.clone(),
-                delta: None,
-                snapshot: handles
-                    .quantiles_handle
-                    .as_ref()
-                    .map(|handle| handle.fork()),
-            },
-        })
-    }
 }
 
 /// Circuit catalog implementation.
@@ -629,6 +566,7 @@ impl InputCollectionHandle {
 }
 
 /// A set of stream handles associated with each output collection.
+#[derive(Clone)]
 pub struct OutputCollectionHandles {
     pub schema: Relation,
 
@@ -637,84 +575,4 @@ pub struct OutputCollectionHandles {
 
     /// A stream of changes to the collection.
     pub delta_handle: Box<dyn SerCollectionHandle>,
-
-    /// Input stream used to submit neighborhood queries.
-    ///
-    /// The stream carries values of type `(bool, Option<NeighborhoodDescr<K,
-    /// V>>)`, where `K` and `V` are the key and value types of the
-    /// collection.
-    ///
-    /// The first component of the tuple is the `reset` flag, which instructs
-    /// the circuit to start executing the neighborhood query specified in the
-    /// second component of the tuple.  The outputs of the neighborhood query
-    /// are emitted to [`neighborhood_handle`](`Self::neighborhood_handle`)
-    /// and
-    /// [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
-    /// streams.  When the flag is `false`, this input is ignored.
-    ///
-    /// In more detail, the circuit handles inputs written to this stream as
-    /// follows:
-    ///
-    /// * `(true, Some(descr))` - Start monitoring the specified descriptor. The
-    ///   circuit will output a complete snapshot of the neighborhood to the
-    ///   [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
-    ///   sstream at the end of the current clock cycle.  The
-    ///   [`neighborhood_handle`](`Self::neighborhood_handle`) stream will
-    ///   output the difference between the previous and the new neighborhoods
-    ///   at the end of the current clock cycle and will contain changes to the
-    ///   new neighborhood going forward.
-    ///
-    /// * `(true, None)` - Stop executing the neighborhood query.  This is
-    ///   equivalent to writing `(true, Some(descr))`, where `descr` specifies
-    ///   an empty neighborhood.
-    ///
-    /// * `(false, _)` - This is a no-op. The circuit will continue monitoring
-    ///   the previously specified neighborhood if any.  Nothing is written to
-    ///   the [`neighborhood_snapshot_handle`](`Self::neighborhood_snapshot_handle`)
-    ///   stream.
-    pub neighborhood_descr_handle: Option<Box<dyn DeScalarHandle>>,
-
-    /// A stream of changes to the neighborhood, computed using the
-    /// [`dbsp::Stream::neighborhood`] operator.
-    pub neighborhood_handle: Option<Box<dyn SerCollectionHandle>>,
-
-    /// A stream that contains the full snapshot of the neighborhood.  Only
-    /// produces an output whenever the `neighborhood_descr_handle` input is
-    /// set to `Some(..)`.
-    pub neighborhood_snapshot_handle: Option<Box<dyn SerCollectionHandle>>,
-
-    /// Input stream used to submit the quantiles query.
-    ///
-    /// The value in the stream specifies the number of quantiles to
-    /// output.  When  greater than zero, it triggers the quantiles
-    /// computation.  The result is output to the
-    /// `quantiles_handle` stream at the
-    /// end of the current clock cycle.
-    pub num_quantiles_handle: Option<InputHandle<usize>>,
-
-    /// Quantiles stream.
-    ///
-    /// When the `num_quantiles_handle` input is set to `N`, `N>0`, this stream
-    /// outputs up to `N` quantiles of the input collection, computed using
-    /// the [`dbsp::Stream::stream_key_quantiles`] operator.
-    pub quantiles_handle: Option<Box<dyn SerCollectionHandle>>,
-}
-
-/// Query result streams.
-///
-/// Stores the result of a a [query](`OutputQuery`) as a pair of streams:
-/// a stream of changes and a snapshot, i.e., the integral, of all previous
-/// changes.  Not all queries return both streams, e.g., the
-/// [quantiles](`OutputQuery::Quantiles`) query only returns a snapshot,
-/// while the [table](`OutputQuery::Table`) query currently only returns the
-/// delta stream; therefore the stream handles are wrapped in `Option`s.
-///
-/// Whenever both streams are present, the client may consume the result in
-/// a hybrid mode: read the initial snapshot containing a full answer to the
-/// query based on previously received inputs, and then listen to the delta
-/// stream for incremental updates triggered by new inputs.
-pub struct OutputQueryHandles {
-    pub schema: Relation,
-    pub delta: Option<Box<dyn SerCollectionHandle>>,
-    pub snapshot: Option<Box<dyn SerCollectionHandle>>,
 }

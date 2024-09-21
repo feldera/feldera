@@ -45,7 +45,7 @@ use actix_web::{
 };
 use anyhow::Error as AnyError;
 use datafusion::error::DataFusionError;
-use dbsp::{operator::sample::MAX_QUANTILES, DetailedError};
+use dbsp::DetailedError;
 use log::{error, log, warn, Level};
 use parquet::errors::ParquetError;
 use serde::{Deserialize, Serialize};
@@ -155,18 +155,6 @@ pub enum PipelineError {
         param: &'static str,
     },
     ApiConnectionLimit,
-    TableSnapshotNotImplemented,
-    QuantileStreamingNotSupported,
-    NumQuantilesOutOfRange {
-        quantiles: u32,
-    },
-    QuantilesNotSupported,
-    MissingNeighborhoodSpec,
-    InvalidNeighborhoodSpec {
-        spec: JsonValue,
-        parse_error: String,
-    },
-    NeighborhoodNotSupported,
     ControllerError {
         // Fold `ControllerError` directly into `PipelineError` to simplify
         // the error hierarchy from the user's perspective.
@@ -236,27 +224,6 @@ impl Display for PipelineError {
             Self::ApiConnectionLimit => {
                 f.write_str("The API connections limit has been exceded. Close some of the existing connections before opening new ones.")
             }
-            Self::QuantileStreamingNotSupported => {
-                f.write_str("Continuous monitoring is not supported for quantiles. Use '?mode=snapshot' to retrieve a single set of quantiles.")
-            }
-            Self::QuantilesNotSupported => {
-                f.write_str("Quantiles queries are not supported for this table.")
-            }
-            Self::TableSnapshotNotImplemented => {
-                f.write_str("Taking a snapshot of a table or view is not yet supported.")
-            }
-            Self::MissingNeighborhoodSpec => {
-                f.write_str(r#"Neighborhood request must specify neighborhood in the body of the request: '{"anchor": ..., "before": 100, "after": 100}'."#)
-            }
-            Self::NumQuantilesOutOfRange{quantiles} => {
-                write!(f, "The requested number of quantiles, {quantiles}, is beyond the allowed range 1 to {MAX_QUANTILES}.")
-            }
-            Self::InvalidNeighborhoodSpec{spec, parse_error} => {
-                write!(f, "Unable to parse neighborhood descriptor '{spec}'. Error returned by the parser: '{parse_error}'.")
-            }
-            Self::NeighborhoodNotSupported => {
-                f.write_str("Neighborhood queries are not supported for this table.")
-            }
             Self::ControllerError{ error } => {
                 error.fmt(f)
             }
@@ -294,13 +261,6 @@ impl DetailedError for PipelineError {
             Self::PrometheusError { .. } => Cow::from("PrometheusError"),
             Self::MissingUrlEncodedParam { .. } => Cow::from("MissingUrlEncodedParam"),
             Self::ApiConnectionLimit => Cow::from("ApiConnectionLimit"),
-            Self::QuantileStreamingNotSupported => Cow::from("QuantileStreamingNotSupported"),
-            Self::QuantilesNotSupported => Cow::from("QuantilesNotSupported"),
-            Self::TableSnapshotNotImplemented => Cow::from("TableSnapshotNotImplemented"),
-            Self::MissingNeighborhoodSpec => Cow::from("MissingNeighborhoodSpec"),
-            Self::NeighborhoodNotSupported => Cow::from("NeighborhoodNotSupported"),
-            Self::NumQuantilesOutOfRange { .. } => Cow::from("NumQuantilesOutOfRange"),
-            Self::InvalidNeighborhoodSpec { .. } => Cow::from("InvalidNeighborhoodSpec"),
             Self::ParseErrors { .. } => Cow::from("ParseErrors"),
             Self::ControllerError { error } => error.error_code(),
             Self::HeapProfilerError { .. } => Cow::from("HeapProfilerError"),
@@ -350,13 +310,6 @@ impl ResponseError for PipelineError {
             Self::PrometheusError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::MissingUrlEncodedParam { .. } => StatusCode::BAD_REQUEST,
             Self::ApiConnectionLimit => StatusCode::TOO_MANY_REQUESTS,
-            Self::QuantileStreamingNotSupported => StatusCode::METHOD_NOT_ALLOWED,
-            Self::QuantilesNotSupported => StatusCode::METHOD_NOT_ALLOWED,
-            Self::TableSnapshotNotImplemented => StatusCode::NOT_IMPLEMENTED,
-            Self::MissingNeighborhoodSpec => StatusCode::BAD_REQUEST,
-            Self::NeighborhoodNotSupported => StatusCode::METHOD_NOT_ALLOWED,
-            Self::NumQuantilesOutOfRange { .. } => StatusCode::RANGE_NOT_SATISFIABLE,
-            Self::InvalidNeighborhoodSpec { .. } => StatusCode::BAD_REQUEST,
             Self::ParseErrors { .. } => StatusCode::BAD_REQUEST,
             Self::HeapProfilerError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::ControllerError { error } => error.status_code(),

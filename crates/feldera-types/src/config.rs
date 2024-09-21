@@ -5,7 +5,6 @@
 //! endpoint configs.  We represent these configs as opaque yaml values, so
 //! that the entire configuration tree can be deserialized from a yaml file.
 
-use crate::query::OutputQuery;
 use crate::transport::datagen::DatagenInputConfig;
 use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
@@ -410,10 +409,6 @@ pub struct OutputEndpointConfig {
     /// The name of the output stream of the circuit that this endpoint is
     /// connected to.
     pub stream: Cow<'static, str>,
-
-    /// Query over the output stream.  Only used for HTTP API endpoints.
-    #[serde(skip)]
-    pub query: OutputQuery,
 
     /// Connector configuration.
     #[serde(flatten)]

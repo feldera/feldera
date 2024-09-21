@@ -19,6 +19,8 @@ import type {
   DeleteApiKeyResponse,
   GetConfigDemosError,
   GetConfigDemosResponse,
+  GetMetricsError,
+  GetMetricsResponse,
   ListPipelinesData,
   ListPipelinesError,
   ListPipelinesResponse,
@@ -137,6 +139,19 @@ export const getConfigDemos = (options?: Options) => {
 }
 
 /**
+ * Retrieve the metrics of all running pipelines belonging to this tenant.
+ * The metrics are collected by making individual HTTP requests to `/metrics`
+ * endpoint of each pipeline, of which only successful responses are included
+ * in the returned list.
+ */
+export const getMetrics = (options?: Options) => {
+  return (options?.client ?? client).get<GetMetricsResponse, GetMetricsError>({
+    ...options,
+    url: '/v0/metrics'
+  })
+}
+
+/**
  * Retrieve the list of pipelines.
  * Inclusion of program code is configured with by the `code` boolean query parameter.
  */
@@ -218,12 +233,6 @@ export const getPipelineCircuitProfile = (options: Options<GetPipelineCircuitPro
  *
  * The pipeline continues sending updates until the client closes the
  * connection or the pipeline is shut down.
- *
- * This API is a POST instead of a GET, because when performing neighborhood
- * queries (query='neighborhood'), the call expects a request body which
- * contains, among other things, a full row to execute a neighborhood search
- * around. A row can be quite large and is not appropriate as a query
- * parameter.
  */
 export const httpOutput = (options: Options<HttpOutputData>) => {
   return (options?.client ?? client).post<HttpOutputResponse, HttpOutputError>({

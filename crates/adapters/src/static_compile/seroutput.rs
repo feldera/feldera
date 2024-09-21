@@ -306,10 +306,6 @@ where
             })
             .collect()
     }
-
-    fn fork(&self) -> Box<dyn SerBatchReaderHandle> {
-        Box::new(self.clone())
-    }
 }
 
 impl<B, KD, VD> SerCollectionHandle for SerCollectionHandleImpl<B, KD, VD>
@@ -341,10 +337,6 @@ where
     fn consolidate(&self) -> Box<dyn SerBatch> {
         let batch = self.handle.consolidate();
         Box::new(<SerBatchImpl<B, KD, VD>>::new(batch))
-    }
-
-    fn fork(&self) -> Box<dyn SerCollectionHandle> {
-        Box::new(self.clone())
     }
 }
 
