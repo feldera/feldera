@@ -46,7 +46,9 @@ use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use futures_util::FutureExt;
 use log::{error, log, trace, Level};
+use std::time::Duration;
 use std::{env, net::TcpListener, sync::Arc};
+use termbg::{theme, Theme};
 use tokio::sync::Mutex;
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
@@ -447,17 +449,18 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
         }
     };
 
+    let banner = if theme(Duration::from_millis(500)).unwrap_or(Theme::Dark) == Theme::Dark {
+        include_str!("../../light-banner.ascii")
+    } else {
+        include_str!("../../dark-banner.ascii")
+    };
     let addr = env::var("BANNER_ADDR").unwrap_or(bind_address);
     let url = format!("http://{}:{}", addr, port);
+
     println!(
         r"
-                    Welcome to
 
-███████ ███████ ██      ██████  ███████ ██████   █████
-██      ██      ██      ██   ██ ██      ██   ██ ██   ██
-█████   █████   ██      ██   ██ █████   █████   ███████
-██      ██      ██      ██   ██ ██      ██  ██  ██   ██
-██      ███████ ███████ ██████  ███████ ██   ██ ██   ██
+{banner}
 
 Web console URL: {}
 API server URL: {}

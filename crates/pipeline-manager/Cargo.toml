@@ -60,6 +60,7 @@ metrics-exporter-prometheus = "0.15.3"
 rustls = "0.23.12"
 regex = "1.10.2"
 fdlimit = "0.3.0"
+termbg = "0.5.1"
 
 [features]
 integration-test = []
