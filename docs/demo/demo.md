@@ -13,14 +13,14 @@ built using those vulnerable binaries, and to Kubernetes clusters
 running those vulnerable images.
 
 To follow along, set up the containers using the instructions in [Get
-Started](/docs/docker).  It's also a good idea to take the [Tour](/docs/tour)
+Started](/docker).  It's also a good idea to take the [Tour](/tour)
 to familiarize yourself with Feldera concepts and user interface.
 
 ## Tables
 
 We'll start by looking at how the DevSecOps demo defines its input
 tables using SQL.  Fire up the Feldera demo and visit
-<http://localhost:8080/> to bring up the UI.  On the sidebar, click on
+http://localhost:8080/ to bring up the UI.  On the sidebar, click on
 "SQL Programs", then find the "SecOps demo" row in the table of
 programs and click on the pencil icon <icon icon="bx:pencil" />.  The
 SQL `create table` statements at the top of the program establish the
@@ -45,7 +45,6 @@ The following list describes the meaning of a record in each table:
 To see a visualization of the relationships between tables, expand the
 following.
 
-<details><summary>E-R diagram</summary>
 
 ```mermaid
 erDiagram
@@ -93,7 +92,6 @@ erDiagram
     artifact ||--o| artifact : "parent artifact"
     artifact ||--|| pipeline : "built by pipeline"
 ```
-</details>
 
 ## Views
 
@@ -122,7 +120,6 @@ To see a visualization of the relationships between tables and views,
 expand the following, which shows table names in lowercase and view
 names in uppercase:
 
-<details><summary>E-R diagram of tables and views</summary>
 
 ```mermaid
 erDiagram
@@ -147,7 +144,6 @@ erDiagram
     K8SOBJECT_VULNERABILITY_STATS ||--|| k8scluster : ""
 
 ```
-</details>
 
 ## Pipeline
 

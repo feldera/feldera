@@ -181,9 +181,7 @@ addition to the normal way of `''`.
   <tr>
     <td><code>TRIM ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
     <td>Remove the specified characters from the specified ends of the string argument</td>
-    <td><code>TRIM(both 'xyz' from 'yxTomxx')</code> => <code>Tom</code><br></br>
-        <code>TRIM(leading 'xyz' from 'yxTomxx')</code> => <code>Tomxx</code>
-    </td>
+    <td><code>TRIM(both 'xyz' from 'yxTomxx')</code> => <code>Tom</code><br></br><code>TRIM(leading 'xyz' from 'yxTomxx')</code> => <code>Tomxx</code></td>
   </tr>
   <tr>
     <td><code>UPPER ( string )</code></td>

@@ -112,8 +112,8 @@ CREATE TABLE json (id INT, json VARCHAR);
 CREATE VIEW parsed_json AS SELECT id, PARSE_JSON(json) AS json FROM json;
 ```
 
-Input events can use any [supported data format](/docs/formats/).  For instance, when
-ingesting a [JSON stream](/docs/formats/json), a valid input record could look like this
+Input events can use any [supported data format](/formats/).  For instance, when
+ingesting a [JSON stream](/formats/json), a valid input record could look like this
 (note the use of escaping in the `json` field):
 
 ```json
@@ -128,11 +128,11 @@ CREATE TABLE json (id INT, json VARIANT);
 ```
 
 **Note** that this program has a subtly different semantics from the previous one
-depending on the input [format](/docs/formats/) used.  For most input formats, e.g.,
-[Avro](/docs/formats/avro), [Parquet](/docs/formats/parquet), or [CSV](/docs/formats/csv),
+depending on the input [format](/formats/) used.  For most input formats, e.g.,
+[Avro](/formats/avro), [Parquet](/formats/parquet), or [CSV](/formats/csv),
 it is equivalent, i.e., it converts an input field of type string into a `VARIANT`.
-However, when the input stream carries JSON data using [raw](#the-raw-format)
-or [insert/delete](#the-insertdelete-format) encoding, the `json` field can contain
+However, when the input stream carries JSON data using [raw](/formats/json#the-raw-format)
+or [insert/delete](/formats/json#the-insertdelete-format) encoding, the `json` field can contain
 an arbitrary JSON value, which gets parsed into `VARIANT`:
 
 ```json

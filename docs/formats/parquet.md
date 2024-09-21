@@ -2,7 +2,7 @@
 
 Feldera can ingest and output data in the [Parquet format](https://parquet.apache.org/).
 
-- via [`ingress` and `egress` REST endpoints](/docs/tutorials/basics/part2) by specifying `?format=parquet` in the URL
+- via [`ingress` and `egress` REST endpoints](/tutorials/basics/part2) by specifying `?format=parquet` in the URL
 - as a payload received from or sent to a connector
 
 We document the Parquet format and how it interacts with different SQL types in this page.
@@ -28,7 +28,7 @@ and [Arrow types](https://docs.rs/arrow/latest/arrow/datatypes/enum.DataType.htm
 | `ARRAY`                                    | `DataType::LargeList`                                                              |
 | `STRUCT`                                   | `DataType::Struct`                                                                 |
 | `MAP`                                      | `DataType::Dictionary`                                                             |
-| `VARIANT`                                  | `LargeUtf8` (JSON-encoded string, see [VARIANT documentation](/docs/sql/json))   |
+| `VARIANT`                                  | `LargeUtf8` (JSON-encoded string, see [VARIANT documentation](/sql/json))   |
 
 
 ## Example

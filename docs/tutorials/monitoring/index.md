@@ -27,7 +27,7 @@ is then used to visualize these metrics.
 3. **Grafana:** You must have [Grafana installed](https://grafana.com).
 4. **Add Prometheus To Grafana:**
     - If you are using a local prometheus instance, the URL for the Prometheus data source will
-      be `http://localhost:9090`.
+      be http://localhost:9090.
     - Follow the steps in the [Grafana
       documentation](https://prometheus.io/docs/visualization/grafana/#creating-a-prometheus-data-source)
       to add Prometheus as a data source.

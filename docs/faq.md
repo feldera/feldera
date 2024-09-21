@@ -131,7 +131,7 @@ are much larger than their changes.
 ## Is Feldera open-source?
 
 The Feldera engine and compiler are licensed under the MIT license.
-The code is available at <https://github.com/feldera/feldera>
+The code is available at https://github.com/feldera/feldera
 
 ## Does Feldera have fault-tolerance?
 
@@ -146,10 +146,9 @@ expect that it will be ready within the next 6 months.
 
 ## How can I try Feldera?
 
-- You can try our online sandbox: <https://try.feldera.com>
+- You can try our online sandbox: https://try.feldera.com
 
-- You can download a docker image that offers everything packaged:
-  <https://www.feldera.com/docs/docker#start-the-demo>
+- You can download a [docker image](/docker#start-the-demo) that offers everything packaged:
 
 - We will be very happy to help design a prototype solution for your
   particular problem.

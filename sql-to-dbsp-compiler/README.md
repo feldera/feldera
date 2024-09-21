@@ -87,7 +87,7 @@ views                                           V
 ## Using the compiler
 
 See the documentation in `docs/contributors/compiler.md` in this repo,
-or [online](https://www.feldera.com/docs/contributors/compiler).
+or [online](/contributors/compiler).
 
 ## Compiler architecture
 

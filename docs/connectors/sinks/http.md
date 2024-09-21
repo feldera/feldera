@@ -84,7 +84,7 @@ print(json.dumps(json.loads(response)['json_data'], indent=4))
 
 For more information, see:
 
-* [Tutorial section](/docs/tutorials/basics/part2) on HTTP-based input and output.
+* [Tutorial section](/tutorials/basics/part2) on HTTP-based input and output.
 
-* [REST API documentation](https://www.feldera.com/api/subscribe-to-a-stream-of-updates-from-a-sql-view-or-table)
+* [REST API documentation](/api/subscribe-to-a-stream-of-updates-from-a-sql-view-or-table)
   for the `/egress` endpoint.

@@ -82,7 +82,7 @@ You also need `curl` and a web browser such as Chrome or Firefox.
    interface to become available.  On fast systems, this includes a
    pause of a few seconds in which nothing is logged.
 
-3. Visit <http://localhost:8080/> in your web browser to bring up the
+3. Visit `http://localhost:8080/` in your web browser to bring up the
    Feldera Console UI.
 
 4. Try out one of the [demos](demo/).

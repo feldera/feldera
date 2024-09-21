@@ -403,7 +403,7 @@ The window bounds must be non-negative constant values.
 
 Table functions are invoked using the syntax `TABLE(function(arguments))`.
 
-See [Table functions](table.md#table-functions)
+See [Table functions](table.md#table-functions-1)
 
 ## `ASOF` joins
 

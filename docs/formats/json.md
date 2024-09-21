@@ -84,7 +84,7 @@ the JSON encoding of a row would look like this:
 | DATE                                    | `2024-02-25`                                            |
 | BIGINT ARRAY                            | `[1, 2]`                                                |
 | VARCHAR ARRAY ARRAY                     | `[[ 'abc', '123'], ['c', 'sql']]`                       |
-| VARIANT                                 | any JSON value (see [`VARIANT` documentation](/docs/sql/json/#processing-json-data-using-variant))|
+| VARIANT                                 | any JSON value (see [`VARIANT` documentation](/sql/json/#processing-json-data-using-variant))|
 
 ### `BOOLEAN`
 
@@ -274,7 +274,7 @@ create table PART (
 - `update_format`: Choose data change event format for this connector. Supported values are `insert_delete` and `raw`.
 - `array`: Enable or disable array encoding.
 
-See also the [input/output connector tutorial](tutorials/basics/part3.md).
+See also the [input/output connector tutorial](/tutorials/basics/part3.md).
 
 ### Streaming JSON over HTTP
 
@@ -303,4 +303,4 @@ to choose this encoding for output data.
 curl -s -N -X 'POST' 'http://localhost:8080/v0/pipelines/PIPELINE_NAME/egress/VIEW_NAME?format=json'
 ```
 
-See also the [HTTP input and output tutorial](tutorials/basics/part3.md).
+See also the [HTTP input and output tutorial](/tutorials/basics/part3.md).

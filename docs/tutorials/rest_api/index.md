@@ -1,7 +1,7 @@
 # Using REST API
 
 Feldera features a comprehensive REST API for managing
-[pipelines](https://www.feldera.com/docs/#pipelines).
+[pipelines](/api/introduction#pipeline).
 In fact, Feldera's Web Console interacts with the backend service exclusively
 via this public API.
 
@@ -31,7 +31,7 @@ language (e.g., in Python using the `requests` module).
    ```
    (leave it running in a separate terminal while going through this tutorial)
 
-   > For the remainder of this tutorial, we will use **http://localhost:8080** as
+   > For the remainder of this tutorial, we will use http://localhost:8080 as
    > this is the default local hostname:port for the docker Feldera instance.
    > You will need to change it to match the Feldera instance you are using.
 
@@ -65,7 +65,7 @@ language (e.g., in Python using the `requests` module).
 
 In this tutorial, we are going to approach a use case of supply chain management,
 which we also looked at in the
-[UI-based tutorial](https://www.feldera.com/docs/tutorials/basics/).
+[UI-based tutorial](/tutorials/basics/).
 The use case focuses on identifying the vendors with the lowest prices for parts.
 We will create a pipeline which ingests data from several HTTP sources
 and performs several interesting queries on them.
@@ -82,7 +82,7 @@ We'll be going through the following steps:
 ... all using just `curl`!
 
 > Note: at any point in the tutorial, don't forget you can check out the
-> Web Console by visiting **http://localhost:8080** in your browser!
+> Web Console by visiting http://localhost:8080 in your browser!
 
 ### Step 1: SQL pipeline
 
@@ -383,5 +383,5 @@ using Ctrl-C.
 
 Interested in building applications using the API? Consider reading our API and SQL reference.
 
-- [Browse the API documentation](https://www.feldera.com/api/)
-- [Read the SQL reference](https://www.feldera.com/docs/sql/intro/)
+- [Browse the API documentation](/api/)
+- [Read the SQL reference](/sql/intro/)

@@ -1,7 +1,7 @@
 # Operations on Maps
 
-A MAP type can be created using the syntax MAP<type, type>.
-For example `MAP<VARCHAR, INT>` is an map from strings to integers.
+A MAP type can be created using the syntax `MAP<type, type>`.
+For example `MAP<VARCHAR, INT>` is a map from strings to integers.
 
 In `CREATE TABLE` and `CREATE TYPE` declarations there is no way to
 specify the nullability of the values of a `MAP`.  The compiler will
