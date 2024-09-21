@@ -105,32 +105,19 @@ but always return a Boolean value (sometimes nullable):
 
 <table>
   <tr>
-    <td><code>CASE value
-        WHEN value1 [, value11 ]* THEN result1
-        [ WHEN valueN [, valueN1 ]* THEN resultN ]*
-        [ ELSE resultZ ]
-        END</code>
-    </td>
+    <td><code>CASE value WHEN value1 [, value11 ]* THEN result1 [ WHEN valueN [, valueN1 ]* THEN resultN ]* [ ELSE resultZ ] END</code></td>
     <td>Simple case</td>
   </tr>
   <tr>
-    <td><code>CASE WHEN condition1 THEN result1
-           [ WHEN conditionN THEN resultN ]*
-           [ ELSE resultZ ]
-        END</code>
-    </td>
+    <td><code>CASE WHEN condition1 THEN result1 [ WHEN conditionN THEN resultN ]* [ ELSE resultZ ] END</code></td>
     <td>Searched case</td>
   </tr>
   <tr>
     <td><code>NULLIF(value, value)</code></td>
-    <td>Returns `NULL` if the values are the same.
-        For example, <code>NULLIF(5, 5)</code> returns NULL; <code>NULLIF(5, 0)</code> returns 5.
-    </td>
+    <td>Returns `NULL` if the values are the same. For example, <code>NULLIF(5, 5)</code> returns NULL; <code>NULLIF(5, 0)</code> returns 5.</td>
   </tr>
   <tr>
     <td><code>COALESCE(value, value [, value ]*)</code></td>
-    <td>Provides a value if the first value is NULL.
-        For example, <code>COALESCE(NULL, 5)</code> returns 5.
-    </td>
+    <td>Provides a value if the first value is NULL. For example, <code>COALESCE(NULL, 5)</code> returns 5.</td>
   </tr>
 </table>

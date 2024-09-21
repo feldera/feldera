@@ -356,7 +356,7 @@ We support the following functions for formatting date-like values:
 | `FORMAT_DATE` | string_format, date | `FORMAT_DATE("%Y=%m", d)` => 2020-10 |
 
 These functions are similar to the BigQuery functions:
-<https://cloud.google.com/bigquery/docs/reference/standard-sql/format-elements#format_elements_date_time>
+https://cloud.google.com/bigquery/docs/reference/standard-sql/format-elements#format_elements_date_time
 
 The format string recognizes the following format specifiers:
 (the Types column encodes the following types: D=Date, TS=TIMESTAMP, T=TIME

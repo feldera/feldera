@@ -4,7 +4,7 @@ Datagen is a source connector that generates synthetic data for testing,
 prototyping and benchmarking purposes.
 
 For a tutorial on how to use the Datagen connector, see the
-[Random Data Generation](/docs/tutorials/basics/part4) tutorial.
+[Random Data Generation](/tutorials/basics/part4) tutorial.
 
 ## Datagen input connector configuration
 

@@ -117,11 +117,11 @@ for product_id in range(0, 1000):
 
 For more information, see:
 
-* [Tutorial section](/docs/tutorials/basics/part2) on HTTP-based input and output.
+* [Tutorial section](/tutorials/basics/part2) on HTTP-based input and output.
 
-* [REST API documentation](https://www.feldera.com/api/push-data-to-a-sql-table) for the `/ingress` endpoint.
+* [REST API documentation](/api/push-data-to-a-sql-table) for the `/ingress` endpoint.
 
-* Data formats such as [JSON](https://www.feldera.com/docs/formats/json) and
-  [CSV](https://www.feldera.com/docs/formats/csv)
+* Data formats such as [JSON](/formats/json) and
+  [CSV](/formats/csv)
 
-* [Python API documentation](https://www.feldera.com/python/index.html)
+* [Python API documentation](https://docs.feldera.com/python/index.html)

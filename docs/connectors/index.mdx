@@ -60,26 +60,26 @@ appear before the `AS` clause to resolve any parsing ambiguities.
 A connector specification consists of three parts:
 
 * [Generic attributes](#generic-attributes) common to all connectors, such as backpressure thresholds.
-* Transport specification (`transport`) for either [input](/docs/connectors/sources/) or [output](/docs/connectors/sinks/)
+* Transport specification (`transport`) for either [input](/connectors/sources/) or [output](/connectors/sinks/)
   defines the data transport to be used by the connector.
-  Example transports include [Kafka](/docs/connectors/sources/kafka),
-  [URL](/docs/connectors/sources/http-get), [Delta Lake](/docs/connectors/sources/delta), etc.
-* [Data format specification](/docs/formats) (`format`), which defines the data format for the connector.
-  Example data formats include [CSV](/docs/formats/csv), [JSON](/docs/formats/json), [Parquet](/docs/formats/parquet), or
+  Example transports include [Kafka](/connectors/sources/kafka),
+  [URL](/connectors/sources/http-get), [Delta Lake](/connectors/sources/delta), etc.
+* [Data format specification](/formats) (`format`), which defines the data format for the connector.
+  Example data formats include [CSV](/formats/csv), [JSON](/formats/json), [Parquet](/formats/parquet), or
   Avro).
 
 :::note
 
-Some transports, e.g., [Delta Lake](/docs/connectors/sinks/delta) and
-[datagen](/docs/connectors/sources/datagen), use fixed predefined data formats and do not require the
+Some transports, e.g., [Delta Lake](/connectors/sinks/delta) and
+[datagen](/connectors/sources/datagen), use fixed predefined data formats and do not require the
 format section in the connector specification.
 
 :::
 
 This architecture allows the user to combine different transports and data formats.
 
-These basics apply to all connectors **except** the HTTP [input](/docs/connectors/sources/http) and
-[output](/docs/connectors/sinks/http) connectors which are not managed by the user, as they directly feed/fetch data
+These basics apply to all connectors **except** the HTTP [input](/connectors/sources/http) and
+[output](/connectors/sinks/http) connectors which are not managed by the user, as they directly feed/fetch data
 into/from a pipeline via dedicated pipeline endpoints and therefore do not need to be configured in the `WITH` clauses
 of tables and views.
 
@@ -98,8 +98,8 @@ The following attributes are common to all connectors:
 By default a Feldera pipeline sends a batch of changes to the output transport
 for each batch of input updates it processes.  This can result in a stream of
 small updates, which is normal and even preferable for output transports like
-[Kafka](/docs/connectors/sinks/kafka); however it can cause performance problems
-for other connectors, such as the [Delta Lake connector](/docs/connectors/sinks/delta)
+[Kafka](/connectors/sinks/kafka); however it can cause performance problems
+for other connectors, such as the [Delta Lake connector](/connectors/sinks/delta)
 by creating a large number of small files.
 
 The output buffer mechanism is designed to solve this problem by decoupling the
@@ -147,14 +147,14 @@ specified.
 
 :::
 
-See [Delta Lake output connector documentation](/docs/connectors/sinks/delta#curl)
+See [Delta Lake output connector documentation](/connectors/sinks/delta)
 for an example of configuring the output buffer.
 
 ## Additional resources
 
 For more information, see:
 
-* [Tutorial on using input and output connectors](/docs/tutorials/basics/part3)
-* [Tutorial on using HTTP-based Input and Output](/docs/tutorials/basics/part2)
-* [Supported source transports](/docs/connectors/sources)
-* [Supported sinks transports](/docs/connectors/sinks)
+* [Tutorial on using input and output connectors](/tutorials/basics/part3)
+* [Tutorial on using HTTP-based Input and Output](/tutorials/basics/part2)
+* [Supported source transports](/connectors/sources)
+* [Supported sinks transports](/connectors/sinks)

@@ -46,7 +46,7 @@ of input changes.  It works by accumulating updates inside the pipeline
 for up to a user-defined period of time or until accumulating a user-defined number
 of updates and writing them to the Delta Table as a small number of large files.
 
-See [output buffer](/docs/connectors#configuring-the-output-buffer) for details on configuring the output buffer mechanism.
+See [output buffer](/connectors#configuring-the-output-buffer) for details on configuring the output buffer mechanism.
 
 ## Limitations
 

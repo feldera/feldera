@@ -2,13 +2,13 @@
 
 :::note
 This page describes configuration options specific to the Debezium source connector.
-See [top-level connector documentation](/docs/connectors/) for general information
+See [top-level connector documentation](/connectors/) for general information
 about configuring input and output connectors.
 :::
 
 Debezium is a widely-used **Change Data Capture** (CDC) technology that streams real-time changes from databases such
 as PostgreSQL, MySQL, and Oracle to Kafka topics. Feldera can consume these change streams as inputs. We support
-Debezium streams encoded in both [JSON](/docs/formats/json) and [Avro](/docs/formats/avro) formats. Synchronizing
+Debezium streams encoded in both [JSON](/formats/json) and [Avro](/formats/avro) formats. Synchronizing
 a set of database tables with Feldera using Debezium involves three steps:
 
 1. [**Configure your database to work with Debezium**](#step-1-configure-your-database-to-work-with-debezium)
@@ -236,14 +236,14 @@ columns with the same types, with the following exceptions:
 ### JSON columns
 
 Source database columns of type `JSON` and `JSONB` can be mapped to Feldera columns of
-either [`VARIANT`](/docs/sql/json) or `VARCHAR` type.  The former allows efficient manipulation
+either [`VARIANT`](/sql/json) or `VARCHAR` type.  The former allows efficient manipulation
 of JSON values, similar to the `JSONB` type. The latter is preferable when working with JSON
 values as regular strings, when you don't need to parse or manipulate the JSON contents of the
 string.
 
 ## Additional resources
 
-* For more details on JSON support in Feldera, please refer to the [JSON Format Documentation](/docs/formats/json).
-* For more details on Avro support in Feldera, please refer to the [Avro Format Documentation](/docs/formats/avro).
-* For more information on configuring Kafka transport, visit the [Kafka Source Connector Documentation](/docs/connectors/sources/kafka).
+* For more details on JSON support in Feldera, please refer to the [JSON Format Documentation](/formats/json).
+* For more details on Avro support in Feldera, please refer to the [Avro Format Documentation](/formats/avro).
+* For more information on configuring Kafka transport, visit the [Kafka Source Connector Documentation](/connectors/sources/kafka).
 

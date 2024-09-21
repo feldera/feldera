@@ -40,15 +40,15 @@ WITH (
 
 For more information, see:
 
-* [Kafka input connector](/docs/connectors/sources/kafka#how-to-write-connector-config)
+* [Kafka input connector](/connectors/sources/kafka#how-to-write-connector-config)
   for examples on how to write the configuration to connect to Kafka brokers (e.g., how to
   specify authentication and encryption).
 
-* [Tutorial section](/docs/tutorials/basics/part3#step-2-create-kafkaredpanda-connectors) which involves
+* [Tutorial section](/tutorials/basics/part3#step-2-configure-kafkaredpanda-connectors) which involves
   creating a Kafka output connector.
 
-* Data formats such as [JSON](https://www.feldera.com/docs/formats/json) and
-  [CSV](https://www.feldera.com/docs/formats/csv)
+* Data formats such as [JSON](/formats/json) and
+  [CSV](/formats/csv)
 
 * Overview of Kafka configuration options:
   [librdkafka options](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)

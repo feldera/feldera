@@ -2,7 +2,7 @@
 
 :::note
 This page describes configuration options specific to integration with the Confluent JDBC sink connector.
-See [top-level connector documentation](/docs/connectors/) for general information
+See [top-level connector documentation](/connectors/) for general information
 about configuring input and output connectors.
 :::
 
@@ -157,5 +157,5 @@ The user is responsible for selecting a set of columns for the `key_fields` prop
 guaranteed to have unique values.  Failure to choose a unique key may lead to data loss.
 :::
 
-* For more details on Avro support in Feldera, please refer to the [Avro Format Documentation](/docs/formats/avro).
-* For more information on configuring Kafka transport, visit the [Kafka Sink Connector Documentation](/docs/connectors/sinks/kafka).
+* For more details on Avro support in Feldera, please refer to the [Avro Format Documentation](/formats/avro).
+* For more information on configuring Kafka transport, visit the [Kafka Sink Connector Documentation](/connectors/sinks/kafka).

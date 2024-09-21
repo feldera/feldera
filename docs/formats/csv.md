@@ -1,7 +1,7 @@
 # CSV Format
 
 Feldera can ingest and output data in the CSV format
-- via [`ingress` and `egress` REST endpoints](/docs/tutorials/basics/part2) by specifying `?format=csv` in the URL
+- via [`ingress` and `egress` REST endpoints](/tutorials/basics/part2) by specifying `?format=csv` in the URL
 - as a payload received from or sent to a connector
 
 Here we document the CSV format and how it interacts with different SQL types.
@@ -48,7 +48,7 @@ interpreted as an empty string instead of `NULL`.
 | DATE                                    | `2024-02-25`                                    |
 | BIGINT ARRAY                            | `[1, 2]`                                        |
 | VARCHAR ARRAY ARRAY                     | `[[ 'abc', '123'], ['c', 'sql']]`               |
-| VARIANT                                 | `"{""foo"": ""bar""}"` (see [`VARIANT` documetation](/docs/sql/json))|
+| VARIANT                                 | `"{""foo"": ""bar""}"` (see [`VARIANT` documetation](/sql/json))|
 
 ### `BOOLEAN`
 

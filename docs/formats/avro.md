@@ -2,12 +2,12 @@
 
 :::note
 This page describes configuration options specific to the Avro data format.
-See [top-level connector documentation](/docs/connectors/) for general information
+See [top-level connector documentation](/connectors/) for general information
 about configuring input and output connectors.
 :::
 
 Feldera supports sending and receiving data in the Avro format. While Avro-encoded messages are commonly
-transmitted over Kafka, any other supported [transport](/docs/connectors/) can be used.
+transmitted over Kafka, any other supported [transport](/connectors/) can be used.
 Avro is a strongly-typed format that requires a shared **schema** between the sender and receiver for successful
 data encoding and decoding.
 
@@ -28,12 +28,12 @@ We support several Avro-based formats:
   deletions.
 
 * **Debezium** (input only) - used to synchronize a Feldera table with an external database using
-  [Debezium](https://debezium.io/).  See [Debezium source connector documentation](/docs/connectors/sources/debezium)
+  [Debezium](https://debezium.io/).  See [Debezium source connector documentation](/connectors/sources/debezium)
   for more details.
 
 * **Confluent JDBC** (output only) - used to send incremental changes computed by Feldera
   to an external database using the [Confluent JDBC connector](https://docs.confluent.io/kafka-connectors/jdbc/current/sink-connector/).
-  See [Confluent JDBC sink documentation](/docs/connectors/sinks/confluent-jdbc) for details.
+  See [Confluent JDBC sink documentation](/connectors/sinks/confluent-jdbc) for details.
 
 
 ## Avro input
@@ -88,7 +88,7 @@ A SQL column and a field in the Avro schema are compatible if the following cond
 | `TIMESTAMP`                   | `long`         | logical type must be set to `timestamp-millis` or `timestamp-micros`|
 | `ARRAY`                       | `array`        | Avro and SQL array element schemas must match                       |
 | `MAP`                         | `map`          | SQL map keys must be of type `CHAR` or `VARCHAR`; Avro and SQL value schemas must match|
-| `VARIANT`                     | `string`       | values of type `VARIANT` are deserialized from JSON-encoded strings (see [`VARIANT` documetation](/docs/sql/json)) |
+| `VARIANT`                     | `string`       | values of type `VARIANT` are deserialized from JSON-encoded strings (see [`VARIANT` documetation](/sql/json)) |
 | user-defined types            | `record`       | Avro record schema must match SQL user-defined type definition according to the same schema compatibility rules as for SQL tables|
 
 ### Configuration
@@ -137,7 +137,7 @@ CREATE TABLE my_table (
 }]');
 ```
 
-Configure the Avro parser to ingest data change events from Debezium (refer to [Debezium connector documentation](/docs/connectors/sources/debezium) for additional details on setting up the Debezium source connector).
+Configure the Avro parser to ingest data change events from Debezium (refer to [Debezium connector documentation](/connectors/sources/debezium) for additional details on setting up the Debezium source connector).
 
 ```sql
 CREATE TABLE my_table (
@@ -184,20 +184,20 @@ The following properties can be used to configure the Avro encoder. All of these
 However, exactly one of `registry_urls` and `schema` properties must be specified.
 
 
-| Property                      | Type                        |Default | Description                                                 |
-|-------------------------------|-----------------------------|--------|----------------------------------------------------------|
-| `update_format`               | `"raw"` or `"confluent_jdbc"`|`"raw"` | Format used to encode data change events in this stream|
-| `schema`                      | string | | Avro schema used to encode output records. When specified, the encoder will use this schema; otherwise it will automatically generate an Avro schema based on the SQL view definition. Specified as a string containing schema definition in JSON format. This schema must match precisely the SQL view definition, modulo nullability of columns.|
-| `namespace`                   | string | | Avro namespace for the generated Avro schemas.|
-| `subject_name_strategy`       | `"topic_name"`, `"record_name"`, or `"topic_record_name"` | see description| Subject name strategy used to publish Avro schemas used by the connector in the schema registry. When this property is not specified, the connector chooses subject name strategy automatically, `topic_name` for `confluent_jdbc` update format or `record_name` for `raw` update format.|
-| `key_fields`                  | array of strings| | When this option is set, only the listed fields appear in the Debezium message key. This option is only valid with the `confluent_jdbc` update format. It is used when writing to a table with primary keys. For such tables, the Confluent JDBC sink connector expects the message key to contain only the primary key columns. When this field is set, the connector generates a separate Avro schema, containing only the listed fields, and uses this schema to encode Kafka message keys.|
-| `skip_schema_id` | Boolean | `false` | Set to `true` if serialized messages should only contain raw data without the header carrying schema ID. `False` by default. See <https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format>|
-| `registry_urls`               | array of strings| `[]` | List of schema registry URLs. When non-empty, the connector retrieves Avro message schemas from the registry.|
-| `registry_proxy`              | string          | | Proxy that will be used to access the schema registry. Requires `registry_urls` to be set.|
-| `registry_timeout_secs`       | string          | | Timeout in seconds used to connect to the registry. Requires `registry_urls` to be set.|
-| `registry_username`           | string          | | Username used to authenticate with the registry.Requires `registry_urls` to be set. This option is mutually exclusive with token-based authentication (see `registry_authorization_token`).|
-| `registry_password`           | string          | | Password used to authenticate with the registry. Requires `registry_urls` to be set.|
-| `registry_authorization_token`| string          | | Token used to authenticate with the registry. Requires `registry_urls` to be set. This option is mutually exclusive with password-based authentication (see `registry_username` and `registry_password`).|
+| Property                       | Type                        |Default | Description                                                 |
+|--------------------------------|-----------------------------|--------|----------------------------------------------------------|
+| `update_format`                | `"raw"` or `"confluent_jdbc"`|`"raw"` | Format used to encode data change events in this stream|
+| `schema`                       | string | | Avro schema used to encode output records. When specified, the encoder will use this schema; otherwise it will automatically generate an Avro schema based on the SQL view definition. Specified as a string containing schema definition in JSON format. This schema must match precisely the SQL view definition, modulo nullability of columns.|
+| `namespace`                    | string | | Avro namespace for the generated Avro schemas.|
+| `subject_name_strategy`        | `"topic_name"`, `"record_name"`, or `"topic_record_name"` | see description| Subject name strategy used to publish Avro schemas used by the connector in the schema registry. When this property is not specified, the connector chooses subject name strategy automatically, `topic_name` for `confluent_jdbc` update format or `record_name` for `raw` update format.|
+| `key_fields`                   | array of strings| | When this option is set, only the listed fields appear in the Debezium message key. This option is only valid with the `confluent_jdbc` update format. It is used when writing to a table with primary keys. For such tables, the Confluent JDBC sink connector expects the message key to contain only the primary key columns. When this field is set, the connector generates a separate Avro schema, containing only the listed fields, and uses this schema to encode Kafka message keys.|
+| `skip_schema_id`               | Boolean | `false` | Set to `true` if serialized messages should only contain raw data without the header carrying schema ID. `False` by default. See https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format|
+| `registry_urls`                | array of strings| `[]` | List of schema registry URLs. When non-empty, the connector retrieves Avro message schemas from the registry.|
+| `registry_proxy`               | string          | | Proxy that will be used to access the schema registry. Requires `registry_urls` to be set.|
+| `registry_timeout_secs`        | string          | | Timeout in seconds used to connect to the registry. Requires `registry_urls` to be set.|
+| `registry_username`            | string          | | Username used to authenticate with the registry.Requires `registry_urls` to be set. This option is mutually exclusive with token-based authentication (see `registry_authorization_token`).|
+| `registry_password`            | string          | | Password used to authenticate with the registry. Requires `registry_urls` to be set.|
+| `registry_authorization_token` | string          | | Token used to authenticate with the registry. Requires `registry_urls` to be set. This option is mutually exclusive with password-based authentication (see `registry_username` and `registry_password`).|
 
 ### Examples
 

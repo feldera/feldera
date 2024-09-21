@@ -60,7 +60,7 @@ underneath.
 Note that it is strongly recommended outside of test/dev
 environments to have encrypted and authenticated communication.
 In addition, in order for connectors to not have secrets in plaintext in their configuration,
-it is recommended to use [secret management](/docs/enterprise/kubernetes-guides/secret-management).
+it is recommended to use [secret management](/enterprise/kubernetes-guides/secret-management).
 
 #### No authentication and plaintext (no encryption)
 
@@ -130,11 +130,11 @@ Debezium.  For information on how to setup Debezium integration for Feldera, see
 
 For more information, see:
 
-* [Tutorial section](/docs/tutorials/basics/part3#step-2-create-kafkaredpanda-connectors) which involves
+* [Tutorial section](/tutorials/basics/part3#step-2-configure-kafkaredpanda-connectors) which involves
   creating a Kafka input connector.
 
-* Data formats such as [JSON](https://www.feldera.com/docs/formats/json) and
-  [CSV](https://www.feldera.com/docs/formats/csv)
+* Data formats such as [JSON](/formats/json) and
+  [CSV](/formats/csv)
 
 * Overview of Kafka configuration options:
   [librdkafka options](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)

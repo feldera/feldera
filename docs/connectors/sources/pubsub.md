@@ -2,7 +2,7 @@
 
 :::note
 This page describes configuration options specific to the Google Pub/Sub connector.
-See [top-level connector documentation](/docs/connectors/) for general information
+See [top-level connector documentation](/connectors/) for general information
 about configuring input and output connectors.
 :::
 
@@ -146,5 +146,5 @@ Please ensure you have a Google Cloud account before proceeding.
 
 For more information, see:
 
-* [Top-level connector documentation](/docs/connectors/)
-* [Supported data formats](/docs/formats)
+* [Top-level connector documentation](/connectors/)
+* [Supported data formats](/formats)

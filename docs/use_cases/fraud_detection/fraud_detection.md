@@ -296,8 +296,8 @@ eval_metrics(y_test, y_pred)
 
 Here we use the [Feldera online sandbox](https://try.feldera.com).
 You can also use a local instance of Feldera running in a Docker
-container on `http://localhost:8080`.
-See [instructions](/docs/docker) for running Feldera in Docker.
+container on http://localhost:8080.
+See [instructions](/docker) for running Feldera in Docker.
 
 :::
 
@@ -349,7 +349,7 @@ query over streaming data and send computed feature vectors to the ML model for
 inference.  It is almost identical to our training setup, except that this time
 we read data from the inference dataset.  In addition, we configure the input
 connector for the `TRANSACTION` table to ingest transaction data in the
-[snapshot-and-follow](/docs/connectors/sources/delta#required-parameters) mode.
+[snapshot-and-follow](/connectors/sources/delta#required-parameters) mode.
 In this mode, the connector reads the initial snapshot of the table before following
 the stream of changes in its transaction log.  This **backfill** pattern is necessary
 to correctly evaluate features that depend on historical data such as rolling
@@ -478,4 +478,4 @@ input.
 ## Resources
 
 A version of this use case focusing on integration with the Delta Lake and Spark ecosystem
-is published as a [blog post](/blog/feature-engineering-part2/).
+is published as a [blog post](https://www.feldera.com/blog/feature-engineering-part2/).

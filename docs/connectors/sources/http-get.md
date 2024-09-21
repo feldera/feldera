@@ -9,7 +9,7 @@ Feldera can ingest data from a user-provided URL into a SQL table.
 We will create a pipeline with an HTTP GET connector.
 
 The file is hosted at `https://example.com/tools-data.json`,
-and is in [newline-delimited JSON (NDJSON) format](/docs/formats/json#encoding-multiple-changes)
+and is in [newline-delimited JSON (NDJSON) format](/formats/json#encoding-multiple-changes)
 with one row per line. For example:
 
 ```text
@@ -86,10 +86,8 @@ requests.put(
 
 For more information, see:
 
-* [API connectors documentation](https://www.feldera.com/api/create-a-new-connector)
-
-* [Tutorial section](/docs/tutorials/basics/part3#step-1-create-http-get-connectors) which involves
+* [Tutorial section](/tutorials/basics/part3#step-1-configure-https-get-connectors) which involves
   creating an HTTP GET connector.
 
-* Data formats such as [JSON](https://www.feldera.com/docs/formats/json),
-  [CSV](https://www.feldera.com/docs/formats/csv), and [Parquet](https://www.feldera.com/docs/formats/parquet)
+* Data formats such as [JSON](/formats/json),
+  [CSV](/formats/csv), and [Parquet](/formats/parquet)
