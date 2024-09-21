@@ -28,6 +28,22 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2539() {
+        String sql = """
+                CREATE TABLE t(c1 INT, c2 INT);
+                CREATE VIEW v AS SELECT
+                ARRAY_AGG(c1) FILTER(WHERE (c1+c2)>3)
+                FROM t;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO t VALUES (2, 3), (5, 6), (2, 1);",
+                """
+                         result | weight
+                        ------------------
+                         {2,5} | 1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void issue2316() {
         String sql = """
                 CREATE TABLE sum(c1 TINYINT);

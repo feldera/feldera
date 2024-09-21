@@ -188,6 +188,9 @@ public class AggregateCompiler implements ICompilerComponent {
     void processGrouping(SqlAbstractGroupFunction function) {
         CalciteObject node = CalciteObject.create(function);
         DBSPExpression zero = this.nullableResultType.to(IsNumericType.class).getZero();
+        if (this.filterArgument() != null) {
+            throw new UnimplementedException(node);
+        }
 
         long result = 0;
         long mask = 1;
@@ -199,6 +202,8 @@ public class AggregateCompiler implements ICompilerComponent {
             }
             mask <<= 1;
         }
+
+        // TODO: should this be looking at the filter argument?
         DBSPExpression increment = new DBSPI64Literal(result).cast(this.nullableResultType);
         DBSPVariablePath accumulator = this.nullableResultType.var();
         DBSPType semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
@@ -284,17 +289,18 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression[] arguments;
         if (ignoreNulls && elementType.mayBeNull) {
             functionName = "array_agg_opt" + this.resultType.nullableSuffix();
-            arguments = new DBSPExpression[5];
+            arguments = new DBSPExpression[6];
         } else {
             functionName = "array_agg" + this.resultType.nullableSuffix();
-            arguments = new DBSPExpression[4];
+            arguments = new DBSPExpression[5];
         }
         arguments[0] = accumulator.borrow(true);
         arguments[1] = aggregatedValue.applyCloneIfNeeded();
         arguments[2] = this.compiler.weightVar;
         arguments[3] = new DBSPBoolLiteral(distinct);
-        if (arguments.length == 5) {
-            arguments[4] = new DBSPBoolLiteral(ignoreNulls);
+        arguments[4] = this.filterArgument >= 0 ? this.filterArgument() : new DBSPBoolLiteral(true);
+        if (arguments.length == 6) {
+            arguments[5] = new DBSPBoolLiteral(ignoreNulls);
         }
         DBSPExpression increment = new DBSPApplyExpression(node, functionName, this.resultType, arguments);
         DBSPType semigroup = new DBSPTypeUser(node, SEMIGROUP, "ConcatSemigroup", false, accumulator.getType());

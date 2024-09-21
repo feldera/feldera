@@ -461,16 +461,22 @@ where
     Some(arrays_overlap_vec__vec_(first?, second))
 }
 
-pub fn array_agg<T>(accumulator: &mut Vec<T>, value: T, weight: Weight, distinct: bool) -> Vec<T>
+pub fn array_agg<T>(
+    accumulator: &mut Vec<T>,
+    value: T,
+    weight: Weight,
+    distinct: bool,
+    keep: bool,
+) -> Vec<T>
 where
     T: Clone,
 {
     if weight < 0 {
         panic!("Negative weight {:?}", weight);
     }
-    if distinct {
+    if distinct && keep {
         accumulator.push(value.clone())
-    } else {
+    } else if keep {
         for _i in 0..weight {
             accumulator.push(value.clone())
         }
@@ -483,13 +489,14 @@ pub fn array_aggN<T>(
     value: T,
     weight: Weight,
     distinct: bool,
+    keep: bool,
 ) -> Option<Vec<T>>
 where
     T: Clone,
 {
     accumulator
         .as_mut()
-        .map(|accumulator| array_agg(accumulator, value, weight, distinct))
+        .map(|accumulator| array_agg(accumulator, value, weight, distinct, keep))
 }
 
 pub fn array_agg_opt<T>(
@@ -497,6 +504,7 @@ pub fn array_agg_opt<T>(
     value: Option<T>,
     weight: Weight,
     distinct: bool,
+    keep: bool,
     ignore_nulls: bool,
 ) -> Vec<Option<T>>
 where
@@ -505,7 +513,7 @@ where
     if ignore_nulls && value.is_none() {
         accumulator.to_vec()
     } else {
-        array_agg(accumulator, value, weight, distinct)
+        array_agg(accumulator, value, weight, distinct, keep)
     }
 }
 
@@ -514,6 +522,7 @@ pub fn array_agg_optN<T>(
     value: Option<T>,
     weight: Weight,
     distinct: bool,
+    keep: bool,
     ignore_nulls: bool,
 ) -> Option<Vec<Option<T>>>
 where
@@ -521,7 +530,7 @@ where
 {
     accumulator
         .as_mut()
-        .map(|accumulator| array_agg_opt(accumulator, value, weight, distinct, ignore_nulls))
+        .map(|accumulator| array_agg_opt(accumulator, value, weight, distinct, keep, ignore_nulls))
 }
 
 /////////////////////////////////////////
