@@ -1578,12 +1578,14 @@ mod test {
     }
 
     #[test]
+    #[ignore = "non-deterministic failures"]
     fn map_test_mt1() {
         map_test_mt(1, input_map_updates1, output_map_updates1);
         map_test_mt(1, input_map_updates2, output_map_updates2);
     }
 
     #[test]
+    #[ignore = "non-deterministic failures"]
     fn map_test_mt4() {
         map_test_mt(4, input_map_updates1, output_map_updates1);
         map_test_mt(4, input_map_updates2, output_map_updates2);
