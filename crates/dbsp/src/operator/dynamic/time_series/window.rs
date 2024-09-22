@@ -396,7 +396,7 @@ mod test {
             (left_inclusive, right_inclusive): (bool, bool),
             bounds: &Stream<C, (TypedBox<B::Key, B::DynK>, TypedBox<B::Key, B::DynK>)>,
         ) -> Stream<C, B> {
-            self.apply2(&bounds, move |batch, (start, end)| {
+            self.apply2(bounds, move |batch, (start, end)| {
                 batch.filter(|k, _v| {
                     let left = if left_inclusive {
                         k >= start
@@ -423,16 +423,16 @@ mod test {
 
         let closed_closed_expected = stream
             .integrate()
-            .window_non_incremental((true, true), &bounds);
+            .window_non_incremental((true, true), bounds);
         let closed_open_expected = stream
             .integrate()
-            .window_non_incremental((true, false), &bounds);
+            .window_non_incremental((true, false), bounds);
         let open_closed_expected = stream
             .integrate()
-            .window_non_incremental((false, true), &bounds);
+            .window_non_incremental((false, true), bounds);
         let open_open_expected = stream
             .integrate()
-            .window_non_incremental((false, false), &bounds);
+            .window_non_incremental((false, false), bounds);
 
         closed_closed.apply2(&closed_closed_expected, |actual, expected| {
             assert_eq!(actual, expected)

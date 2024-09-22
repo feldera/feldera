@@ -213,7 +213,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE T (
                 COL1 INT NOT NULL
                 , COL2 DOUBLE NOT NULL
-                
+
                 )""",
                 "CREATE VIEW V AS SELECT COL1 FROM T"
         };

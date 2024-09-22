@@ -70,7 +70,7 @@ To connect to the Feldera manager, you need to provide the URL of the manager. Y
 environment variable or as a command line argument. The environment variable is called `FELDERA_HOST` and the
 command line argument is called `--host`.
 
-If your Feldera instance requires authentication (not needed in the local docker form factor), you'll also need to 
+If your Feldera instance requires authentication (not needed in the local docker form factor), you'll also need to
 provide an API key. You can either set the API key as an environment variable or as a command line argument.
 The environment variable is called `FELDERA_API_KEY` and the command line argument is called `--auth`.
 It is recommended to use an environment variable configured in your shell init script to avoid storing the API

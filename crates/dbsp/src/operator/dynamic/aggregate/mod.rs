@@ -1337,14 +1337,14 @@ mod test {
         let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(4, |circuit| {
             let (input, input_handle) = circuit.add_input_zset::<Tup2<i32, Option<i32>>>();
 
-            let indexed_input = input.map_index(|Tup2(k, v)| (*k, v.clone()));
+            let indexed_input = input.map_index(|Tup2(k, v)| (*k, *v));
 
             let sum = indexed_input.aggregate_linear_postprocess(agg_func, postprocess_func);
 
             // aggregate_linear_postprocess must be equivalent to aggregate_linear().map_index().
             let sum_slow = indexed_input
                 .aggregate_linear(agg_func)
-                .map_index(|(k, v)| (k.clone(), postprocess_func(v.clone())));
+                .map_index(|(k, v)| (*k, postprocess_func(*v)));
 
             sum.apply2(&sum_slow, |sum, sum_slow| assert_eq!(sum, sum_slow));
 
@@ -1432,14 +1432,14 @@ mod test {
         let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(4, |circuit| {
             let (input, input_handle) = circuit.add_input_zset::<Tup2<i8, Option<i8>>>();
 
-            let indexed_input = input.map_index(|Tup2(k, v)| (*k, v.clone()));
+            let indexed_input = input.map_index(|Tup2(k, v)| (*k, *v));
 
             let sum = indexed_input.aggregate_linear_postprocess(agg_func, postprocess_func);
 
             // aggregate_linear_postprocess must be equivalent to aggregate_linear().map_index().
             let sum_slow = indexed_input
                 .aggregate_linear(agg_func)
-                .map_index(|(k, v)| (k.clone(), postprocess_func(v.clone())));
+                .map_index(|(k, v)| (*k, postprocess_func(*v)));
 
             sum.apply2(&sum_slow, |sum, sum_slow| assert_eq!(sum, sum_slow));
 

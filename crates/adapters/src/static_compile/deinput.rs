@@ -1550,7 +1550,7 @@ mod test {
     fn test_scalar() {
         let (mut dbsp, input_handle, output_handle) = descalar_test_circuit(NUM_WORKERS);
 
-        let inputs = vec![
+        let inputs = [
             TestStruct {
                 id: 1,
                 s: "foo".to_string(),

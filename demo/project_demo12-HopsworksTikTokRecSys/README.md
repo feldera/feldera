@@ -2,7 +2,7 @@
 
 ### Getting Started
 
-0. Ensure that the feldera python API is installed. 
+0. Ensure that the feldera python API is installed.
 
 ```sh
 pip install feldera/ # from the base directory of this repo
@@ -17,7 +17,7 @@ export KAFKA_SERVER=localhost:9092
 export KAFKA_SERVER_FROM_PIPELINE=$KAFKA_SERVER
 ```
 
-Or, 
+Or,
 
 ```sh
 docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml up pipeline-manager redpanda --build --renew-anon-volumes --force-recreate

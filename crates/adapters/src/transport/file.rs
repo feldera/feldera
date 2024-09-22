@@ -250,7 +250,7 @@ mod test {
 
     #[test]
     fn test_csv_file_nofollow() {
-        let test_data = vec![
+        let test_data = [
             TestStruct::new("foo".to_string(), true, 10),
             TestStruct::new("bar".to_string(), false, -10),
         ];
@@ -310,7 +310,7 @@ format:
 
     #[test]
     fn test_csv_file_follow() {
-        let test_data = vec![
+        let test_data = [
             TestStruct::new("foo".to_string(), true, 10),
             TestStruct::new("bar".to_string(), false, -10),
         ];

@@ -7,4 +7,4 @@ It is done in three phases:
 - Convert SqlNode to RelNode
 - Optimize RelNode
 
-The midend converts RelNode to a circuit IR 
+The midend converts RelNode to a circuit IR

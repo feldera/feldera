@@ -34,7 +34,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     customer_id BIGINT NOT NULL,
                     state VARCHAR
                 );
-                
+
                 CREATE MATERIALIZED VIEW red_transactions AS
                 SELECT
                     *
@@ -52,7 +52,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     ts TIMESTAMP LATENESS INTERVAL 1 DAYS,
                     state VARCHAR
                 ) with ('materialized' = 'true');
-                
+
                 CREATE MATERIALIZED VIEW red_transactions AS
                 SELECT
                     *
@@ -76,7 +76,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
         String query = """
                 CREATE TABLE T(COL1 INT, COL2 BIGINT);
                 create table control (id int);
-                
+
                 CREATE LOCAL VIEW test  AS
                 SELECT
                     COL1,
@@ -84,7 +84,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     SUM(COL2)
                 FROM T
                 GROUP BY T.COL1;
-                
+
                 CREATE VIEW output as
                 select * from
                 test where exists (select 1 from control);""";
@@ -96,7 +96,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
         String sql = """
                 CREATE TABLE CUSTOMER (cc_num bigint not null, ts timestamp lateness interval 0 day);
                 CREATE TABLE TRANSACTION (cc_num bigint not null, ts timestamp lateness interval 0 day);
-                
+
                 CREATE VIEW V AS
                 SELECT t.*
                 FROM
@@ -105,7 +105,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     t.cc_num = c.cc_num
                 WHERE
                     t.ts <= c.ts and t.ts + INTERVAL 7 DAY >= c.ts;
-                
+
                 create view V2 as
                 select SUM(5) from v group by ts;""";
         CompilerCircuitStream ccs = this.getCCS(sql);
@@ -158,7 +158,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     unix_time timestamp,
                     id bigint
                 );
-                
+
                 CREATE VIEW TRANSACTION_MONTHLY_AGGREGATE AS
                 select cc_num, window_start as month_start, COUNT(*) num_transactions from TABLE(
                   TUMBLE(
@@ -192,7 +192,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     user_id INT,
                     AMOUNT DECIMAL
                 ) with ('materialized' = 'true');
-                
+
                 CREATE MATERIALIZED VIEW window_computation AS SELECT
                     user_id,
                     COUNT(*) AS transaction_count_by_user
@@ -213,7 +213,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     user_id INT,
                     AMOUNT DECIMAL
                 ) with ('materialized' = 'true');
-                
+
                 CREATE MATERIALIZED VIEW window_computation AS SELECT
                     user_id,
                     COUNT(*) AS transaction_count_by_user
@@ -256,7 +256,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     PRIMARY KEY (c_w_id, c_d_id, c_id),
                     FOREIGN KEY (c_w_id, c_d_id) REFERENCES district(d_w_id, d_id)
                 );
-                
+
                 CREATE TABLE transaction_parameters (
                     txn_id INT NOT NULL PRIMARY KEY,
                     w_id INT,
@@ -269,7 +269,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     h_date TIMESTAMP,
                     datetime_ TIMESTAMP
                 );
-                
+
                 -- incremental fails with this query present
                 CREATE VIEW cust_enum AS
                 SELECT c.c_first, c.c_middle, c.c_id,
@@ -282,7 +282,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                   AND c.c_d_id = t.c_d_id
                   AND c.c_w_id = t.c_w_id
                 ORDER BY c_first;
-                
+
                 CREATE VIEW cust_agg AS
                 SELECT ARRAY_AGG(c_id ORDER BY c_first) AS cust_array
                 FROM (SELECT c.c_id, c.c_first
@@ -292,7 +292,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         AND c.c_d_id = t.c_d_id
                         AND c.c_w_id = t.c_w_id
                       ORDER BY c_first);
-                
+
                 CREATE VIEW cust_med AS
                 SELECT c.c_first, c.c_middle, c.c_id,
                     c.c_street_1, c.c_street_2, c.c_city, c.c_state, c.c_zip,

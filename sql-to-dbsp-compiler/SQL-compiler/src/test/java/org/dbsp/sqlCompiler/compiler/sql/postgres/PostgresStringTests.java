@@ -228,13 +228,13 @@ public class PostgresStringTests extends SqlIoTest {
                 ----------------
                  t
                 (1 row)
-                
+
                 SELECT TRIM(LEADING FROM '  bunch o blanks  ') = 'bunch o blanks  ' AS "bunch o blanks  ";
                  bunch o blanks
                 ------------------
                  t
                 (1 row)
-                
+
                 SELECT TRIM(TRAILING FROM '  bunch o blanks  ') = '  bunch o blanks' AS "  bunch o blanks";
                    bunch o blanks
                 ------------------
@@ -251,7 +251,7 @@ public class PostgresStringTests extends SqlIoTest {
                 ----------------
                  t
                 (1 row)
-                
+
                 SELECT TRIM(LEADING FROM '  bunch o blanks  ') = 'bunch o blanks  ' AS "bunch o blanks  ";
                  bunch o blanks
                 ------------------
@@ -391,73 +391,73 @@ public class PostgresStringTests extends SqlIoTest {
                 -----------------
                  fX\\YoZ\\barrbazz
                 (1 row)
-        
+
                 SELECT regexp_replace('AAA   BBB   CCC   ', E'\\\\s+', ' ', 'g');
                  regexp_replace
                 ----------------
                  AAA BBB CCC\\s
                 (1 row)
-        
+
                 SELECT regexp_replace('AAA', '^|$', 'Z', 'g');
                  regexp_replace
                 ----------------
                  ZAAAZ
                 (1 row)
-        
+
                 SELECT regexp_replace('AAA aaa', 'A+', 'Z', 'gi');
                  regexp_replace
                 ----------------
                  Z Z
                 (1 row)
-        
+
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 1);
                     regexp_replace
                 -----------------------
                  X PostgreSQL function
                 (1 row)
-        
+
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 1, 2);
                     regexp_replace
                 -----------------------
                  A PXstgreSQL function
                 (1 row)
-        
+
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 0, 'i');
                     regexp_replace
                 -----------------------
                  X PXstgrXSQL fXnctXXn
                 (1 row)
-        
+
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 1, 'i');
                     regexp_replace
                 -----------------------
                  X PostgreSQL function
                 (1 row)
-        
+
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 2, 'i');
                     regexp_replace
                 -----------------------
                  A PXstgreSQL function
                 (1 row)
-        
+
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 3, 'i');
                     regexp_replace
                 -----------------------
                  A PostgrXSQL function
                 (1 row)
-        
+
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 9, 'i');
                     regexp_replace
                 -----------------------
                  A PostgreSQL function
                 (1 row)
-        
+
                 SELECT regexp_replace('A PostgreSQL function', 'A|e|i|o|u', 'X', 7, 0, 'i');
                     regexp_replace
                 -----------------------
                  A PostgrXSQL fXnctXXn
                 (1 row)
-        
+
                 -- 'g' flag should be ignored when N is specified
                 SELECT regexp_replace('A PostgreSQL function', 'a|e|i|o|u', 'X', 1, 1, 'g');
                     regexp_replace
@@ -862,49 +862,49 @@ public class PostgresStringTests extends SqlIoTest {
                 -------
                 \s
                 (1 row)
-                
+
                 SELECT 'a' LIKE NULL;
                  result
                 -------
                 \s
                 (1 row)
-                
+
                 SELECT NULL LIKE NULL;
                  result
                 -------
                 \s
                 (1 row)
-                
+
                 SELECT NULL NOT LIKE '%';
                  result
                 -------
                 \s
                 (1 row)
-                
+
                 SELECT 'a' NOT LIKE NULL;
                  result
                 -------
                 \s
                 (1 row)
-                
+
                 SELECT NULL NOT LIKE NULL;
                  result
                 -------
                 \s
                 (1 row)
-                
+
                 SELECT NULL RLIKE '.*';
                  result
                 -------
                 \s
                 (1 row)
-                
+
                 SELECT 'a' RLIKE NULL;
                  result
                 -------
                 \s
                 (1 row)
-                
+
                 SELECT NULL RLIKE NULL;
                  result
                 -------

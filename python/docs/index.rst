@@ -17,7 +17,7 @@ Welcome to feldera's documentation!
 .. toctree::
    :maxdepth: 4
    :caption: API Reference:
-   
+
    modules
 
 Indices and tables

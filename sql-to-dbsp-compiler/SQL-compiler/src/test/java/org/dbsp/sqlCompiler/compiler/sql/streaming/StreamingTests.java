@@ -46,12 +46,12 @@ public class StreamingTests extends StreamingTestBase {
                     id BIGINT NOT NULL,
                     ts timestamp NOT NULL LATENESS INTERVAL 0 days
                 );
-                
+
                 create table l (
                     id BIGINT NOT NULL,
                     ts timestamp NOT NULL LATENESS INTERVAL 0 days
                 );
-                
+
                 create view v as
                 select
                     l.id as id,
@@ -61,7 +61,7 @@ public class StreamingTests extends StreamingTestBase {
                 ON
                     l.id = r.id and
                     r.ts = l.ts;
-                
+
                 CREATE VIEW agg1 as\s
                 SELECT
                     MAX(id)
@@ -95,7 +95,7 @@ public class StreamingTests extends StreamingTestBase {
                     a int,
                     ts timestamp not null lateness interval 1 hours
                 );
-                
+
                 create view v as
                 select
                     a,
@@ -209,16 +209,16 @@ public class StreamingTests extends StreamingTestBase {
                     date_time TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
                     extra  VARCHAR
                 );
-                
+
                 CREATE LOCAL VIEW low
                 AS SELECT * FROM bid WHERE price < 10000;
-                
+
                 CREATE LOCAL VIEW mid
                 AS SELECT * FROM bid WHERE price >= 10000 AND price < 1000000;
-                
+
                 CREATE LOCAL VIEW high
                 AS SELECT * FROM bid WHERE price >= 1000000;
-                
+
                 CREATE LOCAL VIEW LOW_C AS
                 SELECT
                    channel,
@@ -228,7 +228,7 @@ public class StreamingTests extends StreamingTestBase {
                    count(distinct auction) AS rank1_auctions
                 FROM low
                 GROUP BY channel, CAST(date_time AS DATE);
-                
+
                 CREATE LOCAL VIEW MID_C AS
                 SELECT
                    channel,
@@ -238,7 +238,7 @@ public class StreamingTests extends StreamingTestBase {
                    count(distinct auction) AS rank2_auctions
                 FROM mid
                 GROUP BY channel, CAST(date_time AS DATE);
-                
+
                 CREATE LOCAL VIEW HIGH_C AS
                 SELECT
                    channel,
@@ -248,7 +248,7 @@ public class StreamingTests extends StreamingTestBase {
                    count(distinct auction) AS rank3_auctions
                 FROM high
                 GROUP BY channel, CAST(date_time AS DATE);
-                
+
                 CREATE VIEW REST AS
                 SELECT
                     channel,
@@ -259,7 +259,7 @@ public class StreamingTests extends StreamingTestBase {
                     count(distinct auction) AS total_auctions
                 FROM bid
                 GROUP BY channel, CAST(date_time AS DATE);
-                
+
                 CREATE VIEW Q16 AS
                 SELECT * FROM REST
                 JOIN LOW_C
@@ -280,12 +280,12 @@ public class StreamingTests extends StreamingTestBase {
                     id int NOT NULL,
                     unix_time BIGINT NOT NULL
                 );
-                
+
                 CREATE TABLE feedback (
                     id int,
                     unix_time bigint LATENESS 3600 * 24
                 );
-                
+
                 CREATE VIEW TRANSACTIONS AS
                 SELECT t.*
                 FROM transaction as t JOIN feedback as f
@@ -308,13 +308,13 @@ public class StreamingTests extends StreamingTestBase {
                     id bigint NOT NULL,
                     unix_time BIGINT LATENESS 100
                 );
-                
+
                 create table FEEDBACK (
                     id bigint,
                     status int,
                     unix_time bigint NOT NULL LATENESS 100
                 );
-            
+
                 CREATE VIEW TRANSACT AS
                     SELECT transaction.*, feedback.status
                     FROM

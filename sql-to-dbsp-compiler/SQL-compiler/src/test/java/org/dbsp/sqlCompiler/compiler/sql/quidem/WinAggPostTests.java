@@ -26,7 +26,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |        | Wilma | F |
                 +--------+-------+---+
                 (9 rows)
-                
+
                 -- [CALCITE-5283] Add ARG_MIN, ARG_MAX aggregate function
                 -- ARG_MIN, ARG_MAX function without ORDER BY.
                 select gender,
@@ -47,7 +47,7 @@ public class WinAggPostTests extends PostBaseTests {
                 | M      | Bob   | Adam  |
                 +--------+-------+-------+
                 (9 rows)
-                
+
                 -- Multiple window functions sharing a single window
                 select count(*) over(partition by gender order by ename) as count1,
                   count(*) over(partition by deptno order by ename) as count2,
@@ -69,7 +69,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |      6 |      1 |  180 |      |
                 +--------+--------+------+------+
                 (9 rows)
-                
+
                 -- Window Aggregate and group-by.
                 select min(deptno) as x, rank() over (order by ename) as y,
                   max(ename) over (partition by deptno) as z
@@ -89,7 +89,7 @@ public class WinAggPostTests extends PostBaseTests {
                 | 30 | 8 | Susan |
                 +----+---+-------+
                 (9 rows)
-                
+
                 -- Window function on top of regular aggregate in partitioning or order clause.
                 select deptno, gender, min(ename) as x, sum(deptno) as y,
                   rank() over (partition by gender order by min(ename)) as r,
@@ -110,7 +110,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |     20 | M      | Eric  | 20 | 3 |  80 |
                 +--------+--------+-------+----+---+-----+
                 (8 rows)
-                
+
                 select *, first_value(ename) over (partition by deptno order by gender range unbounded preceding) from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
@@ -123,7 +123,7 @@ public class WinAggPostTests extends PostBaseTests {
                  Adam  |     50 | M      | Eve
                  Grace |     60 | F      | Grace
                 (8 rows)
-                
+
                 -- [CALCITE-6011] Add the planner rule that pushes the Filter past a Window
                 -- Get the initial result which not push filter past window.
                 select gender, count(*) over(partition by gender order by ename) as count1 from emp;
@@ -141,7 +141,7 @@ public class WinAggPostTests extends PostBaseTests {
                 | M      |      3 |
                 +--------+--------+
                 (9 rows)
-                
+
                 -- Get the plan and result which push filter past window
                 select gender, count(*) over(partition by gender order by ename) as count1 from emp where gender = 'F';
                 +--------+--------+
@@ -178,7 +178,7 @@ public class WinAggPostTests extends PostBaseTests {
                 | M      |     50 |      1 |
                 +--------+--------+--------+
                 (9 rows)
-                
+
                 -- Partition by same column twice.
                 -- (It's degenerate, but I believe it's valid SQL.)
                 select gender,deptno,
@@ -213,7 +213,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |   100 | 4 |
                 +-------+---+
                 (1 row)
-                
+
                 select *, first_value(deptno) over () from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
@@ -226,7 +226,7 @@ public class WinAggPostTests extends PostBaseTests {
                  Eve   |     50 | F      |          10
                  Grace |     60 | F      |          10
                 (8 rows)
-                
+
                 select *, first_value(ename) over () from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
@@ -239,7 +239,7 @@ public class WinAggPostTests extends PostBaseTests {
                  Eve   |     50 | F      | Jane
                  Grace |     60 | F      | Jane
                 (8 rows)
-                
+
                 select *, first_value(ename) over (partition by deptno) from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
@@ -252,7 +252,7 @@ public class WinAggPostTests extends PostBaseTests {
                  Eve   |     50 | F      | Adam
                  Grace |     60 | F      | Grace
                 (8 rows)
-                
+
                 select *, first_value(ename) over (partition by deptno range current row) from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
@@ -265,7 +265,7 @@ public class WinAggPostTests extends PostBaseTests {
                  Eve   |     50 | F      | Adam
                  Grace |     60 | F      | Grace
                 (8 rows)
-                
+
                 select *, first_value(ename) over (partition by deptno range unbounded preceding) from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
@@ -278,7 +278,7 @@ public class WinAggPostTests extends PostBaseTests {
                  Eve   |     50 | F      | Adam
                  Grace |     60 | F      | Grace
                 (8 rows)
-                
+
                 -- Without ORDER BY
                 select *, count(*) over (partition by deptno) as c from emp;
                 +-------+--------+--------+---+
@@ -295,7 +295,7 @@ public class WinAggPostTests extends PostBaseTests {
                 | Wilma |        | F      | 1 |
                 +-------+--------+--------+---+
                 (9 rows)
-                
+
                 -- No ORDER BY, windows defined in WINDOW clause.
                 select deptno, gender, min(gender) over w1 as a, min(gender) over w2 as d
                 from emp
@@ -315,7 +315,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |        | F      | F | F |
                 +--------+--------+---+---+
                 (9 rows)
-                
+
                 -- Composite COUNT.
                 select deptno, gender, count(gender, deptno) over w1 as a
                 from emp
@@ -334,7 +334,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |        | F      | 8 |
                 +--------+--------+---+
                 (9 rows)
-                
+
                 -- NTH_VALUE
                 select emp."ENAME", emp."DEPTNO",
                  nth_value(emp."DEPTNO", 1) over() as "first_value",
@@ -357,7 +357,7 @@ public class WinAggPostTests extends PostBaseTests {
                 | Wilma |        |          10 |           10 |          30 |           60 |             |
                 +-------+--------+-------------+--------------+-------------+--------------+-------------+
                 (9 rows)
-                
+
                 -- [CALCITE-2402] COVAR_POP, REGR_COUNT functions
                 -- SUM(x, y) = SUM(x) WHERE y IS NOT NULL
                 -- COVAR_POP(x, y) = (SUM(x * y) - SUM(x, y) * SUM(y, x) / REGR_COUNT(x, y)) / REGR_COUNT(x, y)
@@ -376,7 +376,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |     |     40 |              1950 |                       3 |        39 |
                 +-----+--------+-------------------+-------------------------+-----------+
                 (5 rows)
-                
+
                 -- [CALCITE-2402] COVAR_POP, REGR_COUNT functions
                 -- SUM(x, y) = SUM(x) WHERE y IS NOT NULL
                 -- COVAR_POP(x, y) = (SUM(x * y) - SUM(x, y) * SUM(y, x) / REGR_COUNT(x, y)) / REGR_COUNT(x, y)
@@ -395,7 +395,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |  25 |     10 |        |               250 |                       1 |         0 |
                 +-----+--------+--------+-------------------+-------------------------+-----------+
                 (5 rows)
-                
+
                 -- [CALCITE-2402] COVAR_SAMP functions
                 -- SUM(x, y) = SUM(x) WHERE y IS NOT NULL
                 -- COVAR_SAMP(x, y) = (SUM(x * y) - SUM(x, y) * SUM(y, x) / REGR_COUNT(x, y)) / (REGR_COUNT(x, y) - 1)
@@ -414,7 +414,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |     |     40 | F      |     1508 |         58 |                      0 |
                 +-----+--------+--------+----------+------------+------------------------+
                 (5 rows)
-                
+
                 -- [CALCITE-2402] VAR_POP, VAR_SAMP functions
                 -- VAR_POP(x) = (SUM(x * x) - SUM(x) * SUM(x) / COUNT(x)) / COUNT(x)
                 -- VAR_SAMP(x) = (SUM(x * x) - SUM(x) * SUM(x) / COUNT(x)) / (COUNT(x) - 1)
@@ -434,7 +434,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |     |     40 | M      |    1005 |                |     1508 |                    |
                 +-----+--------+--------+---------+----------------+----------+--------------------+
                 (5 rows)
-                
+
                 -- [CALCITE-2402] REGR_SXX, REGR_SXY, REGR_SYY functions
                 -- SUM(x, y) = SUM(x) WHERE y IS NOT NULL
                 -- REGR_SXX(x, y) = REGR_COUNT(x, y) * VAR_POP(y, y)
@@ -456,7 +456,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |     |     40 |                    66 |                  3015 |
                 +-----+--------+-----------------------+-----------------------+
                 (5 rows)
-                
+
                 -- [CALCITE-2402] REGR_SXX, REGR_SXY, REGR_SYY functions
                 -- SUM(x, y) = SUM(x) WHERE y IS NOT NULL
                 -- REGR_SXX(x, y) = REGR_COUNT(x, y) * COVAR_POP(y, y)
@@ -478,7 +478,7 @@ public class WinAggPostTests extends PostBaseTests {
                 |  25 |     10 |        |                     0 |                     0 |
                 +-----+--------+--------+-----------------------+-----------------------+
                 (5 rows)
-                
+
                 -- [CALCITE-3661] MODE function
                 -- MODE function without ORDER BY.
                 select deptno,
@@ -536,7 +536,7 @@ public class WinAggPostTests extends PostBaseTests {
                 | Wilma |        | F      | 9 |
                 +-------+--------+--------+---+
                 (9 rows)
-                
+
                 -- Calcite does not yet generate tied ranks
                 select *, dense_rank() over (order by deptno) as c from emp;
                 +-------+--------+--------+---+
@@ -553,7 +553,7 @@ public class WinAggPostTests extends PostBaseTests {
                 | Wilma |        | F      | 6 |
                 +-------+--------+--------+---+
                 (9 rows)
-                
+
                 -- [CALCITE-806] ROW_NUMBER should emit distinct values
                 --
                 -- We only run this test under JDK 1.8 because the results are
@@ -580,7 +580,7 @@ public class WinAggPostTests extends PostBaseTests {
                 | Wilma |        | F      |  9 |  1 |  1 |  1 | 1 |
                 +-------+--------+--------+----+----+----+----+---+
                 (9 rows)
-                
+
                 -- As above, ROW_NUMBER without explicit ORDER BY
                 select deptno,
                   ename,

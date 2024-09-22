@@ -39,25 +39,25 @@ public class FunctionsTest extends SqlIoTest {
                 --------
                  true
                 (1 row)
-                
+
                 SELECT INTERVAL 5 MONTHS between INTERVAL 4 MONTHS and INTERVAL 1 YEAR;
                  result
                 --------
                  true
                 (1 row)
-                
+
                 SELECT INTERVAL '1:01' HOURS TO MINUTES between INTERVAL 1 HOURS and INTERVAL 1 DAYS;
                  result
                 --------
                  true
                 (1 row)
-                
+
                 SELECT DATE '2020-02-02' between DATE '2020-01-01' and DATE '2020-03-03';
                  result
                 --------
                  true
                 (1 row)
-                
+
                 SELECT TIME '10:00:00' between TIME '09:00:00' and TIME '11:00:00';
                  result
                 --------
@@ -96,19 +96,19 @@ public class FunctionsTest extends SqlIoTest {
                 ----------
                  4.456
                 (1 row)
-                
+
                 select 3.456::decimal(25, 3) - 1.123::decimal(4, 0);
                  ?column?
                 ----------
                  2.456
                 (1 row)
-                
+
                 select 3.456::decimal(25, 3) * 1.123::decimal(4, 0);
                  ?column?
                 ----------
                  3.456
                 (1 row)
-                
+
                 select 3.456::decimal(25, 3) / 1.234::decimal(4, 1);
                  ?column?
                 ----------
@@ -173,7 +173,7 @@ public class FunctionsTest extends SqlIoTest {
                         -----
                          31323334353637383930
                         (1 row)
-                        
+
                         SELECT '1234567890'::VARBINARY as val;
                          val
                         -----
@@ -206,115 +206,115 @@ public class FunctionsTest extends SqlIoTest {
                         ---
                          0
                         (1 row)
-                        
+
                         SELECT (-32768)::int2 % (-1)::int2 as x;
                         x
                         ---
                          0
                         (1 row)
-                        
+
                         SELECT (-2147483648)::int4 % (-1)::int4 as x;
                         x
                         ---
                          0
                         (1 row)
-                        
+
                         SELECT (-9223372036854775808)::int64 % (-1)::int64 as x;
                         x
                         ---
                          0
                         (1 row)
-                        
+
                         SELECT (8)::tinyint % (3)::tinyint as x;
                         x
                         ---
                          2
                         (1 row)
-                        
+
                         SELECT (8)::int2 % (3)::int2 as x;
                         x
                         ---
                          2
                         (1 row)
-                        
+
                         SELECT (8)::int4 % (3)::int4 as x;
                         x
                         ---
                          2
                         (1 row)
-                        
+
                         SELECT (8)::int64 % (3)::int64 as x;
                         x
                         ---
                          2
                         (1 row)
-                        
+
                         SELECT (8)::tinyint % (-3)::tinyint as x;
                         x
                         ---
                          2
                         (1 row)
-                        
+
                         SELECT (8)::int2 % (-3)::int2 as x;
                         x
                         ---
                          2
                         (1 row)
-                        
+
                         SELECT (8)::int4 % (-3)::int4 as x;
                         x
                         ---
                          2
                         (1 row)
-                        
+
                         SELECT (8)::int64 % (-3)::int64 as x;
                         x
                         ---
                          2
                         (1 row)
-                        
+
                         SELECT (-8)::tinyint % (3)::tinyint as x;
                         x
                         ---
                          -2
                         (1 row)
-                        
+
                         SELECT (-8)::int2 % (3)::int2 as x;
                         x
                         ---
                          -2
                         (1 row)
-                        
+
                         SELECT (-8)::int4 % (3)::int4 as x;
                         x
                         ---
                          -2
                         (1 row)
-                        
+
                         SELECT (-8)::int64 % (3)::int64 as x;
                         x
                         ---
                          -2
                         (1 row)
-                        
+
                         SELECT (-8)::tinyint % (-3)::tinyint as x;
                         x
                         ---
                          -2
                         (1 row)
-                        
+
                         SELECT (-8)::int2 % (-3)::int2 as x;
                         x
                         ---
                          -2
                         (1 row)
-                        
+
                         SELECT (-8)::int4 % (-3)::int4 as x;
                         x
                         ---
                          -2
                         (1 row)
-                        
+
                         SELECT (-8)::int64 % (-3)::int64 as x;
                         x
                         ---
@@ -390,116 +390,116 @@ public class FunctionsTest extends SqlIoTest {
                 ------
                  1234.12
                 (1 row)
-                
+
                 select CAST((CAST('1234.1234' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
                 ------
                  1234.12
                 (1 row)
-                
+
                 select CAST((CAST('-1234.1264' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
                 ------
                  -1234.12
                 (1 row)
-                
+
                 select CAST((CAST('-1234.1234' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
                 ------
                  -1234.12
                 (1 row)
-                
+
                 select CAST((CAST('1234.1250' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
                 ------
                  1234.12
                 (1 row)
-                
+
                 select CAST((CAST('-1234.1250' AS DECIMAL(8, 4))) AS DECIMAL(6, 2));
                  cast
                 ------
                  -1234.12
                 (1 row)
-                
+
                 select CAST((CAST('.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
                  0.12
                 (1 row)
-                
+
                 select CAST((CAST('.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
                  0.12
                 (1 row)
-                
+
                 select CAST((CAST('-.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
                  -0.12
                 (1 row)
-                
+
                 select CAST((CAST('-.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
                  -0.12
                 (1 row)
-                
+
                 select CAST((CAST('00.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
                  0.12
                 (1 row)
-                
+
                 select CAST((CAST('00.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
                  0.12
                 (1 row)
-                
+
                 select CAST((CAST('-00.1264' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
                  -0.12
                 (1 row)
-                
+
                 select CAST((CAST('-00.1234' AS DECIMAL(4, 4))) AS DECIMAL(2, 2));
                  cast
                 ------
                  -0.12
                 (1 row)
-                
+
                 -- the following tests are from mysql
                 select cast('1.00000001335143196001808973960578441619873046875E-10' as decimal(30,15));
                      decimal
                 -------------------
                  0.000000000100000
                 (1 row)
-                
+
                 select ln(14000) as c1, cast(ln(14000) as decimal(5,3)) as c2, cast(ln(14000) as decimal(5,3)) as c3;
                         c1         |  c2   |  c3
                 -------------------+-------+-------
                  9.546812608597396 | 9.546 | 9.546
                 (1 row)
-                
+
                 select cast(143.481 as decimal(4,1));
                  cast(143.481 as decimal(4,1))
                 -------------------------------
                 143.4
                 (1 row)
-                
+
                 select cast(143.481 as decimal(4,0));
                  cast(143.481 as decimal(4,0))
                 -------------------------------
                 143
                 (1 row)
-                
+
                 select cast(-3.4 as decimal(2,1));
                  cast(-3.4 as decimal(2,1))
                 -------------------------------
                 -3.4
                 (1 row)
-                
+
                 select cast(98.6 as decimal(2,0));
                  cast(98.6 as decimal(2,0))
                 -------------------------------
@@ -539,7 +539,7 @@ public class FunctionsTest extends SqlIoTest {
                 ----
                  0.693147180559945
                 (1 row)
-                
+
                 SELECT ln(2.0);
                  ln
                 ----
@@ -558,57 +558,57 @@ public class FunctionsTest extends SqlIoTest {
                         -------
                         null
                         (1 row)
-                        
+
                         SELECT IS_INF(1);
                         is_inf
                         -------
                          f
                         (1 row)
-                        
+
                         SELECT IS_INF('INF'::DOUBLE);
                         is_inf
                         -------
                          t
                         (1 row)
-                        
+
                         SELECT IS_INF('-INF'::DOUBLE);
                         is_inf
                         -------
                          t
                         (1 row)
-                        
+
                         SELECT IS_INF('Infinity'::DOUBLE);
                         is_inf
                         -------
                          t
                         (1 row)
-                        
+
                         SELECT IS_INF('-Infinity'::DOUBLE);
                         is_inf
                         -------
                          t
                         (1 row)
-                        
+
                         -- f64::MAX
                         SELECT IS_INF(1.7976931348623157e308);
                         is_inf
                         -------
                          f
                         (1 row)
-                        
+
                         -- f64::MIN
                         SELECT IS_INF(-1.7976931348623157e308);
                         is_inf
                         -------
                          f
                         (1 row)
-                
+
                         SELECT IS_INF(1e0 / 0e0);
                          IS_INF
                         --------
                          t
                         (1 row)
-                
+
                         SELECT IS_INF(-1e0 / 0e0);
                          IS_INF
                         --------
@@ -627,7 +627,7 @@ public class FunctionsTest extends SqlIoTest {
                 -------
                  t
                 (1 row)
-                
+
                 -- f64::MIN
                 SELECT is_inf(-1.7976931348623157e308::real);
                 real
@@ -646,37 +646,37 @@ public class FunctionsTest extends SqlIoTest {
                 --------
                  null
                 (1 row)
-                
+
                 SELECT is_nan('nan'::double);
                  is_nan
                 --------
                  t
                 (1 row)
-                
+
                 SELECT is_nan(0e0 / 0e0);
                  is_nan
                 --------
                  t
                 (1 row)
-                
+
                 SELECT is_nan(-0e0 / 0e0);
                  is_nan
                 --------
                  t
                 (1 row)
-                
+
                 SELECT is_nan(0.0);
                  is_nan
                 --------
                  f
                 (1 row)
-                
+
                 SELECT is_nan(1.7976931348623157e308);
                  is_nan
                 --------
                  f
                 (1 row)
-                
+
                 SELECT is_nan(-1.7976931348623157e308);
                  is_nan
                 --------
@@ -694,56 +694,56 @@ public class FunctionsTest extends SqlIoTest {
                 -------
                  4.0000000000000000
                 (1 row)
-                
+
                 SELECT power(2e0::real, 2);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                
+
                 SELECT power(2, 2e0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                
+
                 SELECT power(2e0, 2.0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                
+
                 SELECT power(2.0, 2e0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                
+
                 SELECT power(2e0, 2e0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                
+
                 SELECT power(2.0, 2.0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                
+
                 SELECT power(2.0, 2);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                
-                
+
+
                 SELECT power(2, 2.0);
                  power
                 -------
                  4.0000000000000000
                 (1 row)
-                
+
                 SELECT POWER(2, 2);
                  power
                 -------
@@ -761,7 +761,7 @@ public class FunctionsTest extends SqlIoTest {
                 ------
                  3
                 (1 row)
-                
+
                 SELECT sqrt(null::double);
                  sqrt
                 ------
@@ -785,512 +785,512 @@ public class FunctionsTest extends SqlIoTest {
                 ------------
                  15
                 (1 row)
-                
+
                 select round(15.4);
                  round(15.4)
                 ------------
                  15
                 (1 row)
-                
+
                 select round(15.5);
                  round(15.5)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(15.6);
                  round(15.6)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(15.9);
                  round(15.9)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(-15.1);
                  round(-15.1)
                 ------------
                  -15
                 (1 row)
-                
+
                 select round(-15.4);
                  round(-15.4)
                 ------------
                  -15
                 (1 row)
-                
+
                 select round(-15.5);
                  round(-15.5)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(-15.6);
                  round(-15.6)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(-15.9);
                  round(-15.9)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(15.1,1);
                  round(15.1,1)
                 ------------
                  15.1
                 (1 row)
-                
+
                 select round(15.4,1);
                  round(15.4,1)
                 ------------
                  15.4
                 (1 row)
-                
+
                 select round(15.5,1);
                  round(15.5,1)
                 ------------
                  15.5
                 (1 row)
-                
+
                 select round(15.6,1);
                  round(15.6,1)
                 ------------
                  15.6
                 (1 row)
-                
+
                 select round(15.9,1);
                  round(15.9,1)
                 ------------
                  15.9
                 (1 row)
-                
+
                 select round(-15.1,1);
                 round(-15.1,1)
                 ------------
                  -15.1
                 (1 row)
-                
+
                 select round(-15.4,1);
                 round(-15.4,1)
                 ------------
                  -15.4
                 (1 row)
-                
+
                 select round(-15.5,1);
                 round(-15.5,1)
                 ------------
                  -15.5
                 (1 row)
-                
+
                 select round(-15.6,1);
                 round(-15.6,1)
                 ------------
                  -15.6
                 (1 row)
-                
+
                 select round(-15.9,1);
                 round(-15.9,1)
                 ------------
                  -15.9
                 (1 row)
-                
+
                 select round(15.1,0);
                 round(15.1,0)
                 ------------
                  15
                 (1 row)
-                
+
                 select round(15.4,0);
                  round(15.4,0)
                 ------------
                  15
                 (1 row)
-                
+
                 select round(15.5,0);
                 round(15.5,0)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(15.6,0);
                 round(15.6,0)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(15.9,0);
                 round(15.9,0)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(-15.1,0);
                 round(-15.1,0)
                 ------------
                  -15
                 (1 row)
-                
+
                 select round(-15.4,0);
                 round(-15.4,0)
                 ------------
                  -15
                 (1 row)
-                
+
                 select round(-15.5,0);
                 round(-15.5,0)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(-15.6,0);
                 round(-15.6,0)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(-15.9,0);
                 round(-15.9,0)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(15.1,-1);
                 round(15.1,-1)
                 ------------
                  20
                 (1 row)
-                
+
                 select round(15.4,-1);
                 round(15.4,-1)
                 ------------
                  20
                 (1 row)
-                
+
                 select round(15.5,-1);
                 round(15.5,-1)
                 ------------
                  20
                 (1 row)
-                
+
                 select round(15.6,-1);
                 round(15.6,-1)
                 ------------
                  20
                 (1 row)
-                
+
                 select round(15.9,-1);
                 round(15.9,-1)
                 ------------
                  20
                 (1 row)
-                
+
                 select round(-15.1,-1);
                 round(-15.1,-1)
                 ------------
                  -20
                 (1 row)
-                
+
                 select round(-15.4,-1);
                 round(-15.4,-1)
                 ------------
                  -20
                 (1 row)
-                
+
                 select round(-15.5,-1);
                 round(-15.5,-1)
                 ------------
                  -20
                 (1 row)
-                
+
                 select round(-15.6,-1);
                 round(-15.6,-1)
                 ------------
                  -20
                 (1 row)
-                
+
                 select round(-15.91,-1);
                 round(-15.91,-1)
                 ------------
                  -20
                 (1 row)
-                
+
                 select round(-15.91,-1::int);
                 round(-15.91,-1)
                 ------------
                  -20
                 (1 row)
-                
-                
+
+
                 select round(15.1);
                  round(15.1)
                 ------------
                  15
                 (1 row)
-                
+
                 select round(15.4);
                  round(15.4)
                 ------------
                  15
                 (1 row)
-                
+
                 select round(15.5);
                  round(15.5)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(15.6);
                  round(15.6)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(15.9);
                  round(15.9)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(-15.1);
                  round(-15.1)
                 ------------
                  -15
                 (1 row)
-                
+
                 select round(-15.4);
                  round(-15.4)
                 ------------
                  -15
                 (1 row)
-                
+
                 select round(-15.5);
                  round(-15.5)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(-15.6);
                  round(-15.6)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(-15.9);
                  round(-15.9)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(15.1::DOUBLE,1);
                  round(15.1::DOUBLE,1)
                 ------------
                  15.1
                 (1 row)
-                
+
                 select round(15.4::DOUBLE,1);
                  round(15.4::DOUBLE,1)
                 ------------
                  15.4
                 (1 row)
-                
+
                 select round(15.5::DOUBLE,1);
                  round(15.5::DOUBLE,1)
                 ------------
                  15.5
                 (1 row)
-                
+
                 select round(15.6::DOUBLE,1);
                  round(15.6::DOUBLE,1)
                 ------------
                  15.6
                 (1 row)
-                
+
                 select round(15.9::DOUBLE,1);
                  round(15.9::DOUBLE,1)
                 ------------
                  15.9
                 (1 row)
-                
+
                 select round(-15.1::DOUBLE,1);
                 round(-15.1::DOUBLE,1)
                 ------------
                  -15.1
                 (1 row)
-                
+
                 select round(-15.4::DOUBLE,1);
                 round(-15.4::DOUBLE,1)
                 ------------
                  -15.4
                 (1 row)
-                
+
                 select round(-15.5::DOUBLE,1);
                 round(-15.5::DOUBLE,1)
                 ------------
                  -15.5
                 (1 row)
-                
+
                 select round(-15.6::DOUBLE,1);
                 round(-15.6::DOUBLE,1)
                 ------------
                  -15.6
                 (1 row)
-                
+
                 select round(-15.9::DOUBLE,1);
                 round(-15.9::DOUBLE,1)
                 ------------
                  -15.9
                 (1 row)
-                
+
                 select round(15.1::DOUBLE,0);
                 round(15.1::DOUBLE,0)
                 ------------
                  15
                 (1 row)
-                
+
                 select round(15.4::DOUBLE,0);
                  round(15.4::DOUBLE,0)
                 ------------
                  15
                 (1 row)
-                
+
                 select round(15.5::DOUBLE,0);
                 round(15.5::DOUBLE,0)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(15.6::DOUBLE,0);
                 round(15.6::DOUBLE,0)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(15.9::DOUBLE,0);
                 round(15.9::DOUBLE,0)
                 ------------
                  16
                 (1 row)
-                
+
                 select round(-15.1::DOUBLE,0);
                 round(-15.1::DOUBLE,0)
                 ------------
                  -15
                 (1 row)
-                
+
                 select round(-15.4::DOUBLE,0);
                 round(-15.4::DOUBLE,0)
                 ------------
                  -15
                 (1 row)
-                
+
                 select round(-15.5::DOUBLE,0);
                 round(-15.5::DOUBLE,0)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(-15.6::DOUBLE,0);
                 round(-15.6::DOUBLE,0)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(-15.9::DOUBLE,0);
                 round(-15.9::DOUBLE,0)
                 ------------
                  -16
                 (1 row)
-                
+
                 select round(15.1::DOUBLE,-1);
                 round(15.1::DOUBLE,-1)
                 ------------
                  20
                 (1 row)
-                
+
                 select round(15.4::DOUBLE,-1);
                 round(15.4::DOUBLE,-1)
                 ------------
                  20
                 (1 row)
-                
+
                 select round(15.5::DOUBLE,-1);
                 round(15.5::DOUBLE,-1)
                 ------------
                  20
                 (1 row)
-                
+
                 select round(15.6::DOUBLE,-1);
                 round(15.6::DOUBLE,-1)
                 ------------
                  20
                 (1 row)
-                
+
                 select round(15.9::DOUBLE,-1);
                 round(15.9::DOUBLE,-1)
                 ------------
                  20
                 (1 row)
-                
+
                 select round(-15.1::DOUBLE,-1);
                 round(-15.1::DOUBLE,-1)
                 ------------
                  -20
                 (1 row)
-                
+
                 select round(-15.4::DOUBLE,-1);
                 round(-15.4::DOUBLE,-1)
                 ------------
                  -20
                 (1 row)
-                
+
                 select round(-15.5::DOUBLE,-1);
                 round(-15.5::DOUBLE,-1)
                 ------------
                  -20
                 (1 row)
-                
+
                 select round(-15.6::DOUBLE,-1);
                 round(-15.6::DOUBLE,-1)
                 ------------
                  -20
                 (1 row)
-                
+
                 select round(-15.91::DOUBLE,-1);
                 round(-15.91::DOUBLE,-1)
                 ------------
                  -20
                 (1 row)
-                
+
                 select round(-15.91::DOUBLE,-1::int);
                 round(-15.91::DOUBLE,-1)
                 ------------
                  -20
                 (1 row)
-                
+
                 select round(null::double);
                  round
                 -------
                  NULL
                 (1 row)
-                
+
                 select round(null::double, null);
                  round
                 -------
                  NULL
                 (1 row)
-                
+
                 select round(null::DECIMAL);
                  round
                 -------
                  NULL
                 (1 row)
-                
+
                 select round(null::DECIMAL, null);
                  round
                 -------
@@ -1308,290 +1308,290 @@ public class FunctionsTest extends SqlIoTest {
                 -----
                 5678
                 (1 row)
-                
+
                 select truncate(5678.123451,0);
                 truncate(5678.123451,0)
                 -----
                 5678
                 (1 row)
-                
+
                 select truncate(5678.123451,1);
                 truncate(5678.123451,1)
                 -----
                 5678.1
                 (1 row)
-                
+
                 select truncate(5678.123451,2);
                 truncate(5678.123451,2)
                 -----
                 5678.12
                 (1 row)
-                
+
                 select truncate(5678.123451,3);
                 truncate(5678.123451,3)
                 -----
                 5678.123
                 (1 row)
-                
+
                 select truncate(5678.123451,4);
                 truncate(5678.123451,4)
                 -----
                 5678.1234
                 (1 row)
-                
+
                 select truncate(5678.123451,5);
                 truncate(5678.123451,5)
                 -----
                 5678.12345
                 (1 row)
-                
+
                 select truncate(5678.123451,6);
                 truncate(5678.123451,6)
                 -----
                 5678.123451
                 (1 row)
-                
+
                 select truncate(5678.123451,-1);
                 truncate(5678.123451,-1)
                 -----
                 5670
                 (1 row)
-                
+
                 select truncate(5678.123451,-2);
                 truncate(5678.123451,-2)
                 -----
                 5600
                 (1 row)
-                
+
                 select truncate(5678.123451,-3);
                 truncate(5678.123451,-3)
                 -----
                 5000
                 (1 row)
-                
+
                 select truncate(5678.123451,-4);
                 truncate(5678.123451,-4)
                 -----
                 0
                 (1 row)
-                
+
                 select truncate(-5678.123451,0);
                 truncate(-5678.123451,0)
                 -----
                 -5678
                 (1 row)
-                
+
                 select truncate(-5678.123451,1);
                 truncate(-5678.123451,1)
                 -----
                 -5678.1
                 (1 row)
-                
+
                 select truncate(-5678.123451,2);
                 truncate(-5678.123451,2)
                 -----
                 -5678.12
                 (1 row)
-                
+
                 select truncate(-5678.123451,3);
                 truncate(-5678.123451,3)
                 -----
                 -5678.123
                 (1 row)
-                
+
                 select truncate(-5678.123451,4);
                 truncate(-5678.123451,4)
                 -----
                 -5678.1234
                 (1 row)
-                
+
                 select truncate(-5678.123451,5);
                 truncate(-5678.123451,5)
                 -----
                 -5678.12345
                 (1 row)
-                
+
                 select truncate(-5678.123451,6);
                 truncate(-5678.123451,6)
                 -----
                 -5678.123451
                 (1 row)
-                
+
                 select truncate(-5678.123451,-1);
                 truncate(-5678.123451,-1)
                 -----
                 -5670
                 (1 row)
-                
+
                 select truncate(-5678.123451,-2);
                 truncate(-5678.123451,-2)
                 -----
                 -5600
                 (1 row)
-                
+
                 select truncate(-5678.123451,-3);
                 truncate(-5678.123451,-3)
                 -----
                 -5000
                 (1 row)
-                
+
                 select truncate(-5678.123451,-4);
                 truncate(-5678.123451,-4)
                 -----
                 0
                 (1 row)
-                
+
                 select truncate(5678.123451,1::int);
                 truncate(5678.123451,1)
                 -----
                 5678.1
                 (1 row)
-                
-                
+
+
                 select truncate(5678.123451);
                 truncate(5678.123451)
                 -----
                 5678
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,0);
                 truncate(5678.123451::DOUBLE,0)
                 -----
                 5678
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,1);
                 truncate(5678.123451::DOUBLE,1)
                 -----
                 5678.1
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,2);
                 truncate(5678.123451::DOUBLE,2)
                 -----
                 5678.12
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,3);
                 truncate(5678.123451::DOUBLE,3)
                 -----
                 5678.123
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,4);
                 truncate(5678.123451::DOUBLE,4)
                 -----
                 5678.1234
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,5);
                 truncate(5678.123451::DOUBLE,5)
                 -----
                 5678.12345
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,6);
                 truncate(5678.123451::DOUBLE,6)
                 -----
                 5678.123451
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,-1);
                 truncate(5678.123451::DOUBLE,-1)
                 -----
                 5670
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,-2);
                 truncate(5678.123451::DOUBLE,-2)
                 -----
                 5600
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,-3);
                 truncate(5678.123451::DOUBLE,-3)
                 -----
                 5000
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,-4);
                 truncate(5678.123451::DOUBLE,-4)
                 -----
                 0
                 (1 row)
-                
+
                 select truncate(-5678.123451::DOUBLE,0);
                 truncate(-5678.123451::DOUBLE,0)
                 -----
                 -5678
                 (1 row)
-                
+
                 select truncate(-5678.123451::DOUBLE,1);
                 truncate(-5678.123451::DOUBLE,1)
                 -----
                 -5678.1
                 (1 row)
-                
+
                 select truncate(-5678.123451::DOUBLE,2);
                 truncate(-5678.123451::DOUBLE,2)
                 -----
                 -5678.12
                 (1 row)
-                
+
                 select truncate(-5678.123451::DOUBLE,3);
                 truncate(-5678.123451::DOUBLE,3)
                 -----
                 -5678.123
                 (1 row)
-                
+
                 select truncate(-5678.123451::DOUBLE,4);
                 truncate(-5678.123451::DOUBLE,4)
                 -----
                 -5678.1234
                 (1 row)
-                
+
                 select truncate(-5678.123451::DOUBLE,5);
                 truncate(-5678.123451::DOUBLE,5)
                 -----
                 -5678.12345
                 (1 row)
-                
+
                 select truncate(-5678.123451::DOUBLE,6);
                 truncate(-5678.123451::DOUBLE,6)
                 -----
                 -5678.123451
                 (1 row)
-                
+
                 select truncate(-5678.123451::DOUBLE,-1);
                 truncate(-5678.123451::DOUBLE,-1)
                 -----
                 -5670
                 (1 row)
-                
+
                 select truncate(-5678.123451::DOUBLE,-2);
                 truncate(-5678.123451::DOUBLE,-2)
                 -----
                 -5600
                 (1 row)
-                
+
                 select truncate(-5678.123451::DOUBLE,-3);
                 truncate(-5678.123451::DOUBLE,-3)
                 -----
                 -5000
                 (1 row)
-                
+
                 select truncate(-5678.123451::DOUBLE,-4);
                 truncate(-5678.123451::DOUBLE,-4)
                 -----
                 0
                 (1 row)
-                
+
                 select truncate(5678.123451::DOUBLE,1::int);
                 truncate(5678.123451::DOUBLE,1)
                 -----
                 5678.1
                 (1 row)
-                
+
                 """
         );
     }
@@ -1605,31 +1605,31 @@ public class FunctionsTest extends SqlIoTest {
                 ----------
                  0.00
                 (1 row)
-                
+
                 select truncate(-0.00123::DECIMAL(10, 5), 2);
                  truncate
                 ----------
                  0.00
                 (1 row)
-                
+
                 select round(-0.00123::DOUBLE, 2);
                  round
                 ----------
                  0.00
                 (1 row)
-                
+
                 select round(-0.00123::DECIMAL(10, 5), 2);
                  round
                 ----------
                  0.00
                 (1 row)
-                
+
                 select round(-0.00623::DOUBLE, 2);
                  round
                 ----------
                  -0.01
                 (1 row)
-                
+
                 select round(-0.00623::DECIMAL(10, 5), 2);
                  round
                 ----------
@@ -1653,25 +1653,25 @@ public class FunctionsTest extends SqlIoTest {
                 -----
                  1.0
                 (1 row)
-                
+
                 SELECT EXP(0e0);
                  exp
                 -----
                  1.0
                 (1 row)
-                
+
                 SELECT EXP(null);
                  exp
                 -----
                 null
                 (1 row)
-                
+
                 SELECT EXP(null::double);
                  exp
                 -----
                 null
                 (1 row)
-                
+
                 SELECT EXP(0);
                  exp
                 -----
@@ -1704,25 +1704,25 @@ public class FunctionsTest extends SqlIoTest {
                 ------------
                  feldera
                 (1 row)
-                
+
                 SELECT GUNZIP(x'1f8b08000000000000ff734bcd49492d4a0400bdb8a86307000000'::bytea);
                  gunzip
                 ------------
                  Feldera
                 (1 row)
-                
+
                 SELECT GUNZIP(x'1f8b08000000000000ffcb48cdc9c9070086a6103605000000'::bytea);
                  gunzip
                 ------------
                  hello
                 (1 row)
-                
+
                 SELECT GUNZIP(x'1f8b08000000000000132bc9c82c5600a2dc4a851282ccd48a12002e7a22ff30000000'::bytea);
                  gunzip
                 --------------------------------------------------------------------------
                  this is my this is my this is my this is my text
                 (1 row)
-                
+
                 SELECT GUNZIP(null);
                  gunzip
                 --------
@@ -1745,19 +1745,19 @@ public class FunctionsTest extends SqlIoTest {
                 -------
                  123.12
                 (1 row)
-                
+
                 SELECT ROUND(123.1266::DOUBLE, 2);
                  round
                 -------
                  123.13
                 (1 row)
-                
+
                 SELECT ROUND(123.1266::DOUBLE, -2);
                  round
                 -------
                  100
                 (1 row)
-                
+
                 SELECT ROUND(123.1266::DOUBLE);
                  round
                 -------
@@ -1775,19 +1775,19 @@ public class FunctionsTest extends SqlIoTest {
                 -------
                  true
                 (1 row)
-                
+
                 SELECT RLIKE(null, 's..i.*');
                  rlike
                 -------
                  NULL
                 (1 row)
-                
+
                 SELECT RLIKE('string', null);
                  rlike
                 -------
                  NULL
                 (1 row)
-                
+
                 SELECT RLIKE(null, null);
                  rlike
                 -------
@@ -1805,73 +1805,73 @@ public class FunctionsTest extends SqlIoTest {
                 ----------
                  {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
                 (1 row)
-                
+
                 SELECT SEQUENCE(10, 1);
                  sequence
                 ----------
                  {}
                 (1 row)
-                
+
                 SELECT SEQUENCE(1, 1);
                  sequence
                 ----------
                  {1}
                 (1 row)
-                
+
                 SELECT SEQUENCE(-6, 1);
                  sequence
                 ----------
                  {-6, -5, -4, -3, -2, -1, 0, 1}
                 (1 row)
-                
+
                 SELECT SEQUENCE(-6, -9);
                  sequence
                 ----------
                  {}
                 (1 row)
-                
+
                 SELECT SEQUENCE(0, -2);
                  sequence
                 ----------
                  {}
                 (1 row)
-                
+
                 SELECT SEQUENCE(null::int, 1);
                  sequence
                 ----------
                  NULL
                 (1 row)
-                
+
                 SELECT SEQUENCE(null, 1);
                  sequence
                 ----------
                  NULL
                 (1 row)
-                
+
                 SELECT SEQUENCE(1, null);
                  sequence
                 ----------
                  NULL
                 (1 row)
-                
+
                 SELECT SEQUENCE(null, null);
                  sequence
                 ----------
                  NULL
                 (1 row)
-                
+
                 SELECT SEQUENCE(null::tinyint, null::tinyint);
                  sequence
                 ----------
                  NULL
                 (1 row)
-                
+
                 SELECT SEQUENCE(1::tinyint, 10::tinyint);
                  sequence
                 ----------
                  {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
                 (1 row)
-                
+
                 SELECT SEQUENCE(1::tinyint, 3::bigint);
                  sequence
                 ----------
@@ -1889,49 +1889,49 @@ public class FunctionsTest extends SqlIoTest {
                 ------
                      2
                 (1 row)
-                
+
                 SELECT ceil(2::smallint);
                  ceil
                 ------
                      2
                 (1 row)
-                
+
                 SELECT ceil(2::int);
                  ceil
                 ------
                      2
                 (1 row)
-                
+
                 SELECT ceil(2::bigint);
                  ceil
                 ------
                      2
                 (1 row)
-                
+
                 SELECT ceil(null::tinyint);
                  ceil
                 ------
                  NULL
                 (1 row)
-                
+
                 SELECT ceil(null::smallint);
                  ceil
                 ------
                  NULL
                 (1 row)
-                
+
                 SELECT ceil(null::int);
                  ceil
                 ------
                  NULL
                 (1 row)
-                
+
                 SELECT ceil(null::bigint);
                  ceil
                 ------
                  NULL
                 (1 row)
-                
+
                 SELECT ceil(null);
                  ceil
                 ------
@@ -1949,49 +1949,49 @@ public class FunctionsTest extends SqlIoTest {
                 ------
                      2
                 (1 row)
-                
+
                 SELECT floor(2::smallint);
                  floor
                 ------
                      2
                 (1 row)
-                
+
                 SELECT floor(2::int);
                  floor
                 ------
                      2
                 (1 row)
-                
+
                 SELECT floor(2::bigint);
                  floor
                 ------
                      2
                 (1 row)
-                
+
                 SELECT floor(null::tinyint);
                  floor
                 ------
                  NULL
                 (1 row)
-                
+
                 SELECT floor(null::smallint);
                  floor
                 ------
                  NULL
                 (1 row)
-                
+
                 SELECT floor(null::int);
                  floor
                 ------
                  NULL
                 (1 row)
-                
+
                 SELECT floor(null::bigint);
                  floor
                 ------
                  NULL
                 (1 row)
-                
+
                 SELECT floor(null);
                  floor
                 ------

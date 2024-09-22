@@ -386,7 +386,7 @@ public class SimulatorTests {
         ZSet<Person, Integer> flattened = personIndex.deindex();
         Assert.assertTrue(input.equals(flattened));
     }
-    
+
     @Test
     public void testJoin() {
         ZSet<Person, Integer> input = getPersons();

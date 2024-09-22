@@ -39,7 +39,7 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    ```bash
    ACCOUNT_ID="00000000-0000-0000-0000-000000000000"  # Set to own
    LICENSE_KEY="00000000-0000-0000-0000-000000000000"  # Set to own
-   
+
    helm upgrade --install feldera \
        oci://public.ecr.aws/feldera/feldera-chart --version 0.9.0 \
        --namespace feldera --create-namespace \
@@ -48,7 +48,7 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
        --set felderaLicenseKey="${LICENSE_KEY}" \
        --set felderaDatabaseSecretRef="feldera-db-insecure-secret"
    ```
-   _Note:_ the license verification is done by interacting with our online 
+   _Note:_ the license verification is done by interacting with our online
    license server at `cloud.feldera.com`.
 
    _Note:_ how to configure your own database credentials is explained in
@@ -58,7 +58,7 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    ```
    kubectl get pods -n feldera
    ```
-   
+
    ... which should output approximately the following:
    ```
    NAME                                         READY   STATUS    RESTARTS   AGE
@@ -68,7 +68,7 @@ on a Kubernetes cluster. It requires a valid Feldera Enterprise license
    feldera-api-server-c546499bc-wdpkm           1/1     Running   0          3m9s
    ```
 
-4. **Usage:** 
+4. **Usage:**
 
    Interaction with Feldera happens through the API server, which has an associated
    service named `<release name>-api-server.<namespace>.svc.cluster.local:8080`.

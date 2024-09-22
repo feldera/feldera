@@ -31,7 +31,7 @@ public class InternalNowTests extends StreamingTestBase {
                     usr  VARCHAR,
                     tim  TIMESTAMP
                 );
-                
+
                 CREATE VIEW window_computation AS
                 SELECT
                   usr,

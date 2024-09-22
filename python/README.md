@@ -1,4 +1,4 @@
-# Feldera Python SDK 
+# Feldera Python SDK
 
 Feldera Python is the Feldera SDK for Python developers.
 
@@ -20,7 +20,7 @@ Checkout the docs [here](./feldera/__init__.py) for an example on how to use the
 
 ## Documentation
 
-To build the html documentation run: 
+To build the html documentation run:
 
 Ensure that you have sphinx installed. If not, install it using `pip install sphinx`.
 

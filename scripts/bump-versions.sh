@@ -8,7 +8,7 @@ set -ex
 # When pushing commits created by this script, don't forget to use the --follow-tags argument to `git push`
 #
 release() {
-    if [ $# -ne 1 ]; then 
+    if [ $# -ne 1 ]; then
         echo "Illegal number of parameters. Usage: ./bump-versions.sh major|minor|patch"
         exit 1
     fi
@@ -26,7 +26,7 @@ release() {
     # Update pipeline manager version
     old_version=`cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version'`
     case $1 in
-        major|minor|patch) 
+        major|minor|patch)
           cargo set-version --bump $1 -p feldera-types
           cargo set-version --bump $1 -p dbsp
           cargo set-version --bump $1 -p fda

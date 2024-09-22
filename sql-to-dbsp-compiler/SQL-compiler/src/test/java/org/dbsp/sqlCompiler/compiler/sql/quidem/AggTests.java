@@ -35,7 +35,7 @@ public class AggTests extends PostBaseTests {
                 | 8 |
                 +---+
                 (1 row)
-                
+
                 -- COUNT excludes fully or partially null rows
                 select count(city, gender) as c from emps;
                 +---+
@@ -44,7 +44,7 @@ public class AggTests extends PostBaseTests {
                 | 3 |
                 +---+
                 (1 row)
-                
+
                 -- COUNT-DISTINCT excludes fully or partially null rows
                 select count(distinct city, gender) as c from emps;
                 +---+
@@ -53,7 +53,7 @@ public class AggTests extends PostBaseTests {
                 | 3 |
                 +---+
                 (1 row)
-                
+
                 select distinct mod(deptno, 20) as m, gender as c from emps;
                 +----+---+
                 | M  | C |
@@ -63,7 +63,7 @@ public class AggTests extends PostBaseTests {
                 |  0 | M|
                 +----+---+
                 (3 rows)
-                
+
                 -- Partially null row (10, NULL) is excluded from count.
                 select count(distinct mod(deptno, 20), gender) as c from emps;
                 +---+
@@ -72,7 +72,7 @@ public class AggTests extends PostBaseTests {
                 | 2 |
                 +---+
                 (1 row)
-                
+
                 select count(mod(deptno, 20), gender) as c from emps;
                 +---+
                 | C |
@@ -93,7 +93,7 @@ public class AggTests extends PostBaseTests {
                 | 9 |
                 +---+
                 (1 row)
-                
+
                 -- count of not-nullable column same as count(*)
                 select count(ename) as c from emp;
                 +---+
@@ -102,7 +102,7 @@ public class AggTests extends PostBaseTests {
                 | 9 |
                 +---+
                 (1 row)
-                
+
                 -- count of nullable column
                 select count(deptno) as c from emp;
                 +---+
@@ -111,7 +111,7 @@ public class AggTests extends PostBaseTests {
                 | 8 |
                 +---+
                 (1 row)
-                
+
                 -- DISTINCT and GROUP BY
                 select distinct deptno, count(*) as c from emp group by deptno;
                 +--------+---+
@@ -125,7 +125,7 @@ public class AggTests extends PostBaseTests {
                 |        | 1 |
                 +--------+---+
                 (6 rows)
-                
+
                 select distinct deptno from emp group by deptno;
                 +--------+
                 | DEPTNO |
@@ -138,7 +138,7 @@ public class AggTests extends PostBaseTests {
                 |        |
                 +--------+
                 (6 rows)
-                
+
                 select distinct count(*) as c from emp group by deptno;
                 +---+
                 | C |
@@ -147,7 +147,7 @@ public class AggTests extends PostBaseTests {
                 | 2 |
                 +---+
                 (2 rows)
-                
+
                 select distinct count(*) as c from emp group by deptno having count(*) > 1;
                 +---+
                 | C |
@@ -155,7 +155,7 @@ public class AggTests extends PostBaseTests {
                 | 2 |
                 +---+
                 (1 row)
-                
+
                 select distinct count(*) as c from emp group by deptno order by 1 desc
                 ;
                 +---+
@@ -165,7 +165,7 @@ public class AggTests extends PostBaseTests {
                 | 1 |
                 +---+
                 (2 rows)
-                
+
                 -- [CALCITE-2192] RelBuilder wrongly skips creation of Aggregate that prunes
                 -- columns if input is unique
                 select distinct deptno
@@ -204,7 +204,7 @@ public class AggTests extends PostBaseTests {
                 |    |
                 +----+
                 (1 row)
-                
+
                 -- [CALCITE-998] Exception when calling STDDEV_SAMP, STDDEV_POP
                 -- stddev_samp
                 select stddev_samp(deptno) as s from emp;
@@ -214,7 +214,7 @@ public class AggTests extends PostBaseTests {
                 | 19 |
                 +----+
                 (1 row)
-                
+
                 -- [CALCITE-998] Exception when calling STDDEV_SAMP, STDDEV_POP
                 -- stddev_samp
                 select stddev_samp(deptno) as s from emp;
@@ -224,7 +224,7 @@ public class AggTests extends PostBaseTests {
                 | 19 |
                 +----+
                 (1 row)
-                
+
                 -- stddev_pop
                 select stddev_pop(deptno) as s from emp;
                 +----+
@@ -233,7 +233,7 @@ public class AggTests extends PostBaseTests {
                 | 17 |
                 +----+
                 (1 row)
-                
+
                 -- stddev
                 select stddev(deptno) as s from emp;
                 +----+
@@ -242,7 +242,7 @@ public class AggTests extends PostBaseTests {
                 | 19 |
                 +----+
                 (1 row)
-                
+
                 -- both
                 select gender,
                   stddev_pop(deptno) as p,
@@ -302,7 +302,7 @@ public class AggTests extends PostBaseTests {
                 |NULL| F|
                 +---------------+---+
                 (5 rows)
-                
+
                 -- SELECT DISTINCT includes fully and partially null rows
                 select distinct city, gender from emps;
                 +---------------+--------+
@@ -315,7 +315,7 @@ public class AggTests extends PostBaseTests {
                 | Vancouver| F|
                 +---------------+--------+
                 (5 rows)
-                
+
                 -- Nulls in GROUP BY
                 select x = 1 as x1, count(*) as c
                 from (values 0, 1, 2, cast(null as integer)) as t(x)
@@ -347,7 +347,7 @@ public class AggTests extends PostBaseTests {
                 |        | 5 |
                 +--------+---+
                 (4 rows)
-                
+
                 -- GROUPING SETS on expression
                 select deptno + 1, count(*) as c from emps group by grouping sets ((), (deptno + 1));
                 +--------+---+
@@ -359,7 +359,7 @@ public class AggTests extends PostBaseTests {
                 |        | 5 |
                 +--------+---+
                 (4 rows)
-                
+
                 -- GROUPING SETS on single-row relation returns multiple rows
                 select 1 as c
                 from (values ('a', 'b')) as t (a, b)
@@ -401,7 +401,7 @@ public class AggTests extends PostBaseTests {
                 |        | 9 |
                 +--------+---+
                 (17 rows)
-                
+
                 -- ROLLUP on 1 column
                 select deptno + 1, count(*) as c
                 from emp
@@ -418,7 +418,7 @@ public class AggTests extends PostBaseTests {
                 |        | 9 |
                 +--------+---+
                 (7 rows)
-                
+
                 -- ROLLUP on 2 columns; project columns in different order
                 select gender, deptno + 1, count(*) as c
                 from emp
@@ -443,7 +443,7 @@ public class AggTests extends PostBaseTests {
                 |NULL|            | 9 |
                 +--------+--------+---+
                 (15 rows)
-                
+
                 -- ROLLUP on column with nulls
                 -- Note the two rows with NULL key (one represents ALL)
                 select gender, count(*) as c
@@ -457,7 +457,7 @@ public class AggTests extends PostBaseTests {
                 |NULL|     9 |
                 +--------+---+
                 (3 rows)
-                
+
                 -- ROLLUP plus ORDER BY
                 select gender, count(*) as c
                 from emp
@@ -472,7 +472,7 @@ public class AggTests extends PostBaseTests {
                 | M|       3 |
                 +--------+---+
                 (3 rows)
-                
+
                 -- ROLLUP cartesian product
                 select deptno, count(*) as c
                 from emp
@@ -499,7 +499,7 @@ public class AggTests extends PostBaseTests {
                 |        | 9 |
                 +--------+---+
                 (17 rows)
-                
+
                 -- ROLLUP cartesian product of with tuple with expression
                 select deptno / 2 + 1 as half1, count(*) as c
                 from emp
@@ -549,7 +549,7 @@ public class AggTests extends PostBaseTests {
                 |       | 9 |
                 +-------+---+
                 (40 rows)
-                
+
                 -- ROLLUP with HAVING
                 select deptno + 1 as d1, count(*) as c
                 from emp
@@ -561,7 +561,7 @@ public class AggTests extends PostBaseTests {
                 |    | 9 |
                 +----+---+
                 (1 row)
-                
+
                 -- ROLLUP column used in expression; see [CALCITE-5296]
                 -- In a query with ROLLUP, validator wrongly infers that a column is NOT NULL
                 select deptno, deptno + 1 as d1 from emp group by rollup(deptno);
@@ -577,7 +577,7 @@ public class AggTests extends PostBaseTests {
                 |        |    |
                 +--------+----+
                 (7 rows)
-                
+
                 -- CUBE and DISTINCT
                 select distinct count(*) from emp group by cube(deptno, gender);
                 +--------+
@@ -590,7 +590,7 @@ public class AggTests extends PostBaseTests {
                 |      9 |
                 +--------+
                 (5 rows)
-                
+
                 -- CUBE and ROLLUP cartesian product over same columns
                 select deptno, gender, count(*) from emp where deptno = 20 group by cube(deptno, gender), rollup(deptno, gender);
                 +--------+--------+--------+
@@ -610,7 +610,7 @@ public class AggTests extends PostBaseTests {
                 |        |NULL|          1 |
                 +--------+--------+--------+
                 (12 rows)
-                
+
                 -- GROUP BY DISTINCT CUBE and ROLLUP cartesian product over same columns
                 select deptno, gender, count(*) from emp where deptno = 20 group by distinct cube(deptno, gender), rollup(deptno, gender);
                 +--------+--------+--------+
@@ -644,7 +644,7 @@ public class AggTests extends PostBaseTests {
                 |      1 |
                 +--------+
                 (1 row)
-                
+
                 -- GROUP BY DISTINCT x + y
                 select deptno + 1, count(*) from emp where deptno = 20 group by distinct deptno + 1;
                 +--------+--------+
@@ -672,7 +672,7 @@ public class AggTests extends PostBaseTests {
                 |        |NULL| Alice|
                 +--------+--------+----------+
                 (4 rows)
-                
+
                 -- GROUPING in SELECT clause of GROUP BY query
                 select count(*) as c, grouping(deptno) as g
                 from emp
@@ -688,7 +688,7 @@ public class AggTests extends PostBaseTests {
                 | 2 | 0 |
                 +---+---+
                 (6 rows)
-                
+
                 -- GROUPING, GROUP_ID, GROUPING_ID in SELECT clause of GROUP BY query
                 select count(*) as c,
                   grouping(deptno) as g,
@@ -719,7 +719,7 @@ public class AggTests extends PostBaseTests {
                 | 2 | 0 |   0 |  0 |  1 |   2 |   1 |
                 +---+---+-----+----+----+-----+-----+
                 (15 rows)
-                
+
                 -- GROUPING accepts multiple arguments, gives same result as GROUPING_ID
                 select count(*) as c,
                   grouping(deptno) as gd,
@@ -749,7 +749,7 @@ public class AggTests extends PostBaseTests {
                 | 9 |  1 |   1 |    7 |     7 |
                 +---+----+-----+------+-------+
                 (15 rows)
-                
+
                 -- GROUPING in ORDER BY clause
                 select count(*) as c
                 from emp
@@ -767,7 +767,7 @@ public class AggTests extends PostBaseTests {
                 | 9 |
                 +---+
                 (7 rows)
-                
+
                 -- Duplicate argument to GROUPING_ID.
                 select deptno, gender, grouping_id(deptno, gender, deptno), count(*) as c
                 from emp
@@ -783,7 +783,7 @@ public class AggTests extends PostBaseTests {
                 |        |NULL|      7 | 2 |
                 +--------+--------+--------+---+
                 (5 rows)
-                
+
                 -- GROUPING in SELECT clause of ROLLUP query
                 select count(*) as c, deptno, grouping(deptno) as g
                 from emp
@@ -800,7 +800,7 @@ public class AggTests extends PostBaseTests {
                 | 9 |        | 1 |
                 +---+--------+---+
                 (7 rows)
-                
+
                 -- GROUPING, GROUPING_ID and GROUP_ID
                 select deptno, gender, grouping(deptno) gd, grouping(gender) gg,
                   grouping_id(deptno, gender) dg, grouping_id(gender, deptno) gd,
@@ -850,7 +850,7 @@ public class AggTests extends PostBaseTests {
                 |    |    | 9 |
                 +----+----+---+
                 (7 rows)
-                
+
                 select mod(deptno, 20) as d, count(*) as c, gender as g
                 from emp
                 group by cube(mod(deptno, 20), gender);
@@ -870,7 +870,7 @@ public class AggTests extends PostBaseTests {
                 |    | 9 |NULL|
                 +----+---+---+
                 (11 rows)
-                
+
                 select mod(deptno, 20) as d, count(*) as c, gender as g
                 from emp
                 group by rollup(mod(deptno, 20), gender);
@@ -888,7 +888,7 @@ public class AggTests extends PostBaseTests {
                 |    | 9 |NULL|
                 +----+---+---+
                 (9 rows)
-                
+
                 select count(*) as c
                 from emp
                 group by cube(1);
@@ -899,7 +899,7 @@ public class AggTests extends PostBaseTests {
                 | 9 |
                 +---+
                 (2 rows)
-                
+
                 select count(*) as c
                 from emp
                 group by rollup(1);
@@ -922,7 +922,7 @@ public class AggTests extends PostBaseTests {
                 | 1|
                 +--------+
                 (1 row)
-                
+
                 select count(distinct '1')
                 from (values (1,2),(3,4));
                 +--------+
@@ -931,7 +931,7 @@ public class AggTests extends PostBaseTests {
                 |      1 |
                 +--------+
                 (1 row)
-                
+
                 -- [CALCITE-1381] SqlCall.clone should retain function quantifier
                 select nullif(count(distinct '1'),0)
                 from (values (1,2),(3,4));
@@ -949,7 +949,7 @@ public class AggTests extends PostBaseTests {
    public void testAggregates() {
        this.qs("""
                 !use orinoco
-                                
+
                 -- FLOOR to achieve a 2-hour window
                 select floor(rowtime to hour) as rowtime, count(*) as c
                 from Orders
@@ -976,7 +976,7 @@ public class AggTests extends PostBaseTests {
                 (1 row)
 
                 !use scott
-                                
+
                 -- [CALCITE-4345] SUM(CASE WHEN b THEN 1) etc.
                 select
                  sum(sal) as sum_sal,
@@ -1164,7 +1164,7 @@ public class AggTests extends PostBaseTests {
                 |          95000.0000 |        1090000.0000 |        1090000.0000 |          95000.0000 |
                 +---------------------+---------------------+---------------------+---------------------+
                 (1 row)
-                                
+
                 -- [CALCITE-1776, CALCITE-2402] COVAR_POP, COVAR_SAMP, VAR_SAMP, VAR_POP
                 SELECT
                   covar_pop(COMM, COMM) as "COVAR_POP(COMM, COMM)",
@@ -1178,7 +1178,7 @@ public class AggTests extends PostBaseTests {
                 |           272500.0000 |    1398313.873626374 |   272500.0000 | 1398313.873626374 |
                 +-----------------------+----------------------+---------------+-------------------+
                 (1 row)
-                                
+
                 -- [CALCITE-1776, CALCITE-2402] REGR_COUNT with group by
                 SELECT SAL, regr_count(COMM, SAL) as "REGR_COUNT(COMM, SAL)",
                    regr_count(EMPNO, SAL) as "REGR_COUNT(EMPNO, SAL)"
@@ -1200,7 +1200,7 @@ public class AggTests extends PostBaseTests {
                 |  950.00 |                     0 |                      1 |
                 +---------+-----------------------+------------------------+
                 (12 rows)
-                                
+
                 -- [CALCITE-1776, CALCITE-2402] COVAR_POP, COVAR_SAMP, VAR_SAMP, VAR_POP with group by
                 SELECT
                   MONTH(HIREDATE) as "MONTH",
@@ -1247,7 +1247,7 @@ public class AggTests extends PostBaseTests {
                 |     30 | [7900, 7844, 7698, 7654, 7521, 7499] |
                 +--------+--------------------------------------+
                 (3 rows)
-                                
+
                 select
                 deptno,
                 collect(empno) as empnos_1,
@@ -1262,7 +1262,7 @@ public class AggTests extends PostBaseTests {
                 |     30 | [7499, 7521, 7654, 7698, 7844, 7900] | [7900, 7844, 7698, 7654, 7521, 7499] |
                 +--------+--------------------------------------+--------------------------------------+
                 (3 rows)
-                                
+
                 select deptno, collect(empno) within group (order by empno desc)
                 filter (where empno > 7500) as empnos
                 from "scott".emp
@@ -1275,7 +1275,7 @@ public class AggTests extends PostBaseTests {
                 |     30 | [7900, 7844, 7698, 7654, 7521] |
                 +--------+--------------------------------+
                 (3 rows)
-                                
+
                 select deptno, collect(empno) within group (order by empno desc) as empnos1,
                 collect(empno) within group (order by empno asc) as empnos2
                 from "scott".emp
@@ -1288,7 +1288,7 @@ public class AggTests extends PostBaseTests {
                 |     30 | [7900, 7844, 7698, 7654, 7521, 7499] | [7499, 7521, 7654, 7698, 7844, 7900] |
                 +--------+--------------------------------------+--------------------------------------+
                 (3 rows)
-                                
+
                 -- Aggregate WITHIN GROUP with JOIN
                 select dept.deptno,
                   collect(sal) within group (order by sal desc) as s,
@@ -1305,7 +1305,7 @@ public class AggTests extends PostBaseTests {
                 |     30 | [2850.00, 1600.00, 1500.00, 1250.00, 1250.00, 950.00] | [1600.00, 1250.00, 1250.00, 2850.00, 1500.00, 950.00] | [2850.00]                   |
                 +--------+-------------------------------------------------------+-------------------------------------------------------+-----------------------------+
                 (3 rows)
-                                
+
                 select deptno, collect(empno + 1) within group (order by 1) as empnos
                 from "scott".emp
                 group by deptno;
@@ -1317,7 +1317,7 @@ public class AggTests extends PostBaseTests {
                 |     30 | [7500, 7522, 7655, 7699, 7845, 7901] |
                 +--------+--------------------------------------+
                 (3 rows)
-                                
+
                 -- BIT_AND, BIT_OR, BIT_XOR aggregate functions
                 select bit_and(deptno), bit_or(deptno), bit_xor(deptno) from "scott".emp;
                 +--------+--------+--------+
@@ -1326,7 +1326,7 @@ public class AggTests extends PostBaseTests {
                 |      0 |     30 |     30 |
                 +--------+--------+--------+
                 (1 row)
-                                
+
                 select deptno, bit_and(empno), bit_or(empno), bit_xor(empno) from "scott".emp group by deptno;
                 +--------+--------+--------+--------+
                 | DEPTNO | EXPR$1 | EXPR$2 | EXPR$3 |
@@ -1336,7 +1336,7 @@ public class AggTests extends PostBaseTests {
                 |     30 |   7168 |   8191 |    934 |
                 +--------+--------+--------+--------+
                 (3 rows)
-                                
+
                 -- Based on [DRUID-7593] Exact distinct-COUNT with complex expression (CASE, IN) throws
                 -- NullPointerException
                 WITH wikipedia AS (
@@ -1366,10 +1366,10 @@ public class AggTests extends PostBaseTests {
                 |                                               2 |
                 +-------------------------------------------------+
                 (1 row)
-                                
+
                 -- [CALCITE-2266] JSON_OBJECTAGG, JSON_ARRAYAGG
                 !use post
-                                
+
                 select gender, json_objectagg(ename: deptno absent on null) from emp group by gender;
                 +--------+-------------------------------------------------------+
                 | GENDER | EXPR$1                                                |
@@ -1396,7 +1396,7 @@ public class AggTests extends PostBaseTests {
                 | M      | [{"ename":"Bob","deptno":10},{"ename":"Eric","deptno":20},{"ename":"Adam","deptno":50}]                                                                                              |
                 +--------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
                 (2 rows)
-                                
+
                 select json_object('deptno': deptno, 'employees': json_arrayagg(json_object('ename': ename, 'gender': gender) format json) format json) from emp group by deptno;
                 +-------------------------------------------------------------------------------------------+
                 | EXPR$0                                                                                    |
@@ -1422,7 +1422,7 @@ public class AggTests extends PostBaseTests {
                 | {"employees":[{"ename":"Wilma","gender":"F"}],"deptno":null}                              |
                 +-------------------------------------------------------------------------------------------+
                 (6 rows)
-                                
+
                 -- [CALCITE-2786] Add order by clause support for JSON_ARRAYAGG
                 select gender,
                 json_arrayagg(deptno order by deptno),
@@ -1469,7 +1469,7 @@ public class AggTests extends PostBaseTests {
                 | Jane,Bob,Eric,Susan,Alice,Adam,Eve,Grace,Wilma |
                 +------------------------------------------------+
                 (1 row)
-                                
+
                 select listagg(ename) within group(order by gender, ename) as combined_name from emp;
                 +------------------------------------------------+
                 | COMBINED_NAME                                  |
@@ -1489,11 +1489,11 @@ public class AggTests extends PostBaseTests {
                 | Jane,Alice,Susan,Eve,Grace,Wilma | Jane; Susan; Alice; Eve; Grace; Wilma |
                 +----------------------------------+---------------------------------------+
                 (2 rows)
-                                
+
                 !use mysqlfunc
-                                
+
                 -- GROUP_CONCAT (MySQL) is very similar to LISTAGG.
-                                
+
                 -- GROUP_CONCAT with DISTINCT, SEPARATOR
                 select
                     group_concat(distinct ename order by ename) as combined_name,
@@ -1505,7 +1505,7 @@ public class AggTests extends PostBaseTests {
                 | Adam,Alice,Bob,Eric,Eve,Grace,Jane,Susan,Wilma | Adam;Alice;Bob;Eric;Eve;Grace;Jane;Susan;Wilma |
                 +------------------------------------------------+------------------------------------------------+
                 (1 row)
-                                
+
                 -- GROUP_CONCAT with multiple columns
                 select
                     group_concat(deptno, ename order by ename) as combined_name
@@ -1545,7 +1545,7 @@ public class AggTests extends PostBaseTests {
                 |        | 1 |
                 +--------+---+
                 (6 rows)
-                                
+
                 select countif(gender = 'F') filter (where deptno = 30) as f
                 from emp;
                 +---+
@@ -1554,7 +1554,7 @@ public class AggTests extends PostBaseTests {
                 | 2 |
                 +---+
                 (1 row)
-                                
+
                 select countif(a > 0) + countif(a > 1) + countif(c > 1) as c
                 from (select 1 as a, 2 as b, 3 as c);
                 +---+
@@ -1565,7 +1565,7 @@ public class AggTests extends PostBaseTests {
                 (1 row)
 
                 -- [CALCITE-3661] Add MODE aggregate function
-                                
+
                 -- MODE without GROUP BY
                 select MODE(gender) as m
                 from emp;
@@ -1575,7 +1575,7 @@ public class AggTests extends PostBaseTests {
                 | F |
                 +---+
                 (1 row)
-                                
+
                 -- MODE with DISTINCT is pretty much useless (because every value occurs once),
                 -- but we allow it. It returns the first value seen, in this case 'F'.
                 select MODE(distinct gender) as m
@@ -1597,7 +1597,7 @@ public class AggTests extends PostBaseTests {
                 | M |
                 +---+
                 (1 row)
-                                
+
                 -- MODE function with WHERE that removes all rows.
                 -- Result is NULL even though MODE is applied to a not-NULL column.
                 select MODE(gender) as m
@@ -1609,7 +1609,7 @@ public class AggTests extends PostBaseTests {
                 |   |
                 +---+
                 (1 row)
-                                
+
                 -- MODE function with GROUP BY.
                 select deptno, MODE(gender) as m
                 from emp
@@ -1648,7 +1648,7 @@ public class AggTests extends PostBaseTests {
                 |        |   |
                 +--------+---+
                 (1 row)
-                                
+
                 -- MODE function applied to NULL value.
                 -- (Calcite requires CAST so that it can deduce type.)
                 select deptno, MODE(CAST(null AS INTEGER)) as m
@@ -1690,7 +1690,7 @@ public class AggTests extends PostBaseTests {
                 |        |       | F |
                 +--------+-------+---+
                 (15 rows)
-                                
+
                 -- [CALCITE-4665] Allow Aggregate.groupKey to be a strict superset of
                 -- Aggregate.groupKeys
                 -- Use a condition on grouping_id to filter out the superset grouping sets.
@@ -1716,7 +1716,7 @@ public class AggTests extends PostBaseTests {
                 |       |     50 |        |   1 |   0 |   1 |
                 +-------+--------+--------+-----+-----+-----+
                 (9 rows)
-                                
+
                 -- just a comparison about the above sql
                 select ename, deptno, grouping(ename) as g_e,
                   grouping(deptno) as g_d
@@ -1738,7 +1738,7 @@ public class AggTests extends PostBaseTests {
                 |       |     50 |   1 |   0 |
                 +-------+--------+-----+-----+
                 (9 rows)
-                                
+
                 -- Test cases for [CALCITE-5209] Proper sub-query handling if it is used inside select list and group by
                 select
                     case when deptno in (1, 2, 3, 4, 5) THEN 1 else 0 end
@@ -1751,7 +1751,7 @@ public class AggTests extends PostBaseTests {
                 |      0 |
                 +--------+
                 (1 row)
-                                
+
                 !set insubquerythreshold 5
                 select
                     case when deptno in (1, 2, 3, 4, 5) THEN 1 else 0 end
@@ -1764,7 +1764,7 @@ public class AggTests extends PostBaseTests {
                 |      0 |
                 +--------+
                 (1 row)
-                                
+
                 -- Test case for [CALCITE-5388] tempList expression inside EnumerableWindow.getPartitionIterator should be unoptimized
                 with
                     CTE1(rownr1, val1) as ( select ROW_NUMBER() OVER(ORDER BY id ASC), id from (values (1), (2)) as Vals1(id) ),

@@ -16,7 +16,7 @@ These instructions detail how to set up a basic EKS Kubernetes cluster.
   Used to bring up and configure EKS cluster
 
 * [**kubectl**](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/): `kubectl version`
-  
+
   Used to interact with the deployed EKS cluster
 
 ## EKS cluster creation
@@ -115,7 +115,7 @@ eksctl create cluster -f eks-config.yaml
 ```
 It should take roughly 15-20 minutes. This uses CloudFormation behind-the-scenes
 to bring up an EKS cluster named `feldera-cluster` with one EC2 instance as worker node,
-running in a newly created dedicated VPC. 
+running in a newly created dedicated VPC.
 
 `eksctl` will create the VPC in the `us-west-1` region which will run the EKS
 cluster. The cluster will be deployed across two availability zones (AZs). Each
@@ -145,7 +145,7 @@ nodes will only be on the private subnet.
   NAME            PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
   gp2 (default)   kubernetes.io/aws-ebs   Delete          WaitForFirstConsumer   false                  64m
   ```
-  
+
   If it has not been automatically marked as default (visible next to its name), set it as such using:
   ```bash
   kubectl patch sc gp2 -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'

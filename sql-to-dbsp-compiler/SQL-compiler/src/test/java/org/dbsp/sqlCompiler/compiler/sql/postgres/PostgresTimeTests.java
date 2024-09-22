@@ -179,7 +179,7 @@ public class PostgresTimeTests extends SqlIoTest {
                 -----------
                   25575000
                 (1 row)
-                
+
                 SELECT date_part(millisecond, TIME '13:30:25.575401');
                  date_part
                 -----------

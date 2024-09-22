@@ -16,7 +16,7 @@ public class PostgresWindowTests extends SqlIoTest {
                     salary int,
                     enroll_date date
                 );
-                
+
                 INSERT INTO empsalary VALUES
                 ('develop', 10, 5200, '2007-08-01'),
                 ('sales', 1, 5000, '2006-10-01'),
@@ -28,7 +28,7 @@ public class PostgresWindowTests extends SqlIoTest {
                 ('sales', 3, 4800, '2007-08-01'),
                 ('develop', 8, 6000, '2006-10-01'),
                 ('develop', 11, 5200, '2007-08-15');
-                
+
                 CREATE TABLE series(x int NOT NULL);
                 INSERT INTO series VALUES
                 (1),
@@ -41,7 +41,7 @@ public class PostgresWindowTests extends SqlIoTest {
                 (8),
                 (9),
                 (10);
-                
+
                 --CREATE TABLE tenk1 (
                 --	unique1		int4,
                 --	unique2		int4,
@@ -80,7 +80,7 @@ public class PostgresWindowTests extends SqlIoTest {
                 	stringu2	varchar,
                 	string4		varchar
                 );
-                
+
                 -- smaller version, only contains values where unique1 < 10
                 CREATE TABLE tenk1_1_small (
                 	unique1		int4,
@@ -100,7 +100,7 @@ public class PostgresWindowTests extends SqlIoTest {
                 	stringu2	varchar,
                 	string4		varchar
                 );
-                
+
                 create table t1 (f1 int, f2 int8);
                 insert into t1 values (1,1),(1,2),(2,2);
                 """);
@@ -149,7 +149,7 @@ public class PostgresWindowTests extends SqlIoTest {
                      |   1 |    3
                    1 |   3 |    3
                 (10 rows)
-                
+
                 SELECT lead(ten) OVER (PARTITION BY four ORDER BY ten), ten, four
                 FROM tenk1_2_small
                 WHERE unique2 < 10;
@@ -166,7 +166,7 @@ public class PostgresWindowTests extends SqlIoTest {
                     3 |   1 |    3
                       |   3 |    3
                 (10 rows)
-                
+
                 SELECT lead(ten * 2, 1) OVER (PARTITION BY four ORDER BY ten), ten, four
                 FROM tenk1_2_small
                 WHERE unique2 < 10;
@@ -183,7 +183,7 @@ public class PostgresWindowTests extends SqlIoTest {
                     6 |   1 |    3
                       |   3 |    3
                 (10 rows)
-                
+
                 SELECT lead(ten * 2, 1, -1) OVER (PARTITION BY four ORDER BY ten), ten, four
                 FROM tenk1_2_small
                 WHERE unique2 < 10;
@@ -244,7 +244,7 @@ public class PostgresWindowTests extends SqlIoTest {
                   23 |       3 |    3
                   23 |       7 |    3
                 (10 rows)
-                
+
                 SELECT sum(unique1) over (partition by four order by unique1 range between 5::int8 preceding and 6::int2 following),
                 	unique1, four
                 FROM tenk1_1_small WHERE unique1 < 10;
@@ -306,7 +306,7 @@ public class PostgresWindowTests extends SqlIoTest {
                  32200 |   4500 | 01-01-2008
                  32200 |   4200 | 01-01-2008
                 (10 rows)
-                
+
                 select sum(salary)
                 OVER (order by enroll_date desc range between INTERVAL 365 DAYS following and INTERVAL 365 DAYS following),
                 	salary, enroll_date from empsalary;
@@ -336,7 +336,7 @@ public class PostgresWindowTests extends SqlIoTest {
                   1 |   1
                   2 |   2
                 (2 rows)
-                
+
                 select f1, sum(f1) over (partition by f1, f1 order by f2
                                          range between 2 preceding and 1 preceding)
                 from t1 where f1 = f2;
@@ -345,7 +345,7 @@ public class PostgresWindowTests extends SqlIoTest {
                   1 |
                   2 |
                 (2 rows)
-                
+
                 select f1, sum(f1) over (partition by f1, f2 order by f2
                                          range between 1 following and 2 following)
                 from t1 where f1 = f2;
@@ -369,7 +369,7 @@ public class PostgresWindowTests extends SqlIoTest {
                      1 |  1
                      2 |  2
                 (2 rows)
-                
+
                 SELECT * FROM
                   (SELECT empno,
                           row_number() OVER (ORDER BY empno) rn
@@ -380,7 +380,7 @@ public class PostgresWindowTests extends SqlIoTest {
                      1 |  1
                      2 |  2
                 (2 rows)
-                
+
                 SELECT * FROM
                   (SELECT empno,
                           row_number() OVER (ORDER BY empno) rn
@@ -391,7 +391,7 @@ public class PostgresWindowTests extends SqlIoTest {
                      1 |  1
                      2 |  2
                 (2 rows)
-                
+
                 SELECT * FROM
                   (SELECT empno,
                           salary,
@@ -404,7 +404,7 @@ public class PostgresWindowTests extends SqlIoTest {
                     10 |   5200 | 2
                     11 |   5200 | 2
                 (3 rows)
-                
+
                 SELECT * FROM
                   (SELECT empno,
                           salary,
@@ -415,7 +415,7 @@ public class PostgresWindowTests extends SqlIoTest {
                 -------+--------+----
                      8 |   6000 |  1
                 (1 row)
-                
+
                 SELECT * FROM
                   (SELECT empno,
                           salary,
@@ -428,7 +428,7 @@ public class PostgresWindowTests extends SqlIoTest {
                     10 |   5200 | 3
                     11 |   5200 | 3
                 (3 rows)
-                
+
                 SELECT * FROM
                   (SELECT empno,
                           salary,
@@ -441,7 +441,7 @@ public class PostgresWindowTests extends SqlIoTest {
                     10 |   5200 | 3
                     11 |   5200 | 3
                 (3 rows)
-                
+
                 SELECT * FROM
                   (SELECT empno,
                           depname,
@@ -457,7 +457,7 @@ public class PostgresWindowTests extends SqlIoTest {
                      1 | sales|       1
                      3 | sales|       2
                 (6 rows)
-                
+
                 SELECT * FROM
                   (SELECT empno,
                           depname,
@@ -497,7 +497,7 @@ public class PostgresWindowTests extends SqlIoTest {
                   9 |   8 |
                  10 |   9 |
                 (10 rows)
-                
+
                 SELECT lag(ten, four) OVER (PARTITION BY four ORDER BY ten), ten, four
                 FROM tenk1_2_small
                 WHERE unique2 < 10;
@@ -514,7 +514,7 @@ public class PostgresWindowTests extends SqlIoTest {
                      |   1 |    3
                      |   3 |    3
                 (10 rows)
-                
+
                 SELECT lag(ten, four, 0) OVER (PARTITION BY four ORDER BY ten), ten, four
                 FROM tenk1_2_small
                 WHERE unique2 < 10;
@@ -531,7 +531,7 @@ public class PostgresWindowTests extends SqlIoTest {
                    0 |   1 |    3
                    0 |   3 |    3
                 (10 rows)
-                
+
                 SELECT lag(ten, four, 0.7) OVER (PARTITION BY four ORDER BY ten), ten, four
                 FROM tenk1_2_small
                 WHERE unique2 < 10 ORDER BY four, ten;

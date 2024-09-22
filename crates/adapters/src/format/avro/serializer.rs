@@ -813,7 +813,7 @@ mod test {
         b["b"]: Option<bool>
     });
 
-    const SCHEMA1: &'static str = r#"{
+    const SCHEMA1: &str = r#"{
   "type": "record",
   "name": "Test1",
   "fields": [
@@ -840,7 +840,7 @@ mod test {
         dec3["dec3"]: RustDecimal
     });
 
-    const SCHEMA_NUMERIC: &'static str = r#"{
+    const SCHEMA_NUMERIC: &str = r#"{
   "type": "record",
   "name": "Numeric",
   "fields": [
@@ -853,7 +853,7 @@ mod test {
 }"#;
 
     // Serializer should be able to serialize non-nullable fields into nullable schema.
-    const SCHEMA_NUMERIC_OPTIONAL: &'static str = r#"{
+    const SCHEMA_NUMERIC_OPTIONAL: &str = r#"{
     "type": "record",
     "name": "Numeric",
     "fields": [

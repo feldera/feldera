@@ -71,7 +71,7 @@ public class RegressionTests extends SqlIoTest {
         String sql = """
                 CREATE FUNCTION MAKE_TIMESTAMP(SECONDS BIGINT) RETURNS TIMESTAMP AS
                 TIMESTAMPADD(SECOND, SECONDS, DATE '1970-01-01');
-                
+
                 CREATE TABLE T(c1 BIGINT);
                 CREATE VIEW sum_view AS SELECT MAKE_TIMESTAMP(c1) FROM T;
                 """;
@@ -199,7 +199,7 @@ public class RegressionTests extends SqlIoTest {
                     card_id INT,
                     ttime INT
                 );
-                
+
                 CREATE VIEW bar AS
                 select
                     id,
@@ -238,7 +238,7 @@ public class RegressionTests extends SqlIoTest {
     public void issue2315() {
         String sql = """
                 CREATE TABLE T(id INT, c6 INT NOT NULL);
-                
+
                 CREATE VIEW stddev_view AS
                 SELECT id, STDDEV_SAMP(c6) AS c6
                 FROM T
@@ -273,7 +273,7 @@ public class RegressionTests extends SqlIoTest {
                 create table customer_address(
                     ca_zip char(10)
                 );
-                
+
                 CREATE VIEW V AS SELECT substr(ca_zip,1,5)
                 FROM customer_address;""";
         this.compileRustTestCase(sql);
@@ -284,7 +284,7 @@ public class RegressionTests extends SqlIoTest {
         String sql = """
                 create table EVENT_DURATION_V(duration bigint, event_type_id bigint);
                 create table EVENTTYPE_T(id bigint, name string);
-                
+
                 CREATE VIEW SHORTEST_ALARMS_TYPE_V AS
                 SELECT duration
                 ,      event_type_id
@@ -328,7 +328,7 @@ public class RegressionTests extends SqlIoTest {
                     PRIMARY KEY (c_w_id, c_d_id, c_id),
                     FOREIGN KEY (c_w_id, c_d_id) REFERENCES district(d_w_id, d_id)
                 );
-                
+
                 CREATE TABLE transaction_parameters (
                     txn_id INT NOT NULL PRIMARY KEY,
                     w_id INT,
@@ -341,7 +341,7 @@ public class RegressionTests extends SqlIoTest {
                     h_date TIMESTAMP,
                     datetime_ TIMESTAMP
                 );
-                
+
                 CREATE VIEW cust_max AS
                 SELECT c.c_first, c.c_middle, c.c_id,
                     c.c_street_1, c.c_street_2, c.c_city, c.c_state, c.c_zip,
@@ -378,7 +378,7 @@ public class RegressionTests extends SqlIoTest {
         String sql = """
                 CREATE FUNCTION ANCHOR_TIMESTAMP() RETURNS TIMESTAMP NOT NULL
                   AS TIMESTAMP '2024-01-01 00:00:00';
-                
+
                 CREATE FUNCTION ROUND_TIMESTAMP(ts TIMESTAMP, billing_interval_days INT) RETURNS TIMESTAMP
                   AS TRUNC(DATEDIFF(DAYS, ts, ANCHOR_TIMESTAMP())) + ANCHOR_TIMESTAMP();
                 """;
@@ -394,11 +394,11 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE example_a (
                     id INT NOT NULL
                 );
-                
+
                 CREATE TABLE example_b (
                     id INT NOT NULL
                 );
-                
+
                 CREATE VIEW example_c AS (
                     SELECT COALESCE(example_a.id, 0) - COALESCE(example_b.id, 0)
                     FROM example_a
@@ -422,13 +422,13 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE transaction (
                    cc_num int
                 );
-                
+
                 CREATE TABLE users (
                    cc_num int,
                    id bigint,
                    age int
                 );
-                
+
                 CREATE VIEW transaction_with_user AS
                 SELECT
                     transaction.*,
@@ -467,7 +467,7 @@ public class RegressionTests extends SqlIoTest {
                     id bigint,
                     part bigint
                 );
-                
+
                 create view v as
                 SELECT
                     id,
@@ -491,7 +491,7 @@ public class RegressionTests extends SqlIoTest {
                    amt INT,
                    ts TIMESTAMP
                 );
-                
+
                 CREATE VIEW V AS SELECT
                     id,
                     amt,
@@ -535,7 +535,7 @@ public class RegressionTests extends SqlIoTest {
                    amt INT,
                    ts TIMESTAMP
                 );
-                
+
                 CREATE VIEW V AS SELECT
                     SUM(amt) OVER window1 AS s1
                 FROM t WINDOW
@@ -551,7 +551,7 @@ public class RegressionTests extends SqlIoTest {
                    amt INT,
                    ts TIMESTAMP
                 );
-                
+
                 CREATE VIEW V AS SELECT
                     SUM(amt) OVER window1 AS s1
                 FROM t WINDOW
@@ -574,7 +574,7 @@ public class RegressionTests extends SqlIoTest {
                     merch_long FLOAT64 NOT NULL,
                     is_fraud INTEGER
                 );
-                
+
                 CREATE TABLE demographics (
                     cc_num BIGINT NOT NULL,
                     first STRING,
@@ -589,7 +589,7 @@ public class RegressionTests extends SqlIoTest {
                     job STRING,
                     dob STRING
                 );
-            
+
                 CREATE VIEW V AS SELECT
                     transaction.cc_num,
                     CASE
@@ -651,7 +651,7 @@ public class RegressionTests extends SqlIoTest {
             ----
              0.95
             (1 row)
-            
+
             SELEct 95/100.0;
              r
             ----
@@ -667,14 +667,14 @@ public class RegressionTests extends SqlIoTest {
                   seller INT,
                   item TEXT
                 );
-                
+
                 CREATE TABLE bids (
                   id INT NOT NULL PRIMARY KEY,
                   buyer INT,
                   auction_id INT,
                   amount INT
                 );
-                
+
                 CREATE VIEW V AS SELECT id, (SELECT array_agg(buyer) FROM (
                   SELECT buyer FROM bids WHERE auction_id = auctions.id
                   ORDER BY buyer LIMIT 10
@@ -689,7 +689,7 @@ public class RegressionTests extends SqlIoTest {
                    id INT NOT NULL PRIMARY KEY,
                    parentId INT
                 );
-                
+
                 CREATE VIEW V AS SELECT\s
                   id,
                   (SELECT ARRAY_AGG(id) FROM (
@@ -715,7 +715,7 @@ public class RegressionTests extends SqlIoTest {
                     city_pop INTEGER,
                     is_fraud BOOLEAN
                 );
-            
+
                 CREATE VIEW V AS SELECT
                     cc_num,
                     CASE

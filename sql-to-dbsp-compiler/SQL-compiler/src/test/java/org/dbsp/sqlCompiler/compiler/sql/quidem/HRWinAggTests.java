@@ -31,7 +31,7 @@ public class HRWinAggTests extends HrBaseTests {
                 |     10 | 110 | 110 |
                 +--------+-----+-----+
                 (5 rows)
-                
+
                 select a."empid", a."deptno", a."commission", a.r as ar, b.r as br
                 from (
                   select "empid", "deptno", "commission", first_value("empid") over w as r

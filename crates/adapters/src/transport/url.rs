@@ -382,7 +382,7 @@ format:
     /// Test normal successful data retrieval.
     #[actix_web::test]
     async fn test_success() -> Result<()> {
-        let test_data = vec![
+        let test_data = [
             TestStruct::new("foo".to_string(), true, 10),
             TestStruct::new("bar".to_string(), false, -10),
         ];

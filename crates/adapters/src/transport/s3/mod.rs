@@ -390,7 +390,7 @@ format:
         MockInputParser,
         MockDeZSet<TestStruct, TestStruct>,
     ) {
-        let config: InputEndpointConfig = serde_yaml::from_str(&config_str).unwrap();
+        let config: InputEndpointConfig = serde_yaml::from_str(config_str).unwrap();
         let transport_config = config.connector_config.transport.clone();
         let transport_config: Arc<S3InputConfig> = match transport_config {
             TransportConfig::S3Input(config) => Arc::new(config),
@@ -451,7 +451,7 @@ format:
                     .build())
             });
         let test_data: Vec<TestStruct> = (1..4).map(|i| TestStruct { i }).collect();
-        run_test(&SINGLE_KEY_CONFIG_STR, mock, test_data);
+        run_test(SINGLE_KEY_CONFIG_STR, mock, test_data);
     }
 
     #[test]
@@ -468,7 +468,7 @@ format:
                     .build())
             });
         let test_data: Vec<TestStruct> = (1..4).map(|i| TestStruct { i }).collect();
-        run_test(&MULTI_KEY_CONFIG_STR, mock, test_data);
+        run_test(MULTI_KEY_CONFIG_STR, mock, test_data);
     }
 
     #[test]
@@ -499,7 +499,7 @@ format:
                     .build())
             });
         let test_data: Vec<TestStruct> = (1..7).map(|i| TestStruct { i }).collect();
-        run_test(&MULTI_KEY_CONFIG_STR, mock, test_data);
+        run_test(MULTI_KEY_CONFIG_STR, mock, test_data);
     }
 
     #[test]
@@ -603,6 +603,6 @@ format:
                     .build())
             });
         let test_data: Vec<TestStruct> = (4..7).map(|i| TestStruct { i }).collect();
-        run_test(&MULTI_KEY_CONFIG_STR, mock, test_data);
+        run_test(MULTI_KEY_CONFIG_STR, mock, test_data);
     }
 }

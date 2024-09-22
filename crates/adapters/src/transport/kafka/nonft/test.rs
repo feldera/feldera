@@ -321,8 +321,8 @@ fn kafka_input_trivial_threaded() {
 #[test]
 fn buffer_test() {
     init_test_logger();
-    let input_topic = format!("buffer_test_input_topic");
-    let output_topic = format!("buffer_test_output_topic");
+    let input_topic = "buffer_test_input_topic".to_string();
+    let output_topic = "buffer_test_output_topic".to_string();
 
     // Total number of records to push.
     let num_records = 1_000;

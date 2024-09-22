@@ -12,7 +12,7 @@ Kubernetes cluster which makes use of Docker.
   To set up a local Kubernetes cluster for testing.
 
 * [**kubectl**](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/): `kubectl version`
-  
+
   Used to interact with the deployed EKS cluster.
 
 ## K3D cluster creation

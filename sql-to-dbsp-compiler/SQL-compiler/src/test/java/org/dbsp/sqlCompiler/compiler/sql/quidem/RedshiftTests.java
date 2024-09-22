@@ -18,7 +18,7 @@ public class RedshiftTests extends ScottBaseTests {
                 7844 | 2850.00
                 7900 | 1500.00
                 (7 rows)
-                
+
                 select empno, lag(sal, 2) respect nulls over (order by empno) from emp where deptno = 30 order by 1;
                 EMPNO | EXPR$1
                 -------------

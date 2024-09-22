@@ -41,6 +41,12 @@ impl MockInputConsumerState {
 #[derive(Clone)]
 pub struct MockInputConsumer(Arc<Mutex<MockInputConsumerState>>);
 
+impl Default for MockInputConsumer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockInputConsumer {
     pub fn new() -> Self {
         Self(Arc::new(Mutex::new(MockInputConsumerState::new())))

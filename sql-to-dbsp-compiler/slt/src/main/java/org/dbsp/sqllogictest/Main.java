@@ -60,11 +60,11 @@ public class Main {
                 "index/orderby",
                 "index/between",
                 "index/view/",
-                "index/in",      
-                "index/delete",  
-                "index/commute", 
-                "index/orderby_nosort", 
-                "index/random",  
+                "index/in",
+                "index/delete",
+                "index/commute",
+                "index/orderby_nosort",
+                "index/random",
                 "evidence"
                  */
         );

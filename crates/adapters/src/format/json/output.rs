@@ -634,8 +634,7 @@ mod test {
                     .lock()
                     .unwrap()
                     .iter()
-                    .map(|(_k, v)| v.clone())
-                    .flatten()
+                    .filter_map(|(_k, v)| v.clone())
                     .flatten()
                     .collect::<Vec<_>>()
             )
@@ -646,8 +645,7 @@ mod test {
             .lock()
             .unwrap()
             .iter()
-            .map(|(_k, v)| v.clone())
-            .flatten()
+            .filter_map(|(_k, v)| v.clone())
             .flatten()
             .collect::<Vec<_>>();
         let deserializer = serde_json::Deserializer::from_slice(&consumer_data);

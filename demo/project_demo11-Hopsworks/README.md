@@ -4,7 +4,7 @@
 
 - Run Feldera locally or in sandbox at: <https://try.feldera.com/>
 - If you are running Feldera in sandbox mode, in notebook 1 and 2, update the
-  client initialization to: 
+  client initialization to:
   `FelderaClient("https://try.feldera.com", FELDERA_API_KEY)`
 - Create a Hopsworks account by signing up at: <https://c.app.hopsworks.ai/>
 - Generate a Hopsworks API key at: <https://c.app.hopsworks.ai/account/api>

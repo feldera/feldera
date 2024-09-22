@@ -13,7 +13,7 @@ public class DateFormatsTests extends SqlIoTest {
                 -- initially named T1
                 create table t2 (d date);
                 insert into t2 values ('2004-07-14'),('2005-07-14');
-                
+
                 -- initially named T1
                 create table t3 (f1 date);
                 insert into t3 (f1) values ('2005-01-01');
@@ -68,13 +68,13 @@ public class DateFormatsTests extends SqlIoTest {
                 ------------
                  Monday 01 January 1
                 (1 row)
-                
+
                 SELECT format_date('%A %d %B %Y', '0001-02-28') as valid_date;
                 valid_date
                 ------------
                  Wednesday 28 February 1
                 (1 row)
-                
+
                 SELECT format_date('%A %d %B %Y', '2009-01-01') as valid_date;
                 valid_date
                 -------------

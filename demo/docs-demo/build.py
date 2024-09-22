@@ -17,7 +17,7 @@ def list_pngs(dir):
     except:
         print(f"failed to read files from {dir} (perhaps you should specify --screenshot-dir?)")
         raise
-    
+
     for name in names:
         if name.endswith('.png'):
             pngs.add(name)
@@ -124,7 +124,7 @@ screenshots set up to take just the right area.
             print(f"Screenshot is {width}x{height} (ideal is 1200x800).")
     except KeyboardInterrupt:
         pass
-    
+
 
 def record_pipeline():
     print("""\
@@ -212,7 +212,7 @@ When the graph fills the entire width, hit Control+C.
 - Hover over the trash can and screenshot.
 """)
     screenshot_as("pipeline-stopped.png")
-        
+
 
 def assemble_pipeline():
     print("assembling pipeline.gif...")
@@ -232,7 +232,7 @@ def assemble_pipeline():
                     '-delay', '200', 'pipeline-stopping.png',
                     '-delay', '200', 'pipeline-stopped.png',
                     'pipeline.gif'])
-    
+
 
 def record_program():
     print("""\
@@ -393,7 +393,7 @@ def assemble_connectors():
                     '-delay', '200',
                     'connectors-create.png',
                     'connectors.gif'])
-    
+
 
 if __name__ == "__main__":
     main()

@@ -337,7 +337,7 @@ fn run_queries(nexmark_config: &NexmarkConfig, snapshotter: &Snapshotter) -> Vec
     };
     let mut results = Vec::new();
     for &query in queries_to_run {
-        let result = run_query(nexmark_config, &snapshotter, query);
+        let result = run_query(nexmark_config, snapshotter, query);
         results.push(result);
     }
     results

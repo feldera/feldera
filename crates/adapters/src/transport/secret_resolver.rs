@@ -192,9 +192,7 @@ mod tests {
             "example-abcde",
         ];
         for secret_ref in valid {
-            assert!(MaybeSecret::is_valid_secret_ref_format(
-                &secret_ref.to_string()
-            ));
+            assert!(MaybeSecret::is_valid_secret_ref_format(secret_ref));
         }
         let invalid = vec![
             "",
@@ -210,9 +208,7 @@ mod tests {
             "EXAMPLE",
         ];
         for secret_ref in invalid {
-            assert!(!MaybeSecret::is_valid_secret_ref_format(
-                &secret_ref.to_string()
-            ));
+            assert!(!MaybeSecret::is_valid_secret_ref_format(secret_ref));
         }
     }
 

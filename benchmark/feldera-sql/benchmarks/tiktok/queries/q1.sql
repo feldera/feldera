@@ -1,5 +1,5 @@
 CREATE VIEW q0 AS
-SELECT 
+SELECT
     interaction_id,
     count(*),
     avg(watch_time)
@@ -15,7 +15,7 @@ GROUP BY
 interaction_id;
 
 CREATE VIEW q1 AS
-SELECT 
+SELECT
     interaction_id,
     count(*),
     avg(watch_time)

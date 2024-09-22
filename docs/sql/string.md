@@ -397,7 +397,7 @@ POSIX standard defines these character class names:
 
 |Class| Description                          |
 |-----|--------------------------------------|
-|`alnum`| letters and numeric digits           |           
+|`alnum`| letters and numeric digits           |
 |`alpha`| letters                              |
 |`blank`| space and tab                        |
 |`cntrl`| control characters                   |

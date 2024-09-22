@@ -23,6 +23,6 @@ that `tutorial9` would:
 ```
 cargo run --example pool -- --address 127.0.0.1:1234
 cargo run --example pool -- --address 127.0.0.1:1235
-cargo run --example coord -- --pool 127.0.0.1:1234 --pool 127.0.0.1:1235 --exchange 127.0.0.1:1236 --exchange 127.0.0.1:1237 
+cargo run --example coord -- --pool 127.0.0.1:1234 --pool 127.0.0.1:1235 --exchange 127.0.0.1:1236 --exchange 127.0.0.1:1237
 ```
 

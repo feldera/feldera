@@ -38,7 +38,7 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE TABLE varchar_pk (
                     pk VARCHAR NOT NULL PRIMARY KEY
                 );
-                
+
                 CREATE VIEW V AS SELECT * FROM varchar_pk;""";
         this.compileRustTestCase(sql);
     }
@@ -54,20 +54,20 @@ public class CatalogTests extends BaseSQLTests {
                     -- aNN INT NOT NULL ARRAY NOT NULL, -- not allowed
                     a INT ARRAY NOT NULL
                 );
-                
+
                 CREATE TYPE n AS (
                     svN s,
                     sv s NOT NULL,
                     svAN s ARRAY -- vec of nullable s
                 );
-                
+
                 CREATE TABLE T (
                    f s,
                    g n,
                    h s NOT NULL,
                    i n NOT NULL
                 );
-                
+
                 CREATE VIEW V AS SELECT * FROM T;
                 """;
         DBSPCompiler compiler = this.testCompiler();
@@ -123,7 +123,7 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE TYPE CustomType AS (
                     version TINYINT not null
                 );
-                
+
                 CREATE TABLE Data (
                     id BIGINT not null primary key,
                     msg CustomType
@@ -138,12 +138,12 @@ public class CatalogTests extends BaseSQLTests {
                    address_type    VARCHAR,
                    address         VARCHAR
                 );
-                
+
                 CREATE TYPE CustomType AS (
                     version TINYINT not null,
                     address ADDRESS
                 );
-                
+
                 CREATE TABLE Data (
                     id BIGINT not null primary key,
                     msg CustomType

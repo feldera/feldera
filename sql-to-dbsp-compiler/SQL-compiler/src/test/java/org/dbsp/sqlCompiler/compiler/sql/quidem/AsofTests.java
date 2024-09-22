@@ -21,7 +21,7 @@ public class AsofTests extends StreamingTestBase {
                 | 2 | 3 |  2 |  0 |
                 +---+---+----+----+
                 (3 rows)
-                
+
                 SELECT *
                 FROM (VALUES (NULL, 0), (1, NULL), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 3), (3, 4)) AS t1(k1, ts1)
                 ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k2, ts2)
@@ -35,7 +35,7 @@ public class AsofTests extends StreamingTestBase {
                 |  2 |   3 |  2 |   0 |
                 +----+-----+----+-----+
                 (3 rows)
-                
+
                 SELECT *
                 FROM (VALUES (NULL, 0), (1, NULL), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 3), (3, 4)) AS t1(k, t)
                 ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k, t)
@@ -50,7 +50,7 @@ public class AsofTests extends StreamingTestBase {
                 | 2 | 3 |  2 | 10 |
                 +---+---+----+----+
                 (4 rows)
-                
+
                 SELECT *
                 FROM (VALUES (NULL, 0), (1, NULL), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 3), (3, 4)) AS t1(k, t)
                 ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k, t)
@@ -66,7 +66,7 @@ public class AsofTests extends StreamingTestBase {
                 | 2 | 3 |  2 | 10 |
                 +---+---+----+----+
                 (5 rows)
-                
+
                 SELECT *
                 FROM (VALUES (NULL, 0), (1, NULL), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 3), (3, 4)) AS t1(k, t)
                 ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k, t)
@@ -129,7 +129,7 @@ public class AsofTests extends StreamingTestBase {
                 | 3 | 4 |    |    |
                 +---+---+----+----+
                 (9 rows)
-                
+
                 SELECT *
                 FROM (VALUES (NULL, 0), (1, NULL), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 3), (3, 4)) AS t1(k, t)
                 LEFT ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k, t)
@@ -149,7 +149,7 @@ public class AsofTests extends StreamingTestBase {
                 | 3 | 4 |    |    |
                 +---+---+----+----+
                 (9 rows)
-                
+
                 SELECT *
                 FROM (VALUES (NULL, 0), (1, NULL), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 3), (3, 4)) AS t1(k, t)
                 LEFT ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k, t)
@@ -169,7 +169,7 @@ public class AsofTests extends StreamingTestBase {
                 | 3 | 4 |    |    |
                 +---+---+----+----+
                 (9 rows)
-                
+
                 SELECT *
                 FROM (VALUES (NULL, 0), (1, NULL), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 3), (3, 4)) AS t1(k, t)
                 LEFT ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k, t)

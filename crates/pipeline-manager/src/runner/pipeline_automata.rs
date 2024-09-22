@@ -944,14 +944,12 @@ mod test {
             .unwrap();
 
         // Transition the pipeline program to success
-        let _ = db
-            .lock()
+        db.lock()
             .await
             .transit_program_status_to_compiling_sql(tenant_id, pipeline_id, Version(1))
             .await
             .unwrap();
-        let _ = db
-            .lock()
+        db.lock()
             .await
             .transit_program_status_to_compiling_rust(
                 tenant_id,
@@ -968,8 +966,7 @@ mod test {
             )
             .await
             .unwrap();
-        let _ = db
-            .lock()
+        db.lock()
             .await
             .transit_program_status_to_success(
                 tenant_id,
@@ -1010,7 +1007,7 @@ mod test {
         Mock::given(method("GET"))
             .and(path(endpoint))
             .respond_with(template)
-            .mount(&server)
+            .mount(server)
             .await;
     }
 

@@ -33,7 +33,7 @@ pub fn load_parquet_file<T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
     let file = File::open(path).unwrap();
 
     SerializedFileReader::new(file)
-        .expect(&format!("error opening parquet file {path:?}"))
+        .unwrap_or_else(|_| panic!("error opening parquet file {path:?}"))
         .into_iter()
         .map(|row| {
             let row = row.unwrap().to_json_value();
@@ -171,8 +171,7 @@ fn parquet_output() {
             .lock()
             .unwrap()
             .iter()
-            .map(|(_k, v)| v.clone())
-            .flatten()
+            .filter_map(|(_k, v)| v.clone())
             .flatten()
             .collect(),
     );
@@ -181,8 +180,7 @@ fn parquet_output() {
         .lock()
         .unwrap()
         .iter()
-        .map(|(_k, v)| v.clone())
-        .flatten()
+        .filter_map(|(_k, v)| v.clone())
         .flatten()
         .collect::<Vec<_>>();
 

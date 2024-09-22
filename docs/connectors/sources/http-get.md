@@ -68,7 +68,7 @@ import requests
 api_url = "http://localhost:8080"
 headers = { "authorization": f"Bearer <API-KEY>" }
 requests.put(
-    f"{api_url}/v0/pipelines/workshop", 
+    f"{api_url}/v0/pipelines/workshop",
     headers=headers,
     json={
       "name": "workshop",

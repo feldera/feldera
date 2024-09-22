@@ -313,7 +313,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     }
 
     // Statements
-    
+
     public VisitDecision preorder(DBSPExpressionStatement node) {
         return this.preorder(node.to(DBSPStatement.class));
     }
@@ -343,7 +343,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     }
 
     // Various
-    
+
     public VisitDecision preorder(DBSPPathSegment node) {
         return this.preorder(node.to(IDBSPInnerNode.class));
     }
@@ -353,7 +353,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     }
 
     // Types
-    
+
     public VisitDecision preorder(DBSPTypeFP node) {
         return this.preorder(node.to(DBSPTypeBaseType.class));
     }
@@ -381,7 +381,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     public VisitDecision preorder(DBSPTypeBinary node) {
         return this.preorder(node.to(DBSPTypeBaseType.class));
     }
-    
+
     public VisitDecision preorder(DBSPTypeUSize node) {
         return this.preorder(node.to(DBSPTypeBaseType.class));
     }
@@ -433,7 +433,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     public VisitDecision preorder(DBSPTypeStream node) {
         return this.preorder(node.to(DBSPType.class));
     }
-    
+
     public VisitDecision preorder(DBSPTypeUser node) {
         return this.preorder(node.to(DBSPType.class));
     }
@@ -473,7 +473,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId {
     public VisitDecision preorder(DBSPTypeAny node) {
         return this.preorder(node.to(DBSPType.class));
     }
-    
+
     public VisitDecision preorder(DBSPTypeRef node) {
         return this.preorder(node.to(DBSPType.class));
     }

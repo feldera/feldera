@@ -250,12 +250,10 @@ fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> ProgramConfig
     ProgramConfig {
         profile: if val.0 {
             None
+        } else if val.1 {
+            Some(CompilationProfile::Unoptimized)
         } else {
-            if val.1 {
-                Some(CompilationProfile::Unoptimized)
-            } else {
-                Some(CompilationProfile::Optimized)
-            }
+            Some(CompilationProfile::Optimized)
         },
     }
 }
@@ -320,7 +318,10 @@ fn limited_program_info() -> impl Strategy<Value = ProgramInfo> {
 fn limited_pipeline_config() -> impl Strategy<Value = PipelineConfig> {
     any::<(PipelineId, RuntimeConfigPropVal, ProgramInfoPropVal)>().prop_map(|val| {
         let runtime_config = map_val_to_limited_runtime_config(val.1);
-        let program_info = map_val_to_limited_program_info(val.2);
+        let program_info = {
+            val.2;
+            map_val_to_limited_program_info(())
+        };
         PipelineConfig {
             global: runtime_config,
             name: Some(format!("pipeline-{}", val.0)),
@@ -404,7 +405,7 @@ async fn api_key_store_and_validation() {
             .unwrap();
         let scopes = handle.db.validate_api_key(&api_key).await.unwrap();
         assert_eq!(tenant_id, scopes.0);
-        assert_eq!(&ApiPermission::Read, scopes.1.get(0).unwrap());
+        assert_eq!(&ApiPermission::Read, scopes.1.first().unwrap());
         assert_eq!(&ApiPermission::Write, scopes.1.get(1).unwrap());
 
         // Delete API key
@@ -453,7 +454,7 @@ async fn pipeline_creation() {
         .unwrap();
     let rows = handle.db.list_pipelines(tenant_id).await.unwrap();
     assert_eq!(rows.len(), 1);
-    let actual = rows.get(0).unwrap();
+    let actual = rows.first().unwrap();
     assert_eq!(new_result, actual.clone());
 
     // Core fields
@@ -537,7 +538,7 @@ async fn pipeline_retrieval() {
     // Check pipeline1
     let rows = handle.db.list_pipelines(tenant_id).await.unwrap();
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows.get(0).unwrap().name, "test1");
+    assert_eq!(rows.first().unwrap().name, "test1");
     assert_eq!(
         pipeline1,
         handle.db.get_pipeline(tenant_id, "test1").await.unwrap()
@@ -573,7 +574,7 @@ async fn pipeline_retrieval() {
     // Check list of two
     let rows = handle.db.list_pipelines(tenant_id).await.unwrap();
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows.get(0).unwrap().name, "test1");
+    assert_eq!(rows.first().unwrap().name, "test1");
     assert_eq!(rows.get(1).unwrap().name, "test2");
     assert_eq!(rows, vec![pipeline1.clone(), pipeline2.clone()]);
     assert_eq!(
@@ -1340,13 +1341,13 @@ async fn create_tenants_if_not_exists(
     tenant_id: TenantId,
 ) -> DBResult<()> {
     let mut m = model.lock().await;
-    if !m.tenants.contains_key(&tenant_id) {
+    if let std::collections::btree_map::Entry::Vacant(e) = m.tenants.entry(tenant_id) {
         let rec = TenantRecord {
             id: tenant_id,
             tenant: Uuid::now_v7().to_string(),
             provider: Uuid::now_v7().to_string(),
         };
-        m.tenants.insert(tenant_id, rec.clone());
+        e.insert(rec.clone());
         handle
             .db
             .pool
@@ -1676,7 +1677,7 @@ impl ModelHelpers for Mutex<DbModel> {
         }
 
         // Check transition
-        validate_program_status_transition(&pipeline.program_status, &new_status)?;
+        validate_program_status_transition(&pipeline.program_status, new_status)?;
 
         // Return fetched pipeline
         Ok(pipeline)
@@ -1700,7 +1701,7 @@ impl ModelHelpers for Mutex<DbModel> {
         }
 
         // Check transition
-        validate_deployment_status_transition(&pipeline.deployment_status, &new_status)?;
+        validate_deployment_status_transition(&pipeline.deployment_status, new_status)?;
 
         // Return fetched pipeline
         Ok(pipeline)
@@ -1832,7 +1833,7 @@ impl Storage for Mutex<DbModel> {
             .map(|k| (k.0 .0, k.1 .2.clone()))
             .collect();
         assert!(record.len() <= 1);
-        let record = record.get(0);
+        let record = record.first();
         match record {
             Some(record) => Ok((record.0, record.1.clone())),
             None => Err(DBError::InvalidApiKey),
@@ -1899,14 +1900,15 @@ impl Storage for Mutex<DbModel> {
         }
 
         // Constraint: name is unique
-        if let Some(_) = state
+        if state
             .pipelines
             .iter()
             .filter(|((tid, _), _)| *tid == tenant_id)
             .map(|(_, p)| p)
             .find(|p| p.name == pipeline.name)
+            .is_some()
         {
-            return Err(DBError::DuplicateName.into());
+            return Err(DBError::DuplicateName);
         }
 
         // Create extended descriptor
@@ -2012,7 +2014,7 @@ impl Storage for Mutex<DbModel> {
                 .map(|(_, p)| p)
                 .find(|p| p.name == *name && p.id != pipeline.id)
             {
-                return Err(DBError::DuplicateName.into());
+                return Err(DBError::DuplicateName);
             }
 
             if *name != pipeline.name {
@@ -2463,7 +2465,7 @@ impl Storage for Mutex<DbModel> {
         pipelines.sort_by(|(_, p1), (_, p2)| {
             (p1.program_status_since, p1.id).cmp(&(p2.program_status_since, p2.id))
         });
-        let chosen = pipelines.get(0).unwrap().clone(); // Already checked for empty
+        let chosen = pipelines.first().unwrap().clone(); // Already checked for empty
         Ok(Some((chosen.0, chosen.1)))
     }
 

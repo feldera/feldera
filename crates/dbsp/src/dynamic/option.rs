@@ -27,7 +27,7 @@ pub trait Opt<T: DataTrait + ?Sized>: Data {
     #[allow(clippy::wrong_self_convention)]
     fn from_val(&mut self, v: &mut T);
 
-    /// Put a fresh value in `self` and call `f` to initialize it.   
+    /// Put a fresh value in `self` and call `f` to initialize it.
     fn set_some_with(&mut self, f: &mut dyn FnMut(&mut T));
 }
 

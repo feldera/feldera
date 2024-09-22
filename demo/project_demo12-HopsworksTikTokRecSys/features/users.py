@@ -24,7 +24,7 @@ def generate_users(num_users: int, historical=False) -> List[Dict[str, str]]:
     """
     generic = Generic(locale=Locale.EN)
     users = []  # List to store generated user data
-    
+
     for _ in range(num_users):
         if historical:
             days_ago = random.randint(0, 730)  # Choose a random number of days up to two years
