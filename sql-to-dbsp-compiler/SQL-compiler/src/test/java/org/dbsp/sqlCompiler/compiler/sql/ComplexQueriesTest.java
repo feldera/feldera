@@ -68,7 +68,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                     merch_long DOUBLE,
                     is_fraud BIGINT
                 );
-                
+
                 CREATE TABLE DEMOGRAPHICS (
                   cc_num BIGINT,
                   first STRING,
@@ -84,7 +84,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                   job STRING,
                   dob DATE
                 );
-                
+
                 CREATE VIEW TRANSACTION_DEMOGRAPHICS AS
                     SELECT * FROM
                         transaction as t
@@ -92,7 +92,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         ON t.cc_num = d.cc_num;
 
                 LATENESS TRANSACTION_DEMOGRAPHICS.unix_time 0;
-                
+
                 CREATE VIEW FEATURE AS
                 SELECT
                    cc_num,
@@ -173,7 +173,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                   trip_distance DOUBLE PRECISION,
                   fare_amount DOUBLE PRECISION
                 );
-                
+
                 CREATE VIEW V AS
                 SELECT
                 *,

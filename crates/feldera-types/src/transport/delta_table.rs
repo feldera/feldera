@@ -165,7 +165,7 @@ fn test_delta_reader_config_serde() {
 
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&serialized_config).unwrap(),
-        serde_json::from_str::<serde_json::Value>(&expected).unwrap()
+        serde_json::from_str::<serde_json::Value>(expected).unwrap()
     );
 }
 

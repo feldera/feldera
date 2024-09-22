@@ -70,7 +70,7 @@ public class WinAggTests extends ScottBaseTests {
                 |  7876 |     20 |  8 |  8 |  8 |  7 |  7 | 14 | 14 |
                 +-------+--------+----+----+----+----+----+----+----+
                 (14 rows)
-    
+
                 select empno,
                   count(comm) over (order by empno rows unbounded preceding) as c
                 from emp
@@ -87,7 +87,7 @@ public class WinAggTests extends ScottBaseTests {
                 |  7900 | 4 |
                 +-------+---+
                 (6 rows)
-                
+
                 -- STDDEV applied to nullable column
                 select empno,
                   stddev(CAST(comm AS DECIMAL(10, 2))) over (order by empno rows unbounded preceding) as stdev
@@ -105,7 +105,7 @@ public class WinAggTests extends ScottBaseTests {
                 |  7900 | 602.77 |
                 +-------+--------+
                 (6 rows)
-                
+
                 -- [CALCITE-5931] Allow integers like 1.00 in window frame
                 select empno,
                   stddev(CAST(comm AS DECIMAL(10, 2))) over (order by empno rows 2 preceding) as stdev_2int,

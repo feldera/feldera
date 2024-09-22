@@ -15,7 +15,7 @@ public class StreamTests extends SqlIoTest {
                    product VARCHAR,
                    units   INTEGER
                 );
-                
+
                 INSERT INTO orders VALUES
                 ('2015-02-15 10:15:00', 1, 'paint', 10),
                 ('2015-02-15 10:24:15', 2, 'paper', 5),
@@ -54,7 +54,7 @@ public class StreamTests extends SqlIoTest {
                 | 2015-02-15 11:10:00 |  5 | paint|        3 | 2015-02-15 11:10:00.000 | 2015-02-15 11:11:00.000 |
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
                 (5 rows)
-                
+
                 SELECT * FROM TABLE(TUMBLE(TABLE ORDERS, DESCRIPTOR(ROWTIME), INTERVAL '1' MINUTE));
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
                 | ROWTIME             | ID | PRODUCT | UNITS | window_start            | window_end              |
@@ -66,7 +66,7 @@ public class StreamTests extends SqlIoTest {
                 | 2015-02-15 11:10:00 |  5 | paint|        3 | 2015-02-15 11:10:00.000 | 2015-02-15 11:11:00.000 |
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
                 (5 rows)
-                
+
                 SELECT * FROM TABLE(TUMBLE((SELECT * FROM ORDERS), DESCRIPTOR(ROWTIME), INTERVAL '1' MINUTE));
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
                 | ROWTIME             | ID | PRODUCT | UNITS | window_start            | window_end              |
@@ -78,7 +78,7 @@ public class StreamTests extends SqlIoTest {
                 | 2015-02-15 11:10:00 |  5 | paint|        3 | 2015-02-15 11:10:00.000 | 2015-02-15 11:11:00.000 |
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
                 (5 rows)
-                
+
                 SELECT * FROM TABLE(TUMBLE((SELECT * FROM ORDERS), DESCRIPTOR(ROWTIME), INTERVAL '10' MINUTE, INTERVAL '3' MINUTE));
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
                 | ROWTIME             | ID | PRODUCT | UNITS | window_start            | window_end              |
@@ -111,7 +111,7 @@ public class StreamTests extends SqlIoTest {
                 | 2015-02-15 11:10:00 |  5 | paint|        3 | 2015-02-15 11:10:00.000 | 2015-02-15 11:20:00.000 |
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
                 (10 rows)
-                
+
                 SELECT * FROM TABLE(
                   HOP(
                     DATA => TABLE ORDERS,
@@ -133,7 +133,7 @@ public class StreamTests extends SqlIoTest {
                 | 2015-02-15 11:10:00 |  5 | paint|        3 | 2015-02-15 11:10:00.000 | 2015-02-15 11:20:00.000 |
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
                 (10 rows)
-                
+
                 SELECT * FROM TABLE(HOP((SELECT * FROM ORDERS), DESCRIPTOR(ROWTIME), INTERVAL '5' MINUTE, INTERVAL '10' MINUTE));
                 +---------------------+----+---------+-------+-------------------------+-------------------------+
                 | ROWTIME             | ID | PRODUCT | UNITS | window_start            | window_end              |

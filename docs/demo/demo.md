@@ -109,7 +109,7 @@ Starting from that information, the views report the following:
 
 * `transitive_artifact_vulnerability`: Vulnerabilities in each
   `artifact` or its chain of parents.
-  
+
 * `k8sobject_vulnerability`: Vulnerabilities in each `k8sobject`.
 
 * `k8scluster_vulnerability`: Vulnerabilities in each `k8scluster`.

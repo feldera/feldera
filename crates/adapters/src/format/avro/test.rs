@@ -182,7 +182,7 @@ fn debezium_avro_schema(value_schema: &str, value_type_name: &str) -> AvroSchema
     ],
     "connect.version": 1,
     "connect.name": "test_namespace.Envelope"
-}"#.replace("VALUE_SCHEMA", &value_schema).replace("VALUE_TYPE", value_type_name);
+}"#.replace("VALUE_SCHEMA", value_schema).replace("VALUE_TYPE", value_type_name);
 
     println!("Debezium Avro schema: {schema_str}");
 
@@ -202,11 +202,11 @@ where
     // 5-byte header
     let mut buffer = vec![0; 5];
     let refs = HashMap::new();
-    let serializer = AvroSchemaSerializer::new(&schema, &refs, false);
+    let serializer = AvroSchemaSerializer::new(schema, &refs, false);
     let val = x
         .serialize_with_context(serializer, &avro_ser_config())
         .unwrap();
-    let mut avro_record = to_avro_datum(&schema, val).unwrap();
+    let mut avro_record = to_avro_datum(schema, val).unwrap();
     buffer.append(&mut avro_record);
     buffer
 }
@@ -301,8 +301,7 @@ where
 
     let expected_output = data
         .iter()
-        .map(|x| vec![MockUpdate::Delete(x.clone()), MockUpdate::Insert(x.clone())])
-        .flatten()
+        .flat_map(|x| vec![MockUpdate::Delete(x.clone()), MockUpdate::Insert(x.clone())])
         .collect::<Vec<_>>();
 
     TestCase {
@@ -341,7 +340,7 @@ fn test_raw_avro_parser() {
     let test_case = gen_raw_parser_test(
         &TestStruct2::data(),
         &TestStruct2::relation_schema(),
-        &TestStruct2::avro_schema(),
+        TestStruct2::avro_schema(),
     );
 
     run_parser_test(vec![test_case])
@@ -352,7 +351,7 @@ fn test_debezium_avro_parser() {
     let test_case = gen_debezium_parser_test(
         &TestStruct2::data(),
         &TestStruct2::relation_schema(),
-        &TestStruct2::avro_schema(),
+        TestStruct2::avro_schema(),
         "TestStruct2",
     );
 
@@ -393,7 +392,7 @@ fn test_extra_columns() {
         ]
     }"#;
 
-    let schema = AvroSchema::parse_str(&schema_str).unwrap();
+    let schema = AvroSchema::parse_str(schema_str).unwrap();
     let vals = TestStruct2::data();
     let input_batches = vals
         .iter()
@@ -460,8 +459,8 @@ fn test_non_null_to_nullable() {
         ]
     }"#;
 
-    let schema = AvroSchema::parse_str(&schema_str).unwrap();
-    let vals = vec![TestStruct2 {
+    let schema = AvroSchema::parse_str(schema_str).unwrap();
+    let vals = [TestStruct2 {
         field: 1,
         field_0: Some("test".to_string()),
         ..Default::default()
@@ -526,7 +525,7 @@ fn test_ms_time() {
         ]
     }"#;
 
-    let schema = AvroSchema::parse_str(&schema_str).unwrap();
+    let schema = AvroSchema::parse_str(schema_str).unwrap();
     let vals = TestStruct2::data();
     let input_batches = vals
         .iter()
@@ -558,7 +557,7 @@ proptest! {
     #[test]
     fn proptest_raw_avro_parser(data in proptest::collection::vec(any::<TestStruct2>(), 0..=10000))
     {
-        let test_case = gen_raw_parser_test(&data, &TestStruct2::relation_schema(),  &TestStruct2::avro_schema());
+        let test_case = gen_raw_parser_test(&data, &TestStruct2::relation_schema(),  TestStruct2::avro_schema());
 
         run_parser_test(vec![test_case])
     }
@@ -566,7 +565,7 @@ proptest! {
     #[test]
     fn proptest_debezium_avro_parser(data in proptest::collection::vec(any::<TestStruct2>(), 0..=10000))
     {
-        let test_case = gen_debezium_parser_test(&data, &TestStruct2::relation_schema(), &TestStruct2::avro_schema(), "TestStruct2");
+        let test_case = gen_debezium_parser_test(&data, &TestStruct2::relation_schema(), TestStruct2::avro_schema(), "TestStruct2");
 
         run_parser_test(vec![test_case])
     }
@@ -672,14 +671,13 @@ fn test_confluent_avro_output<K, V, KF>(
     let (expected_inserts, expected_deletes): (Vec<_>, Vec<_>) = batches
         .concat()
         .into_iter()
-        .map(|Tup2(v, w)| {
+        .flat_map(|Tup2(v, w)| {
             if w > 0 {
                 repeat(Tup2(v.clone(), 1)).take(w as usize)
             } else {
                 repeat(Tup2(v.clone(), -1)).take(-w as usize)
             }
         })
-        .flatten()
         .partition(|Tup2(_, w)| *w > 0);
     let expected_deletes = expected_deletes
         .into_iter()

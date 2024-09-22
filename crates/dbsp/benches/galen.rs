@@ -164,7 +164,7 @@ fn main() -> Result<()> {
             let (outp, outq) = circuit
                 .recursive(
                     |child, (pvar, qvar): (Stream<_, Pair>, Stream<_, Triple>)| {
-                        let p_by_1 = pvar.map_index(|Tup2(x, y)| (x.clone(), y.clone()));
+                        let p_by_1 = pvar.map_index(|Tup2(x, y)| (*x, *y));
                         let p_by_2 = pvar.map_index(|&Tup2(x, y)| (y, x));
                         let p_by_12 = pvar.map_index(|&Tup2(x, y)| (Tup2(x, y), ()));
                         let u_by_1 = u.delta0(child).map_index(|&Tup3(x, y, z)| (x, Tup2(y, z)));
@@ -174,9 +174,7 @@ fn main() -> Result<()> {
                         let q_by_23 = qvar.map_index(|&Tup3(x, y, z)| (Tup2(y, z), x));
                         let c_by_2 = c.delta0(child).map_index(|&Tup3(x, y, z)| (y, Tup2(x, z)));
                         let r_by_1 = r.delta0(child).map_index(|&Tup3(x, y, z)| (x, Tup2(y, z)));
-                        let s_by_1 = s
-                            .delta0(child)
-                            .map_index(|Tup2(x, y)| (x.clone(), y.clone()));
+                        let s_by_1 = s.delta0(child).map_index(|Tup2(x, y)| (*x, *y));
 
                         // IR1: p(x,z) :- p(x,y), p(y,z).
                         let ir1 =

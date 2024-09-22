@@ -45,7 +45,7 @@ public class SourcePositionRange implements IHasSourcePositionRange {
     public SourcePositionRange getPositionRange() {
         return this;
     }
-    
+
     /** Append the position information to a JSON node */
     public void appendAsJson(ObjectNode parent) {
         parent.put("start_line_number", this.start.line);

@@ -1451,8 +1451,8 @@ mod tests {
 
                 let bounds: Stream<_, (TypedBox<Time, DynData>, TypedBox<Time, DynData>)> = circuit.add_source(Generator::new(move || {
                     let clock = 1000 + step_idx as Time;
-                    let res = (TypedBox::new(clock - 100), TypedBox::new(clock));
-                    res
+
+                    (TypedBox::new(clock - 100), TypedBox::new(clock))
                 }));
 
                 let index1: Stream<_, OrdIndexedZSet<Time, String>> = circuit

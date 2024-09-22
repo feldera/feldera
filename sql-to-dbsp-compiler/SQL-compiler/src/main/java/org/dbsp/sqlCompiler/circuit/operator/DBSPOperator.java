@@ -286,9 +286,9 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
         parts = Linq.map(parts, p -> "// " + p, String.class);
         return builder.intercalate("\n", parts);
     }
-    
+
     IIndentStream writeComments(IIndentStream builder) {
-        return this.writeComments(builder, 
+        return this.writeComments(builder,
                 this.getClass().getSimpleName() + " " + this.getIdString() +
                 (this.comment != null ? "\n" + this.comment : ""));
     }

@@ -70,7 +70,7 @@ public class ArrayTests extends BaseSQLTests {
                 CREATE TYPE foo_struct AS (
                     id bigint NOT NULL
                 );
-                
+
                 create table bar (
                     vals foo_struct ARRAY
                 );""";

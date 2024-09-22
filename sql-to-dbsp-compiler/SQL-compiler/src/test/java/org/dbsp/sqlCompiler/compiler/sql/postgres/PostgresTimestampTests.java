@@ -298,7 +298,7 @@ public class PostgresTimestampTests extends SqlIoTest {
                  Sun Dec 31 17:32:01 2000
                  Mon Jan 01 17:32:01 2001""");
     }
-    
+
     @Test
     public void testLt() {
         // SELECT d1 FROM TIMESTAMP_TBL
@@ -745,7 +745,7 @@ public class PostgresTimestampTests extends SqlIoTest {
                  Sun Dec 31 17:32:01 2000    |      2000 |    12 |  31 |   17 |     32 |      1
                  Mon Jan 01 17:32:01 2001    |      2001 |     1 |   1 |   17 |     32 |      1""");
     }
-    
+
     @Test
     public void testQuarter() {
         // SELECT d1 as "timestamp",

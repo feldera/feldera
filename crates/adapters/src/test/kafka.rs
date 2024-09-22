@@ -105,7 +105,7 @@ impl KafkaResources {
 
         let mut admin_config = ClientConfig::new();
         admin_config
-            .set("bootstrap.servers", &default_redpanda_server())
+            .set("bootstrap.servers", default_redpanda_server())
             .set_log_level(RDKafkaLogLevel::Debug);
         let admin_client = AdminClient::from_config(&admin_config).unwrap();
 
@@ -128,9 +128,9 @@ impl KafkaResources {
         // Now create the topics and wait for the creations to complete.
         let new_topics = topics
             .iter()
-            .filter_map(|(topic_name, partitions)| {
-                (*partitions > 0)
-                    .then(|| NewTopic::new(topic_name, *partitions, TopicReplication::Fixed(1)))
+            .filter(|&(topic_name, partitions)| (*partitions > 0))
+            .map(|(topic_name, partitions)| {
+                NewTopic::new(topic_name, *partitions, TopicReplication::Fixed(1))
             })
             .collect::<Vec<_>>();
         block_on(admin_client.create_topics(&new_topics, &AdminOptions::new())).unwrap();
@@ -183,7 +183,7 @@ impl TestProducer {
     pub fn new() -> Self {
         let mut producer_config = ClientConfig::new();
         producer_config
-            .set("bootstrap.servers", &default_redpanda_server())
+            .set("bootstrap.servers", default_redpanda_server())
             .set("message.timeout.ms", "0") // infinite timeout
             .set_log_level(RDKafkaLogLevel::Debug);
         let producer = ThreadedProducer::from_config(&producer_config).unwrap();
@@ -269,7 +269,7 @@ impl BufferConsumer {
                 );
 
                 let kafka_consumer = ClientConfig::new()
-                    .set("bootstrap.servers", &default_redpanda_server())
+                    .set("bootstrap.servers", default_redpanda_server())
                     .set("enable.auto.commit", "true")
                     .set("enable.auto.offset.store", "true")
                     .set("auto.offset.reset", "earliest")
@@ -361,7 +361,7 @@ impl BufferConsumer {
         assert_eq!(
             expected
                 .into_iter()
-                .map(|x| MockUpdate::Insert(x))
+                .map(MockUpdate::Insert)
                 .collect::<Vec<_>>(),
             received
         );

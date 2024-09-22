@@ -88,7 +88,7 @@ public class AggregateCompiler implements ICompilerComponent {
     // Deposit compilation result here
     @Nullable
     private AggregateBase result;
-    
+
     /** Expression that stands for the whole input row in the input zset. */
     private final DBSPVariablePath v;
     private final SqlAggFunction aggFunction;

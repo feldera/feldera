@@ -700,8 +700,7 @@ mod test {
             let (transactions, transactions_handle) = circuit.add_input_zset::<Transaction>();
             let (users, users_handle) = circuit.add_input_zset::<User>();
 
-            let transactions =
-                transactions.map_index(|transaction| (transaction.1, transaction.clone()));
+            let transactions = transactions.map_index(|transaction| (transaction.1, *transaction));
             let users = users.map_index(|user| (user.1, user.clone()));
 
             let join = |_key: &CCNum, transaction: &Transaction, user: Option<&User>| {

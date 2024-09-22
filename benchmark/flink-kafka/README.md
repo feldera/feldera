@@ -88,7 +88,7 @@ docker compose up -d -p nexmark
    This query will continue running in the background even after it
    "finishes".  It will consume your disk space at an incredible rate
    (over 1 TB in 30 minutes).
-   
+
    You might want to do this from a separate terminal, because the
    `docker compose` from the previous step will spew tons of
    distractions (unless you added `-d` above).

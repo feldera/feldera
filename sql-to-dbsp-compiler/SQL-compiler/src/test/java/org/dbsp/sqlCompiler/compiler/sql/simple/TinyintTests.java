@@ -34,7 +34,7 @@ public class TinyintTests extends SqlIoTest {
                          127
                          -127
                         (5 rows)
-                        
+
                         SELECT i.* FROM INT_TBL i WHERE i.f1 <> 0::TINYINT;
                          f1
                         ----
@@ -100,7 +100,7 @@ public class TinyintTests extends SqlIoTest {
                          -12
                          -127
                         (2 rows)
-                        
+
                         SELECT i.* FROM INT_TBL i WHERE i.f1 <= '0'::TINYINT;
                          f1
                         ----
@@ -189,7 +189,7 @@ public class TinyintTests extends SqlIoTest {
                          12
                          -12
                         (3 rows)
-                        
+
                         SELECT i.f1, i.f1 * '2'::TINYINT AS x FROM INT_TBL i WHERE abs(f1) < 64;
                           f1 |   x
                         -----+-------

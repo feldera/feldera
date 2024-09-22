@@ -457,7 +457,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 #[test]
                 pub fn test() {
                     use dbsp_adapters::{CircuitCatalog, RecordFormat};
-                
+
                     let (mut circuit, catalog) = circuit(CircuitConfig::with_workers(2))
                         .expect("Failed to build circuit");
                     let persons = catalog
@@ -481,12 +481,12 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     circuit
                         .step()
                         .unwrap();
-                
+
                     let adult = &catalog
                         .output_handles(&SqlIdentifier::from("ADULT"))
                         .expect("Failed to get output collection handles")
                         .delta_handle;
-                
+
                     // Read the produced output
                     let out = adult.consolidate();
                     // Print the produced output

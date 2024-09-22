@@ -17,8 +17,8 @@ def simulate_interactions(step=100, historical=False):
 
     # Generate interactions
     interactions = generate_interactions(
-        config.INTERACTIONS_AMOUNT_HISTORICAL if historical else config.INTERACTIONS_AMOUNT_PIPELINE, 
-        user_data, 
+        config.INTERACTIONS_AMOUNT_HISTORICAL if historical else config.INTERACTIONS_AMOUNT_PIPELINE,
+        user_data,
         video_data,
     )
 
@@ -64,4 +64,4 @@ send_interactions(simulate_interactions(historical=True))
 print("Simulating Present Data")
 send_interactions(simulate_interactions())
 
-    
+

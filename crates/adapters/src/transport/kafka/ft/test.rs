@@ -658,7 +658,7 @@ config:
 "#;
 
     let mut endpoint =
-        output_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap())
+        output_transport_config_to_endpoint(serde_yaml::from_str(config_str).unwrap())
             .unwrap()
             .unwrap();
     assert!(endpoint.is_fault_tolerant());

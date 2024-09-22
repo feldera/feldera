@@ -709,8 +709,8 @@ mod test {
 
     #[test]
     fn test_stable_sort() {
-        let long_sorted: Vec<i32> = (0..1000).into_iter().collect();
-        let long_reversed: Vec<i32> = (0..1000).into_iter().rev().collect();
+        let long_sorted: Vec<i32> = (0..1000).collect();
+        let long_reversed: Vec<i32> = (0..1000).rev().collect();
         let corpus: Vec<Vec<i32>> = vec![
             vec![],
             vec![10],

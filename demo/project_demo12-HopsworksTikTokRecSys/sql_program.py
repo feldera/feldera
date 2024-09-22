@@ -16,7 +16,7 @@ def generate_program(transport_cfg, format_cfg):
 
     if transport_cfg is not None and format_cfg is not None:
         code += """ with (
-            'connectors' = '[{{ 
+            'connectors' = '[{{
                 "transport": {0},
                 "format": {1}
             }}]'

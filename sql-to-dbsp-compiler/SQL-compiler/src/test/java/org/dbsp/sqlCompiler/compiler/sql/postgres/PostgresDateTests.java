@@ -1411,43 +1411,43 @@ public class PostgresDateTests extends SqlIoTest {
                 --------------------------
                  1001-01-01
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(DATE '1970-03-20', CENTURY); -- 1901
                           date_trunc
                 ------------------------------
                  1901-01-01
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(DATE '2004-08-10', CENTURY); -- 2001-01-01
                           date_trunc
                 ------------------------------
                  2001-01-01
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(DATE '0002-02-04', CENTURY); -- 0001-01-01
                           date_trunc
                 ------------------------------
                  0001-01-01
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(DATE '1993-12-25', DECADE); -- 1990-01-01
                           date_trunc
                 ------------------------------
                  1990-01-01
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(DATE '1993-12-25', YEAR);
                           date_trunc
                 ------------------------------
                  1993-01-01
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(DATE '1993-12-25', MONTH);
                           date_trunc
                 ------------------------------
                  1993-12-01
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(DATE '1993-12-25', DAY);
                           date_trunc
                 ------------------------------
@@ -1459,31 +1459,31 @@ public class PostgresDateTests extends SqlIoTest {
                 --------------------------
                  1001-01-01 00:00:00
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(TIMESTAMP '1970-03-20 04:30:00.00000', CENTURY); -- 1901
                         date_trunc
                 --------------------------
                  1901-01-01 00:00:00
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(TIMESTAMP '1970-03-20 04:30:00.00000', DECADE);
                         date_trunc
                 --------------------------
                  1970-01-01 00:00:00
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(TIMESTAMP '1970-03-20 04:30:00.00000', YEAR);
                         date_trunc
                 --------------------------
                  1970-01-01 00:00:00
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(TIMESTAMP '1970-03-20 04:30:00.00000', MONTH);
                         date_trunc
                 --------------------------
                  1970-03-01 00:00:00
                 (1 row)
-                                
+
                 SELECT DATE_TRUNC(TIMESTAMP '1970-03-20 04:30:00.00000', DAY);
                         date_trunc
                 --------------------------
@@ -1500,49 +1500,49 @@ public class PostgresDateTests extends SqlIoTest {
                 --------------------------
                  1001-01-01 00:00:00
                 (1 row)
-                
+
                 SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', CENTURY); -- 1901
                         timestamp_trunc
                 --------------------------
                  1901-01-01 00:00:00
                 (1 row)
-                
+
                 SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', DECADE);
                         timestamp_trunc
                 --------------------------
                  1970-01-01 00:00:00
                 (1 row)
-                
+
                 SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', YEAR);
                         timestamp_trunc
                 --------------------------
                  1970-01-01 00:00:00
                 (1 row)
-                
+
                 SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', MONTH);
                         timestamp_trunc
                 --------------------------
                  1970-03-01 00:00:00
                 (1 row)
-                
+
                 SELECT timestamp_trunc(TIMESTAMP '1970-03-20 04:30:00.00000', DAY);
                         timestamp_trunc
                 --------------------------
                  1970-03-20 00:00:00
                 (1 row)
-                
+
                 SELECT timestamp_trunc(timestamp '2015-02-19 12:34:56.78', hour);
                   trunc
                 --------
                 2015-02-19 12:00:00
                 (1 row)
-                
+
                 SELECT timestamp_trunc(timestamp '2015-02-19 12:34:56.78', minute);
                   trunc
                 --------
                 2015-02-19 12:34:00
                 (1 row)
-                
+
                 SELECT timestamp_trunc(timestamp '2015-02-19 12:34:56.78', second);
                   trunc
                 --------
@@ -1559,20 +1559,20 @@ public class PostgresDateTests extends SqlIoTest {
                 --------
                 12:00:00
                 (1 row)
-                
+
                 SELECT time_trunc(time '12:34:56.78', minute);
                   trunc
                 --------
                 12:34:00
                 (1 row)
-                
+
                 SELECT time_trunc(time '12:34:56.78', second);
                   trunc
                 --------
                 12:34:56
                 (1 row)""");
     }
-    
+
     @Test
     public void illegalDateTrunc() {
         this.queryFailingInCompilation("SELECT DATE_TRUNC(DATE '1993-12-25', HOUR)",

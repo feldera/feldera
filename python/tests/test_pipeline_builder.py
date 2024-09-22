@@ -20,14 +20,14 @@ class TestPipelineBuilder(unittest.TestCase):
             name STRING,
             id INT
         );
-        
+
         CREATE TABLE {TBL_NAMES[1]} (
             student_id INT,
             science INT,
             maths INT,
             art INT
         );
-        
+
         CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
         """
 
@@ -57,14 +57,14 @@ class TestPipelineBuilder(unittest.TestCase):
             name STRING,
             id INT
         );
-        
+
         CREATE TABLE {TBL_NAMES[1]} (
             student_id INT,
             science INT,
             maths INT,
             art INT
         );
-        
+
         CREATE VIEW {view_name} AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
         """
 

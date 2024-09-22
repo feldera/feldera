@@ -65,12 +65,12 @@ Because Kafka Connect is already running, it is not possible to mount new secret
    user=chosen_debezium_user_123456
    password=chosen_debezium_password_123456
    ```
-   
+
    ... and then we can base64 encode its content using:
    ```
    cat temp.properties | base64
    ```
-   
+
    ... which will yield the following output:
    ```
    aG9zdG5hbWU9bXlzcWwuc29tZS5kb21haW4uZXhhbXBsZS5jb20KcG9ydD0zMzA2CnVzZXI9Y2hvc2VuX2RlYmV6aXVtX3VzZXJfMTIzNDU2CnBhc3N3b3JkPWNob3Nlbl9kZWJleml1bV9wYXNzd29yZF8xMjM0NTYK

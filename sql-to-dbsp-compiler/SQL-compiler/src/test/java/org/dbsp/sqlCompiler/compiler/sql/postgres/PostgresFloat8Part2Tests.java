@@ -35,7 +35,7 @@ public class PostgresFloat8Part2Tests extends SqlIoTest {
                  -1.2345678901234e+200
                  -1.2345678901234e-200
                 (5 rows)
-                
+
                 SELECT power(0, 0) + power(0, 1) + power(0, 0.0) + power(0, 0.5);
                  ?column?
                 ----------
@@ -58,7 +58,7 @@ public class PostgresFloat8Part2Tests extends SqlIoTest {
                  -1.0042999999999999e203
                                -Infinity
                 (5 rows)
-                
+
                 -- postgres overflows
                 SELECT power(f.f1, 1e200) from FLOAT8_TBL f;
                             f1
@@ -69,7 +69,7 @@ public class PostgresFloat8Part2Tests extends SqlIoTest {
                                 Infinity
                                 Infinity
                 (5 rows)
-                
+
                 SELECT f.f1 / '0.0' from FLOAT8_TBL f;
                             f1
                 -------------------------
@@ -79,7 +79,7 @@ public class PostgresFloat8Part2Tests extends SqlIoTest {
                                -Infinity
                                      NaN
                 (5 rows)
-                
+
                 SELECT exp(f.f1) from FLOAT8_TBL f;
                             f1
                 -------------------------

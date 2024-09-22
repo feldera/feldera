@@ -395,7 +395,7 @@ outputs:
 
     if verify {
         let parquet_files =
-            list_files_recursive(&Path::new(table_uri), OsStr::from_bytes(b"parquet")).unwrap();
+            list_files_recursive(Path::new(table_uri), OsStr::from_bytes(b"parquet")).unwrap();
 
         // // Uncomment to inspect the input JSON file.
         // std::mem::forget(input_file);
@@ -508,7 +508,7 @@ async fn test_follow(
 
     // Connect to `output_table_uri`.
     let mut output_table = Arc::new(
-        DeltaTableBuilder::from_uri(&output_table_uri)
+        DeltaTableBuilder::from_uri(output_table_uri)
             .with_storage_options(storage_options.clone())
             .load()
             .await
