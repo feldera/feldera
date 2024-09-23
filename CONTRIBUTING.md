@@ -302,6 +302,7 @@ Finally, add new versions tn crates.io for the following crates:
 cargo publish --package feldera-types
 cargo publish --package dbsp
 cargo publish --package fda
+cargo publish --package feldera-sqllib
 ```
 
 ### Phase 2: post-release commit

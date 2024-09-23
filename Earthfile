@@ -218,7 +218,7 @@ test-adapters:
             redpanda start --smp 2  && \
             (google-cloud-sdk/bin/gcloud beta emulators pubsub start --project=feldera-test --host-port=127.0.0.1:8685 &) && \
             sleep 5 && \
-            RUST_BACKTRACE=1 cargo test --package dbsp_adapters --features "pubsub-emulator-test" --package sqllib
+            RUST_BACKTRACE=1 cargo test --package dbsp_adapters --features "pubsub-emulator-test" --package feldera-sqllib
     END
 
 test-manager:
@@ -317,6 +317,7 @@ build-pipeline-manager-container:
     COPY crates/feldera-types database-stream-processor/crates/feldera-types
     COPY crates/adapters database-stream-processor/crates/adapters
     COPY crates/nexmark database-stream-processor/crates/nexmark
+    COPY crates/sqllib database-stream-processor/crates/sqllib
     COPY README.md database-stream-processor/README.md
 
     # Then copy over the required SQL compiler files

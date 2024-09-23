@@ -314,7 +314,7 @@ public class MetadataTests extends BaseSQLTests {
         File implementation = File.createTempFile("impl", ".rs", new File(rustDirectory));
         createInputFile(implementation,
                 System.lineSeparator(),
-                "use sqllib::*;",
+                "use feldera_sqllib::*;",
                 "pub fn CONTAINS_NUMBER(str: String, value: Option<i32>) -> " +
                         "   Result<bool, Box<dyn std::error::Error>> {",
                 "   match value {",

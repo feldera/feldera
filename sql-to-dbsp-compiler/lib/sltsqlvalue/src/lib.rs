@@ -7,8 +7,8 @@
 #![allow(non_snake_case)]
 
 use dbsp::algebra::{F32, F64};
+use feldera_sqllib::casts::*;
 use rust_decimal::Decimal;
-use sqllib::casts::*;
 
 #[derive(Debug)]
 pub enum SltSqlValue {

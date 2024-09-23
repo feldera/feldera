@@ -3633,6 +3633,7 @@ dependencies = [
  "erased-serde",
  "fake",
  "feldera-size-of",
+ "feldera-sqllib",
  "feldera-types",
  "feldera_rust_decimal",
  "form_urlencoded",
@@ -3680,7 +3681,6 @@ dependencies = [
  "serde_urlencoded",
  "serde_yaml",
  "serial_test 2.0.0",
- "sqllib",
  "tempfile",
  "test_bin",
  "tokio",
@@ -4452,6 +4452,32 @@ dependencies = [
  "size-of-derive",
  "time",
  "xxhash-rust",
+]
+
+[[package]]
+name = "feldera-sqllib"
+version = "0.26.0"
+dependencies = [
+ "chrono",
+ "dbsp",
+ "feldera-size-of",
+ "feldera-types",
+ "feldera_rust_decimal",
+ "flate2",
+ "geo",
+ "hex",
+ "itertools 0.13.0",
+ "lazy_static",
+ "like",
+ "metrics",
+ "num",
+ "num-traits",
+ "paste",
+ "regex",
+ "rkyv",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -7820,11 +7846,11 @@ dependencies = [
  "dbsp",
  "derive_more",
  "feldera-size-of",
+ "feldera-sqllib",
  "paste",
  "rkyv",
  "serde",
  "sltsqlvalue",
- "sqllib",
 ]
 
 [[package]]
@@ -8975,8 +9001,8 @@ name = "sltsqlvalue"
 version = "0.1.0"
 dependencies = [
  "dbsp",
+ "feldera-sqllib",
  "feldera_rust_decimal",
- "sqllib",
 ]
 
 [[package]]
@@ -9061,33 +9087,6 @@ checksum = "67cf02bbac7a337dc36e4f5a693db6c21e7863f45070f7064577eb4367a3212b"
 dependencies = [
  "base64ct",
  "der",
-]
-
-[[package]]
-name = "sqllib"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dbsp",
- "feldera-size-of",
- "feldera-types",
- "feldera_rust_decimal",
- "flate2",
- "geo",
- "geo-types",
- "hex",
- "itertools 0.13.0",
- "lazy_static",
- "like",
- "metrics",
- "num",
- "num-traits",
- "paste",
- "regex",
- "rkyv",
- "serde",
- "serde_json",
- "thiserror",
 ]
 
 [[package]]

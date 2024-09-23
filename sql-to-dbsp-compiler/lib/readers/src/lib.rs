@@ -13,11 +13,11 @@ use dbsp::{
     zset, DBData, DBWeight, OrdZSet,
 };
 use derive_more::{From, Into, Neg, Sub};
+use feldera_sqllib::{WSet, Weight};
 use paste::paste;
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
 use size_of::*;
-use sqllib::{WSet, Weight};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::ops::Neg;
 use std::{fs::File, io::BufReader, path::Path};

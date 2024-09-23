@@ -791,12 +791,12 @@ mod test {
         from_avro_datum, to_avro_datum, types::Value as AvroValue, Decimal, Schema as AvroSchema,
     };
     use dbsp::algebra::{F32, F64};
+    use feldera_sqllib::{Date, Timestamp};
     use feldera_types::{serde_with_context::SerializeWithContext, serialize_table_record};
     use num_bigint::BigInt;
     use rust_decimal::Decimal as RustDecimal;
     use rust_decimal_macros::dec;
     use serde::Serialize;
-    use sqllib::{Date, Timestamp};
     use std::collections::{BTreeMap, HashMap};
     use std::str::FromStr;
 

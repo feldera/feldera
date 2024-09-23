@@ -4,6 +4,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
+use feldera_sqllib::{Date, Timestamp};
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 use feldera_types::{
     deserialize_table_record, deserialize_without_context, serialize_struct, serialize_table_record,
@@ -12,7 +13,6 @@ use prop::sample::SizeRange;
 use proptest::{collection, prelude::*};
 use proptest_derive::Arbitrary;
 use size_of::SizeOf;
-use sqllib::{Date, Timestamp};
 use std::collections::BTreeMap;
 use std::string::ToString;
 use std::sync::Arc;
