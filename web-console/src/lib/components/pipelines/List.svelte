@@ -84,22 +84,33 @@
 
 <div class="relative flex flex-col gap-2 overflow-y-auto px-4 pb-2" use:bindScrollY={{ scrollY }}>
   <div class="sticky top-0 m-0 pt-1 bg-surface-50-950">
-    <input
-      bind:this={createPipelineInputRef}
-      onblur={(e) => {
-        e.currentTarget.value = ''
-        stopAssisting()
-      }}
-      onkeydown={async (e) => {
-        if (e.key === 'Enter') {
-          await createPipeline(e.currentTarget.value)
-          e.currentTarget.blur()
-        }
-      }}
-      placeholder="New Pipeline Name"
-      class="input placeholder-surface-700 outline-none transition-none duration-0 bg-surface-50-950 dark:placeholder-surface-300"
-    />
-    <div class="py-2 text-surface-400-600">Press Enter to create</div>
+    {#if assistCreatingPipeline}
+      <input
+        bind:this={createPipelineInputRef}
+        onblur={(e) => {
+          e.currentTarget.value = ''
+          stopAssisting()
+        }}
+        onkeydown={async (e) => {
+          if (e.key === 'Enter') {
+            await createPipeline(e.currentTarget.value)
+            e.currentTarget.blur()
+          }
+        }}
+        placeholder="New Pipeline Name"
+        class="input placeholder-surface-800 outline-none transition-none duration-0 bg-surface-50-950 dark:placeholder-surface-200"
+      />
+      <div class="-mb-2 pt-2 text-surface-600-400">Press Enter to create</div>
+    {:else}
+      <div class="flex justify-center">
+        <button
+          class="btn mb-7 mt-auto self-end text-sm preset-filled-primary-500"
+          onclick={() => goto('#new')}
+        >
+          CREATE NEW PIPELINE
+        </button>
+      </div>
+    {/if}
   </div>
   {#each pipelines as pipeline}
     <a

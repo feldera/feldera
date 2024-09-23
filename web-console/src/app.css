@@ -9,7 +9,7 @@
 @tailwind utilities;
 
 .preset-grayout-surface {
-  @apply text-surface-600 hover:text-surface-950 dark:text-surface-400 hover:dark:text-surface-50;
+  @apply text-surface-700 hover:text-surface-950 dark:text-surface-300 hover:dark:text-surface-50;
 }
 
 .pane-divider-horizontal {
