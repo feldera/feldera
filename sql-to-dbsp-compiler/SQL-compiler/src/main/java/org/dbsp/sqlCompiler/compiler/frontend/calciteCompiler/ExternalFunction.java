@@ -195,8 +195,7 @@ public class ExternalFunction extends SqlFunction {
             TYPE ~ struct
             pub fn JSONSTRING_AS_<TYPE>(_pos: &SourcePositionRange, s: Option<String>) -> Option<Tup1<TYPE>> {
                 let s: String = (s?);
-                let json = try_parse_json(s)?;
-                let strct: Option<struct_0> = json_as(json);
+                let strct: Option<struct_0> = from_json_string(s);
                 strct.map(move |x: _, | -> _ { x.into() })
             }
              */
@@ -213,15 +212,12 @@ public class ExternalFunction extends SqlFunction {
             List<DBSPStatement> statements = new ArrayList<>();
             if (parameterType.mayBeNull)
                 statements.add(new DBSPLetStatement("s", param.asVariable().question()));
-            DBSPLetStatement json = new DBSPLetStatement("json",
-                    new DBSPApplyExpression("try_parse_json", DBSPTypeAny.getDefault(), param.asVariable())
-                            .question());
-            statements.add(json);
-            DBSPExpression toStruct = new DBSPApplyExpression("try_json_as", structType.setMayBeNull(true), json.getVarReference());
-            DBSPLetStatement strct = new DBSPLetStatement("strct", toStruct);
+            DBSPExpression toStruct = new DBSPApplyExpression("from_json_string",
+                    structType.setMayBeNull(true), param.asVariable().borrow());
+            DBSPLetStatement strct = new DBSPLetStatement("strct",toStruct);
             statements.add(strct);
-            DBSPVariablePath var = new DBSPVariablePath(DBSPTypeAny.getDefault());
-            DBSPExpression into = new DBSPApplyMethodExpression("into", var.getType(), var).closure(var.asParameter());
+            DBSPVariablePath var = DBSPTypeAny.getDefault().var();
+            DBSPExpression into = new DBSPApplyMethodExpression("into", DBSPTypeAny.getDefault(), var).closure(var.asParameter());
             DBSPExpression retval = new DBSPApplyMethodExpression("map", returnType, strct.getVarReference(), into);
             DBSPExpression body = new DBSPBlockExpression(statements, retval);
             // DBSPExpression ok = new DBSPApplyMethodExpression("Ok", new DBSPTypeResult(returnType), retval);

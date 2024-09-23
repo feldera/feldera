@@ -786,6 +786,17 @@ pub fn variantnull() -> Variant {
     Variant::VariantNull
 }
 
+pub fn from_json_string<T>(json: &str) -> Option<T>
+where
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
+{
+    T::deserialize_with_context(
+        &mut serde_json::Deserializer::from_str(json),
+        &SqlSerdeConfig::default(),
+    )
+    .ok()
+}
+
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
