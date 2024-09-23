@@ -1,4 +1,4 @@
-use crate::circuit::metrics::gauge;
+use crate::circuit::metrics::Gauge;
 use crate::{
     algebra::{
         IndexedZSet, IndexedZSetReader, Lattice, MulByRef, OrdIndexedZSet, OrdZSet, PartialOrder,
@@ -25,7 +25,6 @@ use crate::{
     utils::Tup2,
     DBData, ZWeight,
 };
-use metrics::Unit;
 use minitrace::trace;
 use size_of::{Context, SizeOf};
 use std::{
@@ -951,6 +950,16 @@ where
     // True if empty output was produced at the current clock cycle.
     empty_output: bool,
     stats: JoinStats,
+    // Handle to update the metric `left_tuples`
+    left_tuples_metric: Option<Gauge>,
+    // Handle to update the metric `right_tuples`
+    right_tuples_metric: Option<Gauge>,
+    // Handle to update the metric `computed_output`
+    computed_output_metric: Option<Gauge>,
+    // Handle to update the metric `produced_output`
+    produced_output_metric: Option<Gauge>,
+    // Handle to update the metric `output_redundancy`
+    output_redundancy_metric: Option<Gauge>,
     _types: PhantomData<(I, T, Z)>,
 }
 
@@ -986,6 +995,11 @@ where
             empty_output: false,
             stats: JoinStats::new(),
             _types: PhantomData,
+            left_tuples_metric: None,
+            right_tuples_metric: None,
+            produced_output_metric: None,
+            computed_output_metric: None,
+            output_redundancy_metric: None,
         }
     }
 }
@@ -1019,7 +1033,45 @@ where
             .all(|time| !time.less_equal(&self.clock.time())));
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
+    fn init_metrics(&mut self, global_id: &GlobalNodeId) {
+        self.left_tuples_metric = Some(Gauge::new(
+            "left_tuples",
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+        self.right_tuples_metric = Some(Gauge::new(
+            "right_tuples",
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+        self.computed_output_metric = Some(Gauge::new(
+            "computed_output",
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+        self.produced_output_metric = Some(Gauge::new(
+            "produced_output",
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+        self.output_redundancy_metric = Some(Gauge::new(
+            "output_redundancy",
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
         // Find the percentage of consolidated outputs
         let mut output_redundancy = ((self.stats.output_tuples as f64
             - self.stats.produced_tuples as f64)
@@ -1031,46 +1083,26 @@ where
             output_redundancy = 100.0;
         }
 
-        gauge(
-            global_id.to_owned(),
-            "left_tuples".to_string(),
-            self.stats.lhs_tuples as f64,
-            vec![],
-            Some(Unit::Count),
-            None,
-        );
-        gauge(
-            global_id.to_owned(),
-            "right_tuples".to_string(),
-            self.stats.rhs_tuples as f64,
-            vec![],
-            Some(Unit::Count),
-            None,
-        );
-        gauge(
-            global_id.to_owned(),
-            "computed_output".to_string(),
-            self.stats.output_tuples as f64,
-            vec![],
-            Some(Unit::Count),
-            None,
-        );
-        gauge(
-            global_id.to_owned(),
-            "produced_output".to_string(),
-            self.stats.produced_tuples as f64,
-            vec![],
-            Some(Unit::Count),
-            None,
-        );
-        gauge(
-            global_id.to_owned(),
-            "output_redundancy".to_string(),
-            output_redundancy,
-            vec![],
-            Some(Unit::Count),
-            None,
-        );
+        self.output_redundancy_metric
+            .as_ref()
+            .unwrap()
+            .set(output_redundancy);
+        self.left_tuples_metric
+            .as_ref()
+            .unwrap()
+            .set(self.stats.lhs_tuples as f64);
+        self.right_tuples_metric
+            .as_ref()
+            .unwrap()
+            .set(self.stats.rhs_tuples as f64);
+        self.computed_output_metric
+            .as_ref()
+            .unwrap()
+            .set(self.stats.output_tuples as f64);
+        self.produced_output_metric
+            .as_ref()
+            .unwrap()
+            .set(self.stats.produced_tuples as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {

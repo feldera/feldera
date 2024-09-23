@@ -5,13 +5,8 @@
 
 use crate::circuit::GlobalNodeId;
 use crate::Runtime;
-use ::metrics::{
-    describe_counter, describe_histogram, SharedString as MetricString, Unit as MetricUnit,
-};
-use lazy_static::lazy_static;
-use metrics::{describe_gauge, Counter, Gauge, Histogram, IntoLabels, KeyName};
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use ::metrics::{describe_counter, describe_gauge, describe_histogram, Unit as MetricUnit};
+use size_of::{Context, SizeOf};
 
 /// Total number of files created.
 pub const FILES_CREATED: &str = "disk.total_files_created";
@@ -72,282 +67,172 @@ pub const TOTAL_LATE_RECORDS: &str = "records.late";
 /// Runtime in microseconds of an Operator evaluation
 pub const OPERATOR_EVAL_DURATION: &str = "operator.runtime_micros";
 
-/// Holds a map of the [`DBSPMetric`] and their equivalent [`metrics`] type.
+/// Creates the appropriate metric name for this metric.
+/// As these metrics are DBSP related, they are prefixed with `dbsp_`.
+fn metric_name(name: &str) -> String {
+    format!("dbsp_{}", name)
+}
+
+/// A metric of type `Gauge`.
 ///
-/// [`RwLock`]s here should be very efficient, as reading is the most common operation.
-/// Writing is only necessary while adding a new metric.
-///
-/// Updating the inner type in the map doesn't require mutable access due to the interior
-/// mutability of the [`Counter`], [`Gauge`] and [`Histogram`] types.
-#[allow(unused)]
-#[derive(Default)]
-struct MetricsRecorder {
-    counters: RwLock<HashMap<DBSPMetric, Counter>>,
-    gauge: RwLock<HashMap<DBSPMetric, Gauge>>,
-    histogram: RwLock<HashMap<DBSPMetric, Histogram>>,
-}
+/// Gauge represents a single value that can go up or down over time, and always starts out
+/// with an initial value of zero.
+#[derive(Clone)]
+pub(crate) struct Gauge(metrics::Gauge);
 
-lazy_static! {
-    /// Global recorder for DBSP related metrics.
-    static ref METRICS_RECORDER: Arc<MetricsRecorder> = Arc::new(MetricsRecorder::new());
-}
-
-impl MetricsRecorder {
-    fn new() -> Self {
-        Self::default()
-    }
-
-    /// Registers a new [`Counter`] and saves it to the map.
-    #[allow(unused)]
-    fn register_counter(
-        &self,
-        metric: DBSPMetric,
-        unit: Option<MetricUnit>,
+impl Gauge {
+    /// Describe and initialize a new [`Gauge`].
+    ///
+    /// The following labels are set to this gauge by default:
+    /// `worker` => Appropriate runtime worker thread index
+    /// `gid` => The global node id of the current operator
+    pub(crate) fn new(
+        name: &str,
         description: Option<String>,
-    ) {
-        {
-            let c = self.counters.read().unwrap();
-            if c.contains_key(&metric) {
-                return;
-            }
-        }
-
-        metric.describe(MetricType::Counter, unit, description);
-
-        {
-            let mut c = self.counters.write().unwrap();
-            let counter = metrics::counter!(metric.name(), metric.labels.into_labels());
-            c.insert(metric, counter);
-        }
-    }
-
-    /// Increments the [`Counter`] for the given `metric` by `value`.
-    #[allow(unused)]
-    fn increment_counter(&self, metric: DBSPMetric, value: u64) {
-        let c = self.counters.read().unwrap();
-        if let Some(counter) = c.get(&metric) {
-            counter.increment(value);
-        }
-    }
-
-    /// Registers a new [`Gauge`] and saves it to the map.
-    fn register_gauge(
-        &self,
-        metric: DBSPMetric,
-        unit: Option<MetricUnit>,
-        description: Option<String>,
-    ) {
-        {
-            let c = self.gauge.read().unwrap();
-            if c.contains_key(&metric) {
-                return;
-            }
-        }
-
-        metric.describe(MetricType::Gauge, unit, description);
-
-        {
-            let mut c = self.gauge.write().unwrap();
-            let gauge = metrics::gauge!(metric.name(), metric.labels.into_labels());
-            c.insert(metric, gauge);
-        }
-    }
-
-    /// Sets value of the [`Gauge`] for the given `metric` to `value`.
-    fn set_gauge(&self, metric: DBSPMetric, value: f64) {
-        let g = self.gauge.read().unwrap();
-        if let Some(gauge) = g.get(&metric) {
-            gauge.set(value);
-        }
-    }
-
-    /// Registers a new [`Histogram`] and saves it to the map.
-    fn register_histogram(
-        &self,
-        metric: DBSPMetric,
-        unit: Option<MetricUnit>,
-        description: Option<String>,
-    ) {
-        {
-            let c = self.histogram.read().unwrap();
-            if c.contains_key(&metric) {
-                return;
-            }
-        }
-
-        metric.describe(MetricType::Histogram, unit, description);
-
-        {
-            let mut c = self.histogram.write().unwrap();
-            let h = metrics::histogram!(metric.name(), metric.labels.into_labels());
-            c.insert(metric, h);
-        }
-    }
-
-    /// Records this `value` to the [`Histogram`] for the given `metric`.
-    fn record_histogram(&self, metric: DBSPMetric, value: f64) {
-        let h = self.histogram.read().unwrap();
-        if let Some(histogram) = h.get(&metric) {
-            histogram.record(value);
-        }
-    }
-}
-
-enum MetricType {
-    #[allow(unused)]
-    Counter,
-    Gauge,
-    Histogram,
-}
-
-#[derive(Debug, Hash, PartialOrd, PartialEq, Eq, Clone)]
-pub(crate) struct DBSPMetric {
-    /// Name of the metric.
-    key: KeyName,
-
-    /// The global node ID of the operator.
-    global_node_id: GlobalNodeId,
-
-    /// The worker index of the operator.
-    worker_index: usize,
-
-    /// Optional key-value pairs that provide additional metadata about this
-    /// metric.
-    labels: Vec<(MetricString, MetricString)>,
-}
-
-impl DBSPMetric {
-    fn new(
-        key: KeyName,
-        global_node_id: GlobalNodeId,
-        labels: Vec<(MetricString, MetricString)>,
+        unit: Option<&str>,
+        gid: &GlobalNodeId,
+        mut labels: Vec<(String, String)>,
     ) -> Self {
-        Self {
-            key,
-            global_node_id,
-            worker_index: Runtime::worker_index(),
-            labels,
-        }
-    }
+        labels.push(("worker".to_owned(), Runtime::worker_index().to_string()));
+        labels.push(("gid".to_owned(), gid.metrics_id()));
 
-    fn describe(
-        &self,
-        metric_type: MetricType,
-        unit: Option<MetricUnit>,
-        description: Option<String>,
-    ) {
+        let unit: Option<metrics::Unit> = unit.and_then(metrics::Unit::from_string);
+        let name = metric_name(name);
         let description = description.unwrap_or_default();
-        let key = self.key.clone();
-        match metric_type {
-            MetricType::Counter => {
-                if let Some(unit) = unit {
-                    describe_counter!(key, unit, description);
-                } else {
-                    describe_counter!(key, description);
-                }
+
+        match unit {
+            Some(unit) => {
+                describe_gauge!(name.clone(), unit, description);
             }
-            MetricType::Gauge => {
-                if let Some(unit) = unit {
-                    describe_gauge!(key, unit, description);
-                } else {
-                    describe_gauge!(key, description);
-                }
+            None => {
+                describe_gauge!(name.clone(), description);
             }
-            MetricType::Histogram => {
-                if let Some(unit) = unit {
-                    describe_histogram!(key, unit, description);
-                } else {
-                    describe_histogram!(key, description);
-                }
-            }
-        }
+        };
+
+        Self(metrics::gauge!(name, &labels[..]))
     }
 
-    fn name(&self) -> String {
-        format!("dbsp_{}", self.key.as_str(),)
+    /// Set the value of this [`Gauge`] to `value`.
+    pub(crate) fn set(&self, value: f64) {
+        self.0.set(value)
+    }
+
+    /// Increment the value of this [`Gauge`] by `value`.
+    #[allow(unused)]
+    pub(crate) fn increment(&self, value: f64) {
+        self.0.increment(value)
+    }
+
+    /// Decrement the value of this [`Gauge`] by `value`.
+    #[allow(unused)]
+    pub(crate) fn decrement(&self, value: f64) {
+        self.0.decrement(value)
     }
 }
 
-/// Sets the value for the [`Gauge`] to `value`.
-///
-/// The metric is named in the form: `dbsp_{name}`.
-/// Automatically adds the worker index and global node id as labels.
-pub(crate) fn gauge(
-    global_id: GlobalNodeId,
-    name: String,
-    value: f64,
-    mut labels: Vec<(MetricString, MetricString)>,
-    unit: Option<MetricUnit>,
-    description: Option<String>,
-) {
-    labels.push((
-        "worker".to_string().into(),
-        Runtime::worker_index().to_string().into(),
-    ));
-    labels.push((
-        "global_id".to_string().into(),
-        global_id.metrics_id().into(),
-    ));
-
-    let metric = DBSPMetric::new(name.into(), global_id, labels);
-    METRICS_RECORDER.register_gauge(metric.clone(), unit, description);
-
-    METRICS_RECORDER.set_gauge(metric, value);
+impl SizeOf for Gauge {
+    fn size_of_children(&self, _: &mut Context) {}
 }
 
-/// Records the `value` in the [`Histogram`].
+/// Metric of type `Histogram`.
 ///
-/// The metric is named in the form: `dbsp_{name}`.
-/// Automatically adds the worker index and global node id as labels.
-pub(crate) fn histogram(
-    global_id: GlobalNodeId,
-    name: String,
-    value: f64,
-    mut labels: Vec<(MetricString, MetricString)>,
-    unit: Option<MetricUnit>,
-    description: Option<String>,
-) {
-    labels.push((
-        "worker".to_string().into(),
-        Runtime::worker_index().to_string().into(),
-    ));
-    labels.push((
-        "global_id".to_string().into(),
-        global_id.metrics_id().into(),
-    ));
+/// Histograms measure the distribution of values for a given set of measurements,
+/// and start with no initial values.
+#[derive(Clone)]
+pub(crate) struct Histogram(metrics::Histogram);
 
-    let metric = DBSPMetric::new(name.into(), global_id, labels);
-    METRICS_RECORDER.register_histogram(metric.clone(), unit, description);
+impl Histogram {
+    /// Describe and initialize a new [`Histogram`].
+    ///
+    /// The following labels are set to this histogram by default:
+    /// `worker` => Appropriate runtime worker thread index
+    /// `gid` => The global node id of the current operator
+    #[allow(unused)]
+    pub(crate) fn new(
+        name: &str,
+        description: Option<String>,
+        unit: Option<&str>,
+        gid: &GlobalNodeId,
+        mut labels: Vec<(String, String)>,
+    ) -> Self {
+        labels.push(("worker".to_owned(), Runtime::worker_index().to_string()));
+        labels.push(("gid".to_owned(), gid.metrics_id()));
 
-    METRICS_RECORDER.record_histogram(metric, value);
+        let unit: Option<metrics::Unit> = unit.and_then(metrics::Unit::from_string);
+        let name = metric_name(name);
+        let description = description.unwrap_or_default();
+
+        match unit {
+            Some(unit) => {
+                describe_histogram!(name.clone(), unit, description);
+            }
+            None => {
+                describe_histogram!(name.clone(), description);
+            }
+        };
+
+        Self(metrics::histogram!(name, &labels[..]))
+    }
+
+    #[allow(unused)]
+    pub(crate) fn record(&self, value: f64) {
+        self.0.record(value)
+    }
 }
 
-/// Increments the [`Counter`] by the `value`.
+impl SizeOf for Histogram {
+    fn size_of_children(&self, _: &mut Context) {}
+}
+
+/// Metric of type `Counter`.
 ///
-/// The metric is named in the form: `dbsp_{name}`.
-/// Automatically adds worker index and global node id as labels.
-#[allow(unused)]
-pub(crate) fn counter(
-    global_id: GlobalNodeId,
-    name: String,
-    value: u64,
-    mut labels: Vec<(MetricString, MetricString)>,
-    unit: Option<MetricUnit>,
-    description: Option<String>,
-) {
-    labels.push((
-        "worker".to_string().into(),
-        Runtime::worker_index().to_string().into(),
-    ));
-    labels.push((
-        "global_id".to_string().into(),
-        global_id.metrics_id().into(),
-    ));
+/// Counters represent a single monotonic value, which means the value can only be incremented,
+/// not decremented, and always starts out with an initial value of zero.
+#[derive(Clone)]
+pub(crate) struct Counter(metrics::Counter);
 
-    let metric = DBSPMetric::new(name.into(), global_id, labels);
-    METRICS_RECORDER.register_counter(metric.clone(), unit, description);
+impl Counter {
+    /// Describe and initialize a new [`Counter`].
+    ///
+    /// The following labels are set to this counter by default:
+    /// `worker` => Appropriate runtime worker thread index
+    /// `gid` => The global node id of the current operator
+    #[allow(unused)]
+    pub(crate) fn new(
+        name: &str,
+        description: Option<String>,
+        unit: Option<&str>,
+        gid: &GlobalNodeId,
+        mut labels: Vec<(String, String)>,
+    ) -> Self {
+        labels.push(("worker".to_owned(), Runtime::worker_index().to_string()));
+        labels.push(("gid".to_owned(), gid.metrics_id()));
 
-    METRICS_RECORDER.increment_counter(metric, value);
+        let unit: Option<metrics::Unit> = unit.and_then(metrics::Unit::from_string);
+        let name = metric_name(name);
+        let description = description.unwrap_or_default();
+
+        match unit {
+            Some(unit) => {
+                describe_counter!(name.clone(), unit, description);
+            }
+            None => {
+                describe_counter!(name.clone(), description);
+            }
+        };
+
+        Self(metrics::counter!(name, &labels[..]))
+    }
+
+    /// Increments this [`Counter`] by `value`.
+    #[allow(unused)]
+    pub(crate) fn increment(&self, value: u64) {
+        self.0.increment(value)
+    }
+}
+
+impl SizeOf for Counter {
+    fn size_of_children(&self, _: &mut Context) {}
 }
 
 /// Adds descriptions for the metrics we expose.
