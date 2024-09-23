@@ -16,7 +16,7 @@
       {#if user.picture}
         <img class="h-10 w-10 rounded-full" src={user.picture} alt="User avatar" />
       {:else}
-        <div class="bx bx-user h-10 w-10 rounded-full text-[40px]"></div>
+        <div class="fd fd-account_circle h-10 w-10 rounded-full text-[40px]"></div>
       {/if}
       <div>
         <div class="h4 font-normal" class:italic={!user.name}>{user.name || 'anonymous'}</div>
@@ -45,7 +45,7 @@
         //   )
         // })
         // await signOut({ callbackUrl: 'https://dev-jzraqtxsr8a3hhhv.us.auth0.com/oidc/logout' })
-      }}><span class="bx bx-right-arrow-alt text-[24px]"></span> Logout</button
+      }}><span class="fd fd-arrow_forward text-[24px]"></span> Logout</button
     >
   </div>
 </div>

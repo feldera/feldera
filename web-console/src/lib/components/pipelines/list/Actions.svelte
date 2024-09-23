@@ -101,16 +101,13 @@
 </div>
 
 {#snippet _delete()}
-  <button
-    class="bx bx-trash-alt {buttonClass}"
-    onclick={() => (globalDialog.dialog = deleteDialog)}
-  >
+  <button class="fd fd-delete {buttonClass}" onclick={() => (globalDialog.dialog = deleteDialog)}>
   </button>
 {/snippet}
 {#snippet start(action: PipelineAction, status: PipelineStatus)}
   <button
     class:disabled={unsavedChanges}
-    class="{buttonClass} bx bx-play text-[36px] bg-success-200-800"
+    class="{buttonClass} fd fd-play_arrow text-[36px] bg-success-200-800"
     onclick={async () => {
       const success = await postPipelineAction(pipeline.current.name, action)
       pipeline.optimisticUpdate({ status })
@@ -138,7 +135,7 @@
 {/snippet}
 {#snippet _start_disabled()}
   <div class="h-9">
-    <button class="{buttonClass} bx bx-play disabled text-[36px]"></button>
+    <button class="{buttonClass} fd fd-play_arrow disabled text-[36px]"></button>
   </div>
 {/snippet}
 {#snippet _start_error()}
@@ -155,7 +152,7 @@
 {/snippet}
 {#snippet _pause()}
   <button
-    class="bx bx-pause {buttonClass}"
+    class="fd fd-pause {buttonClass}"
     onclick={() =>
       postPipelineAction(pipeline.current.name, 'pause').then(() => {
         onActionSuccess?.('pause')
@@ -166,7 +163,7 @@
 {/snippet}
 {#snippet _shutdown()}
   <button
-    class="bx bx-stop {buttonClass}"
+    class="fd fd-stop {buttonClass}"
     onclick={() =>
       postPipelineAction(pipeline.current.name, 'shutdown').then(() => {
         onActionSuccess?.('shutdown')
@@ -196,7 +193,7 @@
   {/snippet}
   <button
     onclick={() => (globalDialog.dialog = pipelineResourcesDialog)}
-    class="bx bx-cog {buttonClass}"
+    class="fd fd-settings {buttonClass}"
   >
   </button>
   {#if pipelineBusy}

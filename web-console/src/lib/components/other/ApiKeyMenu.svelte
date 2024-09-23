@@ -39,7 +39,7 @@
           <div class="text-sm">{key.id}</div>
         </div>
         <button
-          class="bx bx-trash-alt btn-icon text-[24px]"
+          class="fd fd-delete btn-icon text-[24px]"
           onclick={() => (globalDialog.dialog = deleteDialog)}
         ></button>
       </div>

@@ -28,7 +28,7 @@
         href={error.cause.source}
         class="relative overflow-hidden text-ellipsis whitespace-nowrap pl-8"
       >
-        <span class="bx bx-x-circle text-error-500"></span>
+        <span class="fd fd-add_circle_outline rotate-45 text-error-500"></span>
         <span class="absolute">{error.cause.body?.message ?? error.cause.body}</span>
       </a>
       <Tooltip

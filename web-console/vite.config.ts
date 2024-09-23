@@ -9,16 +9,19 @@ import { existsSync, mkdirSync } from 'fs'
 import SvgFixer from 'oslllo-svg-fixer'
 
 export default defineConfig(async () => {
-  if (!existsSync('tmp/assets/icons/feldera-icons-fixed')) {
-    mkdirSync('tmp/assets/icons/feldera-icons-fixed', { recursive: true })
-    await SvgFixer('src/assets/icons/feldera-icons', 'tmp/assets/icons/feldera-icons-fixed').fix()
+  if (!existsSync('tmp/assets/icons/feldera-material-icons')) {
+    mkdirSync('tmp/assets/icons/feldera-material-icons', { recursive: true })
+    await SvgFixer(
+      'src/assets/icons/feldera-material-icons',
+      'tmp/assets/icons/feldera-material-icons'
+    ).fix()
   }
   return {
     plugins: [
       sveltekit(),
       svg(),
       viteSvgToWebfont({
-        context: resolve(__dirname, 'tmp/assets/icons/feldera-icons-fixed'),
+        context: resolve(__dirname, 'tmp/assets/icons/feldera-material-icons'),
         fontName: 'FelderaIconsFont',
         baseSelector: '.fd',
         classPrefix: 'fd-',

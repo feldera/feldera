@@ -21,7 +21,7 @@
         <span class="hidden {compactBreakpoint}block">Logged in</span>
         <div class="hidden {compactBreakpoint}block w-1"></div>
 
-        <div class="bx bx-user-circle btn-icon text-[32px]">
+        <div class="fd fd-person btn-icon text-[32px]">
           <div class="hidden {compactBreakpoint}block w-2"></div>
         </div>
       </button>
@@ -36,8 +36,7 @@
     {/snippet}
   </Popup>
 {:else}
-  <button class="bx bx-lock-open-alt btn-icon cursor-default text-[24px] text-surface-600-400"
-  ></button>
+  <button class="fd fd-lock_open btn-icon cursor-default text-[24px] text-surface-600-400"></button>
   <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="left">
     Authentication is disabled
   </Tooltip>

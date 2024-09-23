@@ -59,7 +59,7 @@
       <div class="flex w-full flex-nowrap items-center gap-2">
         <span>{name}:</span>
         <span class="w-full overflow-hidden overflow-ellipsis">{key}</span>
-        <button class=" bx bx-copy btn-icon flex-none" use:clipboard={key}></button>
+        <button class=" fd fd-content_copy btn-icon flex-none" use:clipboard={key}></button>
       </div>
     {/each}
   </div>

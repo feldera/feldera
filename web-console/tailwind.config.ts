@@ -3,8 +3,6 @@ import { join } from 'path'
 import { skeleton } from '@skeletonlabs/skeleton/plugin'
 import forms from '@tailwindcss/forms'
 
-import { felderaClassic } from './src/lib/functions/themes/feldera-classic'
-
 import { felderaModern } from './src/lib/functions/themes/feldera-modern'
 
 import type { Config } from 'tailwindcss'
@@ -26,7 +24,7 @@ const config = {
   plugins: [
     forms,
     skeleton({
-      themes: [felderaClassic, felderaModern]
+      themes: [felderaModern]
     })
   ]
 } satisfies Config

@@ -26,7 +26,7 @@ export const navItems = (props: { showSettings: boolean }): NavLink[] => {
     {
       title: 'Examples',
       path: `${base}/`,
-      class: 'bx bx-rocket'
+      class: 'fd fd-lightbulb'
     },
     // {
     //   sectionTitle: 'Platform'
@@ -37,7 +37,7 @@ export const navItems = (props: { showSettings: boolean }): NavLink[] => {
             {
               title: 'Settings',
               path: `${base}/settings/`,
-              class: 'bx bx-cog'
+              class: 'fd fd-settings'
             }
           ]
         : []
@@ -45,7 +45,7 @@ export const navItems = (props: { showSettings: boolean }): NavLink[] => {
     {
       title: 'Documentation',
       path: 'https://www.feldera.com/docs/',
-      class: 'bx bx-file',
+      class: 'fd fd-text_snippet',
       openInNewTab: true,
       testid: 'button-vertical-nav-documentation'
     },
