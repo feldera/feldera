@@ -42,8 +42,10 @@ fn default_tracing_endpoint() -> String {
 }
 
 /// Default value of `RuntimeConfig::tracing`.
+// We discovered that the jaeger crate can use up gigabytes of RAM, so it's not harmless
+// to keep it on by default.
 fn default_tracing() -> bool {
-    true
+    false
 }
 
 /// Pipeline deployment configuration.
