@@ -13,8 +13,6 @@ dbsp = { path = "../../crates/dbsp" }
 dbsp_adapters = { path = "../../crates/adapters", default-features = false }
 feldera-types = { path = "../../crates/feldera-types" }
 feldera-sqllib = { path = "../../crates/sqllib" }
-json = { path = "../lib/json" }
-sltsqlvalue = { path = "../lib/sltsqlvalue" }
 serde = { version = "1.0", features = ["derive"] }
 compare = { version = "0.1.0" }
 size-of = { version = "0.1.5", package = "feldera-size-of" }
@@ -36,6 +34,7 @@ uuid = { version = "1.6.1" }
 # Used only in some unit tests
 metrics = { version = "0.23.0" }
 metrics-util = { version = "0.17.0" }
+sltsqlvalue = { path = "../lib/sltsqlvalue" }
 
 [lib]
 path = "src/lib.rs"

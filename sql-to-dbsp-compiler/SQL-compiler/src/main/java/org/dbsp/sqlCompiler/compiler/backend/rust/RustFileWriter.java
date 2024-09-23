@@ -31,10 +31,9 @@ import java.util.stream.IntStream;
 public class RustFileWriter {
     final List<IDBSPNode> toWrite;
     final PrintStream outputStream;
+    boolean slt = false;
 
-    /**
-     * Various visitors gather here information about the program prior to generating code.
-     */
+    /** Various visitors gather here information about the program prior to generating code. */
     static class StructuresUsed {
         /** The set of all tuple sizes used in the program. */
         final Set<Integer> tupleSizesUsed = new HashSet<>();
@@ -51,8 +50,7 @@ public class RustFileWriter {
     }
     final StructuresUsed used = new StructuresUsed();
 
-    /**
-     * Visitor which discovers some data structures used.
+    /** Visitor which discovers some data structures used.
      * Stores the result in the "used" structure. */
     class FindResources extends InnerVisitor {
         public FindResources(IErrorReporter reporter) {
@@ -75,9 +73,7 @@ public class RustFileWriter {
         }
     }
 
-    /**
-     * Preamble used for all compilations.
-     */
+    /** Preamble used for all compilations. */
     static final String commonPreamble =
             """
             // Automatically-generated file
@@ -92,88 +88,100 @@ public class RustFileWriter {
             #![allow(non_camel_case_types)]
             """;
 
-    /**
-     * Preamble used when generating Rust code. */
+    /** Preamble used when generating Rust code. */
     @SuppressWarnings("SpellCheckingInspection")
-    static final String rustPreamble = """
-                    use dbsp::{
-                        algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
-                             UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
-                             AddAssignByRef,
-                        },
-                        circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, Stream},
-                        operator::{
-                            Generator,
-                            FilterMap,
-                            Fold,
-                            group::WithCustomOrd,
-                            time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},
-                            MaxSemigroup,
-                            MinSemigroup,
-                            CmpFunc,
-                        },
-                        OrdIndexedZSet, OrdZSet,
-                        TypedBox,
-                        utils::*,
-                        zset,
-                        indexed_zset,
-                        DBWeight,
-                        DBData,
-                        DBSPHandle,
-                        Error,
-                        Runtime,
-                        NumEntries,
-                        MapHandle, ZSetHandle, OutputHandle,
-                        dynamic::{DynData,DynDataTyped},
-                    };
-                    use feldera_types::program_schema::SqlIdentifier;
-                    use dbsp_adapters::Catalog;
-                    use feldera_types::{deserialize_table_record, serialize_table_record};
-                    use size_of::*;
-                    use ::serde::{Deserialize,Serialize};
-                    use compare::{Compare, Extract};
-                    use std::{
-                        collections::BTreeMap,
-                        convert::identity,
-                        ops::Neg,
-                        fmt::{Debug, Formatter, Result as FmtResult},
-                        path::Path,
-                        marker::PhantomData,
-                    };
-                    use core::cmp::Ordering;
-                    use rust_decimal::Decimal;
-                    use dbsp::declare_tuples;
-                    use json::*;
-                    use feldera_sqllib::{
-                        *,
-                        array::*,
-                        casts::*,
-                        binary::*,
-                        geopoint::*,
-                        timestamp::*,
-                        interval::*,
-                        string::*,
-                        operators::*,
-                        aggregates::*,
-                        variant::*,
-                    };
-                    use sltsqlvalue::*;
-                    #[cfg(test)]
-                    use readers::*;
+    String rustPreamble() {
+        String preamble = """
+                use dbsp::{
+                    algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
+                         UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
+                         AddAssignByRef,
+                    },
+                    circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, Stream},
+                    operator::{
+                        Generator,
+                        FilterMap,
+                        Fold,
+                        group::WithCustomOrd,
+                        time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet},
+                        MaxSemigroup,
+                        MinSemigroup,
+                        CmpFunc,
+                    },
+                    OrdIndexedZSet, OrdZSet,
+                    TypedBox,
+                    utils::*,
+                    zset,
+                    indexed_zset,
+                    DBWeight,
+                    DBData,
+                    DBSPHandle,
+                    Error,
+                    Runtime,
+                    NumEntries,
+                    MapHandle, ZSetHandle, OutputHandle,
+                    dynamic::{DynData,DynDataTyped},
+                };
+                use feldera_types::program_schema::SqlIdentifier;
+                use dbsp_adapters::Catalog;
+                use feldera_types::{deserialize_table_record, serialize_table_record};
+                use size_of::*;
+                use ::serde::{Deserialize,Serialize};
+                use compare::{Compare, Extract};
+                use std::{
+                    collections::BTreeMap,
+                    convert::identity,
+                    ops::Neg,
+                    fmt::{Debug, Formatter, Result as FmtResult},
+                    path::Path,
+                    marker::PhantomData,
+                };
+                use core::cmp::Ordering;
+                use rust_decimal::Decimal;
+                use dbsp::declare_tuples;
+                use feldera_sqllib::{
+                    *,
+                    array::*,
+                    casts::*,
+                    binary::*,
+                    geopoint::*,
+                    timestamp::*,
+                    interval::*,
+                    string::*,
+                    operators::*,
+                    aggregates::*,
+                    variant::*,
+                };
 
-                    #[cfg(not(target_env = "msvc"))]
-                    #[global_allocator]
-                    static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+                #[cfg(not(target_env = "msvc"))]
+                #[global_allocator]
+                static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-                    #[allow(non_upper_case_globals)]
-                    #[export_name = "malloc_conf"]
-                    pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\\0";
-                    """;
+                #[allow(non_upper_case_globals)]
+                #[export_name = "malloc_conf"]
+                pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\\0";
+                #[cfg(test)]
+                use readers::*;
+                """;
+        if (this.slt) {
+            preamble += """
+                #[cfg(test)]
+                use sltsqlvalue::*;
+                """;
+        }
+        return preamble;
+    }
 
 
     public RustFileWriter(PrintStream outputStream) {
         this.toWrite = new ArrayList<>();
         this.outputStream = outputStream;
+    }
+
+    /** Special support for running the SLT tests */
+    public RustFileWriter forSlt() {
+        this.slt = true;
+        return this;
     }
 
     public RustFileWriter(String outputFile)
@@ -308,15 +316,18 @@ public class RustFileWriter {
         }
         stream.append("\n");
 
-        stream.append("sltsqlvalue::to_sql_row_impl! {").increase();
-        for (int i: used.tupleSizesUsed) {
-            if (i <= 10)
-                // These are already pre-declared
-                continue;
-            stream.append(this.tup(i));
-            stream.append(",\n");
+        if (this.slt) {
+            stream.append("#[cfg(test)]").newline()
+                    .append("sltsqlvalue::to_sql_row_impl! {").increase();
+            for (int i : used.tupleSizesUsed) {
+                if (i <= 10)
+                    // These are already pre-declared
+                    continue;
+                stream.append(this.tup(i));
+                stream.append(",\n");
+            }
+            stream.decrease().append("}\n\n");
         }
-        stream.decrease().append("}\n\n");
     }
 
     String generatePreamble(DBSPCompiler compiler, StructuresUsed used) {
@@ -334,7 +345,7 @@ public class RustFileWriter {
         stream.append("""
             #[cfg(test)]
             use hashing::*;""");
-        stream.append(rustPreamble)
+        stream.append(this.rustPreamble())
                 .newline();
         this.generateStructures(used, stream);
 

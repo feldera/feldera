@@ -48,9 +48,7 @@ public class SerdeTest extends SqlIoTest {
                 new DBSPI32Literal(2, true)
         );
         DBSPZSetLiteral input = new DBSPZSetLiteral(address0, address1, invalid, invalidJson);
-        DBSPZSetLiteral output = new DBSPZSetLiteral(person0, person0
-                // new DBSPTupleExpression(new DBSPI32Literal()));
-        );
+        DBSPZSetLiteral output = new DBSPZSetLiteral(person0, person0);
         ccs.addPair(new Change(input), new Change(output));
         this.addRustTestCase(ccs);
     }
