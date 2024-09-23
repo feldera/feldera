@@ -1,7 +1,7 @@
 //! A CLI App for the Feldera REST API.
 
 use std::convert::Infallible;
-use std::io::Read;
+use std::io::{Read, Write};
 
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
@@ -13,6 +13,8 @@ use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use reqwest::StatusCode;
 use tabled::builder::Builder;
 use tabled::settings::Style;
+use tempfile::tempfile;
+use tokio::process::Command;
 use tokio::time::{sleep, Duration};
 
 mod cli;
@@ -634,6 +636,70 @@ async fn pipeline(action: PipelineAction, client: Client) {
             endpoint_name,
             action,
         } => endpoint(name, endpoint_name.as_str(), action, client).await,
+        PipelineAction::HeapProfile {
+            name,
+            pprof,
+            output,
+        } => {
+            let response = client
+                .get_pipeline_heap_profile()
+                .pipeline_name(name)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl.clone(),
+                    "Failed to obtain heap profile",
+                    1,
+                ))
+                .unwrap();
+            let mut byte_stream = response.into_inner();
+            let mut buffer = Vec::new();
+            while let Some(chunk) = byte_stream.next().await {
+                match chunk {
+                    Ok(chunk) => buffer.extend_from_slice(&chunk),
+                    Err(e) => {
+                        eprintln!("ERROR: Unable to read server response: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            match output {
+                None => {
+                    let mut tempfile = tempfile().unwrap_or_else(|e| {
+                        eprintln!("ERROR: Failed to create temporary file: {e}");
+                        std::process::exit(1);
+                    });
+                    tempfile.write_all(&buffer).unwrap();
+
+                    let mut args = pprof.split_whitespace();
+                    let command_name = args.next().expect("`pprof` command cannot be empty");
+                    let mut command = Command::new(command_name);
+                    command.args(args);
+                    command.arg("/dev/stdin");
+                    command.stdin(tempfile);
+                    match command.status().await {
+                        Err(e) => {
+                            eprintln!("ERROR: Failed to execute `{command_name}` ({e}). `pprof` is probably not installed. Install it from <https://github.com/google/pprof>.");
+                            std::process::exit(1);
+                        }
+                        Ok(exit_status) if !exit_status.success() => {
+                            eprintln!("Child process exited with {exit_status}");
+                            std::process::exit(1);
+                        }
+                        Ok(_success) => (),
+                    }
+                }
+                Some(filename) => {
+                    tokio::fs::write(&filename, buffer)
+                        .await
+                        .unwrap_or_else(|e| {
+                            eprintln!("ERROR: Failed to write {}: {e}", filename.display());
+                            std::process::exit(1);
+                        });
+                }
+            }
+        }
         PipelineAction::Shell { name, start } => {
             let client2 = client.clone();
             if start {

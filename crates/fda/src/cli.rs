@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::engine::{ArgValueCompleter, CompletionCandidate};
+use std::path::PathBuf;
 
 use crate::cd::types::{CompilationProfile, ProgramConfig};
 use crate::make_client;
@@ -303,6 +304,26 @@ pub enum PipelineAction {
         endpoint_name: String,
         #[command(subcommand)]
         action: EndpointAction,
+    },
+    /// Obtains a heap profile for a pipeline.
+    ///
+    /// By default, or with `--pprof`, this command retrieves the heap profile
+    /// to a temporary file and then displays it with `pprof`. With `--output`,
+    /// this command instead writes the heap profile to the specified file.
+    ///
+    /// Get `pprof` from <https://github.com/google/pprof>. There is at least
+    /// one other program named `pprof` that is unrelated and will not work.
+    HeapProfile {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// The `pprof` command to run as a subprocess. The name of the `pprof`
+        /// file will be provided as an additional command-line argument.
+        #[arg(long, short = 'p', default_value = "pprof -http :")]
+        pprof: String,
+        /// The file to write the profile to.
+        #[arg(value_hint = ValueHint::FilePath, long, short = 'o')]
+        output: Option<PathBuf>,
     },
     /// Enter the ad-hoc SQL shell for a pipeline.
     Shell {
