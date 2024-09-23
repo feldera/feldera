@@ -133,6 +133,6 @@ serial_test = "2.0.0"
 rust_decimal_macros = "1.32"
 mockall = "0.12.1"
 pretty_assertions = "1.4.0"
-sqllib = { path = "../../sql-to-dbsp-compiler/lib/sqllib" }
+feldera-sqllib = { path = "../sqllib" }
 num-bigint = "0.4.4"
 google-cloud-googleapis = "0.15.0"

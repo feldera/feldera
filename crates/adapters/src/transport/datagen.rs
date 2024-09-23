@@ -1564,14 +1564,14 @@ mod test {
     use crate::test::{mock_input_pipeline, MockDeZSet, MockInputConsumer, TestStruct2};
     use crate::InputReader;
     use anyhow::Result as AnyResult;
+    use feldera_sqllib::binary::ByteArray;
+    use feldera_sqllib::{Date, Time, Timestamp};
     use feldera_types::config::{InputEndpointConfig, TransportConfig};
     use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
     use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
     use feldera_types::transport::datagen::GenerationPlan;
     use feldera_types::{deserialize_table_record, serialize_table_record};
     use size_of::SizeOf;
-    use sqllib::binary::ByteArray;
-    use sqllib::{Date, Time, Timestamp};
     use std::collections::BTreeMap;
     use std::time::Duration;
     use std::{env, thread};

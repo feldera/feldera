@@ -144,7 +144,7 @@ public class RustFileWriter {
                     use rust_decimal::Decimal;
                     use dbsp::declare_tuples;
                     use json::*;
-                    use sqllib::{
+                    use feldera_sqllib::{
                         *,
                         array::*,
                         casts::*,

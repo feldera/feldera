@@ -1383,7 +1383,7 @@ public class StreamingTests extends StreamingTestBase {
                     zset,
                 };
 
-                use sqllib::{
+                use feldera_sqllib::{
                     append_to_collection_handle,
                     read_output_handle,
                     casts::cast_to_Timestamp_s,

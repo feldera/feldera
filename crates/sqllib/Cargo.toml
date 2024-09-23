@@ -1,18 +1,23 @@
 [package]
-name = "sqllib"
-version = "0.1.0"
+name = "feldera-sqllib"
+version = "0.26.0"
 edition = "2021"
-publish = false
+license = "MIT"
+description = "SQL runtime library for Feldera"
+homepage = "https://github.com/feldera/feldera"
+repository = "https://github.com/feldera/feldera"
+keywords = ["DBSP", "streaming", "analytics", "database", "sql"]
+categories = ["database", "api-bindings", "network-programming"]
+publish = true
 
 [dependencies]
 thiserror = "1.0"
-dbsp = { path = "../../../crates/dbsp" }
-feldera-types = { path = "../../../crates/feldera-types" }
+dbsp = { path = "../dbsp" }
+feldera-types = { path = "../feldera-types" }
 itertools = { version = "0.13.0" }
 # `serde-with-arbitrary-precision` is needed because we enable `arbitrary_precision` in `serde_json`.
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["maths", "rkyv", "serde-float", "serde-arbitrary-precision"] }
 geo = { version = "0.26.0" }
-geo-types = { version = "0.7" }
 size-of = { version = "0.1.5", package = "feldera-size-of", features = ["rust_decimal"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0.127", features = ["arbitrary_precision"] }

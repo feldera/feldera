@@ -12,7 +12,7 @@ derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
 dbsp = { path = "../../crates/dbsp" }
 dbsp_adapters = { path = "../../crates/adapters", default-features = false }
 feldera-types = { path = "../../crates/feldera-types" }
-sqllib = { path = "../lib/sqllib" }
+feldera-sqllib = { path = "../../crates/sqllib" }
 json = { path = "../lib/json" }
 sltsqlvalue = { path = "../lib/sltsqlvalue" }
 serde = { version = "1.0", features = ["derive"] }

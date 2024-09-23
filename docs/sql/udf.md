@@ -48,7 +48,7 @@ canonical function name.  Here is a possible implementation of the
 function `contains_number` above:
 
 ```rs
-use sqllib::*;
+use feldera_sqllib::*;
 
 pub fn CONTAINS_NUMBER(str: String, value: Option<i32>) ->
    Result<bool, Box<dyn std::error::Error>> {
@@ -59,7 +59,7 @@ pub fn CONTAINS_NUMBER(str: String, value: Option<i32>) ->
 }
 ```
 
-The `use sqllib::types::*` directive imports the definitions of the
+The `use feldera_sqllib::*` directive imports the definitions of the
 standard Rust types that the compiler uses to implement SQL datatypes.
 The next section explains what these types are.
 
