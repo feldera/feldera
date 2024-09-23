@@ -280,6 +280,10 @@ exprOrList
   |   '(' expr [, expr ]* ')'
 ```
 
+Beware that in the SQL `UNION`, `EXCEPT`, and `INTERSECT` statements
+the column names are *not* used to reorder columns.  The result of a
+uses the column names from the first table.
+
 In `orderItem`, if expression is a positive integer n, it denotes the
 nth item in the `SELECT` clause.
 
