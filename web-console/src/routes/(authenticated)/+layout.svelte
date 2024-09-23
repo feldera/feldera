@@ -27,7 +27,7 @@
 <div class="flex h-full">
   <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
     <div class="flex h-full w-full flex-col gap-1">
-      <span class="flex items-end">
+      <span class="flex items-end justify-center py-4">
         <a href="{base}/">
           {#if darkMode.value === 'dark'}
             <FelderaModernLogoColorLight class="w-32 p-3"></FelderaModernLogoColorLight>
@@ -35,9 +35,9 @@
             <FelderaModernLogoColorDark class="w-32 p-3"></FelderaModernLogoColorDark>
           {/if}
         </a>
-        <span class="pb-1 text-surface-600-400">{$page.data.felderaVersion}</span>
       </span>
       <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
+      <span class="mt-auto pb-1 pl-4 text-surface-700-300">{$page.data.felderaVersion}</span>
     </div>
   </Drawer>
   <div class="flex h-full w-full flex-col">
