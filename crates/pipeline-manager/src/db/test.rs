@@ -1905,8 +1905,7 @@ impl Storage for Mutex<DbModel> {
             .iter()
             .filter(|((tid, _), _)| *tid == tenant_id)
             .map(|(_, p)| p)
-            .find(|p| p.name == pipeline.name)
-            .is_some()
+            .any(|p| p.name == pipeline.name)
         {
             return Err(DBError::DuplicateName);
         }
