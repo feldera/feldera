@@ -15,8 +15,8 @@
       <a href={systemError.cause.source}>
         <span
           class=" text-[20px] {systemError.cause.warning
-            ? 'bx bx-error text-warning-500'
-            : 'bx bx-x-circle text-error-500'}"
+            ? 'fd fd-warning_amber text-warning-500'
+            : 'fd fd-add_circle_outline rotate-45 text-error-500'}"
         ></span></a
       >
       <span

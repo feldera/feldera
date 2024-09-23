@@ -49,7 +49,7 @@
             showDrawer.value = !showDrawer.value
           }}
         >
-          <i class="bx bx-menu text-[24px]"></i>
+          <i class="fd fd-menu text-[24px]"></i>
         </button>
       </div>
       <div class="flex"></div>
@@ -70,7 +70,7 @@
         <button
           onclick={toggleDarkMode}
           class="btn-icon text-[24px] preset-tonal-surface
-            {darkMode.value === 'dark' ? 'bx bx-sun' : 'bx bx-moon'}"
+            {darkMode.value === 'dark' ? 'fd fd-brightness_5' : 'fd fd-brightness_2'}"
         ></button>
         <AuthButton compactBreakpoint="xl:"></AuthButton>
       </div>

@@ -1,8 +1,0 @@
-{
-  "dependencies": {},
-  "devDependencies": {
-    "@fontsource-variable/dm-sans": "^5.1.0",
-    "@fontsource/dm-mono": "^5.1.0",
-    "oslllo-svg-fixer": "^5.0.0"
-  }
-}

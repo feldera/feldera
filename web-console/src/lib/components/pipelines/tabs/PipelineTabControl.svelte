@@ -31,7 +31,7 @@
   {#if close}
     <a
       {...close}
-      class={' bx bx-x btn-icon absolute right-0 top-2 h-6 text-[24px] ' +
+      class={' fd fd-close btn-icon absolute right-0 top-2 h-6 text-[24px] ' +
         (tabContentChanged
           ? 'text-transparent duration-0 hover:text-inherit'
           : 'preset-grayout-surface')}

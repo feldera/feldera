@@ -4,6 +4,7 @@ pnpm-lock.yaml
 yarn.lock
 # Other files
 src/assets
+tmp/
 playwright-report-ct
 playwright-report-e2e
 test-results-ct

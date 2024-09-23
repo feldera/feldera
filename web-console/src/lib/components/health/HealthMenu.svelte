@@ -23,7 +23,7 @@
                 role="presentation"
               >
                 <div
-                  class={'bx bx-chevron-down text-[24px] transition-transform ' +
+                  class={'fd fd-expand_more text-[24px] transition-transform ' +
                     (open ? 'rotate-180' : '')}
                 ></div>
                 <a
