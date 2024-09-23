@@ -1,6 +1,6 @@
 //! Distinct operator.
 
-use crate::circuit::metrics::gauge;
+use crate::circuit::metrics::Gauge;
 use crate::{
     algebra::{
         AddByRef, HasOne, HasZero, IndexedZSet, IndexedZSetReader, Lattice, OrdIndexedZSet,
@@ -16,7 +16,6 @@ use crate::{
     trace::{Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor},
     DBData, Timestamp, ZWeight,
 };
-use metrics::Unit;
 use minitrace::trace;
 use size_of::SizeOf;
 use std::{
@@ -369,6 +368,8 @@ where
     // Used in computing partial derivatives
     // (we keep it here to reuse allocations across `eval_keyval` calls).
     distinct_vals: Vec<(Option<T::Time>, ZWeight)>,
+    // Handle to update the metric `total_updates`
+    total_updates_metric: Option<Gauge>,
     _type: PhantomData<(Z, T)>,
 }
 
@@ -394,6 +395,7 @@ where
             empty_output: false,
             distinct_vals: vec![(None, HasZero::zero()); 2 << depth],
             _type: PhantomData,
+            total_updates_metric: None,
         }
     }
 
@@ -600,17 +602,20 @@ where
         Cow::Borrowed("DistinctIncremental")
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
+    fn init_metrics(&mut self, global_id: &GlobalNodeId) {
+        self.total_updates_metric = Some(Gauge::new(
+            "total_updates",
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
         let size: usize = self.keys_of_interest.values().map(|v| v.len()).sum();
 
-        gauge(
-            global_id.to_owned(),
-            "total_updates".to_owned(),
-            size as f64,
-            vec![],
-            Some(Unit::Count),
-            None,
-        );
+        self.total_updates_metric.as_ref().unwrap().set(size as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {

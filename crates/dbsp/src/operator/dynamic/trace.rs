@@ -1,4 +1,4 @@
-use crate::circuit::metrics::gauge;
+use crate::circuit::metrics::Gauge;
 use crate::{
     circuit::{
         metadata::{
@@ -15,7 +15,6 @@ use crate::{
     Error, Timestamp,
 };
 use dyn_clone::clone_box;
-use metrics::Unit;
 use minitrace::trace;
 use size_of::SizeOf;
 use std::{
@@ -766,6 +765,8 @@ pub struct Z1Trace<T: Trace> {
     reset_on_clock_start: bool,
     bounds: TraceBounds<T::Key, T::Val>,
     effective_key_bound: Option<Box<T::Key>>,
+    // Handle to update the metric `total_size`.
+    total_size_metric: Option<Gauge>,
 }
 
 impl<T> Z1Trace<T>
@@ -787,6 +788,7 @@ where
             reset_on_clock_start,
             bounds,
             effective_key_bound: None,
+            total_size_metric: None,
         }
     }
 }
@@ -816,21 +818,27 @@ where
         self.time.advance(scope + 1);
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
+    fn init_metrics(&mut self, global_id: &GlobalNodeId) {
+        self.total_size_metric = Some(Gauge::new(
+            "total_size",
+            None,
+            Some("count"),
+            global_id,
+            vec![],
+        ));
+    }
+
+    fn metrics(&self) {
         let total_size = self
             .trace
             .as_ref()
             .map(|trace| trace.num_entries_deep())
             .unwrap_or(0);
 
-        gauge(
-            global_id.to_owned(),
-            NUM_ENTRIES_LABEL.to_string(),
-            total_size as f64,
-            vec![],
-            Some(Unit::Count),
-            None,
-        );
+        self.total_size_metric
+            .as_ref()
+            .unwrap()
+            .set(total_size as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {

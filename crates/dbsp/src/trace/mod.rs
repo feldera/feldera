@@ -268,8 +268,8 @@ pub trait Trace: BatchReader {
     fn restore<P: AsRef<str>>(&mut self, _cid: Uuid, _pid: P) -> Result<(), Error> {
         Ok(())
     }
-
-    fn metrics(&self, _global_id: &GlobalNodeId) {}
+    fn init_metrics(&mut self, _gid: &GlobalNodeId) {}
+    fn metrics(&self) {}
 
     /// Allows the trace to report additional metadata.
     fn metadata(&self, _meta: &mut OperatorMeta) {}

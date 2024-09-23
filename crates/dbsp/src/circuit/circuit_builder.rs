@@ -30,7 +30,6 @@ use crate::{
     InputHandle, OutputHandle,
 };
 
-use crate::circuit::metrics::{histogram, OPERATOR_EVAL_DURATION};
 use crate::{
     circuit::{
         cache::{CircuitCache, CircuitStoreMarker},
@@ -53,7 +52,6 @@ use crate::{
     Error as DBSPError, Error, Runtime,
 };
 use anyhow::Error as AnyError;
-use metrics::Unit;
 use serde::Serialize;
 use std::{
     any::type_name_of_val,
@@ -812,7 +810,9 @@ pub trait Node {
     /// another node).
     unsafe fn clock_end(&mut self, scope: Scope);
 
-    fn metrics(&self, _global_id: &GlobalNodeId) {}
+    fn init_metrics(&mut self, _gid: &GlobalNodeId) {}
+
+    fn metrics(&self) {}
 
     fn metadata(&self, output: &mut OperatorMeta);
 
@@ -1825,10 +1825,11 @@ where
         self.edges.push(edge);
     }
 
-    fn add_node<N>(&mut self, node: N)
+    fn add_node<N>(&mut self, mut node: N)
     where
         N: Node + 'static,
     {
+        node.init_metrics(&self.global_node_id);
         self.nodes.push(Box::new(node) as Box<dyn Node>);
     }
 
@@ -2406,8 +2407,6 @@ where
         // optimization.
         circuit.log_scheduler_event(&SchedulerEvent::eval_start(circuit.nodes[id.0].as_ref()));
 
-        let start = std::time::Instant::now();
-
         // Safety: `eval` cannot invoke the
         // `eval` method of another node.  To circumvent
         // this invariant the user would have to extract a
@@ -2415,20 +2414,8 @@ where
         // but this module doesn't expose nodes, only
         // streams.
         unsafe { circuit.nodes[id.0].eval()? };
-        let end = start.elapsed();
 
-        let gid = circuit.nodes[id.0].global_id();
-
-        histogram(
-            gid.clone(),
-            OPERATOR_EVAL_DURATION.to_string(),
-            end.as_micros() as f64,
-            vec![],
-            Some(Unit::Microseconds),
-            Some("Operator evaluation time in Microseconds".to_string()),
-        );
-
-        circuit.nodes[id.0].metrics(gid);
+        circuit.nodes[id.0].metrics();
 
         circuit.log_scheduler_event(&SchedulerEvent::eval_end(circuit.nodes[id.0].as_ref()));
 
@@ -3247,8 +3234,12 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
-        self.operator.metrics(global_id)
+    fn init_metrics(&mut self, gid: &GlobalNodeId) {
+        self.operator.init_metrics(gid);
+    }
+
+    fn metrics(&self) {
+        self.operator.metrics()
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -3335,8 +3326,12 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
-        self.operator.metrics(global_id);
+    fn init_metrics(&mut self, gid: &GlobalNodeId) {
+        self.operator.init_metrics(gid);
+    }
+
+    fn metrics(&self) {
+        self.operator.metrics();
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -3429,8 +3424,12 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
-        self.operator.metrics(global_id);
+    fn init_metrics(&mut self, gid: &GlobalNodeId) {
+        self.operator.init_metrics(gid);
+    }
+
+    fn metrics(&self) {
+        self.operator.metrics();
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -3516,8 +3515,12 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
-        self.operator.metrics(global_id);
+    fn init_metrics(&mut self, gid: &GlobalNodeId) {
+        self.operator.init_metrics(gid);
+    }
+
+    fn metrics(&self) {
+        self.operator.metrics();
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -3623,8 +3626,12 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
-        self.operator.metrics(global_id);
+    fn init_metrics(&mut self, gid: &GlobalNodeId) {
+        self.operator.init_metrics(gid);
+    }
+
+    fn metrics(&self) {
+        self.operator.metrics();
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -3750,8 +3757,12 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
-        self.operator.metrics(global_id)
+    fn init_metrics(&mut self, gid: &GlobalNodeId) {
+        self.operator.init_metrics(gid);
+    }
+
+    fn metrics(&self) {
+        self.operator.metrics()
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -3881,8 +3892,12 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
-        self.operator.metrics(global_id);
+    fn init_metrics(&mut self, gid: &GlobalNodeId) {
+        self.operator.init_metrics(gid);
+    }
+
+    fn metrics(&self) {
+        self.operator.metrics();
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -4030,8 +4045,12 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
-        self.operator.metrics(global_id);
+    fn init_metrics(&mut self, gid: &GlobalNodeId) {
+        self.operator.init_metrics(gid);
+    }
+
+    fn metrics(&self) {
+        self.operator.metrics();
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -4164,8 +4183,12 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
-        self.operator.metrics(global_id);
+    fn init_metrics(&mut self, gid: &GlobalNodeId) {
+        self.operator.init_metrics(gid);
+    }
+
+    fn metrics(&self) {
+        self.operator.metrics();
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -4238,16 +4261,16 @@ where
     O: Clone,
     Op: StrictUnaryOperator<I, O>,
 {
-    fn name(&self) -> Cow<'static, str> {
-        unsafe { &*self.operator.get() }.name()
-    }
-
     fn local_id(&self) -> NodeId {
         self.id.local_node_id().unwrap()
     }
 
     fn global_id(&self) -> &GlobalNodeId {
         &self.id
+    }
+
+    fn name(&self) -> Cow<'static, str> {
+        unsafe { &*self.operator.get() }.name()
     }
 
     fn is_async(&self) -> bool {
@@ -4280,8 +4303,12 @@ where
         (*self.operator.get()).clock_end(scope);
     }
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
-        unsafe { (*self.operator.get()).metrics(global_id) }
+    fn init_metrics(&mut self, gid: &GlobalNodeId) {
+        unsafe { (*self.operator.get()).init_metrics(gid) };
+    }
+
+    fn metrics(&self) {
+        unsafe { (*self.operator.get()).metrics() }
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -4368,8 +4395,12 @@ where
 
     unsafe fn clock_end(&mut self, _scope: Scope) {}
 
-    fn metrics(&self, global_id: &GlobalNodeId) {
-        unsafe { (*self.operator.get()).metrics(global_id) }
+    fn init_metrics(&mut self, gid: &GlobalNodeId) {
+        unsafe { (*self.operator.get()).init_metrics(gid) };
+    }
+
+    fn metrics(&self) {
+        unsafe { (*self.operator.get()).metrics() }
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
