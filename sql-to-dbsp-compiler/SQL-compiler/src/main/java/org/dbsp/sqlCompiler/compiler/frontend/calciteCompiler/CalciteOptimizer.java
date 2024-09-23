@@ -73,7 +73,7 @@ public class CalciteOptimizer implements IWritesLogs {
         void addRules(int level, RelOptRule... rules) {
             if (this.level > level) return;
             for (RelOptRule rule: rules) {
-                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 2)
+                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 3)
                         .append(this.getName())
                         .append(" adding rule: ")
                         .append(rule.toString())
