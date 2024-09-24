@@ -77,10 +77,6 @@ def main():
     if 'calibrate' in steps:
         calibrate()
 
-    if 'pipeline' in steps:
-        record_pipeline()
-        assemble_pipeline()
-
     if 'program' in steps:
         record_program()
         assemble_program()
@@ -88,6 +84,11 @@ def main():
     if 'connectors' in steps:
         record_connectors()
         assemble_connectors()
+
+    if 'pipeline' in steps:
+        record_pipeline()
+        assemble_pipeline()
+
 
 
 def calibrate():
@@ -97,9 +98,10 @@ screenshots set up to take just the right area.
 
 1. Open the web console in the web browser, and size it so the content
    area (that is, the web page itself ignoring the web browser's frame
-   and tool bars, etc.) is 1200x800.  If you need a guide for sizing it,
-   open 1200x800.png in an image viewer, e.g. with xdg-open, and move
-   the windows above and below and alongside each other as guides.
+   and tool bars, etc.) is 1200x1200.  If you need a guide for sizing
+   it, open 1200x1200.png in an image viewer, e.g. with xdg-open, and
+   move the windows above and below and alongside each other as
+   guides.
 
 2. Take a screenshot of the content area only.  Assuming that you're
    using GNOME, hit PrtScr on the keyboard, click on "Selection" in the
@@ -115,13 +117,13 @@ screenshots set up to take just the right area.
    you should start over with --screenshot-dir pointed to the right
    one.
 
-3. If the size is within a few pixels of 1200x800, hit Control+C to
+3. If the size is within a few pixels of 1200x1200, hit Control+C to
    finish up.  Otherwise, adjust the size of the web browser or the
    size of the screenshot and try again until it's close enough.""")
     try:
         while True:
             width, height = imagesize.get(screenshot())
-            print(f"Screenshot is {width}x{height} (ideal is 1200x800).")
+            print(f"Screenshot is {width}x{height} (ideal is 1200x1200).")
     except KeyboardInterrupt:
         pass
 
@@ -130,51 +132,29 @@ def record_pipeline():
     print("""\
 Let's record running the pipeline:
 
-- Click on Home.
-- Hover over Home and screenshot.
+- Click on the Feldera logo.
+- Click on secops.
+- Hover over the SQL program and screenshot.
 """)
     screenshot_as("pipeline-home.png")
 
     print("""\
-- Hover over Pipelines and take a screenshot.
-""")
-    screenshot_as("pipeline-tab.png")
-
-    print("""\
-- Click on Pipelines.
-- If the pipeline is expanded, click on the up arrow to collapse it.
-- Hover over Pipelines and take a screenshot.
-""")
-    screenshot_as("pipeline-list.png")
-
-    print("""\
-- Hover over the start icon and take a screenshot.
+- Hover over the Play icon ▶️ and screenshot.
 """)
     screenshot_as("pipeline-start.png")
 
     print("""\
 - Click on the start icon.
-- Wait for the status to change to "starting".
-- Hover over the start icon and take a screenshot.
+- Wait for "starting up" to appear.
+- Hover over the Play icon ▶️ and take a screenshot.
 """)
     screenshot_as('pipeline-starting.png')
 
     print("""\
-- Wait for the status to change to "running".
-- Hover over the pause icon and take a screenshot.
+- Wait for "running" to appear.
+- Hover over the pause icon ⏸️ and take a screenshot.
 """)
     screenshot_as('pipeline-running.png')
-
-    print("""\
-- Hover over the down arrow to expand the pipeline and take a screenshot.
-""")
-    screenshot_as('pipeline-expand.png')
-
-    print("""\
-- Click on the down arrow.
-- Hover over the arrow (now an up arrow) and take a screenshot.
-""")
-    screenshot_as('pipeline-expanded.png')
 
     print("""\
 Every 5 seconds or so, as the throughput graph updates:
@@ -208,7 +188,7 @@ When the graph fills the entire width, hit Control+C.
     screenshot_as("pipeline-stopping.png")
 
     print("""\
-- Wait for status to change to "ready to run".
+- Wait for trash can icon to appear.
 - Hover over the trash can and screenshot.
 """)
     screenshot_as("pipeline-stopped.png")
@@ -217,14 +197,10 @@ When the graph fills the entire width, hit Control+C.
 def assemble_pipeline():
     print("assembling pipeline.gif...")
     throughput = sorted(glob.glob('pipeline-throughput-[0-9][0-9].png'))
-    subprocess.run(['magick', '-size', '1200x800',
+    subprocess.run(['magick', '-size', '1200x1200',
                     '-delay', '200', 'pipeline-home.png',
-                    '-delay', '100', 'pipeline-tab.png',
-                    '-delay', '200', 'pipeline-list.png',
                     '-delay', '200', 'pipeline-start.png',
                     '-delay', '100', 'pipeline-running.png',
-                    '-delay', '100', 'pipeline-expand.png',
-                    '-delay', '100', 'pipeline-expanded.png',
                     '-delay', '75'] + throughput +
                    ['-delay', '200', 'pipeline-pause.png',
                     '-delay', '150', 'pipeline-pausing.png',
@@ -239,35 +215,30 @@ def record_program():
 ----------------------------------------------------------------------
 Let's record scrolling through the SQL program.
 
-- Click on Home.
-- Hover over Home and screenshot.
+- Click on the Feldera logo and screenshot.
 """)
     screenshot_as("program-home.png")
 
     print("""\
-- Hover over SQL Programs and screenshot.
+- Hover over secops and screenshot.
 """)
-    screenshot_as("program-tab.png")
+    screenshot_as("program-secops.png")
 
     print("""\
-- Click on SQL Programs.
-- Hover over SQL Programs and screenshot.
+- Click on secops and screenshot.
 """)
-    screenshot_as("program-list.png")
-
-    print(f"""\
-- Hover over the pencil icon for {secops.PROGRAM_NAME} and screenshot.
-""")
-    screenshot_as("program-edit.png")
+    screenshot_as("program-secops2.png")
 
     print("""\
-- Click on the pencil icon.
-- Hover over the SQL program and screenshot.
+- Scroll through the program and click on the down-arrow next to
+  each "WITH", to collapse them.
+- Then, scroll back up to the top.
+- Then, hover over the SQL program and screenshot.
 """)
-    screenshot_as("program-edited.png")
+    screenshot_as("program-editor.png")
 
     print("""\
-Now, repeatedly:
+Then, repeatedly:
 - Roll the scroll wheel three or four times to scroll the program downward.
 - Hover over the SQL program and take a screenshot.
 ...until you get to the end of the program, then hit Control+C.
@@ -278,121 +249,43 @@ Now, repeatedly:
 def assemble_program():
     names = sorted(glob.glob('program-scroll-*.png'))
     print("assembling program.gif...")
-    subprocess.run(['magick', '-size', '1200x800',
+    subprocess.run(['magick', '-size', '1200x1200',
                     '-delay', '200', 'program-home.png',
-                    '-delay', '100', 'program-tab.png',
-                    'program-list.png',
-                    'program-edit.png',
+                    '-delay', '100', 'program-secops.png',
+                    '-delay', '100', 'program-secops2.png',
+                    'program-editor.png',
                     '-delay', '200',
-                    'program-edited.png',
                     '-delay', '40'] + names[:-1] +
                    ['-delay', '100', names[-1], 'program.gif'])
 
 def record_connectors():
     print("""\
-Let's record looking at the pipeline's connectors:
+Let's record looking at the pipeline's connectors.
 
-- Click on Pipelines.
-- If the pipeline is open, click on the up arrow to close it.
-- Hover over the pencil icon and screenshot.
+- Click on the Feldera logo.
+- Click on secops.
+- Scroll so the pipeline table and its WITH clause are visible,
+  and screenshot.
 """)
-    screenshot_as("connectors-edit.png")
-
-    print("""\
-- Click on the pencil icon.
-- Click and drag the pipeline so it's nicely centered.
-- Move the cursor aside and screenshot.
-""")
-    screenshot_as("connectors-diagram.png")
+    screenshot_as("connectors-pipeline.png")
 
     print("""\
-- Hover over "secops_pipeline" and screenshot.
+Then, repeatedly:
+- Roll the scroll wheel three or four times to scroll the program downward.
+- Hover over the SQL program and take a screenshot.
+...until you get to k8sobject (the last table with a connector),
+   then hit Control+C.
 """)
-    screenshot_as("connectors-secops_pipeline.png")
-
-    print("""\
-- Click on "secops_pipeline".
-- Move the cursor aside and screenshot.
-""")
-    screenshot_as("connectors-open.png")
-
-    print("""\
-- Hover over "METADATA" and screenshot.
-""")
-    screenshot_as("connectors-metadata.png")
-
-    print("""\
-- Click on "SERVER".
-- Hover over "SERVER" and screenshot.
-""")
-    screenshot_as("connectors-server.png")
-
-    print("""\
-- Click on "SECURITY".
-- Hover over "SECURITY" and screenshot.
-""")
-    screenshot_as("connectors-security.png")
-
-    print("""\
-- Click on "FORMAT".
-- Hover over "FORMAT" and screenshot.
-""")
-    screenshot_as("connectors-format.png")
-
-    print("""\
-- Hover over "UPDATE" and screenshot.
-""")
-    screenshot_as("connectors-update.png")
-
-    print("""\
-- Click on "UPDATE" and screenshot.
-""")
-    screenshot_as("connectors-updated.png")
-
-    print("""\
-- Hover over Connectors tab and screenshot.
-""")
-    screenshot_as("connectors-tab.png")
-
-    print("""\
-- Click on Connectors tab and screenshot.
-""")
-    screenshot_as("connectors-list.png")
-
-    print("""\
-- Hover over "ADD CONNECTOR" and screenshot.
-""")
-    screenshot_as("connectors-add.png")
-
-    print("""\
-- Click on "ADD CONNECTOR".
-- Move the cursor aside and screenshot.
-""")
-    screenshot_as("connectors-create.png")
+    screenshot_sequence('connectors-scroll')
 
 
 def assemble_connectors():
     print("assembling connectors.gif...")
-    subprocess.run(['magick', '-size', '1200x800', '-delay', '200',
-                    'pipeline.png',
-                    '-delay', '100',
-                    'connectors-edit.png',
-                    'connectors-diagram.png',
-                    'connectors-secops_pipeline.png',
-                    '-delay', '200', 'connectors-open.png',
-                    '-delay', '100',
-                    'connectors-metadata.png',
-                    'connectors-server.png',
-                    'connectors-security.png',
-                    'connectors-format.png',
-                    'connectors-update.png',
-                    'connectors-updated.png',
-                    'connectors-tab.png',
-                    'connectors-list.png',
-                    'connectors-add.png',
-                    '-delay', '200',
-                    'connectors-create.png',
-                    'connectors.gif'])
+    names = sorted(glob.glob('connectors-scroll-*.png'))
+    subprocess.run(['magick', '-size', '1200x1200',
+                    '-delay', '200', 'connectors-pipeline.png',
+                    '-delay', '60'] + names[:-1] +
+                   ['-delay', '200', names[-1], 'connectors.gif'])
 
 
 if __name__ == "__main__":
