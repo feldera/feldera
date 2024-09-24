@@ -139,11 +139,6 @@ public class ExpandOperators extends CircuitCloneVisitor {
     }
 
     @Override
-    public void postorder(DBSPStreamAggregateOperator operator) {
-        this.replace(operator);
-    }
-
-    @Override
     public void postorder(DBSPAggregateOperator operator) {
         DBSPOperator input = this.mapped(operator.input());
         DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getNode(), input);

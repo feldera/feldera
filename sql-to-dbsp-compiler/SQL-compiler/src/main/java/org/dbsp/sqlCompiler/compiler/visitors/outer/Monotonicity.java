@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctIncrementalOperator;
@@ -29,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneClosureType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
@@ -49,11 +51,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
@@ -498,6 +500,75 @@ public class Monotonicity extends CircuitVisitor {
         boolean pairOfReferences = node.getType().is(DBSPTypeIndexedZSet.class);
         MonotoneExpression output = this.identity(node, getBodyType(input), pairOfReferences);
         this.set(node, output);
+    }
+
+    @Override
+    public void postorder(DBSPAsofJoinOperator node) {
+        MonotoneExpression left = this.getMonotoneExpression(node.left());
+        MonotoneExpression right = this.getMonotoneExpression(node.right());
+        if (left == null && right == null)
+            return;
+        PartiallyMonotoneTuple leftType;
+        if (left != null) {
+            leftType = getBodyType(left).to(PartiallyMonotoneTuple.class);
+        } else {
+            DBSPType source = node.left().getOutputIndexedZSetType().getKVType();
+            leftType = NonMonotoneType.nonMonotone(source).to(PartiallyMonotoneTuple.class);
+        }
+        PartiallyMonotoneTuple rightType;
+        if (right != null) {
+            rightType = getBodyType(right).to(PartiallyMonotoneTuple.class);
+        } else {
+            DBSPType source = node.right().getOutputIndexedZSetType().getKVType();
+            rightType = NonMonotoneType.nonMonotone(source).to(PartiallyMonotoneTuple.class);
+        }
+
+        IMaybeMonotoneType leftValueMonoType = leftType.getField(1);
+        IMaybeMonotoneType rightValueMonoType = rightType.getField(1);
+        IMaybeMonotoneType leftKeyMonoType = leftType.getField(0);
+        IMaybeMonotoneType rightKeyMonoType = rightType.getField(0);
+        IMaybeMonotoneType keyMonoType = leftKeyMonoType.union(rightKeyMonoType);
+
+        // We expect ASOF joins to look like projections.
+        Projection projection = new Projection(this.errorReporter);
+        DBSPClosureExpression function = node.getClosureFunction();
+        projection.apply(function);
+        assert projection.isProjection && projection.hasIoMap();
+        Projection.IOMap ioMap = projection.getIoMap();
+        DBSPTypeTupleBase keyType = node.getKeyType().to(DBSPTypeTupleBase.class);
+
+        // The function associated with an ASOF join has a funny shape, since:
+        // - the parameters are wrapped DBSPCustomOrdExpression
+        // - the third parameter is a nullable tuple.
+        // Instead of analyzing node.function, we make up a simpler function with
+        // non-nullable tuple arguments and we analyze that one, making this ASOF join
+        // look more like a regular join.
+        DBSPVariablePath k = keyType.ref().var();
+        DBSPVariablePath l = function.parameters[1].getType().var();
+        DBSPVariablePath r = function.parameters[2].getType().setMayBeNull(false).var();
+        List<DBSPExpression> fields = new ArrayList<>();
+        for (var fai: ioMap.fields()) {
+            int input = fai.inputIndex();
+            int index = fai.fieldIndex();
+            DBSPExpression expr = switch (input) {
+                case 0 -> k.field(index);
+                case 1 -> new DBSPUnwrapCustomOrdExpression(l.deepCopy().deref()).field(index);
+                case 2 -> new DBSPUnwrapCustomOrdExpression(r.deepCopy().deref()).field(index).castToNullable();
+                default -> throw new InternalCompilerError("Unexpected input index " + input);
+            };
+            fields.add(expr);
+        }
+        DBSPTupleExpression tuple = new DBSPTupleExpression(fields, false);
+        DBSPClosureExpression closure = tuple.closure(k.asParameter(), l.asParameter(), r.asParameter());
+
+        MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
+                this.errorReporter, node,
+                MonotoneTransferFunctions.ArgumentKind.Join,
+                keyMonoType, leftValueMonoType, rightValueMonoType);
+        MonotoneExpression result = mm.applyAnalysis(closure);
+        if (result == null)
+            return;
+        this.set(node, result);
     }
 
     @Override

@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -43,6 +44,8 @@ public class NonMonotoneType extends ScalarMonotoneType {
     @Override
     @Nullable
     public DBSPType getProjectedType() {
+        if (this.type.is(DBSPTypeWithCustomOrd.class))
+            return new DBSPTypeTuple();
         return null;
     }
 

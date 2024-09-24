@@ -46,7 +46,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.ScalarMonotoneType;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.WrapperMonotoneType;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.CustomOrdMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.CommonJoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctExpansion;
@@ -537,7 +537,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     public void postorder(DBSPStreamJoinOperator operator) {
         ReplacementExpansion expanded = this.getReplacement(operator);
         if (expanded != null)
-            this.processStreamJoin(expanded.replacement.to(DBSPStreamJoinOperator.class));
+            this.processJoin(expanded.replacement.to(DBSPStreamJoinOperator.class));
         else
             this.nonMonotone(operator);
         this.addJoinAnnotations(operator);
@@ -639,9 +639,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         this.processIntegral(expansion.leftIntegrator);
         this.processIntegral(expansion.rightIntegrator);
-        this.processStreamJoin(expansion.leftDelta);
-        this.processStreamJoin(expansion.rightDelta);
-        this.processStreamJoin(expansion.both);
+        this.processJoin(expansion.leftDelta);
+        this.processJoin(expansion.rightDelta);
+        this.processJoin(expansion.both);
         this.processSum(expansion.sum);
 
         this.map(join, result, true);
@@ -664,7 +664,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // First index to apply to the limiter
         int outerIndex = sourceType.getField(0).mayBeMonotone() ? 1 : 0;
         PartiallyMonotoneTuple sourceTypeValue = sourceType.getField(1)
-                .to(WrapperMonotoneType.class).getWrappedType();
+                .to(CustomOrdMonotoneType.class).getWrappedType();
         // Second index to apply to the limiter
         int innerIndex = 0;
         for (int i = 0; i < tsIndex; i++) {
@@ -691,6 +691,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
         ReplacementExpansion repl = expansion.to(ReplacementExpansion.class);
         DBSPAsofJoinOperator expanded = repl.replacement.to(DBSPAsofJoinOperator.class);
+        this.processJoin(expanded);
 
         DBSPOperator leftLimiter = this.bound.get(join.left());
         DBSPOperator rightLimiter = this.bound.get(join.right());
@@ -730,8 +731,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        PartiallyMonotoneTuple leftValueTuple = leftValue.to(WrapperMonotoneType.class).getWrappedType();
-        PartiallyMonotoneTuple rightValueTuple = rightValue.to(WrapperMonotoneType.class).getWrappedType();
+        PartiallyMonotoneTuple leftValueTuple = leftValue.to(CustomOrdMonotoneType.class).getWrappedType();
+        PartiallyMonotoneTuple rightValueTuple = rightValue.to(CustomOrdMonotoneType.class).getWrappedType();
         IMaybeMonotoneType leftTS = leftValueTuple.getField(leftTSIndex);
         IMaybeMonotoneType rightTS = rightValueTuple.getField(rightTSIndex);
         if (!leftTS.mayBeMonotone() || !rightTS.mayBeMonotone()) {
@@ -768,13 +769,14 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
         PartiallyMonotoneTuple valuePart = new PartiallyMonotoneTuple(value, false, false);
         PartiallyMonotoneTuple dataProjection = new PartiallyMonotoneTuple(
-                Linq.list(keyPart, new WrapperMonotoneType(valuePart, leftValueType)), true, false);
+                Linq.list(keyPart, new CustomOrdMonotoneType(valuePart, leftValueType)), true, false);
 
         if (INSERT_RETAIN_VALUES) {
             DBSPIntegrateTraceRetainValuesOperator retain = DBSPIntegrateTraceRetainValuesOperator.create(
                     join.getNode(), this.mapped(join.left()), dataProjection, minOperator);
             this.addOperator(retain);
         }
+
         super.postorder(join);
     }
 
@@ -798,9 +800,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         this.processIntegral(expansion.leftIntegrator);
         this.processIntegral(expansion.rightIntegrator);
-        this.processStreamJoin(expansion.leftDelta);
-        this.processStreamJoin(expansion.rightDelta);
-        this.processStreamJoin(expansion.both);
+        this.processJoin(expansion.leftDelta);
+        this.processJoin(expansion.rightDelta);
+        this.processJoin(expansion.both);
         this.processFilter(expansion.filter);
         this.processFilter(expansion.leftFilter);
         this.processFilter(expansion.rightFilter);
@@ -975,7 +977,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         return this.getLimiterOutputType(operator).tupFields[1];
     }
 
-    void processStreamJoin(@Nullable DBSPStreamJoinOperator expanded) {
+    void processJoin(@Nullable DBSPBinaryOperator expanded) {
         if (expanded == null)
             return;
         MonotoneExpression monotoneValue = this.expansionMonotoneValues.get(expanded);

@@ -927,7 +927,7 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = new DBSPCustomOrdField(source, expression.field);
+        DBSPExpression result = new DBSPCustomOrdField(source, expression.fieldNo);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

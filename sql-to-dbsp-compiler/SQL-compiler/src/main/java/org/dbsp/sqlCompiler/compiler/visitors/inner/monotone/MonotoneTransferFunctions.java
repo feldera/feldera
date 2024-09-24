@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -391,6 +392,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     @Override
     public void postorder(DBSPBaseTupleExpression expression) {
         if (expression.fields == null) {
+            // A constant tuple with NULL value
             this.maybeSet(expression, null);
             return;
         }
@@ -617,13 +619,36 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     @Override
     public void postorder(DBSPCustomOrdExpression expression) {
         MonotoneExpression source = this.get(expression.source);
-        DBSPExpression reduced = source.getReducedExpression();
+        DBSPExpression reduced = null;
+        if (source.mayBeMonotone())
+            reduced = source.getReducedExpression();
         if (this.positiveExpressions.contains(expression.source))
             this.positiveExpressions.add(expression);
         if (this.constantExpressions.contains(expression.source))
             this.constantExpressions.add(expression);
         MonotoneExpression result = new MonotoneExpression(
-                expression, new WrapperMonotoneType(source.getMonotoneType(), expression.getType()), reduced);
+                expression, new CustomOrdMonotoneType(source.getMonotoneType(), expression.getType()), reduced);
+        this.set(expression, result);
+    }
+
+    @Override
+    public void postorder(DBSPUnwrapCustomOrdExpression expression) {
+        MonotoneExpression source = this.get(expression.expression);
+        DBSPExpression reduced = null;
+        IMaybeMonotoneType mono;
+        if (source.mayBeMonotone()) {
+            reduced = source.getReducedExpression();
+            CustomOrdMonotoneType sourceType = source.getMonotoneType().to(CustomOrdMonotoneType.class);
+            mono = sourceType.getWrappedType();
+        } else {
+            mono = NonMonotoneType.nonMonotone(expression.getType());
+        }
+        if (this.positiveExpressions.contains(expression.expression))
+            this.positiveExpressions.add(expression);
+        if (this.constantExpressions.contains(expression.expression))
+            this.constantExpressions.add(expression);
+        MonotoneExpression result = new MonotoneExpression(
+                expression, mono, reduced);
         this.set(expression, result);
     }
 

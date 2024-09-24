@@ -26,6 +26,61 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2530() {
+        String sql = """
+                create table r(
+                    id BIGINT NOT NULL,
+                    ts timestamp NOT NULL LATENESS INTERVAL 0 days
+                );
+
+                create table l (
+                    id BIGINT NOT NULL,
+                    ts timestamp NOT NULL LATENESS INTERVAL 0 days
+                );
+
+                create view v as
+                select
+                    l.id as id,
+                    l.ts as lts,
+                    r.ts as rts
+                from
+                    l left asof join r
+                    MATCH_CONDITION (r.ts <= l.ts)
+                ON
+                    l.id = r.id;
+
+                CREATE VIEW agg1 as\s
+                SELECT
+                    MAX(id)
+                FROM
+                    v
+                GROUP BY lts;""";
+        var ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int integrateTraceKeys = 0;
+            int integrateTraceValues = 0;
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                this.integrateTraceKeys++;
+            }
+
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) {
+                this.integrateTraceValues++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(2, this.integrateTraceKeys);
+                Assert.assertEquals(1, this.integrateTraceValues);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
     public void issue2514() {
         String sql = """
                 CREATE TABLE transaction (

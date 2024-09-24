@@ -4,21 +4,22 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd;
 
 import javax.annotation.Nullable;
 
-/** Wraps another monotone type with a different DBSPType.
- * Used for example for {@link org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd} */
-public class WrapperMonotoneType
+/** A monotone version of {@link org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWithCustomOrd} */
+public class CustomOrdMonotoneType
         extends BaseMonotoneType {
     final IMaybeMonotoneType wrappedType;
     final DBSPType exposedType;
 
-    public WrapperMonotoneType(IMaybeMonotoneType type, DBSPType exposedType) {
+    public CustomOrdMonotoneType(IMaybeMonotoneType type, DBSPType exposedType) {
         super();
         this.wrappedType = type;
         this.exposedType = exposedType;
         assert this.wrappedType.is(PartiallyMonotoneTuple.class);
+        assert exposedType.is(DBSPTypeWithCustomOrd.class);
     }
 
     public int size() {

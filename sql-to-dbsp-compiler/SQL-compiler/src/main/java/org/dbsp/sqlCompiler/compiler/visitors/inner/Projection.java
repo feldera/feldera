@@ -10,17 +10,22 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.util.ExplicitShuffle;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
@@ -98,13 +103,17 @@ public class Projection extends InnerVisitor {
 
     /** A list indexed by output number.  For each output, the list
      * contains the input parameter index, and the field index, if the analyzed
-     * function is a projection. */
+     * function is a simple projection. */
     @Nullable
-    IOMap outputs;
+    IOMap ioMap;
+
+    void notShuffle() {
+        this.shuffle = null;
+        this.ioMap = null;
+    }
 
     VisitDecision notProjection() {
-        this.shuffle = null;
-        this.outputs = null;
+        this.notShuffle();
         this.isProjection = false;
         this.parameters = null;
         return VisitDecision.STOP;
@@ -115,7 +124,7 @@ public class Projection extends InnerVisitor {
     public Projection(IErrorReporter reporter, boolean allowNoopCasts) {
         super(reporter);
         this.isProjection = true;
-        this.outputs = new IOMap();
+        this.ioMap = new IOMap();
         this.shuffle = new ExplicitShuffle();
         this.resolver = new ResolveReferences(reporter, false);
         this.allowNoopCasts = allowNoopCasts;
@@ -159,8 +168,7 @@ public class Projection extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPDerefExpression expression) {
         if (!expression.expression.is(DBSPVariablePath.class)) {
-            this.shuffle = null;
-            this.outputs = null;
+            this.notShuffle();
         }
         return VisitDecision.CONTINUE;
     }
@@ -180,8 +188,29 @@ public class Projection extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPFieldExpression field) {
+        if (!field.expression.is(DBSPDerefExpression.class) &&
+            !field.expression.is(DBSPUnwrapCustomOrdExpression.class)) {
+            this.notShuffle();
+            return VisitDecision.CONTINUE;
+        }
+        if (this.shuffle != null)
+            this.shuffle.add(field.fieldNo);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPUnwrapCustomOrdExpression field) {
         if (!field.expression.is(DBSPDerefExpression.class)) {
-            this.shuffle = null;
+            this.notShuffle();
+            return VisitDecision.CONTINUE;
+        }
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPCustomOrdField field) {
+        if (!field.expression.is(DBSPVariablePath.class)) {
+            this.notProjection();
             return VisitDecision.CONTINUE;
         }
         if (this.shuffle != null)
@@ -191,14 +220,26 @@ public class Projection extends InnerVisitor {
 
     @Override
     public void postorder(DBSPFieldExpression field) {
-        if (this.outputs != null) {
+        if (this.ioMap != null) {
             assert this.currentParameterIndex >= 0;
-            this.outputs.add(this.currentParameterIndex, field.fieldNo);
+            this.ioMap.add(this.currentParameterIndex, field.fieldNo);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPCustomOrdField field) {
+        if (this.ioMap != null) {
+            assert this.currentParameterIndex >= 0;
+            this.ioMap.add(this.currentParameterIndex, field.fieldNo);
         }
     }
 
     @Override
     public VisitDecision preorder(DBSPCloneExpression expression) {
+        if (!expression.getType().is(DBSPTypeBaseType.class)) {
+            this.notProjection();
+            return VisitDecision.CONTINUE;
+        }
         return VisitDecision.CONTINUE;
     }
 
@@ -216,8 +257,7 @@ public class Projection extends InnerVisitor {
     }
 
     public VisitDecision preorder(DBSPLiteral expression) {
-        this.shuffle = null;
-        this.outputs = null;
+        this.notShuffle();
         return VisitDecision.CONTINUE;
     }
 
@@ -270,6 +310,24 @@ public class Projection extends InnerVisitor {
         super.startVisit(node);
     }
 
+    @Override
+    public void endVisit() {
+        if (this.ioMap != null && this.expression != null) {
+            DBSPTypeTupleBase bodyType = this.expression.body.getType().to(DBSPTypeTupleBase.class);
+            int iomapSize = this.ioMap.fields().size();
+            if (bodyType.is(DBSPTypeRawTuple.class)) {
+                assert bodyType.tupFields.length == 2;
+                int totalSize = bodyType.tupFields[0].to(DBSPTypeTupleBase.class).size() +
+                        bodyType.tupFields[1].to(DBSPTypeTupleBase.class).size();
+                assert iomapSize == totalSize :
+                        "IOMap has " + iomapSize + " fields, but expected " + totalSize;
+            } else {
+                assert iomapSize == bodyType.size() :
+                        "IOMap has " + iomapSize + " fields, but expected " + bodyType.size();
+            }
+        }
+    }
+
     public boolean isShuffle() {
         assert Objects.requireNonNull(this.parameters).length == 1;
         return this.shuffle != null;
@@ -277,12 +335,12 @@ public class Projection extends InnerVisitor {
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean hasIoMap() {
-        return this.isProjection && this.outputs != null;
+        return this.isProjection && this.ioMap != null;
     }
 
     /** @return The IOMap, if the analyzed
      * function is a projection. */
     public IOMap getIoMap() {
-        return Objects.requireNonNull(this.outputs);
+        return Objects.requireNonNull(this.ioMap);
     }
 }
