@@ -23,6 +23,7 @@ class Base(unittest.TestCase):
         self.additional_data[test_name] = {table_name: data}
 
     def register_view(self, sql):
+        self.sql += "\n"
         self.sql += sql
 
     def set_expected_output(self, test_name, view_name, expected_data):
@@ -42,12 +43,13 @@ class Base(unittest.TestCase):
         for test, expected_data in self.expected_data.items():
             print(f"Running pipeline for test: {test}")
             
-            pipeline.start()
             
             listeners = {}
 
             for view in expected_data.keys():
                 listeners[view] = pipeline.listen(view)
+                
+            pipeline.start()
             
             input_data = self.data
             additional_data = self.additional_data.get(test, {})
