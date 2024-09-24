@@ -24,41 +24,34 @@ For output, being incremental means that Feldera outputs query results
 as sets of changes from the previous output. This improves performance
 and reduces output size.
 
-## Pipeline
+# Programs
 
-A Feldera **pipeline** continuously pulls data from sources, runs it
-through a computation, and pushes the results to sinks.  The user can
-start, stop, manage, and monitor pipelines.
-
-A pipeline is created by attaching input and output
-[connectors](#connector) to a [SQL program](#program).
-
-<!-- The GIFs below were generated with the utility in demo/docs-demo. -->
-
-![Pipeline demonstration](pipeline.gif)
-
-## Program
-
-A **program** written in SQL specifies what a pipeline computes.
-`CREATE TABLE` statements specify the format of data, and `CREATE
-VIEW` statements specify transformations and computations.  Views may
-draw data from tables and from other views.  Feldera provides powerful
-SQL analysis features, including time-series operators.
+Feldera programs are written in SQL.  `CREATE TABLE` statements
+specify the format of data, and `CREATE VIEW` statements specify
+transformations and computations.  Views may draw data from tables and
+from other views.  Feldera provides powerful SQL analysis features,
+including time-series operators.
 
 ![Program demonstration](program.gif)
 
-## Connector
+# Connectors
 
-A **connector** attaches a pipeline's program to its data.  **Input
-connectors** connect a data source to SQL tables, and **output
-connectors** connect a SQL view to a data sink.
-
-Feldera includes connectors for working with HTTPS, Kafka, Debezium,
-Snowflake, Delta Lake, S3, and other systems.  New connectors can
-easily be written to interface with whatever data sources and sinks a
-user would find most convenient.
+Feldera tables and views can work with data using HTTPS, Kafka,
+Debezium, Snowflake, Delta Lake, S3, and other protocols.  New
+connectors can easily be written to interface with whatever data
+sources and sinks a user would find most convenient.  For testing,
+Feldera even provides an input connector that generates data on the
+fly.  Data connections are specified right in SQL source.
 
 ![Connector demonstration](connectors.gif)
+
+# Pipelines
+
+A running program in Feldera continuously pulls data from sources,
+runs it through a computation, and pushes the results to sinks.  The
+user can start, stop, manage, and monitor pipelines.
+
+![Running a program](pipeline.gif)
 
 # Foundation
 

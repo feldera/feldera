@@ -20,23 +20,14 @@ To use the demo to regenerate the GIFs:
    cargo run -p pipeline-manager --features pg-embed
    ```
 
-3. Start Redpanda locally, e.g.:
+3. Create a pipeline named `secops` and paste in the secops SQL code
+   from the `try.feldera.com` sandbox.  It should use the datagen
+   connector.
+
+4. In this directory, run the demo, e.g.:
 
    ```
-   docker run --name redpanda -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v24.2.4 redpanda start --smp 2
-   ```
-
-4. In another terminal, start the secops simulator, e.g.:
-
-   ```
-   cd ../project_demo00-SecOps
-   python3 run.py --delete-extra --kafka-url-for-connector=localhost:9092 --registry-url-for-connector=
-   ```
-
-5. In this directory, run the demo, e.g.:
-
-   ```
-   ./build
+   ./build.py
    ```
 
    This demo assumes that you have an easy-to-use manual screenshot
