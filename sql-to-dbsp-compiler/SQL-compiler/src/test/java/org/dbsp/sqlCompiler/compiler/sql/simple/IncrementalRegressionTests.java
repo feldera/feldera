@@ -120,7 +120,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     state VARCHAR,
                     ts TIMESTAMP LATENESS INTERVAL 7 DAYS
                 );
-                
+
                 -- Credit card transactions.
                 CREATE TABLE transaction (
                     ts TIMESTAMP LATENESS INTERVAL 10 MINUTES,
@@ -129,7 +129,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     cc_num BIGINT NOT NULL,
                     state VARCHAR
                 );
-                
+
                 CREATE LOCAL VIEW enriched_transaction AS
                 SELECT
                     transaction.*,
@@ -140,7 +140,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     transaction LEFT ASOF JOIN customer
                     MATCH_CONDITION ( transaction.ts >= customer.ts )
                     ON transaction.customer_id = customer.id;
-                
+
                 CREATE LOCAL VIEW transaction_with_history AS
                 SELECT
                     *,
@@ -148,7 +148,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 FROM
                     enriched_transaction
                 WINDOW window_30_day AS (PARTITION BY customer_id ORDER BY ts RANGE BETWEEN INTERVAL 30 DAYS PRECEDING AND CURRENT ROW);
-                
+
                 CREATE LOCAL VIEW red_transactions AS
                 SELECT
                     *
@@ -156,7 +156,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     transaction_with_history
                 WHERE
                     out_of_state AND out_of_state_count < 5;
-                
+
                 CREATE LOCAL VIEW green_transactions AS
                 SELECT
                     *
@@ -164,7 +164,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     transaction_with_history
                 WHERE
                     (NOT out_of_state) OR out_of_state_count >= 5;
-                
+
                 CREATE VIEW user_stats AS
                 SELECT
                         customer_id,
