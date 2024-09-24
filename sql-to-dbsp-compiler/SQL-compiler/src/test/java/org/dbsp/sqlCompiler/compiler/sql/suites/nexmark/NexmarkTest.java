@@ -823,10 +823,6 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
 
     @Test
     public void q9test() {
-        // Logger.INSTANCE.setLoggingLevel(MonotoneAnalyzer.class, 2);
-        // Logger.INSTANCE.setLoggingLevel(KeyPropagation.class, 1);
-        // Logger.INSTANCE.setLoggingLevel(AppendOnly.class, 1);
-        // Logger.INSTANCE.setLoggingLevel(DBSPCompiler.class, 2);
         this.createTest(9, "", """
  id | item | description | initialBid | reserve | date_time | expires | seller | category | extra | auction | bidder | price | bid_datetime | bid_extra | weight
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------""");

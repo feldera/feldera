@@ -1207,7 +1207,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (expression.needsSome())
             this.builder.append("Some(");
         this.builder.append("(*x).get().")
-                .append(expression.field);
+                .append(expression.fieldNo);
         if (!fieldType.hasCopy())
             this.builder.append(".clone()");
         if (expression.needsSome())

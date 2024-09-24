@@ -147,6 +147,13 @@ public abstract class DBSPExpression
         return new DBSPCastExpression(this.getNode(), this, to);
     }
 
+    /** Cast an expression to its own type, but nullable */
+    public DBSPExpression castToNullable() {
+        if (this.getType().mayBeNull)
+            return this;
+        return this.cast(this.getType().setMayBeNull(true));
+    }
+
     public DBSPExpression cast(DBSPType to) {
         boolean force = type.is(DBSPTypeDecimal.class);
         // Computations on decimal values in Rust do not produce the correct result type,

@@ -15,7 +15,7 @@ import org.dbsp.util.IIndentStream;
  * The result type is always nullable */
 public final class DBSPCustomOrdField extends DBSPExpression {
     public final DBSPExpression expression;
-    public final int field;
+    public final int fieldNo;
 
     private static DBSPType getFieldType(DBSPType sourceType, int field) {
         return sourceType.deref()
@@ -35,11 +35,11 @@ public final class DBSPCustomOrdField extends DBSPExpression {
         super(expression.getNode(), getFieldType(expression.getType(), field).setMayBeNull(true));
         assert expression.getType().mayBeNull;
         this.expression = expression;
-        this.field = field;
+        this.fieldNo = field;
     }
 
     public DBSPType getFieldType() {
-        return getFieldType(this.expression.getType(), this.field);
+        return getFieldType(this.expression.getType(), this.fieldNo);
     }
 
     @Override
@@ -59,7 +59,7 @@ public final class DBSPCustomOrdField extends DBSPExpression {
         if (o == null)
             return false;
         return this.expression == o.expression &&
-                this.field == o.field &&
+                this.fieldNo == o.fieldNo &&
                 this.hasSameType(o);
     }
 
@@ -68,12 +68,12 @@ public final class DBSPCustomOrdField extends DBSPExpression {
         return builder.append("(*")
                 .append(this.expression)
                 .append(").get().")
-                .append(this.field);
+                .append(this.fieldNo);
     }
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPCustomOrdField(this.expression.deepCopy(), this.field);
+        return new DBSPCustomOrdField(this.expression.deepCopy(), this.fieldNo);
     }
 
     @Override
@@ -82,6 +82,6 @@ public final class DBSPCustomOrdField extends DBSPExpression {
         if (otherExpression == null)
             return false;
         return context.equivalent(this.expression, otherExpression.expression) &&
-                this.field == otherExpression.field;
+                this.fieldNo == otherExpression.fieldNo;
     }
 }
