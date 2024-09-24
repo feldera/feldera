@@ -2,7 +2,7 @@ from tests.refactored_tests.test_base_class import Base
 import unittest
 from decimal import Decimal
 
-class Avg0(Base):     
+class Avg0(Base):
     def setUp(self) -> None:
         super().setUp()
         print("Setting up all the test cases...")
@@ -15,7 +15,7 @@ class Avg0(Base):
                      {"insert": {"id": 1, "c1": 5681.08, "c2": 7689.88}},
                      {"insert": {"id": 1, "c1": 5681.08, "c2": 7335.88}}]
         self.set_data('agg_tbl', data_list)
-        
+
     def test_avg_value(self):
         print("Running test_avg_value...")
         test_name = 'test_avg_value'
@@ -37,10 +37,9 @@ class Avg0(Base):
         expected_data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('3017.30'), 'insert_delete': 1},
                          {'id': 1, 'c1': Decimal('5681.08'), 'c2': Decimal('7512.88'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-        
+
     def testall(self):
         self.run_tests()
 
 if __name__ == '__main__':
     unittest.main()
-        

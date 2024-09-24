@@ -17,7 +17,7 @@ class DecimalAggregates0(Base):
         self.set_data('agg_tbl', data_list)
 
     # average tests
-    
+
     def test_avg_value(self):
         print("Running test_avg_value...")
         test_name = 'test_avg_value'
@@ -39,7 +39,7 @@ class DecimalAggregates0(Base):
         expected_data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('3017.30'), 'insert_delete': 1},
                          {'id': 1, 'c1': Decimal('5681.08'), 'c2': Decimal('7512.88'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-        
+
     def test_avg_distinct(self):
         print("Running test_distinct...")
         test_name = 'test_avg_distinct'
@@ -49,7 +49,7 @@ class DecimalAggregates0(Base):
                          FROM agg_tbl;''')
         expected_data = [{'c1': Decimal('3396.30'), 'c2': Decimal('5265.09'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-        
+
     def test_avg_distinct_gby(self):
         print("Running test_distinct_gby...")
         test_name = 'test_avg_distinct_gby'
@@ -58,10 +58,10 @@ class DecimalAggregates0(Base):
                             id, AVG(DISTINCT c1) AS c1, AVG(DISTINCT c2) AS c2
                          FROM agg_tbl
                          GROUP BY id;''')
-        expected_data = [{'id':0,'c1': Decimal('1111.52'), 'c2': Decimal('3017.30'), 'insert_delete': 1}, 
+        expected_data = [{'id':0,'c1': Decimal('1111.52'), 'c2': Decimal('3017.30'), 'insert_delete': 1},
                          {'id':1,'c1': Decimal('5681.08'), 'c2': Decimal('7512.88'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-        
+
     def test_avg_where(self):
         print("Running test_avg_where...")
         test_name = 'test_avg_where'
@@ -71,7 +71,7 @@ class DecimalAggregates0(Base):
                          FROM agg_tbl;''')
         expected_data = [{'f_c1': Decimal('5681.08'), 'f_c2': Decimal('6276.15'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-        
+
     def test_avg_where_gby(self):
         print("Running test_avg_where_gby...")
         test_name = 'test_avg_where_gby'
@@ -83,9 +83,9 @@ class DecimalAggregates0(Base):
         expected_data = [{'id': 0, 'f_c1': None, 'f_c2': Decimal('3802.71'), 'insert_delete': 1},
                          {'id': 1, 'f_c1': Decimal('5681.08'), 'f_c2': Decimal('7512.88'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-    
-    # sum tests 
-    
+
+    # sum tests
+
     def test_sum_value(self):
         print("Running test_sum_value...")
         test_name = 'test_sum_value'
@@ -95,7 +95,7 @@ class DecimalAggregates0(Base):
                          FROM agg_tbl;''')
         expected_data = [{'c1': Decimal('12473.68'), 'c2': Decimal('21060.37'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-        
+
     def test_sum_gby(self):
         print("Running test_sum_gby...")
         test_name = 'test_sum_gby'
@@ -104,10 +104,10 @@ class DecimalAggregates0(Base):
                             id, SUM(c1) AS c1, SUM(c2) AS c2
                          FROM agg_tbl
                          GROUP BY id;''')
-        expected_data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('6034.61'), 'insert_delete': 1}, 
+        expected_data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('6034.61'), 'insert_delete': 1},
                          {'id': 1, 'c1': Decimal('11362.16'), 'c2': Decimal('15025.76'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-        
+
     def test_sum_distinct(self):
         print("Running test_sum_distinct...")
         test_name = 'test_sum_distinct'
@@ -117,7 +117,7 @@ class DecimalAggregates0(Base):
                          FROM agg_tbl;''')
         expected_data = [{'c1': Decimal('6792.60'), 'c2': Decimal('21060.37'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-        
+
     def test_sum_distinct_gby(self):
         print("Running test_sum_distinct_gby...")
         test_name = 'test_sum_distinct_gby'
@@ -129,7 +129,7 @@ class DecimalAggregates0(Base):
         expected_data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('6034.61'), 'insert_delete': 1},
                         {'id': 1,'c1': Decimal('5681.08'), 'c2': Decimal('15025.76'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-        
+
     def test_sum_where(self):
         print("Running test_sum_where..")
         test_name = 'test_sum_where'
@@ -139,7 +139,7 @@ class DecimalAggregates0(Base):
                         FROM agg_tbl;''')
         expected_data = [{'f_c1': Decimal('11362.16'), 'f_c2': Decimal('18828.47'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-        
+
     def test_sum_where_gby(self):
         print("Running test_sum_where_gby..")
         test_name = 'test_sum_where_gby'
@@ -151,7 +151,7 @@ class DecimalAggregates0(Base):
         expected_data = [{'id': 0, 'f_c1': None, 'f_c2': Decimal('3802.71'), 'insert_delete': 1},
                          {'id': 1, 'f_c1': Decimal('11362.16'), 'f_c2': Decimal('15025.76'), 'insert_delete': 1}]
         self.set_expected_output(test_name, view_name, expected_data)
-        
+
     def testall(self):
         self.run_tests()
 
