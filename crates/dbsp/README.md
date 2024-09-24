@@ -1,11 +1,11 @@
 # DBSP
 
 Database Stream Processor (DBSP) is a computational engine for
-continuous analysis of changing data.  With DBSP, a programmer writes
+continuous analysis of changing data. With DBSP, a programmer writes
 code in terms of computations on a complete data set, but DBSP
 implements it incrementally, meaning that changes to the data set run
 in time proportional to the size of the change rather than the size of
-the data set.  This is a major advantage for applications that work
+the data set. This is a major advantage for applications that work
 with large data sets that change frequently in small ways.
 
 The DBSP computational engine is a component of the [Feldera
@@ -23,8 +23,11 @@ Continuous Analytics Platform](https://www.feldera.com).
 - More sophisticated uses can be found as [examples] and [benchmarks]
 
 [tutorial]: https://docs.rs/dbsp/latest/dbsp/tutorial
+
 [`circuit` module documentation]: https://docs.rs/dbsp/latest/dbsp/circuit
+
 [examples]: https://github.com/feldera/feldera/tree/main/crates/dbsp/examples
+
 [benchmarks]: https://github.com/feldera/feldera/tree/main/crates/dbsp/benches
 
 ## Documentation
@@ -36,8 +39,11 @@ Continuous Analytics Platform](https://www.feldera.com).
 - The formal theory behind DBSP, as a [paper] or as [video] of a talk.
 
 [Rustdocs]: https://docs.rs/dbsp
-[1]: https://www.feldera.com/docs/
+
+[1]: https://docs.feldera.com/
+
 [paper]: https://www.feldera.com/vldb23.pdf
+
 [video]: https://www.youtube.com/watch?v=iT4k5DCnvPU
 
 ## Feedback
@@ -48,13 +54,17 @@ Some ways that you can give us your feedback:
 
 - [File an issue].
 
-- [Submit a pull request].  DBSP uses the [Developer Certificate of
+- [Submit a pull request]. DBSP uses the [Developer Certificate of
   Origin] (DCO) (see the [contribution guidelines]).
 
 [community Slack]: https://www.feldera.com/slack/
+
 [file an issue]: https://github.com/feldera/feldera/issues
+
 [submit a pull request]: https://github.com/feldera/feldera/pulls
+
 [Developer Certificate of Origin]: https://developercertificate.org/
+
 [contribution guidelines]: https://github.com/feldera/feldera/blob/main/CONTRIBUTING.md
 
 # Example
@@ -85,7 +95,7 @@ fn main() {
 
         Ok((hedges, degrees.output(), distribution.output()))
     })
-    .unwrap();
+        .unwrap();
 
     // Add some initial edges and print the results.
     for i in 0..edges {

@@ -97,7 +97,7 @@ class Pipeline:
         :param data: The JSON encoded data to be pushed to the pipeline. The data should be in the form:
             `{'col1': 'val1', 'col2': 'val2'}` or `[{'col1': 'val1', 'col2': 'val2'}, {'col1': 'val1', 'col2': 'val2'}]`
         :param update_format: The update format of the JSON data to be pushed to the pipeline. Must be one of:
-            "raw", "insert_delete". <https://www.feldera.com/docs/formats/json#the-insertdelete-format>
+            "raw", "insert_delete". <https://docs.feldera.com/formats/json#the-insertdelete-format>
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
         """
 

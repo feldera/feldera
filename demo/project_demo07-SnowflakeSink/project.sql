@@ -1,5 +1,5 @@
 -- SQL program for the Feldera Snowflake sink demo
--- (Based on the tutorial: https://www.feldera.com/docs/tutorials/basics/)
+-- (Based on the tutorial: https://docs.feldera.com/tutorials/basics/)
 
 create table VENDOR (
     id bigint not null primary key,
