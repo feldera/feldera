@@ -42,15 +42,15 @@ class Base(unittest.TestCase):
 
         for test, expected_data in self.expected_data.items():
             print(f"Running pipeline for test: {test}")
-            
-            
+
+
             listeners = {}
 
             for view in expected_data.keys():
                 listeners[view] = pipeline.listen(view)
-                
+
             pipeline.start()
-            
+
             input_data = self.data
             additional_data = self.additional_data.get(test, {})
 
