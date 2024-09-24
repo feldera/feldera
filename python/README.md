@@ -57,3 +57,16 @@ set the environment variables listed in `python/tests/__init__.py`.)
 ```bash
 (cd python/tests && python3 -m pytest .)
 ```
+
+To run tests from a specific file:
+
+```bash
+(cd python/tests && python3 -m unittest ./tests/path-to-file.py)
+```
+
+To run the aggregate tests use:
+
+```bash
+cd python
+PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/test_base_class.py
+```
