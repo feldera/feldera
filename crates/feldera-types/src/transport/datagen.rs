@@ -23,7 +23,7 @@ fn default_sequence() -> Vec<GenerationPlan> {
 
 /// Strategy used to generate values.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum DatagenStrategy {
     /// Whether the field should be incremented for each new
@@ -133,6 +133,7 @@ impl Default for DatagenStrategy {
 
 /// Configuration for generating random data for a field of a table.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RngFieldSettings {
     /// Percentage of records where this field should be set to NULL.
     ///
@@ -238,6 +239,7 @@ impl Default for RngFieldSettings {
 
 /// A random generation plan for a table that generates either a limited amount of rows or runs continuously.
 #[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GenerationPlan {
     /// Non-zero number of rows to generate per second.
     ///
@@ -262,6 +264,7 @@ pub struct GenerationPlan {
 
 /// Configuration for generating random data for a table.
 #[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct DatagenInputConfig {
     /// The sequence of generations to perform.
     ///

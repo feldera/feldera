@@ -1587,7 +1587,7 @@ mod test {
     {
         let relation = Relation::new("test_input".into(), fields, true, BTreeMap::new());
         let (endpoint, consumer, _parser, zset) =
-            mock_input_pipeline::<T, U>(serde_yaml::from_str(config_str).unwrap(), relation)?;
+            mock_input_pipeline::<T, U>(serde_yaml::from_str(config_str)?, relation)?;
         endpoint.start(0)?;
         Ok((endpoint, consumer, zset))
     }
@@ -2173,6 +2173,50 @@ transport:
         assert_eq!(record.field, Timestamp::new(1724803200000));
         assert_eq!(record.field_1, Date::new(19963));
         assert_eq!(record.field_2, Time::new(5000000));
+    }
+
+    #[test]
+    fn test_invalid_configs() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        unknown: 1
+        plan: [ { limit: 3, fields: { "ts": { "range": [1724803200000, 1724803200002] }, "dt": { "range": [19963, 19965] }, "t": { "range": [5, 7] } } } ]
+"#;
+        let r = mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema());
+        assert!(r.is_err());
+
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limitx: 1 } ]
+"#;
+        let r = mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema());
+        assert!(r.is_err());
+
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { fields: { "ts": { "unknown": "abc", "range": [1724803200000, 1724803200002] } } } ]
+"#;
+        let r = mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema());
+        assert!(r.is_err());
+
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { fields: { "ts": { "strategy": "unknown" } } } ]
+"#;
+        let r = mk_pipeline::<TimeStuff, TimeStuff>(config_str, TimeStuff::schema());
+        assert!(r.is_err());
     }
 
     #[test]

@@ -2220,7 +2220,8 @@
             "description": "Number of workers to use for generating data.",
             "minimum": 0
           }
-        }
+        },
+        "additionalProperties": false
       },
       "DatagenStrategy": {
         "type": "string",
@@ -2723,7 +2724,8 @@
             "nullable": true,
             "minimum": 0
           }
-        }
+        },
+        "additionalProperties": false
       },
       "InputEndpointConfig": {
         "allOf": [
@@ -3755,7 +3757,8 @@
             "description": "An optional set of values the generator will pick from.\n\nIf set, the generator will pick values from the specified set.\nIf not set, the generator will produce values according to the specified range.\nIf set to an empty set, the generator will produce NULL values.\nIf set to a single value, the generator will produce only that value.\n\nNote that `range` is ignored if `values` is set.",
             "nullable": true
           }
-        }
+        },
+        "additionalProperties": false
       },
       "RuntimeConfig": {
         "type": "object",
