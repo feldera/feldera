@@ -87,7 +87,7 @@ pub struct DeltaTableReaderConfig {
     /// When this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,
     /// the snapshot of the table is ingested in the timestamp order.  This setting is required
     /// for tables declared with the
-    /// [`LATENESS`](https://www.feldera.com/docs/sql/streaming#lateness-expressions) attribute
+    /// [`LATENESS`](https://docs.feldera.com/sql/streaming#lateness-expressions) attribute
     /// in Feldera SQL. It impacts the performance of the connector, since data must be sorted
     /// before pushing it to the pipeline; therefore it is not recommended to use this
     /// settings for tables without `LATENESS`.

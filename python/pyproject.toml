@@ -29,6 +29,6 @@ dependencies = [
 ]
 [project.urls]
 Homepage = "https://www.feldera.com"
-Documentation = "https://www.feldera.com/docs"
+Documentation = "https://docs.feldera.com"
 Repository = "https://github.com/feldera/feldera"
 Issues = "https://github.com/feldera/feldera/issues"

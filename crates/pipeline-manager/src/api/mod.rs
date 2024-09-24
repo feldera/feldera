@@ -461,7 +461,7 @@ pub async fn run(db: Arc<Mutex<StoragePostgres>>, api_config: ApiServerConfig) -
 
 Web console URL: {}
 API server URL: {}
-Documentation: https://www.feldera.com/docs/
+Documentation: https://docs.feldera.com/
 Version: {}
         ",
         url,

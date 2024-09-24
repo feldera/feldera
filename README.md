@@ -72,9 +72,9 @@ docker compose -f - --profile demo up
 
 It can take some time for the container images to be downloaded. About ten seconds after that, the Feldera
 web console will become available. Visit [http://localhost:8080](http://localhost:8080) on your browser
-to bring it up. We suggest going through our [tutorial](https://www.feldera.com/docs/tutorials/basics/) next.
+to bring it up. We suggest going through our [tutorial](https://docs.feldera.com/tutorials/basics/) next.
 
-Our [Getting Started](https://www.feldera.com/docs/get-started) guide has more detailed instructions on running the
+Our [Getting Started](https://docs.feldera.com/get-started) guide has more detailed instructions on running the
 demo.
 
 ## Running Feldera from sources
@@ -103,13 +103,13 @@ Feldera WebConsole.
 ## Documentation
 
 To learn more about Feldera Platform, we recommend going through the
-[documentation](https://www.feldera.com/docs).
+[documentation](https://docs.feldera.com).
 
-* [Getting started](https://www.feldera.com/docs/get-started)
-* [UI tour](https://www.feldera.com/docs/tour)
-* [Tutorials](https://www.feldera.com/docs/tutorials)
-* [Demo](https://www.feldera.com/docs/demo)
-* [SQL reference](https://www.feldera.com/docs/sql/intro)
+* [Getting started](https://docs.feldera.com/get-started)
+* [UI tour](https://docs.feldera.com/tour)
+* [Tutorials](https://docs.feldera.com/tutorials)
+* [Demo](https://docs.feldera.com/demo)
+* [SQL reference](https://docs.feldera.com/sql/intro)
 * [API reference](https://www.feldera.com/api)
 
 ## Contributing
