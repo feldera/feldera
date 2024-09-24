@@ -6,7 +6,6 @@
 use crate::circuit::GlobalNodeId;
 use crate::Runtime;
 use ::metrics::{describe_counter, describe_gauge, describe_histogram, Unit as MetricUnit};
-use size_of::{Context, SizeOf};
 
 /// Total number of files created.
 pub const FILES_CREATED: &str = "disk.total_files_created";
@@ -77,8 +76,8 @@ fn metric_name(name: &str) -> String {
 ///
 /// Gauge represents a single value that can go up or down over time, and always starts out
 /// with an initial value of zero.
-#[derive(Clone)]
-pub(crate) struct Gauge(metrics::Gauge);
+#[derive(Clone, size_of::SizeOf)]
+pub(crate) struct Gauge(#[size_of(skip)] metrics::Gauge);
 
 impl Gauge {
     /// Describe and initialize a new [`Gauge`].
@@ -130,16 +129,12 @@ impl Gauge {
     }
 }
 
-impl SizeOf for Gauge {
-    fn size_of_children(&self, _: &mut Context) {}
-}
-
 /// Metric of type `Histogram`.
 ///
 /// Histograms measure the distribution of values for a given set of measurements,
 /// and start with no initial values.
-#[derive(Clone)]
-pub(crate) struct Histogram(metrics::Histogram);
+#[derive(Clone, size_of::SizeOf)]
+pub(crate) struct Histogram(#[size_of(skip)] metrics::Histogram);
 
 impl Histogram {
     /// Describe and initialize a new [`Histogram`].
@@ -180,16 +175,12 @@ impl Histogram {
     }
 }
 
-impl SizeOf for Histogram {
-    fn size_of_children(&self, _: &mut Context) {}
-}
-
 /// Metric of type `Counter`.
 ///
 /// Counters represent a single monotonic value, which means the value can only be incremented,
 /// not decremented, and always starts out with an initial value of zero.
-#[derive(Clone)]
-pub(crate) struct Counter(metrics::Counter);
+#[derive(Clone, size_of::SizeOf)]
+pub(crate) struct Counter(#[size_of(skip)] metrics::Counter);
 
 impl Counter {
     /// Describe and initialize a new [`Counter`].
@@ -229,10 +220,6 @@ impl Counter {
     pub(crate) fn increment(&self, value: u64) {
         self.0.increment(value)
     }
-}
-
-impl SizeOf for Counter {
-    fn size_of_children(&self, _: &mut Context) {}
 }
 
 /// Adds descriptions for the metrics we expose.
