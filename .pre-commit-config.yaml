@@ -23,8 +23,7 @@ repos:
     rev: v3.2.0
     hooks:
     -   id: trailing-whitespace
-        # Can't mess with these files, will break migrations
-        exclude: 'crates/pipeline-manager/migrations/.*|.*\.patch|.*\.svg'
+        exclude: 'crates/pipeline-manager/migrations/.*|.*\.patch|.*\.svg|.*\.java'
 -   repo: local
     hooks:
     -   id: update-openapi
