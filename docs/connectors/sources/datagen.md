@@ -48,6 +48,8 @@ Each field can set a strategy that defines how a value is picked:
         * For floating point types, the increment is 1.0.
         * For time and timestamp types, the increment is 1 millisecond.
         * For date types, the increment is 1 day.
+        * When generating an array/binary/varbinary type, the increment will
+          start from zero with a step size of 1.
     * `uniform` - Generate random values from a uniform distribution.
     * `zipf` - Generate random values from a Zipf distribution. The exponent of the distribution can be set with the
       `e` parameter.
