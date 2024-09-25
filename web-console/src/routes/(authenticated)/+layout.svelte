@@ -30,15 +30,17 @@
 <div class="flex h-full">
   <Drawer width="w-[22rem]" bind:open={showDrawer.value} side="left">
     <div class="flex h-full w-full flex-col gap-1">
-      <a href="{base}/" class="mx-5 my-4 w-min">
-        {#if darkMode.value === 'dark'}
-          <FelderaModernLogoColorLight class="h-12"></FelderaModernLogoColorLight>
-        {:else}
-          <FelderaModernLogoColorDark class="h-12"></FelderaModernLogoColorDark>
-        {/if}
-      </a>
+      <span class="mx-5 my-4 flex items-end justify-center">
+        <a href="{base}/">
+          {#if darkMode.value === 'dark'}
+            <FelderaModernLogoColorLight class="h-12"></FelderaModernLogoColorLight>
+          {:else}
+            <FelderaModernLogoColorDark class="h-12"></FelderaModernLogoColorDark>
+          {/if}
+        </a>
+      </span>
       <PipelinesList bind:pipelines={pipelines.pipelines}></PipelinesList>
-      <span class="mt-auto pb-1 pl-4 text-surface-700-300">{$page.data.felderaVersion}</span>
+      <span class="text-surface-700-300 mt-auto pb-1 pl-4">{$page.data.felderaVersion}</span>
     </div>
   </Drawer>
   <div class="flex h-full w-full flex-col">
@@ -48,8 +50,7 @@
           class="btn-icon"
           onclick={() => {
             showDrawer.value = !showDrawer.value
-          }}
-        >
+          }}>
           <i class="fd fd-menu text-[24px]"></i>
         </button>
       </div>
@@ -59,8 +60,7 @@
           <a
             href={Array.isArray(item.path) ? item.path[0] : item.path}
             class="preset-grayout-surface flex flex-nowrap items-center justify-center"
-            {...item.openInNewTab ? { target: '_blank', rel: 'noreferrer' } : undefined}
-          >
+            {...item.openInNewTab ? { target: '_blank', rel: 'noreferrer' } : undefined}>
             <div class="flex w-9 justify-center">
               <div class={item.class + ' text-[24px]'}></div>
             </div>
@@ -70,9 +70,8 @@
         <!-- <HealthPopup></HealthPopup> -->
         <button
           onclick={toggleDarkMode}
-          class="btn-icon text-[24px] preset-tonal-surface
-            {darkMode.value === 'dark' ? 'fd fd-brightness_5' : 'fd fd-brightness_2'}"
-        ></button>
+          class="btn-icon preset-tonal-surface text-[24px]
+            {darkMode.value === 'dark' ? 'fd fd-brightness_5' : 'fd fd-brightness_2'}"></button>
         <AuthButton compactBreakpoint="xl:"></AuthButton>
       </div>
     </div>
