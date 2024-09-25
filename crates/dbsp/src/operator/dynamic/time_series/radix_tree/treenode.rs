@@ -428,7 +428,7 @@ mod test {
     fn aggregate_default(node: &mut DynTreeNode<u64, DynData /* <u64> */>) -> Option<u64> {
         let mut result: Option<u64> = None;
         node.aggregate(
-            &mut |acc, x| *acc.downcast_mut_checked::<u64>() += *x.downcast_checked::<u64>(),
+            &|acc, x| *acc.downcast_mut_checked::<u64>() += *x.downcast_checked::<u64>(),
             result.erase_mut(),
         );
         result

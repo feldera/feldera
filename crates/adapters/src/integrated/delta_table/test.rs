@@ -434,6 +434,7 @@ outputs:
 /// - When `snapshot` is `true`, runs the connector in `snapshot_and_follow`
 ///   mode.  The dataset is split in halves; the first half is consumed as a
 ///   single snapshot and the second half is processed in follow mode.
+#[allow(clippy::too_many_arguments)]
 async fn test_follow(
     schema: &[Field],
     input_table_uri: &str,

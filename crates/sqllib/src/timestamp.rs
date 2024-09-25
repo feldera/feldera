@@ -1450,7 +1450,7 @@ mod test {
         )
     }
 
-    fn serialize_with_default_config<'de, T>(val: &T) -> Result<String, serde_json::Error>
+    fn serialize_with_default_config<T>(val: &T) -> Result<String, serde_json::Error>
     where
         T: SerializeWithContext<SqlSerdeConfig>,
     {
@@ -1460,7 +1460,7 @@ mod test {
         Ok(String::from_utf8(data).unwrap())
     }
 
-    fn serialize_with_snowflake_config<'de, T>(val: &T) -> Result<String, serde_json::Error>
+    fn serialize_with_snowflake_config<T>(val: &T) -> Result<String, serde_json::Error>
     where
         T: SerializeWithContext<SqlSerdeConfig>,
     {

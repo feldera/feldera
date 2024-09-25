@@ -164,6 +164,7 @@ mod tests {
     };
     use std::cmp::max;
 
+    #[allow(clippy::borrowed_box)]
     fn test_waterline_monotonic(workers: usize) {
         let mut expected_waterlines = vec![115, 115, 125, 145].into_iter();
 

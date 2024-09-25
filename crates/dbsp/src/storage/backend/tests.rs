@@ -85,6 +85,7 @@ impl Debug for Transition {
 /// - `ALLOW_OVERWRITE = true`: allows overwriting data in the file.
 /// - `ALLOW_OVERWRITE = false`: does not allow overwriting data in the file
 ///   (returns an error on writes).
+///
 /// This ensures we can test the raw backend as well as the buffer cache (which
 /// does not allow overwrites).
 #[derive(Default, Debug)]
@@ -109,7 +110,7 @@ impl<const ALLOW_OVERWRITE: bool> Clone for InMemoryBackend<ALLOW_OVERWRITE> {
     }
 }
 fn insert_slice_at_offset(
-    vec: &Vec<Option<u8>>,
+    vec: &[Option<u8>],
     offset: usize,
     slice: &[u8],
     allow_overwrite: bool,
@@ -117,7 +118,7 @@ fn insert_slice_at_offset(
     // we clone the file so the write is 'atomic'. For this particular check
     // (overlapping writes) this happens before any writes to the FS in the
     // BufferCache implementation.
-    let mut new_vec = vec.clone();
+    let mut new_vec = vec.to_owned();
 
     if offset > vec.len() {
         new_vec.resize(offset, None);

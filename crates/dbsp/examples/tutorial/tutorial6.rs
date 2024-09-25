@@ -31,6 +31,7 @@ struct Record {
     daily_vaccinations: Option<u64>,
 }
 
+#[allow(clippy::type_complexity)]
 fn build_circuit(
     circuit: &mut RootCircuit,
 ) -> Result<(

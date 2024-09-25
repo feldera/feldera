@@ -1104,7 +1104,7 @@ mod test {
             let output_500_500_waterline = aggregate_500_500_waterline.gather(0).integrate();
 
             let bound: TraceBound<DynPair<DynDataTyped<u64>, DynOpt<DynData>>> = TraceBound::new();
-            let b: Tup2<u64, Option<i64>> = Tup2(u64::max_value(), None::<i64>);
+            let b: Tup2<u64, Option<i64>> = Tup2(u64::MAX, None::<i64>);
 
             bound.set(Box::new(b).erase_box());
 
@@ -1155,7 +1155,7 @@ mod test {
 
     #[test]
     fn test_partitioned_over_range_2() {
-        let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
+        let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
 
         circuit.step().unwrap();
 
@@ -1170,7 +1170,7 @@ mod test {
 
     #[test]
     fn test_partitioned_over_range() {
-        let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
+        let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
 
         circuit.step().unwrap();
 
@@ -1426,7 +1426,7 @@ mod test {
     proptest! {
         #[test]
         fn proptest_partitioned_over_range_sparse(trace in input_trace(5, 1_000_000, 10, 10)) {
-            let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
+            let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
 
             for mut batch in trace {
                 input.append(&mut batch);
@@ -1438,7 +1438,7 @@ mod test {
 
         #[test]
         fn proptest_partitioned_over_range_dense(trace in input_trace(5, 500, 25, 10)) {
-            let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::max_value(), None);
+            let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
 
             for mut batch in trace {
                 input.append(&mut batch);

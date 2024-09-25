@@ -1,3 +1,5 @@
+#![allow(clippy::borrowed_box)]
+
 use crate::format::InputBuffer;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{

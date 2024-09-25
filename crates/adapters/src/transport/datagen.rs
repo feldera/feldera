@@ -1560,6 +1560,7 @@ impl RecordGenerator {
 }
 
 #[cfg(test)]
+#[allow(clippy::type_complexity)]
 mod test {
     use crate::test::{mock_input_pipeline, MockDeZSet, MockInputConsumer, TestStruct2};
     use crate::InputReader;

@@ -611,7 +611,6 @@ mod test {
             V: DBData,
         {
             if let Some(descr) = &descr {
-                let descr = descr;
                 let anchor_k = &descr.anchor;
                 let anchor_v = &descr.anchor_val;
 

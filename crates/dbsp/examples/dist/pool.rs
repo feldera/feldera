@@ -33,6 +33,7 @@ struct Args {
     address: SocketAddr,
 }
 
+#[allow(clippy::type_complexity)]
 fn build_circuit(
     circuit: &mut RootCircuit,
 ) -> AnyResult<(

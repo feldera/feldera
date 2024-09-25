@@ -53,6 +53,7 @@ struct VaxMonthly {
     month: u8,
 }
 
+#[allow(clippy::type_complexity)]
 fn build_circuit(
     circuit: &mut RootCircuit,
 ) -> Result<(

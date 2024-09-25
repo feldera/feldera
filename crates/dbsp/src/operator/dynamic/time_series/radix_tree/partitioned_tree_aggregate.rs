@@ -542,12 +542,12 @@ mod test {
 
     // Checks that `aggregate_range` correctly computes aggregates for all
     // possible ranges in all partitions.
-    fn test_partitioned_aggregate_range<PK, TS, A, C, S>(
+    fn test_partitioned_aggregate_range</* PK, */ TS, A, C, S>(
         cursor: &mut C,
         contents: &BTreeMap<Box<DynData /* <PK> */>, BTreeMap<TS, Box<DynData /* <A> */>>>,
     ) where
         C: PartitionedRadixTreeCursor<DynData /* <PK> */, TS, DynData /* <A> */>,
-        PK: DBData,
+        /* PK: DBData, */
         TS: DBData + PrimInt,
         A: DBData,
         S: Semigroup<A>,
@@ -637,7 +637,7 @@ mod test {
                         .validate(&contents_clone.lock().unwrap(), &|acc, val| {
                             acc.downcast_mut_checked::<u64>().add_assign_by_ref(val.downcast_checked::<u64>())
                         });
-                    test_partitioned_aggregate_range::<u64, u64, u64, _, DefaultSemigroup<_>>(
+                    test_partitioned_aggregate_range::</* u64, */u64, u64, _, DefaultSemigroup<_>>(
                         &mut tree_trace.cursor(),
                         &contents_clone.lock().unwrap(),
                     );

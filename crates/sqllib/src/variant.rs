@@ -1019,7 +1019,7 @@ mod test {
                             (
                                 Variant::String("d".to_string()),
                                 Variant::Date(Date::from_date(
-                                    NaiveDate::from_ymd_opt(2024, 01, 01).unwrap(),
+                                    NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
                                 )),
                             ),
                             (

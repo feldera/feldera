@@ -104,6 +104,7 @@ impl PartialEq for PersonalNetworkGkgEntry {
 
 impl Eq for PersonalNetworkGkgEntry {}
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for PersonalNetworkGkgEntry {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.id.partial_cmp(&other.id)

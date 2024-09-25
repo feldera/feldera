@@ -133,7 +133,7 @@ fn main() {
 
     let mut file_urls = BufReader::new(get_master_file(args.update_master_list))
         .lines()
-        .flatten()
+        .map_while(Result::ok)
         .filter_map(|line| {
             let line = line.trim();
             // We now have a url in this form: `http://data.gdeltproject.org/gdeltv2/20150218230000.gkg.csv.zip`

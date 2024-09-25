@@ -318,10 +318,7 @@ fn limited_program_info() -> impl Strategy<Value = ProgramInfo> {
 fn limited_pipeline_config() -> impl Strategy<Value = PipelineConfig> {
     any::<(PipelineId, RuntimeConfigPropVal, ProgramInfoPropVal)>().prop_map(|val| {
         let runtime_config = map_val_to_limited_runtime_config(val.1);
-        let program_info = {
-            val.2;
-            map_val_to_limited_program_info(())
-        };
+        let program_info = { map_val_to_limited_program_info(()) };
         PipelineConfig {
             global: runtime_config,
             name: Some(format!("pipeline-{}", val.0)),
@@ -1366,6 +1363,7 @@ async fn create_tenants_if_not_exists(
 /// Compare the database storage implementation with our model using in-memory
 /// data-structures. Ideally, the two behave the same.
 #[test]
+#[allow(clippy::field_reassign_with_default)]
 fn db_impl_behaves_like_model() {
     let _r = env_logger::try_init();
     let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -2004,14 +2002,14 @@ impl Storage for Mutex<DbModel> {
         let mut program_version_increment = false;
         if let Some(name) = name {
             // Constraint: name is unique
-            if let Some(_) = self
+            if self
                 .lock()
                 .await
                 .pipelines
                 .iter()
                 .filter(|((tid, _), _)| *tid == tenant_id)
                 .map(|(_, p)| p)
-                .find(|p| p.name == *name && p.id != pipeline.id)
+                .any(|p| p.name == *name && p.id != pipeline.id)
             {
                 return Err(DBError::DuplicateName);
             }
