@@ -537,6 +537,9 @@ public class Monotonicity extends CircuitVisitor {
         Projection.IOMap ioMap = projection.getIoMap();
         DBSPTypeTupleBase keyType = node.getKeyType().to(DBSPTypeTupleBase.class);
 
+        int leftTsIndex = node.getLeftTimestampIndex();
+        int rightTsIndex = node.getRightTimestampIndex();
+
         // The function associated with an ASOF join has a funny shape, since:
         // - the parameters are wrapped DBSPCustomOrdExpression
         // - the third parameter is a nullable tuple.
@@ -546,16 +549,46 @@ public class Monotonicity extends CircuitVisitor {
         DBSPVariablePath k = keyType.ref().var();
         DBSPVariablePath l = function.parameters[1].getType().var();
         DBSPVariablePath r = function.parameters[2].getType().setMayBeNull(false).var();
+
+        DBSPExpression leftTsField = new DBSPUnwrapCustomOrdExpression(
+                l.deepCopy().deref()).field(leftTsIndex);
+        DBSPExpression rightTsField = new DBSPUnwrapCustomOrdExpression(
+                r.deepCopy().deref()).field(rightTsIndex);
+        DBSPExpression min = ExpressionCompiler.makeBinaryExpression(node.getNode(), rightTsField.getType(),
+                DBSPOpcode.MIN, leftTsField, rightTsField);
+
         List<DBSPExpression> fields = new ArrayList<>();
         for (var fai: ioMap.fields()) {
             int input = fai.inputIndex();
             int index = fai.fieldIndex();
-            DBSPExpression expr = switch (input) {
-                case 0 -> k.field(index);
-                case 1 -> new DBSPUnwrapCustomOrdExpression(l.deepCopy().deref()).field(index);
-                case 2 -> new DBSPUnwrapCustomOrdExpression(r.deepCopy().deref()).field(index).castToNullable();
-                default -> throw new InternalCompilerError("Unexpected input index " + input);
-            };
+            DBSPExpression expr;
+            switch (input) {
+                case 0:
+                    expr = k.field(index);
+                    break;
+                case 1:
+                    expr = new DBSPUnwrapCustomOrdExpression(l.deepCopy().deref()).field(index);
+                    if (index != leftTsIndex) {
+                        // Since this is not a streaming join, we can't say anything about
+                        // non-timestamp fields
+                        expr = new NoExpression(expr.getType());
+                    } else {
+                        expr = min.deepCopy();
+                    }
+                    break;
+                case 2:
+                    expr = new DBSPUnwrapCustomOrdExpression(r.deepCopy().deref()).field(index).castToNullable();
+                    if (index != rightTsIndex) {
+                        // Since this is not a streaming join, we can't say anything about
+                        // non-timestamp fields
+                        expr = new NoExpression(expr.getType());
+                    } else {
+                        expr = min.deepCopy().castToNullable();
+                    }
+                    break;
+                default:
+                    throw new InternalCompilerError("Unexpected input index " + input);
+            }
             fields.add(expr);
         }
         DBSPTupleExpression tuple = new DBSPTupleExpression(fields, false);
