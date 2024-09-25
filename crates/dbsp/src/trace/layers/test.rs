@@ -264,10 +264,7 @@ type Trie2 /* <K, T, R> */ = Layer<DynData, Trie1>;
 type Trie3 /* <K, V, T, R> */ = Layer<DynData, Trie2>;
 
 // Generate a layer-based representation of the trie.
-fn tuples_to_trie1<T: DBData, R: DBWeight + ZRingValue, L: Trie>(
-    factories: &L::Factories,
-    tuples: &Tuples1<T, R>,
-) -> L
+fn tuples_to_trie1<T, R, L>(factories: &L::Factories, tuples: &Tuples1<T, R>) -> L
 where
     T: DBData,
     R: DBWeight + ZRingValue,

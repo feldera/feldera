@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 use crate::{transport::Step, OutputConsumer};
 use std::sync::{Arc, Mutex};
 

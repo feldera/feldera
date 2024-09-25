@@ -148,7 +148,7 @@ mod tests {
                 assert_eq!("example", simple_string);
             }
             _ => {
-                assert!(false);
+                unreachable!();
             }
         }
     }
@@ -176,7 +176,7 @@ mod tests {
                 assert_eq!("example", secret_string);
             }
             _ => {
-                assert!(false);
+                unreachable!();
             }
         }
     }
@@ -218,7 +218,7 @@ mod tests {
             "-example".to_string(),
         )) {
             Ok(_) => {
-                assert!(false);
+                unreachable!();
             }
             Err(err) => {
                 assert_eq!(
@@ -243,7 +243,7 @@ mod tests {
             MaybeSecretRef::SecretRef("the-secret".to_string()),
         ) {
             Ok(_) => {
-                assert!(false);
+                unreachable!();
             }
             Err(err) => {
                 let err_string = err.to_string();
@@ -274,7 +274,7 @@ mod tests {
             MaybeSecretRef::SecretRef("the-secret".to_string()),
         ) {
             Ok(_) => {
-                assert!(false);
+                unreachable!();
             }
             Err(err) => {
                 let err_string = err.to_string();
@@ -315,12 +315,12 @@ mod tests {
                 assert_eq!(simple_string, "example123");
             }
             MaybeSecret::Secret(_) => {
-                assert!(false);
+                unreachable!();
             }
         }
         match MaybeSecret::Secret("example123".to_string()) {
             MaybeSecret::String(_) => {
-                assert!(false);
+                unreachable!();
             }
             MaybeSecret::Secret(secret_string) => {
                 assert_eq!(secret_string, "example123");

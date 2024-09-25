@@ -681,7 +681,7 @@ mod test {
                     });
 
             let bound = TraceBound::new();
-            bound.set(Box::new(i64::max_value()).erase_box());
+            bound.set(Box::new(i64::MAX).erase_box());
 
             input.window((true, false), &bounds);
 

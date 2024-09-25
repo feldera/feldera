@@ -141,6 +141,7 @@ fn spawn_source_producer(
         .unwrap();
 }
 
+#[allow(clippy::too_many_arguments)]
 fn coordinate_input_and_steps(
     progress: bool,
     expected_num_events: u64,
@@ -352,7 +353,7 @@ fn run_queries(nexmark_config: &NexmarkConfig, snapshotter: &Snapshotter) -> Vec
 // grab elapsed time for each query run.  See
 // https://github.com/matklad/t-cmd/blob/master/src/main.rs Also CpuMonitor.java
 // in nexmark (binary that uses procfs to get cpu usage ever 100ms?)
-
+#[allow(clippy::mutable_key_type)]
 fn parse_counter(metrics: &MetricsSnapshot, name: &'static str) -> u64 {
     if let Some((_, _, DebugValue::Counter(value))) = metrics.get(&CompositeKey::new(
         MetricKind::Counter,

@@ -1015,7 +1015,7 @@ mod test {
                     *w = -*w;
                 }
                 for Tup2(_u, w) in us.iter_mut() {
-                     *w =-*w;
+                     *w = -*w;
                 }
             }
 

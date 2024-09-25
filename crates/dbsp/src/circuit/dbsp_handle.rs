@@ -1358,6 +1358,7 @@ mod tests {
 
     /// This test exercises the checkpoint/restore path of the Z1 operator.
     #[test]
+    #[allow(clippy::borrowed_box)]
     fn test_z1_checkpointing() {
         let (_temp, mut cconf) = mkconfig();
 

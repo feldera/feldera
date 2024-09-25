@@ -1,5 +1,7 @@
 //! Test framework for the `adapters` crate.
 
+#![allow(clippy::type_complexity)]
+
 use crate::{
     controller::InputEndpointConfig, transport::InputReader, Catalog, CircuitCatalog,
     DbspCircuitHandle, FormatConfig, InputFormat,
@@ -69,6 +71,7 @@ impl Log for TestLogger {
 /// Wait for `predicate` to become `true`.
 ///
 /// Returns the number of milliseconds elapsed or `Err(())` on timeout.
+#[allow(clippy::result_unit_err)]
 pub fn wait<P>(mut predicate: P, timeout_ms: u128) -> Result<u128, ()>
 where
     P: FnMut() -> bool,

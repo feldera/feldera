@@ -96,7 +96,7 @@ ordered-float = { version = "4.2.0", features = ["serde"] }
 minitrace = { version = "0.6", features = ["enable"] }
 minitrace-jaeger = { version = "0.6" }
 governor = { version = "0.6.3" }
-fake = { version = "2.9.2", features = ["http"] }
+fake = { version = "2.10", features = ["http"] }
 atomic = "0.6.0"
 bytemuck = "1.16.3"
 dbsp_nexmark = { path = "../nexmark", features = [], optional = true }

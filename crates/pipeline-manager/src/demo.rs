@@ -100,17 +100,12 @@ mod test {
     fn demos_dir_does_not_exist() {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().join("does-not-exist");
-        assert!(
-            match read_demos_from_directory(dir_path.as_path()).unwrap_err() {
-                ManagerError::DemoError { demo_error } => {
-                    match demo_error {
-                        DemoError::UnableToReadDirectory { .. } => true,
-                        _ => false,
-                    }
-                }
-                _ => false,
+        assert!(matches!(
+            read_demos_from_directory(dir_path.as_path()).unwrap_err(),
+            ManagerError::DemoError {
+                demo_error: DemoError::UnableToReadDirectory { .. },
             }
-        );
+        ));
     }
 
     #[test]
@@ -118,35 +113,31 @@ mod test {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
         fs::create_dir(dir_path.join("does-exist").as_path()).unwrap();
-        assert!(match read_demos_from_directory(dir_path).unwrap_err() {
-            ManagerError::DemoError { demo_error } => {
-                match demo_error {
-                    DemoError::UnableToReadFile { .. } => true,
-                    _ => false,
-                }
+        assert!(matches!(
+            read_demos_from_directory(dir_path).unwrap_err(),
+            ManagerError::DemoError {
+                demo_error: DemoError::UnableToReadFile { .. },
             }
-            _ => false,
-        });
+        ));
     }
 
     #[test]
+    #[allow(clippy::unused_io_amount)]
     fn demos_dir_deserialization_failed() {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
         let mut file = File::create(dir_path.join("file.txt").as_path()).unwrap();
         file.write("this_is_not_valid".as_bytes()).unwrap();
-        assert!(match read_demos_from_directory(dir_path).unwrap_err() {
-            ManagerError::DemoError { demo_error } => {
-                match demo_error {
-                    DemoError::DeserializationFailed { .. } => true,
-                    _ => false,
-                }
+        assert!(matches!(
+            read_demos_from_directory(dir_path).unwrap_err(),
+            ManagerError::DemoError {
+                demo_error: DemoError::DeserializationFailed { .. },
             }
-            _ => false,
-        });
+        ));
     }
 
     #[test]
+    #[allow(clippy::unused_io_amount)]
     fn demos_dir_one() {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();
@@ -169,6 +160,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::unused_io_amount)]
     fn demos_dir_multiple() {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path();

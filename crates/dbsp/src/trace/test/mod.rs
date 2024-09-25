@@ -432,27 +432,27 @@ proptest! {
     }
 
     #[test]
-    fn test_vec_zset_spine(batches in kr_batches(50, 2, 100, 20), seed in 0..u64::max_value()) {
+    fn test_vec_zset_spine(batches in kr_batches(50, 2, 100, 20), seed in 0..u64::MAX) {
         let factories = <OrdZSetFactories<DynI32>>::new::<i32, (), ZWeight>();
 
         test_zset_spine::<OrdZSet<DynI32>>(&factories, batches, seed)
     }
 
     #[test]
-    fn test_file_zset_spine(batches in kr_batches(50, 2, 50, 10), seed in 0..u64::max_value()) {
+    fn test_file_zset_spine(batches in kr_batches(50, 2, 50, 10), seed in 0..u64::MAX) {
         let factories = <FallbackWSetFactories<DynI32, DynZWeight>>::new::<i32, (), ZWeight>();
 
         test_zset_spine::<FallbackWSet<DynI32, DynZWeight>>(&factories, batches, seed)
     }
 
     #[test]
-    fn test_vec_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 500, 20), seed in 0..u64::max_value()) {
+    fn test_vec_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 500, 20), seed in 0..u64::MAX) {
         let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
         test_indexed_zset_spine::<OrdIndexedZSet<DynI32, DynI32>>(&factories, batches, seed)
     }
 
     #[test]
-    fn test_file_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 200, 10), seed in 0..u64::max_value()) {
+    fn test_file_indexed_zset_spine(batches in kvr_batches(100, 5, 2, 200, 10), seed in 0..u64::MAX) {
         let factories = <FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
         test_indexed_zset_spine::<FallbackIndexedWSet<DynI32, DynI32, DynZWeight>>(&factories, batches, seed)
     }
@@ -460,7 +460,7 @@ proptest! {
 
     // Like `test_indexed_zset_spine` but keeps even values only.
     #[test]
-    fn test_indexed_zset_spine_even_values(batches in kvr_batches(100, 5, 2, 500, 10), seed in 0..u64::max_value()) {
+    fn test_indexed_zset_spine_even_values(batches in kvr_batches(100, 5, 2, 500, 10), seed in 0..u64::MAX) {
         let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
 
         let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(&factories);
@@ -501,7 +501,7 @@ proptest! {
     }
 
     #[test]
-    fn test_indexed_zset_spine_even_keys(batches in kvr_batches(100, 5, 2, 500, 10), seed in 0..u64::max_value()) {
+    fn test_indexed_zset_spine_even_keys(batches in kvr_batches(100, 5, 2, 500, 10), seed in 0..u64::MAX) {
         let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
 
         let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(&factories);
@@ -542,26 +542,26 @@ proptest! {
     }
 
     #[test]
-    fn test_vec_zset_trace_spine(batches in kr_batches(100, 2, 500, 20), seed in 0..u64::max_value()) {
+    fn test_vec_zset_trace_spine(batches in kr_batches(100, 2, 500, 20), seed in 0..u64::MAX) {
         let factories = <OrdKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
         test_zset_trace_spine::<OrdKeyBatch<DynI32, u32, DynZWeight>>(&factories, batches, seed)
     }
 
     #[test]
-    fn test_file_zset_trace_spine(batches in kr_batches(100, 2, 200, 10), seed in 0..u64::max_value()) {
+    fn test_file_zset_trace_spine(batches in kr_batches(100, 2, 200, 10), seed in 0..u64::MAX) {
         let factories = <FileKeyBatchFactories<DynI32, u32, DynZWeight>>::new::<i32, (), ZWeight>();
         test_zset_trace_spine::<FileKeyBatch<DynI32, u32, DynZWeight>>(&factories, batches, seed)
     }
 
     #[test]
-    fn test_vec_indexed_zset_trace_spine(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::max_value()) {
+    fn test_vec_indexed_zset_trace_spine(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::MAX) {
         let factories = <OrdValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
 
         test_indexed_zset_trace_spine::<OrdValBatch<DynI32, DynI32, u32, DynZWeight>>(&factories, batches, seed)
     }
 
     #[test]
-    fn test_file_indexed_zset_trace_spine(batches in kvr_batches(100, 5, 2, 100, 10), seed in 0..u64::max_value()) {
+    fn test_file_indexed_zset_trace_spine(batches in kvr_batches(100, 5, 2, 100, 10), seed in 0..u64::MAX) {
         let factories =
         <FileValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
 
@@ -570,7 +570,7 @@ proptest! {
 
     // Like `test_indexed_zset_trace_spine` but keeps even values only.
     #[test]
-    fn test_indexed_zset_trace_spine_retain_even_values(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::max_value()) {
+    fn test_indexed_zset_trace_spine_retain_even_values(batches in kvr_batches(100, 5, 2, 300, 20), seed in 0..u64::MAX) {
         let factories = <OrdValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
 
         // `trace1` uses `truncate_keys_below`.
@@ -607,7 +607,7 @@ proptest! {
     }
 
     #[test]
-    fn test_indexed_zset_trace_spine_retain_even_keys(batches in kvr_batches(100, 5, 2, 300, 10), seed in 0..u64::max_value()) {
+    fn test_indexed_zset_trace_spine_retain_even_keys(batches in kvr_batches(100, 5, 2, 300, 10), seed in 0..u64::MAX) {
         let factories = <OrdValBatchFactories<DynI32, DynI32, u32, DynZWeight>>::new::<i32, i32, ZWeight>();
 
         // `trace1` uses `truncate_keys_below`.

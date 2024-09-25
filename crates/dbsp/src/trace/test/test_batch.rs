@@ -845,6 +845,7 @@ where
         Self { data: Vec::new() }
     }
 
+    #[allow(clippy::borrowed_box)]
     fn work(
         &mut self,
         source1: &TestBatch<K, V, T, R>,
@@ -1023,7 +1024,7 @@ where
     fn step_key(&mut self) {
         let current_key = clone_box(self.data[self.index].0 .0.as_ref());
 
-        while self.index < self.data.len() && &self.data[self.index].0 .0 == &current_key {
+        while self.index < self.data.len() && self.data[self.index].0 .0 == current_key {
             self.index += 1;
         }
 
@@ -1056,8 +1057,8 @@ where
         let current_key = clone_box(self.data[self.index].0 .0.as_ref());
         let current_val = clone_box(self.data[self.index].0 .1.as_ref());
 
-        while self.index < self.data.len() && &self.data[self.index].0 .1 == &current_val {
-            if self.index + 1 < self.data.len() && &self.data[self.index + 1].0 .0 == &current_key {
+        while self.index < self.data.len() && self.data[self.index].0 .1 == current_val {
+            if self.index + 1 < self.data.len() && self.data[self.index + 1].0 .0 == current_key {
                 self.index += 1;
             } else {
                 self.val_valid = false;
@@ -1095,7 +1096,7 @@ where
         let current_key = clone_box(self.data[self.index].0 .0.as_ref());
         let current_val = clone_box(self.data[self.index].0 .1.as_ref());
 
-        while &self.data[self.index].0 .1 == &current_val {
+        while self.data[self.index].0 .1 == current_val {
             if self.index > 0 && self.data[self.index - 1].0 .0 == current_key {
                 self.index -= 1;
             } else {
