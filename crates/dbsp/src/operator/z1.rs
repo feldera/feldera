@@ -266,7 +266,7 @@ where
         self.values = self.zero.clone();
     }
 
-    fn init_metrics(&mut self, global_id: &GlobalNodeId) {
+    fn init(&mut self, global_id: &GlobalNodeId) {
         self.total_size_metric = Some(Gauge::new(
             NUM_ENTRIES_LABEL,
             Some("Total number of entries stored by the operator".to_owned()),
@@ -454,7 +454,7 @@ where
         }
     }
 
-    fn init_metrics(&mut self, global_id: &GlobalNodeId) {
+    fn init(&mut self, global_id: &GlobalNodeId) {
         self.total_size_metric = Some(Gauge::new(
             NUM_ENTRIES_LABEL,
             Some("Total number of entries stored by the operator".to_owned()),

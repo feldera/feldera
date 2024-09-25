@@ -818,7 +818,7 @@ where
         self.time.advance(scope + 1);
     }
 
-    fn init_metrics(&mut self, global_id: &GlobalNodeId) {
+    fn init(&mut self, global_id: &GlobalNodeId) {
         self.total_size_metric = Some(Gauge::new(
             "total_size",
             None,

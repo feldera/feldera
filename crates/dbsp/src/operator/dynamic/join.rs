@@ -1033,7 +1033,7 @@ where
             .all(|time| !time.less_equal(&self.clock.time())));
     }
 
-    fn init_metrics(&mut self, global_id: &GlobalNodeId) {
+    fn init(&mut self, global_id: &GlobalNodeId) {
         self.left_tuples_metric = Some(Gauge::new(
             "left_tuples",
             None,

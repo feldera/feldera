@@ -810,7 +810,7 @@ pub trait Node {
     /// another node).
     unsafe fn clock_end(&mut self, scope: Scope);
 
-    fn init_metrics(&mut self, _gid: &GlobalNodeId) {}
+    fn init(&mut self, _gid: &GlobalNodeId) {}
 
     fn metrics(&self) {}
 
@@ -951,10 +951,24 @@ impl GlobalNodeId {
     }
 
     pub(crate) fn metrics_id(&self) -> String {
-        self.to_string()
-            .replace("[]", "root")
-            .replace(['[', ']'], "")
-            .replace('.', "_")
+        let mut mid = String::with_capacity(3 + self.0.len() * 3);
+        mid.push('o');
+
+        let path = self.path();
+
+        if path.is_empty() {
+            mid.push_str("root");
+            return mid;
+        }
+
+        for i in 0..path.len() {
+            mid.push_str(&path[i].0.to_string());
+            if i < path.len() - 1 {
+                mid.push('_');
+            }
+        }
+
+        mid
     }
 }
 
@@ -1829,7 +1843,7 @@ where
     where
         N: Node + 'static,
     {
-        node.init_metrics(&self.global_node_id);
+        node.init(&self.global_node_id);
         self.nodes.push(Box::new(node) as Box<dyn Node>);
     }
 
@@ -3234,8 +3248,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init_metrics(&mut self, gid: &GlobalNodeId) {
-        self.operator.init_metrics(gid);
+    fn init(&mut self, gid: &GlobalNodeId) {
+        self.operator.init(gid);
     }
 
     fn metrics(&self) {
@@ -3326,8 +3340,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init_metrics(&mut self, gid: &GlobalNodeId) {
-        self.operator.init_metrics(gid);
+    fn init(&mut self, gid: &GlobalNodeId) {
+        self.operator.init(gid);
     }
 
     fn metrics(&self) {
@@ -3424,8 +3438,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init_metrics(&mut self, gid: &GlobalNodeId) {
-        self.operator.init_metrics(gid);
+    fn init(&mut self, gid: &GlobalNodeId) {
+        self.operator.init(gid);
     }
 
     fn metrics(&self) {
@@ -3515,8 +3529,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init_metrics(&mut self, gid: &GlobalNodeId) {
-        self.operator.init_metrics(gid);
+    fn init(&mut self, gid: &GlobalNodeId) {
+        self.operator.init(gid);
     }
 
     fn metrics(&self) {
@@ -3626,8 +3640,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init_metrics(&mut self, gid: &GlobalNodeId) {
-        self.operator.init_metrics(gid);
+    fn init(&mut self, gid: &GlobalNodeId) {
+        self.operator.init(gid);
     }
 
     fn metrics(&self) {
@@ -3757,8 +3771,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init_metrics(&mut self, gid: &GlobalNodeId) {
-        self.operator.init_metrics(gid);
+    fn init(&mut self, gid: &GlobalNodeId) {
+        self.operator.init(gid);
     }
 
     fn metrics(&self) {
@@ -3892,8 +3906,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init_metrics(&mut self, gid: &GlobalNodeId) {
-        self.operator.init_metrics(gid);
+    fn init(&mut self, gid: &GlobalNodeId) {
+        self.operator.init(gid);
     }
 
     fn metrics(&self) {
@@ -4045,8 +4059,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init_metrics(&mut self, gid: &GlobalNodeId) {
-        self.operator.init_metrics(gid);
+    fn init(&mut self, gid: &GlobalNodeId) {
+        self.operator.init(gid);
     }
 
     fn metrics(&self) {
@@ -4183,8 +4197,8 @@ where
         self.operator.clock_end(scope);
     }
 
-    fn init_metrics(&mut self, gid: &GlobalNodeId) {
-        self.operator.init_metrics(gid);
+    fn init(&mut self, gid: &GlobalNodeId) {
+        self.operator.init(gid);
     }
 
     fn metrics(&self) {
@@ -4303,8 +4317,8 @@ where
         (*self.operator.get()).clock_end(scope);
     }
 
-    fn init_metrics(&mut self, gid: &GlobalNodeId) {
-        unsafe { (*self.operator.get()).init_metrics(gid) };
+    fn init(&mut self, gid: &GlobalNodeId) {
+        unsafe { (*self.operator.get()).init(gid) };
     }
 
     fn metrics(&self) {
@@ -4395,8 +4409,8 @@ where
 
     unsafe fn clock_end(&mut self, _scope: Scope) {}
 
-    fn init_metrics(&mut self, gid: &GlobalNodeId) {
-        unsafe { (*self.operator.get()).init_metrics(gid) };
+    fn init(&mut self, gid: &GlobalNodeId) {
+        unsafe { (*self.operator.get()).init(gid) };
     }
 
     fn metrics(&self) {

@@ -28,8 +28,8 @@ pub trait Operator: 'static {
         None
     }
 
-    /// Initialize the metrics reported by this operator
-    fn init_metrics(&mut self, _global_id: &GlobalNodeId) {}
+    /// Initialize the operator
+    fn init(&mut self, _global_id: &GlobalNodeId) {}
 
     /// Reports metrics about this operator
     fn metrics(&self) {}

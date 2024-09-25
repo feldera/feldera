@@ -602,7 +602,7 @@ where
         Cow::Borrowed("DistinctIncremental")
     }
 
-    fn init_metrics(&mut self, global_id: &GlobalNodeId) {
+    fn init(&mut self, global_id: &GlobalNodeId) {
         self.total_updates_metric = Some(Gauge::new(
             "total_updates",
             None,
