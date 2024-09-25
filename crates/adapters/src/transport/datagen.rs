@@ -523,6 +523,7 @@ impl Drop for InputGenerator {
 struct RecordGenerator {
     config: GenerationPlan,
     schema: Relation,
+    /// The current record number.
     current: usize,
     rng: Option<SmallRng>,
     ymd_format: Vec<Item<'static>>,
@@ -579,6 +580,7 @@ impl RecordGenerator {
         &self,
         fields: &[Field],
         settings: &HashMap<String, Box<RngFieldSettings>>,
+        incr: usize,
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
@@ -601,7 +603,7 @@ impl RecordGenerator {
                     }
                 })
                 .or_insert_with(|| Self::typ_to_default(field.columntype.typ));
-            self.generate_field(field, field_settings, rng, obj)?;
+            self.generate_field(field, field_settings, incr, rng, obj)?;
         }
 
         Ok(())
@@ -611,18 +613,19 @@ impl RecordGenerator {
         &self,
         field: &Field,
         settings: &RngFieldSettings,
+        incr: usize,
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
         match field.columntype.typ {
-            SqlType::Boolean => self.generate_boolean(field, settings, rng, obj),
-            SqlType::TinyInt => self.generate_integer::<i8>(field, settings, rng, obj),
-            SqlType::SmallInt => self.generate_integer::<i16>(field, settings, rng, obj),
-            SqlType::Int => self.generate_integer::<i32>(field, settings, rng, obj),
-            SqlType::BigInt => self.generate_integer::<i64>(field, settings, rng, obj),
-            SqlType::Real => self.generate_real::<f64>(field, settings, rng, obj),
-            SqlType::Double => self.generate_real::<f64>(field, settings, rng, obj),
-            SqlType::Decimal => self.generate_real::<f64>(field, settings, rng, obj),
+            SqlType::Boolean => self.generate_boolean(field, settings, incr, rng, obj),
+            SqlType::TinyInt => self.generate_integer::<i8>(field, settings, incr, rng, obj),
+            SqlType::SmallInt => self.generate_integer::<i16>(field, settings, incr, rng, obj),
+            SqlType::Int => self.generate_integer::<i32>(field, settings, incr, rng, obj),
+            SqlType::BigInt => self.generate_integer::<i64>(field, settings, incr, rng, obj),
+            SqlType::Real => self.generate_real::<f64>(field, settings, incr, rng, obj),
+            SqlType::Double => self.generate_real::<f64>(field, settings, incr, rng, obj),
+            SqlType::Decimal => self.generate_real::<f64>(field, settings, incr, rng, obj),
             SqlType::Binary | SqlType::Varbinary => {
                 let mut field = field.clone();
                 let mut columntype = Box::new(ColumnType::tinyint(false));
@@ -630,12 +633,14 @@ impl RecordGenerator {
                 // in `generate_integer`
                 columntype.scale = Some(1);
                 field.columntype.component = Some(columntype);
-                self.generate_array(&field, settings, rng, obj)
+                self.generate_array(&field, settings, incr, rng, obj)
             }
-            SqlType::Char | SqlType::Varchar => self.generate_string(field, settings, rng, obj),
-            SqlType::Timestamp => self.generate_timestamp(field, settings, rng, obj),
-            SqlType::Date => self.generate_date(field, settings, rng, obj),
-            SqlType::Time => self.generate_time(field, settings, rng, obj),
+            SqlType::Char | SqlType::Varchar => {
+                self.generate_string(field, settings, incr, rng, obj)
+            }
+            SqlType::Timestamp => self.generate_timestamp(field, settings, incr, rng, obj),
+            SqlType::Date => self.generate_date(field, settings, incr, rng, obj),
+            SqlType::Time => self.generate_time(field, settings, incr, rng, obj),
             SqlType::Interval(_unit) => {
                 // I don't think this can show up in a table schema
                 *obj = Value::Null;
@@ -646,8 +651,8 @@ impl RecordGenerator {
                 *obj = Value::Null;
                 Ok(())
             }
-            SqlType::Array => self.generate_array(field, settings, rng, obj),
-            SqlType::Map => self.generate_map(field, settings, rng, obj),
+            SqlType::Array => self.generate_array(field, settings, incr, rng, obj),
+            SqlType::Map => self.generate_map(field, settings, incr, rng, obj),
             SqlType::Struct => {
                 if let Some(nl) = Self::maybe_null(field, settings, rng) {
                     *obj = nl;
@@ -657,6 +662,7 @@ impl RecordGenerator {
                 self.generate_fields(
                     field.columntype.fields.as_ref().unwrap(),
                     settings.fields.as_ref().unwrap_or(&HashMap::new()),
+                    incr,
                     rng,
                     obj,
                 )
@@ -688,6 +694,7 @@ impl RecordGenerator {
         &self,
         _field: &Field,
         _settings: &RngFieldSettings,
+        _incr: usize,
         _rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
@@ -699,6 +706,7 @@ impl RecordGenerator {
         &self,
         field: &Field,
         settings: &RngFieldSettings,
+        incr: usize,
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
@@ -735,12 +743,12 @@ impl RecordGenerator {
 
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment, None) => {
-                    let val = self.current * scale;
+                    let val = incr * scale;
                     let range = max - min;
                     let len = min + (val % range);
                     arr.resize_with(len, || Self::typ_to_default(arr_field.columntype.typ));
-                    for e in arr.iter_mut() {
-                        self.generate_field(&arr_field, &value_settings, rng, e)?;
+                    for (idx, e) in arr.iter_mut().enumerate() {
+                        self.generate_field(&arr_field, &value_settings, idx, rng, e)?;
                     }
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
@@ -751,8 +759,8 @@ impl RecordGenerator {
                 (DatagenStrategy::Uniform, None) => {
                     let len = rng.sample(Uniform::from(min..max)) * scale;
                     arr.resize_with(len, || Self::typ_to_default(arr_field.columntype.typ));
-                    for e in arr.iter_mut() {
-                        self.generate_field(&arr_field, &value_settings, rng, e)?;
+                    for (idx, e) in arr.iter_mut().enumerate() {
+                        self.generate_field(&arr_field, &value_settings, idx, rng, e)?;
                     }
                 }
                 (DatagenStrategy::Uniform, Some(values)) => {
@@ -765,8 +773,8 @@ impl RecordGenerator {
                     let zipf = Zipf::new(range as u64, settings.e as f64).unwrap();
                     let len = rng.sample(zipf) as usize - 1;
                     arr.resize_with(len, || Self::typ_to_default(arr_field.columntype.typ));
-                    for e in arr.iter_mut() {
-                        self.generate_field(&arr_field, &value_settings, rng, e)?;
+                    for (idx, e) in arr.iter_mut().enumerate() {
+                        self.generate_field(&arr_field, &value_settings, idx, rng, e)?;
                     }
                 }
                 (DatagenStrategy::Zipf, Some(values)) => {
@@ -795,6 +803,7 @@ impl RecordGenerator {
         &self,
         field: &Field,
         settings: &RngFieldSettings,
+        incr: usize,
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
@@ -829,7 +838,7 @@ impl RecordGenerator {
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment, None) => {
                     let range = max - min;
-                    let val_in_range = (self.current as u64 * scale) % range;
+                    let val_in_range = (incr as u64 * scale) % range;
                     let val = min + val_in_range;
                     debug_assert!(val >= min && val < max);
 
@@ -837,7 +846,7 @@ impl RecordGenerator {
                     write!(str, "{}", t)?;
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    let new_value = values[self.current % values.len()].clone();
+                    let new_value = values[incr % values.len()].clone();
                     field_is_string(field, &new_value)?;
                     *obj = new_value;
                 }
@@ -885,6 +894,7 @@ impl RecordGenerator {
         &self,
         field: &Field,
         settings: &RngFieldSettings,
+        incr: usize,
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
@@ -911,7 +921,7 @@ impl RecordGenerator {
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment, None) => {
                     let range = max - min;
-                    let val_in_range = (self.current as i64 * scale) % range;
+                    let val_in_range = (incr as i64 * scale) % range;
                     let val = min + val_in_range;
                     debug_assert!(val >= min && val < max);
                     let d = unix_date + Days::new(val as u64);
@@ -923,7 +933,7 @@ impl RecordGenerator {
                     )?;
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    let new_value = values[self.current % values.len()].clone();
+                    let new_value = values[incr % values.len()].clone();
                     field_is_string(field, &new_value)?;
                     *obj = new_value;
                 }
@@ -988,6 +998,7 @@ impl RecordGenerator {
         &self,
         field: &Field,
         settings: &RngFieldSettings,
+        incr: usize,
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
@@ -1024,13 +1035,13 @@ impl RecordGenerator {
             // ```
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment, None) => {
-                    let val = (self.current as i64 * scale) % (max - min);
+                    let val = (incr as i64 * scale) % (max - min);
                     let dt = DateTime::from_timestamp_millis(min).unwrap_or(DateTime::UNIX_EPOCH)
                         + Duration::milliseconds(val);
                     *obj = Value::String(dt.to_rfc3339());
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    let new_value = values[self.current % values.len()].clone();
+                    let new_value = values[incr % values.len()].clone();
                     field_is_string(field, &new_value)?;
                     *obj = new_value;
                 }
@@ -1079,6 +1090,7 @@ impl RecordGenerator {
         &self,
         field: &Field,
         settings: &RngFieldSettings,
+        incr: usize,
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
@@ -1118,10 +1130,10 @@ impl RecordGenerator {
 
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment, None) => {
-                    write!(str, "{}", self.current as i64 * settings.scale)?;
+                    write!(str, "{}", incr as i64 * settings.scale)?;
                 }
                 (DatagenStrategy::Increment, Some(values)) => {
-                    let new_value = values[self.current % values.len()].clone();
+                    let new_value = values[incr % values.len()].clone();
                     field_is_string(field, &new_value)?;
                     *obj = new_value;
                 }
@@ -1315,6 +1327,7 @@ impl RecordGenerator {
         &self,
         field: &Field,
         settings: &RngFieldSettings,
+        incr: usize,
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
@@ -1345,18 +1358,18 @@ impl RecordGenerator {
 
         match (&settings.strategy, &settings.values, &range) {
             (DatagenStrategy::Increment, None, None) => {
-                let val = (self.current as i64 * scale) % max;
+                let val = (incr as i64 * scale) % max;
                 *obj = Value::Number(serde_json::Number::from(val));
             }
             (DatagenStrategy::Increment, None, Some((a, b))) => {
                 let range = b - a;
-                let val_in_range = (self.current as i64 * scale) % range;
+                let val_in_range = (incr as i64 * scale) % range;
                 let val = a + val_in_range;
                 debug_assert!(val >= *a && val < *b);
                 *obj = Value::Number(serde_json::Number::from(val));
             }
             (DatagenStrategy::Increment, Some(values), _) => {
-                let new_value = values[self.current % values.len()].clone();
+                let new_value = values[incr % values.len()].clone();
                 field_is_number(field, &new_value)?;
                 *obj = new_value;
             }
@@ -1408,6 +1421,7 @@ impl RecordGenerator {
         &self,
         field: &Field,
         settings: &RngFieldSettings,
+        incr: usize,
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
@@ -1432,14 +1446,14 @@ impl RecordGenerator {
 
         match (&settings.strategy, &settings.values, &range) {
             (DatagenStrategy::Increment, None, None) => {
-                let val = (self.current as f64 * scale) % max;
+                let val = (incr as f64 * scale) % max;
                 *obj = Value::Number(
                     serde_json::Number::from_f64(val).unwrap_or(serde_json::Number::from(0)),
                 );
             }
             (DatagenStrategy::Increment, None, Some((a, b))) => {
                 let range = b - a;
-                let val_in_range = (self.current as f64 * scale) % range;
+                let val_in_range = (incr as f64 * scale) % range;
                 let val = a + val_in_range;
                 debug_assert!(val >= *a && val < *b);
                 *obj = Value::Number(
@@ -1447,7 +1461,7 @@ impl RecordGenerator {
                 );
             }
             (DatagenStrategy::Increment, Some(values), _) => {
-                *obj = values[self.current % values.len()].clone();
+                *obj = values[incr % values.len()].clone();
             }
             (DatagenStrategy::Uniform, None, None) => {
                 let dist = Uniform::from(min..max);
@@ -1502,6 +1516,7 @@ impl RecordGenerator {
         &self,
         field: &Field,
         settings: &RngFieldSettings,
+        incr: usize,
         rng: &mut SmallRng,
         obj: &mut Value,
     ) -> AnyResult<()> {
@@ -1511,10 +1526,8 @@ impl RecordGenerator {
         }
 
         *obj = match (&settings.strategy, &settings.values) {
-            (DatagenStrategy::Increment, None) => Value::Bool(self.current % 2 == 1),
-            (DatagenStrategy::Increment, Some(values)) => {
-                values[self.current % values.len()].clone()
-            }
+            (DatagenStrategy::Increment, None) => Value::Bool(incr % 2 == 1),
+            (DatagenStrategy::Increment, Some(values)) => values[incr % values.len()].clone(),
             (DatagenStrategy::Uniform, None) => Value::Bool(rand::random::<bool>()),
             (DatagenStrategy::Uniform, Some(values)) => {
                 values[rand::random::<usize>() % values.len()].clone()
@@ -1550,7 +1563,13 @@ impl RecordGenerator {
         let mut obj = self.json_obj.take().unwrap();
         self.current = idx;
 
-        let r = self.generate_fields(&self.schema.fields, &self.config.fields, &mut rng, &mut obj);
+        let r = self.generate_fields(
+            &self.schema.fields,
+            &self.config.fields,
+            self.current,
+            &mut rng,
+            &mut obj,
+        );
         self.rng = Some(rng);
         self.json_obj = Some(obj);
         r?;
@@ -1648,6 +1667,36 @@ transport:
             assert_eq!(record.field, 10 + (idx % 10));
             idx += 3;
         }
+    }
+
+    #[test]
+    fn test_array_increment() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 2, fields: { "bs": { "range": [10, 11] } } } ]
+"#;
+        let (endpoint, consumer, zset) =
+            mk_pipeline::<ByteStruct, ByteStruct>(config_str, ByteStruct::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+        thread::sleep(Duration::from_millis(20));
+        endpoint.flush_all();
+
+        let zst = zset.state();
+        let iter = zst.flushed.iter();
+        let mut idx = 0;
+
+        for upd in iter {
+            let record = upd.unwrap_insert();
+            assert_eq!(record.field.as_slice(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+            idx += 1;
+        }
+        assert_eq!(idx, 2);
     }
 
     #[test]
@@ -1964,13 +2013,13 @@ transport:
     });
 
     #[test]
-    fn test_byte_array_generator() {
+    fn test_byte_array_with_values() {
         let config_str = r#"
 stream: test_input
 transport:
     name: datagen
     config:
-        plan: [ { limit: 2, fields: { "bs": { "range": [ 1, 5 ], values: [[1,2], [1,2,3]] } } } ]
+        plan: [ { limit: 3, fields: { "bs": { "range": [ 1, 5 ], values: [[1,2], [1,2,3]] } } } ]
 "#;
         let (endpoint, consumer, zset) =
             mk_pipeline::<ByteStruct, ByteStruct>(config_str, ByteStruct::schema()).unwrap();
@@ -1990,6 +2039,48 @@ transport:
         let second = iter.next().unwrap();
         let record = second.unwrap_insert();
         assert_eq!(record.field.as_slice(), &[1, 2, 3]);
+
+        let second = iter.next().unwrap();
+        let record = second.unwrap_insert();
+        assert_eq!(record.field.as_slice(), &[1, 2]);
+    }
+
+    #[test]
+    fn test_byte_array_with_increment() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 5, fields: { "bs": { "range": [0, 3], "value": { "range": [ 0, 2 ] } } } } ]
+"#;
+        let (endpoint, consumer, zset) =
+            mk_pipeline::<ByteStruct, ByteStruct>(config_str, ByteStruct::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+        thread::sleep(Duration::from_millis(20));
+        endpoint.flush_all();
+
+        let zst = zset.state();
+
+        let mut iter = zst.flushed.iter();
+        let first = iter.next().unwrap();
+        let record = first.unwrap_insert();
+        assert!(record.field.as_slice().is_empty());
+
+        let second = iter.next().unwrap();
+        let record = second.unwrap_insert();
+        assert_eq!(record.field.as_slice(), &[0]);
+
+        let second = iter.next().unwrap();
+        let record = second.unwrap_insert();
+        assert_eq!(record.field.as_slice(), &[0, 1]);
+
+        let second = iter.next().unwrap();
+        let record = second.unwrap_insert();
+        assert!(record.field.as_slice().is_empty());
     }
 
     #[test]
