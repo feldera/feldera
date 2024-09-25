@@ -1,7 +1,7 @@
-import {base} from '$app/paths'
-import {felderaEndpoint} from '$lib/functions/configs/felderaEndpoint'
+import { base } from '$app/paths'
+import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 
-import type {NavItem, NavLink} from '$lib/types/layout'
+import type { NavItem, NavLink } from '$lib/types/layout'
 
 // TODO: remove conditional Settings page link display
 // after more content is added to Settings page
@@ -34,12 +34,12 @@ export const navItems = (props: { showSettings: boolean }): NavLink[] => {
     [
       props.showSettings
         ? [
-          {
-            title: 'Settings',
-            path: `${base}/settings/`,
-            class: 'fd fd-settings'
-          }
-        ]
+            {
+              title: 'Settings',
+              path: `${base}/settings/`,
+              class: 'fd fd-settings'
+            }
+          ]
         : []
     ],
     {

@@ -22,6 +22,16 @@ pub enum RunnerError {
         pipeline_id: PipelineId,
         pipeline_name: String,
     },
+    // Runner web server interaction
+    RunnerEndpointSendError {
+        url: String,
+        error: String,
+    },
+    RunnerUnreachable {
+        original_error: String,
+    },
+    LogFollowRequestChannelFull,
+    LogFollowRequestChannelClosed,
     // Pipeline web server interaction
     PipelineNotRunningOrPaused {
         pipeline_id: PipelineId,
@@ -98,6 +108,12 @@ impl DetailedError for RunnerError {
             Self::PipelineMissingProgramBinaryUrl { .. } => {
                 Cow::from("PipelineMissingProgramBinaryUrl")
             }
+            Self::RunnerEndpointSendError { .. } => Cow::from("RunnerEndpointSendError"),
+            Self::RunnerUnreachable { .. } => Cow::from("RunnerUnreachable"),
+            Self::LogFollowRequestChannelFull { .. } => Cow::from("LogFollowRequestChannelFull"),
+            Self::LogFollowRequestChannelClosed { .. } => {
+                Cow::from("LogFollowRequestChannelClosed")
+            }
             Self::PipelineNotRunningOrPaused { .. } => Cow::from("PipelineNotRunningOrPaused"),
             Self::PipelineEndpointSendError { .. } => Cow::from("PipelineEndpointSendError"),
             Self::PipelineEndpointResponseBodyError { .. } => {
@@ -150,6 +166,24 @@ impl Display for RunnerError {
                     f,
                     "Pipeline {pipeline_name} ({pipeline_id}) is missing its program binary URL"
                 )
+            }
+            Self::RunnerEndpointSendError {
+                url,
+                error,
+            } => {
+                write!(
+                    f,
+                    "Sending request to URL {url} of runner failed: {error}"
+                )
+            }
+            Self::RunnerUnreachable { original_error } => {
+                write!(f, "Runner is unreachable. This indicates that the runner either is still starting up or has crashed unexpectedly (original error: {original_error}).")
+            }
+            Self::LogFollowRequestChannelFull => {
+                write!(f, "Log follow request channel is full. This indicates that the runner logging is overwhelmed.")
+            }
+            Self::LogFollowRequestChannelClosed => {
+                write!(f, "Log follow request channel is closed. This indicates that the runner crashed unexpectedly.")
             }
             Self::PipelineNotRunningOrPaused {
                 pipeline_id,
@@ -286,6 +320,10 @@ impl ResponseError for RunnerError {
             Self::PipelineMissingDeploymentLocation { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineMissingProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineMissingProgramBinaryUrl { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RunnerEndpointSendError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RunnerUnreachable { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::LogFollowRequestChannelFull { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::LogFollowRequestChannelClosed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineNotRunningOrPaused { .. } => StatusCode::BAD_REQUEST,
             Self::PipelineEndpointSendError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PipelineEndpointResponseBodyError { .. } => StatusCode::INTERNAL_SERVER_ERROR,

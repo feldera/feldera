@@ -9,7 +9,8 @@ use pipeline_manager::config::{
     ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig,
 };
 use pipeline_manager::db::storage_postgres::StoragePostgres;
-use pipeline_manager::runner::local_runner;
+use pipeline_manager::runner::local_runner::LocalRunner;
+use pipeline_manager::runner::main::runner_main;
 use pipeline_manager::{ensure_default_crypto_provider, init_fd_limit};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -74,7 +75,8 @@ async fn main() -> anyhow::Result<()> {
         Some(&api_config),
     )
     .await
-    .unwrap();
+    .expect("Could not open connection to database");
+
     // Run migrations before starting any service
     db.run_migrations().await?;
     let db = Arc::new(Mutex::new(db));
@@ -82,14 +84,22 @@ async fn main() -> anyhow::Result<()> {
     let _compiler = tokio::spawn(async move {
         Compiler::run(&compiler_config.clone(), db_clone)
             .await
-            .unwrap();
+            .expect("Compiler server main failed");
     });
     let db_clone = db.clone();
     let _local_runner = tokio::spawn(async move {
-        local_runner::run(db_clone, &local_runner_config).await;
+        runner_main::<LocalRunner>(
+            db_clone,
+            local_runner_config.clone(),
+            local_runner_config.runner_main_port,
+        )
+        .await
+        .expect("Local runner main failed");
     });
     pipeline_manager::metrics::create_endpoint(metrics_handle, db.clone()).await;
     // The api-server blocks forever
-    pipeline_manager::api::run(db, api_config).await.unwrap();
+    pipeline_manager::api::run(db, api_config)
+        .await
+        .expect("API server main failed");
     Ok(())
 }

@@ -322,22 +322,32 @@ export const postApiKey = (name: string) => handled(_postApiKey)({ body: { name 
 export const deleteApiKey = (name: string) =>
   handled(_deleteApiKey)({ path: { api_key_name: name } })
 
+const makeAuthorizedFetch = () => {
+  try {
+    const oidcClient = OidcClient.get()
+    return oidcClient.fetchWithTokens(globalThis.fetch)
+  } catch {
+    return globalThis.fetch
+  }
+}
+
 export const relationEggressStream = async (pipelineName: string, relationName: string) => {
-  // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'array': false}})
-  const fetch = (() => {
-    try {
-      const oidcClient = OidcClient.get()
-      return oidcClient.fetchWithTokens(globalThis.fetch)
-    } catch {
-      return globalThis.fetch
-    }
-  })()
+  // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'mode': 'watch', 'array': false, 'query': 'table'}})
+  const fetch = makeAuthorizedFetch()
   const result = await fetch(
     `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${relationName}?format=json&array=false`,
     {
       method: 'POST'
     }
   )
+  return result.status === 200 && result.body ? result.body : (result.json() as Promise<Error>)
+}
+
+export const pipelineLogsStream = async (pipelineName: string) => {
+  const fetch = makeAuthorizedFetch()
+  const result = await fetch(`${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`, {
+    method: 'GET'
+  })
   return result.status === 200 && result.body ? result.body : (result.json() as Promise<Error>)
 }
 

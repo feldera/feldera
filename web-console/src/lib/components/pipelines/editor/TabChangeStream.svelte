@@ -35,7 +35,7 @@
       if ('message' in stream) {
         return undefined
       }
-      const cancel = parseJSONInStream(
+      const { cancel } = parseUTF8JSON(
         stream,
         pushChanges(pipelineName, relationName),
         (skippedBytes) => {
@@ -95,7 +95,7 @@
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type { Relation } from '$lib/services/manager'
-  import { parseJSONInStream } from '$lib/functions/pipelines/changeStream'
+  import { parseUTF8JSON } from '$lib/functions/pipelines/changeStream'
   import JSONbig from 'true-json-bigint'
   import { groupBy } from '$lib/functions/common/array'
 

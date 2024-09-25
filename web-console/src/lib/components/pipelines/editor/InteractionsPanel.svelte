@@ -7,6 +7,7 @@
   import PanelChangeStream from '$lib/components/pipelines/editor/TabChangeStream.svelte'
   import PanelPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
   import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
+  import PanelLogs from '$lib/components/pipelines/editor/TabLogs.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
@@ -24,7 +25,8 @@
     // tuple('ad-hoc query', TabQueryData),
     tuple('Performance' as const, undefined, PanelPerformance),
     // tuple('query plan', TabDBSPGraph),
-    tuple('Changes stream' as const, undefined, PanelChangeStream)
+    tuple('Changes stream' as const, undefined, PanelChangeStream),
+    tuple('Logs' as const, undefined, PanelLogs)
   ]
   let currentTab = $derived(
     useLocalStorage<(typeof tabs)[number][0]>(

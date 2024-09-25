@@ -37,24 +37,24 @@ export type ApiPermission = 'Read' | 'Write'
 
 export type AuthProvider =
   | {
-  AwsCognito: ProviderAwsCognito
-}
+      AwsCognito: ProviderAwsCognito
+    }
   | {
-  GoogleIdentity: ProviderGoogleIdentity
-}
+      GoogleIdentity: ProviderGoogleIdentity
+    }
 
 /**
  * Configuration to authenticate against AWS
  */
 export type AwsCredentials =
   | {
-  type: 'NoSignRequest'
-}
+      type: 'NoSignRequest'
+    }
   | {
-  aws_access_key_id: string
-  aws_secret_access_key: string
-  type: 'AccessKey'
-}
+      aws_access_key_id: string
+      aws_secret_access_key: string
+      type: 'AccessKey'
+    }
 
 export type type = 'NoSignRequest'
 
@@ -213,11 +213,11 @@ export type ConnectorConfig = OutputBufferConfig & {
  */
 export type ConsumeStrategy =
   | {
-  type: 'Fragment'
-}
+      type: 'Fragment'
+    }
   | {
-  type: 'Object'
-}
+      type: 'Object'
+    }
 
 export type type2 = 'Fragment'
 
@@ -1288,23 +1288,23 @@ export type ProgramStatus =
   | 'CompilingRust'
   | 'Success'
   | {
-  /**
-   * SQL compiler returned an error.
-   */
-  SqlError: Array<SqlCompilerMessage>
-}
+      /**
+       * SQL compiler returned an error.
+       */
+      SqlError: Array<SqlCompilerMessage>
+    }
   | {
-  /**
-   * Rust compiler returned an error.
-   */
-  RustError: string
-}
+      /**
+       * Rust compiler returned an error.
+       */
+      RustError: string
+    }
   | {
-  /**
-   * System/OS returned an error when trying to invoke commands.
-   */
-  SystemError: string
-}
+      /**
+       * System/OS returned an error when trying to invoke commands.
+       */
+      SystemError: string
+    }
 
 export type PropertyValue = {
   key_position: SourcePosition
@@ -1399,13 +1399,13 @@ export type PubSubInputConfig = {
  */
 export type ReadStrategy =
   | {
-  key: string
-  type: 'SingleKey'
-}
+      key: string
+      type: 'SingleKey'
+    }
   | {
-  prefix: string
-  type: 'Prefix'
-}
+      prefix: string
+      type: 'Prefix'
+    }
 
 export type type3 = 'SingleKey'
 
@@ -1704,8 +1704,8 @@ export type SqlType =
   | 'DATE'
   | 'TIMESTAMP'
   | {
-  Interval: IntervalUnit
-}
+      Interval: IntervalUnit
+    }
   | 'ARRAY'
   | 'STRUCT'
   | 'MAP'
@@ -1743,55 +1743,55 @@ export type StorageConfig = {
  */
 export type TransportConfig =
   | {
-  config: FileInputConfig
-  name: 'file_input'
-}
+      config: FileInputConfig
+      name: 'file_input'
+    }
   | {
-  config: FileOutputConfig
-  name: 'file_output'
-}
+      config: FileOutputConfig
+      name: 'file_output'
+    }
   | {
-  config: KafkaInputConfig
-  name: 'kafka_input'
-}
+      config: KafkaInputConfig
+      name: 'kafka_input'
+    }
   | {
-  config: KafkaOutputConfig
-  name: 'kafka_output'
-}
+      config: KafkaOutputConfig
+      name: 'kafka_output'
+    }
   | {
-  config: PubSubInputConfig
-  name: 'pub_sub_input'
-}
+      config: PubSubInputConfig
+      name: 'pub_sub_input'
+    }
   | {
-  config: UrlInputConfig
-  name: 'url_input'
-}
+      config: UrlInputConfig
+      name: 'url_input'
+    }
   | {
-  config: S3InputConfig
-  name: 's3_input'
-}
+      config: S3InputConfig
+      name: 's3_input'
+    }
   | {
-  config: DeltaTableReaderConfig
-  name: 'delta_table_input'
-}
+      config: DeltaTableReaderConfig
+      name: 'delta_table_input'
+    }
   | {
-  config: DeltaTableWriterConfig
-  name: 'delta_table_output'
-}
+      config: DeltaTableWriterConfig
+      name: 'delta_table_output'
+    }
   | {
-  config: DatagenInputConfig
-  name: 'datagen'
-}
+      config: DatagenInputConfig
+      name: 'datagen'
+    }
   | {
-  config: NexmarkInputConfig
-  name: 'nexmark'
-}
+      config: NexmarkInputConfig
+      name: 'nexmark'
+    }
   | {
-  name: 'http_input'
-}
+      name: 'http_input'
+    }
   | {
-  name: 'http_output'
-}
+      name: 'http_output'
+    }
 
 export type name = 'file_input'
 

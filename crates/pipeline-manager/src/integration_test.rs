@@ -53,6 +53,7 @@ use tokio::{
 
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::program::{CompilationProfile, ProgramStatus};
+use crate::runner::local_runner::LocalRunner;
 use crate::{
     compiler::Compiler,
     config::{ApiServerConfig, CompilerConfig, DatabaseConfig, LocalRunnerConfig},
@@ -106,6 +107,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         allowed_origins: None,
         demos_dir: None,
         telemetry: "".to_string(),
+        runner_hostname_port: "127.0.0.1:8089".to_string(),
     }
     .canonicalize()
     .unwrap();
@@ -121,6 +123,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
     .canonicalize()
     .unwrap();
     let local_runner_config = LocalRunnerConfig {
+        runner_main_port: 8089,
         runner_working_directory: workdir.to_owned(),
         pipeline_host: "127.0.0.1".to_owned(),
     }
@@ -163,7 +166,13 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
                 });
                 let db_clone = db.clone();
                 let _local_runner = tokio::spawn(async move {
-                    crate::runner::local_runner::run(db_clone, &local_runner_config.clone()).await;
+                    crate::runner::main::runner_main::<LocalRunner>(
+                        db_clone,
+                        local_runner_config.clone(),
+                        local_runner_config.runner_main_port,
+                    )
+                    .await
+                    .unwrap();
                 });
                 // The api-server blocks forever
                 crate::api::run(db, api_config).await.unwrap();
@@ -2116,4 +2125,85 @@ async fn test_get_metrics() {
     // Delete the pipeline
     let response = config.delete("/v0/pipelines/test").await;
     assert_eq!(StatusCode::OK, response.status());
+}
+
+/// Tests that logs can be retrieved from the pipeline.
+/// TODO: test in the other deployment statuses whether logs can be retrieved
+#[actix_web::test]
+#[serial]
+async fn pipeline_logs() {
+    let config = setup().await;
+
+    // Retrieve logs of non-existent pipeline
+    let response = config.get("/v0/pipelines/test/logs").await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // Create pipeline
+    let request_body = json!({
+        "name": "test",
+        "description": "Description of the test pipeline",
+        "runtime_config": {},
+        "program_code": "CREATE TABLE t1(c1 INTEGER) with ('materialized' = 'true');",
+        "program_config": {}
+    });
+    let response = config.post("/v0/pipelines", &request_body).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // Retrieve logs (shutdown)
+    let mut response_logs = config.get("/v0/pipelines/test/logs").await;
+    assert_eq!(response_logs.status(), StatusCode::OK);
+    assert_eq!(
+        "LOG STREAM UNAVAILABLE: the pipeline has likely not yet started\n",
+        String::from_utf8(response_logs.body().await.unwrap().to_vec()).unwrap()
+    );
+
+    // Wait for its program compilation completion
+    config
+        .wait_for_compilation("test", 1, config.compilation_timeout)
+        .await;
+
+    // Start the pipeline in Paused state
+    let response = config.post_no_body("/v0/pipelines/test/pause").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+    // Await it reaching paused status
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Paused, config.start_timeout)
+        .await;
+
+    // Retrieve logs (paused)
+    let mut response_logs_paused = config.get("/v0/pipelines/test/logs").await;
+
+    // Start the pipeline
+    let response = config.post_no_body("/v0/pipelines/test/start").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Running, config.resume_timeout)
+        .await;
+
+    // Retrieve logs (running)
+    let mut response_logs_running = config.get("/v0/pipelines/test/logs").await;
+
+    // Shut the pipeline down
+    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config
+        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
+        .await;
+
+    // Check the logs
+    assert_eq!(response_logs_paused.status(), StatusCode::OK);
+    assert_eq!(response_logs_running.status(), StatusCode::OK);
+    let logs1 = String::from_utf8(response_logs_paused.body().await.unwrap().to_vec()).unwrap();
+    let logs2 = String::from_utf8(response_logs_running.body().await.unwrap().to_vec()).unwrap();
+    assert_eq!(logs1, logs2);
+    assert!(logs1.ends_with("LOG STREAM END: pipeline is being shutdown\n"));
+
+    // Retrieve logs (shutdown)
+    let mut response_logs = config.get("/v0/pipelines/test/logs").await;
+    assert_eq!(response_logs.status(), StatusCode::OK);
+    assert_eq!(
+        "LOG STREAM UNAVAILABLE: the pipeline has likely not yet started\n",
+        String::from_utf8(response_logs.body().await.unwrap().to_vec()).unwrap()
+    );
 }

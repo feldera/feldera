@@ -723,6 +723,7 @@ mod test {
             allowed_origins: None,
             demos_dir: None,
             telemetry: "".to_owned(),
+            runner_hostname_port: "127.0.0.1:8089".to_string(),
         };
 
         let (conn, _temp) = crate::db::test::setup_pg().await;

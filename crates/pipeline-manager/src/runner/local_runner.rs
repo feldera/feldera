@@ -2,38 +2,27 @@
 //! and instantiates them locally as processes.
 
 use crate::config::LocalRunnerConfig;
-use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
 use crate::db::types::program::generate_pipeline_config;
-use crate::db_notifier::{DbNotification, Operation};
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
-use crate::runner::pipeline_automata::{
-    PipelineAutomaton, PipelineExecutionDesc, PipelineExecutor,
-};
+use crate::runner::logs_buffer::LogsBuffer;
+use crate::runner::pipeline_executor::{LogMessage, PipelineExecutionDesc, PipelineExecutor};
 use async_trait::async_trait;
 use feldera_types::config::{StorageCacheConfig, StorageConfig};
-use log::{debug, info, trace};
+use log::{debug, error};
+use std::process::Stdio;
 use std::time::Duration;
-use std::{collections::BTreeMap, process::Stdio, sync::Arc};
-use tokio::io::AsyncWriteExt;
-use tokio::process::{Child, Command};
-use tokio::sync::Notify;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStderr, ChildStdout, Command};
+use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tokio::{
     fs,
     fs::{create_dir_all, remove_dir_all},
-    spawn,
-    sync::Mutex,
+    select, spawn,
 };
-
-// Provisioning is over once the pipeline port file has been detected.
-const PROVISIONING_TIMEOUT: Duration = Duration::from_millis(10_000);
-const PROVISIONING_POLL_PERIOD: Duration = Duration::from_millis(300);
-
-// Shutdown is over once the process has exited.
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(10_000);
-const SHUTDOWN_POLL_PERIOD: Duration = Duration::from_millis(300);
 
 /// Retrieve the binary executable using its URL.
 pub async fn fetch_binary_ref(
@@ -127,33 +116,194 @@ pub async fn fetch_binary_ref(
 ///
 /// In addition, it attempts to non-blocking kill the spawned process upon
 /// `drop` (which occurs when the owning automaton exits its run loop).
-pub struct ProcessRunner {
+///
+/// The log follow requests are replied to by a background thread:
+/// - If the pipeline has not yet started, it sends back rejections
+/// - If it has started, the thread adds new followers and catches them up,
+///   and sends the latest log lines as they come in to existing followers
+#[allow(clippy::type_complexity)]
+pub struct LocalRunner {
     pipeline_id: PipelineId,
-    pipeline_process: Option<Child>,
-    config: Arc<LocalRunnerConfig>,
+    config: LocalRunnerConfig,
+    process: Option<Child>,
+    log_terminate_sender_and_join_handle: Option<(
+        oneshot::Sender<()>,
+        JoinHandle<mpsc::Receiver<mpsc::Sender<LogMessage>>>,
+    )>,
 }
 
-impl Drop for ProcessRunner {
+impl Drop for LocalRunner {
     fn drop(&mut self) {
-        // This shouldn't normally happen, as the runner should shutdown the
+        // This shouldn't normally happen, as the runner should shut down the
         // pipeline before destroying the automaton, but we make sure that the
         // pipeline process is still killed on error.  We use `start_kill`
         // to avoid blocking in `drop`.
-        self.pipeline_process.as_mut().map(|p| p.start_kill());
-    }
-}
+        if let Some(p) = &mut self.process {
+            let _ = p.start_kill();
+        }
 
-impl ProcessRunner {
-    async fn kill_pipeline(&mut self) {
-        if let Some(mut p) = self.pipeline_process.take() {
-            let _ = p.kill().await;
-            let _ = p.wait().await;
+        // Terminate the log thread as best as possible by sending termination message
+        // and aborting the task associated to the join handle
+        if let Some((terminate_sender, join_handle)) =
+            self.log_terminate_sender_and_join_handle.take()
+        {
+            let _ = terminate_sender.send(());
+            join_handle.abort()
         }
     }
 }
 
+impl LocalRunner {
+    async fn kill_pipeline(&mut self) {
+        if let Some(mut p) = self.process.take() {
+            let _ = p.kill().await;
+            let _ = p.wait().await;
+        }
+    }
+
+    /// Sets up a thread which listens to log follow requests and new incoming lines
+    /// from stdout/stderr. New followers are caught up and existing followers receive
+    /// the new stdout/stderr lines as they come in.
+    ///
+    /// Returns a sender to invoke termination of the thread and the corresponding join handle.
+    fn setup_log_operational(
+        pipeline_id: PipelineId,
+        stdout: ChildStdout,
+        stderr: ChildStderr,
+        mut log_follow_request_receiver: mpsc::Receiver<mpsc::Sender<LogMessage>>,
+    ) -> (
+        oneshot::Sender<()>,
+        JoinHandle<mpsc::Receiver<mpsc::Sender<LogMessage>>>,
+    ) {
+        let (terminate_sender, mut terminate_receiver) = oneshot::channel::<()>();
+        let join_handle = spawn(async move {
+            // Buffered line readers such that we can already segment it into lines,
+            // such that stdout and stderr can be interleaved without making it unreadable
+            let mut lines_stdout = BufReader::new(stdout).lines();
+            let mut lines_stderr = BufReader::new(stderr).lines();
+
+            // Buffer with the latest lines
+            let mut logs = LogsBuffer::new(
+                Self::LOGS_BUFFER_LIMIT_BYTE,
+                Self::LOGS_BUFFER_LIMIT_NUM_LINES,
+            );
+
+            // All parties interested in receiving the logs
+            let mut log_followers: Vec<mpsc::Sender<LogMessage>> = Vec::new();
+
+            // Continues running until the logging is sent a termination message,
+            // or an I/O or send error is encountered
+            let mut stdout_finished = false;
+            let mut stderr_finished = false;
+            loop {
+                select! {
+                    // Terminate
+                    _ = &mut terminate_receiver => {
+                        Self::end_log_of_followers(&mut log_followers, LogMessage::End("LOG STREAM END: pipeline is being shutdown".to_string())).await;
+                        debug!("Terminating logging by request");
+                        break;
+                    }
+                    // New follower
+                    follower = log_follow_request_receiver.recv() => {
+                        if let Some(follower) = follower {
+                            Self::catch_up_and_add_follower(&mut logs, &mut log_followers, follower).await;
+                        } else {
+                            // The automata cannot recover from this as this is the only method to receive log followers from the runner.
+                            // Operational logging should not be active when the pipeline is shutdown, and only if the pipeline is
+                            // shutdown should it be deleted (which would cause this). As such, this is an error.
+                            error!("Log request channel closed during operational logging. Logs for this pipeline will no longer work.");
+                            break;
+                        }
+                    }
+                    // New stdout line
+                    line = lines_stdout.next_line(), if !stdout_finished => {
+                        match line {
+                            Ok(line) => match line {
+                                None => {
+                                    stdout_finished = true;
+                                }
+                                Some(line) => {
+                                    println!("{line}"); // Also print it to manager's stdout
+                                    Self::process_log_line_with_followers(&mut logs, &mut log_followers, line).await;
+                                }
+                            },
+                            Err(e) => {
+                                let explanation = format!("stdout experienced I/O error. Logs for this pipeline until restarted will no longer work. Error: {e}");
+                                Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
+                                error!("Logs of pipeline {pipeline_id} ended incorrectly: {explanation}");
+                                break;
+                            }
+                        }
+                    }
+                    // New stderr line
+                    line = lines_stderr.next_line(), if !stderr_finished => {
+                        match line {
+                            Ok(line) => match line {
+                                None => {
+                                    stderr_finished = true;
+                                }
+                                Some(line) => {
+                                    eprintln!("{line}"); // Also print it to manager's stderr
+                                    Self::process_log_line_with_followers(&mut logs, &mut log_followers, line).await;
+                                }
+                            },
+                            Err(e) => {
+                                let explanation = format!("stderr experienced I/O error. Logs for this pipeline until restarted will no longer work. Error: {e}");
+                                Self::end_log_of_followers(&mut log_followers, LogMessage::End(format!("LOG STREAM END: {explanation}"))).await;
+                                error!("Logs of pipeline {pipeline_id} ended incorrectly: {explanation}");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // The end of the scope of this loop will cause the Senders of the
+            // followers to be dropped and disconnected, which will notify the
+            // Receivers on the other end
+
+            // Return the log follow receiver such that it can be re-used when
+            // the pipeline is restarted
+            log_follow_request_receiver
+        });
+        debug!("Logging is operational for pipeline {}", pipeline_id);
+        (terminate_sender, join_handle)
+    }
+}
+
 #[async_trait]
-impl PipelineExecutor for ProcessRunner {
+impl PipelineExecutor for LocalRunner {
+    type Config = LocalRunnerConfig;
+
+    // Provisioning is over once the pipeline port file has been detected.
+    const PROVISIONING_TIMEOUT: Duration = Duration::from_millis(10_000);
+    const PROVISIONING_POLL_PERIOD: Duration = Duration::from_millis(300);
+
+    // Shutdown is over once the process has exited.
+    const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(10_000);
+    const SHUTDOWN_POLL_PERIOD: Duration = Duration::from_millis(300);
+
+    /// Creation steps:
+    /// - Spawn a log rejection thread
+    /// - Construct object
+    fn new(
+        pipeline_id: PipelineId,
+        config: Self::Config,
+        log_follow_request_receiver: mpsc::Receiver<mpsc::Sender<LogMessage>>,
+    ) -> Self {
+        let (log_reject_terminate_sender, log_reject_join_handle) =
+            Self::setup_log_rejection(pipeline_id, log_follow_request_receiver);
+        Self {
+            pipeline_id,
+            config,
+            process: None,
+            log_terminate_sender_and_join_handle: Some((
+                log_reject_terminate_sender,
+                log_reject_join_handle,
+            )),
+        }
+    }
+
     /// Converts a pipeline descriptor into a self-contained execution descriptor.
     async fn to_execution_desc(
         &self,
@@ -211,9 +361,20 @@ impl PipelineExecutor for ProcessRunner {
         })
     }
 
-    /// Starting is done by creating a data directory, followed by writing a configuration file
-    /// to it and copying over the binary executable. Finally, a process running the
-    /// binary executable is launched.
+    /// At initialization of the runner, we cannot reconnect with an existing running
+    /// pipeline process because local processes are terminated upon pipeline manager exit.
+    /// For this reason, it is not possible to re-acquire the stdout/stderr and as such there is
+    /// nothing to implement for this local runner function.
+    async fn init(&mut self, _was_started: bool) {
+        // Nothing to implement
+    }
+
+    /// Starting consists of the following steps:
+    /// 1. Create pipeline directory
+    /// 2. Write configuration file
+    /// 3. Fetch and copy over the binary executable
+    /// 4. Launch process running the binary executable
+    /// 5. Setup log following
     async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError> {
         let pipeline_id = ped.pipeline_id;
         let program_version = ped.program_version;
@@ -265,17 +426,46 @@ impl PipelineExecutor for ProcessRunner {
 
         // Run executable, set current directory to pipeline directory, pass metadata
         // file and config as arguments.
-        let pipeline_process = Command::new(fetched_executable)
+        let mut process = Command::new(fetched_executable)
             .current_dir(self.config.pipeline_dir(pipeline_id))
             .arg("--config-file")
             .arg(&config_file_path)
             .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| RunnerError::PipelineStartupError {
                 pipeline_id,
                 error: e.to_string(),
             })?;
-        self.pipeline_process = Some(pipeline_process);
+
+        // Setup log following
+        let stdout = process
+            .stdout
+            .take()
+            .expect("stdout could not be taken out");
+        let stderr = process
+            .stderr
+            .take()
+            .expect("stderr could not be taken out");
+        let (current_log_terminate_sender, current_log_join_handle) = self
+            .log_terminate_sender_and_join_handle
+            .take()
+            .expect("Log terminate sender and join handle are not present");
+        let log_follow_request_receiver =
+            Self::terminate_log_thread(current_log_terminate_sender, current_log_join_handle).await;
+        let (new_log_terminate_sender, new_log_join_handle) = Self::setup_log_operational(
+            self.pipeline_id,
+            stdout,
+            stderr,
+            log_follow_request_receiver,
+        );
+
+        // Store state
+        self.process = Some(process);
+        self.log_terminate_sender_and_join_handle =
+            Some((new_log_terminate_sender, new_log_join_handle));
+
         Ok(())
     }
 
@@ -299,9 +489,15 @@ impl PipelineExecutor for ProcessRunner {
         }
     }
 
-    /// Shutdown by killing the process and removing the pipeline directory.
+    /// Shutdown steps:
+    /// - Kill the process
+    /// - Remove the pipeline directory
+    /// - Shutdown operational logging thread and start the rejection thread
     async fn shutdown(&mut self) -> Result<(), ManagerError> {
+        // Kill pipeline process
         self.kill_pipeline().await;
+
+        // Remove the pipeline directory
         match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
             Ok(_) => (),
             Err(e) => {
@@ -312,97 +508,27 @@ impl PipelineExecutor for ProcessRunner {
                 );
             }
         }
+
+        // Terminate the operational logging thread and start the rejection one
+        let (current_log_terminate_sender, current_log_join_handle) = self
+            .log_terminate_sender_and_join_handle
+            .take()
+            .expect("Log terminate sender and join handle are not present");
+        let log_follow_request_receiver =
+            Self::terminate_log_thread(current_log_terminate_sender, current_log_join_handle).await;
+        let (new_log_terminate_sender, new_log_join_handle) =
+            Self::setup_log_rejection(self.pipeline_id, log_follow_request_receiver);
+        self.log_terminate_sender_and_join_handle =
+            Some((new_log_terminate_sender, new_log_join_handle));
+
         Ok(())
     }
 
     /// A pipeline is shutdown when the process has exited.
     async fn check_if_shutdown(&mut self) -> bool {
-        self.pipeline_process
+        self.process
             .as_mut()
             .map(|p| p.try_wait().is_ok())
             .unwrap_or(true)
-    }
-}
-
-/// Starts a runner that executes pipelines locally using processes.
-///
-/// # Starting a pipeline
-///
-/// Starting a pipeline amounts to running the compiled executable with
-/// selected config, and monitoring the pipeline log file for either
-/// "Started HTTP server on port XXXXX" or "Failed to create server
-/// [detailed error message]". In the former case, the port number is
-/// recorded in the database. In the latter case, the error message is
-/// returned to the client.
-///
-/// # Shutting down a pipeline
-///
-/// To shutdown the pipeline, the runner sends a `/shutdown` HTTP request to the
-/// pipeline. This request is asynchronous: the pipeline may continue running
-/// for a few seconds after the request succeeds.
-pub async fn run(db: Arc<Mutex<StoragePostgres>>, config: &LocalRunnerConfig) {
-    let runner_task = spawn(reconcile(db, Arc::new(config.clone())));
-    runner_task.await.unwrap().unwrap(); // TODO: unwrap
-}
-
-/// Continuous reconciliation loop between what is stored about the pipelines in the database and
-/// the local process runner managing their deployment as processes.
-async fn reconcile(
-    db: Arc<Mutex<StoragePostgres>>,
-    config: Arc<LocalRunnerConfig>,
-) -> Result<(), ManagerError> {
-    // Mapping of the present pipelines to a notifier to the pipeline automaton
-    let pipelines: Mutex<BTreeMap<PipelineId, Arc<Notify>>> = Mutex::new(BTreeMap::new());
-
-    // Channel between the listener which listens to any database-triggered notifications
-    // regarding whether pipelines should be added, updated or deleted
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    spawn(crate::db_notifier::listen(db.clone(), tx));
-
-    // Continuously wait and act on pipeline operation notifications
-    info!("Local runner is ready");
-    loop {
-        trace!("Waiting for pipeline operation notification from database...");
-        if let Some(DbNotification::Pipeline(op, tenant_id, pipeline_id)) = rx.recv().await {
-            debug!("Received pipeline operation notification: operation={op:?} tenant_id={tenant_id} pipeline_id={pipeline_id}");
-            match op {
-                Operation::Add | Operation::Update => {
-                    pipelines
-                        .lock()
-                        .await
-                        .entry(pipeline_id)
-                        .or_insert_with(|| {
-                            let notifier = Arc::new(Notify::new());
-                            let pipeline_handle = ProcessRunner {
-                                pipeline_id,
-                                pipeline_process: None,
-                                config: config.clone(),
-                            };
-                            spawn(
-                                PipelineAutomaton::new(
-                                    pipeline_id,
-                                    tenant_id,
-                                    db.clone(),
-                                    notifier.clone(),
-                                    pipeline_handle,
-                                    PROVISIONING_TIMEOUT,
-                                    PROVISIONING_POLL_PERIOD,
-                                    SHUTDOWN_TIMEOUT,
-                                    SHUTDOWN_POLL_PERIOD,
-                                )
-                                .run(),
-                            );
-                            notifier
-                        })
-                        .notify_one();
-                }
-                Operation::Delete => {
-                    if let Some(n) = pipelines.lock().await.remove(&pipeline_id) {
-                        // Notify the automaton so it shuts down
-                        n.notify_one();
-                    }
-                }
-            };
-        }
     }
 }

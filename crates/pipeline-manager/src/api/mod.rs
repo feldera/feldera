@@ -100,6 +100,7 @@ The program version is used internally by the compiler to know when to recompile
         // Special pipeline endpoints
         pipeline::post_pipeline_action,
         pipeline::input_endpoint_action,
+        pipeline::get_pipeline_logs,
         pipeline::get_pipeline_stats,
         pipeline::get_pipeline_circuit_profile,
         pipeline::get_pipeline_heap_profile,
@@ -260,6 +261,7 @@ fn api_scope() -> Scope {
         // Special pipeline endpoints
         .service(pipeline::post_pipeline_action)
         .service(pipeline::input_endpoint_action)
+        .service(pipeline::get_pipeline_logs)
         .service(pipeline::get_pipeline_stats)
         .service(pipeline::get_pipeline_circuit_profile)
         .service(pipeline::get_pipeline_heap_profile)
@@ -332,7 +334,7 @@ pub(crate) struct ServerState {
 
 impl ServerState {
     pub async fn new(config: ApiServerConfig, db: Arc<Mutex<StoragePostgres>>) -> AnyResult<Self> {
-        let runner = RunnerInteraction::new(db.clone());
+        let runner = RunnerInteraction::new(config.clone(), db.clone());
         let db_copy = db.clone();
         Ok(Self {
             db,
