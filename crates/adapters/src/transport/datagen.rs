@@ -1222,7 +1222,7 @@ impl RecordGenerator {
                     *str = Dummy::dummy_with_rng(&BuzzwordTail(EN), rng)
                 }
                 (DatagenStrategy::CatchPhrase, _) => {
-                    *str = Dummy::dummy_with_rng(&CatchPhase(EN), rng)
+                    *str = Dummy::dummy_with_rng(&CatchPhrase(EN), rng)
                 }
                 (DatagenStrategy::BsVerb, _) => *str = Dummy::dummy_with_rng(&BsVerb(EN), rng),
                 (DatagenStrategy::BsAdj, _) => *str = Dummy::dummy_with_rng(&BsAdj(EN), rng),
