@@ -1,3 +1,4 @@
+use crate::config::ApiServerConfig;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId, PipelineStatus};
@@ -11,19 +12,23 @@ use tokio::sync::Mutex;
 
 /// Interface to interact through HTTP with the runner itself or the pipelines that it spawns.
 pub struct RunnerInteraction {
+    config: ApiServerConfig,
     db: Arc<Mutex<StoragePostgres>>,
 }
 
 impl RunnerInteraction {
-    /// Default timeout for a HTTP request to a pipeline. This is the maximum time to
+    /// Default timeout for an HTTP request to a pipeline. This is the maximum time to
     /// wait for the issued request to attain an outcome (be it success or failure).
     /// Upon timeout, the request is failed and immediately returns.
     const PIPELINE_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
+    /// Default timeout for a HTTP request to the runner.
+    const RUNNER_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
     /// Creates the interaction interface.
     /// The database is used to retrieve pipelines.
-    pub fn new(db: Arc<Mutex<StoragePostgres>>) -> Self {
-        Self { db }
+    pub fn new(config: ApiServerConfig, db: Arc<Mutex<StoragePostgres>>) -> Self {
+        Self { config, db }
     }
 
     /// Checks that the pipeline (1) exists and retrieves it, (2) is either running or paused,
@@ -196,6 +201,8 @@ impl RunnerInteraction {
     /// Makes a new HTTP request without body to the pipeline,
     /// which is found via the tenant identifier and pipeline name.
     /// The response is fully composed before returning including headers.
+    /// This function is intended to be called by the user endpoints, and
+    /// has a different more informative error response when the HTTP request fails.
     pub(crate) async fn forward_http_request_to_pipeline_by_name(
         &self,
         tenant_id: TenantId,
@@ -217,6 +224,11 @@ impl RunnerInteraction {
         )
         .await
         .map(|(_url, response)| response)
+        .map_err(|e| {
+            ManagerError::from(RunnerError::PipelineUnreachable {
+                original_error: e.to_string(),
+            })
+        })
     }
 
     /// Forwards HTTP request to the pipeline, with both the request
@@ -263,6 +275,52 @@ impl RunnerInteraction {
         })?;
 
         // Build the new HTTP response with the same status, headers and streaming body
+        let mut builder = HttpResponseBuilder::new(response.status());
+        for header in response.headers().into_iter() {
+            builder.append_header(header);
+        }
+        Ok(builder.streaming(response))
+    }
+
+    /// Retrieves the streaming logs of the pipeline through the runner.
+    pub(crate) async fn http_streaming_logs_from_pipeline_by_name(
+        &self,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<HttpResponse, ManagerError> {
+        // Retrieve pipeline
+        let pipeline = self
+            .db
+            .lock()
+            .await
+            .get_pipeline(tenant_id, pipeline_name)
+            .await?;
+
+        // Build request to the runner
+        let url = format!(
+            "http://{}/logs/{}",
+            self.config.runner_hostname_port, pipeline.id
+        );
+        let request = client
+            .request(Method::GET, &url)
+            .timeout(Self::RUNNER_HTTP_REQUEST_TIMEOUT);
+
+        // Perform request to the runner
+        let response = request
+            .send()
+            .await
+            .map_err(|e| RunnerError::RunnerEndpointSendError {
+                url: url.to_string(),
+                error: e.to_string(),
+            })
+            .map_err(|e| {
+                ManagerError::from(RunnerError::RunnerUnreachable {
+                    original_error: e.to_string(),
+                })
+            })?;
+
+        // Build the HTTP response with the same status, headers and streaming body
         let mut builder = HttpResponseBuilder::new(response.status());
         for header in response.headers().into_iter() {
             builder.append_header(header);

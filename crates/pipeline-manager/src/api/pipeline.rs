@@ -536,6 +536,48 @@ pub(crate) async fn input_endpoint_action(
     Ok(HttpResponse::Accepted().finish())
 }
 
+/// Retrieve pipeline logs as a stream.
+///
+/// The logs stream catches up to the extent of the internally configured per-pipeline
+/// circular logs buffer (limited to a certain byte size and number of lines, whichever
+/// is reached first). After the catch-up, new lines are pushed whenever they become
+/// available.
+///
+/// The logs stream will end when the pipeline is shut down. It is also possible for the
+/// logs stream to end prematurely due to the runner back-end (temporarily) losing
+/// connectivity to the pipeline instance (e.g., process). In this case, it is needed
+/// to issue again a new request to this endpoint.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Pipeline logs retrieved successfully"
+            , body = Object),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline()))
+    ),
+    tag = "Pipelines"
+)]
+#[get("/pipelines/{pipeline_name}/logs")]
+pub(crate) async fn get_pipeline_logs(
+    client: WebData<awc::Client>,
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = parse_string_param(&request, "pipeline_name")?;
+    state
+        .runner
+        .http_streaming_logs_from_pipeline_by_name(&client, *tenant_id, &pipeline_name)
+        .await
+}
+
 /// Retrieve pipeline statistics (e.g., metrics, performance counters).
 #[utoipa::path(
     context_path = "/v0",
@@ -547,7 +589,7 @@ pub(crate) async fn input_endpoint_action(
         // TODO: implement `ToSchema` for `ControllerStatus`, which is the
         //       actual type returned by this endpoint and move it to feldera-types.
         (status = OK
-            , description = "Pipeline metrics retrieved successfully."
+            , description = "Pipeline metrics retrieved successfully"
             , body = Object),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"

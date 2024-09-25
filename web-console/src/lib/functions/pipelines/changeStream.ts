@@ -27,33 +27,24 @@ const mkParser = (
 
 /**
  *
- * @param stream
- * @param pushChanges
- * @param options.bufferSize Threshold size of the buffer that holds unprocessed JSON chunks.
- * If the buffer size exceeds this value - when the new JSON batch arrives previous JSON batches are dropped
- * until the buffer size is under the threshold, or only one batch remains.
- * @returns
+ * @param chunksToParse a list of batches (complete JSON objects), each split into a list of bytestring chunks.
+ * It contains no empty bytestrings
  */
-export const parseJSONInStream = <T>(
-  stream: ReadableStream<Uint8Array>,
-  pushChanges: (changes: T[]) => void,
-  onBytesSkipped?: (bytes: number) => void,
-  options?: TokenParserOptions & { bufferSize?: number }
-) => {
-  const reader = stream.getReader()
-  let count = 0
-  let resultBuffer = [] as any[]
+const parseStreamOfUTF8JSON =
+  <T>(
+    pushChanges: (changes: T[]) => void,
+    onBytesSkipped?: (bytes: number) => void,
+    options?: TokenParserOptions & { bufferSize?: number }
+  ) =>
+  (chunksToParse: Uint8Array[][]) => {
+    let count = 0
+    let resultBuffer = [] as any[]
 
-  const onValue = ({ value }: ParsedElementInfo) => {
-    resultBuffer[count] = value
-    ++count
-  }
+    const onValue = ({ value }: ParsedElementInfo) => {
+      resultBuffer[count] = value
+      ++count
+    }
 
-  // chunksToParse is a list of batches (complete JSON objects), each split into a list of bytestring chunks
-  // chunksToParse contains no empty bytestrings
-  let chunksToParse = [[]] as Uint8Array[][]
-
-  const startInterruptableParse = () => {
     let parser = mkParser(onValue, options)
     let isEnd = false
     let done = true
@@ -147,7 +138,34 @@ export const parseJSONInStream = <T>(
     }
   }
 
-  const { start, stop } = startInterruptableParse()
+/**
+ *
+ * @param stream
+ * @param pushChanges
+ * @param options.bufferSize Threshold size of the buffer that holds unprocessed JSON chunks.
+ * If the buffer size exceeds this value - when the new JSON batch arrives previous JSON batches are dropped
+ * until the buffer size is under the threshold, or only one batch remains.
+ * @returns
+ */
+export const parseUTF8JSON = <T>(
+  stream: ReadableStream<Uint8Array>,
+  pushChanges: (changes: T[]) => void,
+  onBytesSkipped?: (bytes: number) => void,
+  options?: TokenParserOptions & { bufferSize?: number }
+) => {
+  return processUTF8StreamByLine(
+    stream,
+    parseStreamOfUTF8JSON(pushChanges, onBytesSkipped, options)
+  )
+}
+
+export const processUTF8StreamByLine = (
+  stream: ReadableStream<Uint8Array>,
+  parser: (chunks: Uint8Array[][]) => { start: () => Promise<void>; stop: () => void }
+) => {
+  const reader = stream.getReader()
+  let chunksToParse = [[]] as Uint8Array[][]
+  const { start, stop } = parser(chunksToParse)
 
   setTimeout(async () => {
     start()
@@ -168,10 +186,61 @@ export const parseJSONInStream = <T>(
       await new Promise((resolve) => setTimeout(resolve))
     }
   })
-  return () => {
-    reader.cancel()
-    stop()
+  return {
+    cancel: () => {
+      reader.cancel()
+      stop()
+    }
   }
+}
+
+export const parseUTF8AsTextLines = (
+  stream: ReadableStream<Uint8Array>,
+  onValue: (value: string) => void,
+  onDone?: () => void
+) => {
+  queueMicrotask(async () => {
+    for await (let line of makeUTF8LineIterator(stream, onDone)) {
+      onValue(line)
+    }
+  })
+  return {
+    cancel: () => stream.cancel()
+  }
+}
+
+async function* makeUTF8LineIterator(stream: ReadableStream<Uint8Array>, onDone?: () => void) {
+  const utf8Decoder = new TextDecoder('utf-8')
+  let reader = stream.getReader()
+  let readerDone = false
+  let res = await reader.read()
+  readerDone = res.done
+  let chunk = res.value ? utf8Decoder.decode(res.value, { stream: true }) : ''
+
+  let re = /\r\n|\n|\r/gm
+  let startIndex = 0
+
+  for (;;) {
+    let result = re.exec(chunk)
+    if (!result) {
+      if (readerDone) {
+        break
+      }
+      let remainder = chunk.slice(startIndex)
+      let res2 = await reader.read()
+      chunk = remainder + (res2.value ? utf8Decoder.decode(res2.value, { stream: true }) : '')
+      readerDone = res2.done
+      startIndex = re.lastIndex = 0
+      continue
+    }
+    yield chunk.substring(startIndex, result.index)
+    startIndex = re.lastIndex
+  }
+  if (startIndex < chunk.length) {
+    // last line didn't end in a newline char
+    yield chunk.slice(startIndex)
+  }
+  onDone?.()
 }
 
 /**

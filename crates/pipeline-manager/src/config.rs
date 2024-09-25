@@ -184,6 +184,12 @@ pub struct ApiServerConfig {
     /// and sent to our telemetry service.
     #[arg(long, default_value = "", env = "FELDERA_TELEMETRY")]
     pub telemetry: String,
+
+    /// The hostname:port to use in a URL to reach the runner web server, which for instance
+    /// provides access to pipeline logs. The hostname will typically be a DNS name for the host
+    /// running the runner service.
+    #[arg(long, default_value = "127.0.0.1:8089")]
+    pub runner_hostname_port: String,
 }
 
 impl ApiServerConfig {
@@ -474,6 +480,10 @@ impl CompilerConfig {
 #[derive(Parser, Deserialize, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct LocalRunnerConfig {
+    /// Local runner main HTTP server port.
+    #[arg(long, default_value = "8089")]
+    pub runner_main_port: u16,
+
     /// Directory where the local runner stores its filesystem state:
     /// fetched binaries, configuration files etc.
     #[serde(default = "default_working_directory")]

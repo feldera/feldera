@@ -1526,6 +1526,61 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/logs": {
+      "get": {
+        "tags": [
+          "Pipelines"
+        ],
+        "summary": "Retrieve pipeline logs as a stream.",
+        "description": "The logs stream catches up to the extent of the internally configured per-pipeline\ncircular logs buffer (limited to a certain byte size and number of lines, whichever\nis reached first). After the catch-up, new lines are pushed whenever they become\navailable.\n\nThe logs stream will end when the pipeline is shut down. It is also possible for the\nlogs stream to end prematurely due to the runner back-end (temporarily) losing\nconnectivity to the pipeline instance (e.g., process). In this case, it is needed\nto issue again a new request to this endpoint.",
+        "operationId": "get_pipeline_logs",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipeline logs retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "details": {
+                    "pipeline_id": "2e79afe1-ff4d-44d3-af5f-9397de7746c0"
+                  },
+                  "error_code": "UnknownPipeline",
+                  "message": "Unknown pipeline id '2e79afe1-ff4d-44d3-af5f-9397de7746c0'"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/query": {
       "get": {
         "tags": [
@@ -1657,7 +1712,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Pipeline metrics retrieved successfully.",
+            "description": "Pipeline metrics retrieved successfully",
             "content": {
               "application/json": {
                 "schema": {

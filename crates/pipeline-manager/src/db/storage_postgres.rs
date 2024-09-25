@@ -770,7 +770,7 @@ impl StoragePostgres {
         return Ok(Self { config, pool });
     }
 
-    /// Run database migrations
+    /// Runs database migrations if needed.
     pub async fn run_migrations(&self) -> Result<(), DBError> {
         debug!("Applying database migrations if needed...");
         let mut client = self.pool.get().await?;

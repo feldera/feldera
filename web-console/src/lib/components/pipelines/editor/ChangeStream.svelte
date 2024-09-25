@@ -4,11 +4,14 @@
 <script lang="ts">
   import JSONbig from 'true-json-bigint'
 
-  import { VirtualList, type AfterScrollEvent } from 'svelte-virtuallists'
-  import { useResizeObserver } from 'runed'
+  import { VirtualList } from 'svelte-virtuallists'
   import { scale } from 'svelte/transition'
   import { humanSize } from '$lib/functions/common/string'
   import type { XgressEntry } from '$lib/services/pipelineManager'
+  import {
+    useElementSize,
+    useStickScrollToBottom
+  } from '$lib/compositions/components/virtualList.svelte'
 
   type Payload = XgressEntry | { skippedBytes: number }
   type Row = { relationName: string } & Payload
@@ -21,47 +24,15 @@
     }
   } = $props()
 
-  let len = $derived(changeStream.rows.length)
-  let lastLen = $state(changeStream.rows.length)
-  let scrollOffset = $state(0)
-  let lastScrollOffset = $state(0)
   const itemSize = 24
   let ref = $state<HTMLElement>()
-  let height = $state(0)
-  let didFirstScroll = $state(false)
-  const onAfterScroll = (e: AfterScrollEvent) => {
-    lastScrollOffset = Number(e.offset)
-  }
-  useResizeObserver(
-    () => ref,
-    (entries) => {
-      const entry = entries[0]
-      if (!entry) {
-        return
-      }
-      height = entry.contentRect.height
-    }
+  let size = useElementSize(() => ref)
+
+  const scrollProps = useStickScrollToBottom(
+    () => size.height,
+    () => changeStream.rows,
+    itemSize
   )
-  $effect(() => {
-    if (height === 0) {
-      return
-    }
-    if (lastLen === len && didFirstScroll) {
-      return
-    }
-    stickToBottom(lastLen, len)
-    lastLen = len
-  })
-  const stickToBottom = (lastLen: number, len: number) => {
-    if (lastScrollOffset !== 0 && Math.round(lastScrollOffset + height) >= lastLen * itemSize) {
-      // Scroll to the new bottom of the list if scroll was at the bottom previously
-      lastScrollOffset = scrollOffset = len * itemSize
-    } else if (!didFirstScroll && len > height / itemSize) {
-      // Scroll to the bottom of the list the first time it became longer than the viewport
-      lastScrollOffset = scrollOffset = len * itemSize
-      didFirstScroll = true
-    }
-  }
 </script>
 
 <div class="relative flex flex-1 flex-col" bind:this={ref}>
@@ -78,12 +49,12 @@
 
   <VirtualList
     width="100%"
-    {height}
+    height={size.height}
+    scrollOffset={scrollProps.scrollOffset}
+    onAfterScroll={scrollProps.onAfterScroll}
     model={changeStream.rows}
-    {scrollOffset}
     modelCount={changeStream.rows.length}
     {itemSize}
-    {onAfterScroll}
   >
     {#snippet slot({ item, style }: { item: Row; style: string })}
       <div
@@ -112,15 +83,11 @@
       </div>
     {/snippet}
   </VirtualList>
-  {#if height !== 0 && Math.round(lastScrollOffset + height) < len * itemSize}
+  {#if !scrollProps.isAtBottom}
     <button
       transition:scale={{ duration: 200 }}
       class="fd fd-arrow_downward absolute bottom-4 right-4 rounded-full p-2 text-[24px] preset-filled-primary-500"
-      onclick={() => {
-        // Force scroll to bottom
-        scrollOffset = undefined!
-        setTimeout(() => (scrollOffset = len * itemSize))
-      }}
+      onclick={scrollProps.scrolToBottom}
     ></button>
   {/if}
 </div>

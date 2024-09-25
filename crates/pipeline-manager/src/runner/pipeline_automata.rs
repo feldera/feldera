@@ -1,17 +1,15 @@
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::common::Version;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
 };
-use crate::db::types::program::generate_pipeline_config;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::interaction::RunnerInteraction;
+use crate::runner::pipeline_executor::PipelineExecutor;
 use actix_web::http::{Method, StatusCode};
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use feldera_types::config::PipelineConfig;
 use feldera_types::error::ErrorResponse;
@@ -42,81 +40,8 @@ async fn automaton_http_request_to_pipeline_json(
     .await
 }
 
-/// A description of a pipeline to execute.
-#[derive(Eq, PartialEq, Debug, Clone)]
-pub struct PipelineExecutionDesc {
-    pub pipeline_id: PipelineId,
-    pub pipeline_name: String,
-    pub program_version: Version,
-    pub program_binary_url: String,
-    pub deployment_config: PipelineConfig,
-}
-
-/// Trait to be implemented by any pipeline runner.
-/// The `PipelineAutomaton` invokes these methods per pipeline.
-#[async_trait]
-pub trait PipelineExecutor: Sync + Send {
-    /// Converts an extended pipeline descriptor retrieved from the database
-    /// into a execution descriptor which has no optional fields.
-    async fn to_execution_desc(
-        &self,
-        pipeline: &ExtendedPipelineDescr,
-    ) -> Result<PipelineExecutionDesc, ManagerError> {
-        // Handle optional fields
-        let (inputs, outputs) = match pipeline.program_info.clone() {
-            None => {
-                return Err(ManagerError::from(
-                    RunnerError::PipelineMissingProgramInfo {
-                        pipeline_name: pipeline.name.clone(),
-                        pipeline_id: pipeline.id,
-                    },
-                ))
-            }
-            Some(program_info) => (
-                program_info.input_connectors,
-                program_info.output_connectors,
-            ),
-        };
-        let program_binary_url = match pipeline.program_binary_url.clone() {
-            None => {
-                return Err(ManagerError::from(
-                    RunnerError::PipelineMissingProgramBinaryUrl {
-                        pipeline_name: pipeline.name.clone(),
-                        pipeline_id: pipeline.id,
-                    },
-                ))
-            }
-            Some(program_binary_url) => program_binary_url,
-        };
-
-        let deployment_config =
-            generate_pipeline_config(pipeline.id, &pipeline.runtime_config, &inputs, &outputs);
-        Ok(PipelineExecutionDesc {
-            pipeline_id: pipeline.id,
-            pipeline_name: pipeline.name.clone(),
-            program_version: pipeline.program_version,
-            program_binary_url,
-            deployment_config,
-        })
-    }
-
-    /// Starts a new pipeline
-    /// (e.g., brings up a process that runs the pipeline binary)
-    async fn start(&mut self, ped: PipelineExecutionDesc) -> Result<(), ManagerError>;
-
-    /// Returns the hostname:port over which the pipeline's HTTP server should be
-    /// reachable. `Ok(None)` indicates that the pipeline is still initializing.
-    async fn get_location(&mut self) -> Result<Option<String>, ManagerError>;
-
-    /// Initiates pipeline shutdown
-    /// (e.g., send a SIGTERM successfully to the process).
-    async fn shutdown(&mut self) -> Result<(), ManagerError>;
-
-    /// Returns whether the pipeline has been shutdown.
-    async fn check_if_shutdown(&mut self) -> bool;
-}
-
 /// Utility type for the pipeline automaton to describe state changes.
+#[derive(Debug, PartialEq)]
 enum State {
     TransitionToShutdown,
     TransitionToProvisioning { deployment_config: PipelineConfig },
@@ -142,6 +67,10 @@ where
     db: Arc<Mutex<StoragePostgres>>,
     notifier: Arc<Notify>,
 
+    /// Whether the first run cycle still has to be done.
+    /// In the first run cycle, the pipeline handle's initialization is called.
+    first_run_cycle: bool,
+
     /// Maximum time to wait for the pipeline instance to be provisioned.
     /// This can differ significantly between the type of runner.
     provisioning_timeout: Duration,
@@ -160,7 +89,7 @@ where
 impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// The frequency of polling the pipeline during normal operation
     /// when we don't normally expect its state to change.
-    const DEFAULT_PIPELINE_POLL_PERIOD: Duration = Duration::from_millis(10_000);
+    const DEFAULT_PIPELINE_POLL_PERIOD: Duration = Duration::from_millis(2_500);
 
     /// Maximum time to wait for the pipeline to initialize its connectors and web server.
     const INITIALIZATION_TIMEOUT: Duration = Duration::from_millis(60_000);
@@ -187,6 +116,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             pipeline_handle,
             db,
             notifier,
+            first_run_cycle: true,
             provisioning_timeout,
             provisioning_poll_period,
             shutdown_timeout,
@@ -199,7 +129,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         let pipeline_id = self.pipeline_id;
         let mut poll_timeout = Self::DEFAULT_PIPELINE_POLL_PERIOD;
         loop {
-            // Wait until the timeout expires or we get notified that the
+            // Wait until the timeout expires, or we get notified that the
             // pipeline has been updated
             let _ = timeout(poll_timeout, self.notifier.notified()).await;
             match self.do_run().await {
@@ -245,6 +175,15 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .await
             .get_pipeline_by_id(self.tenant_id, self.pipeline_id)
             .await?;
+
+        // Initialization is called on the first run cycle such that if the pipeline
+        // was already started, logs for instance can be attempted to be retrieved.
+        if self.first_run_cycle {
+            self.pipeline_handle
+                .init(pipeline.deployment_status != PipelineStatus::Shutdown)
+                .await;
+            self.first_run_cycle = false;
+        }
 
         // Determine transition
         let transition: State = match (
@@ -324,6 +263,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         };
 
         // Store the transition in the database
+        if transition != State::Unchanged {
+            debug!(
+                "Performing database operation to store {transition:?} for pipeline {}...",
+                pipeline.id
+            );
+        }
         let new_status = match transition {
             State::TransitionToShutdown => {
                 self.db
@@ -500,7 +445,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
-    /// Awaiting for the initialization to finish.
+    /// Awaiting the initialization to finish.
     /// The pipeline web server is polled at an interval.
     /// The pipeline transitions to failure upon timeout or error.
     async fn transit_initializing_to_paused_or_running(
@@ -795,7 +740,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     }
 
     /// User acknowledges pipeline failure by invoking the `/shutdown` endpoint.
-    /// Make a last effort to shutdown the pipeline, and transition to `Shutdown` state
+    /// Make a last effort to shut down the pipeline, and transition to `Shutdown` state
     /// such that the pipeline can be started again.
     async fn transit_failed_to_shutdown(&mut self) -> State {
         // TODO: the runner should be authoritative on deciding whether a pipeline
@@ -811,7 +756,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
 #[cfg(test)]
 mod test {
-    use super::{PipelineExecutionDesc, PipelineExecutor};
     use crate::auth::TenantRecord;
     use crate::db::storage::Storage;
     use crate::db::storage_postgres::StoragePostgres;
@@ -821,12 +765,14 @@ mod test {
     use crate::error::ManagerError;
     use crate::logging;
     use crate::runner::pipeline_automata::PipelineAutomaton;
+    use crate::runner::pipeline_executor::{LogMessage, PipelineExecutionDesc, PipelineExecutor};
     use async_trait::async_trait;
     use feldera_types::config::RuntimeConfig;
     use feldera_types::program_schema::ProgramSchema;
     use serde_json::json;
     use std::sync::Arc;
     use std::time::Duration;
+    use tokio::sync::mpsc::{Receiver, Sender};
     use tokio::sync::{Mutex, Notify};
     use uuid::Uuid;
     use wiremock::matchers::{method, path};
@@ -838,6 +784,24 @@ mod test {
 
     #[async_trait]
     impl PipelineExecutor for MockPipeline {
+        type Config = ();
+        const PROVISIONING_TIMEOUT: Duration = Duration::from_millis(1);
+        const PROVISIONING_POLL_PERIOD: Duration = Duration::from_millis(1);
+        const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(1);
+        const SHUTDOWN_POLL_PERIOD: Duration = Duration::from_millis(1);
+
+        fn new(
+            _pipeline_id: PipelineId,
+            _config: Self::Config,
+            _follow_request_receiver: Receiver<Sender<LogMessage>>,
+        ) -> Self {
+            todo!()
+        }
+
+        async fn init(&mut self, _was_started: bool) {
+            // Nothing to implement
+        }
+
         async fn start(&mut self, _ped: PipelineExecutionDesc) -> Result<(), ManagerError> {
             Ok(())
         }
