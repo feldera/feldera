@@ -16,8 +16,9 @@
         <span
           class=" text-[20px] {systemError.cause.warning
             ? 'fd fd-warning_amber text-warning-500'
-            : 'fd fd-add_circle_outline rotate-45 text-error-500'}"
-        ></span></a
+            : 'fd fd-close_circle_outline text-error-500'}"
+        >
+        </span></a
       >
       <span
         class="whitespace-pre-wrap break-words align-text-bottom"

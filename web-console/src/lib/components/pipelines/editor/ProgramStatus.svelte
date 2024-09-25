@@ -24,7 +24,7 @@
         undefined,
         () => 'bx bx-loader-alt animate-spin pt-[0.5px] text-[24px]'
       )
-      .with(P.shape({}), () => 'fd fd-add_circle_outline rotate-45 text-[24px] text-error-500')
+      .with(P.shape({}), () => 'fd fd-close_circle_outline inline-block text-[24px] text-error-500')
       .exhaustive()}
   >
   </span>
@@ -40,10 +40,7 @@
   <span
     class={match(programStatus)
       .with('CompilingRust', () => 'bx bx-loader-alt animate-spin pt-[0.5px] text-[24px]')
-      .with(
-        { RustError: P.any },
-        () => 'fd fd-add_circle_outline rotate-45 text-[24px] text-error-500'
-      )
+      .with({ RustError: P.any }, () => 'fd fd-close_circle_outline text-[24px] text-error-500')
       .with('Success', 'Pending', 'CompilingSql', P.shape({}), undefined, () => '')
       .exhaustive()}
   >

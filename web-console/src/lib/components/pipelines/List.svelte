@@ -82,8 +82,8 @@
   }
 </script>
 
-<div class="relative flex flex-col gap-2 overflow-y-auto px-4 pb-2" use:bindScrollY={{ scrollY }}>
-  <div class="sticky top-0 m-0 pt-1 bg-surface-50-950">
+<div class="relative flex flex-col gap-2 overflow-y-auto pb-2" use:bindScrollY={{ scrollY }}>
+  <div class="sticky top-0 px-4 py-0.5 bg-surface-50-950">
     {#if assistCreatingPipeline}
       <input
         bind:this={createPipelineInputRef}
@@ -102,7 +102,7 @@
       />
       <div class="-mb-2 pt-2 text-surface-600-400">Press Enter to create</div>
     {:else}
-      <div class="flex justify-center">
+      <div class="flex">
         <button
           class="btn mb-7 mt-auto self-end text-sm preset-filled-primary-500"
           onclick={() => goto('#new')}
@@ -114,7 +114,7 @@
   </div>
   {#each pipelines as pipeline}
     <a
-      class="-mx-4 -my-0.5 flex flex-nowrap items-center gap-2 border-2 border-transparent px-3.5 {$page
+      class="-my-0.5 flex flex-nowrap items-center gap-2 border-2 border-transparent px-3.5 {$page
         .params.pipelineName === pipeline.name
         ? 'bg-white-black'
         : 'border-transparent hover:!bg-opacity-30 hover:bg-surface-100-900'}"
