@@ -1,6 +1,9 @@
 <script lang="ts">
-  import { goto } from '$app/navigation'
+  import { goto, preloadCode } from '$app/navigation'
+  import { base } from '$app/paths'
   import { useTryPipeline } from '$lib/compositions/pipelines/useTryPipeline'
+
+  preloadCode(`${base}/pipelines/*`)
 
   let { data } = $props()
   const tryPipeline = useTryPipeline()
