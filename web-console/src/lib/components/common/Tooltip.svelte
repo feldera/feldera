@@ -1,4 +1,4 @@
-<script lang="ts" context="module">
+<script lang="ts" module>
   import Tooltip from './Tooltip.svelte'
   export { Tooltip }
 </script>

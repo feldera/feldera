@@ -1,4 +1,4 @@
-<script lang="ts" context="module">
+<script lang="ts" module>
   type RelationInfo = {
     pipelineName: string
     relationName: string
@@ -31,7 +31,7 @@
     )
   }
   const startReadingStream = (pipelineName: string, relationName: string) => {
-    const handle = relationEggressStream(pipelineName, relationName).then((stream) => {
+    const handle = relationEgressStream(pipelineName, relationName).then((stream) => {
       if ('message' in stream) {
         return undefined
       }
@@ -86,7 +86,7 @@
 
   import { getCaseIndependentName } from '$lib/functions/felderaRelation'
   import {
-    relationEggressStream,
+    relationEgressStream,
     relationIngress,
     type ExtendedPipeline,
     type XgressEntry
