@@ -1,4 +1,4 @@
-from test_base import TestTable
+from .test_base import TestTable
 
 class test_bit_table(TestTable):
     """Define the table used by some bitwise tests"""

@@ -1,4 +1,4 @@
-from test_base import TestTable, TestView
+from .test_base import TestTable, TestView
 
 class test_decimal_table(TestTable):
     """Define the table used by all decimal tests"""
