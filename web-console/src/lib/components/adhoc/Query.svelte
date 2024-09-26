@@ -4,9 +4,19 @@
   import type { Field } from '$lib/services/manager'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
 
+  export type Row = { cells: SQLValueJS[] } | { error: string }
+
+  export type QueryResult = {
+    rows: Row[]
+    columns: Field[]
+    totalSkippedBytes: number
+    endResultStream: () => void
+  }
+
   export type QueryData = {
     query: string
-    result?: Promise<{ rows: SQLValueJS[][]; columns: Field[] } | Error>
+    progress?: boolean
+    result?: QueryResult
   }
 
   const handleKeyDown =
@@ -31,66 +41,72 @@
 
 <script lang="ts">
   let {
-    value = $bindable(),
+    // value
+    query = $bindable(),
+    result,
+    progress,
     onSubmitQuery,
     onDeleteQuery,
     disabled,
     isLastQuery
   }: {
-    value: QueryData
+    // value: QueryData
     onSubmitQuery: (query: string) => void
     onDeleteQuery: () => void
     disabled: boolean
     isLastQuery: boolean
-  } = $props()
+  } & QueryData = $props()
+
+  $effect(() => {
+    // console.log('effect', JSON.stringify(progress))
+  })
 </script>
 
 <div class="mr-4 flex flex-nowrap items-start">
   <div class="w-full">
     <textarea
-      bind:value={value.query}
+      bind:value={query}
       class="textarea bg-white dark:bg-black"
       placeholder="SQL"
-      onkeydown={handleKeyDown(onSubmitQuery, disabled)}
-    ></textarea>
-    {#if value.result}
-      {#await value.result}
-        <Progress value={null} meterBg="bg-secondary-500" base="py-2 h-5"></Progress>
-      {:then result}
-        {#if 'rows' in result}
-          <div class="my-2 max-h-64 overflow-auto">
-            <table>
-              <thead class="sticky top-0 !mb-0 border-b-2 bg-surface-50-950">
-                <tr>
-                  {#each result.columns as column}
-                    <th>{getCaseIndependentName(column)}</th>
+      onkeydown={handleKeyDown(onSubmitQuery, disabled)}></textarea>
+    {#if progress}
+      <Progress value={null} meterBg="bg-secondary-500" base="py-2 h-5 -mb-5"></Progress>
+    {/if}
+    {#if result}
+      <div class="mt-5 max-h-64 overflow-auto">
+        <table>
+          {#if result.columns.length}
+            <thead class="bg-surface-50-950 sticky top-0 !mb-0 border-b-2">
+              <tr>
+                {#each result.columns as column}
+                  <th>{getCaseIndependentName(column)}</th>
+                {/each}
+              </tr>
+            </thead>
+          {/if}
+          <tbody>
+            {#each result.rows as row}
+              {#if 'cells' in row}
+                <tr class="even:bg-white even:dark:bg-black">
+                  {#each row.cells as value}
+                    <td>
+                      {String(value)}
+                    </td>
                   {/each}
                 </tr>
-              </thead>
-              <tbody>
-                {#each result.rows as row}
-                  <tr class="even:bg-white even:dark:bg-black">
-                    {#each row as value}
-                      <td>
-                        {String(value)}
-                      </td>
-                    {/each}
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {:else}
-          <div class="whitespace-pre-wrap pt-1 font-mono text-error-500">
-            {result.details.error}
-          </div>
-        {/if}
-      {/await}
+              {:else}
+                <tr>
+                  <td colspan="99999999" class="preset-filled-error-50-950 px-2">{row.error}</td>
+                </tr>
+              {/if}
+            {/each}
+          </tbody>
+        </table>
+      </div>
     {/if}
   </div>
   <button
-    class="{isLastQuery ? '' : 'fd fd-delete'}  w-10 p-2 text-[24px]"
+    class="{isLastQuery ? 'pointer-events-none' : 'fd fd-delete'} w-10 p-2 text-[24px]"
     onclick={onDeleteQuery}
-    aria-label="Delete query"
-  ></button>
+    aria-label="Delete query"></button>
 </div>

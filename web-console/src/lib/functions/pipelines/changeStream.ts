@@ -34,6 +34,7 @@ const parseStreamOfUTF8JSON =
   <T>(
     pushChanges: (changes: T[]) => void,
     onBytesSkipped?: (bytes: number) => void,
+    onParseEnded?: (reason: any) => void,
     options?: TokenParserOptions & { bufferSize?: number }
   ) =>
   (chunksToParse: Uint8Array[][]) => {
@@ -48,6 +49,7 @@ const parseStreamOfUTF8JSON =
     let parser = mkParser(onValue, options)
     let isEnd = false
     let done = true
+    let noNewData = false
 
     const interrupt = async () => {
       try {
@@ -66,6 +68,7 @@ const parseStreamOfUTF8JSON =
     return {
       start: async () => {
         while (!isEnd) {
+          console.log('loop')
           const value = chunksToParse[0]?.shift()
           if (!value) {
             if (chunksToParse.length > 1) {
@@ -74,7 +77,11 @@ const parseStreamOfUTF8JSON =
               parser = mkParser(onValue, options)
             }
             await new Promise((resolve) => setTimeout(resolve))
-            continue
+            if (chunksToParse.length < 2 && noNewData) {
+              break
+            } else {
+              continue
+            }
           }
 
           // Parse JSON in subchunks of up to 200000 bytes to keep UI freezes to a minimum
@@ -114,6 +121,7 @@ const parseStreamOfUTF8JSON =
             count = 0
             done = false
             try {
+              // console.log('parsing', new TextDecoder().decode(value.slice(n0, n1)))
               parser.write(value.slice(n0, n1))
             } catch (e) {
               console.log('JSON parse error', e)
@@ -130,10 +138,15 @@ const parseStreamOfUTF8JSON =
             await new Promise((resolve) => setTimeout(resolve))
           }
         }
+        console.log('STOP')
+        onParseEnded?.(undefined)
       },
       stop() {
         isEnd = true
         interrupt()
+      },
+      noNewData() {
+        noNewData = true
       }
     }
   }
@@ -151,28 +164,31 @@ export const parseUTF8JSON = <T>(
   stream: ReadableStream<Uint8Array>,
   pushChanges: (changes: T[]) => void,
   onBytesSkipped?: (bytes: number) => void,
+  onParseEnded?: (reason: any) => void,
   options?: TokenParserOptions & { bufferSize?: number }
 ) => {
   return processUTF8StreamByLine(
     stream,
-    parseStreamOfUTF8JSON(pushChanges, onBytesSkipped, options)
+    parseStreamOfUTF8JSON(pushChanges, onBytesSkipped, onParseEnded, options),
   )
 }
 
 export const processUTF8StreamByLine = (
   stream: ReadableStream<Uint8Array>,
-  parser: (chunks: Uint8Array[][]) => { start: () => Promise<void>; stop: () => void }
+  parser: (chunks: Uint8Array[][]) => { start: () => Promise<void>; stop: () => void; noNewData?: () => void },
+  onStreamClosed?: (reason: any) => void,
 ) => {
   const reader = stream.getReader()
   let chunksToParse = [[]] as Uint8Array[][]
-  const { start, stop } = parser(chunksToParse)
+  const { start, stop, noNewData } = parser(chunksToParse)
 
   setTimeout(async () => {
     start()
     while (true) {
       const { done, value } = await reader.read()
       if (done || !value) {
-        stop()
+        // stop()
+        noNewData?.()
         break
       }
 
@@ -257,6 +273,8 @@ function splitByNewline(
     const newlineIndex = chunk.indexOf(10, start)
     const end = newlineIndex === -1 ? chunk.length : newlineIndex
 
+    // console.log('onChunk 0', chunk)
+    // console.log('onChunk', new TextDecoder().decode(chunk.subarray(start, end)))
     onChunk(chunk.subarray(start, end))
     if (end !== chunk.length) {
       onBatch()
