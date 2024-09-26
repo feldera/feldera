@@ -1,6 +1,7 @@
 from .test_base import TestTable
 
 class test_int0_table(TestTable):
+    """Define the table used by some integer tests"""
     def __init__(self):
         self.sql = '''CREATE TABLE int0_tbl(
                       id INT, c1 TINYINT, c2 TINYINT NOT NULL, c3 INT2, c4 INT2 NOT NULL, c5 INT, c6 INT NOT NULL, c7 BIGINT, c8 BIGINT NOT NULL
