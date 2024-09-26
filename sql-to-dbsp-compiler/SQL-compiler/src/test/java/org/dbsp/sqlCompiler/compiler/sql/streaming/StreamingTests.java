@@ -733,7 +733,84 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE id + ts/2 - SIN(id) >= year(now()) + 10 AND
                       id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20;""";
-           CompilerCircuitStream ccs = this.getCCS(sql);
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int window = 0;
+            int waterline = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void postorder(DBSPWaterlineOperator operator) {
+                this.waterline++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+                Assert.assertEquals(2, this.waterline);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
+    public void testNow8() {
+        // now() used in WHERE with complex function
+        String sql = """
+                CREATE TABLE transactions (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts INT
+                );
+                CREATE VIEW window_computation AS
+                SELECT *
+                FROM transactions
+                WHERE ts > 4 AND ts < 100 AND
+                      id + ts/2 - SIN(id) >= year(now()) + 10 AND
+                      id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20 AND
+                      id >= EXTRACT(CENTURY FROM now()) * 20 AND
+                      id = 4;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int window = 0;
+            int waterline = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void postorder(DBSPWaterlineOperator operator) {
+                this.waterline++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(2, this.window);
+                Assert.assertEquals(2, this.waterline);
+            }
+        };
+        visitor.apply(ccs.circuit);
+    }
+
+    @Test
+    public void testNow9() {
+        // now() used in WHERE with complex function where only some part generates a temporal filter
+        String sql = """
+                CREATE TABLE transactions (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts INT
+                );
+                CREATE VIEW window_computation AS
+                SELECT *
+                FROM transactions
+                WHERE id >= EXTRACT(CENTURY FROM now()) * 20 AND
+                      EXTRACT(CENTURY FROM now()) % 10 = 0;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
         CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
             int window = 0;
             int waterline = 0;
