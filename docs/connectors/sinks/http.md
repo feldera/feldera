@@ -7,9 +7,8 @@ Feldera supports receiving a stream of changes to a SQL table or view over HTTP.
 
 * It is the only output connector not created and managed by the user.
 
-* Usage is through a special endpoint:
-
-  **[/v0/pipelines/:pipeline_name/egress/table_or_view_name?format=...](https://www.feldera.com/api/subscribe-to-a-stream-of-updates-from-a-sql-view-or-table)**
+* Usage is through a special
+  endpoint: [/v0/pipelines/:pipeline_name/egress/table_or_view_name?format=...](https://docs.feldera.com/api/subscribe-to-a-stream-of-updates-from-a-sql-view-or-table)
 
 * Specify data output format using URL query parameters
   (e.g., `format=...`, and more depending on format).
@@ -31,11 +30,11 @@ curl -i -X 'POST' \
 import requests
 
 api_url = "http://localhost:8080"
-headers = { "authorization": f"Bearer <API-KEY>" }
+headers = {"authorization": f"Bearer <API-KEY>"}
 
 with requests.post(
-    f'{api_url}/v0/pipelines/supply-chain-pipeline/egress/average_price?format=json',
-    stream=True
+        f'{api_url}/v0/pipelines/supply-chain-pipeline/egress/average_price?format=json',
+        stream=True
 ) as f_in:
     for line in f_in:
         print(line.decode("utf-8").strip())

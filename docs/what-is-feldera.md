@@ -15,7 +15,7 @@ site explains the concepts behind Feldera and how to use it
 through its user interface and API.
 
 Feldera's implementation is based on a streaming algebra called "DataBase
-Stream Processor", [DBSP](https://www.feldera.com/vldb23.pdf).
+Stream Processor", [DBSP](https://docs.feldera.com/vldb23.pdf).
 
 ![Analytics](what-is-feldera.svg)
 
