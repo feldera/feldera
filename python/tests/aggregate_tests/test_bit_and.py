@@ -1,4 +1,4 @@
-from test_base import TestView
+from .test_base import TestView
 
 class test_bit_and(TestView):
     def __init__(self):

@@ -1,4 +1,4 @@
-from test_base import TestTable, TestView
+from .test_base import TestTable, TestView
 
 class test_count_col_table(TestTable):
     def __init__(self):

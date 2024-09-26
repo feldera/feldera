@@ -1,4 +1,4 @@
-from test_base import TestView
+from .test_base import TestView
 from decimal import Decimal
 
 class test_decimal_avg(TestView):
