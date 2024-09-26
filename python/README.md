@@ -68,5 +68,5 @@ To run the aggregate tests use:
 
 ```bash
 cd python
-PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/test_base_class.py
+PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/test_base.py
 ```

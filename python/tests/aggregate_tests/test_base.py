@@ -1,6 +1,6 @@
 """Run multiple Python tests in a single pipeline"""
 
-from typing import TypeAlias
+from typing import TypeAlias, Dict
 from types import ModuleType
 import os
 import re
@@ -50,7 +50,7 @@ class SqlObject:
         # If a match is found, return the table name
         if match:
             return match.group(1)
-        raise "Could not parse sql " + sql
+        raise Exception("Could not parse sql '" + sql + "'")
 
 
 class Table(SqlObject):
@@ -61,7 +61,50 @@ class Table(SqlObject):
 
     def __init__(self, sql: str, data: JSON):
         super().__init__(SqlObject.extract_name(sql, True), sql, Table.add_insert(data))
+        if DEBUG:
+            print(self.as_sql_insert())
 
+    @staticmethod
+    def row_to_values(row: Dict[str, any]) -> str:
+        result = ""
+        for key, value in row.items():
+            if result != "":
+                result += ", "
+            if value is None:
+                result += "NULL"
+            else:
+                result += str(value)
+        return result
+
+    def as_sql_insert(self) -> str:
+        """Returns an insert statement for the table.  Assumes that the dictionary
+           contains the columns in the right order"""
+        stat = "INSERT INTO " + self.name + " VALUES"
+        for row in self.data:
+            if stat != "":
+                stat += ", "
+            stat += "(" + Table.row_to_values(row['insert']) + ")"
+        return stat + ";"
+
+
+def consolidate(data: JSON) -> JSON:
+    """Attempt to consolidate some results that contains identical rows with +1/-1.
+       Not a complete solution, but solves a real problem for aggregate tests
+       where we receive 2 lists of None values that cancel each other"""
+    insert = list(filter(lambda x: x["insert_delete"] == 1, data))
+    delete = list(filter(lambda x: x["insert_delete"] == -1, data))
+    for x in delete:
+        x["insert_delete"] = 1
+    result = []
+    for x in insert:
+        if x in delete:
+            delete.remove(x)
+            continue
+        del x['insert_delete']
+        result.append(x)
+    if len(delete) != 0:
+        raise("Could not normalize data", data)
+    return result
 
 class View(SqlObject):
     """A SQL view with contents"""
@@ -79,6 +122,7 @@ class View(SqlObject):
     def validate(self):
         """Check that the data received matches the expected data"""
         data = self.listener.to_dict()
+        data = consolidate(data)
         expected = self.get_data()
         assert expected == data , f"ASSERTION ERROR: failed view:{self.name}: {expected} != {data}"
 
@@ -163,11 +207,17 @@ class TestView:
 ######################
 ## Add here import statements for all files with tests
 
-from tests.aggregate_tests import test_decimal_avg, test_decimal_agg
+from tests.aggregate_tests import test_decimal_table, test_decimal_avg, test_decimal_sum
+from tests.aggregate_tests import test_bit_table, test_bit_and, test_bit_xor, test_bit_or
+from tests.aggregate_tests import test_int_table, test_int_avg, test_sum, test_avg
+from tests.aggregate_tests import test_array, test_every, test_some, test_count, test_count_col
+from tests.aggregate_tests import test_max, test_min, test_stddev_pop, test_stddev_samp
 
 def register_tests_in_module(module, ta: TestAccumulator):
     """Registers all the tests in the specified module.
        Tests are classes that start with test_.
+       (As a consequence, a test may be disabled by renaming it
+       not to start with 'test_'.)
        They must all derive from TestView or TestTable"""
     for name, obj in inspect.getmembers(module):
         if name.startswith("test_"):
