@@ -13,11 +13,11 @@ will go through the following steps of building the application:
 
 * Using the same queries to compute feature vectors over a real-time stream of
   credit card transaction data. **By simply connecting new data sources and
-sinks, the SQL queries used for training the model on batch inputs work
-seamlessly on streaming data for real-time inference.**
+  sinks, the SQL queries used for training the model on batch inputs work
+  seamlessly on streaming data for real-time inference.**
 
 The entire use case is implemented as a Python script written using the Feldera
-[Python SDK](https://www.feldera.com/python/).  It is available from our [github
+[Python SDK](https://docs.feldera.com/python/). It is available from our [github
 repository](https://github.com/feldera/feldera/blob/main/demo/project_demo10-FraudDetectionDeltaLake/run.py)
 and can be run from the command line or from your favorite Python notebook
 environment.
@@ -25,8 +25,8 @@ environment.
 ## Credit card fraud detection
 
 Credit card fraud detection is a classic application of real-time feature
-engineering.  Here, data comes in a stream of transactions, each with attributes
-like card number, purchase time, vendor, and amount.  Additionally, the fraud
+engineering. Here, data comes in a stream of transactions, each with attributes
+like card number, purchase time, vendor, and amount. Additionally, the fraud
 detector has access to a slowly changing table with demographics information
 about cardholders, such as age and address.
 
@@ -36,25 +36,25 @@ about cardholders, such as age and address.
 
 We used a publicly available [Synthetic Credit Card Transaction
 Generator](https://github.com/namebrandon/Sparkov_Data_Generation) to generate
-two labeled datasets, both with 1000 user profiles.  We will use the first
+two labeled datasets, both with 1000 user profiles. We will use the first
 dataset for model training and testing, and the second dataset -- for real-time
-inference.  We stored the datasets in the [Delta Lake format](https://delta.io/)
+inference. We stored the datasets in the [Delta Lake format](https://delta.io/)
 in two public S3 buckets:
 
 * Training dataset:
-  * Demographics table: `s3://feldera-fraud-detection-data/demographics_train/`
-  * Transaction table: `s3://feldera-fraud-detection-data/transaction_train/`
+    * Demographics table: `s3://feldera-fraud-detection-data/demographics_train/`
+    * Transaction table: `s3://feldera-fraud-detection-data/transaction_train/`
 
 * Inference dataset:
-  * Demographics table: `s3://feldera-fraud-detection-data/demographics_train/`
-  * Transaction table: `s3://feldera-fraud-detection-data/transaction_train/`
+    * Demographics table: `s3://feldera-fraud-detection-data/demographics_train/`
+    * Transaction table: `s3://feldera-fraud-detection-data/transaction_train/`
 
 ## Model training and testing
 
 Finding an optimal set of features to train a good ML model is an iterative
-process.  At every step, the data scientist trains and tests a model using
-currently selected feature queries on an array of labeled historical data.  The
-results of each experiment drive the next refinement of feature queries.  In
+process. At every step, the data scientist trains and tests a model using
+currently selected feature queries on an array of labeled historical data. The
+results of each experiment drive the next refinement of feature queries. In
 this scenario, feature vectors are computed in batch mode over a slice of
 historical data, e.g., data collected over a two-week timeframe.
 
@@ -68,15 +68,15 @@ set of features, train a model using these features, and test its accuracy.
 We define several features over our input tables:
 
 * Data enrichment:
-  - We add demographic attributes, such as zip code, to each transaction
+    - We add demographic attributes, such as zip code, to each transaction
 * Rolling aggregates:
-  - average spending per transaction in the past day, week, and month
-  - average spending per transaction over a 3-month timeframe on the same day of the week
-  - number of transactions made with this credit card in the last 24 hours
+    - average spending per transaction in the past day, week, and month
+    - average spending per transaction over a 3-month timeframe on the same day of the week
+    - number of transactions made with this credit card in the last 24 hours
 * Other:
-  - `is_weekend` - transaction took place on a weekend
-  - `is_night` - transaction took place before 6am
-  - `d` - day of week
+    - `is_weekend` - transaction took place on a weekend
+    - `is_night` - transaction took place before 6am
+    - `d` - day of week
 
 The following Python function creates a SQL program,
 consisting of two tables with raw input data (`TRANSACTION` and `DEMOGRAPHICS`) and
@@ -168,13 +168,16 @@ from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
 
+
 # Split input dataframe into train and test sets
 def get_train_test_data(dataframe, feature_cols, target_col, train_test_split_ratio, random_seed):
     X = dataframe[feature_cols]
     y = dataframe[target_col]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, train_size = train_test_split_ratio, random_state = random_seed)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=train_test_split_ratio,
+                                                        random_state=random_seed)
 
     return X_train, X_test, y_train, y_test
+
 
 # Train a decision tree classifier using xgboost.
 # Other ML frameworks and types of ML models can be readily used with Feldera.
@@ -197,6 +200,7 @@ def train_model(dataframe, config):
     model.fit(X_train, y_train.values.ravel())
     return model, X_test, y_test
 
+
 # Evaluate prediction accuracy against ground truth.
 def eval_metrics(y, predictions):
     cm = confusion_matrix(y, predictions)
@@ -215,15 +219,16 @@ def eval_metrics(y, predictions):
     print(f"Recall: {recall * 100:.2f}%")
     print(f"F1 Score: {f1 * 100:.2f}%")
 ```
+
 </details>
 
 The following Python snippet connects to a Feldera service
 and creates a Feldera pipeline to read transaction and demographics
 data from Delta tables stored in S3 and evaluate the feature query
 defined above on this data. We use the
-[`listen`](https://www.feldera.com/python/feldera.html#feldera.pipeline.Pipeline.listen)
+[`listen`](https://docs.feldera.com/python/feldera.html#feldera.pipeline.Pipeline.listen)
 API to read the computed features into a [Pandas](https://pandas.pydata.org/)
-dataframe.  We split this dataframe into train and test sets.  We
+dataframe. We split this dataframe into train and test sets. We
 use the former to train an XGBoost model and the latter to measure model
 accuracy.
 
@@ -232,7 +237,7 @@ import pandas as pd
 
 # Connect to the Feldera sandbox.
 # Use the 'Settings' menu at try.feldera.com to generate an API key
-client = FelderaClient("https://try.feldera.com", api_key = <FELDERA_API_KEY>)
+client = FelderaClient("https://try.feldera.com", api_key= < FELDERA_API_KEY >)
 
 # Load DEMOGRAPHICS data from a Delta table stored in an S3 bucket.
 demographics_connectors = [{
@@ -277,12 +282,12 @@ print("Training the model")
 
 feature_cols = list(features_pd.columns.drop('is_fraud'))
 
-config={
-        'feature_cols' : feature_cols,
-        'target_col' : ['is_fraud'],
-        'random_seed' : 45,
-        'train_test_split_ratio' : 0.8
-        }
+config = {
+    'feature_cols': feature_cols,
+    'target_col': ['is_fraud'],
+    'random_seed': 45,
+    'train_test_split_ratio': 0.8
+}
 
 trained_model, X_test, y_test = train_model(features_pd, config)
 
@@ -307,7 +312,7 @@ The full
 [Python script](https://github.com/feldera/feldera/blob/main/demo/project_demo10-FraudDetectionDeltaLake/run.py)
 for this use case also contains the code to write computed features
 to a Delta Lake, which might be preferrable when working with larger
-datasets.  This functionality requires write credentials to an S3 bucket
+datasets. This functionality requires write credentials to an S3 bucket
 or some other object store and is therefore disabled by default.
 
 :::
@@ -315,7 +320,7 @@ or some other object store and is therefore disabled by default.
 ## Real-time inference
 
 During real-time feature computation, raw data arrives from a streaming
-source like Kafka.  Feldera can ingest data directly from such sources, but in
+source like Kafka. Feldera can ingest data directly from such sources, but in
 this case we will assume that Kafka is connected to a Delta table, and configure
 Feldera to ingest the data by following the transaction log of the table.
 
@@ -346,12 +351,12 @@ def inference(trained_model, df):
 
 The next Python snippet builds another Feldera pipeline to evaluate the feature
 query over streaming data and send computed feature vectors to the ML model for
-inference.  It is almost identical to our training setup, except that this time
-we read data from the inference dataset.  In addition, we configure the input
+inference. It is almost identical to our training setup, except that this time
+we read data from the inference dataset. In addition, we configure the input
 connector for the `TRANSACTION` table to ingest transaction data in the
 [snapshot-and-follow](/connectors/sources/delta#required-parameters) mode.
 In this mode, the connector reads the initial snapshot of the table before following
-the stream of changes in its transaction log.  This **backfill** pattern is necessary
+the stream of changes in its transaction log. This **backfill** pattern is necessary
 to correctly evaluate features that depend on historical data such as rolling
 sums and averages.
 
@@ -392,7 +397,7 @@ transactions_connectors = [{
 sql = build_program(json.dumps(transactions_connectors), json.dumps(demographics_connectors), '[]')
 pipeline = PipelineBuilder(client, name="fraud_detection_inference", sql=sql).create_or_replace()
 
-pipeline.foreach_chunk("feature", lambda df, chunk : inference(trained_model, df))
+pipeline.foreach_chunk("feature", lambda df, chunk: inference(trained_model, df))
 
 # Start the pipeline to continuously process the input stream of credit card
 # transactions and output newly computed feature vectors to a Delta table.
@@ -451,27 +456,27 @@ Open [try.feldera.com] in your browser and select the `fraud_detection_inference
 
 In this example we used Feldera to evaluate *the same feature queries* first
 over historical (batch) data and then over a combination of historical and
-streaming inputs.  Feldera's ability to operate on any combination of batch and
+streaming inputs. Feldera's ability to operate on any combination of batch and
 streaming sources is crucial for real-time feature engineering, as it eliminates
 the need to develop multiple implementations of the same queries for development
 and production environments.  **In fact, Feldera does not distinguish between
-the two**.  Internally, it represents all inputs as changes (inserts, deletes
-and updates) to input tables.  It processes changes in the same way and produces
+the two**. Internally, it represents all inputs as changes (inserts, deletes
+and updates) to input tables. It processes changes in the same way and produces
 the same outputs, whether they arrive frequently in small groups (aka streaming)
 or occasionally in bigger groups (aka batch).
 
 Upon receiving a set of changes, Feldera updates its output views without full
 re-computation, by doing work proportional to the size of the change rather than
-the size of the entire database.  This **incremental evaluation** makes Feldera
+the size of the entire database. This **incremental evaluation** makes Feldera
 efficient for both streaming and batch inputs.
 
 Finally, we would like to emphaize that **Feldera is strongly consistent**. If
 we pause our inference pipeline and inspect the contents of the output view
 produced by Feldera so far, it will be **precisely the same as if we ran the
-query on all the inputs received so far as one large batch**.  Unpause the
-pipeline and run it a little longer.  The pipeline will receive some additional
+query on all the inputs received so far as one large batch**. Unpause the
+pipeline and run it a little longer. The pipeline will receive some additional
 inputs and produce additional outputs, but it still preserves the same
-input/output guarantee.  This property, known as **strong consistency**, ensures
+input/output guarantee. This property, known as **strong consistency**, ensures
 that the prediction accuracy of your ML model will not be affected by incorrect
 input.
 

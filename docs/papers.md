@@ -4,8 +4,9 @@ The following publications and awards describe Feldera's theoretical foundation,
 
 ## Awards
 
-*  :trophy: [DBSP in ACM SIGMOD Research Highlights](https://www.feldera.com/blog/blog/sigmod-research-highlights/)
-*  :trophy: [DBSP wins Best Paper award at VLDB 2023 ](https://www.feldera.com/blog/Best-Research-Paper-VLDB-2023/)
+* :trophy: [DBSP in ACM SIGMOD Research Highlights](https://www.feldera.com/blog/sigmod-research-highlights/)
+* :trophy: [DBSP wins Best Paper award at VLDB 2023 ](https://www.feldera.com/blog/Best-Research-Paper-VLDB-2023/)
+
 ## Publications
 
 * [DBSP: Incremental Computation on Streams and Its Applications to Databases](https://sigmodrecord.org/?smd_process_download=1&download_id=13708)
@@ -21,4 +22,5 @@ The following publications and awards describe Feldera's theoretical foundation,
 
 * [DBSP mathematical specification](https://mihaibudiu.github.io/work/dbsp-spec.pdf).
 
-* [DBSP mathematical formalization](https://github.com/tchajed/database-stream-processing-theory) using the Lean theorem prover, *Tej Chajed*, 2022
+* [DBSP mathematical formalization](https://github.com/tchajed/database-stream-processing-theory) using the Lean theorem
+  prover, *Tej Chajed*, 2022
