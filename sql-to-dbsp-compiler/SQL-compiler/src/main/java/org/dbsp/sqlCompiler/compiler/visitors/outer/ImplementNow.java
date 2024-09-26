@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ReferenceMap;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneExpression;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.monotone.MonotoneTransferFunctions;
@@ -53,10 +54,12 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -245,17 +248,15 @@ public class ImplementNow extends Passes {
             this.compiler = compiler;
         }
 
-        DBSPOperator createJoin(DBSPUnaryOperator operator) {
-            // Index the input
-            DBSPType inputType = operator.input().getOutputZSetElementType();
+        DBSPOperator createJoin(DBSPOperator input, DBSPUnaryOperator operator) {
+            DBSPType inputType = input.getOutputZSetElementType();
             DBSPVariablePath var = inputType.ref().var();
             DBSPExpression indexFunction = new DBSPRawTupleExpression(
                     new DBSPTupleExpression(),
                     var.deref().applyClone());
             DBSPMapIndexOperator index = new DBSPMapIndexOperator(
                     operator.getNode(), indexFunction.closure(var.asParameter()),
-                    TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), inputType),
-                    this.mapped(operator.input()));
+                    TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), inputType), input);
             this.addOperator(index);
 
             // Join with 'indexedNow'
@@ -281,7 +282,7 @@ public class ImplementNow extends Passes {
             DBSPExpression function = operator.getFunction();
             cn.apply(function);
             if (cn.found()) {
-                DBSPOperator join = this.createJoin(operator);
+                DBSPOperator join = this.createJoin(operator.input(), operator);
                 RewriteNowClosure rn = new RewriteNowClosure(this.errorReporter);
                 function = rn.apply(function).to(DBSPExpression.class);
                 DBSPOperator result = new DBSPMapOperator(operator.getNode(), function, operator.getOutputZSetType(), join);
@@ -292,9 +293,8 @@ public class ImplementNow extends Passes {
         }
 
         record WindowBound(boolean inclusive, DBSPExpression expression) {
-            @Nullable WindowBound combine(WindowBound with, boolean lower) {
-                if (this.inclusive != with.inclusive)
-                    return null;
+            WindowBound combine(WindowBound with, boolean lower) {
+                assert this.inclusive == with.inclusive;
                 DBSPOpcode opcode = lower ? DBSPOpcode.MIN : DBSPOpcode.MAX;
                 DBSPExpression expression = ExpressionCompiler.makeBinaryExpression(this.expression.getNode(),
                         this.expression.getType(), opcode, this.expression, with.expression);
@@ -350,33 +350,174 @@ public class ImplementNow extends Passes {
             }
         }
 
-        @Nullable
-        static WindowBound combine(@Nullable WindowBound left, @Nullable WindowBound right, boolean lower) {
-            if (left == null)
-                return right;
-            if (right == null)
-                return left;
-            return left.combine(right, lower);
+        /** True if a comparison includes "equality" */
+        static boolean isInclusive(DBSPOpcode opcode) {
+            return opcode == DBSPOpcode.GTE || opcode == DBSPOpcode.LTE;
         }
 
-        static class FindComparisons {
-            static class Comparison {
-                /** Left expression does not involve now() */
-                final DBSPExpression noNow;
-                /** Right expression must ba a monotone expression of now(), which does
-                 * not involve other fields */
-                final DBSPExpression withNow;
-                final DBSPOpcode opcode;
+        /** True if a comparison is "greater than (or equal)" */
+        static boolean isGreater(DBSPOpcode opcode) {
+            return opcode == DBSPOpcode.GTE || opcode == DBSPOpcode.GT;
+        }
 
-                Comparison(DBSPExpression noNow, DBSPExpression withNow, DBSPOpcode opcode) {
-                    this.noNow = noNow;
-                    this.withNow = withNow;
-                    this.opcode = opcode;
+        /** Boolean expression that appear as conjuncts in a filter expression */
+        interface BooleanExpression extends ICastable {
+            /** true if these two Boolean expressions can be evaluated together */
+            boolean compatible(BooleanExpression other);
+            /** Combine two compatible boolean expressions */
+            BooleanExpression combine(BooleanExpression other);
+            /** Returns the final form of this Boolean expression */
+            BooleanExpression seal();
+        }
+
+        /**
+         * A Boolean expression that is a comparison involving now() that can be implemented as a temporal filter.
+         * @param parameter  Parameter of the original filter comparison function
+         * @param noNow    left expression, which does not involve now.
+         * @param withNow  right expression, which must ba a monotone expression of now(),
+         *                 and which does not involve other fields
+         * @param opcode   comparison
+         */
+        record TemporalFilter(DBSPParameter parameter, DBSPExpression noNow,
+                              DBSPExpression withNow, DBSPOpcode opcode)
+                implements BooleanExpression {
+            @Override
+            public boolean compatible(BooleanExpression other) {
+                TemporalFilter o = other.as(TemporalFilter.class);
+                if (o == null)
+                    return false;
+
+                // To be compatible the operations must be on different sides, or have the same inclusivity
+                boolean thisGe = isGreater(this.opcode);
+                boolean otherGe = isGreater(o.opcode);
+                if (thisGe == otherGe) {
+                    boolean thisInclusive = isInclusive(this.opcode);
+                    boolean otherInclusive = isInclusive(o.opcode);
+                    if (thisInclusive != otherInclusive)
+                        return false;
                 }
+
+                EquivalenceContext context = new EquivalenceContext();
+                context.leftDeclaration.newContext();
+                context.rightDeclaration.newContext();
+                context.leftDeclaration.substitute(this.parameter.name, this.parameter);
+                context.rightDeclaration.substitute(this.parameter.name, this.parameter);
+                context.leftToRight.put(this.parameter, this.parameter);
+                return context.equivalent(this.noNow, o.noNow);
             }
 
-            final boolean complete;
-            final List<Comparison> comparisons;
+            @Override
+            public BooleanExpression combine(BooleanExpression other) {
+                return new TemporalFilterList(Linq.list(this, other.to(TemporalFilter.class)));
+            }
+
+            public BooleanExpression seal() {
+                // return a singleton list
+                return new TemporalFilterList(Linq.list(this));
+            }
+        }
+
+        /** A Boolean expression that does not involve now */
+        record NoNow(DBSPExpression noNow) implements BooleanExpression {
+            @Override
+            public boolean compatible(BooleanExpression other) {
+                return other.is(NoNow.class);
+            }
+
+            @Override
+            public BooleanExpression combine(BooleanExpression other) {
+                return new NoNow(
+                        ExpressionCompiler.makeBinaryExpression(this.noNow().getNode(),
+                                DBSPTypeBool.create(false), DBSPOpcode.AND,
+                                this.noNow, other.to(NoNow.class).noNow));
+            }
+
+            @Override
+            public BooleanExpression seal() {
+                return this;
+            }
+        }
+
+        /** A Boolean expression that involves now() but is not a temporal filter */
+        record NonTemporalFilter(DBSPExpression expression) implements BooleanExpression {
+            @Override
+            public boolean compatible(BooleanExpression other) {
+                // This is compatible with anything else
+                return true;
+            }
+
+            @Override
+            public BooleanExpression combine(BooleanExpression other) {
+                return new NonTemporalFilter(
+                        ExpressionCompiler.makeBinaryExpression(this.expression().getNode(),
+                                DBSPTypeBool.create(false), DBSPOpcode.AND,
+                                this.expression, other.to(NoNow.class).noNow));
+            }
+
+            @Override
+            public BooleanExpression seal() {
+                return this;
+            }
+        }
+
+        /** A List of NowComparison objects that are "compatible" with each other.
+         * These have the shape "(t.field > now() + constant)",
+         * where the same field is used in all comparisons. */
+        record TemporalFilterList(List<TemporalFilter> comparisons) implements BooleanExpression {
+            @Override
+            public boolean compatible(BooleanExpression other) {
+                return Linq.all(this.comparisons, c -> c.compatible(other));
+            }
+
+            @Override
+            public BooleanExpression combine(BooleanExpression other) {
+                this.comparisons.add(other.to(TemporalFilter.class));
+                return this;
+            }
+
+            /** Combine two window bounds.  At least one must be non-null */
+            static WindowBound combine(@Nullable WindowBound left, @Nullable WindowBound right, boolean lower) {
+                if (left == null)
+                    return Objects.requireNonNull(right);
+                if (right == null)
+                    return left;
+                return left.combine(right, lower);
+            }
+
+            public WindowBounds getWindowBounds(IErrorReporter reporter) {
+                WindowBound lower = null;
+                WindowBound upper = null;
+                assert !this.comparisons.isEmpty();
+                DBSPExpression common = this.comparisons.get(0).noNow;
+                for (TemporalFilter comp: this.comparisons) {
+                    boolean inclusive = isInclusive(comp.opcode);
+                    boolean toLower = isGreater(comp.opcode);
+                    WindowBound result = new WindowBound(inclusive, comp.withNow);
+                    if (toLower) {
+                        lower = combine(lower, result, toLower);
+                    } else {
+                        upper = combine(upper, result, toLower);
+                    }
+                }
+                return new WindowBounds(reporter, lower, upper, common);
+            }
+
+            @Override
+            public BooleanExpression seal() {
+                return this;
+            }
+
+            public DBSPParameter getParameter() {
+                return this.comparisons.get(0).parameter;
+            }
+        }
+
+        /** Break a Boolean expression into a series of conjunctions, some of which
+         * may be implemented as temporal filters. */
+        static class FindComparisons {
+            final DBSPParameter parameter;
+            /** List of Boolean expressions; a NonTemporalComparison may appear in the last position only */
+            final List<BooleanExpression> comparisons;
             final MonotoneTransferFunctions mono;
             final ContainsNow containsNow;
             final Set<DBSPOpcode> compOpcodes;
@@ -394,6 +535,8 @@ public class ImplementNow extends Passes {
                 }};
 
                 DBSPClosureExpression clo = closure.to(DBSPClosureExpression.class);
+                assert clo.parameters.length == 1;
+                this.parameter = clo.parameters[0];
 
                 DBSPExpression expression = clo.body;
                 if (expression.is(DBSPUnaryExpression.class)) {
@@ -402,43 +545,61 @@ public class ImplementNow extends Passes {
                     if (unary.operation == DBSPOpcode.WRAP_BOOL)
                         expression = unary.source;
                 }
-                this.complete = this.analyzeConjunction(expression);
+                this.analyzeConjunction(expression);
             }
 
+            /** Analyze a conjunction; return 'true' if it was fully decomposed */
             boolean analyzeConjunction(DBSPExpression expression) {
                 DBSPBinaryExpression binary = expression.as(DBSPBinaryExpression.class);
-                if (binary == null)
+                if (binary == null) {
+                    NonTemporalFilter ntf = new NonTemporalFilter(expression);
+                    this.comparisons.add(ntf);
                     return false;
+                }
                 if (binary.operation == DBSPOpcode.AND) {
                     boolean foundLeft = this.analyzeConjunction(binary.left);
-                    boolean foundRight = this.analyzeConjunction(binary.right);
-                    return foundLeft && foundRight;
+                    if (!foundLeft)
+                        return false;
+                    return this.analyzeConjunction(binary.right);
                 } else {
-                    return this.findComparison(binary);
+                    boolean decomposed = this.findComparison(binary);
+                    if (!decomposed)
+                        this.comparisons.add(new NonTemporalFilter(expression));
+                    return decomposed;
                 }
             }
 
+            /** See if a binary expression can be implemented as a temporal filter.
+             * Return 'false' if the expression contains now() but is not a temporal filter. */
             boolean findComparison(DBSPBinaryExpression binary) {
+                this.containsNow.apply(binary);
+                if (!this.containsNow.found) {
+                    NoNow expression = new NoNow(binary);
+                    this.comparisons.add(expression);
+                    return true;
+                }
+
                 if (!this.compOpcodes.contains(binary.operation))
                     return false;
                 this.containsNow.apply(binary.left);
                 boolean leftHasNow = this.containsNow.found;
                 this.containsNow.apply(binary.right);
                 boolean rightHasNow = this.containsNow.found;
-                if (leftHasNow == rightHasNow)
+                if (leftHasNow == rightHasNow) {
                     // Both true or both false
                     return false;
+                }
 
                 DBSPExpression withNow = leftHasNow ? binary.left : binary.right;
                 DBSPExpression withoutNow = leftHasNow ? binary.right : binary.left;
 
                 // The expression containing now() must be monotone
                 MonotoneExpression me = this.mono.maybeGet(withNow);
-                if (me == null)
+                if (me == null || !me.mayBeMonotone())
                     return false;
 
                 DBSPOpcode opcode = leftHasNow ? inverse(binary.operation) : binary.operation;
-                Comparison comp = new Comparison(withoutNow, withNow, opcode);
+                TemporalFilter comp = new TemporalFilter(this.parameter, withoutNow, withNow, opcode);
                 this.comparisons.add(comp);
                 return true;
             }
@@ -450,59 +611,28 @@ public class ImplementNow extends Passes {
                 case GTE -> DBSPOpcode.LT;
                 case LTE -> DBSPOpcode.GT;
                 case GT -> DBSPOpcode.LTE;
+                case EQ -> DBSPOpcode.EQ;
                 default -> throw new InternalCompilerError(opcode.toString());
             };
         }
 
-        @Nullable WindowBounds findWindowBounds(DBSPOperator operator) {
-            DBSPClosureExpression closure = operator.getFunction().to(DBSPClosureExpression.class);
-            assert closure.parameters.length == 1;
-            DBSPParameter param = closure.parameters[0];
+        /** Decompose the filter's function into a sequence of comparisons.
+         * @param operator A filter operator.
+         * @param function  The operator's function.
+         * @return A list of comparisons that can be implemented as simple filters or
+         *         window operations.  Returns 'null' if the filter expression
+         *         cannot be expressed as a list of such comparisons.
+         */
+        List<BooleanExpression> findTemporalFilters(DBSPFilterOperator operator, DBSPClosureExpression function) {
+            assert function.parameters.length == 1;
+            DBSPParameter param = function.parameters[0];
             IMaybeMonotoneType nonMonotone = NonMonotoneType.nonMonotone(param.getType().deref());
             MonotoneTransferFunctions mono = new MonotoneTransferFunctions(
                     this.errorReporter, operator, MonotoneTransferFunctions.ArgumentKind.ZSet, nonMonotone);
-            mono.apply(closure);
+            mono.apply(function);
 
-            FindComparisons analyzer = new FindComparisons(closure, mono);
-            if (!analyzer.complete || analyzer.comparisons.isEmpty())
-                return null;
-
-            // If not all comparisons compare the same expression, give up
-            DBSPExpression common = null;
-            EquivalenceContext context = new EquivalenceContext();
-            context.leftDeclaration.newContext();
-            context.rightDeclaration.newContext();
-            context.leftDeclaration.substitute(param.name, param);
-            context.rightDeclaration.substitute(param.name, param);
-            context.leftToRight.put(param, param);
-
-            for (FindComparisons.Comparison comp: analyzer.comparisons) {
-                if (common == null)
-                    common = comp.noNow;
-                else if (!context.equivalent(comp.noNow, common))
-                    return null;
-            }
-            if (common == null)
-                // This shouldn't really happen
-                return null;
-
-            WindowBound lower = null;
-            WindowBound upper = null;
-            for (FindComparisons.Comparison comp: analyzer.comparisons) {
-                boolean inclusive = comp.opcode == DBSPOpcode.GTE || comp.opcode == DBSPOpcode.LTE;
-                boolean toLower = comp.opcode == DBSPOpcode.GTE || comp.opcode == DBSPOpcode.GT;
-                WindowBound result = new WindowBound(inclusive, comp.withNow);
-                if (toLower) {
-                    lower = combine(lower, result, toLower);
-                    if (lower == null)
-                        return null;
-                } else {
-                    upper = combine(upper, result, toLower);
-                    if (upper == null)
-                        return null;
-                }
-            }
-            return new WindowBounds(this.errorReporter, lower, upper, common);
+            FindComparisons analyzer = new FindComparisons(function, mono);
+            return analyzer.comparisons;
         }
 
         public DBSPOperator getNow() {
@@ -531,84 +661,161 @@ public class ImplementNow extends Passes {
             return waterline;
         }
 
+        /** Combine consecutive compatible expressions in the decomposition */
+        static List<BooleanExpression> combineExpressions(List<BooleanExpression> decomposition) {
+            List<BooleanExpression> combined = new ArrayList<>();
+            BooleanExpression current = null;
+            for (BooleanExpression expression: decomposition) {
+                if (current == null) {
+                    current = expression;
+                } else {
+                    if (current.compatible(expression)) {
+                        current = current.combine(expression);
+                    } else {
+                        combined.add(current.seal());
+                        current = expression;
+                    }
+                }
+            }
+            if (current != null)
+                combined.add(current.seal());
+            return combined;
+        }
+
+        /** Implement a temporal comparison described as a list of comparisons.
+         *
+         * @param operator    Original filter operator
+         * @param source      Result of filtering from previous comparisons.
+         * @param comparisons A list of compatible comparisons that can be compiled into a window.
+         * @return            An operator whose output is the result of the filtering.
+         */
+        DBSPOperator implementTemporalFilter(DBSPFilterOperator operator,
+                                             DBSPOperator source,
+                                             TemporalFilterList comparisons) {
+            // Now input comes from here
+            DBSPOperator flattenNow = this.flattenNow();
+            WindowBounds bounds = comparisons.getWindowBounds(this.errorReporter);
+            DBSPClosureExpression makeWindow = bounds.makeWindow();
+            DBSPOperator windowBounds = new DBSPApplyOperator(operator.getNode(),
+                    makeWindow, flattenNow, null);
+            this.addOperator(windowBounds);
+
+            // Filter the null timestamps away, they won't be selected anyway,
+            // but window needs non-nullable values
+            DBSPTypeTupleBase inputType = source.getOutputZSetElementType().to(DBSPTypeTupleBase.class);
+            DBSPType commonType = bounds.common.getType();
+            DBSPParameter param = comparisons.getParameter();
+            if (bounds.common.getType().mayBeNull) {
+                DBSPClosureExpression nonNull =
+                        bounds.common.is_null().not().closure(param);
+                DBSPFilterOperator filter = new DBSPFilterOperator(operator.getNode(), nonNull, source);
+                this.addOperator(filter);
+                source = filter;
+            }
+
+            // Index input by timestamp
+            DBSPClosureExpression indexFunction =
+                    new DBSPRawTupleExpression(
+                            bounds.common.cast(commonType.setMayBeNull(false)),
+                            param.asVariable().deref().applyClone()).closure(param);
+            DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getNode(),
+                    commonType.setMayBeNull(false),
+                    inputType);
+            DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getNode(),
+                    indexFunction, ix, operator.isMultiset, source);
+            this.addOperator(index);
+
+            // Apply window function.  Operator is incremental, so add D & I around it
+            DBSPDifferentiateOperator diffIndex = new DBSPDifferentiateOperator(operator.getNode(), index);
+            this.addOperator(diffIndex);
+            boolean lowerInclusive = bounds.lower == null || bounds.lower.inclusive;
+            boolean upperInclusive = bounds.upper == null || bounds.upper.inclusive;
+            DBSPOperator window = new DBSPWindowOperator(
+                    operator.getNode(), lowerInclusive, upperInclusive, diffIndex, windowBounds);
+            this.addOperator(window);
+            DBSPOperator winInt = new DBSPIntegrateOperator(operator.getNode(), window);
+            this.addOperator(winInt);
+
+            // Deindex result of window
+            DBSPOperator deindex = new DBSPDeindexOperator(operator.getNode(), winInt);
+            this.addOperator(deindex);
+            return deindex;
+        }
+
+        /** Implement a list of filters, some of which may be temporal filters
+         *
+         * @param operator Original filter operator.
+         * @param filters  A decomposition of the filter's condition into a sequence
+         *                 of Boolean expresions, some of which may be suitable for
+         *                 temporal filters.
+         * @return         The replacement for the original filter operator.
+         */
+        DBSPOperator implementTemporalFilters(DBSPFilterOperator operator,
+                                              List<BooleanExpression> filters) {
+            int nonTemporal = Linq.where(filters, f -> f.is(NonTemporalFilter.class)).size();
+            assert nonTemporal <= 1;
+            if (nonTemporal == 1) {
+                // Only the last element may be a non-temporal filter
+                assert Utilities.last(filters).is(NonTemporalFilter.class);
+            }
+            DBSPOperator current = this.mapped(operator.input());
+            DBSPParameter param = operator.getClosureFunction().parameters[0];
+            for (BooleanExpression expression: filters) {
+                if (expression.is(NonTemporalFilter.class)) {
+                    // must be the last in the list
+                    return current;
+                } else if (expression.is(TemporalFilterList.class)) {
+                    current = this.implementTemporalFilter(operator, current, expression.to(TemporalFilterList.class));
+                } else {
+                    // NowComparison expressions have been eliminated by combineExpressions
+                    DBSPExpression body = ExpressionCompiler.wrapBoolIfNeeded(expression.to(NoNow.class).noNow);
+                    DBSPClosureExpression closure = body.closure(param);
+                    current = new DBSPFilterOperator(operator.getNode(), closure, current);
+                    this.addOperator(current);
+                }
+            }
+            return current;
+        }
+
         @Override
         public void postorder(DBSPFilterOperator operator) {
             ContainsNow cn = new ContainsNow(this.errorReporter, true);
             DBSPExpression function = operator.getFunction();
-            DBSPClosureExpression closure = function.to(DBSPClosureExpression.class);
-            assert closure.parameters.length == 1;
-            DBSPParameter param = closure.parameters[0];
             cn.apply(function);
             if (!cn.found) {
+                // Filter does not involve 'now'
                 super.postorder(operator);
                 return;
             }
 
-            // Look for "temporal filters".
-            // These have the shape "&& (t.field > now() + constant)",
-            // where the same field is used in all comparisons
-            WindowBounds bounds = this.findWindowBounds(operator);
-            if (bounds != null) {
-                DBSPOperator flattenNow = this.flattenNow();
-                DBSPClosureExpression makeWindow = bounds.makeWindow();
-                DBSPOperator windowBounds = new DBSPApplyOperator(operator.getNode(),
-                        makeWindow, flattenNow, null);
-                this.addOperator(windowBounds);
+            // This makes it easier to discover more monotone expressions
+            Simplify simplify = new Simplify(this.errorReporter);
+            DBSPClosureExpression closure = function.to(DBSPClosureExpression.class);
+            closure = simplify.apply(closure).to(DBSPClosureExpression.class);
+            List<BooleanExpression> filters = this.findTemporalFilters(operator, closure);
+            filters = combineExpressions(filters);
+            assert !filters.isEmpty();
+            DBSPOperator result = this.implementTemporalFilters(operator, filters);
+            // If the last value in the list is a NonTemporalFilter, implement that as well
+            BooleanExpression leftOver = Utilities.last(filters);
 
-                // Filter the null timestamps away, they won't be selected anyway,
-                // but window needs non-nullable values
-                DBSPTypeTupleBase inputType = operator.input().getOutputZSetElementType().to(DBSPTypeTupleBase.class);
-                DBSPOperator source = this.mapped(operator.input());
-                DBSPType commonType = bounds.common.getType();
-                if (bounds.common.getType().mayBeNull) {
-                    DBSPClosureExpression nonNull =
-                            bounds.common.is_null().not().closure(param);
-                    DBSPFilterOperator filter = new DBSPFilterOperator(operator.getNode(), nonNull, source);
-                    this.addOperator(filter);
-                    source = filter;
-                }
-
-                // Index input by timestamp
-                DBSPClosureExpression indexFunction =
-                        new DBSPRawTupleExpression(
-                                bounds.common.cast(commonType.setMayBeNull(false)),
-                                param.asVariable().deref().applyClone()).closure(param);
-                DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getNode(),
-                        commonType.setMayBeNull(false),
-                        inputType);
-                DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getNode(),
-                        indexFunction, ix, operator.isMultiset, source);
-                this.addOperator(index);
-
-                // Apply window function.  Operator is incremental, so add D & I around it
-                DBSPDifferentiateOperator diffIndex = new DBSPDifferentiateOperator(operator.getNode(), index);
-                this.addOperator(diffIndex);
-                boolean lowerInclusive = bounds.lower == null || bounds.lower.inclusive;
-                boolean upperInclusive = bounds.upper == null || bounds.upper.inclusive;
-                DBSPOperator window = new DBSPWindowOperator(
-                        operator.getNode(), lowerInclusive, upperInclusive, diffIndex, windowBounds);
-                this.addOperator(window);
-                DBSPOperator winInt = new DBSPIntegrateOperator(operator.getNode(), window);
-                this.addOperator(winInt);
-
-                // Deindex result of window
-                DBSPOperator deindex = new DBSPDeindexOperator(operator.getNode(), winInt);
-                this.map(operator, deindex);
-                return;
+            if (leftOver.is(NonTemporalFilter.class)) {
+                // Implement leftover as a join
+                DBSPOperator join = this.createJoin(result, operator);
+                RewriteNowClosure rn = new RewriteNowClosure(this.errorReporter);
+                function = leftOver.to(NonTemporalFilter.class).expression.closure(closure.parameters);
+                function = rn.apply(function).to(DBSPExpression.class);
+                DBSPOperator filter = new DBSPFilterOperator(operator.getNode(), function, join);
+                this.addOperator(filter);
+                // Drop the extra field
+                DBSPVariablePath var = filter.getOutputZSetElementType().ref().var();
+                List<DBSPExpression> fields = var.deref().allFields();
+                Utilities.removeLast(fields);
+                DBSPExpression drop = new DBSPTupleExpression(fields, false).closure(var.asParameter());
+                result = new DBSPMapOperator(operator.getNode(), drop, operator.getOutputZSetType(), filter);
+                this.addOperator(result);
             }
-
-            DBSPOperator join = this.createJoin(operator);
-            RewriteNowClosure rn = new RewriteNowClosure(this.errorReporter);
-            function = rn.apply(function).to(DBSPExpression.class);
-            DBSPOperator filter = new DBSPFilterOperator(operator.getNode(), function, join);
-            this.addOperator(filter);
-            // Drop the extra field
-            DBSPVariablePath var = filter.getOutputZSetElementType().ref().var();
-            List<DBSPExpression> fields = var.deref().allFields();
-            Utilities.removeLast(fields);
-            DBSPExpression drop = new DBSPTupleExpression(fields, false).closure(var.asParameter());
-            DBSPMapOperator result = new DBSPMapOperator(operator.getNode(), drop, operator.getOutputZSetType(), filter);
-            this.map(operator, result);
+            this.map(operator, result, false);
         }
 
         @Override

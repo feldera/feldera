@@ -678,12 +678,14 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         boolean allArgsConstant = Linq.all(expression.arguments, this.constantExpressions::contains);
         DBSPExpression reduced = null;
         IMaybeMonotoneType resultType = new NonMonotoneType(expression.getType());
+        boolean isDeterministic = true;
         if (allArgsMonotone || allArgsConstant) {
             DBSPExpression[] reducedArgs = Linq.map(
                     arguments, MonotoneExpression::getReducedExpression, DBSPExpression.class);
             if (expression.function.is(DBSPPathExpression.class)) {
                 DBSPPathExpression path = expression.function.to(DBSPPathExpression.class);
                 String name = path.toString();
+                isDeterministic = !name.equals("now");
                 if (name.startsWith("log10_") ||
                         name.startsWith("ln_") ||
                         name.startsWith("ceil_") ||
@@ -719,7 +721,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     }
                 }
             }
-            if (allArgsConstant) {
+            if (allArgsConstant && isDeterministic) {
                 this.constantExpressions.add(expression);
             }
         }

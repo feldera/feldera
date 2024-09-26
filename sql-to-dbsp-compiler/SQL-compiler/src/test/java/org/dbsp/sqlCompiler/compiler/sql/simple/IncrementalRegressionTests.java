@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
@@ -23,6 +24,36 @@ public class IncrementalRegressionTests extends SqlIoTest {
         // Without the following ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
         return new DBSPCompiler(options);
+    }
+
+    @Test
+    public void issue2584() {
+        String sql = """
+                create table t (
+                    x int,
+                    ts timestamp
+                );
+                
+                create view v as
+                select *
+                from t
+                where x = 5 and ts > now();""";
+        var ccs = this.getCCS(sql);
+        this.addRustTestCase(ccs);
+        CircuitVisitor visitor = new CircuitVisitor(new StderrErrorReporter()) {
+            int window = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+            }
+        };
+        visitor.apply(ccs.circuit);
     }
 
     @Test
