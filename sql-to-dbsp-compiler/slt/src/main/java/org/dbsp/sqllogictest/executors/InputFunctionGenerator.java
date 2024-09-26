@@ -53,7 +53,7 @@ class InputFunctionGenerator {
         if (totalSize > 10) {
             // If the data is large write, it to a set of CSV files and read it at runtime.
             for (int i = 0; i < inputSets.length; i++) {
-                String fileName = (Main.rustDirectory + inputSets[i].tableName) + ".csv";
+                String fileName = (Main.getAbsoluteRustDirectory() + inputSets[i].tableName) + ".csv";
                 File file = new File(fileName);
                 ToCsvVisitor.toCsv(compiler, file, inputSets[i].contents);
                 fields[i] = new DBSPApplyExpression(CalciteObject.EMPTY, "read_csv",
