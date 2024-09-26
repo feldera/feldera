@@ -13,7 +13,7 @@ class test_int0_table(TestTable):
                       c6 INT NOT NULL,
                       c7 BIGINT,
                       c8 BIGINT NOT NULL)'''
-                      
+
         self.data = [{"id": 0, "c1": 5, "c2": 2, "c3": None, "c4": 4, "c5": 5, "c6": 6, "c7": None, "c8": 8},
                      {"id": 1,"c1": 4, "c2": 3, "c3": 4, "c4": 6, "c5": 2, "c6": 3, "c7": 4, "c8": 2},
                      {"id" : 0, "c1": None, "c2": 2, "c3": 3, "c4": 2, "c5": 3, "c6": 4, "c7": 3, "c8": 3},
