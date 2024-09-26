@@ -2196,8 +2196,20 @@ async fn pipeline_logs() {
     assert_eq!(response_logs_running.status(), StatusCode::OK);
     let logs1 = String::from_utf8(response_logs_paused.body().await.unwrap().to_vec()).unwrap();
     let logs2 = String::from_utf8(response_logs_running.body().await.unwrap().to_vec()).unwrap();
-    assert_eq!(logs1, logs2);
-    assert!(logs1.ends_with("LOG STREAM END: pipeline is being shutdown\n"));
+    // It might take time for the logs to become available or upon shutdown they become
+    // no longer available, as such any of these three endings is possible
+    assert!(
+        logs1.ends_with("LOG STREAM END: pipeline is being shutdown\n")
+            || logs1.ends_with("LOG STREAM END: no longer available, please try again later\n")
+            || logs1.ends_with("LOG STREAM UNAVAILABLE: please try again later\n"),
+        "Unexpected logs ending: {logs1}"
+    );
+    assert!(
+        logs2.ends_with("LOG STREAM END: pipeline is being shutdown\n")
+            || logs2.ends_with("LOG STREAM END: no longer available, please try again later\n")
+            || logs2.ends_with("LOG STREAM UNAVAILABLE: please try again later\n"),
+        "Unexpected logs ending: {logs2}"
+    );
 
     // Retrieve logs (shutdown)
     let mut response_logs = config.get("/v0/pipelines/test/logs").await;
