@@ -169,8 +169,10 @@ impl PubSubReader {
                         async move {
                             // None if the stream is cancelled
                             while let Some(message) = stream.next().await {
-                                let errors = parser.input_chunk(&message.message.data);
-                                queue.push(parser.take(), message.message.data.len(), errors);
+                                queue.push(
+                                    message.message.data.len(),
+                                    parser.parse(&message.message.data),
+                                );
                                 message.ack().await.unwrap_or_else(|e| {
                                     consumer.error(
                                         false,

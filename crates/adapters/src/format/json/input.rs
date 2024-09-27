@@ -2,11 +2,10 @@
 
 use super::{DebeziumUpdate, InsDelUpdate, WeightedUpdate};
 use crate::catalog::InputCollectionHandle;
-use crate::format::InputBuffer;
+use crate::format::{InputBuffer, LineSplitter};
 use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::{InputFormat, ParseError, Parser},
-    util::split_on_newline,
     ControllerError,
 };
 use actix_web::HttpRequest;
@@ -16,7 +15,7 @@ use serde::Deserialize;
 use serde_json::value::RawValue;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use serde_yaml::Value as YamlValue;
-use std::{borrow::Cow, mem::take};
+use std::borrow::Cow;
 
 /// JSON format parser.
 pub struct JsonInputFormat;
@@ -233,7 +232,6 @@ struct JsonParser {
     /// Input handle to push parsed data to.
     input_stream: Box<dyn DeCollectionStream>,
     config: JsonParserConfig,
-    leftover: Vec<u8>,
     last_event_number: u64,
 }
 
@@ -242,7 +240,6 @@ impl JsonParser {
         Self {
             input_stream,
             config,
-            leftover: Vec::new(),
             last_event_number: 0,
         }
     }
@@ -298,7 +295,7 @@ impl JsonParser {
                 }
                 Ok(updates) => {
                     let mut error = false;
-                    let old_len = self.len();
+                    let old_len = self.input_stream.len();
                     for update in updates {
                         if let Err(e) = update.apply(self) {
                             error = true;
@@ -331,22 +328,24 @@ impl JsonParser {
             self.last_event_number += 1;
         }
     }
+}
 
-    fn input_from_slice(&mut self, bytes: &[u8]) -> Vec<ParseError> {
+impl Parser for JsonParser {
+    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let mut errors = Vec::new();
 
-        let mut stream = serde_json::Deserializer::from_slice(bytes).into_iter::<&RawValue>();
+        let mut stream = serde_json::Deserializer::from_slice(data).into_iter::<&RawValue>();
 
         while let Some(update) = stream.next() {
             let update = match update {
                 Err(e) => {
-                    let json_str = String::from_utf8_lossy(&bytes[stream.byte_offset()..]);
+                    let json_str = String::from_utf8_lossy(&data[stream.byte_offset()..]);
                     errors.push(ParseError::text_envelope_error(
                         format!("failed to parse string as a JSON document: {e}"),
                         &json_str,
                         None,
                     ));
-                    return errors;
+                    break;
                 }
                 Ok(update) => update,
             };
@@ -368,66 +367,15 @@ impl JsonParser {
             }
         }
 
-        errors
-    }
-}
-
-impl Parser for JsonParser {
-    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
-        // println!("input_fragment {}", std::str::from_utf8(data).unwrap());
-        let leftover = split_on_newline(data);
-
-        if leftover == 0 {
-            // `data` doesn't contain a new-line character; append it to
-            // the `leftover` buffer so it gets processed with the next input
-            // buffer.
-            self.leftover.extend_from_slice(data);
-            Vec::new()
-        } else {
-            self.leftover.extend_from_slice(&data[0..leftover]);
-            let mut leftover_data = take(&mut self.leftover);
-            let errors = self.input_from_slice(&leftover_data);
-            leftover_data.clear();
-            leftover_data.extend_from_slice(&data[leftover..]);
-            self.leftover = leftover_data;
-            errors
-        }
-    }
-
-    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.input_from_slice(data)
-    }
-
-    fn end_of_fragments(&mut self) -> Vec<ParseError> {
-        /*println!(
-            "eoi: leftover: {}",
-            std::str::from_utf8(&self.leftover).unwrap()
-        );*/
-        if self.leftover.is_empty() {
-            return Vec::new();
-        }
-
-        // Try to interpret the leftover chunk as a complete JSON.
-        let leftover = take(&mut self.leftover);
-        self.input_from_slice(leftover.as_slice())
+        (self.input_stream.take(), errors)
     }
 
     fn fork(&self) -> Box<dyn Parser> {
         Box::new(Self::new(self.input_stream.fork(), self.config.clone()))
     }
-}
 
-impl InputBuffer for JsonParser {
-    fn flush(&mut self, n: usize) -> usize {
-        self.input_stream.flush(n)
-    }
-
-    fn len(&self) -> usize {
-        self.input_stream.len()
-    }
-
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.input_stream.take()
+    fn splitter(&self) -> Box<dyn crate::format::Splitter> {
+        Box::new(LineSplitter)
     }
 }
 
@@ -509,11 +457,9 @@ mod test {
         #[allow(dead_code)]
         location: &'static Location<'static>,
 
-        chunks: bool,
         config: JsonParserConfig,
         /// Input data, expected result.
         input_batches: Vec<(String, Vec<ParseError>)>,
-        final_errors: Vec<ParseError>,
         /// Expected contents at the end of the test.
         expected_output: Vec<MockUpdate<T, U>>,
     }
@@ -545,17 +491,11 @@ mod test {
             consumer.on_error(Some(Box::new(|_, _| {})));
             parser.on_error(Some(Box::new(|_, _| {})));
             for (json, expected_errors) in test.input_batches {
-                let errors = if test.chunks {
-                    parser.input_chunk(json.as_bytes())
-                } else {
-                    parser.input_fragment(json.as_bytes())
-                };
+                let (mut buffer, errors) = parser.parse(json.as_bytes());
                 assert_eq!(&errors, &expected_errors);
+                buffer.flush_all();
             }
-            let errors = parser.end_of_fragments();
-            assert_eq!(&errors, &test.final_errors);
             consumer.eoi();
-            parser.flush_all();
             assert_eq!(&test.expected_output, &outputs.state().flushed);
         }
     }
@@ -563,19 +503,15 @@ mod test {
     impl<T, U> TestCase<T, U> {
         #[track_caller]
         fn new(
-            chunks: bool,
             config: JsonParserConfig,
             input_batches: Vec<(String, Vec<ParseError>)>,
             expected_output: Vec<MockUpdate<T, U>>,
-            final_result: Vec<ParseError>,
         ) -> Self {
             Self {
                 location: Location::caller(),
-                chunks,
                 config,
                 input_batches,
                 expected_output,
-                final_errors: final_result,
             }
         }
     }
@@ -588,7 +524,6 @@ mod test {
 
             // raw: single-record chunk.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -596,10 +531,8 @@ mod test {
                 },
                 vec![(r#"{"b": true, "i": 0}"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new(),
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -607,10 +540,8 @@ mod test {
                 },
                 vec![(r#"[true, 0, "a"]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("a")), true)],
-                Vec::new(),
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -618,10 +549,8 @@ mod test {
                 },
                 vec![(r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -629,11 +558,9 @@ mod test {
                 },
                 vec![(r#"[[true, 0, "b"]]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("b")), true)],
-                Vec::new()
             ),
             // raw: one chunk, two records.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -641,10 +568,8 @@ mod test {
                 },
                 vec![(r#"{"b": true, "i": 0}{"b": false, "i": 100, "s": "foo"}"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -652,10 +577,8 @@ mod test {
                 },
                 vec![(r#"[true, 0, "c"][false, 100, "foo"]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("c")), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -663,10 +586,8 @@ mod test {
                 },
                 vec![(r#"[{"b": true, "i": 0},{"b": false, "i": 100, "s": "foo"}]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -674,11 +595,9 @@ mod test {
                 },
                 vec![(r#"[[true, 0, "d"],[false, 100, "foo"]]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("d")), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
-                Vec::new()
             ),
             // raw: two chunks, one record each.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -687,10 +606,8 @@ mod test {
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
                     , (r#"{"b": false, "i": 100, "s": "foo"}"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -699,10 +616,8 @@ mod test {
                 vec![ (r#"[true, 0, "e"]"#.to_string(), Vec::new())
                     , (r#"[false, 100, "foo"]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("e")), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -711,10 +626,8 @@ mod test {
                 vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
                     , (r#"[{"b": false, "i": 100, "s": "foo"}]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -723,11 +636,9 @@ mod test {
                 vec![ (r#"[[true, 0, "e"]]"#.to_string(), Vec::new())
                     , (r#"[[false, 100, "foo"]]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("e")), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), true)],
-                Vec::new()
             ),
             // raw: invalid json.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -736,10 +647,8 @@ mod test {
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
                     , (r#"{"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 27".to_string(), "{\"b\": false, \"i\": 100, \"s\":", None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -748,10 +657,8 @@ mod test {
                 vec![ (r#"[true, 0, "f"]"#.to_string(), Vec::new())
                     , (r#"[false, 100, "#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 13".to_string(), "[false, 100, ", None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("f")), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -760,10 +667,8 @@ mod test {
                 vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
                     , (r#"[{"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 28".to_string(), "[{\"b\": false, \"i\": 100, \"s\":", None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -772,11 +677,9 @@ mod test {
                 vec![ (r#"[[true, 0, "g"]]"#.to_string(), Vec::new())
                     , (r#"[[false, 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: expected `,` or `]` at line 1 column 18".to_string(), "[[false, 100, \"s\":", None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("g")), true)],
-                Vec::new()
             ),
             // raw: valid json, but data doesn't match type definition.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -785,10 +688,8 @@ mod test {
                 vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
                     , (r#"{"b": false, "i": 5}{"b": false}{"b": false, "i": "hello"}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None), ParseError::new("failed to deserialize JSON record: error parsing field 'i': invalid type: string \"hello\", expected i32 at line 1 column 25".to_string(), Some(4), Some("i".to_string()), Some("{\"b\": false, \"i\": \"hello\"}"), None, None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -799,10 +700,8 @@ mod test {
                     , (r#"[{"b": false, "i": 5},{"b": 20, "i": 10}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: error parsing field 'b': invalid type: integer `20`, expected a boolean at line 1 column 8".to_string(), Some(5), Some("b".to_string()), Some("{\"b\": 20, \"i\": 10}"), None, None)])
                 ],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::Default,
@@ -811,87 +710,12 @@ mod test {
                 vec![ (r#"[[true, 0, "h"]]"#.to_string(), Vec::new())
                     , (r#"[{"b": false, "i": 5},[false]]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: invalid length 1, expected 3 columns at line 1 column 7".to_string(), Some(3), None, Some("[false]"), None, None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("h")), true)],
-                Vec::new()
-            ),
-            // raw: streaming mode; record split across two fragments.
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::Raw,
-                    json_flavor: JsonFlavor::Default,
-                    array: false,
-                },
-                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
-                    , (r#"{"b": false, "i": 5}
-                       {"b": false, "i":"#.to_string(), Vec::new())
-                    , (r#"5}"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
-                Vec::new()
-            ),
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::Raw,
-                    json_flavor: JsonFlavor::Default,
-                    array: false,
-                },
-                vec![ (r#"[true, 0, "i"]"#.to_string(), Vec::new())
-                    , (r#"{"b": false, "i": 5}
-                       [false, "#.to_string(), Vec::new())
-                    , (r#"5, "j"]"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("i")), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, Some("j")), true)],
-                Vec::new()
-            ),
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::Raw,
-                    json_flavor: JsonFlavor::Default,
-                    array: true,
-                },
-                vec![ (r#"[{"b": true, "i": 0}]"#.to_string(), Vec::new())
-                    , (r#"[{"b": false, "i": 5}, {"b": false, "i":"#.to_string(), Vec::new())
-                    , (r#"5}]"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
-                Vec::new()
-            ),
-            // raw: streaming mode; record split across several fragments.
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::Raw,
-                    json_flavor: JsonFlavor::Default,
-                    array: false,
-                },
-                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
-                    , (r#"{"b": false, "i": 5}
-                       {"#.to_string(), Vec::new())
-                    , (r#""b": false, "i":"#.to_string(), Vec::new())
-                    , (r#"5}"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
-                Vec::new()
-            ),
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::Raw,
-                    json_flavor: JsonFlavor::Default,
-                    array: false,
-                },
-                vec![ (r#"{"b": true, "i": 0}"#.to_string(), Vec::new())
-                    , (r#"[false, 5, ""]
-                       ["#.to_string(), Vec::new())
-                    , (r#"false, "#.to_string(), Vec::new())
-                    , (r#"5, "k"]"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, Some("")), true), MockUpdate::with_polarity(TestStruct::new(false, 5, Some("k")), true)],
-                Vec::new()
             ),
 
             /* InsertDelete format. */
 
             // insert_delete: single-record chunk.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -899,10 +723,8 @@ mod test {
                 },
                 vec![(r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -910,11 +732,9 @@ mod test {
                 },
                 vec![(r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             // Parse update record.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -930,11 +750,9 @@ mod test {
                      MockUpdate::Update(TestStructUpd::new(Some(true), 0, Some(Some("foo")))),
                      MockUpdate::Update(TestStructUpd::new(None, 0, Some(None))),
                 ],
-                Vec::new()
             ),
             // insert_delete: one chunk, two records.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -942,10 +760,8 @@ mod test {
                 },
                 vec![(r#"{"insert": {"b": true, "i": 0}}{"delete": {"b": false, "i": 100, "s": "foo"}}"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -953,10 +769,8 @@ mod test {
                 },
                 vec![(r#"[{"insert": {"b": true, "i": 0}}, {"delete": {"b": false, "i": 100, "s": "foo"}}]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -964,11 +778,9 @@ mod test {
                 },
                 vec![(r#"[{"insert": [true, 0, "a"]}, {"delete": {"b": false, "i": 100, "s": "foo"}}]"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("a")), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
-                Vec::new()
             ),
             // insert_delete: two chunks, one record each.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -977,11 +789,9 @@ mod test {
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
                     , (r#"{"delete": {"b": false, "i": 100, "s": "foo"}}"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
-                Vec::new()
             ),
             // insert_delete: invalid json.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -990,10 +800,8 @@ mod test {
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
                     , (r#"{"delete": {"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 38".to_string(), "{\"delete\": {\"b\": false, \"i\": 100, \"s\":", None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -1002,11 +810,9 @@ mod test {
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
                     , (r#"[{"delete": {"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 39".to_string(), "[{\"delete\": {\"b\": false, \"i\": 100, \"s\":", None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             // insert_delete: valid json, but data doesn't match type definition.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -1015,10 +821,8 @@ mod test {
                 vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
                     , (r#"{"insert": {"b": false, "i": 5}}{"delete": {"b": false}}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -1027,10 +831,8 @@ mod test {
                 vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
                     , (r#"[{"insert": {"b": false, "i": 5}},{"delete": {"b": false}}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::InsertDelete,
                     json_flavor: JsonFlavor::Default,
@@ -1042,86 +844,12 @@ mod test {
                     , (r#"[{"delete": {"b": false}}]"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(5), None, Some("{\"b\": false}"), None, None)])
                     , (r#"[{"b": false}]"#.to_string(), vec![ParseError::text_envelope_error("error deserializing string as a JSON array of updates: unknown field `b`, expected one of `table`, `insert`, `delete`, `update` at line 1 column 5".to_string(), "[{\"b\": false}]", Some(Cow::from("Example valid JSON: '[{{\"insert\": {{...}} }}, {{\"delete\": {{...}} }}]'")))])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
-            ),
-            // insert_delete: streaming mode; record split across two fragments.
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::InsertDelete,
-                    json_flavor: JsonFlavor::Default,
-                    array: false,
-                },
-                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
-                    , (r#"{"insert": {"b": false, "i": 5}}
-                       {"delete": {"b": false, "i":"#.to_string(), Vec::new())
-                    , (r#"5}}"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
-                Vec::new()
-            ),
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::InsertDelete,
-                    json_flavor: JsonFlavor::Default,
-                    array: true,
-                },
-                vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
-                    , (r#"[{"insert": {"b": false, "i": 5}}, {"delete": {"b": false, "i":"#.to_string(), Vec::new())
-                    , (r#"5}}]"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
-                Vec::new()
-            ),
-            // insert_delete: streaming mode; record split across several fragments.
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::InsertDelete,
-                    json_flavor: JsonFlavor::Default,
-                    array: false,
-                },
-                vec![ (r#"{"insert": {"b": true, "i": 0}}"#.to_string(), Vec::new())
-                    , (r#"{"insert": {"b": false, "i": 5}}
-                       {"delete""#.to_string(), Vec::new())
-                    , (r#": {"b": false, "i":"#.to_string(), Vec::new())
-                    , (r#"5}}"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
-                Vec::new()
-            ),
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::InsertDelete,
-                    json_flavor: JsonFlavor::Default,
-                    array: true,
-                },
-                vec![ (r#"[{"insert": {"b": true, "i": 0}}]"#.to_string(), Vec::new())
-                    , (r#"[{"insert": {"b": false, "i": 5}},{"delete""#.to_string(), Vec::new())
-                    , (r#": {"b": false, "i":"#.to_string(), Vec::new())
-                    , (r#"5}}]"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
-                Vec::new()
-            ),
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::InsertDelete,
-                    json_flavor: JsonFlavor::Default,
-                    array: true,
-                },
-                vec![ (r#"[{"insert": [true, 0, "a"]}]"#.to_string(), Vec::new())
-                    , (r#"[{"insert": [false, 5, "b"]},{"delete""#.to_string(), Vec::new())
-                    , (r#": [false, "#.to_string(), Vec::new())
-                    , (r#"5, "c"]}]"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, Some("a")), true), MockUpdate::with_polarity(TestStruct::new(false, 5, Some("b")), true), MockUpdate::with_polarity(TestStruct::new(false, 5, Some("c")), false)],
-                Vec::new()
             ),
 
             /* Debezium format */
 
             // debezium: single-record chunk.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
                     json_flavor: JsonFlavor::Default,
@@ -1129,11 +857,9 @@ mod test {
                 },
                 vec![(r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             // debezium: "u" record.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
                     json_flavor: JsonFlavor::Default,
@@ -1141,10 +867,8 @@ mod test {
                 },
                 vec![(r#"{"payload": {"op": "u", "before": {"b": true, "i": 123}, "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 123, None), false), MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
                     json_flavor: JsonFlavor::Default,
@@ -1152,11 +876,9 @@ mod test {
                 },
                 vec![(r#"{"payload": {"op": "u", "before": [true, 123, "abc"], "after": [true, 0, "def"]}}"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 123, Some("abc")), false), MockUpdate::with_polarity(TestStruct::new(true, 0, Some("def")), true)],
-                Vec::new()
             ),
             // debezium: one chunk, two records.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
                     json_flavor: JsonFlavor::Default,
@@ -1164,11 +886,9 @@ mod test {
                 },
                 vec![(r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}{"payload": {"op": "d", "before": {"b": false, "i": 100, "s": "foo"}}}"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
-                Vec::new()
             ),
             // debezium: two chunks, one record each.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
                     json_flavor: JsonFlavor::Default,
@@ -1177,11 +897,9 @@ mod test {
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
                     , (r#"{"payload": {"op": "d", "before": {"b": false, "i": 100, "s": "foo"}}}"#.to_string(), Vec::new())],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 100, Some("foo")), false)],
-                Vec::new()
             ),
             // debezium: invalid json.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
                     json_flavor: JsonFlavor::Default,
@@ -1190,11 +908,9 @@ mod test {
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
                     , (r#"{"payload": {"op": "d", "before": {"b": false, "i": 100, "s":"#.to_string(), vec![ParseError::text_envelope_error("failed to parse string as a JSON document: EOF while parsing a value at line 1 column 61".to_string(), "{\"payload\": {\"op\": \"d\", \"before\": {\"b\": false, \"i\": 100, \"s\":", None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true)],
-                Vec::new()
             ),
             // debezium: valid json, but data doesn't match type definition.
             TestCase::new(
-                true,
                 JsonParserConfig {
                     update_format: JsonUpdateFormat::Debezium,
                     json_flavor: JsonFlavor::Default,
@@ -1203,38 +919,6 @@ mod test {
                 vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
                     , (r#"{"payload": {"op": "c", "after": {"b": false, "i": 5}}}{"payload": {"op": "d", "before": {"b": false}}}"#.to_string(), vec![ParseError::new("failed to deserialize JSON record: missing field `i` at line 1 column 12".to_string(), Some(3), None, Some("{\"b\": false}"), None, None)])],
                 vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true)],
-                Vec::new()
-            ),
-            // debezium: streaming mode; record split across two fragments.
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::Debezium,
-                    json_flavor: JsonFlavor::Default,
-                    array: false,
-                },
-                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
-                    , (r#"{"payload": {"op": "c", "after": {"b": false, "i": 5}}}
-                       {"payload": {"op": "d", "before": {"b": false, "i":"#.to_string(), Vec::new())
-                    , (r#"5}}}"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
-                Vec::new()
-            ),
-            // debezium: streaming mode; record split across several fragments.
-            TestCase::new(
-                false,
-                JsonParserConfig {
-                    update_format: JsonUpdateFormat::Debezium,
-                    json_flavor: JsonFlavor::Default,
-                    array: false,
-                },
-                vec![ (r#"{"payload": {"op": "c", "after": {"b": true, "i": 0}}}"#.to_string(), Vec::new())
-                    , (r#"{"payload": {"op": "c", "after": {"b": false, "i": 5}}}
-                       {"payload": {"op": "d", "before""#.to_string(), Vec::new())
-                    , (r#""#.to_string(), Vec::new())
-                    , (r#": {"b": false, "i":5}}}"#.to_string(), Vec::new()) ],
-                vec![MockUpdate::with_polarity(TestStruct::new(true, 0, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), true), MockUpdate::with_polarity(TestStruct::new(false, 5, None), false)],
-                Vec::new()
             ),
         ];
 

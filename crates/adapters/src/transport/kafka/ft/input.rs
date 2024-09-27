@@ -532,8 +532,7 @@ impl WorkerThread {
                         continue;
                     }
                     if let Some(payload) = data_message.payload() {
-                        let errors = self.parser.input_chunk(payload);
-                        self.queue.push(self.parser.take(), payload.len(), errors);
+                        self.queue.push(payload.len(), self.parser.parse(payload));
                     }
                     p.next_offset = data_message.offset() + 1;
                 }
@@ -582,8 +581,7 @@ impl WorkerThread {
                             // step).
 
                             if let Some(payload) = data_message.payload() {
-                                let errors = self.parser.input_chunk(payload);
-                                self.queue.push(self.parser.take(), payload.len(), errors);
+                                self.queue.push(payload.len(), self.parser.parse(payload));
                             }
                             n_messages += 1;
                             n_bytes += data_message.payload_len();

@@ -3,8 +3,8 @@
 #![allow(clippy::type_complexity)]
 
 use crate::{
-    controller::InputEndpointConfig, transport::InputReader, Catalog, CircuitCatalog, FormatConfig,
-    InputFormat,
+    controller::InputEndpointConfig, format::InputBuffer, transport::InputReader, Catalog,
+    CircuitCatalog, FormatConfig, InputFormat,
 };
 use anyhow::Result as AnyResult;
 use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
@@ -253,8 +253,8 @@ where
 
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).unwrap();
-    let errors = parser.input_chunk(&bytes);
-    parser.flush_all();
+    let (mut parsed_buffers, errors) = parser.parse(&bytes);
+    parsed_buffers.flush_all();
 
     // Use assert_eq, so errors are printed in case of a failure.
     assert_eq!(errors, vec![]);
