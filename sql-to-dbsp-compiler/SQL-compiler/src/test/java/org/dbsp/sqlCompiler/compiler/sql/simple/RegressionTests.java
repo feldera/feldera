@@ -28,6 +28,22 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2498() {
+        String sql = """
+                CREATE TABLE t (
+                   line string
+                );
+                CREATE TYPE global_metrics AS (
+                    rss_bytes BIGINT,
+                    buffered_records BIGINT
+                );
+                CREATE LOCAL VIEW tmp AS SELECT PARSE_JSON(line) AS json FROM t;
+                CREATE VIEW rss AS
+                       SELECT CAST(json['global_metrics'] AS global_metrics) FROM tmp;""";
+        this.statementsFailingInCompilation(sql, "not yet implemented");
+    }
+
+    @Test
     public void issue2539() {
         String sql = """
                 CREATE TABLE t(c1 INT, c2 INT);

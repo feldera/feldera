@@ -36,10 +36,10 @@ public enum DBSPTypeCode {
     // Derived types
     FUNCTION("FUNCTION", "", ""),
     INDEXED_ZSET(null, "", ""),
-    RAW_TUPLE(null, "", ""),
+    RAW_TUPLE("STRUCT", "", ""),
     REF(null, "", ""),
-    STRUCT("ROW TYPE", "", ""),
-    TUPLE(null, "", "Tup"),
+    STRUCT("STRUCT", "", ""),
+    TUPLE("STRUCT", "", "Tup"),
     // User-defined types
     RESULT(null, "", "Result"),
     OPTION(null, "", "Option"),

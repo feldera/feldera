@@ -27,13 +27,18 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.Linq;
 import org.junit.Test;
+
+import java.math.BigDecimal;
 
 public class VariantTests extends BaseSQLTests {
     /** Return the default compiler used for testing. */
@@ -238,6 +243,93 @@ public class VariantTests extends BaseSQLTests {
                                                       ] AS VARIANT)
                       ] AS VARIANT)""",
                 new DBSPBoolLiteral(true));
+    }
+
+    @Test
+    public void testCastVec() {
+        // This is a bug in Calcite, the array should be nullable, and the elements should be nullable too
+        this.testQuery("""
+                SELECT CAST(ARRAY[NULL, 1] AS INT ARRAY)""",
+                new DBSPVecLiteral(false,
+                        new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true).none(),
+                        new DBSPI32Literal(1, true)));
+        // result is null, since 1 cannot be converted to a string
+        this.testQuery("""
+                SELECT CAST(PARSE_JSON('["a", 1]') AS STRING ARRAY)""",
+                new DBSPVecLiteral(
+                        new DBSPTypeVec(DBSPTypeString.varchar(false), true),
+                        true));
+        this.testQuery("""
+                SELECT CAST(PARSE_JSON('["a", 1]') AS VARIANT ARRAY)""",
+                new DBSPVecLiteral(true,
+                        new DBSPVariantLiteral(new DBSPStringLiteral("a", true)),
+                        new DBSPVariantLiteral(new DBSPDecimalLiteral(CalciteObject.EMPTY,
+                                DBSPTypeDecimal.getDefault(), new BigDecimal(1)))));
+
+        this.testQuery("""
+                SELECT CAST(ARRAY[NULL, 1] AS VARIANT)""",
+                new DBSPVariantLiteral(
+                        new DBSPVecLiteral(false,
+                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true).none(),
+                                new DBSPI32Literal(1, true))));
+    }
+
+    @Test
+    public void testCastMap() {
+        this.testQuery("""
+                SELECT CAST(PARSE_JSON('{"a": 1}') AS MAP<VARIANT, VARIANT>)""",
+                new DBSPMapLiteral(
+                        new DBSPTypeMap(
+                                new DBSPTypeVariant(false),
+                                new DBSPTypeVariant(false),
+                                true),
+                                Linq.list(
+                                        new DBSPVariantLiteral(new DBSPStringLiteral("a")),
+                                        new DBSPVariantLiteral(new DBSPDecimalLiteral(1)))));
+        this.testQuery("""
+                SELECT CAST(PARSE_JSON('{"a": 1}') AS MAP<STRING, VARIANT>)""",
+                new DBSPMapLiteral(
+                        new DBSPTypeMap(
+                                DBSPTypeString.varchar(false),
+                                new DBSPTypeVariant(false),
+                                true),
+                        Linq.list(
+                                new DBSPStringLiteral("a"),
+                                new DBSPVariantLiteral(new DBSPDecimalLiteral(1))
+                        )));
+        this.testQuery("""
+                SELECT CAST(PARSE_JSON('{"a": 1}') AS MAP<STRING, INT>)""",
+                new DBSPMapLiteral(
+                        new DBSPTypeMap(
+                                DBSPTypeString.varchar(false),
+                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
+                                true),
+                        Linq.list(
+                                new DBSPStringLiteral("a"),
+                                new DBSPI32Literal(1)
+                        )));
+        // Wrong type, result is NULL
+        this.testQuery("""
+                SELECT CAST(PARSE_JSON('{"a": 1}') AS MAP<STRING, TIMESTAMP>)""",
+                new DBSPMapLiteral(
+                        new DBSPTypeMap(
+                                DBSPTypeString.varchar(false),
+                                new DBSPTypeTimestamp(CalciteObject.EMPTY, false),
+                                true), null, null));
+
+        this.testQuery("""
+                SELECT CAST(MAP['a', 1, 'b', 2] AS VARIANT)""",
+                new DBSPVariantLiteral(new DBSPMapLiteral(
+                        new DBSPTypeMap(
+                                DBSPTypeString.varchar(false),
+                                new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
+                                true),
+                        Linq.list(
+                                new DBSPStringLiteral("a"),
+                                new DBSPI32Literal(1),
+                                new DBSPStringLiteral("b"),
+                                new DBSPI32Literal(2)
+                        ))));
     }
 
     @Test

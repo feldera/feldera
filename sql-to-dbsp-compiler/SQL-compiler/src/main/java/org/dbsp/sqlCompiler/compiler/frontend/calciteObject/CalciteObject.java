@@ -10,6 +10,8 @@ import org.dbsp.sqlCompiler.compiler.IHasSourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.util.ICastable;
 
+import javax.annotation.Nullable;
+
 /** This is a base class for classes that wrap
  * a variety of possible Calcite IR objects
  * that can be used to report errors. */
@@ -49,8 +51,8 @@ public class CalciteObject implements ICastable, IHasSourcePositionRange {
         return new CalciteSqlOperator(operator);
     }
 
-    public static CalciteObject create(RexNode node) {
-        return new CalciteRexNode(node);
+    public static CalciteObject create(@Nullable RelNode context, RexNode node) {
+        return new CalciteRexNode(context, node);
     }
 
     public static CalciteObject create(SqlParserPos pos) { return new CalciteSqlParserPos(pos); }

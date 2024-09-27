@@ -386,14 +386,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
             throw new UnimplementedException(node);
         RexNode projection = project.getProjects().get(0);
         DBSPVariablePath dataVar = new DBSPVariablePath(leftElementType.ref());
-        ExpressionCompiler eComp = new ExpressionCompiler(dataVar, this.compiler);
+        ExpressionCompiler eComp = new ExpressionCompiler(correlate, dataVar, this.compiler);
         DBSPClosureExpression arrayExpression = eComp.compile(projection).closure(dataVar.asParameter());
         DBSPType arrayElementType = arrayExpression.getResultType().to(DBSPTypeVec.class).getElementType();
 
         List<DBSPClosureExpression> rightProjections = null;
         if (rightProject != null) {
             DBSPVariablePath eVar = new DBSPVariablePath(arrayElementType.ref());
-            final ExpressionCompiler eComp0 = new ExpressionCompiler(eVar, this.compiler);
+            final ExpressionCompiler eComp0 = new ExpressionCompiler(correlate, eVar, this.compiler);
             rightProjections =
                     Linq.map(rightProject.getProjects(),
                             e -> eComp0.compile(e).closure(eVar.asParameter()));
@@ -436,7 +436,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPOperator opInput = this.getInputAs(input, true);
         // This is the same as a LogicalProject which adds two columns
         DBSPVariablePath row = inputRowType.ref().var();
-        ExpressionCompiler expressionCompiler = new ExpressionCompiler(row, this.compiler);
+        ExpressionCompiler expressionCompiler = new ExpressionCompiler(scan, row, this.compiler);
         List<RexNode> operands = call.getOperands();
         assert call.operandCount() == 2 || call.operandCount() == 3;
         int timestampIndex = this.getDescriptor(operands.get(0));
@@ -493,7 +493,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple inputRowType = this.convertType(input.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPOperator opInput = this.getInputAs(input, true);
         DBSPVariablePath row = inputRowType.ref().var();
-        ExpressionCompiler expressionCompiler = new ExpressionCompiler(row, this.compiler);
+        ExpressionCompiler expressionCompiler = new ExpressionCompiler(scan, row, this.compiler);
         List<RexNode> operands = call.getOperands();
         assert call.operandCount() == 3 || call.operandCount() == 4;
         int timestampIndex = this.getDescriptor(operands.get(0));
@@ -836,14 +836,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple tuple = outputElementType.to(DBSPTypeTuple.class);
         DBSPType inputType = this.convertType(project.getInput().getRowType(), false);
         DBSPVariablePath row = inputType.ref().var();
-        ExpressionCompiler expressionCompiler = new ExpressionCompiler(row, this.compiler);
+        ExpressionCompiler expressionCompiler = new ExpressionCompiler(project, row, this.compiler);
 
         List<DBSPExpression> resultColumns = new ArrayList<>();
         int index = 0;
         for (RexNode column : project.getProjects()) {
             if (column instanceof RexOver) {
                 throw new UnsupportedException("Optimizer should have removed OVER expressions",
-                        CalciteObject.create(column));
+                        CalciteObject.create(project, column));
             } else {
                 DBSPExpression exp = expressionCompiler.compile(column);
                 DBSPType expectedType = tuple.getFieldType(index);
@@ -934,10 +934,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject node = CalciteObject.create(filter);
         DBSPType type = this.convertType(filter.getRowType(), false);
         DBSPVariablePath t = type.ref().var();
-        ExpressionCompiler expressionCompiler = new ExpressionCompiler(t, this.compiler);
+        ExpressionCompiler expressionCompiler = new ExpressionCompiler(filter, t, this.compiler);
         DBSPExpression condition = expressionCompiler.compile(filter.getCondition());
         condition = ExpressionCompiler.wrapBoolIfNeeded(condition);
-        condition = new DBSPClosureExpression(CalciteObject.create(filter.getCondition()), condition, t.asParameter());
+        condition = new DBSPClosureExpression(
+                CalciteObject.create(filter, filter.getCondition()), condition, t.asParameter());
         DBSPOperator input = this.getOperator(filter.getInput());
         DBSPFilterOperator fop = new DBSPFilterOperator(node, condition, input);
         this.assignOperator(filter, fop);
@@ -995,7 +996,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(
                 leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
-        JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join.getCondition());
+        JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join, join.getCondition());
         // If any key field that is compared with = is nullable we need to filter the inputs;
         // this will make some key columns non-nullable
         DBSPOperator filteredLeft = this.filterNonNullFields(join,
@@ -1107,12 +1108,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression originalCondition = null;
             if (leftOver != null) {
                 DBSPVariablePath t = lr.getType().ref().var();
-                ExpressionCompiler expressionCompiler = new ExpressionCompiler(t, this.compiler);
+                ExpressionCompiler expressionCompiler = new ExpressionCompiler(join, t, this.compiler);
                 condition = expressionCompiler.compile(leftOver);
                 if (condition.getType().mayBeNull)
                     condition = ExpressionCompiler.wrapBoolIfNeeded(condition);
                 originalCondition = condition;
-                condition = new DBSPClosureExpression(CalciteObject.create(join.getCondition()), condition, t.asParameter());
+                condition = new DBSPClosureExpression(
+                        CalciteObject.create(join, join.getCondition()), condition, t.asParameter());
             }
 
             DBSPClosureExpression makeTuple = lr.closure(k.asParameter(), l0.asParameter(), r0.asParameter());
@@ -1258,7 +1260,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         JoinConditionAnalyzer analyzer = new JoinConditionAnalyzer(
                 leftElementType.to(DBSPTypeTuple.class).size(), this.compiler.getTypeCompiler());
-        JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join.getCondition());
+        JoinConditionAnalyzer.ConditionDecomposition decomposition = analyzer.analyze(join, join.getCondition());
         @Nullable
         RexNode leftOver = decomposition.getLeftOver();
         assert leftOver == null;
@@ -1424,7 +1426,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      */
     void visitLogicalValues(LogicalValues values) {
         CalciteObject node = CalciteObject.create(values);
-        ExpressionCompiler expressionCompiler = new ExpressionCompiler(null, this.compiler);
+        ExpressionCompiler expressionCompiler = new ExpressionCompiler(values, null, this.compiler);
         DBSPTypeTuple sourceType = this.convertType(values.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPTypeTuple resultType;
         if (this.modifyTableTranslation != null) {
@@ -1739,7 +1741,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             DBSPType firstInputRowType = firstInput.getOutputZSetElementType();
             DBSPVariablePath firstInputVar = firstInputRowType.ref().var();
-            ExpressionCompiler eComp = new ExpressionCompiler(firstInputVar, this.window.constants, this.compiler.compiler);
+            ExpressionCompiler eComp = new ExpressionCompiler(
+                    this.window, firstInputVar, this.window.constants, this.compiler.compiler);
             DBSPOperator inputIndexed;
 
             if (lastOperator == firstInput) {
@@ -1903,7 +1906,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             this.collation = orderKeys.get(0);
             this.orderColumnIndex = this.collation.getFieldIndex();
             this.inputRowRefVar = this.inputRowType.ref().var();
-            this.eComp = new ExpressionCompiler(inputRowRefVar, window.constants, this.compiler.compiler);
+            this.eComp = new ExpressionCompiler(window, inputRowRefVar, window.constants, this.compiler.compiler);
         }
 
         DBSPWindowBoundExpression compileWindowBound(
@@ -2252,7 +2255,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPExpression limit = null;
         if (sort.fetch != null) {
-            ExpressionCompiler expressionCompiler = new ExpressionCompiler(null, this.compiler);
+            ExpressionCompiler expressionCompiler = new ExpressionCompiler(sort, null, this.compiler);
             // We expect the limit to be a constant
             limit = expressionCompiler.compile(sort.fetch);
         }
@@ -2406,7 +2409,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     InputColumnMetadata convertMetadata(RelColumnMetadata metadata) {
         DBSPType type = this.convertType(metadata.getType(), false);
-        ExpressionCompiler expressionCompiler = new ExpressionCompiler(null, this.compiler);
+        ExpressionCompiler expressionCompiler = new ExpressionCompiler(null, null, this.compiler);
         DBSPExpression lateness = null;
         if (metadata.lateness != null) {
             lateness = expressionCompiler.compile(metadata.lateness);
@@ -2649,7 +2652,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     @Nullable
     DBSPNode compileLateness(LatenessStatement stat) {
-        ExpressionCompiler compiler = new ExpressionCompiler(null, this.compiler);
+        ExpressionCompiler compiler = new ExpressionCompiler(null, null, this.compiler);
         DBSPExpression lateness = compiler.compile(stat.value);
         ViewColumnMetadata vcm = new ViewColumnMetadata(
                 stat.getCalciteObject(), stat.view.getSimple(), stat.column.getSimple(), null, lateness);
@@ -2708,7 +2711,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple tuple = outputElementType.to(DBSPTypeTuple.class);
         DBSPType inputType = this.convertType(project.getInput().getRowType(), false);
         DBSPVariablePath row = inputType.ref().var();  // should not be used
-        ExpressionCompiler expressionCompiler = new ExpressionCompiler(row, this.compiler);
+        ExpressionCompiler expressionCompiler = new ExpressionCompiler(project, row, this.compiler);
         DBSPZSetLiteral result = DBSPZSetLiteral.emptyWithElementType(outputElementType);
 
         List<DBSPExpression> resultColumns = new ArrayList<>();

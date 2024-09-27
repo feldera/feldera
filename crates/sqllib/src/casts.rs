@@ -11,6 +11,7 @@ use num::{FromPrimitive, One, ToPrimitive, Zero};
 use num_traits::cast::NumCast;
 use rust_decimal::{Decimal, RoundingStrategy};
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::string::String;
 
 const FLOAT_DISPLAY_PRECISION: usize = 6;
@@ -1591,18 +1592,9 @@ where
     vec.into()
 }
 
-pub fn cast_to_V_map<K, V>(map: BTreeMap<K, V>) -> Variant
-where
-    Variant: From<K> + From<V>,
-    K: Clone,
-    V: Clone,
-{
-    map.into()
-}
-
 pub fn cast_to_vec_V<T>(value: Variant) -> Vec<T>
 where
-    Vec<T>: TryFrom<Variant>,
+    Vec<T>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     value
         .try_into()
@@ -1611,7 +1603,7 @@ where
 
 pub fn cast_to_vec_VN<T>(value: Option<Variant>) -> Option<Vec<T>>
 where
-    Vec<T>: TryFrom<Variant>,
+    Vec<T>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     let value = value?;
     cast_to_vecN_V(value)
@@ -1619,14 +1611,14 @@ where
 
 pub fn cast_to_vecN_V<T>(value: Variant) -> Option<Vec<T>>
 where
-    Vec<T>: TryFrom<Variant>,
+    Vec<T>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     value.try_into().ok()
 }
 
 pub fn cast_to_vecN_VN<T>(value: Option<Variant>) -> Option<Vec<T>>
 where
-    Vec<T>: TryFrom<Variant>,
+    Vec<T>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     let value = value?;
     cast_to_vecN_V(value)
@@ -1634,9 +1626,18 @@ where
 
 /////// cast variant to map
 
+pub fn cast_to_V_map<K, V>(map: BTreeMap<K, V>) -> Variant
+where
+    Variant: From<K> + From<V>,
+    K: Clone + Ord,
+    V: Clone,
+{
+    map.into()
+}
+
 pub fn cast_to_map_V<K, V>(value: Variant) -> BTreeMap<K, V>
 where
-    BTreeMap<K, V>: TryFrom<Variant>,
+    BTreeMap<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     value
         .try_into()
@@ -1645,7 +1646,7 @@ where
 
 pub fn cast_to_map_VN<K, V>(value: Option<Variant>) -> Option<BTreeMap<K, V>>
 where
-    BTreeMap<K, V>: TryFrom<Variant>,
+    BTreeMap<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     let value = value?;
     cast_to_mapN_V(value)
@@ -1653,14 +1654,14 @@ where
 
 pub fn cast_to_mapN_V<K, V>(value: Variant) -> Option<BTreeMap<K, V>>
 where
-    BTreeMap<K, V>: TryFrom<Variant>,
+    BTreeMap<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     value.try_into().ok()
 }
 
 pub fn cast_to_mapN_VN<K, V>(value: Option<Variant>) -> Option<BTreeMap<K, V>>
 where
-    BTreeMap<K, V>: TryFrom<Variant>,
+    BTreeMap<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
 {
     let value = value?;
     cast_to_mapN_V(value)
