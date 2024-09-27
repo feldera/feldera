@@ -40,10 +40,10 @@ fields:
   If not specified, the field will be set to `min(rate, 10_000)`. This works well in most situations.
   However, if you're running tests with lateness and many workers you can e.g., reduce the chunk size
   to make sure a smaller range of records is being ingested/generated in parallel.
-  
-  Example: Assume datagen generates a total of 125 records with 4 workers and a chunk size of 25. In this case, 
-  worker A will generate records `0..25`, worker B will generate records `25..50`, etc. A, B, C, and D will 
-  generate the first 100 records in parallel. The first worker to finish its chunk will pick up the last chunk 
+
+  Example: Assume datagen generates a total of 125 records with 4 workers and a chunk size of 25. In this case,
+  worker A will generate records `0..25`, worker B will generate records `25..50`, etc. A, B, C, and D will
+  generate the first 100 records in parallel. The first worker to finish its chunk will pick up the last chunk
   of records (`100..125`) and generate the records for it.
 
 ### Random Field Settings

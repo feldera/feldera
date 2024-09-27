@@ -73,7 +73,7 @@ fn range_as_f64(
             Ok(Some((a, b)))
         }
         _ => Err(anyhow!(
-            "Range values must be integers for field {:?}",
+            "Range values must be floating point numbers for field {:?}",
             field.sql_name()
         )),
     }
@@ -947,6 +947,12 @@ impl RecordGenerator {
                 return Ok(());
             }
             let scale = settings.scale;
+            let checked_days_arith_err = || {
+                anyhow!(
+                    "Unable calculate date for '{}'. Make sure it fits within Jan 1, 262145 BCE to Dec 31, 262143 CE. If the start and end dates are represented as numbers, they will be interpreted as the number of days since 1970-01-01.",
+                    field.name
+                )
+            };
 
             match (&settings.strategy, &settings.values) {
                 (DatagenStrategy::Increment, None) => {
@@ -954,8 +960,9 @@ impl RecordGenerator {
                     let val_in_range = (incr as i64 * scale) % range;
                     let val = min + val_in_range;
                     debug_assert!(val >= min && val < max);
-                    let d = unix_date + Days::new(val as u64);
-
+                    let d = unix_date
+                        .checked_add_days(Days::new(val as u64))
+                        .ok_or_else(checked_days_arith_err)?;
                     write!(
                         str,
                         "{}",
@@ -971,9 +978,13 @@ impl RecordGenerator {
                     let dist = Uniform::from(min..max);
                     let days = rng.sample(dist);
                     let d = if days > 0 {
-                        unix_date + Days::new(days.unsigned_abs() * scale.unsigned_abs())
+                        unix_date
+                            .checked_add_days(Days::new(days.unsigned_abs() * scale.unsigned_abs()))
+                            .ok_or_else(checked_days_arith_err)?
                     } else {
-                        unix_date - Days::new(days.unsigned_abs() * scale.unsigned_abs())
+                        unix_date
+                            .checked_sub_days(Days::new(days.unsigned_abs() * scale.unsigned_abs()))
+                            .ok_or_else(checked_days_arith_err)?
                     };
                     write!(
                         str,
@@ -992,9 +1003,13 @@ impl RecordGenerator {
                     let val = rng.sample(zipf) as i64 - 1;
                     let days = clamp(min + val, min, max);
                     let d = if days > 0 {
-                        unix_date + Days::new(days as u64)
+                        unix_date
+                            .checked_add_days(Days::new(days as u64))
+                            .ok_or_else(checked_days_arith_err)?
                     } else {
-                        unix_date - Days::new(days.unsigned_abs())
+                        unix_date
+                            .checked_sub_days(Days::new(days.unsigned_abs()))
+                            .ok_or_else(checked_days_arith_err)?
                     };
                     write!(
                         str,
@@ -1467,7 +1482,6 @@ impl RecordGenerator {
                 ));
             }
         }
-        let range = range.map(|(a, b)| (a as f64, b as f64));
         if let Some(nl) = Self::maybe_null(field, settings, rng) {
             *obj = nl;
             return Ok(());
