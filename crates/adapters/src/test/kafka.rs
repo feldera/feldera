@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity)]
 
 use crate::catalog::InputCollectionHandle;
+use crate::InputBuffer;
 use crate::{
     test::{wait, MockDeZSet, MockUpdate, TestStruct, DEFAULT_TIMEOUT_MS},
     InputFormat,
@@ -301,8 +302,7 @@ impl BufferConsumer {
                             };
 
                             if let Some(payload) = message.payload() {
-                                parser.input_chunk(payload);
-                                parser.flush_all();
+                                parser.parse(payload).0.flush_all();
                             }
                         }
                     }

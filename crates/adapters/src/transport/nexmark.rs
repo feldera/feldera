@@ -327,8 +327,7 @@ impl Inner {
         }
 
         // Input is exhausted.
-        for (_table, (consumer, parser, _count)) in cps.iter_mut() {
-            parser.end_of_fragments();
+        for (_table, (consumer, _parser, _count)) in cps.iter_mut() {
             consumer.eoi();
         }
     }
@@ -397,8 +396,10 @@ impl Inner {
             let buffers = writers.map(|table, writer| {
                 let data = writer.into_inner().unwrap().into_inner();
                 let (_consumer, parser, count) = &mut cps[table];
-                parser.input_chunk(data.as_slice());
-                let buffer = parser.take().unwrap_or(Box::new(EmptyInputBuffer));
+                let buffer = parser
+                    .parse(data.as_slice())
+                    .0
+                    .unwrap_or(Box::new(EmptyInputBuffer));
                 count.fetch_add(buffer.len(), Ordering::SeqCst);
                 buffer
             });
