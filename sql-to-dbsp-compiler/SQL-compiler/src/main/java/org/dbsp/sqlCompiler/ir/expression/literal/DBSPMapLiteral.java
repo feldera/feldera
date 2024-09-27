@@ -25,6 +25,7 @@ public final class DBSPMapLiteral extends DBSPLiteral {
     public final List<DBSPExpression> values;
     public final DBSPTypeMap mapType;
 
+    /** Create a MapLiteral representing an empty map */
     public DBSPMapLiteral(DBSPType keyType, DBSPType valueType, boolean mayBeNull) {
         super(CalciteObject.EMPTY, new DBSPTypeMap(keyType, valueType, mayBeNull), false);
         this.keys = new ArrayList<>();
@@ -51,7 +52,7 @@ public final class DBSPMapLiteral extends DBSPLiteral {
     }
 
     public DBSPMapLiteral(DBSPTypeMap mapType, @Nullable List<DBSPExpression> keys, @Nullable List<DBSPExpression> values) {
-        super(CalciteObject.EMPTY, mapType, mapType.mayBeNull);
+        super(CalciteObject.EMPTY, mapType, keys == null || values == null);
         this.mapType = this.getType().to(DBSPTypeMap.class);
         if (keys == null) {
             this.keys = null;

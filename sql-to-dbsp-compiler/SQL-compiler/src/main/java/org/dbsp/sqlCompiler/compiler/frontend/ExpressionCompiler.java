@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend;
 
+import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
@@ -133,14 +134,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     private final RexBuilder rexBuilder;
     private final List<RexLiteral> constants;
     private final DBSPCompiler compiler;
+    /** Context in which the rex nodes are defined */
+    @Nullable
+    private final RelNode context;
 
-    public ExpressionCompiler(
+    public ExpressionCompiler(@Nullable RelNode context,
             @Nullable DBSPVariablePath inputRow, DBSPCompiler compiler) {
-        this(inputRow, Linq.list(), compiler);
+        this(context, inputRow, Linq.list(), compiler);
     }
 
     /**
      * Create a compiler that will translate expressions pertaining to a row.
+     * @param context          Rel to which the RexNodes belong.
      * @param inputRow         Variable representing the row being compiled.
      * @param constants        Additional constants.  Expressions compiled
      *                         may use RexInputRef, which are field references
@@ -149,10 +154,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
      *                         the input row.
      * @param compiler         Handle to the compiler.
      */
-    public ExpressionCompiler(@Nullable DBSPVariablePath inputRow,
+    public ExpressionCompiler(@Nullable RelNode context, @Nullable DBSPVariablePath inputRow,
                               List<RexLiteral> constants,
                               DBSPCompiler compiler) {
         super(true);
+        this.context = context;
         this.inputRow = inputRow;
         this.constants = constants;
         this.rexBuilder = compiler.frontend.getRexBuilder();
@@ -168,7 +174,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
      * @return           the corresponding DBSP expression. */
     @Override
     public DBSPExpression visitInputRef(RexInputRef inputRef) {
-        CalciteObject node = CalciteObject.create(inputRef);
+        CalciteObject node = CalciteObject.create(this.context, inputRef);
         if (this.inputRow == null)
             throw new InternalCompilerError("Row referenced without a row context", node);
         // Unfortunately it looks like we can't trust the type coming from Calcite.
@@ -185,7 +191,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
     @Override
     public DBSPExpression visitCorrelVariable(RexCorrelVariable correlVariable) {
-        CalciteObject node = CalciteObject.create(correlVariable);
+        CalciteObject node = CalciteObject.create(this.context, correlVariable);
         if (this.inputRow == null)
             throw new InternalCompilerError("Correlation variable referenced without a row context", node);
         return this.inputRow.deref().deepCopy();
@@ -193,7 +199,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
     @Override
     public DBSPExpression visitLiteral(RexLiteral literal) {
-        CalciteObject node = CalciteObject.create(literal);
+        CalciteObject node = CalciteObject.create(this.context, literal);
         try {
             DBSPType type = this.typeCompiler.convertType(literal.getType(), true);
             if (literal.isNull())
@@ -701,7 +707,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
     @Override
     public DBSPExpression visitFieldAccess(RexFieldAccess field) {
-        CalciteObject node = CalciteObject.create(field);
+        CalciteObject node = CalciteObject.create(this.context, field);
         DBSPExpression source = field.getReferenceExpr().accept(this);
         RelDataTypeField dataField = field.getField();
         return new DBSPFieldExpression(node, source, dataField.getIndex());
@@ -709,7 +715,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
     @Override
     public DBSPExpression visitCall(RexCall call) {
-        CalciteObject node = CalciteObject.create(call);
+        CalciteObject node = CalciteObject.create(this.context, call);
         DBSPType type = this.typeCompiler.convertType(call.getType(), false);
         // If type is NULL we can skip the call altogether...
         if (type.is(DBSPTypeNull.class))
@@ -1479,7 +1485,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 .newline();
         DBSPExpression result = expression.accept(this);
         if (result == null)
-            throw new UnimplementedException(CalciteObject.create(expression));
+            throw new UnimplementedException(CalciteObject.create(this.context, expression));
         return result;
     }
 

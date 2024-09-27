@@ -726,7 +726,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             if (sourceType.is(DBSPTypeVariant.class)) {
                 // Cast variant to vec
                 functionName = "cast_to_vec" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
-                this.builder.append(functionName).increase().append("(");
+                this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
                 this.builder.decrease().append(")");
                 return VisitDecision.STOP;
@@ -737,7 +737,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             if (destType.is(DBSPTypeVariant.class)) {
                 // cast vec to variant
                 functionName = "cast_to_" + destType.baseTypeWithSuffix() + "_vec" + sourceType.nullableSuffix();
-                this.builder.append(functionName).increase().append("(");
+                this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
                 this.builder.decrease().append(")");
                 return VisitDecision.STOP;
@@ -757,10 +757,22 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return VisitDecision.STOP;
         }
 
-        if (sourceType.is(DBSPTypeMap.class)) {
+        DBSPTypeMap sourceMap = sourceType.as(DBSPTypeMap.class);
+        DBSPTypeMap destMap = destType.as(DBSPTypeMap.class);
+        if (destMap != null) {
+            if (sourceType.is(DBSPTypeVariant.class)) {
+                // Cast variant to map
+                functionName = "cast_to_map" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
+                this.builder.append(functionName).append("(").increase();
+                expression.source.accept(this);
+                this.builder.decrease().append(")");
+                return VisitDecision.STOP;
+            }
+        }
+        if (sourceMap != null) {
             if (destType.is(DBSPTypeVariant.class)) {
                 functionName = "cast_to_" + destType.baseTypeWithSuffix() + "_map" + sourceType.nullableSuffix();
-                this.builder.append(functionName).increase().append("(");
+                this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
                 this.builder.decrease().append(")");
                 return VisitDecision.STOP;
@@ -769,7 +781,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                 "_" + sourceType.baseTypeWithSuffix();
-        this.builder.append(functionName).increase().append("(");
+        this.builder.append(functionName).append("(").increase();
         expression.source.accept(this);
         DBSPTypeDecimal dec = destType.as(DBSPTypeDecimal.class);
         if (dec != null) {
@@ -884,7 +896,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 expression.getType(),
                 expression.left.getType(),
                 expression.right.getType());
-        this.builder.append(function).increase().append("(");
+        this.builder.append(function).append("(").increase();
         expression.left.accept(this);
         this.builder.append(",").newline();
         expression.right.accept(this);

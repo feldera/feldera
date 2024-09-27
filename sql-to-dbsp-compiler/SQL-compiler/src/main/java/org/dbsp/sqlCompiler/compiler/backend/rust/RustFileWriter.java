@@ -344,7 +344,8 @@ public class RustFileWriter {
 
         stream.append("""
             #[cfg(test)]
-            use hashing::*;""");
+            use hashing::*;""")
+                .newline();
         stream.append(this.rustPreamble())
                 .newline();
         this.generateStructures(used, stream);

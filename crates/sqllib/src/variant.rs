@@ -19,8 +19,10 @@ use serde::ser::{self, Error as _, SerializeMap};
 use serde::{Deserialize, Serialize};
 use size_of::{Context, SizeOf};
 use std::borrow::Cow;
+use std::cmp::Ord;
 use std::error::Error;
 use std::fmt;
+use std::fmt::Display;
 use std::str::FromStr;
 use std::{collections::BTreeMap, fmt::Debug, hash::Hash};
 use thiserror::Error;
@@ -488,6 +490,15 @@ macro_rules! from {
                 Variant::$variant(value)
             }
         }
+
+        impl From<Option<$type>> for Variant {
+            fn from(value: Option<$type>) -> Self {
+                match value {
+                    None => Variant::SqlNull,
+                    Some(value) => Variant::$variant(value),
+                }
+            }
+        }
     };
 }
 
@@ -518,18 +529,44 @@ where
     }
 }
 
+impl<T> From<Option<Vec<T>>> for Variant
+where
+    Variant: From<T>,
+{
+    fn from(vec: Option<Vec<T>>) -> Self {
+        match vec {
+            None => Variant::SqlNull,
+            Some(vec) => Variant::Array(vec.into_iter().map(Variant::from).collect()),
+        }
+    }
+}
+
 impl<K, V> From<BTreeMap<K, V>> for Variant
 where
     Variant: From<K> + From<V>,
-    K: Clone,
+    K: Clone + Ord,
     V: Clone,
 {
     fn from(map: BTreeMap<K, V>) -> Self {
-        let mut result = BTreeMap::new();
+        let mut result = BTreeMap::<Variant, Variant>::new();
         for (key, value) in map.iter() {
             result.insert(key.clone().into(), value.clone().into());
         }
         Variant::Map(result)
+    }
+}
+
+impl<K, V> From<Option<BTreeMap<K, V>>> for Variant
+where
+    Variant: From<K> + From<V>,
+    K: Clone + Ord,
+    V: Clone,
+{
+    fn from(map: Option<BTreeMap<K, V>>) -> Self {
+        match map {
+            None => Variant::SqlNull,
+            Some(map) => Variant::from(map),
+        }
     }
 }
 
@@ -576,7 +613,7 @@ macro_rules! into {
                     Variant::VariantNull => Ok(None),
                     _ => match <$type>::try_from(value) {
                         Ok(result) => Ok(Some(result)),
-                        Err(e) => Err(e),
+                        Err(e) => Err(ConversionError::from_string(e.to_string())),
                     },
                 }
             }
@@ -624,7 +661,7 @@ macro_rules! into_numeric {
                     Variant::SqlNull => Ok(None),
                     _ => match <$type>::try_from(value) {
                         Ok(result) => Ok(Some(result)),
-                        Err(e) => Err(e),
+                        Err(e) => Err(ConversionError::from_string(e.to_string())),
                     }
                 }
             }
@@ -680,7 +717,7 @@ impl TryFrom<Variant> for Option<Decimal> {
             Variant::SqlNull => Ok(None),
             _ => match Decimal::try_from(value) {
                 Ok(result) => Ok(Some(result)),
-                Err(e) => Err(e),
+                Err(e) => Err(ConversionError::from_string(e.to_string())),
             },
         }
     }
@@ -688,7 +725,8 @@ impl TryFrom<Variant> for Option<Decimal> {
 
 impl<T> TryFrom<Variant> for Vec<T>
 where
-    T: TryFrom<Variant, Error = Box<dyn Error>>,
+    T: TryFrom<Variant>,
+    T::Error: Display,
 {
     type Error = Box<dyn Error>;
 
@@ -697,8 +735,11 @@ where
             Variant::Array(a) => {
                 let mut result = Vec::with_capacity(a.len());
                 for e in a {
-                    let converted = T::try_from(e)?;
-                    result.push(converted);
+                    let converted = T::try_from(e);
+                    match converted {
+                        Ok(value) => result.push(value),
+                        Err(e) => return Err(ConversionError::from_string(e.to_string())),
+                    }
                 }
                 Ok(result)
             }
@@ -711,7 +752,8 @@ where
 
 impl<T> TryFrom<Variant> for Option<Vec<T>>
 where
-    T: TryFrom<Variant, Error = Box<dyn Error>>,
+    T: TryFrom<Variant>,
+    T::Error: Display,
 {
     type Error = Box<dyn Error>;
 
@@ -721,7 +763,7 @@ where
             Variant::SqlNull => Ok(None),
             _ => match Vec::<T>::try_from(value) {
                 Ok(result) => Ok(Some(result)),
-                Err(e) => Err(e),
+                Err(e) => Err(ConversionError::from_string(e.to_string())),
             },
         }
     }
@@ -729,8 +771,10 @@ where
 
 impl<K, V> TryFrom<Variant> for BTreeMap<K, V>
 where
-    K: TryFrom<Variant, Error = Box<dyn Error>> + Ord,
-    V: TryFrom<Variant, Error = Box<dyn Error>>,
+    K: TryFrom<Variant> + Ord,
+    K::Error: Display,
+    V: TryFrom<Variant>,
+    V::Error: Display,
 {
     type Error = Box<dyn Error>;
 
@@ -739,9 +783,17 @@ where
             Variant::Map(map) => {
                 let mut result = BTreeMap::<K, V>::new();
                 for (key, value) in map.into_iter() {
-                    let convertedKey = K::try_from(key)?;
-                    let convertedValue = V::try_from(value)?;
-                    result.insert(convertedKey, convertedValue);
+                    let convertedKey = K::try_from(key);
+                    let convertedValue = V::try_from(value);
+                    let k = match convertedKey {
+                        Ok(result) => result,
+                        Err(e) => return Err(ConversionError::from_string(e.to_string())),
+                    };
+                    let v = match convertedValue {
+                        Ok(result) => result,
+                        Err(e) => return Err(ConversionError::from_string(e.to_string())),
+                    };
+                    result.insert(k, v);
                 }
                 Ok(result)
             }
@@ -754,8 +806,10 @@ where
 
 impl<K, V> TryFrom<Variant> for Option<BTreeMap<K, V>>
 where
-    K: TryFrom<Variant, Error = Box<dyn Error>> + Ord,
-    V: TryFrom<Variant, Error = Box<dyn Error>>,
+    K: TryFrom<Variant> + Ord,
+    K::Error: Display,
+    V: TryFrom<Variant>,
+    V::Error: Display,
 {
     type Error = Box<dyn Error>;
 
@@ -765,7 +819,7 @@ where
             Variant::SqlNull => Ok(None),
             _ => match BTreeMap::<K, V>::try_from(value) {
                 Ok(result) => Ok(Some(result)),
-                Err(e) => Err(e),
+                Err(e) => Err(ConversionError::from_string(e.to_string())),
             },
         }
     }

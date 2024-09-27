@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend;
 
+import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rex.*;
 import org.apache.calcite.sql.SqlKind;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -196,12 +197,12 @@ public class JoinConditionAnalyzer implements IWritesLogs {
         return ref.getIndex() < this.leftTableColumnCount;
     }
 
-    JoinConditionAnalyzer.ConditionDecomposition analyze(RexNode expression) {
+    JoinConditionAnalyzer.ConditionDecomposition analyze(RelNode context, RexNode expression) {
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Analyzing ")
                 .append(expression.toString())
                 .newline();
-        final ConditionDecomposition result = new ConditionDecomposition(CalciteObject.create(expression));
+        final ConditionDecomposition result = new ConditionDecomposition(CalciteObject.create(context, expression));
         if (! (expression instanceof RexCall call)) {
             result.setLeftOver(expression);
             return result;

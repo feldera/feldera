@@ -154,7 +154,7 @@ public class ExternalFunction extends SqlFunction {
         /* Customize the input ref to refer to parameters instead */
         @Override
         public DBSPExpression visitInputRef(RexInputRef inputRef) {
-            CalciteObject node = CalciteObject.create(inputRef);
+            CalciteObject node = CalciteObject.create(null, inputRef);
             int index = inputRef.getIndex();
             if (index < this.parameters.size()) {
                 return this.parameters.get(index).asVariable().applyCloneIfNeeded();
@@ -163,7 +163,7 @@ public class ExternalFunction extends SqlFunction {
         }
 
         public FunctionBodyGenerator(DBSPCompiler compiler, List<DBSPParameter> parameters) {
-            super(null, compiler);
+            super(null, null, compiler);
             this.parameters = parameters;
         }
     }
