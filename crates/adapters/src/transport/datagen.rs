@@ -57,6 +57,28 @@ fn range_as_i64(
     }
 }
 
+fn range_as_f64(
+    field: &SqlIdentifier,
+    range: &Option<(Value, Value)>,
+) -> AnyResult<Option<(f64, f64)>> {
+    match range {
+        None => Ok(None),
+        Some((Value::Number(a), Value::Number(b))) => {
+            let a = a
+                .as_f64()
+                .ok_or_else(|| anyhow!("Invalid min range for field {:?}", field.sql_name()))?;
+            let b = b
+                .as_f64()
+                .ok_or_else(|| anyhow!("Invalid max range for field {:?}", field.sql_name()))?;
+            Ok(Some((a, b)))
+        }
+        _ => Err(anyhow!(
+            "Range values must be integers for field {:?}",
+            field.sql_name()
+        )),
+    }
+}
+
 fn field_is_json_array(field: &Field, value: &Value) -> AnyResult<()> {
     if !matches!(value, Value::Array(_)) {
         return Err(anyhow!(
@@ -1435,7 +1457,7 @@ impl RecordGenerator {
     ) -> AnyResult<()> {
         let min = N::min_value().to_f64().unwrap_or(f64::MIN);
         let max = N::max_value().to_f64().unwrap_or(f64::MAX);
-        let range = range_as_i64(&field.name, &settings.range)?;
+        let range = range_as_f64(&field.name, &settings.range)?;
 
         if let Some((a, b)) = range {
             if a > b {
@@ -1592,6 +1614,7 @@ mod test {
     use crate::test::{mock_input_pipeline, MockDeZSet, MockInputConsumer, TestStruct2};
     use crate::InputReader;
     use anyhow::Result as AnyResult;
+    use dbsp::algebra::F64;
     use feldera_sqllib::binary::ByteArray;
     use feldera_sqllib::{Date, Time, Timestamp};
     use feldera_types::config::{InputEndpointConfig, TransportConfig};
@@ -1603,6 +1626,100 @@ mod test {
     use std::collections::BTreeMap;
     use std::time::Duration;
     use std::{env, thread};
+
+    #[derive(
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        serde::Serialize,
+        serde::Deserialize,
+        Clone,
+        Hash,
+        SizeOf,
+        rkyv::Archive,
+        rkyv::Serialize,
+        rkyv::Deserialize,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct ByteStruct {
+        #[serde(rename = "bs")]
+        field: ByteArray,
+    }
+
+    impl ByteStruct {
+        pub fn schema() -> Vec<Field> {
+            vec![Field {
+                name: "bs".into(),
+                columntype: ColumnType {
+                    typ: SqlType::Varbinary,
+                    nullable: false,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                    key: None,
+                    value: None,
+                },
+            }]
+        }
+    }
+    serialize_table_record!(ByteStruct[1]{
+        r#field["bs"]: ByteArray
+    });
+
+    deserialize_table_record!(ByteStruct["ByteStruct", 1] {
+        (r#field, "bs", false, ByteArray, None)
+    });
+
+    #[derive(
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        serde::Serialize,
+        serde::Deserialize,
+        Clone,
+        Hash,
+        SizeOf,
+        rkyv::Archive,
+        rkyv::Serialize,
+        rkyv::Deserialize,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct RealStruct {
+        #[serde(rename = "double")]
+        field: F64,
+    }
+
+    impl RealStruct {
+        pub fn schema() -> Vec<Field> {
+            vec![Field {
+                name: "double".into(),
+                columntype: ColumnType {
+                    typ: SqlType::Double,
+                    nullable: false,
+                    precision: None,
+                    scale: None,
+                    component: None,
+                    fields: None,
+                    key: None,
+                    value: None,
+                },
+            }]
+        }
+    }
+    serialize_table_record!(RealStruct[1]{
+        r#field["double"]: F64
+    });
+
+    deserialize_table_record!(RealStruct["RealStruct", 1] {
+        (r#field, "double", false, F64, None)
+    });
 
     fn mk_pipeline<T, U>(
         config_str: &str,
@@ -1660,12 +1777,13 @@ transport:
     config:
         plan: [ { limit: 10, fields: { "id": { "strategy": "increment", "range": [10, 20], scale: 3 } } } ]
 "#;
-        let (_endpoint, consumer, zset) =
+        let (endpoint, consumer, zset) =
             mk_pipeline::<TestStruct2, TestStruct2>(config_str, TestStruct2::schema()).unwrap();
 
         while !consumer.state().eoi {
             thread::sleep(Duration::from_millis(20));
         }
+        endpoint.flush_all();
 
         let zst = zset.state();
         let iter = zst.flushed.iter();
@@ -1675,6 +1793,36 @@ transport:
             assert_eq!(record.field, 10 + (idx % 10));
             idx += 3;
         }
+        assert!(idx > 10);
+    }
+
+    #[test]
+    fn test_scaled_range_increment_reals() {
+        let config_str = r#"
+stream: test_input
+transport:
+    name: datagen
+    config:
+        plan: [ { limit: 5, fields: { "double": { "strategy": "increment", "range": [1.1, 10.1], scale: 1 } } } ]
+"#;
+        let (endpoint, consumer, zset) =
+            mk_pipeline::<RealStruct, RealStruct>(config_str, RealStruct::schema()).unwrap();
+
+        while !consumer.state().eoi {
+            thread::sleep(Duration::from_millis(20));
+        }
+        endpoint.flush_all();
+
+        let zst = zset.state();
+        let iter = zst.flushed.iter();
+        let mut idx = 0f64;
+        let eps = F64::new(1e-5);
+        for upd in iter {
+            let record = upd.unwrap_insert();
+            assert!((record.field - (1.1 + idx)).abs() < eps);
+            idx += 1.0;
+        }
+        assert!(idx > 0.0);
     }
 
     #[test]
@@ -1972,53 +2120,6 @@ transport:
             assert!(record.field_0.is_some());
         }
     }
-
-    #[derive(
-        Debug,
-        Default,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        serde::Serialize,
-        serde::Deserialize,
-        Clone,
-        Hash,
-        SizeOf,
-        rkyv::Archive,
-        rkyv::Serialize,
-        rkyv::Deserialize,
-    )]
-    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-    struct ByteStruct {
-        #[serde(rename = "bs")]
-        field: ByteArray,
-    }
-
-    impl ByteStruct {
-        pub fn schema() -> Vec<Field> {
-            vec![Field {
-                name: "bs".into(),
-                columntype: ColumnType {
-                    typ: SqlType::Varbinary,
-                    nullable: false,
-                    precision: None,
-                    scale: None,
-                    component: None,
-                    fields: None,
-                    key: None,
-                    value: None,
-                },
-            }]
-        }
-    }
-    serialize_table_record!(ByteStruct[1]{
-        r#field["bs"]: ByteArray
-    });
-
-    deserialize_table_record!(ByteStruct["ByteStruct", 1] {
-        (r#field, "bs", false, ByteArray, None)
-    });
 
     #[test]
     fn test_byte_array_with_values() {
