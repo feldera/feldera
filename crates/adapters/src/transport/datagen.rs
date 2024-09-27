@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
+use super::InputQueue;
 use crate::transport::Step;
 use crate::{
     InputConsumer, InputEndpoint, InputReader, Parser, PipelineState, TransportInputEndpoint,
@@ -25,6 +26,7 @@ use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Jitter, Quota, RateLimiter};
+use log::debug;
 use num_traits::{clamp, Bounded, ToPrimitive};
 use rand::distributions::{Alphanumeric, Uniform};
 use rand::rngs::SmallRng;
@@ -32,8 +34,7 @@ use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Zipf};
 use serde_json::{to_writer, Map, Value};
 use tokio::sync::Notify;
-
-use super::InputQueue;
+use tokio::time::{Duration as TokioDuration, Instant as TokioInstant};
 
 fn range_as_i64(
     field: &SqlIdentifier,
@@ -416,6 +417,11 @@ impl InputGenerator {
             let schema = schema.clone();
             let mut generator = RecordGenerator::new(worker_idx, config.seed, plan, schema);
 
+            // Count how long we took to so far to create a batch
+            // If we end up taking too long we send a batch earlier even if we don't reach `batch_size`
+            const BATCH_CREATION_TIMEOUT: TokioDuration = TokioDuration::from_secs(1);
+            let mut batch_creation_duration = TokioInstant::now();
+
             // Make sure we generate records from 0..limit:
             loop {
                 // Where to start generating records for this iteration, this needs to be synchronized among thread
@@ -451,13 +457,16 @@ impl InputGenerator {
                             to_writer(&mut buffer, &record).unwrap();
                             batch_idx += 1;
 
-                            if batch_idx % batch_size == 0 {
+                            if batch_idx % batch_size == 0
+                                || batch_creation_duration.elapsed() > BATCH_CREATION_TIMEOUT
+                            {
                                 buffer.extend(END_ARR);
                                 let errors = parser.input_chunk(&buffer);
                                 queue.push(parser.take(), buffer.len(), errors);
                                 buffer.clear();
                                 buffer.extend(START_ARR);
                                 batch_idx = 0;
+                                batch_creation_duration = TokioInstant::now();
                             }
                         }
                         Err(e) => {
