@@ -150,10 +150,7 @@ impl KafkaInputReaderInner {
                 // message.payload().map(|payload| consumer.input(payload));
 
                 if let Some(payload) = message.payload() {
-                    // Leave it to the controller to handle errors.  There is noone we can
-                    // forward the error to upstream.
-                    let errors = parser.input_chunk(payload);
-                    self.queue.push(parser.take(), payload.len(), errors);
+                    self.queue.push(payload.len(), parser.parse(payload));
                 }
             }
         }
@@ -287,8 +284,7 @@ impl KafkaInputReader {
                     // Hopefully, this guarantees that we won't see any messages from it, but if
                     // that's not the case, there shouldn't be any harm in sending them downstream.
                     if let Some(payload) = message.payload() {
-                        let errors = parser.input_chunk(payload);
-                        inner.queue.push(parser.take(), payload.len(), errors);
+                        inner.queue.push(payload.len(), parser.parse(payload));
                     }
                 }
                 _ => (),

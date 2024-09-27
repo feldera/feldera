@@ -2,6 +2,7 @@ use super::{
     InputConsumer, InputEndpoint, InputQueue, InputReader, OutputEndpoint, Step,
     TransportInputEndpoint,
 };
+use crate::format::StreamSplitter;
 use crate::{Parser, PipelineState};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
@@ -10,7 +11,7 @@ use feldera_types::program_schema::Relation;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
 use std::{
     fs::File,
-    io::{BufRead, BufReader, Write},
+    io::Write,
     sync::{atomic::Ordering, Arc},
     thread::{sleep, spawn},
     time::Duration,
@@ -60,15 +61,11 @@ impl FileInputReader {
     fn new(
         config: &FileInputConfig,
         consumer: Box<dyn InputConsumer>,
-        parser: Box<dyn Parser>,
+        mut parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
-        let file = File::open(&config.path).map_err(|e| {
+        let mut file = File::open(&config.path).map_err(|e| {
             AnyError::msg(format!("Failed to open input file '{}': {e}", config.path))
         })?;
-        let reader = match config.buffer_size_bytes {
-            Some(buffer_size) if buffer_size > 0 => BufReader::with_capacity(buffer_size, file),
-            _ => BufReader::new(file),
-        };
 
         let parker = Parker::new();
         let unparker = Some(parker.unparker().clone());
@@ -76,9 +73,41 @@ impl FileInputReader {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
         spawn({
             let follow = config.follow;
+            let buffer_size = match config.buffer_size_bytes {
+                Some(size) if size > 0 => size,
+                _ => 8192,
+            };
             let status = status.clone();
             let queue = queue.clone();
-            move || Self::worker_thread(reader, consumer, parser, queue, parker, status, follow)
+            move || {
+                let mut splitter = StreamSplitter::new(parser.splitter());
+                loop {
+                    match status.load(Ordering::Acquire) {
+                        PipelineState::Paused => parker.park(),
+                        PipelineState::Running => {
+                            let n = match splitter.read(&mut file, buffer_size, usize::MAX) {
+                                Ok(n) => n,
+                                Err(error) => {
+                                    consumer.error(true, AnyError::from(error));
+                                    break;
+                                }
+                            };
+
+                            while let Some(chunk) = splitter.next(n == 0 && !follow) {
+                                queue.push(0, parser.parse(chunk));
+                            }
+                            if n == 0 {
+                                if !follow {
+                                    consumer.eoi();
+                                    break;
+                                }
+                                sleep(Duration::from_millis(SLEEP_MS));
+                            }
+                        }
+                        PipelineState::Terminated => break,
+                    }
+                }
+            }
         });
 
         Ok(Self {
@@ -91,52 +120,6 @@ impl FileInputReader {
     fn unpark(&self) {
         if let Some(unparker) = &self.unparker {
             unparker.unpark();
-        }
-    }
-
-    fn worker_thread(
-        mut reader: BufReader<File>,
-        consumer: Box<dyn InputConsumer>,
-        mut parser: Box<dyn Parser>,
-        queue: Arc<InputQueue>,
-        parker: Parker,
-        status: Arc<Atomic<PipelineState>>,
-        follow: bool,
-    ) {
-        loop {
-            match status.load(Ordering::Acquire) {
-                PipelineState::Paused => parker.park(),
-                PipelineState::Running => {
-                    let data = reader.fill_buf();
-                    match data {
-                        Err(e) => {
-                            consumer.error(true, AnyError::from(e));
-                            return;
-                        }
-                        Ok([]) => {
-                            if !follow {
-                                let errors = parser.end_of_fragments();
-                                queue.push(parser.take(), 0, errors);
-                                consumer.eoi();
-                                return;
-                            } else {
-                                sleep(Duration::from_millis(SLEEP_MS));
-                            }
-                        }
-                        Ok(data) => {
-                            // println!("read {} bytes from file", data.len());
-
-                            // Leave it to the controller to handle errors.  There is noone we can
-                            // forward the error to upstream.
-                            let errors = parser.input_fragment(data);
-                            queue.push(parser.take(), data.len(), errors);
-                            let len = data.len();
-                            reader.consume(len);
-                        }
-                    }
-                }
-                PipelineState::Terminated => return,
-            }
         }
     }
 }
