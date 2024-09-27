@@ -31,10 +31,20 @@ All parameters are optional:
 A plan is a list of objects that describe how to generate rows. Each object can have the following, optional
 fields:
 
-* `limit` - How many rows to generate. If not specified, the plan will run indefinitely.
-* `rate` - How many rows to generate per second. If not specified, the plan will run as fast as possible. See also
+- `limit`: How many rows to generate. If not specified, the plan will run indefinitely.
+- `rate`: How many rows to generate per second. If not specified, the plan will run as fast as possible. See also
   the `workers` parameter.
-* `fields` - A map of field names to [field generation options](#random-field-settings).
+- `fields`: A map of field names to [field generation options](#random-field-settings).
+- `worker_chunk_size`: When multiple workers are used, each worker will complete a consecutive "chunk" of records
+  before getting a new chunk (by synchronizing with other workers). This parameter specifies the size of the chunk.
+  If not specified, the field will be set to `min(rate, 10_000)`. This works well in most situations.
+  However, if you're running tests with lateness and many workers you can e.g., reduce the chunk size
+  to make sure a smaller range of records is being ingested/generated in parallel.
+  
+  Example: Assume datagen generates a total of 125 records with 4 workers and a chunk size of 25. In this case, 
+  worker A will generate records `0..25`, worker B will generate records `25..50`, etc. A, B, C, and D will 
+  generate the first 100 records in parallel. The first worker to finish its chunk will pick up the last chunk 
+  of records (`100..125`) and generate the records for it.
 
 ### Random Field Settings
 

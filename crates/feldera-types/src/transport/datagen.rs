@@ -257,6 +257,21 @@ pub struct GenerationPlan {
     /// this case it's possible the total number of records is less than the specified limit.
     pub limit: Option<usize>,
 
+    /// When multiple workers are used, each worker will pick a consecutive "chunk" of
+    /// records to generate.
+    ///
+    /// By default, if not specified, the generator will use the formula `min(rate, 10_000)`
+    /// to determine it. This works well in most situations. However, if you're
+    /// running tests with lateness and many workers you can e.g., reduce the
+    /// chunk size to make sure a smaller range of records is being ingested in parallel.
+    ///
+    /// # Example
+    /// Assume you generate a total of 125 records with 4 workers and a chunk size of 25.
+    /// In this case, worker A will generate records 0..25, worker B will generate records 25..50,
+    /// etc. A, B, C, and D will generate records in parallel. The first worker to finish its chunk
+    /// will pick up the last chunk of records (100..125) to generate.
+    pub worker_chunk_size: Option<usize>,
+
     /// Specifies the values that the generator should produce.
     #[serde(default)]
     pub fields: HashMap<String, Box<RngFieldSettings>>,
