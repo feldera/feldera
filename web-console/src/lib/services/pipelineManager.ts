@@ -359,7 +359,9 @@ export const adHocQuery = async (pipelineName: string, query: string) => {
     const json = await result.json()
     return new ReadableStream<Uint8Array>({
       start(controller) {
-        const encodedString = new TextEncoder().encode(JSON.stringify({error: json.details.error ?? json.message}))
+        const encodedString = new TextEncoder().encode(
+          JSON.stringify({ error: json.details.error ?? json.message })
+        )
         controller.enqueue(encodedString)
         controller.close()
       }

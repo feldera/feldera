@@ -25,12 +25,10 @@ function _table(Inputs, result) {
 }
 
 export default function define(runtime, observer) {
-  console.log('running adHoxQuery define')
   const main = runtime.module()
   main.variable(observer('viewof text')).define('viewof text', ['Inputs'], _text)
   main.variable('text').define('text', ['Generators', 'viewof text'], (G, _) => G.input(_))
   main.variable('text').define('result', ['text'], _result)
   main.variable(observer('viewof table')).define('viewof table', ['Inputs', 'result'], _table)
-  // console.log('observer is', Object.entries(observer("viewof table")))
   return main
 }

@@ -206,7 +206,8 @@
                     startReadingStream(pipelineName, relation.relationName)
                 }
               }}
-              value={relation} />
+              value={relation}
+            />
             {relation.relationName}
           </label>
         {/snippet}
@@ -233,7 +234,7 @@
       {#if getChangeStream()[pipelineName]?.rows?.length}
         <ChangeStream changeStream={getChangeStream()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="text-surface-600-400 p-2">
+        <span class="p-2 text-surface-600-400">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}

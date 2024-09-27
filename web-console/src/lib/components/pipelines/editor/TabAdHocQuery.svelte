@@ -2,19 +2,18 @@
   let adhocQueries: Record<
     string,
     {
-      queries: QueryData[]
+      queries: (QueryData | undefined)[]
     }
-  > = $state({})
+  > = {}
 
   let getAdhocQueries = $state(() => adhocQueries)
 </script>
 
 <script lang="ts">
   import { adHocQuery, type ExtendedPipeline } from '$lib/services/pipelineManager'
-  import Query, { type QueryResult, type Row } from '$lib/components/adhoc/Query.svelte'
+  import Query, { type Row } from '$lib/components/adhoc/Query.svelte'
   import { type QueryData } from '$lib/components/adhoc/Query.svelte'
   import { isPipelineIdle } from '$lib/functions/pipelines/status'
-  import type { Field } from '$lib/services/manager'
   import type { SQLValueJS } from '$lib/functions/sqlValue'
   import { parseUTF8JSON } from '$lib/functions/pipelines/changeStream'
   import invariant from 'tiny-invariant'
@@ -27,34 +26,31 @@
     adhocQueries[pipelineName] ??= { queries: [{ query: '' }] }
   })
 
-  $effect(() => {
-    console.log('eeeeeeeeeee', JSON.stringify(adhocQueries[pipelineName].queries[0].progress))
-  })
-
   const onSubmitQuery = (pipelineName: string, i: number) => (query: string) => {
     const promise = adHocQuery(pipelineName, query)
-    adhocQueries[pipelineName].queries[i].progress = true
+    adhocQueries[pipelineName].queries[i]!.progress = true
+    getAdhocQueries = () => adhocQueries
     promise.then((stream) => {
+      if (!adhocQueries[pipelineName].queries[i]) {
+        return
+      }
       adhocQueries[pipelineName].queries[i].result = {
         rows: [],
         columns: [],
         totalSkippedBytes: 0,
         endResultStream: () => {}
       }
-      // let data: QueryResult = adhocQueries[pipelineName].queries[i].result!
       const bufferSize = 1000
       const pushChanges = (input: (Record<string, SQLValueJS> | { error: string })[]) => {
-        if (!adhocQueries[pipelineName].queries[i].result) {
+        if (!adhocQueries[pipelineName].queries[i]?.result) {
           return
         }
-        // console.log('pushChanges', input)
         const isError = (record: Record<string, SQLValueJS>) =>
           Object.keys(record).length === 1 && 'error' in record
         if (
           adhocQueries[pipelineName].queries[i].result.columns.length === 0 &&
           !isError(input[0])
         ) {
-          console.log('setting header', input[0])
           adhocQueries[pipelineName].queries[i].result.columns.push(
             ...Object.keys(input[0]).map((name) => ({
               name,
@@ -63,29 +59,55 @@
             }))
           )
         }
-        adhocQueries[pipelineName].queries[i].result.rows.splice(
-          0,
-          adhocQueries[pipelineName].queries[i].result.rows.length + input.length - bufferSize
-        )
-        const x = input
-          .slice(-bufferSize)
-          .map((v) => (isError(v) ? v : { cells: Object.values(v) }) as Row)
-        adhocQueries[pipelineName].queries[i].result.rows.push(...x)
-        // console.log('x', x, adhocQueries[pipelineName].queries[i].result)
-        getAdhocQueries = () => adhocQueries
-        // adhocQueries[pipelineName].queries[i].result = data
+        {
+          // Circular buffer behavior - keep bufferSize latest rows
+          // adhocQueries[pipelineName].queries[i].result.rows.splice(
+          //   0,
+          //   adhocQueries[pipelineName].queries[i].result.rows.length + input.length - bufferSize
+          // )
+          // adhocQueries[pipelineName].queries[i].result.rows.push(...(input
+          //   .slice(-bufferSize)
+          //   .map((v) => (isError(v) ? v : { cells: Object.values(v) }) as Row)))
+        }
+        {
+          // Limit result size behavior - ignore all but first bufferSize rows
+          const previousLength = adhocQueries[pipelineName].queries[i].result.rows.length
+          adhocQueries[pipelineName].queries[i].result.rows.push(
+            ...input
+              .slice(0, bufferSize - previousLength)
+              .map((v) => (isError(v) ? v : { cells: Object.values(v) }) as Row)
+          )
+          getAdhocQueries = () => adhocQueries
+
+          if (input.length > bufferSize - previousLength) {
+            queueMicrotask(() => {
+              if (!adhocQueries[pipelineName].queries[i]) {
+                return
+              }
+              adhocQueries[pipelineName].queries[i].result?.rows.push({
+                error: `The query result contains more rows, but only the first ${bufferSize} are shown`
+              })
+              getAdhocQueries = () => adhocQueries
+              adhocQueries[pipelineName].queries[i].result?.endResultStream()
+            })
+          }
+        }
       }
       const { cancel } = parseUTF8JSON(
         stream,
         pushChanges,
         (skippedBytes) => {
-          if (!adhocQueries[pipelineName].queries[i].result) {
+          if (!adhocQueries[pipelineName].queries[i]?.result) {
             return
           }
           adhocQueries[pipelineName].queries[i].result.totalSkippedBytes += skippedBytes
         },
         () => {
+          if (!adhocQueries[pipelineName].queries[i]) {
+            return
+          }
           adhocQueries[pipelineName].queries[i].progress = false
+          getAdhocQueries = () => adhocQueries
         },
         {
           paths: ['$'],
@@ -103,23 +125,34 @@
   }
 </script>
 
-<div class="flex min-h-full flex-col gap-4 p-2">
+<div class="bg-white-black flex min-h-full flex-col gap-6 p-2">
   {#if isIdle}
-    <div class="preset-tonal-warning sticky top-0 z-10 -m-2 mb-0 p-2">
+    <div class="sticky top-0 z-10 -m-2 mb-0 p-2 preset-tonal-warning">
       Start the pipeline to be able to execute queries
     </div>
   {/if}
-  {#each adhocQueries[pipelineName].queries as x, i}
-    <Query
-      bind:query={adhocQueries[pipelineName].queries[i].query}
-      progress={x.progress}
-      result={adhocQueries[pipelineName].queries[i].result}
-      onSubmitQuery={onSubmitQuery(pipelineName, i)}
-      onDeleteQuery={() => {
-        adhocQueries[pipelineName].queries[i].result?.endResultStream()
-        adhocQueries[pipelineName].queries.splice(i, 1)
-      }}
-      disabled={isIdle}
-      isLastQuery={adhocQueries[pipelineName].queries.length === i + 1}></Query>
+  {#each getAdhocQueries()[pipelineName].queries as x, i}
+    {#if x}
+      {invariant(adhocQueries[pipelineName].queries[i])}
+      <Query
+        bind:query={adhocQueries[pipelineName].queries[i].query}
+        progress={getAdhocQueries()[pipelineName].queries[i]!.progress}
+        result={getAdhocQueries()[pipelineName].queries[i]!.result}
+        onSubmitQuery={onSubmitQuery(pipelineName, i)}
+        onDeleteQuery={() => {
+          if (!adhocQueries[pipelineName].queries[i]) {
+            return
+          }
+          adhocQueries[pipelineName].queries[i].result?.endResultStream()
+          delete adhocQueries[pipelineName].queries[i] // Delete instead of splice to preserve indices of other elements
+          getAdhocQueries = () => adhocQueries
+        }}
+        onCancelQuery={getAdhocQueries()[pipelineName].queries[i]!.progress
+          ? adhocQueries[pipelineName].queries[i].result?.endResultStream
+          : undefined}
+        disabled={isIdle}
+        isLastQuery={getAdhocQueries()[pipelineName].queries.length === i + 1}
+      ></Query>
+    {/if}
   {/each}
 </div>

@@ -49,7 +49,7 @@ const parseStreamOfUTF8JSON =
     let parser = mkParser(onValue, options)
     let isEnd = false
     let done = true
-    let noNewData = false
+    let dataSourceEnded = false
 
     const interrupt = async () => {
       try {
@@ -65,10 +65,12 @@ const parseStreamOfUTF8JSON =
       }
     }
 
+    const maxJsonChunkBytes = 200000
+    const maxSynchronousParseBytes = 10000
     return {
       start: async () => {
+        let synchronousParseBytesCount = 0
         while (!isEnd) {
-          console.log('loop')
           const value = chunksToParse[0]?.shift()
           if (!value) {
             if (chunksToParse.length > 1) {
@@ -77,16 +79,16 @@ const parseStreamOfUTF8JSON =
               parser = mkParser(onValue, options)
             }
             await new Promise((resolve) => setTimeout(resolve))
-            if (chunksToParse.length < 2 && noNewData) {
+            if (chunksToParse.length < 2 && dataSourceEnded) {
               break
             } else {
               continue
             }
           }
 
-          // Parse JSON in subchunks of up to 200000 bytes to keep UI freezes to a minimum
+          // Parse JSON in subchunks of up to maxJsonChunkBytes bytes to keep UI freezes to a minimum
           // because during parsing JavaScript cannot handle UI updates
-          const positions = chunkIndices(0, value.length, 200000)
+          const positions = chunkIndices(0, value.length, maxJsonChunkBytes)
           const pairs = discreteDerivative(positions, tuple)
           for (const [n1, n0] of pairs) {
             if (isEnd) {
@@ -118,35 +120,41 @@ const parseStreamOfUTF8JSON =
               }
             }
 
-            count = 0
             done = false
             try {
-              // console.log('parsing', new TextDecoder().decode(value.slice(n0, n1)))
               parser.write(value.slice(n0, n1))
             } catch (e) {
               console.log('JSON parse error', e)
               done = true
               break
             }
+            synchronousParseBytesCount += n1 - n0
 
             if (parser.isParserEnded()) {
               parser = mkParser(onValue, options)
             }
-
-            pushChanges(resultBuffer.slice(0, count))
             done = true
-            await new Promise((resolve) => setTimeout(resolve))
+            if (synchronousParseBytesCount >= maxSynchronousParseBytes) {
+              synchronousParseBytesCount = 0
+              pushChanges(resultBuffer.slice(0, count))
+              count = 0
+              await new Promise((resolve) => setTimeout(resolve))
+            }
           }
         }
-        console.log('STOP')
+        if (synchronousParseBytesCount !== 0) {
+          pushChanges(resultBuffer.slice(0, count))
+        }
         onParseEnded?.(undefined)
       },
       stop() {
+        // Stop data stream and parsing immediately
         isEnd = true
         interrupt()
       },
-      noNewData() {
-        noNewData = true
+      end() {
+        // End reading data stream and continue parsing buffered data
+        dataSourceEnded = true
       }
     }
   }
@@ -169,18 +177,22 @@ export const parseUTF8JSON = <T>(
 ) => {
   return processUTF8StreamByLine(
     stream,
-    parseStreamOfUTF8JSON(pushChanges, onBytesSkipped, onParseEnded, options),
+    parseStreamOfUTF8JSON(pushChanges, onBytesSkipped, onParseEnded, options)
   )
 }
 
 export const processUTF8StreamByLine = (
   stream: ReadableStream<Uint8Array>,
-  parser: (chunks: Uint8Array[][]) => { start: () => Promise<void>; stop: () => void; noNewData?: () => void },
-  onStreamClosed?: (reason: any) => void,
+  parser: (chunks: Uint8Array[][]) => {
+    start: () => Promise<void>
+    stop: () => void
+    end?: () => void
+  },
+  onStreamClosed?: (reason: any) => void
 ) => {
   const reader = stream.getReader()
   let chunksToParse = [[]] as Uint8Array[][]
-  const { start, stop, noNewData } = parser(chunksToParse)
+  const { start, stop, end } = parser(chunksToParse)
 
   setTimeout(async () => {
     start()
@@ -188,7 +200,7 @@ export const processUTF8StreamByLine = (
       const { done, value } = await reader.read()
       if (done || !value) {
         // stop()
-        noNewData?.()
+        end?.()
         break
       }
 
@@ -273,8 +285,6 @@ function splitByNewline(
     const newlineIndex = chunk.indexOf(10, start)
     const end = newlineIndex === -1 ? chunk.length : newlineIndex
 
-    // console.log('onChunk 0', chunk)
-    // console.log('onChunk', new TextDecoder().decode(chunk.subarray(start, end)))
     onChunk(chunk.subarray(start, end))
     if (end !== chunk.length) {
       onBatch()

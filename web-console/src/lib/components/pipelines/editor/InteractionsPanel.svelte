@@ -57,7 +57,7 @@
   )}
   Errors
   {#if errorCount !== 0}
-    <span class="preset-filled-error-500 rounded-full px-2 pt-0.5 text-sm font-medium">
+    <span class="rounded-full px-2 pt-0.5 text-sm font-medium preset-filled-error-500">
       {errorCount}
     </span>
   {/if}
@@ -72,7 +72,8 @@
   bind:value={currentTab.value}
   listMargin=""
   contentClasses="h-full"
-  classes="flex flex-col flex-1 !space-y-0">
+  classes="flex flex-col flex-1 !space-y-0"
+>
   {#snippet list()}
     {#each tabs as [tabName, tabControl]}
       <Tabs.Control value={tabName} classes="btn rounded-none" labelBase="">

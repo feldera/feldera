@@ -31,8 +31,6 @@
       },
       (x: string) => x as any
     )
-    // schema = ['viewof text', 'viewof table']
-    // console.log('schema', schema)
     return schema
   }
 
@@ -43,17 +41,13 @@
   $effect.root(() => {
     cells = schema.map((name) => ({ name, ref: undefined! }))
     setTimeout(() => {
-      console.log('requesting inspector')
       const module = runtime.module(define, (name) => {
-        console.log('trying inspector')
         const found = cells.find((ref) => name === ref.name)?.ref
         if (!found) {
           return
         }
-        console.log('returning inspector')
         return new Inspector(found)
       })
-      console.log('main', module)
     })
   })
 
@@ -72,7 +66,6 @@
       ? 'text-transparent'
       : 'text-surface-400-600'}"
     onclick={() => {
-      console.log('exp', expanded)
       // modules[pipelineName][i].expanded = !module.expanded
       expanded = !expanded
     }}><div class="fd fd-expand_more" class:-rotate-90={expanded}></div></button
