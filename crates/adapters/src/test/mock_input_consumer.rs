@@ -1,5 +1,5 @@
 use crate::catalog::InputCollectionHandle;
-use crate::format::InputBuffer;
+use crate::format::{InputBuffer, Splitter};
 use crate::transport::Step;
 use crate::{controller::FormatConfig, InputConsumer, InputFormat, ParseError, Parser};
 use anyhow::{anyhow, Error as AnyError};
@@ -150,15 +150,13 @@ impl MockInputParser {
         let mut state = self.0.lock().unwrap();
         state.error_cb = error_cb;
     }
+}
 
-    fn input(&self, data: &[u8], fragment: bool) -> Vec<ParseError> {
+impl Parser for MockInputParser {
+    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let mut state = self.0.lock().unwrap();
         state.data.extend_from_slice(data);
-        let errors = if fragment {
-            state.parser.input_fragment(data)
-        } else {
-            state.parser.input_chunk(data)
-        };
+        let (buffer, errors) = state.parser.parse(data);
 
         for error in errors.iter() {
             // println!("parser returned '{:?}'", state.parser_result);
@@ -170,49 +168,16 @@ impl MockInputParser {
         }
 
         state.parser_result = Some(errors.clone());
-        errors
-    }
-}
-
-impl Parser for MockInputParser {
-    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.input(data, true)
-    }
-
-    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.input(data, false)
-    }
-
-    fn end_of_fragments(&mut self) -> Vec<ParseError> {
-        let mut state = self.0.lock().unwrap();
-        let errors = state.parser.end_of_fragments();
-        for error in errors.iter() {
-            if let Some(error_cb) = &mut state.error_cb {
-                error_cb(false, &anyhow!(error.clone()));
-            } else {
-                panic!("mock_input_consumer: parse error '{error}'");
-            }
-        }
-        errors
+        (buffer, errors)
     }
 
     fn fork(&self) -> Box<dyn Parser> {
         let state = self.0.lock().unwrap();
         Box::new(Self::new(state.parser.fork()))
     }
-}
 
-impl InputBuffer for MockInputParser {
-    fn flush(&mut self, n: usize) -> usize {
-        self.0.lock().unwrap().parser.flush(n)
-    }
-
-    fn len(&self) -> usize {
-        self.0.lock().unwrap().parser.len()
-    }
-
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        let mut state = self.0.lock().unwrap();
-        state.parser.take()
+    fn splitter(&self) -> Box<dyn Splitter> {
+        let state = self.0.lock().unwrap();
+        state.parser.splitter()
     }
 }

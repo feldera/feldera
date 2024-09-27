@@ -32,7 +32,7 @@ use feldera_types::format::json::JsonFlavor;
 use feldera_types::format::parquet::{ParquetEncoderConfig, ParquetParserConfig};
 use feldera_types::program_schema::{ColumnType, Field, IntervalUnit, Relation, SqlType};
 
-use super::InputBuffer;
+use super::{InputBuffer, Sponge};
 
 #[cfg(test)]
 pub mod test;
@@ -82,7 +82,6 @@ impl InputFormat for ParquetInputFormat {
 struct ParquetParser {
     /// Input handle to push parsed data to.
     input_stream: Box<dyn DeCollectionStream>,
-    buf: Vec<u8>,
     last_event_number: u64,
 }
 
@@ -90,17 +89,16 @@ impl ParquetParser {
     fn new(input_stream: Box<dyn DeCollectionStream>) -> Self {
         Self {
             input_stream,
-            buf: Vec::with_capacity(4096),
             last_event_number: 0,
         }
     }
-    fn parse(&mut self) -> Vec<ParseError> {
-        if self.buf.is_empty() {
-            return Vec::new();
-        }
+}
 
-        let bytes = Bytes::from(take(&mut self.buf));
-        match SerializedFileReader::new(bytes) {
+impl Parser for ParquetParser {
+    /// In the chunk case, we got an entire file in `data` and parse it immediately.
+    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+        let bytes = Bytes::copy_from_slice(data);
+        let errors = match SerializedFileReader::new(bytes) {
             Ok(reader) => {
                 let mut errors = Vec::new();
                 match reader.get_row_iter(None) {
@@ -152,46 +150,16 @@ impl ParquetParser {
                     "Make sure the provided file is a valid parquet file.",
                 )),
             )],
-        }
-    }
-}
-
-impl Parser for ParquetParser {
-    /// In the fragment case, we will wait until end_of_fragments() is called to
-    /// parse any data.
-    ///
-    /// Happens for example with the file connector.
-    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.buf.extend_from_slice(data);
-        Vec::new()
-    }
-
-    /// In the chunk case, we got an entire file in `data` and parse it immediately.
-    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.buf.extend_from_slice(data);
-        self.parse()
-    }
-
-    fn end_of_fragments(&mut self) -> Vec<ParseError> {
-        self.parse()
+        };
+        (self.input_stream.take(), errors)
     }
 
     fn fork(&self) -> Box<dyn Parser> {
         Box::new(Self::new(self.input_stream.fork()))
     }
-}
 
-impl InputBuffer for ParquetParser {
-    fn flush(&mut self, n: usize) -> usize {
-        self.input_stream.flush(n)
-    }
-
-    fn len(&self) -> usize {
-        self.input_stream.len()
-    }
-
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        self.input_stream.take()
+    fn splitter(&self) -> Box<dyn super::Splitter> {
+        Box::new(Sponge)
     }
 }
 
