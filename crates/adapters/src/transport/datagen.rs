@@ -26,7 +26,6 @@ use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Jitter, Quota, RateLimiter};
-use log::debug;
 use num_traits::{clamp, Bounded, ToPrimitive};
 use rand::distributions::{Alphanumeric, Uniform};
 use rand::rngs::SmallRng;
@@ -411,7 +410,7 @@ impl InputGenerator {
             // If we have a low rate, it's necessary to adjust the batch-size down otherwise no inserts might be visible
             // for a long time (until a batch is full).
             let batch_size: usize = min(plan.rate.unwrap_or(u32::MAX) as usize, 10_000);
-            let per_thread_chunk: usize = 10 * batch_size;
+            let per_thread_chunk: usize = plan.worker_chunk_size.unwrap_or(batch_size);
 
             let limit = plan.limit.unwrap_or(usize::MAX);
             let schema = schema.clone();
