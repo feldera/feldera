@@ -1,5 +1,5 @@
 use super::{InputConsumer, InputEndpoint, InputQueue, InputReader, Step, TransportInputEndpoint};
-use crate::{ensure_default_crypto_provider, Parser, PipelineState};
+use crate::{ensure_default_crypto_provider, format::AppendSplitter, Parser, PipelineState};
 use actix::System;
 use actix_web::http::header::{ByteRangeSpec, ContentRangeSpec, Range, CONTENT_RANGE};
 use anyhow::{anyhow, Result as AnyResult};
@@ -67,12 +67,16 @@ impl UrlInputReader {
             let queue = queue.clone();
             move || {
                 System::new().block_on(async move {
+                    let mut splitter = AppendSplitter::new(parser.splitter());
                     if let Err(error) =
-                        Self::worker_thread(config, &mut parser, receiver, queue).await
+                        Self::worker_thread(config, &mut parser, &mut splitter, receiver, &queue)
+                            .await
                     {
                         consumer.error(true, error);
                     } else {
-                        let _ = parser.end_of_fragments();
+                        if let Some(record) = splitter.next(true) {
+                            queue.push(record.len(), parser.parse(record));
+                        }
                         consumer.eoi();
                     };
                 });
@@ -85,8 +89,9 @@ impl UrlInputReader {
     async fn worker_thread(
         config: Arc<UrlInputConfig>,
         parser: &mut Box<dyn Parser>,
+        splitter: &mut AppendSplitter,
         mut receiver: Receiver<PipelineState>,
-        queue: Arc<InputQueue>,
+        queue: &InputQueue,
     ) -> AnyResult<()> {
         ensure_default_crypto_provider();
 
@@ -232,8 +237,10 @@ impl UrlInputReader {
                                     };
                                     if !chunk.is_empty() {
                                         consumed_bytes += chunk.len() as u64;
-                                        let errors = parser.input_fragment(chunk);
-                                        queue.push(parser.take(), chunk.len(), errors);
+                                        splitter.append(chunk);
+                                        while let Some(record) = splitter.next(false) {
+                                            queue.push(record.len(), parser.parse(record));
+                                        }
                                     }
                                     offset += data_len;
                                 },

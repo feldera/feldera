@@ -263,9 +263,8 @@ impl InputQueue {
     /// [InputConsumer::queued].
     pub fn push(
         &self,
-        buffer: Option<Box<dyn InputBuffer>>,
         num_bytes: usize,
-        errors: Vec<ParseError>,
+        (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
     ) {
         match buffer {
             Some(buffer) if !buffer.is_empty() => {

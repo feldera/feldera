@@ -2,7 +2,7 @@ use super::{
     InputConsumer, InputEndpoint, InputQueue, InputReader, OutputEndpoint, Step,
     TransportInputEndpoint,
 };
-use crate::{Parser, PipelineState};
+use crate::{format::Splitter, Parser, PipelineState};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use crossbeam::sync::{Parker, Unparker};
@@ -10,7 +10,8 @@ use feldera_types::program_schema::Relation;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
 use std::{
     fs::File,
-    io::{BufRead, BufReader, Write},
+    io::{Error as IoError, Read, Write},
+    ops::Range,
     sync::{atomic::Ordering, Arc},
     thread::{sleep, spawn},
     time::Duration,
@@ -50,6 +51,80 @@ impl TransportInputEndpoint for FileInputEndpoint {
     }
 }
 
+struct FileSplitter {
+    buffer: Vec<u8>,
+    fragment: Range<usize>,
+    fed: usize,
+    splitter: Box<dyn Splitter>,
+}
+
+impl FileSplitter {
+    fn new(splitter: Box<dyn Splitter>, buffer_size: Option<usize>) -> Self {
+        let mut buffer = Vec::new();
+        let buffer_size = buffer_size.unwrap_or_default();
+        buffer.resize(if buffer_size == 0 { 8192 } else { buffer_size }, 0);
+        Self {
+            buffer,
+            fragment: 0..0,
+            fed: 0,
+            splitter,
+        }
+    }
+    fn next(&mut self, eoi: bool) -> Option<&[u8]> {
+        match self
+            .splitter
+            .input(&self.buffer[self.fed..self.fragment.end])
+        {
+            Some(n) => {
+                let chunk = &self.buffer[self.fragment.start..self.fed + n];
+                self.fed += n;
+                self.fragment.start = self.fed;
+                Some(chunk)
+            }
+            None => {
+                self.fed = self.fragment.end;
+                if eoi {
+                    self.final_chunk()
+                } else {
+                    None
+                }
+            }
+        }
+    }
+    fn final_chunk(&mut self) -> Option<&[u8]> {
+        if !self.fragment.is_empty() {
+            let chunk = &self.buffer[self.fragment.clone()];
+            self.fragment.end = self.fragment.start;
+            Some(chunk)
+        } else {
+            None
+        }
+    }
+    fn spare_capacity_mut(&mut self) -> &mut [u8] {
+        self.buffer.copy_within(self.fragment.clone(), 0);
+        self.fed -= self.fragment.start;
+        self.fragment = 0..self.fragment.len();
+        if self.fragment.len() == self.buffer.len() {
+            self.buffer.resize(self.buffer.capacity() * 2, 0);
+        }
+        &mut self.buffer[self.fragment.len()..]
+    }
+    fn added_data(&mut self, n: usize) {
+        self.fragment.end += n;
+    }
+    fn read(&mut self, file: &mut File, max: usize) -> Result<usize, IoError> {
+        let mut space = self.spare_capacity_mut();
+        if space.len() > max {
+            space = &mut space[..max];
+        }
+        let result = file.read(space);
+        if let Ok(n) = result {
+            self.added_data(n);
+        }
+        result
+    }
+}
+
 struct FileInputReader {
     status: Arc<Atomic<PipelineState>>,
     unparker: Option<Unparker>,
@@ -60,15 +135,11 @@ impl FileInputReader {
     fn new(
         config: &FileInputConfig,
         consumer: Box<dyn InputConsumer>,
-        parser: Box<dyn Parser>,
+        mut parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
-        let file = File::open(&config.path).map_err(|e| {
+        let mut file = File::open(&config.path).map_err(|e| {
             AnyError::msg(format!("Failed to open input file '{}': {e}", config.path))
         })?;
-        let reader = match config.buffer_size_bytes {
-            Some(buffer_size) if buffer_size > 0 => BufReader::with_capacity(buffer_size, file),
-            _ => BufReader::new(file),
-        };
 
         let parker = Parker::new();
         let unparker = Some(parker.unparker().clone());
@@ -76,9 +147,38 @@ impl FileInputReader {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
         spawn({
             let follow = config.follow;
+            let buffer_size = config.buffer_size_bytes;
             let status = status.clone();
             let queue = queue.clone();
-            move || Self::worker_thread(reader, consumer, parser, queue, parker, status, follow)
+            move || {
+                let mut splitter = FileSplitter::new(parser.splitter(), buffer_size);
+                loop {
+                    match status.load(Ordering::Acquire) {
+                        PipelineState::Paused => parker.park(),
+                        PipelineState::Running => {
+                            let n = match splitter.read(&mut file, usize::MAX) {
+                                Ok(n) => n,
+                                Err(error) => {
+                                    consumer.error(true, AnyError::from(error));
+                                    break;
+                                }
+                            };
+
+                            while let Some(chunk) = splitter.next(n == 0 && !follow) {
+                                queue.push(0, parser.parse(chunk));
+                            }
+                            if n == 0 {
+                                if !follow {
+                                    consumer.eoi();
+                                    break;
+                                }
+                                sleep(Duration::from_millis(SLEEP_MS));
+                            }
+                        }
+                        PipelineState::Terminated => break,
+                    }
+                }
+            }
         });
 
         Ok(Self {
@@ -91,52 +191,6 @@ impl FileInputReader {
     fn unpark(&self) {
         if let Some(unparker) = &self.unparker {
             unparker.unpark();
-        }
-    }
-
-    fn worker_thread(
-        mut reader: BufReader<File>,
-        consumer: Box<dyn InputConsumer>,
-        mut parser: Box<dyn Parser>,
-        queue: Arc<InputQueue>,
-        parker: Parker,
-        status: Arc<Atomic<PipelineState>>,
-        follow: bool,
-    ) {
-        loop {
-            match status.load(Ordering::Acquire) {
-                PipelineState::Paused => parker.park(),
-                PipelineState::Running => {
-                    let data = reader.fill_buf();
-                    match data {
-                        Err(e) => {
-                            consumer.error(true, AnyError::from(e));
-                            return;
-                        }
-                        Ok([]) => {
-                            if !follow {
-                                let errors = parser.end_of_fragments();
-                                queue.push(parser.take(), 0, errors);
-                                consumer.eoi();
-                                return;
-                            } else {
-                                sleep(Duration::from_millis(SLEEP_MS));
-                            }
-                        }
-                        Ok(data) => {
-                            // println!("read {} bytes from file", data.len());
-
-                            // Leave it to the controller to handle errors.  There is noone we can
-                            // forward the error to upstream.
-                            let errors = parser.input_fragment(data);
-                            queue.push(parser.take(), data.len(), errors);
-                            let len = data.len();
-                            reader.consume(len);
-                        }
-                    }
-                }
-                PipelineState::Terminated => return,
-            }
         }
     }
 }

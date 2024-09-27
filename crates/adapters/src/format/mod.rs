@@ -12,6 +12,7 @@ use feldera_types::serde_with_context::FieldParseError;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde_yaml::Value as YamlValue;
+use std::ops::Range;
 use std::{
     borrow::Cow,
     collections::BTreeMap,
@@ -431,6 +432,20 @@ pub trait InputBuffer: Send {
     fn take(&mut self) -> Option<Box<dyn InputBuffer>>;
 }
 
+impl InputBuffer for Option<Box<dyn InputBuffer>> {
+    fn len(&self) -> usize {
+        self.as_ref().map_or(0, |buffer| buffer.len())
+    }
+
+    fn flush(&mut self, n: usize) -> usize {
+        self.as_mut().map_or(0, |buffer| buffer.flush(n))
+    }
+
+    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
+        self.as_mut().and_then(|buffer| buffer.take())
+    }
+}
+
 /// An empty [InputBuffer].
 pub struct EmptyInputBuffer;
 
@@ -448,64 +463,130 @@ impl InputBuffer for EmptyInputBuffer {
     }
 }
 
-/// Parses raw bytes into database records in an internal buffer.
-///
-/// The implementation can assume that either `input_fragment` or `input_chunk`
-/// will be called, but not both.
-///
-/// The [InputBuffer] supertrait allows the client to access the buffered
-/// records.
-pub trait Parser: Send + Sync + InputBuffer {
-    /// Push a fragment of the input stream to the parser.
+/// Parses raw bytes into database records.
+pub trait Parser: Send + Sync {
+    /// Parses `data` into records and returns the records and any parse errors
+    /// that occurred.
     ///
-    /// The parser breaks `data` up into records and adds the records to its
-    /// buffers using the [`DeCollectionHandle`](`crate::DeCollectionHandle`)
-    /// API.  `data` is not guaranteed to start or end on a record boundary.
-    /// The parser is responsible for identifying record boundaries and
-    /// buffering incomplete records to get prepended to the next input
-    /// fragment.
-    ///
-    /// The parser must be able to maintain state for any incomplete records in
-    /// `data` that cannot be fully parsed until the next call to this method or
-    /// a call to [Self::end_of_fragments].
-    ///
-    /// This method is invoked by transport adapters, such as file, URL, and
-    /// HTTP adapters (for some configurations of the adapter), where the
-    /// underlying transport does not enforce message boundaries.
-    ///
-    /// Returns parse errors, if any.
-    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError>;
+    /// XXX it would be even better if this were `&self` and avoided keeping
+    /// state entirely.
+    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>);
 
-    /// Notifies the parser that the preceding fragment(s) are complete.
-    ///
-    /// The parser should complete or discard any incompletely parsed records.
-    /// Returns the number of additional records added to the buffer or an error
-    /// if parsing fails.
-    ///
-    /// This shouldn't have any work to do if the data was pushed via
-    /// [Self::input_chunk], since each chunk is complete and independent.
-    ///
-    /// Returns parse errors, if any.
-    fn end_of_fragments(&mut self) -> Vec<ParseError>;
+    /// Returns an object that can be used to break a stream of incoming data
+    /// into complete records to pass to [Parser::parse].
+    fn splitter(&self) -> Box<dyn Splitter>;
 
-    /// Push a chunk of data to the parser.
-    ///
-    /// The parser breaks `data` up into records and adds the records to its
-    /// buffers using the [`DeCollectionHandle`](`crate::DeCollectionHandle`)
-    /// API.  The chunk is expected to contain complete records only, so the
-    /// parser need not maintain any state from `data` for the next call.
-    ///
-    /// Returns parse errors, if any.
-    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.input_fragment(data)
-    }
-
-    /// Create a new parser with the same configuration as `self`.  The new
-    /// parser will have an independent and initially empty buffer.
+    /// Create a new parser with the same configuration as `self`.
     ///
     /// Used by multithreaded transport endpoints to create multiple parallel
     /// input pipelines.
     fn fork(&self) -> Box<dyn Parser>;
+}
+
+/// Splits a data stream into individual records.
+///
+/// [Parser::parse] can only parse complete records. For a byte stream source, a
+/// format-specific [Splitter] allows a transport to find record boundaries.
+pub trait Splitter: Send {
+    /// Looks for a record boundary in `data`. Returns:
+    ///
+    /// - `None`, if `data` does not necessarily complete a record.
+    ///
+    ///- `Some(n)`, if the first `n` bytes of data, plus any data previously
+    ///   presented for which `None` was returned, forms a record. If `n <
+    ///   data.len()`, then the caller should re-present `data[n..]`, which
+    ///   might include one or more complete records or (otherwise) the
+    ///   beginning of a new record.
+    fn input(&mut self, data: &[u8]) -> Option<usize>;
+
+    /// Clears any state in this splitter and prepares it to start splitting new
+    /// data.
+    fn clear(&mut self);
+}
+
+/// A [Splitter] that never breaks data into records.
+///
+/// This supports [Parser]s that need all of a streaming data source to be read
+/// in full before parsing.
+pub struct Sponge;
+
+impl Splitter for Sponge {
+    fn input(&mut self, _data: &[u8]) -> Option<usize> {
+        None
+    }
+    fn clear(&mut self) {}
+}
+
+/// A [Splitter] that breaks data into records at ASCII new-lines.
+pub struct LineSplitter;
+
+impl Splitter for LineSplitter {
+    fn input(&mut self, data: &[u8]) -> Option<usize> {
+        data.iter()
+            .position(|b| *b == b'\n')
+            .map(|position| position + 1)
+    }
+
+    fn clear(&mut self) {}
+}
+
+pub struct AppendSplitter {
+    buffer: Vec<u8>,
+    fragment: Range<usize>,
+    fed: usize,
+    splitter: Box<dyn Splitter>,
+}
+
+impl AppendSplitter {
+    pub fn new(splitter: Box<dyn Splitter>) -> Self {
+        Self {
+            buffer: Vec::new(),
+            fragment: 0..0,
+            fed: 0,
+            splitter,
+        }
+    }
+    pub fn next(&mut self, eoi: bool) -> Option<&[u8]> {
+        match self
+            .splitter
+            .input(&self.buffer[self.fed..self.fragment.end])
+        {
+            Some(n) => {
+                let chunk = &self.buffer[self.fragment.start..self.fed + n];
+                self.fed += n;
+                self.fragment.start = self.fed;
+                Some(chunk)
+            }
+            None => {
+                self.fed = self.fragment.end;
+                if eoi {
+                    self.final_chunk()
+                } else {
+                    None
+                }
+            }
+        }
+    }
+    pub fn final_chunk(&mut self) -> Option<&[u8]> {
+        if !self.fragment.is_empty() {
+            let chunk = &self.buffer[self.fragment.clone()];
+            self.fragment.end = self.fragment.start;
+            Some(chunk)
+        } else {
+            None
+        }
+    }
+    pub fn append(&mut self, data: &[u8]) {
+        let final_len = self.fragment.len() + data.len();
+        if final_len > self.buffer.len() {
+            self.buffer.reserve(final_len - self.buffer.len());
+        }
+        self.buffer.copy_within(self.fragment.clone(), 0);
+        self.buffer.resize(self.fragment.len(), 0);
+        self.buffer.extend(data);
+        self.fed -= self.fragment.start;
+        self.fragment = 0..self.buffer.len();
+    }
 }
 
 pub trait OutputFormat: Send + Sync {

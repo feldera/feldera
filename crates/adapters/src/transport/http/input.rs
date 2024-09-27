@@ -1,3 +1,4 @@
+use crate::format::AppendSplitter;
 use crate::transport::{InputEndpoint, InputQueue};
 use crate::{
     server::{PipelineError, MAX_REPORTED_PARSE_ERRORS},
@@ -57,6 +58,7 @@ impl HttpInputTransport {
 struct HttpInputEndpointDetails {
     consumer: Box<dyn InputConsumer>,
     parser: Box<dyn Parser>,
+    splitter: AppendSplitter,
     queue: InputQueue,
 }
 
@@ -114,21 +116,23 @@ impl HttpInputEndpoint {
     fn push(&self, bytes: Option<&[u8]>, errors: &mut CircularQueue<ParseError>) -> usize {
         let mut guard = self.inner.details.lock().unwrap();
         let details = guard.as_mut().unwrap();
-        let mut new_errors = match bytes {
-            Some(bytes) => details.parser.input_fragment(bytes),
-            None => details.parser.end_of_fragments(),
-        };
-        let buffer = details.parser.take();
-        details
-            .queue
-            .push(buffer, bytes.map_or(0, |b| b.len()), new_errors.clone());
+        if let Some(bytes) = bytes {
+            details.splitter.append(bytes);
+        }
+        let mut total_errors = 0;
+        while let Some(chunk) = details.splitter.next(bytes.is_none()) {
+            let (buffer, mut new_errors) = details.parser.parse(chunk);
+            total_errors += new_errors.len();
+            details
+                .queue
+                .push(chunk.len(), (buffer, new_errors.clone()));
+            for error in new_errors.drain(..) {
+                errors.push(error);
+            }
+        }
         drop(guard);
 
-        let num_errors = new_errors.len();
-        for error in new_errors.drain(..) {
-            errors.push(error);
-        }
-        num_errors
+        total_errors
     }
 
     fn error(&self, fatal: bool, error: AnyError) {
@@ -232,10 +236,12 @@ impl TransportInputEndpoint for HttpInputEndpoint {
         _start_step: Step,
         _schema: Relation,
     ) -> AnyResult<Box<dyn InputReader>> {
+        let splitter = AppendSplitter::new(parser.splitter());
         *self.inner.details.lock().unwrap() = Some(HttpInputEndpointDetails {
             queue: InputQueue::new(consumer.clone()),
             consumer,
             parser,
+            splitter,
         });
         Ok(Box::new(self.clone()))
     }

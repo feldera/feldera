@@ -1,6 +1,6 @@
 #![allow(clippy::borrowed_box)]
 
-use crate::format::InputBuffer;
+use crate::format::{InputBuffer, Sponge};
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
     test::{
@@ -426,7 +426,6 @@ config:
 #[derive(Debug, Eq, PartialEq)]
 enum ConsumerCall {
     StartStep(Step),
-    InputFragment(String),
     InputChunk(String),
     Queued(usize, usize, Vec<ParseError>),
     Error(bool),
@@ -564,39 +563,19 @@ impl InputConsumer for DummyInputConsumer {
 }
 
 impl Parser for DummyInputConsumer {
-    fn input_fragment(&mut self, data: &[u8]) -> Vec<ParseError> {
-        self.called(ConsumerCall::InputFragment(
-            String::from_utf8(data.into()).unwrap(),
-        ));
-        Vec::new()
-    }
-    fn input_chunk(&mut self, data: &[u8]) -> Vec<ParseError> {
+    fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         self.called(ConsumerCall::InputChunk(
             String::from_utf8(data.into()).unwrap(),
         ));
-        Vec::new()
-    }
-    fn end_of_fragments(&mut self) -> Vec<ParseError> {
-        self.called(ConsumerCall::Eoi);
-        Vec::new()
+        (None, Vec::new())
     }
 
     fn fork(&self) -> Box<dyn Parser> {
         todo!()
     }
-}
 
-impl InputBuffer for DummyInputConsumer {
-    fn flush(&mut self, _n: usize) -> usize {
-        todo!()
-    }
-
-    fn len(&self) -> usize {
-        todo!()
-    }
-
-    fn take(&mut self) -> Option<Box<dyn InputBuffer>> {
-        None
+    fn splitter(&self) -> Box<dyn crate::format::Splitter> {
+        Box::new(Sponge)
     }
 }
 
