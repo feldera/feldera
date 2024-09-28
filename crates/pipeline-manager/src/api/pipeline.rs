@@ -556,7 +556,8 @@ pub(crate) async fn input_endpoint_action(
     responses(
         (status = OK
             , description = "Pipeline logs retrieved successfully"
-            , body = Object),
+            , content_type = "text/plain"
+            , body = Vec<u8>),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse

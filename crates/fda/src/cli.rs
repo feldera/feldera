@@ -272,6 +272,20 @@ pub enum PipelineAction {
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
     },
+    /// Retrieve the logs of a pipeline.
+    #[clap(aliases = &["log"])]
+    Logs {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// Watch the log endpoint and emit new pipeline log messages as they are written.
+        ///
+        /// When `true`, the command will listen to pipeline logs until the pipeline terminates or
+        /// the command is interrupted by the user. When `false`, the command outputs pipeline logs
+        /// accumulated so far and exits.
+        #[arg(long, short = 'w', default_value_t = false)]
+        watch: bool,
+    },
     /// Interact with the program of the pipeline.
     ///
     /// If no sub-command is specified retrieves the program.

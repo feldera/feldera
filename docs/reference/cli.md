@@ -121,6 +121,11 @@ Retrieve the stats for `p1`:
 fda stats p1
 ```
 
+Retrieve the latest logging statements for `p1`:
+```commandline
+fda logs p1
+```
+
 Shutdown and delete the pipeline `p1`:
 ```commandline
 fda shutdown p1
