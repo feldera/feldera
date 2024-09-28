@@ -100,7 +100,7 @@ pub fn input_transport_config_to_endpoint(
         #[cfg(not(feature = "with-pubsub"))]
         TransportConfig::PubSubInput(_) => Ok(None),
         TransportConfig::UrlInput(config) => Ok(Some(Box::new(UrlInputEndpoint::new(config)))),
-        TransportConfig::S3Input(config) => Ok(Some(Box::new(S3InputEndpoint::new(config)))),
+        TransportConfig::S3Input(config) => Ok(Some(Box::new(S3InputEndpoint::new(config)?))),
         TransportConfig::Datagen(config) => {
             Ok(Some(Box::new(GeneratorEndpoint::new(config.clone()))))
         }

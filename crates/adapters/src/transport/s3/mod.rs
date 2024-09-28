@@ -8,13 +8,14 @@ use tokio::sync::{
 };
 
 use crate::{InputConsumer, InputReader, Parser, PipelineState, TransportInputEndpoint};
+use anyhow::{bail, Result as AnyResult};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::program_schema::Relation;
 #[cfg(test)]
 use mockall::automock;
 
 use crate::transport::InputEndpoint;
-use feldera_types::transport::s3::{AwsCredentials, ConsumeStrategy, ReadStrategy, S3InputConfig};
+use feldera_types::transport::s3::S3InputConfig;
 
 use super::InputQueue;
 
@@ -23,10 +24,28 @@ pub struct S3InputEndpoint {
 }
 
 impl S3InputEndpoint {
-    pub fn new(config: S3InputConfig) -> Self {
-        Self {
-            config: Arc::new(config),
+    pub fn new(config: S3InputConfig) -> AnyResult<Self> {
+        if !config.no_sign_request {
+            if config.aws_access_key_id.is_none() {
+                bail!("the 'aws_access_key_id' property is missing; either set it or use 'no_sign_request=true' to bypass AWS authentication for a public bucket");
+            }
+
+            if config.aws_secret_access_key.is_none() {
+                bail!("the 'aws_secret_access_key' property is missing; either set it or use 'no_sign_request=true' to bypass AWS authentication for a public bucket");
+            }
         }
+
+        if config.key.is_none() && config.prefix.is_none() {
+            bail!("either 'key' or 'prefix' property must be specified");
+        }
+
+        if config.key.is_some() && config.prefix.is_some() {
+            bail!("connector configuration specifies both 'key' and 'prefix' properties; please specify only one");
+        }
+
+        Ok(Self {
+            config: Arc::new(config),
+        })
     }
 }
 
@@ -204,14 +223,12 @@ impl S3InputReader {
         // to make it so that no more than 8 objects are fetched while waiting
         // for object processing.
         let (tx, mut rx) = mpsc::channel(8);
-        let consume_strategy = config.consume_strategy.clone();
+        let streaming = config.streaming;
         tokio::spawn(async move {
             let mut continuation_token = None;
             loop {
-                let (objects_to_fetch, next_token): (Vec<String>, Option<String>) = match &config
-                    .read_strategy
-                {
-                    ReadStrategy::Prefix { prefix } => {
+                let (objects_to_fetch, next_token): (Vec<String>, Option<String>) =
+                    if let Some(prefix) = &config.prefix {
                         let result = client
                             .get_object_keys(&config.bucket_name, prefix, continuation_token.take())
                             .await;
@@ -223,9 +240,10 @@ impl S3InputReader {
                                 break;
                             }
                         }
-                    }
-                    ReadStrategy::SingleKey { key } => (vec![key.clone()], None),
-                };
+                    } else {
+                        // We checked that either key or prefix is set.
+                        (vec![config.key.as_ref().unwrap().clone()], None)
+                    };
                 continuation_token = next_token;
                 for key in &objects_to_fetch {
                     let object = client.get_object(&config.bucket_name, key).await;
@@ -251,8 +269,8 @@ impl S3InputReader {
                         get_obj = rx.recv() => {
                             match get_obj {
                                 Some(Ok(mut object)) => {
-                                    match consume_strategy {
-                                        ConsumeStrategy::Fragment => match object.body.next().await {
+                                    if streaming {
+                                        match object.body.next().await {
                                             Some(Ok(bytes)) => {
                                                 let errors = parser.input_fragment(&bytes);
                                                 queue.push(parser.take(), bytes.len(), errors);
@@ -260,7 +278,7 @@ impl S3InputReader {
                                             None => break,
                                             Some(Err(e)) => consumer.error(false, e.into())
                                         }
-                                        ConsumeStrategy::Object =>
+                                    } else {
                                             match object.body.collect().await.map(|c| c.into_bytes()) {
                                                 Ok(bytes) => {
                                                 let errors = parser.input_chunk(&bytes);
@@ -294,21 +312,17 @@ impl S3InputReader {
 fn to_s3_config(config: &Arc<S3InputConfig>) -> aws_sdk_s3::Config {
     let config_builder =
         aws_sdk_s3::Config::builder().region(aws_types::region::Region::new(config.region.clone()));
-    match &config.credentials {
-        AwsCredentials::AccessKey {
-            aws_access_key_id,
-            aws_secret_access_key,
-        } => {
-            let credentials = aws_sdk_s3::config::Credentials::new(
-                aws_access_key_id.clone(),
-                aws_secret_access_key.clone(),
-                None,
-                None,
-                "credential-provider",
-            );
-            config_builder.credentials_provider(credentials).build()
-        }
-        AwsCredentials::NoSignRequest => config_builder.build(),
+    if config.no_sign_request {
+        config_builder.build()
+    } else {
+        let credentials = aws_sdk_s3::config::Credentials::new(
+            config.aws_access_key_id.as_ref().unwrap().clone(),
+            config.aws_secret_access_key.as_ref().unwrap().clone(),
+            None,
+            None,
+            "credential-provider",
+        );
+        config_builder.credentials_provider(credentials).build()
     }
 }
 
@@ -346,17 +360,12 @@ stream: test_input
 transport:
     name: s3_input
     config:
-        credentials:
-            type: AccessKey
-            aws_access_key_id: FAKE_ACCESS_KEY
-            aws_secret_access_key: FAKE_SECRET
+        aws_access_key_id: FAKE_ACCESS_KEY
+        aws_secret_access_key: FAKE_SECRET
         bucket_name: test-bucket
         region: us-west-1
-        read_strategy:
-            type: Prefix
-            prefix: ''
-        consume_strategy:
-            type: Fragment
+        prefix: ''
+        streaming: true
 format:
     name: csv
 "#;
@@ -366,17 +375,12 @@ stream: test_input
 transport:
     name: s3_input
     config:
-        credentials:
-            type: AccessKey
-            aws_access_key_id: FAKE_ACCESS_KEY
-            aws_secret_access_key: FAKE_SECRET
+        aws_access_key_id: FAKE_ACCESS_KEY
+        aws_secret_access_key: FAKE_SECRET
         bucket_name: test-bucket
         region: us-west-1
-        read_strategy:
-            type: SingleKey
-            key: obj1
-        consume_strategy:
-            type: Object
+        key: obj1
+        streaming: false
 format:
     name: csv
 "#;

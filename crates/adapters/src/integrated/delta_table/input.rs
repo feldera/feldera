@@ -31,7 +31,7 @@ use feldera_types::config::InputEndpointConfig;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::delta_table::{DeltaTableIngestMode, DeltaTableReaderConfig};
-use feldera_types::transport::s3::{ReadStrategy, S3InputConfig};
+use feldera_types::transport::s3::S3InputConfig;
 use futures_util::StreamExt;
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
