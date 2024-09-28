@@ -15,7 +15,7 @@ use tabled::builder::Builder;
 use tabled::settings::Style;
 use tempfile::tempfile;
 use tokio::process::Command;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, timeout, Duration};
 
 mod cli;
 mod shell;
@@ -583,6 +583,50 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 serde_json::to_string_pretty(response.as_ref())
                     .expect("Failed to serialize pipeline stats")
             );
+        }
+        PipelineAction::Logs { name, watch } => {
+            // The log endpoint is a stream that never ends. However, we want to be able for
+            // fda to exit after a certain amount of time without any new logs to emulate
+            // a log snapshot functionality.
+            let mut first_line = true;
+            let next_line_timeout = if !watch {
+                Duration::from_millis(250)
+            } else {
+                Duration::MAX
+            };
+
+            let response = client.get_pipeline_logs().pipeline_name(name).send().await;
+            match response {
+                Ok(response) => {
+                    let mut byte_stream = response.into_inner();
+                    while let Ok(Some(chunk)) = timeout(
+                        if first_line {
+                            Duration::from_secs(5)
+                        } else {
+                            next_line_timeout
+                        },
+                        byte_stream.next(),
+                    )
+                    .await
+                    {
+                        match chunk {
+                            Ok(chunk) => {
+                                let text = String::from_utf8_lossy(&chunk);
+                                print!("{}", text);
+                                first_line = false;
+                            }
+                            Err(e) => {
+                                eprintln!("ERROR: Unable to read server response: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("ERROR: Failed to get pipeline logs: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
         PipelineAction::Delete { name } => {
             let response = client

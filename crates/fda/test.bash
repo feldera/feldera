@@ -22,6 +22,7 @@ $BINARY_PATH config p1
 
 $BINARY_PATH start p1
 $BINARY_PATH stats p1 | jq '.metrics'
+$BINARY_PATH log p1
 
 $BINARY_PATH shutdown p1
 
