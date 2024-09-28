@@ -25,7 +25,7 @@ older data.
 While a pipeline is running, users can inspect the results of the views at any time.
 
 Our approach to incremental computation makes Feldera incredibly fast (millions of events per second on a laptop).
-It also enables unified offline and online compute over both live and historical data. Feldera users have built batch
+It also enables **unified offline and online compute** over both live and historical data. Feldera users have built batch
 and real-time
 feature engineering pipelines, ETL pipelines, various forms of incremental and periodic analytical jobs over batch data,
 and more.
@@ -37,20 +37,20 @@ Our defining features:
    window functions, complex data types, time series operators, UDFs, and
    recursive queries. Pipelines can process deeply nested hierarchies of views.
 
-3. **Fast out-of-the-box performance.**  Feldera users have reported getting complex use cases
+2. **Fast out-of-the-box performance.**  Feldera users have reported getting complex use cases
    implemented in 30 minutes or less, and hitting millions
    of events per second in performance on a laptop without any tuning.
 
-4. **Datasets larger than RAM.** Feldera is designed to handle datasets
+3. **Datasets larger than RAM.** Feldera is designed to handle datasets
    that exceed the available RAM by spilling efficiently to disk, taking advantage of recent advances in NVMe storage.
 
-5. **Strong guarantees on consistency and freshness.** Feldera is strongly consistent. It
+4. **Strong guarantees on consistency and freshness.** Feldera is strongly consistent. It
    also [guarantees](https://www.feldera.com/blog/synchronous-streaming/) that the state of the views always corresponds
    to what you'd get if you ran the queries in a batch system for the same input.
 
-6. **Connectors for your favorite data sources and destinations.** Feldera connects to myriad batch and streaming data
+5. **Connectors for your favorite data sources and destinations.** Feldera connects to myriad batch and streaming data
    sources, like Kafka, HTTP, CDC streams, S3, Data Lakes, Warehouses and more.
-   If you need a connector that we don't yet support, let us [know](https://github.com/feldera/feldera/issues).
+   If you need a connector that we don't yet support, [let us know](https://github.com/feldera/feldera/issues).
 
 ## Architecture
 
