@@ -36,7 +36,7 @@
 
 ---
 
-## ⚠️ Incremental Computation Engine
+## 🔥 Incremental Computation Engine
 
 Our approach to incremental computation is simple. A Feldera `pipeline` is a set of SQL tables and views. Views can be
 deeply nested.
