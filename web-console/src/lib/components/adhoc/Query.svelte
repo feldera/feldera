@@ -5,7 +5,7 @@
   import type { Field } from '$lib/services/manager'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
 
-  export type Row = { cells: SQLValueJS[] } | { error: string }
+  export type Row = { cells: SQLValueJS[] } | { error: string } | { warning: string }
 
   export type QueryResult = {
     rows: Row[]
@@ -104,9 +104,13 @@
                     </td>
                   {/each}
                 </tr>
+              {:else if 'error' in row}
+                <tr>
+                  <td colspan="99999999" class="px-2 preset-tonal-error">{row.error}</td>
+                </tr>
               {:else}
                 <tr>
-                  <td colspan="99999999" class="px-2 preset-filled-error-50-950">{row.error}</td>
+                  <td colspan="99999999" class="px-2 preset-tonal-warning">{row.warning}</td>
                 </tr>
               {/if}
             {/each}

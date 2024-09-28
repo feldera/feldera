@@ -17,6 +17,7 @@
   import type { SQLValueJS } from '$lib/functions/sqlValue'
   import { parseUTF8JSON } from '$lib/functions/pipelines/changeStream'
   import invariant from 'tiny-invariant'
+  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
   let pipelineName = $derived(pipeline.current.name)
@@ -25,6 +26,8 @@
   $effect.pre(() => {
     adhocQueries[pipelineName] ??= { queries: [{ query: '' }] }
   })
+  const isDataRow = (record: Record<string, SQLValueJS>) =>
+    !(Object.keys(record).length === 1 && ('error' in record || 'warning' in record))
 
   const onSubmitQuery = (pipelineName: string, i: number) => (query: string) => {
     const promise = adHocQuery(pipelineName, query)
@@ -41,15 +44,22 @@
         endResultStream: () => {}
       }
       const bufferSize = 1000
-      const pushChanges = (input: (Record<string, SQLValueJS> | { error: string })[]) => {
+      const pushChanges = (
+        input: (Record<string, SQLValueJS> | { error: string } | { warning: string })[]
+      ) => {
         if (!adhocQueries[pipelineName].queries[i]?.result) {
           return
         }
-        const isError = (record: Record<string, SQLValueJS>) =>
-          Object.keys(record).length === 1 && 'error' in record
+        // Add field for the next query if the last query was successful
+        if (
+          adhocQueries[pipelineName].queries.length === i + 1 &&
+          input.find((row) => isDataRow(row))
+        ) {
+          adhocQueries[pipelineName].queries.push({ query: '' })
+        }
         if (
           adhocQueries[pipelineName].queries[i].result.columns.length === 0 &&
-          !isError(input[0])
+          isDataRow(input[0])
         ) {
           adhocQueries[pipelineName].queries[i].result.columns.push(
             ...Object.keys(input[0]).map((name) => ({
@@ -75,7 +85,7 @@
           adhocQueries[pipelineName].queries[i].result.rows.push(
             ...input
               .slice(0, bufferSize - previousLength)
-              .map((v) => (isError(v) ? v : { cells: Object.values(v) }) as Row)
+              .map((v) => (isDataRow(v) ? { cells: Object.values(v) } : v) as Row)
           )
           getAdhocQueries = () => adhocQueries
 
@@ -85,7 +95,7 @@
                 return
               }
               adhocQueries[pipelineName].queries[i].result?.rows.push({
-                error: `The query result contains more rows, but only the first ${bufferSize} are shown`
+                warning: `The query result contains more rows, but only the first ${bufferSize} are shown`
               })
               getAdhocQueries = () => adhocQueries
               adhocQueries[pipelineName].queries[i].result?.endResultStream()
@@ -116,20 +126,14 @@
       )
       adhocQueries[pipelineName].queries[i].result.endResultStream = cancel
     })
-    promise.then(() => {
-      // Add field for the next query if the last query was successful
-      if (adhocQueries[pipelineName].queries.length === i + 1) {
-        adhocQueries[pipelineName].queries.push({ query: '' })
-      }
-    })
   }
 </script>
 
 <div class="bg-white-black flex min-h-full flex-col gap-6 p-2">
   {#if isIdle}
-    <div class="sticky top-0 z-10 -m-2 mb-0 p-2 preset-tonal-warning">
+    <WarningBanner class="sticky top-0 z-10 -m-2">
       Start the pipeline to be able to execute queries
-    </div>
+    </WarningBanner>
   {/if}
   {#each getAdhocQueries()[pipelineName].queries as x, i}
     {#if x}
