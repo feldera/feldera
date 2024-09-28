@@ -48,9 +48,13 @@ fn make_auth_headers(auth: &Option<String>) -> Result<HeaderMap, InvalidHeaderVa
 pub(crate) fn make_client(
     host: String,
     auth: Option<String>,
-    timeout: u64,
+    timeout: Option<u64>,
 ) -> Result<Client, Box<dyn std::error::Error>> {
-    let mut client_builder = reqwest::ClientBuilder::new().timeout(Duration::from_secs(timeout));
+    let mut client_builder = reqwest::ClientBuilder::new();
+
+    if let Some(timeout) = timeout {
+        client_builder = client_builder.timeout(Duration::from_secs(timeout));
+    }
 
     if host.starts_with("https://") {
         client_builder = client_builder.default_headers(make_auth_headers(&auth)?);
