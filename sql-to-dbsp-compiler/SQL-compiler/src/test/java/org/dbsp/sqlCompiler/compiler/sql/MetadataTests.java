@@ -28,11 +28,18 @@ import org.junit.Test;
 
 import javax.sql.DataSource;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.List;
 
 /** Tests about table and view metadata */
 public class MetadataTests extends BaseSQLTests {
@@ -285,15 +292,6 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
-    public void testUDFWarning() throws IOException, SQLException {
-        File file = createInputScript("CREATE FUNCTION myfunction(d DATE, i INTEGER) RETURNS VARCHAR",
-                "CREATE VIEW V AS SELECT myfunction(DATE '2023-10-20', CAST(5 AS INTEGER))");
-        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
-        Assert.assertEquals(1, messages.warningCount());
-        Assert.assertTrue(messages.toString().contains("the compiler was invoked without the `-udf` flag"));
-    }
-
-    @Test
     public void testUDFTypeError() throws IOException, SQLException {
         File file = createInputScript("CREATE FUNCTION myfunction(d DATE, i INTEGER) RETURNS VARCHAR NOT NULL",
                 "CREATE VIEW V AS SELECT myfunction(DATE '2023-10-20', '5')");
@@ -311,25 +309,38 @@ public class MetadataTests extends BaseSQLTests {
                 "CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5 MAYBE: 2' AS VARCHAR), 5)",
                 "CREATE FUNCTION \"empty\"() RETURNS VARCHAR",
                 "CREATE VIEW V1 AS SELECT \"empty\"()");
-        File implementation = File.createTempFile("impl", ".rs", new File(rustDirectory));
-        createInputFile(implementation,
-                System.lineSeparator(),
-                "use feldera_sqllib::*;",
-                "pub fn CONTAINS_NUMBER(str: String, value: Option<i32>) -> " +
-                        "   Result<bool, Box<dyn std::error::Error>> {",
-                "   match value {",
-                "      None => Err(\"null value\".into()),",
-                "      Some(value) => Ok(str.contains(&format!(\"{}\", value).to_string())),",
-                "   }",
-                "}",
-                "pub fn empty() -> Result<Option<String>, Box<dyn std::error::Error>> {",
-                "   Ok(Some(\"\".to_string()))",
-                "}");
-        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, "--udf",
-                implementation.getPath(), file.getPath());
+
+        File udf = Paths.get(rustDirectory, "udf.rs").toFile();
+        PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
+        script.println("""
+                use feldera_sqllib::*;
+                pub fn CONTAINS_NUMBER(str: String, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
+                   match value {
+                       None => Err("null value".into()),
+                       Some(value) => Ok(str.contains(&format!("{}", value).to_string())),
+                   }
+                }
+                pub fn empty() -> Result<Option<String>, Box<dyn std::error::Error>> {
+                   Ok(Some("".to_string()))
+                }""");
+        script.close();
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
+
+        Path protos = Paths.get(BaseSQLTests.rustDirectory, DBSPCompiler.PROTOS_FILE_NAME);
+        Assert.assertTrue(protos.toFile().exists());
+        List<String> str = Files.readAllLines(protos);
+        Assert.assertEquals("""
+                pub fn CONTAINS_NUMBER(STR: String, VALUE: Option<i32>) -> bool;
+                pub fn empty() -> Option<String>;""", String.join(System.lineSeparator(), str));
+        boolean success = protos.toFile().delete();
+        Assert.assertTrue(success);
+
+        // Truncate file to 0 bytes
+        FileWriter writer = new FileWriter(udf);
+        writer.close();
     }
 
     @Test

@@ -34,8 +34,11 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 
 import javax.annotation.Nullable;
@@ -45,11 +48,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Map;
 
 /** Main entry point of the SQL compiler. */
@@ -188,27 +192,30 @@ public class CompilerMain {
             stream.close();
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,
-                    "Error writing to file", e.getMessage());
+                    "Error writing to output file", e.getMessage());
             return compiler.messages;
         }
 
         try {
-            if (!this.options.ioOptions.udfs.isEmpty()) {
-                String outputFileName = this.options.ioOptions.outputFile;
-                if (outputFileName.isEmpty()) {
-                    compiler.reportError(SourcePositionRange.INVALID,
-                            "No output file", "`-udf` option requires specifying an output file");
-                    return compiler.messages;
+            List<DBSPFunction> extern = Linq.where(compiler.functions, f -> f.body == null);
+            if (!extern.isEmpty()) {
+                String outputFile = this.options.ioOptions.outputFile;
+                if (!outputFile.isEmpty()) {
+                    String outputPath = new File(outputFile).getAbsolutePath();
+                    Path protos = Paths.get(outputPath).getParent().resolve(DBSPCompiler.PROTOS_FILE_NAME);
+                    PrintStream protosStream = new PrintStream(Files.newOutputStream(protos));
+                    if (compiler.options.ioOptions.verbosity > 0)
+                        System.out.println("Writing prototypes to file " + protos);
+                    for (DBSPFunction function : extern) {
+                        String str = ToRustInnerVisitor.toRustString(compiler, function, compiler.options, false);
+                        protosStream.println(str);
+                    }
+                    protosStream.close();
                 }
-                File outputFile = new File(outputFileName);
-                File outputDirectory = outputFile.getParentFile();
-                File source = new File(this.options.ioOptions.udfs);
-                File destination = new File(outputDirectory, DBSPCompiler.UDF_FILE_NAME);
-                Files.copy(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,
-                    "Error copying UDF file", e.getMessage());
+                    "Error writing to proto.rs file", e.getMessage());
             return compiler.messages;
         }
 

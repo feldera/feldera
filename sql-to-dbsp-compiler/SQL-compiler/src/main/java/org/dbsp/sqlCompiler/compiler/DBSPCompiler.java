@@ -62,6 +62,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.LatenessStatement;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
+import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -79,6 +81,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * This class compiles SQL statements into DBSP circuits.
@@ -97,6 +100,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /** Name of the Rust file that will contain the user-defined functions.
      * The definitions supplied by the user will be copied here. */
     public static final String UDF_FILE_NAME = "udf.rs";
+    public static final String PROTOS_FILE_NAME = "protos.rs";
 
     final GlobalTypes globalTypes = new GlobalTypes();
 
@@ -133,6 +137,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     final Map<String, CreateViewStatement> views = new HashMap<>();
     final List<LatenessStatement> lateness = new ArrayList<>();
+    /** All UDFs from the SQL program.  The ones in Rust have no bodies */
+    public final List<DBSPFunction> functions = new ArrayList<>();
 
     /** Circuit produced by the compiler. */
     @Nullable DBSPCircuit circuit;
@@ -372,8 +378,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             }
             this.toCompile.clear();
 
+            // All UDFs which have no bodies in SQL
+            final List<SqlFunction> rustFunctions = new ArrayList<>();
             // Compile first the statements that define functions, types, and lateness
-            List<SqlFunction> rustFunctions = new ArrayList<>();
             for (SqlNode node: parsed) {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append("Parsing result: ")
@@ -403,7 +410,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         SqlOperatorTable newFunctions = SqlOperatorTables.of(Linq.list(function));
                         this.frontend.addOperatorTable(newFunctions);
                     }
-                    this.midend.compile(fe);
+                    DBSPNode func = this.midend.compile(fe);
+                    this.functions.add(Objects.requireNonNull(func).to(DBSPFunction.class));
                 }
                 if (node instanceof SqlLateness) {
                     FrontEndStatement fe = this.frontend.compile(node.toString(), node, this.sources);
@@ -419,13 +427,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 // These we can load all at the end, since they can't depend on each other.
                 SqlOperatorTable newFunctions = SqlOperatorTables.of(rustFunctions);
                 this.frontend.addOperatorTable(newFunctions);
-                if (this.options.ioOptions.udfs.isEmpty()) {
-                    this.compiler().reportWarning(
-                            SourcePositionRange.INVALID,
-                            "No UDFs",
-                            "Program contains `CREATE FUNCTION` statements but the compiler" +
-                                    " was invoked without the `-udf` flag");
-                }
             }
 
             // Compile all statements which do not define functions or types

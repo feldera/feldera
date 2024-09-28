@@ -30,8 +30,11 @@ Feldera's public API or Web Console.
 The SQL statement `CREATE FUNCTION` can be used to declare new
 functions whose implementation is provided separately in Rust.
 
-The implementation of these functions is provided to the compiler in a
-separate file, whose name is specified using the `--udf` flag.
+The implementation of these functions must be provided to the Rust
+compiler in a separate file.  Moreover, when the SQL program contains
+user-defined functions, the compiler will generate an additional
+output file named `protos.rs` containing the signature for all the
+Rust user-defined functions.
 
 The following example shows a user-defined function:
 
@@ -103,7 +106,9 @@ SQL | Rust
 `TIME` | `Time`
 `TIMESTAMP` | `Timestamp`
 `DATE` | `Date`
-`ARRAY T` | `Vec<T>`
+`T ARRAY` | `Vec<T>`
+`MAP<K, V> | `BTreeMap<K, V>`
+`VARIANT` | `Variant`
 
 Multiple SQL types may be represented by the same Rust type.  For
 example, `CHAR`, `CHAR(n)`, `VARCHAR(n)`, and `VARCHAR` are all

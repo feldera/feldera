@@ -168,6 +168,18 @@ public class ExternalFunction extends SqlFunction {
         }
     }
 
+    /** Get the declaration of an external function */
+    public DBSPFunction getDeclaration(TypeCompiler typeCompiler) {
+        List<DBSPParameter> parameters = new ArrayList<>();
+        for (RelDataTypeField param: this.parameterList) {
+            DBSPType type = typeCompiler.convertType(param.getType(), true);
+            DBSPParameter p = new DBSPParameter(param.getName(), type);
+            parameters.add(p);
+        }
+        DBSPType returnType = typeCompiler.convertType(this.returnType, true);
+        return new DBSPFunction(this.getName(), parameters, returnType, null, Linq.list());
+    }
+
     @Nullable
     public DBSPFunction getImplementation(TypeCompiler typeCompiler, DBSPCompiler compiler) {
         if (this.body != null) {

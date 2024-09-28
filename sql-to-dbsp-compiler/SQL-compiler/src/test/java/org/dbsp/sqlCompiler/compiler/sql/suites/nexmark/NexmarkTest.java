@@ -24,9 +24,13 @@
 package org.dbsp.sqlCompiler.compiler.sql.suites.nexmark;
 
 import org.apache.calcite.config.Lex;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Ignore;
@@ -571,7 +575,7 @@ SELECT
         return new DBSPCompiler(options);
     }
 
-    void createTest(int query, String... scriptsAndTables) {
+    CompilerCircuitStream createTest(int query, String... scriptsAndTables) {
         assert scriptsAndTables.length % 2 == 0;
         DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
@@ -587,6 +591,7 @@ SELECT
         for (int i = 0; i < scriptsAndTables.length; i += 2)
             ccs.step(scriptsAndTables[i], scriptsAndTables[i + 1]);
         this.addRustTestCase(ccs);
+        return ccs;
     }
 
     @Test
@@ -854,10 +859,19 @@ INSERT INTO auction VALUES(101, 'item-name', 'description', 5, 10, '2020-01-01 0
 
     @Test
     public void q15test() {
-        this.createTest(15, "",
+        var ccs = this.createTest(15, "",
                 """
  day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_bidders | rank2_bidders | rank3_bidders | total_auctions | rank1_auctions | rank2_auctions | rank3_auctions
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------""");
+        // Test for https://github.com/feldera/feldera/issues/2250
+        CircuitVisitor v = new CircuitVisitor(new StderrErrorReporter()) {
+            @Override
+            public VisitDecision preorder(DBSPOperator node) {
+                assert !node.operation.contains("aggregate") || node.operation.equals("aggregate_linear_postprocess");
+                return super.preorder(node);
+            }
+        };
+        v.apply(ccs.circuit);
     }
 
     @Test

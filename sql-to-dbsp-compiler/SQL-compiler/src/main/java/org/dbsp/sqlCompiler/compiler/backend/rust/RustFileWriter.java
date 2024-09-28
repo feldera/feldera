@@ -350,15 +350,13 @@ public class RustFileWriter {
                 .newline();
         this.generateStructures(used, stream);
 
-        if (!compiler.options.ioOptions.udfs.isEmpty()) {
-            int dot = DBSPCompiler.UDF_FILE_NAME.lastIndexOf(".");
-            stream.append("mod ")
-                    .append(DBSPCompiler.UDF_FILE_NAME.substring(0, dot))
-                    .append(";")
-                    .newline()
-                    .append("use crate::udf::*;")
-                    .newline();
-        }
+        int dot = DBSPCompiler.UDF_FILE_NAME.lastIndexOf(".");
+        stream.append("mod ")
+                .append(DBSPCompiler.UDF_FILE_NAME.substring(0, dot))
+                .append(";")
+                .newline()
+                .append("use crate::udf::*;")
+                .newline();
         return stream.toString();
     }
 

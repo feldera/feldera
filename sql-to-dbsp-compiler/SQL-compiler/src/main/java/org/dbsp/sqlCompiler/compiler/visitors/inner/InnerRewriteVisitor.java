@@ -1233,7 +1233,7 @@ public abstract class InnerRewriteVisitor
     public VisitDecision preorder(DBSPFunction function) {
         this.push(function);
         DBSPType returnType = this.transform(function.returnType);
-        DBSPExpression body = this.transform(function.body);
+        DBSPExpression body = this.transformN(function.body);
         List<DBSPParameter> parameters =
                 Linq.map(function.parameters, p -> this.apply(p).to(DBSPParameter.class));
         this.pop(function);
