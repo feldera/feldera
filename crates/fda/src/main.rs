@@ -493,6 +493,18 @@ async fn pipeline(action: PipelineAction, client: Client) {
             recompile,
             no_wait,
         } => {
+            let current_status = client
+                .get_pipeline()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl.clone(),
+                    "Failed to get pipeline status",
+                    1,
+                ))
+                .unwrap();
+
             let _r = client
                 .post_pipeline_action()
                 .pipeline_name(name.clone())
@@ -505,7 +517,6 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     1,
                 ))
                 .unwrap();
-
             wait_for_status(
                 &client,
                 name.clone(),
@@ -514,7 +525,10 @@ async fn pipeline(action: PipelineAction, client: Client) {
             )
             .await;
 
-            println!("Pipeline shutdown successful.");
+            if current_status.deployment_status != PipelineStatus::Shutdown {
+                println!("Pipeline shutdown successful.");
+            }
+
             let _ = Box::pin(pipeline(
                 PipelineAction::Start {
                     name,
