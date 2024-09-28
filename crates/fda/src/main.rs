@@ -319,6 +319,15 @@ async fn wait_for_status(
             info!("{}", waiting_text);
             print_every_30_seconds = tokio::time::Instant::now();
         }
+
+        if wait_for != PipelineStatus::Shutdown && pc.deployment_status == PipelineStatus::Failed {
+            if let Some(deployment_error) = &pc.deployment_error {
+                eprintln!("{}", deployment_error.message);
+            } else {
+                eprintln!("Pipeline failed to reach status {:?}", wait_for);
+            }
+            std::process::exit(1);
+        }
         sleep(Duration::from_millis(500)).await;
     }
 }
@@ -356,7 +365,11 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 std::process::exit(1);
             }
         }
-        PipelineAction::Start { name, recompile } => {
+        PipelineAction::Start {
+            name,
+            recompile,
+            no_wait,
+        } => {
             if recompile {
                 // Force recompilation by adding/removing a space at the end of the program code.
                 let pc = client
@@ -425,20 +438,31 @@ async fn pipeline(action: PipelineAction, client: Client) {
 
             let response = client
                 .post_pipeline_action()
-                .pipeline_name(name)
+                .pipeline_name(name.clone())
                 .action("start")
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
-                    client.baseurl,
+                    client.baseurl.clone(),
                     "Failed to start pipeline",
                     1,
                 ))
                 .unwrap();
-            println!("Pipeline started successfully.");
+
+            if !no_wait {
+                wait_for_status(
+                    &client,
+                    name.clone(),
+                    PipelineStatus::Running,
+                    "Starting the pipeline...",
+                )
+                .await;
+                println!("Pipeline started successfully.");
+            }
+
             trace!("{:#?}", response);
         }
-        PipelineAction::Pause { name } => {
+        PipelineAction::Pause { name, no_wait } => {
             let response = client
                 .post_pipeline_action()
                 .pipeline_name(name.clone())
@@ -452,18 +476,23 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 ))
                 .unwrap();
 
-            wait_for_status(
-                &client,
-                name.clone(),
-                PipelineStatus::Paused,
-                "Pausing the pipeline...",
-            )
-            .await;
-
-            println!("Pipeline paused successfully.");
+            if !no_wait {
+                wait_for_status(
+                    &client,
+                    name.clone(),
+                    PipelineStatus::Paused,
+                    "Pausing the pipeline...",
+                )
+                .await;
+                println!("Pipeline paused successfully.");
+            }
             trace!("{:#?}", response);
         }
-        PipelineAction::Restart { name, recompile } => {
+        PipelineAction::Restart {
+            name,
+            recompile,
+            no_wait,
+        } => {
             let _r = client
                 .post_pipeline_action()
                 .pipeline_name(name.clone())
@@ -486,9 +515,17 @@ async fn pipeline(action: PipelineAction, client: Client) {
             .await;
 
             println!("Pipeline shutdown successful.");
-            let _ = Box::pin(pipeline(PipelineAction::Start { name, recompile }, client)).await;
+            let _ = Box::pin(pipeline(
+                PipelineAction::Start {
+                    name,
+                    recompile,
+                    no_wait,
+                },
+                client,
+            ))
+            .await;
         }
-        PipelineAction::Shutdown { name } => {
+        PipelineAction::Shutdown { name, no_wait } => {
             let response = client
                 .post_pipeline_action()
                 .pipeline_name(name.clone())
@@ -502,15 +539,17 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 ))
                 .unwrap();
 
-            wait_for_status(
-                &client,
-                name.clone(),
-                PipelineStatus::Shutdown,
-                "Shutting down the pipeline...",
-            )
-            .await;
+            if !no_wait {
+                wait_for_status(
+                    &client,
+                    name.clone(),
+                    PipelineStatus::Shutdown,
+                    "Shutting down the pipeline...",
+                )
+                .await;
+                println!("Pipeline shutdown successful.");
+            }
 
-            println!("Pipeline shutdown successful.");
             trace!("{:#?}", response);
         }
         PipelineAction::Stats { name } => {
@@ -707,6 +746,7 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     PipelineAction::Start {
                         name: name.clone(),
                         recompile: false,
+                        no_wait: false,
                     },
                     client,
                 ))
