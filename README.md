@@ -1,19 +1,42 @@
-# The Feldera Incremental Computation Engine
+<h1 align="center">
+  <a href="https://feldera.com">
+    <picture>
+      <source height="125" media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/feldera/docs.feldera.com/refs/heads/main/static/img/logo-color-light.svg">
+      <img height="125" alt="Feldera" src="https://raw.githubusercontent.com/feldera/docs.feldera.com/refs/heads/main/static/img/logo.svg">
+    </picture>
+  </a>
+  <br>
+  <br>
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-green.svg">
+  </a>
+  <a href="https://github.com/feldera/feldera/actions/workflows/ci.yml">
+    <img src="https://github.com/feldera/feldera/actions/workflows/ci.yml/badge.svg?event=merge_group">
+  </a>
+  <a href="https://github.com/feldera/feldera/actions/workflows/ci-nightly.yml" >
+    <img alt="Nightly" src="https://github.com/feldera/feldera/actions/workflows/ci-nightly.yml/badge.svg?event=merge_group">
+  </a>
+  <a href="https://github.com/feldera/feldera/actions/workflows/containers.yml">
+    <img src="https://github.com/feldera/feldera/actions/workflows/containers.yml/badge.svg">
+  </a>
+  <a href="https://www.feldera.com/community">
+    <img salt="Slack" src="https://img.shields.io/badge/slack-blue.svg?logo=slack">
+  </a>
+  <a href="https://discord.gg/5YBX9Uw5u7">
+    <img alt="Discord" src="https://img.shields.io/badge/discord-blue.svg?logo=discord&logoColor=white">
+  </a>
+  <a href="https://www.feldera.com/sandbox">
+    <img alt="Sandbox" src="https://img.shields.io/badge/feldera_sandbox-blue?logo=CodeSandbox">
+  </a>
+</h1>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![CI workflow](https://github.com/feldera/feldera/actions/workflows/ci.yml/badge.svg?event=merge_group)](https://github.com/feldera/feldera/actions)
-[![CI nightly](https://github.com/feldera/feldera/actions/workflows/ci-nightly.yml/badge.svg?event=merge_group)](https://github.com/feldera/feldera/actions)
-[![Containers](https://github.com/feldera/feldera/actions/workflows/containers.yml/badge.svg)](https://github.com/feldera/feldera/actions/workflows/containers.yml)
-[![Benchmarks](https://github.com/feldera/feldera/actions/workflows/benchmark-command.yml/badge.svg?event=merge_group)](https://benchmarks.feldera.io)
-[![Slack](https://img.shields.io/badge/slack-blue.svg?logo=slack)](https://www.feldera.com/community)
-[![Discord](https://img.shields.io/badge/discord-blue.svg?logo=discord&logoColor=white)](https://discord.gg/5YBX9Uw5u7)
-[![Sandbox](https://img.shields.io/badge/feldera_sandbox-blue?logo=CodeSandbox)](https://www.feldera.com/sandbox)
+<p align="center">
+  <em><b><a href="https://feldera.com">Feldera</a></b></em> is a fast query engine for <b>incremental computation</b>. Feldera has the <a href="#-theory">unique</a> ability to <b>evaluate arbitrary SQL programs incrementally</b>, making it more powerful, expressive and performant than existing alternatives like batch engines, warehouses, stream processors or streaming databases.
+</p>
 
-[Feldera](https://www.feldera.com) is a
-fast query engine for *incremental computation*.
-Feldera has the [unique](#theory) ability to *evaluate arbitrary SQL programs
-incrementally*, making it more powerful, expressive and performant than existing
-alternatives like batch engines, warehouses, stream processors or streaming databases.
+---
+
+## 🔥 Incremental Computation Engine
 
 Our approach to incremental computation is simple. A Feldera `pipeline` is a set of SQL tables and views. Views can be
 deeply nested.
@@ -30,7 +53,7 @@ and real-time
 feature engineering pipelines, ETL pipelines, various forms of incremental and periodic analytical jobs over batch data,
 and more.
 
-Our defining features:
+## 🎯 Our defining Features
 
 1. **Full SQL support and more.**  Our engine is the only one in existence that can evaluate full SQL
    syntax and semantics completely incrementally. This includes joins and aggregates, group by, correlated subqueries,
@@ -52,13 +75,13 @@ Our defining features:
    sources, like Kafka, HTTP, CDC streams, S3, Data Lakes, Warehouses and more.
    If you need a connector that we don't yet support, [let us know](https://github.com/feldera/feldera/issues).
 
-## Architecture
+## 💻 Architecture
 
 The following diagram shows Feldera's architecture
 
 ![Feldera Platform Architecture](architecture.svg)
 
-## Quick start with Docker
+## ⚡️ Quick start with Docker
 
 First, make sure you have [Docker Compose](https://docs.docker.com/compose/) installed.
 
@@ -77,7 +100,7 @@ to bring it up. We suggest going through our [tutorial](https://docs.feldera.com
 Our [Getting Started](https://docs.feldera.com/get-started) guide has more detailed instructions on running the
 demo.
 
-## Running Feldera from sources
+## ⚙️ Running Feldera from sources
 
 To run Feldera from sources, first install all the required
 [dependencies](CONTRIBUTING.md). This includes the Rust toolchain (at least 1.75), Java (at
@@ -100,7 +123,7 @@ As with the Docker instructions above, you can now visit
 [http://localhost:8080](http://localhost:8080) on your browser to see the
 Feldera WebConsole.
 
-## Documentation
+## 📖 Documentation
 
 To learn more about Feldera Platform, we recommend going through the
 [documentation](https://docs.feldera.com).
@@ -112,12 +135,22 @@ To learn more about Feldera Platform, we recommend going through the
 * [SQL reference](https://docs.feldera.com/sql/intro)
 * [API reference](https://www.feldera.com/api)
 
-## Contributing
+## 🤖 Benchmarks
 
-Most of the software in this repository is governed by an open-source license.
+Feldera is generally [faster and uses less memory](https://www.feldera.com/blog/nexmark-vs-flink)
+than systems like stream processors. Our Benchmarks are performed by our CI on every commit that goes in
+`main`. If you want to see all the results, please visit [benchmarks.feldera.io](https://benchmarks.feldera.io/).
+
+<p float="left" align="middle">
+  <img src="https://www.feldera.com/_next/image?url=https://cdn.sanity.io/images/nlte859i/production/c80a9d592fb6f6e4cf2c7a665add24da65998123-1740x493.png?D75&fit=clip&auto=format&w=1920&q=100" width="100%">
+</p>
+
+## 👍 Contributing
+
+The software in this repository is governed by an open-source license.
 We welcome contributions. Here are some [guidelines](CONTRIBUTING.md).
 
-## Theory
+## 🎓 Theory
 
 Feldera Platform achieves its objectives by building on a solid mathematical
 foundation. The formal model that underpins our system, called DBSP, is
