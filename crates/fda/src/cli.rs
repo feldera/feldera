@@ -73,17 +73,18 @@ pub struct Cli {
     pub auth: Option<String>,
     /// The client timeout for requests in seconds.
     ///
-    /// In almost all cases you should not need to change this value.
-    /// It can be helpful to increase this if you want to evaluate long-running
-    /// ad-hoc queries in the shell.
+    /// In almost all cases you should not need to set this value, but it can
+    /// be useful to limit the execution of certain commands (e.g., `query` or
+    /// `logs`).
+    ///
+    /// By default, no timeout is set.
     #[arg(
         long,
         env = "FELDERA_REQUEST_TIMEOUT",
         global = true,
-        help_heading = "Global Options",
-        default_value_t = 120
+        help_heading = "Global Options"
     )]
-    pub timeout: u64,
+    pub timeout: Option<u64>,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
