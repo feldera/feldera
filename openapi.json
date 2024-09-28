@@ -1962,51 +1962,6 @@
           }
         ]
       },
-      "AwsCredentials": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "NoSignRequest"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Authenticate using a long-lived AWS access key and secret",
-            "required": [
-              "aws_access_key_id",
-              "aws_secret_access_key",
-              "type"
-            ],
-            "properties": {
-              "aws_access_key_id": {
-                "type": "string"
-              },
-              "aws_secret_access_key": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "AccessKey"
-                ]
-              }
-            }
-          }
-        ],
-        "description": "Configuration to authenticate against AWS",
-        "discriminator": {
-          "propertyName": "type"
-        }
-      },
       "Chunk": {
         "type": "object",
         "description": "A set of updates to a SQL table or view.\n\nThe `sequence_number` field stores the offset of the chunk relative to the\nstart of the stream and can be used to implement reliable delivery.\nThe payload is stored in the `bin_data`, `text_data`, or `json_data` field\ndepending on the data format used.",
@@ -2163,39 +2118,6 @@
           }
         ],
         "description": "A data connector's configuration"
-      },
-      "ConsumeStrategy": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "Fragment"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": [
-                  "Object"
-                ]
-              }
-            }
-          }
-        ],
-        "description": "Strategy to feed a fetched object into an InputConsumer."
       },
       "DatagenInputConfig": {
         "type": "object",
@@ -3579,52 +3501,6 @@
           }
         }
       },
-      "ReadStrategy": {
-        "oneOf": [
-          {
-            "type": "object",
-            "description": "Read a single object specified by a key",
-            "required": [
-              "key",
-              "type"
-            ],
-            "properties": {
-              "key": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "SingleKey"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Read all objects whose keys match a prefix",
-            "required": [
-              "prefix",
-              "type"
-            ],
-            "properties": {
-              "prefix": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "Prefix"
-                ]
-              }
-            }
-          }
-        ],
-        "description": "Strategy that determines which objects to read from a given bucket",
-        "discriminator": {
-          "propertyName": "type"
-        }
-      },
       "Relation": {
         "allOf": [
           {
@@ -3826,28 +3702,45 @@
         "type": "object",
         "description": "Configuration for reading data from AWS S3.",
         "required": [
-          "credentials",
           "region",
-          "bucket_name",
-          "read_strategy"
+          "bucket_name"
         ],
         "properties": {
+          "aws_access_key_id": {
+            "type": "string",
+            "description": "AWS Access Key id. This property must be specified unless `no_sign_request` is set to `true`.",
+            "nullable": true
+          },
+          "aws_secret_access_key": {
+            "type": "string",
+            "description": "Secret Access Key. This property must be specified unless `no_sign_request` is set to `true`.",
+            "nullable": true
+          },
           "bucket_name": {
             "type": "string",
-            "description": "S3 bucket name to access"
+            "description": "S3 bucket name to access."
           },
-          "consume_strategy": {
-            "$ref": "#/components/schemas/ConsumeStrategy"
+          "key": {
+            "type": "string",
+            "description": "Read a single object specified by a key.",
+            "nullable": true
           },
-          "credentials": {
-            "$ref": "#/components/schemas/AwsCredentials"
+          "no_sign_request": {
+            "type": "boolean",
+            "description": "Do not sign requests. This is equivalent to the `--no-sign-request` flag in the AWS CLI."
           },
-          "read_strategy": {
-            "$ref": "#/components/schemas/ReadStrategy"
+          "prefix": {
+            "type": "string",
+            "description": "Read all objects whose keys match a prefix. Set to an empty string to read all objects in the bucket.",
+            "nullable": true
           },
           "region": {
             "type": "string",
-            "description": "AWS region"
+            "description": "AWS region."
+          },
+          "streaming": {
+            "type": "boolean",
+            "description": "Determines how the connector ingests an individual S3 object. When `true`,\nthe connector pushes the object to the pipeline chunk-by-chunk, so that the\npipeline can parse and process initial chunks of the object before the entire\nobject has been retrieved. This mode is suitable for streaming formats such as\nnewline-delimited JSON. When `false`, the connector buffers the entire object\nin memory and pushes it to the pipeline as a single chunk.  Appropriate for\nformats like Parquet that cannot be streamed.\n\nThe default value is `false`."
           }
         }
       },
