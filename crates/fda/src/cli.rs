@@ -212,12 +212,18 @@ pub enum PipelineAction {
         /// This is useful for dev purposes in case the Feldera source-code has changed.
         #[arg(long, short = 'r', default_value_t = false)]
         recompile: bool,
+        /// Don't wait for pipeline to reach the status before returning.
+        #[arg(long, short = 'n', default_value_t = false)]
+        no_wait: bool,
     },
     /// Pause a pipeline.
     Pause {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
+        /// Don't wait for pipeline to reach the status before returning.
+        #[arg(long, short = 'n', default_value_t = false)]
+        no_wait: bool,
     },
     /// Shutdown a pipeline, then restart it.
     ///
@@ -231,6 +237,9 @@ pub enum PipelineAction {
         /// This is useful for dev purposes in case the Feldera source-code has changed.
         #[arg(long, short = 'r', default_value_t = false)]
         recompile: bool,
+        /// Don't wait for pipeline to reach the status before returning.
+        #[arg(long, short = 'n', default_value_t = false)]
+        no_wait: bool,
     },
     /// Shutdown a pipeline.
     #[clap(aliases = &["stop"])]
@@ -238,6 +247,9 @@ pub enum PipelineAction {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
+        /// Don't wait for pipeline to reach the status before returning.
+        #[arg(long, short = 'n', default_value_t = false)]
+        no_wait: bool,
     },
     /// Retrieve the entire state of a pipeline.
     ///
