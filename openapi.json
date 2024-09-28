@@ -1294,7 +1294,7 @@
             }
           },
           "400": {
-            "description": "Pipeline is not running or paused",
+            "description": "Pipeline is not running or paused, or getting a heap profile is not supported on this platform",
             "content": {
               "application/json": {
                 "schema": {

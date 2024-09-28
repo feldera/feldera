@@ -682,7 +682,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
             , body = ErrorResponse
             , example = json!(examples::error_unknown_pipeline())),
         (status = BAD_REQUEST
-            , description = "Pipeline is not running or paused"
+            , description = "Pipeline is not running or paused, or getting a heap profile is not supported on this platform"
             , body = ErrorResponse
             , example = json!(examples::error_pipeline_not_running_or_paused()))
     ),

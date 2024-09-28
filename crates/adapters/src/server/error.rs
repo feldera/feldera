@@ -311,7 +311,7 @@ impl ResponseError for PipelineError {
             Self::MissingUrlEncodedParam { .. } => StatusCode::BAD_REQUEST,
             Self::ApiConnectionLimit => StatusCode::TOO_MANY_REQUESTS,
             Self::ParseErrors { .. } => StatusCode::BAD_REQUEST,
-            Self::HeapProfilerError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::HeapProfilerError { .. } => StatusCode::BAD_REQUEST,
             Self::ControllerError { error } => error.status_code(),
             Self::AdHocQueryError { .. } => StatusCode::BAD_REQUEST,
         }
