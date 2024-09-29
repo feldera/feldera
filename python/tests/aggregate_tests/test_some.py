@@ -1,43 +1,55 @@
-from .test_base import TestTable, TestView
+from .test_base import TestView
 
-class test_some_table(TestTable):
+class test_int_some(TestView):
     def __init__(self):
-        self.data = [{"id": 0, "c1": 5, "c2": 2, "c3": None, "c4": 4, "c5": 5, "c6": 6, "c7": None, "c8": 8},
-                     {"id": 1,"c1": 4, "c2": 3, "c3": 4, "c4": 6, "c5": 2, "c6": 3, "c7": 4, "c8": 2},
-                     {"id" :0 ,"c1": 4, "c2": 2, "c3": 30, "c4": 14, "c5": None, "c6": 60, "c7": 70, "c8": 18},
-                     {"id": 1,"c1": 5, "c2": 3, "c3": None, "c4": 9, "c5": 51, "c6": 6, "c7": 72, "c8": 2}]
-        self.sql = '''CREATE TABLE some_table(
-                      id INT NOT NULL,
-                      c1 TINYINT,
-                      c2 TINYINT NOT NULL,
-                      c3 INT2,
-                      c4 INT2 NOT NULL,
-                      c5 INT,
-                      c6 INT NOT NULL,
-                      c7 BIGINT,
-                      c8 BIGINT NOT NULL)'''
+        # Validated on Postgres
+        self.data = [{'c1': True, 'c2': True, 'c3': True, 'c4': True, 'c5': True, 'c6': True, 'c7': True, 'c8': True}]
+        self.sql = '''CREATE VIEW int_some AS SELECT
+                      SOME(c1 = 4) AS c1, SOME(c2 > 1) AS c2, SOME(c3>3) AS c3, SOME(c4>1) AS c4, SOME(c5>1) AS c5, SOME(c6 % 2 = 1) AS c6, SOME(c7>2) AS c7, SOME(c8>2) AS c8
+                      FROM int0_tbl'''
 
-class test_some(TestView):
+class test_int_some_groupby(TestView):
     def __init__(self):
-        # checked manually
-        self.data = [{'some_res': True}]
-        self.sql = '''CREATE VIEW some_view AS SELECT SOME(c4>3) AS some_res FROM some_table'''
+        # Validated on Postgres
+        self.data = [{'id': 0, 'c1': False, 'c2': True, 'c3': False, 'c4': True, 'c5': True, 'c6': False, 'c7': True, 'c8': True},
+                     {'id': 1, 'c1': True, 'c2': True, 'c3': True, 'c4': True, 'c5': True, 'c6': True, 'c7': True, 'c8': True}]
+        self.sql = '''CREATE VIEW int_some_gby AS SELECT 
+                      id, SOME(c1 = 4) AS c1, SOME(c2 > 1) AS c2, SOME(c3>3) AS c3, SOME(c4>1) AS c4, SOME(c5>1) AS c5, SOME(c6 % 2 = 1) AS c6, SOME(c7>2) AS c7, SOME(c8>2) AS c8
+                      FROM int0_tbl
+                      GROUP BY id'''
 
-class test_some_groupby(TestView):
+class test_int_some_distinct(TestView):
     def __init__(self):
-        # checked manually
-        self.data = [{'some_res': True}, {'some_res': True}]
-        self.sql = '''CREATE VIEW some_gby AS SELECT SOME(c4>3) AS some_res FROM some_table GROUP BY id'''
+        # Validated on Postgres
+        self.sql = '''CREATE VIEW int_some_distinct AS SELECT
+                      SOME(DISTINCT(c1 = 4)) AS c1, SOME(DISTINCT(c2 > 1)) AS c2, SOME(DISTINCT(c3>3)) AS c3, SOME(DISTINCT(c4>1)) AS c4, SOME(DISTINCT(c5>1)) AS c5, SOME(DISTINCT(c6 % 2 = 1)) AS c6, SOME(DISTINCT(c7>2)) AS c7, SOME(DISTINCT(c8>2)) AS c8
+                      FROM int0_tbl'''
+        self.data = [{'c1': True, 'c2': True, 'c3': True, 'c4': True, 'c5': True, 'c6': True, 'c7': True, 'c8': True}]
 
-class test_some_where(TestView):
+class test_int_some_distinct_gby(TestView):
     def __init__(self):
-        # checked manually
-        self.data = [{'some_res': True}]
-        self.sql = '''CREATE VIEW some_where AS SELECT SOME(c4=4) AS some_res FROM some_table WHERE c6=6'''
+        # Validated on Postgres
+        self.sql = '''CREATE VIEW int_some_distinct_gby AS SELECT
+                      id, SOME(DISTINCT(c1 = 4)) AS c1, SOME(DISTINCT(c2 > 1)) AS c2, SOME(DISTINCT(c3>3)) AS c3, SOME(DISTINCT(c4>1)) AS c4, SOME(DISTINCT(c5>1)) AS c5, SOME(DISTINCT(c6 % 2 = 1)) AS c6, SOME(DISTINCT(c7>2)) AS c7, SOME(DISTINCT(c8>2)) AS c8
+                      FROM int0_tbl
+                      GROUP BY id'''
+        self.data = [{'id': 0, 'c1': False, 'c2': True, 'c3': False, 'c4': True, 'c5': True, 'c6': False, 'c7': True, 'c8': True}, 
+                     {'id': 1, 'c1': True, 'c2': True, 'c3': True, 'c4': True, 'c5': True, 'c6': True, 'c7': True, 'c8': True}]
 
-class test_some_where_groupby(TestView):
+class test_int_some_where(TestView):
     def __init__(self):
-        # checked manually
-        self.data = [{'some_res': True}, {'some_res': True}]
-        self.sql = '''CREATE VIEW some_where_gby AS SELECT SOME(c4>4) AS some_res FROM some_table WHERE c6>3 GROUP BY id'''
+        # Validated on Postgres
+        self.data = [{'c1': True, 'c2': True, 'c3': True, 'c4': True, 'c5': True, 'c6': True, 'c7': True, 'c8': True}]
+        self.sql = '''CREATE VIEW int_some_where AS SELECT 
+                      SOME(c1 = 4) FILTER (WHERE c1 > 0) AS c1, SOME(c2 > 1) FILTER (WHERE c1 > 0) AS c2, SOME(c3 > 3) FILTER (WHERE c1 > 0) AS c3, SOME(c4 > 1) FILTER (WHERE c1 > 0) AS c4, SOME(c5 > 1) FILTER (WHERE c1 > 0) AS c5, SOME(c6 % 2 = 1) FILTER (WHERE c1 > 0) AS c6, SOME(c7 > 2) FILTER (WHERE c1 > 0) AS c7, SOME(c8 > 2) FILTER (WHERE c1 > 0) AS c8
+                      FROM int0_tbl'''
 
+class test_int_some_where_groupby(TestView):
+    def __init__(self):
+        # Validated on Postgres
+        self.data = [{'id': 0, 'c1': False, 'c2': True, 'c3': None, 'c4': True, 'c5': True, 'c6': False, 'c7': None, 'c8': True},
+                     {'id': 1, 'c1': True, 'c2': True, 'c3': True, 'c4': True, 'c5': True, 'c6': True, 'c7': True, 'c8': False}]
+        self.sql = '''CREATE VIEW int_some_where_gby AS SELECT 
+                      id, SOME(c1 = 4) FILTER (WHERE c1 > 0) AS c1, SOME(c2 > 1) FILTER (WHERE c1 > 0) AS c2, SOME(c3 > 3) FILTER (WHERE c1 > 0) AS c3, SOME(c4 > 1) FILTER (WHERE c1 > 0) AS c4, SOME(c5 > 1) FILTER (WHERE c1 > 0) AS c5, SOME(c6 % 2 = 1) FILTER (WHERE c1 > 0) AS c6, SOME(c7 > 2) FILTER (WHERE c1 > 0) AS c7, SOME(c8 > 2) FILTER (WHERE c1 > 0) AS c8
+                      FROM int0_tbl 
+                      GROUP BY id'''

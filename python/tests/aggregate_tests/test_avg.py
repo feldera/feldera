@@ -5,7 +5,7 @@ class test_int_avg(TestView):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_avg_value AS SELECT
                       AVG(c1) AS c1,AVG(c2) AS c2,AVG(c3) AS c3,AVG(c4) AS c4,AVG(c5) AS c5,AVG(c6) AS c6,AVG(c7) AS c7,AVG(c8) AS c8
-                      FROM int0_tbl;'''
+                      FROM int0_tbl'''
         self.data = [{'c1': 4, 'c2': 3, 'c3': 4, 'c4': 3, 'c5': 3, 'c6': 3, 'c7': 3, 'c8': 4}]
 
 class test_int_avg_gby(TestView):
@@ -14,7 +14,7 @@ class test_int_avg_gby(TestView):
         self.sql = '''CREATE VIEW int_avg_gby AS SELECT
                       id, AVG(c1) AS c1,AVG(c2) AS c2,AVG(c3) AS c3,AVG(c4) AS c4,AVG(c5) AS c5,AVG(c6) AS c6,AVG(c7) AS c7,AVG(c8) AS c8
                       FROM int0_tbl
-                      GROUP BY id;'''
+                      GROUP BY id'''
         self.data = [{'id': 0, 'c1': 5, 'c2': 2, 'c3': 3, 'c4': 3, 'c5': 4, 'c6': 5, 'c7': 3, 'c8': 5},
                      {'id': 1, 'c1': 4, 'c2': 4, 'c3': 5, 'c4': 4, 'c5': 2, 'c6': 2, 'c7': 4, 'c8': 3}]
 
