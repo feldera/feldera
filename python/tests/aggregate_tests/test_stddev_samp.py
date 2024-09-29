@@ -43,13 +43,13 @@ class test_int_stddev_where(TestView):
         self.sql = '''CREATE VIEW int_stddev_where AS SELECT
                       STDDEV_SAMP(c1) FILTER (WHERE c1 > 0) AS c1, STDDEV_SAMP(c2) FILTER (WHERE c1 > 0) AS c2, STDDEV_SAMP(c3) FILTER (WHERE c1 > 0) AS c3, STDDEV_SAMP(c4) FILTER (WHERE c1 > 0) AS c4, STDDEV_SAMP(c5) FILTER (WHERE c1 > 0) AS c5, STDDEV_SAMP(c6) FILTER (WHERE c1 > 0) AS c6, STDDEV_SAMP(c7) FILTER (WHERE c1 > 0) AS c7, STDDEV_SAMP(c8) FILTER (WHERE c1 > 0) AS c8
                       FROM int0_tbl'''
-                    
+
 class test_int_stddev_where_groupby1(TestView):
     def __init__(self):
         # Validated on Postgres
         self.data = [{'id': 0, 'c1': None, 'c2': 0, 'c3': None, 'c4': 1, 'c5': 1, 'c6': 1, 'c7': None, 'c8': 3},
                      {'id': 1, 'c1': None, 'c2': None, 'c3': None, 'c4': None, 'c5': None, 'c6': None, 'c7': None, 'c8': None}]
-        self.sql = '''CREATE VIEW int_stddev_where_gby1 AS SELECT 
+        self.sql = '''CREATE VIEW int_stddev_where_gby1 AS SELECT
                       id, STDDEV_SAMP(c1) FILTER (WHERE c8>2) AS c1, STDDEV_SAMP(c2) FILTER (WHERE c8>2) AS c2, STDDEV_SAMP(c3) FILTER (WHERE c8>2) AS c3, STDDEV_SAMP(c4) FILTER (WHERE c8>2) AS c4, STDDEV_SAMP(c5) FILTER (WHERE c8>2) AS c5, STDDEV_SAMP(c6) FILTER (WHERE c8>2) AS c6, STDDEV_SAMP(c7) FILTER (WHERE c8>2) AS c7, STDDEV_SAMP(c8) FILTER (WHERE c8>2) AS c8
-                      FROM int0_tbl 
-                      GROUP BY id'''       
+                      FROM int0_tbl
+                      GROUP BY id'''
