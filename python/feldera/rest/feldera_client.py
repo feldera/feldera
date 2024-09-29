@@ -3,6 +3,7 @@ import logging
 import time
 import json
 from decimal import Decimal
+from typing import Generator
 
 from feldera.rest.config import Config
 from feldera.rest.pipeline import Pipeline
@@ -375,3 +376,94 @@ class FelderaClient:
                 break
             if chunk:
                 yield json.loads(chunk, parse_float=Decimal)
+
+    def query(self, pipeline_name: str, query: str, fmt: str) -> str | bytes | Generator[dict, None, None]:
+        """
+        Executes an ad-hoc query on the specified data pipeline.
+
+        :param pipeline_name: The name of the pipeline to query.
+        :param query: The SQL query to be executed.
+        :param fmt: The format in which to return the query result:
+
+            - "text": Returns a string in tabular format representing the query result.
+            - "parquet": Returns a binary blob of data in Parquet format, which can be saved as a file.
+            - "json": Returns a generator that yields each row of the result as a Python dictionary.
+
+        :return: Depending on the format (`fmt`) provided:
+
+            - For "text": A string representing the query result in tabular form.
+            - For "parquet": A binary blob representing the query result in Parquet format.
+            - For "json": A generator that produces dictionaries for each row in the query result.
+        """
+
+        match fmt.lower():
+            case "text":
+                return self.query_as_text(pipeline_name, query)
+            case "parquet":
+                return self.query_as_parquet(pipeline_name, query)
+            case _:
+                return self.query_as_json(pipeline_name, query)
+
+    def query_as_text(self, pipeline_name: str, query: str) -> str:
+        """
+        Executes an ad-hoc query on the specified pipeline and returns the result as a formatted text table.
+
+        :param pipeline_name: The name of the pipeline to query.
+        :param query: The SQL query to be executed.
+        :return: A string containing the query result in tabular format.
+        """
+        params = {
+            "pipeline_name": pipeline_name,
+            "sql": query,
+            "format": "text",
+        }
+
+        return self.http.get(
+            path=f"/pipelines/{pipeline_name}/query",
+            params=params,
+        )
+
+    def query_as_parquet(self, pipeline_name: str, query: str) -> bytes:
+        """
+        Executes an ad-hoc query on the specified pipeline and returns the result as a Parquet binary blob.
+
+        :param pipeline_name: The name of the pipeline to query.
+        :param query: The SQL query to be executed.
+        :return: A binary blob representing the query result in Parquet format, which can be saved as a file.
+        """
+        params = {
+            "pipeline_name": pipeline_name,
+            "sql": query,
+            "format": "parquet",
+        }
+
+        return self.http.get(
+            path=f"/pipelines/{pipeline_name}/query",
+            params=params,
+        )
+
+    def query_as_json(self, pipeline_name: str, query: str) -> Generator[dict, None, None]:
+        """
+        Executes an ad-hoc query on the specified pipeline and returns the result as a generator that yields
+        rows of the query as Python dictionaries.
+
+        :param pipeline_name: The name of the pipeline to query.
+        :param query: The SQL query to be executed.
+        :return: A generator that yields each row of the result as a Python dictionary, deserialized from JSON.
+        """
+        params = {
+            "pipeline_name": pipeline_name,
+            "sql": query,
+            "format": "json",
+        }
+
+        resp = self.http.get(
+            path=f"/pipelines/{pipeline_name}/query",
+            params=params,
+            stream=True,
+        )
+
+        for chunk in resp.iter_lines(chunk_size=50000000):
+            if chunk:
+                yield json.loads(chunk, parse_float=Decimal)
+
