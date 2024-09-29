@@ -7,6 +7,7 @@ from feldera import PipelineBuilder, Pipeline
 from tests import TEST_CLIENT
 from decimal import Decimal
 
+
 class TestVariant(unittest.TestCase):
     def test_local(self):
         sql = f"""
@@ -33,9 +34,9 @@ FROM variant_table;
         pipeline = PipelineBuilder(TEST_CLIENT, name="test_variant", sql=sql).create_or_replace()
 
         input_strings = [
-            {"json":"{\"name\":\"Bob\",\"scores\":[8,10]}"},
-            {"json":"{\"name\":\"Dunce\",\"scores\":[3,4]}"},
-            {"json":"{\"name\":\"John\",\"scores\":[9,10]}"}
+            {"json": "{\"name\":\"Bob\",\"scores\":[8,10]}"},
+            {"json": "{\"name\":\"Dunce\",\"scores\":[3,4]}"},
+            {"json": "{\"name\":\"John\",\"scores\":[9,10]}"}
         ]
 
         input_json = [
@@ -47,25 +48,25 @@ FROM variant_table;
         expected_strings = [j | {"insert_delete": 1} for j in input_strings]
 
         expected_average = [
-            { "name": "Bob", "average": Decimal(9) },
-            { "name": "Dunce", "average": Decimal(3.5) },
-            { "name": "John", "average": Decimal(9.5) }
+            {"name": "Bob", "average": Decimal(9)},
+            {"name": "Dunce", "average": Decimal(3.5)},
+            {"name": "John", "average": Decimal(9.5)}
         ]
         for datum in expected_average:
             datum.update({"insert_delete": 1})
 
         expected_typed = [
-            { "name": "Bob", "scores": [8, 10] },
-            { "name": "Dunce", "scores": [3, 4] },
-            { "name": "John", "scores": [9, 10] }
+            {"name": "Bob", "scores": [8, 10]},
+            {"name": "Dunce", "scores": [3, 4]},
+            {"name": "John", "scores": [9, 10]}
         ]
         for datum in expected_typed:
             datum.update({"insert_delete": 1})
 
         expected_variant = [
-            {"json": { "name": "Bob", "scores": [8, 10] }},
-            {"json": { "name": "Dunce", "scores": [3, 4] }},
-            {"json": { "name": "John", "scores": [9, 10] }}
+            {"json": {"name": "Bob", "scores": [8, 10]}},
+            {"json": {"name": "Dunce", "scores": [3, 4]}},
+            {"json": {"name": "John", "scores": [9, 10]}}
         ]
         for datum in expected_variant:
             datum.update({"insert_delete": 1})
@@ -97,6 +98,7 @@ FROM variant_table;
         pipeline.wait_for_completion(True)
 
         pipeline.delete()
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -62,6 +62,7 @@ class HttpRequests:
                     timeout=timeout,
                     headers=headers,
                     params=params,
+                    stream=stream,
                 )
             elif isinstance(body, bytes):
                 request = http_method(
@@ -81,8 +82,14 @@ class HttpRequests:
                     params=params,
                     stream=stream,
                 )
-                if stream:
-                    return request
+
+            if stream:
+                return request
+            if request.headers.get("content-type") == "text/plain":
+                return request.text
+            elif request.headers.get("content-type") == "application/octet-stream":
+                return request.content
+
             resp = self.__validate(request)
             logging.debug("got response: %s", str(resp))
             return resp
@@ -95,9 +102,10 @@ class HttpRequests:
     def get(
             self,
             path: str,
-            params: Optional[Mapping[str, Any]] = None
+            params: Optional[Mapping[str, Any]] = None,
+            stream: bool = False,
     ) -> Any:
-        return self.send_request(requests.get, path, params)
+        return self.send_request(requests.get, path, params=params, stream=stream)
 
     def post(
             self,

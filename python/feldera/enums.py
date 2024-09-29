@@ -184,3 +184,18 @@ class PipelineStatus(Enum):
 
     def __eq__(self, other):
         return self.value == other.value
+
+
+class QueryResponseFormat(Enum):
+    """
+    The format of the response returned for the output of a query.
+    """
+
+    JSON = 1
+    """
+    The output is serialized as JSON.
+    The response is deserialized into a python dictionary.
+    
+    """
+
+    PARQUET = 2

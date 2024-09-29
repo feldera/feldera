@@ -1,11 +1,11 @@
 import time
 import pandas
 
-from typing import List, Dict, Callable, Optional
+from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
 from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
-from feldera.enums import PipelineStatus
+from feldera.enums import PipelineStatus, QueryResponseFormat
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.feldera_client import FelderaClient
 from feldera._callback_runner import _CallbackRunnerInstruction, CallbackRunner
@@ -344,3 +344,39 @@ class Pipeline:
         except FelderaAPIError as err:
             if err.status_code == 404:
                 raise RuntimeError(f"Pipeline with name {name} not found")
+
+    def query(self, query: str, fmt: QueryResponseFormat) -> Generator[Mapping[str, Any], None, None]:
+        """
+        Executes an ad-hoc SQL query on this pipeline and returns the result in the specified format.
+
+        :param query: The SQL query to be executed.
+        :param fmt: An instance of the :class:`.QueryResponseFormat` enum, specifying the output format:
+
+            - `QueryResponseFormat.JSON`: Returns a generator that yields rows as Python dictionaries.
+            - `QueryResponseFormat.PARQUET`: Returns the result as a binary blob in Parquet format.
+
+        :return: A generator that yields the rows of the result as Python dictionaries when the format is JSON,
+                 or binary data when the format is Parquet.
+        """
+
+        if self.status() not in [
+            PipelineStatus.RUNNING,
+            PipelineStatus.PAUSED,
+        ]:
+            raise RuntimeError("Pipeline must be running or paused to run a query")
+        return self.client.query(self.name, query, fmt.name)
+
+    def query_tabular(self, query: str) -> str:
+        """
+        Executes a SQL query on this pipeline and returns the result as a formatted string.
+
+        :param query: The SQL query to be executed.
+        :return: A string representing the query result in a human-readable, tabular format.
+        """
+
+        if self.status() not in [
+            PipelineStatus.RUNNING,
+            PipelineStatus.PAUSED,
+        ]:
+            raise RuntimeError("Pipeline must be running or paused to run a query")
+        return self.client.query_as_text(self.name, query)

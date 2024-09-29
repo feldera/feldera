@@ -106,7 +106,7 @@ class TestPipeline(unittest.TestCase):
         TEST_CLIENT.shutdown_pipeline(name)
         TEST_CLIENT.delete_pipeline(name)
 
-    def __listener(self, name: str) -> bool:
+    def __listener(self, name: str):
 
         gen_obj = TEST_CLIENT.listen_to_pipeline(
             pipeline_name=name,
@@ -141,6 +141,79 @@ class TestPipeline(unittest.TestCase):
         t1.join()
 
         assert self.result
+
+        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.delete_pipeline(name)
+
+    def test_adhoc_query_text(self):
+        data = "1\n2\n"
+        name = str(uuid.uuid4())
+
+        sql = f"""
+        CREATE TABLE tbl(id INT) with ('materialized' = 'true');
+        """
+
+        pipeline = Pipeline(name, sql, {}, {})
+        pipeline = TEST_CLIENT.create_pipeline(pipeline)
+
+        TEST_CLIENT.start_pipeline(name)
+
+        TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
+        tbl = TEST_CLIENT.query(pipeline.name, "SELECT * FROM tbl", "text")
+        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.delete_pipeline(name)
+
+        expected = """+----+
+| id |
++----+
+| 2  |
+| 1  |
++----+"""
+
+        assert tbl == expected
+
+    def test_adhoc_query_parquet(self):
+        data = "1\n2\n"
+        name = str(uuid.uuid4())
+
+        sql = f"""
+        CREATE TABLE tbl(id INT) with ('materialized' = 'true');
+        """
+
+        pipeline = Pipeline(name, sql, {}, {})
+        pipeline = TEST_CLIENT.create_pipeline(pipeline)
+
+        TEST_CLIENT.start_pipeline(name)
+
+        TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
+        got: bytes = TEST_CLIENT.query(pipeline.name, "SELECT * FROM tbl", "parquet")
+        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.delete_pipeline(name)
+
+        expected = b'PAR1\x15\x04\x15\x10\x15\x14L\x15\x04\x15\x00\x12'
+
+        assert got.find(expected) == 0
+
+    def test_adhoc_query_json(self):
+        data = "1\n2\n"
+        name = str(uuid.uuid4())
+
+        sql = f"""
+        CREATE TABLE tbl(id INT) with ('materialized' = 'true');
+        """
+
+        pipeline = Pipeline(name, sql, {}, {})
+        pipeline = TEST_CLIENT.create_pipeline(pipeline)
+
+        TEST_CLIENT.start_pipeline(name)
+
+        TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
+        got = TEST_CLIENT.query(pipeline.name, "SELECT * FROM tbl", "json")
+
+        expected = [{"id": 2}, {"id": 1}]
+
+        for d, e in zip(got, expected):
+            assert d == e
 
         TEST_CLIENT.shutdown_pipeline(name)
         TEST_CLIENT.delete_pipeline(name)
