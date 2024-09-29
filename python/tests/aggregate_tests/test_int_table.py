@@ -18,7 +18,7 @@ class test_int0_table(TestTable):
                      {"id": 1,"c1": 4, "c2": 3, "c3": 4, "c4": 6, "c5": 2, "c6": 3, "c7": 4, "c8": 2},
                      {"id" : 0, "c1": None, "c2": 2, "c3": 3, "c4": 2, "c5": 3, "c6": 4, "c7": 3, "c8": 3},
                      {"id" : 1, "c1": None, "c2": 5, "c3": 6, "c4": 2, "c5": 2, "c6": 1, "c7": None, "c8": 5}]
-        
+
 class test_int_stddev_table(TestTable):
     """Define the table used by some integer tests"""
     def __init__(self):

@@ -49,7 +49,7 @@ class test_int_stddev_pop_where_groupby(TestView):
         # Validated on Postgres
         self.data = [{'id': 0, 'c1': 0, 'c2': 0, 'c3': 0, 'c4': 1, 'c5': 1, 'c6': 1, 'c7': 0, 'c8': 2},
                      {'id': 1, 'c1': None, 'c2': 0, 'c3': 0, 'c4': 0, 'c5': 0, 'c6': 0, 'c7': None, 'c8': 0}]
-        self.sql = '''CREATE VIEW int_stddev_pop_where_gby AS SELECT  
+        self.sql = '''CREATE VIEW int_stddev_pop_where_gby AS SELECT
                       id, STDDEV_POP(c1) FILTER (WHERE c8>2) AS c1, STDDEV_POP(c2) FILTER (WHERE c8>2) AS c2, STDDEV_POP(c3) FILTER (WHERE c8>2) AS c3, STDDEV_POP(c4) FILTER (WHERE c8>2) AS c4, STDDEV_POP(c5) FILTER (WHERE c8>2) AS c5, STDDEV_POP(c6) FILTER (WHERE c8>2) AS c6, STDDEV_POP(c7) FILTER (WHERE c8>2) AS c7, STDDEV_POP(c8) FILTER (WHERE c8>2) AS c8
                       FROM int0_tbl
                       GROUP BY id'''

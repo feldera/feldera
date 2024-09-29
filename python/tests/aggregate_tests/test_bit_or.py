@@ -47,7 +47,7 @@ class test_int_bit_or_where(TestView):
 class test_int_bit_or_where_groupby(TestView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{'id': 0, 'f_c1': 5, 'f_c2': 2, 'f_c3': 3, 'f_c4': 6, 'f_c5': 7, 'f_c6': 6, 'f_c7': 3, 'f_c8': 11}, 
+        self.data = [{'id': 0, 'f_c1': 5, 'f_c2': 2, 'f_c3': 3, 'f_c4': 6, 'f_c5': 7, 'f_c6': 6, 'f_c7': 3, 'f_c8': 11},
                      {'id': 1, 'f_c1': None, 'f_c2': 5, 'f_c3': 6, 'f_c4': 2, 'f_c5': 2, 'f_c6': 1, 'f_c7': None, 'f_c8': 5}]
         self.sql =  '''CREATE VIEW int_bit_or_where_gby AS SELECT
                        id, BIT_OR(c1) FILTER(WHERE c8>2) AS f_c1, BIT_OR(c2) FILTER(WHERE c8>2) AS f_c2, BIT_OR(c3) FILTER(WHERE c8>2) AS f_c3, BIT_OR(c4) FILTER(WHERE c8>2) AS f_c4, BIT_OR(c5) FILTER(WHERE c8>2) AS f_c5, BIT_OR(c6) FILTER(WHERE c8>2) AS f_c6, BIT_OR(c7) FILTER(WHERE c8>2) AS f_c7, BIT_OR(c8) FILTER(WHERE c8>2) AS f_c8
