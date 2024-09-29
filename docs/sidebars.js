@@ -164,6 +164,11 @@ const sidebars = {
                                 },
                                 {
                                     type: 'doc',
+                                    id: 'connectors/sources/s3',
+                                    label: 'AWS S3'
+                                },
+                                {
+                                    type: 'doc',
                                     id: 'connectors/sources/datagen',
                                     label: 'Data Generator'
                                 }
