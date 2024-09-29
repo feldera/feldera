@@ -208,8 +208,8 @@ class TestView:
 ## Add here import statements for all files with tests
 
 from tests.aggregate_tests import test_decimal_table, test_decimal_avg, test_decimal_sum
-from tests.aggregate_tests import test_bit_table, test_bit_and, test_bit_xor, test_bit_or
-from tests.aggregate_tests import test_int_table, test_int_avg, test_sum, test_avg
+from tests.aggregate_tests import test_bit_and, test_bit_xor, test_bit_or
+from tests.aggregate_tests import test_int_table, test_sum, test_avg
 from tests.aggregate_tests import test_array, test_every, test_some, test_count, test_count_col
 from tests.aggregate_tests import test_max, test_min, test_stddev_pop, test_stddev_samp
 
