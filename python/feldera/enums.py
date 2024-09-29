@@ -195,7 +195,7 @@ class QueryResponseFormat(Enum):
     """
     The output is serialized as JSON.
     The response is deserialized into a python dictionary.
-    
+
     """
 
     PARQUET = 2
