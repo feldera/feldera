@@ -25,7 +25,6 @@
     })
   }
   const pipeline = useWritablePipeline(
-    () => pipelineName,
     () => data.preloadedPipeline,
     () => goto(`${base}/`)
   )

@@ -8,7 +8,9 @@ export const load = async ({ params, route, url, fetch, parent }) => {
   await parent()
   const preloadedPipeline = await getExtendedPipeline(decodeURIComponent(params.pipelineName), {
     fetch,
-    onNotFound: () => goto(`${base}/`)
+    onNotFound: () => {
+      goto(`${base}/`)
+    }
   })
   return {
     preloadedPipeline
