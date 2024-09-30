@@ -16,6 +16,7 @@ export const useAggregatePipelineStats = (
   refetchMs: number,
   keepMs?: number
 ) => {
+  let timeout = $state<NodeJS.Timeout>()
   let pipelineStatus = $derived(pipeline.current.status)
   const doFetch = (pipelineName: string) => {
     if (!isMetricsAvailable(pipelineStatus)) {
@@ -23,21 +24,28 @@ export const useAggregatePipelineStats = (
       getMetrics = () => metrics
       return
     }
+    let requestTimestamp = Date.now()
     getPipelineStats(pipelineName).then((stats) => {
-      metrics[pipelineName] = accumulatePipelineMetrics(refetchMs, keepMs)(
-        metrics[pipelineName],
-        stats.status === 'not running' ? { status: null } : stats
-      )
+      let responseTimestamp = Date.now()
+      metrics[pipelineName] = accumulatePipelineMetrics(
+        (requestTimestamp + responseTimestamp) / 2,
+        refetchMs,
+        keepMs
+      )(metrics[pipelineName], stats.status === 'not running' ? { status: null } : stats)
       getMetrics = () => metrics
+      timeout = setTimeout(
+        () => doFetch(pipelineName),
+        Math.max(0, requestTimestamp + refetchMs - responseTimestamp)
+      )
     })
   }
 
   let pipelineName = $derived(pipeline.current.name)
   $effect(() => {
-    const interval = setInterval(() => doFetch(pipelineName), refetchMs)
-    doFetch(pipelineName)
+    pipelineName
+    queueMicrotask(() => doFetch(pipelineName))
     return () => {
-      clearInterval(interval)
+      clearTimeout(timeout)
     }
   })
   return {
