@@ -5,9 +5,8 @@ use crate::{
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
     },
-    CircuitCatalog, Controller, ControllerError, DbspCircuitHandle, FormatConfig,
-    InputEndpointConfig, InputFormat, OutputEndpoint, OutputEndpointConfig, OutputFormat,
-    PipelineConfig, TransportInputEndpoint,
+    CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, InputFormat,
+    OutputEndpoint, OutputEndpointConfig, OutputFormat, PipelineConfig, TransportInputEndpoint,
 };
 use actix_web::body::MessageBody;
 use actix_web::dev::Service;
@@ -21,7 +20,7 @@ use actix_web::{
 };
 use clap::Parser;
 use colored::Colorize;
-use dbsp::circuit::CircuitConfig;
+use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use env_logger::Env;
 use feldera_types::config::default_max_batch_size;
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
@@ -155,10 +154,7 @@ pub struct ServerArgs {
 ///   input/output stream catalog.
 pub fn server_main<F>(circuit_factory: F) -> Result<(), ControllerError>
 where
-    F: FnOnce(
-            CircuitConfig,
-        )
-            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
         + Send
         + 'static,
 {
@@ -172,10 +168,7 @@ where
 
 pub fn run_server<F>(args: ServerArgs, circuit_factory: F) -> Result<(), ControllerError>
 where
-    F: FnOnce(
-            CircuitConfig,
-        )
-            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
         + Send
         + 'static,
 {
@@ -306,10 +299,7 @@ fn bootstrap<F>(
     state: WebData<ServerState>,
     loginit_sender: StdSender<()>,
 ) where
-    F: FnOnce(
-            CircuitConfig,
-        )
-            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
         + Send
         + 'static,
 {
@@ -367,10 +357,7 @@ fn do_bootstrap<F>(
     loginit_sender: StdSender<()>,
 ) -> Result<(), ControllerError>
 where
-    F: FnOnce(
-            CircuitConfig,
-        )
-            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
         + Send
         + 'static,
 {
