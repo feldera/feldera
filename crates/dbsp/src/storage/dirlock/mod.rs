@@ -155,7 +155,9 @@ impl LockedDirectory {
     pub fn new<P: AsRef<Path>>(base_path: P) -> Result<LockedDirectory, StorageError> {
         let pid = sysinfo::get_current_pid().expect("failed to get current pid");
         if !base_path.as_ref().exists() {
-            return Err(StorageError::StorageLocationNotFound);
+            return Err(StorageError::StorageLocationNotFound(
+                base_path.as_ref().to_path_buf(),
+            ));
         }
         Self::with_pid(base_path, pid)
     }
