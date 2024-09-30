@@ -37,12 +37,14 @@
       }
       const { cancel } = parseUTF8JSON(
         stream,
-        pushChanges(pipelineName, relationName),
-        (skippedBytes) => {
-          pushChanges(pipelineName, relationName)([{ skippedBytes }])
-          changeStream[pipelineName].totalSkippedBytes += skippedBytes
+        {
+          pushChanges: pushChanges(pipelineName, relationName),
+          onBytesSkipped: (skippedBytes) => {
+            pushChanges(pipelineName, relationName)([{ skippedBytes }])
+            changeStream[pipelineName].totalSkippedBytes += skippedBytes
+          },
+          onParseEnded: undefined
         },
-        undefined,
         {
           paths: ['$.json_data.*'],
           bufferSize: 10 * 1024 * 1024
@@ -206,8 +208,7 @@
                     startReadingStream(pipelineName, relation.relationName)
                 }
               }}
-              value={relation}
-            />
+              value={relation} />
             {relation.relationName}
           </label>
         {/snippet}
@@ -234,7 +235,7 @@
       {#if getChangeStream()[pipelineName]?.rows?.length}
         <ChangeStream changeStream={getChangeStream()[pipelineName]}></ChangeStream>
       {:else}
-        <span class="p-2 text-surface-600-400">
+        <span class="text-surface-600-400 p-2">
           {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
             The selected tables and views have not emitted any new changes
           {:else}

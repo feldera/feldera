@@ -105,19 +105,21 @@
       }
       const { cancel } = parseUTF8JSON(
         stream,
-        pushChanges,
-        (skippedBytes) => {
-          if (!adhocQueries[pipelineName].queries[i]?.result) {
-            return
+        {
+          pushChanges,
+          onBytesSkipped: (skippedBytes) => {
+            if (!adhocQueries[pipelineName].queries[i]?.result) {
+              return
+            }
+            adhocQueries[pipelineName].queries[i].result.totalSkippedBytes += skippedBytes
+          },
+          onParseEnded: () => {
+            if (!adhocQueries[pipelineName].queries[i]) {
+              return
+            }
+            adhocQueries[pipelineName].queries[i].progress = false
+            getAdhocQueries = () => adhocQueries
           }
-          adhocQueries[pipelineName].queries[i].result.totalSkippedBytes += skippedBytes
-        },
-        () => {
-          if (!adhocQueries[pipelineName].queries[i]) {
-            return
-          }
-          adhocQueries[pipelineName].queries[i].progress = false
-          getAdhocQueries = () => adhocQueries
         },
         {
           paths: ['$'],
@@ -155,8 +157,7 @@
           ? adhocQueries[pipelineName].queries[i].result?.endResultStream
           : undefined}
         disabled={isIdle}
-        isLastQuery={getAdhocQueries()[pipelineName].queries.length === i + 1}
-      ></Query>
+        isLastQuery={getAdhocQueries()[pipelineName].queries.length === i + 1}></Query>
     {/if}
   {/each}
 </div>
