@@ -20,12 +20,18 @@
   }
 
   const handleSubmit = (e: { currentTarget: EventTarget & HTMLInputElement }) => {
-    if (value !== e.currentTarget.value) {
-      value = e.currentTarget.value
+    if (_value !== e.currentTarget.value) {
+      value = _value = e.currentTarget.value
       onvalue?.(e.currentTarget.value)
     }
     showInput = false
   }
+  // Local _value can be updated instantly and checked within sequential onblur and onkeydown handlers,
+  // unlike $bindable value
+  let _value = value
+  $effect(() => {
+    _value = value
+  })
 </script>
 
 {#if showInput}

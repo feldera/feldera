@@ -6,19 +6,28 @@ import {
 } from '$lib/services/pipelineManager'
 import invariant from 'tiny-invariant'
 
-export const useWritablePipeline = (
-  pipelineName: () => string,
-  preloaded: () => ExtendedPipeline,
-  onNotFound?: () => void
-) => {
-  if (!pipelineName()) {
+export const useWritablePipeline = (preloaded: () => ExtendedPipeline, onNotFound?: () => void) => {
+  let pipeline = $state(preloaded())
+  let pipelineName = $derived(pipeline.name)
+
+  if (!pipelineName) {
     throw new Error('Cannot use pipeline without specifying its name')
   }
 
-  let pipeline = $state(preloaded())
-
   const reload = async () => {
-    pipeline = await getExtendedPipeline(pipelineName(), { onNotFound })
+    const requestedPipelineName = pipelineName
+    let loaded = await getExtendedPipeline(requestedPipelineName, {
+      onNotFound: () => {
+        if (requestedPipelineName !== pipelineName) {
+          return
+        }
+        onNotFound?.()
+      }
+    })
+    if (requestedPipelineName !== pipelineName) {
+      return
+    }
+    pipeline = loaded
   }
 
   let interval: NodeJS.Timeout
@@ -31,8 +40,7 @@ export const useWritablePipeline = (
     interval = setInterval(reload, 2000)
   }
   $effect(() => {
-    restartInterval()
-    reload()
+    queueMicrotask(reload)
     return () => {
       clearInterval(interval)
     }
@@ -44,7 +52,7 @@ export const useWritablePipeline = (
       return pipeline
     },
     async patch(newPipeline: Partial<Pipeline>) {
-      return (pipeline = await patchPipeline(pipelineName(), newPipeline))
+      return (pipeline = await patchPipeline(pipelineName, newPipeline))
     },
     async optimisticUpdate(newPipeline: Partial<ExtendedPipeline>) {
       if (!pipeline) {

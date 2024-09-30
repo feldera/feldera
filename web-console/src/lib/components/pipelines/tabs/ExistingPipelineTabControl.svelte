@@ -25,6 +25,9 @@
       return existing
     },
     set value(name: string) {
+      if (name === existing) {
+        return
+      }
       const newUrl = `${base}/pipelines/${encodeURIComponent(name)}/`
       patchPipeline(existing, { name }).then(() => {
         onRenamePipeline?.({ existing }, { existing: name })
