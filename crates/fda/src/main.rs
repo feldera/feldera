@@ -822,14 +822,18 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 .pipeline_name(name)
                 .format("text")
                 .sql(sql.unwrap_or_else(|| {
-                    assert!(stdin, "stdin and sql are mutually exclusive options");
-                    let mut program_code = String::new();
-                    let mut stdin = std::io::stdin();
-                    if stdin.read_to_string(&mut program_code).is_ok() {
-                        debug!("Read SQL from stdin");
-                        program_code
+                    if stdin {
+                        let mut program_code = String::new();
+                        let mut stdin_stream = std::io::stdin();
+                        if stdin_stream.read_to_string(&mut program_code).is_ok() {
+                            debug!("Read SQL from stdin");
+                            program_code
+                        } else {
+                            eprintln!("Failed to read SQL from stdin");
+                            std::process::exit(1);
+                        }
                     } else {
-                        eprintln!("Failed to read SQL from stdin");
+                        eprintln!("`query` command expects a SQL query or a pipe from stdin. For example, `fda query p1 'select * from foo'` or `echo 'select * from foo' | fda query p1`");
                         std::process::exit(1);
                     }
                 }))
