@@ -1,6 +1,6 @@
 # Feldera Cloud Sandbox
 
-Feldera maintains an online sandbox where you can try tutorials and
+Feldera maintains an [online sandbox](https://try.feldera.com) where you can try tutorials and
 demos to help you learn about Feldera's product and features, without
 having to install anything yourself.
 
