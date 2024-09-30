@@ -102,7 +102,7 @@
       />
       <div class="-mb-2 pt-2 text-surface-600-400">Press Enter to create</div>
     {:else}
-      <div class="flex">
+      <div class="flex justify-center">
         <button
           class="btn mb-7 mt-auto self-end text-sm preset-filled-primary-500"
           onclick={() => goto('#new')}
