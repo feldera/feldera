@@ -24,10 +24,9 @@
       addOpenedTab(pipelineName)
     })
   }
-
   const pipeline = useWritablePipeline(
     () => pipelineName,
-    data.preloadedPipeline,
+    () => data.preloadedPipeline,
     () => goto(`${base}/`)
   )
 </script>
