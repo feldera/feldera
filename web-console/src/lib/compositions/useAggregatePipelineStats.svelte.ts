@@ -18,8 +18,9 @@ export const useAggregatePipelineStats = (
 ) => {
   let timeout = $state<NodeJS.Timeout>()
   let pipelineStatus = $derived(pipeline.current.status)
+  let metricsAvailable = $derived(isMetricsAvailable(pipelineStatus))
   const doFetch = (pipelineName: string) => {
-    if (!isMetricsAvailable(pipelineStatus)) {
+    if (!metricsAvailable) {
       metrics[pipelineName] = emptyPipelineMetrics
       getMetrics = () => metrics
       return
@@ -43,6 +44,7 @@ export const useAggregatePipelineStats = (
   let pipelineName = $derived(pipeline.current.name)
   $effect(() => {
     pipelineName
+    metricsAvailable
     queueMicrotask(() => doFetch(pipelineName))
     return () => {
       clearTimeout(timeout)
