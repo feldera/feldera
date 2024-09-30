@@ -58,7 +58,7 @@ fn main() {
         circuit(cconfig)
             .map(|(dbsp, catalog)| {
                 (
-                    Box::new(dbsp) as Box<dyn dbsp_adapters::DbspCircuitHandle>,
+                    dbsp,
                     Box::new(catalog) as Box<dyn dbsp_adapters::CircuitCatalog>,
                 )
             })

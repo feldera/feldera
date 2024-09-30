@@ -155,7 +155,6 @@ use serde::Serialize;
 
 pub(crate) mod adhoc;
 mod catalog;
-mod circuit_handle;
 mod controller;
 pub mod format;
 pub mod integrated;
@@ -185,8 +184,6 @@ pub enum PipelineState {
 
 // Re-export `DetailedError`.
 pub use dbsp::DetailedError;
-
-pub use circuit_handle::DbspCircuitHandle;
 
 pub use server::{ErrorResponse, PipelineError};
 
