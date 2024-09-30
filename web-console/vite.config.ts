@@ -2,7 +2,6 @@ import { defineConfig } from 'vite'
 
 import svg from '@poppanator/sveltekit-svg'
 import { sveltekit } from '@sveltejs/kit/vite'
-import { monaco } from '@bithero/monaco-editor-vite-plugin'
 
 import viteSvgToWebfont from 'vite-svg-2-webfont'
 import { resolve } from 'path'
@@ -28,10 +27,6 @@ export default defineConfig(async () => {
         classPrefix: 'fd-',
         moduleId: 'vite-svg-2-webfont.css',
         cssFontsUrl: '/'
-      }),
-      monaco({
-        features: ['clipboard', 'dropOrPasteInto', 'find', 'lineSelection', 'wordHighlighter'],
-        languages: ['sql', 'json', 'rust']
       })
     ],
     build: {
