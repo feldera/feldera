@@ -104,6 +104,7 @@ pub struct StorageConfig {
     pub path: String,
 
     /// How to cache access to storage in this pipeline.
+    #[serde(default)]
     pub cache: StorageCacheConfig,
 }
 
