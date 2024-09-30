@@ -19,6 +19,7 @@
 //! buffered via `InputConsumer::queued`.
 
 use crate::catalog::OutputCollectionHandles;
+use crate::create_integrated_output_endpoint;
 use crate::transport::InputReader;
 use crate::transport::Step;
 use crate::transport::{
@@ -30,7 +31,6 @@ use crate::{
     OutputConsumer, OutputEndpoint, OutputFormat, ParseError, PipelineState,
     TransportInputEndpoint,
 };
-use crate::{create_integrated_output_endpoint, DbspCircuitHandle};
 use anyhow::Error as AnyError;
 use arrow::datatypes::Schema;
 use crossbeam::{
@@ -40,6 +40,7 @@ use crossbeam::{
 use datafusion::prelude::*;
 use dbsp::circuit::{CircuitConfig, Layout};
 use dbsp::profile::GraphProfile;
+use dbsp::DBSPHandle;
 use log::{debug, error, info, trace};
 use metrics::set_global_recorder;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
@@ -146,10 +147,7 @@ impl Controller {
         error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
-        F: FnOnce(
-                CircuitConfig,
-            )
-                -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>
+        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
             + Send
             + 'static,
     {
@@ -483,10 +481,7 @@ impl Controller {
         profile_request_receiver: Receiver<GraphProfileCallbackFn>,
     ) -> Result<(), ControllerError>
     where
-        F: FnOnce(
-            CircuitConfig,
-        )
-            -> Result<(Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>), ControllerError>,
+        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
     {
         let mut start: Option<Instant> = None;
         let min_storage_bytes = if controller.status.pipeline_config.global.storage {
@@ -556,7 +551,7 @@ impl Controller {
 
         loop {
             for reply_cb in profile_request_receiver.try_iter() {
-                reply_cb(circuit.graph_profile());
+                reply_cb(circuit.graph_profile().map_err(ControllerError::dbsp_error));
             }
             match controller.state() {
                 PipelineState::Running | PipelineState::Paused => {
@@ -632,7 +627,9 @@ impl Controller {
                         // backpressure.
                         controller.unpark_backpressure();
                         debug!("circuit thread: calling 'circuit.step'");
-                        circuit.step().unwrap_or_else(|e| controller.error(e));
+                        circuit
+                            .step()
+                            .unwrap_or_else(|e| controller.error(e.into()));
                         debug!("circuit thread: 'circuit.step' returned");
 
                         let processed_records = controller
