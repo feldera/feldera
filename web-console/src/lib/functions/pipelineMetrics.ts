@@ -46,7 +46,7 @@ const reconcileHistoricData = (
 }
 
 export const accumulatePipelineMetrics =
-  (refetchMs: number, keepMs?: number) => (oldData: any, x: any) => {
+  (newTimestamp: number, refetchMs: number, keepMs?: number) => (oldData: any, x: any) => {
     const { status: newData } = x
     invariant(((v: any): v is PipelineMetrics | undefined => true)(oldData))
     invariant(((v: any): v is ControllerStatus | null => true)(newData))
@@ -56,7 +56,6 @@ export const accumulatePipelineMetrics =
         lastTimestamp: undefined
       }
     }
-    const newTimestamp = Date.now()
     const globalWithTimestamp = {
       ...newData.global_metrics,
       timeMs: newTimestamp
@@ -129,14 +128,23 @@ export const accumulatePipelineMetrics =
     } as any
   }
 
+/**
+ * @returns Time series of throughput with smoothing window over 3 data intervals
+ */
 export const calcPipelineThroughput = (metrics: {
   global: (GlobalMetrics & { timeMs: number })[]
 }) => {
   const totalProcessed = metrics.global.map((m) => tuple(m.timeMs, m.total_processed_records))
-  const series = discreteDerivative(totalProcessed, (n1, n0) => ({
-    name: n1[0].toString(),
-    value: tuple(n1[0], ((n1[1] - n0[1]) * 1000) / (n1[0] - n0[0]))
-  }))
+  const series = discreteDerivative(totalProcessed, ({}, {}, i, arr) => {
+    const n3 = arr[i]
+    const n2 = arr[i - 1]
+    const n1 = arr[i - 2] ?? n2
+    const n0 = arr[i - 3] ?? n1
+    return {
+      name: n3[0].toString(),
+      value: tuple(n1[0], ((n3[1] - n0[1]) * 1000) / (n3[0] - n0[0]))
+    }
+  })
 
   const valueMax = series.length ? Math.max(...series.map((v) => v.value[1])) : 0
   const yMaxStep = Math.pow(10, Math.ceil(Math.log10(valueMax))) / 5

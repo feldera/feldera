@@ -16,14 +16,14 @@ export function clamp(number: number, min: number, max: number) {
  * @param f
  * @returns the list of results shorter by 1
  */
-export const discreteDerivative = <T, R>(arr: T[], f: (n1: T, n0: T) => R) => {
+export const discreteDerivative = <T, R>(arr: T[], f: (n1: T, n0: T, i: number, arr: T[]) => R) => {
   if (!arr.length) {
     return []
   }
   const len = arr.length - 1,
     result = new Array<R>(len)
   for (let i = 0; i < len; ++i) {
-    result[i] = f(arr[i + 1], arr[i])
+    result[i] = f(arr[i + 1], arr[i], i + 1, arr)
   }
   return result
 }
