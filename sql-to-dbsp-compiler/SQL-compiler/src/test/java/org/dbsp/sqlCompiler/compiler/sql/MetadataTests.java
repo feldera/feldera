@@ -329,12 +329,26 @@ public class MetadataTests extends BaseSQLTests {
             throw new RuntimeException(messages.toString());
         Utilities.compileAndTestRust(BaseSQLTests.rustDirectory, false);
 
-        Path protos = Paths.get(BaseSQLTests.rustDirectory, DBSPCompiler.PROTOS_FILE_NAME);
+        Path protos = Paths.get(BaseSQLTests.rustDirectory, DBSPCompiler.STUBS_FILE_NAME);
         Assert.assertTrue(protos.toFile().exists());
         List<String> str = Files.readAllLines(protos);
         Assert.assertEquals("""
-                pub fn CONTAINS_NUMBER(STR: String, VALUE: Option<i32>) -> bool;
-                pub fn empty() -> Option<String>;""", String.join(System.lineSeparator(), str));
+                //! stubs.rs
+                // Compiler-generated file
+                // Stubs for user-defined functions
+                
+                #![allow(non_snake_case)]
+                #![allow(non_camel_case_types)]
+                use crate::udf;
+                pub fn CONTAINS_NUMBER(STR: String, VALUE: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
+                    udf::CONTAINS_NUMBER(
+                        STR,
+                        VALUE)
+                }
+                pub fn empty() -> Result<Option<String>, Box<dyn std::error::Error>> {
+                    udf::empty(
+                    )
+                }""", String.join(System.lineSeparator(), str));
         boolean success = protos.toFile().delete();
         Assert.assertTrue(success);
 

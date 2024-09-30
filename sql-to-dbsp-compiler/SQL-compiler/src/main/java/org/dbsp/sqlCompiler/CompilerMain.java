@@ -38,8 +38,12 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import javax.sql.DataSource;
@@ -124,6 +128,16 @@ public class CompilerMain {
         }
     }
 
+    // For a function prototype like f(s: i32) -> i32;
+    // generate a body like
+    // udf::f(s)
+    DBSPFunction generateStubBody(DBSPFunction function) {
+        String name = "udf::" + function.name;
+        List<DBSPExpression> arguments = Linq.map(function.parameters, DBSPParameter::asVariable);
+        DBSPExpression expression = new DBSPApplyExpression(name, function.returnType, arguments.toArray(new DBSPExpression[0]));
+        return new DBSPFunction(function.name, function.parameters, function.returnType, expression, function.annotations);
+    }
+
     /** Run compiler, return exit code. */
     CompilerMessages run() throws SQLException {
         DBSPCompiler compiler = new DBSPCompiler(this.options);
@@ -198,20 +212,35 @@ public class CompilerMain {
 
         try {
             List<DBSPFunction> extern = Linq.where(compiler.functions, f -> f.body == null);
-            if (!extern.isEmpty()) {
-                String outputFile = this.options.ioOptions.outputFile;
-                if (!outputFile.isEmpty()) {
-                    String outputPath = new File(outputFile).getAbsolutePath();
-                    Path protos = Paths.get(outputPath).getParent().resolve(DBSPCompiler.PROTOS_FILE_NAME);
-                    PrintStream protosStream = new PrintStream(Files.newOutputStream(protos));
-                    if (compiler.options.ioOptions.verbosity > 0)
-                        System.out.println("Writing prototypes to file " + protos);
-                    for (DBSPFunction function : extern) {
-                        String str = ToRustInnerVisitor.toRustString(compiler, function, compiler.options, false);
-                        protosStream.println(str);
-                    }
-                    protosStream.close();
+            String outputFile = this.options.ioOptions.outputFile;
+            if (!outputFile.isEmpty()) {
+                String outputPath = new File(outputFile).getAbsolutePath();
+                Path stubs = Paths.get(outputPath).getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
+                PrintStream protosStream = new PrintStream(Files.newOutputStream(stubs));
+
+                if (compiler.options.ioOptions.verbosity > 0)
+                    System.out.println("Writing UDF stubs to file " + stubs);
+                protosStream.append("//! ")
+                        .append(DBSPCompiler.STUBS_FILE_NAME)
+                        .append("\n")
+                        .append("""        
+// Compiler-generated file
+// Stubs for user-defined functions
+
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
+""");
+                if (!extern.isEmpty())
+                    protosStream.append("use crate::")
+                            .append(Utilities.getBaseName(DBSPCompiler.UDF_FILE_NAME))
+                            .append(";\n");
+
+                for (DBSPFunction function : extern) {
+                    function = this.generateStubBody(function);
+                    String str = ToRustInnerVisitor.toRustString(compiler, function, compiler.options, false);
+                    protosStream.println(str);
                 }
+                protosStream.close();
             }
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,

@@ -100,7 +100,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     /** Name of the Rust file that will contain the user-defined functions.
      * The definitions supplied by the user will be copied here. */
     public static final String UDF_FILE_NAME = "udf.rs";
-    public static final String PROTOS_FILE_NAME = "protos.rs";
+    /** Name of the rust file that will contain stubs for all user-defined functions */
+    public static final String STUBS_FILE_NAME = "stubs.rs";
 
     final GlobalTypes globalTypes = new GlobalTypes();
 
