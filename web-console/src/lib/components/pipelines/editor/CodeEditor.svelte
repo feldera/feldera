@@ -45,6 +45,11 @@
       setTimeout(() => {
         editedText.pull()
       })
+      return () => {
+        if (autoSavePipeline.value) {
+          editedText.cancelDebounce()
+        }
+      }
     })
   }
 

@@ -1,5 +1,3 @@
-import { useDebounce } from 'runed'
-
 /**
  * Upstream and downstream changes do not immediately affect each other
  * On `.pull()` upstream is applied to downstream
@@ -13,14 +11,33 @@ export const useDecoupledState = <T extends string | number | boolean>(
   let downstreamChanged = $state(false)
   let downstream = $state({ current: upstream.current })
 
-  const debounceSet = useDebounce(
-    (value: T) => {
-      upstream.current = value
-      downstreamChanged = false
-      upstreamChanged = false
-    },
-    () => ((wait) => (wait === 'decoupled' ? 0 : wait))(wait())
-  )
+  let timeout = $state<NodeJS.Timeout>()
+
+  const cancelDebounce = () => {
+    clearTimeout(timeout)
+    timeout = undefined
+  }
+  const debounceSet = () => {
+    const periodMs = wait()
+    if (periodMs === 'decoupled') {
+      return
+    }
+    clearTimeout(timeout)
+    timeout = setTimeout(() => {
+      push()
+    }, periodMs)
+  }
+
+  const push = () => {
+    if (!downstreamChanged) {
+      return
+    }
+    cancelDebounce()
+    upstream.current = downstream.current
+    upstreamChanged = false
+    downstreamChanged = false
+  }
+
   $effect(() => {
     upstream.current
     setTimeout(() => {
@@ -41,25 +58,23 @@ export const useDecoupledState = <T extends string | number | boolean>(
     },
     set current(value: T) {
       downstream.current = value
-      downstreamChanged = downstream.current !== upstream.current
-      if (wait() === 'decoupled') {
-        return
-      }
-      debounceSet(value)
+      const isComparable =
+        typeof value === 'string' ||
+        typeof value === 'boolean' ||
+        typeof value === 'number' ||
+        typeof value === 'bigint'
+      downstreamChanged = isComparable ? downstream.current !== upstream.current : true
+      debounceSet()
     },
     pull() {
+      clearTimeout(timeout)
+      timeout = undefined
       downstream.current = upstream.current
       upstreamChanged = false
       downstreamChanged = false
     },
-    push() {
-      if (!downstreamChanged) {
-        return
-      }
-      upstream.current = downstream.current
-      upstreamChanged = false
-      downstreamChanged = false
-    },
+    push,
+    cancelDebounce,
     get upstreamChanged() {
       return upstreamChanged
     },
