@@ -976,3 +976,9 @@ impl From<ConfigError> for ControllerError {
         Self::Config { config_error }
     }
 }
+
+impl From<DBSPError> for ControllerError {
+    fn from(error: DBSPError) -> Self {
+        Self::DbspError { error }
+    }
+}

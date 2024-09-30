@@ -3,11 +3,11 @@
 #![allow(clippy::type_complexity)]
 
 use crate::{
-    controller::InputEndpointConfig, transport::InputReader, Catalog, CircuitCatalog,
-    DbspCircuitHandle, FormatConfig, InputFormat,
+    controller::InputEndpointConfig, transport::InputReader, Catalog, CircuitCatalog, FormatConfig,
+    InputFormat,
 };
 use anyhow::Result as AnyResult;
-use dbsp::{DBData, OrdZSet, Runtime};
+use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
 use env_logger::Env;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -177,7 +177,7 @@ where
 pub fn test_circuit<T>(
     config: CircuitConfig,
     schema: &[Field],
-) -> (Box<dyn DbspCircuitHandle>, Box<dyn CircuitCatalog>)
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
 where
     T: DBData
         + SerializeWithContext<SqlSerdeConfig>
@@ -211,7 +211,7 @@ where
         Ok(catalog)
     })
     .unwrap();
-    (Box::new(circuit), Box::new(catalog))
+    (circuit, Box::new(catalog))
 }
 
 pub fn list_files_recursive(dir: &Path, extension: &OsStr) -> Result<Vec<PathBuf>, std::io::Error> {
