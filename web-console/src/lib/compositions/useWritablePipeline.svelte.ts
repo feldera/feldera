@@ -8,21 +8,30 @@ import invariant from 'tiny-invariant'
 
 export const useWritablePipeline = (
   pipelineName: () => string,
-  preloaded: ExtendedPipeline,
+  preloaded: () => ExtendedPipeline,
   onNotFound?: () => void
 ) => {
   if (!pipelineName()) {
     throw new Error('Cannot use pipeline without specifying its name')
   }
 
-  let pipeline = $state(preloaded)
+  let pipeline = $state(preloaded())
 
   const reload = async () => {
     pipeline = await getExtendedPipeline(pipelineName(), { onNotFound })
   }
 
+  let interval: NodeJS.Timeout
   $effect(() => {
-    let interval = setInterval(reload, 2000)
+    restartInterval()
+    pipeline = preloaded()
+  })
+  const restartInterval = () => {
+    clearInterval(interval)
+    interval = setInterval(reload, 2000)
+  }
+  $effect(() => {
+    restartInterval()
     reload()
     return () => {
       clearInterval(interval)
