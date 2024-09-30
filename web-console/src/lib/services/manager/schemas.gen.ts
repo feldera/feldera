@@ -2545,7 +2545,7 @@ export const $StorageCacheConfig = {
 export const $StorageConfig = {
   type: 'object',
   description: 'Configuration for persistent storage in a [`PipelineConfig`].',
-  required: ['path', 'cache'],
+  required: ['path'],
   properties: {
     cache: {
       $ref: '#/components/schemas/StorageCacheConfig'
