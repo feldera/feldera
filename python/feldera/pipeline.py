@@ -5,7 +5,7 @@ from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
 from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
-from feldera.enums import PipelineStatus, QueryResponseFormat
+from feldera.enums import PipelineStatus
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.feldera_client import FelderaClient
 from feldera._callback_runner import _CallbackRunnerInstruction, CallbackRunner
@@ -345,18 +345,12 @@ class Pipeline:
             if err.status_code == 404:
                 raise RuntimeError(f"Pipeline with name {name} not found")
 
-    def query(self, query: str, fmt: QueryResponseFormat) -> Generator[Mapping[str, Any], None, None]:
+    def query(self, query: str) -> Generator[Mapping[str, Any], None, None]:
         """
         Executes an ad-hoc SQL query on this pipeline and returns the result in the specified format.
 
         :param query: The SQL query to be executed.
-        :param fmt: An instance of the :class:`.QueryResponseFormat` enum, specifying the output format:
-
-            - `QueryResponseFormat.JSON`: Returns a generator that yields rows as Python dictionaries.
-            - `QueryResponseFormat.PARQUET`: Returns the result as a binary blob in Parquet format.
-
-        :return: A generator that yields the rows of the result as Python dictionaries when the format is JSON,
-                 or binary data when the format is Parquet.
+        :return: A generator that yields the rows of the result as Python dictionaries.
         """
 
         if self.status() not in [
@@ -364,14 +358,30 @@ class Pipeline:
             PipelineStatus.PAUSED,
         ]:
             raise RuntimeError("Pipeline must be running or paused to run a query")
-        return self.client.query(self.name, query, fmt.name)
+        return self.client.query_as_json(self.name, query)
 
-    def query_tabular(self, query: str) -> str:
+    def query_parquet(self, query: str, path: str):
+        """
+        Executes an ad-hoc SQL query on this pipeline and saves the result to the specified path as a parquet file.
+        If the extension isn't `parquet`, it will be automatically appended to `path`.
+
+        :param query: The SQL query to be executed.
+        :param path: The path of the parquet file.
+        """
+
+        if self.status() not in [
+            PipelineStatus.RUNNING,
+            PipelineStatus.PAUSED,
+        ]:
+            raise RuntimeError("Pipeline must be running or paused to run a query")
+        self.client.query_as_parquet(self.name, query, path)
+
+    def query_tabular(self, query: str) -> Generator[str, None, None]:
         """
         Executes a SQL query on this pipeline and returns the result as a formatted string.
 
         :param query: The SQL query to be executed.
-        :return: A string representing the query result in a human-readable, tabular format.
+        :return: A generator that yields a string representing the query result in a human-readable, tabular format.
         """
 
         if self.status() not in [

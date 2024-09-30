@@ -1,3 +1,5 @@
+import os
+import pathlib
 import unittest
 import uuid
 import threading
@@ -159,10 +161,7 @@ class TestPipeline(unittest.TestCase):
         TEST_CLIENT.start_pipeline(name)
 
         TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
-        tbl = TEST_CLIENT.query(pipeline.name, "SELECT * FROM tbl", "text")
-        TEST_CLIENT.shutdown_pipeline(name)
-        TEST_CLIENT.delete_pipeline(name)
-
+        resp = TEST_CLIENT.query(pipeline.name, "SELECT * FROM tbl", "text")
         expected = """+----+
 | id |
 +----+
@@ -170,7 +169,11 @@ class TestPipeline(unittest.TestCase):
 | 1  |
 +----+"""
 
-        assert tbl == expected
+        got = '\n'.join(resp)
+        assert got == expected
+
+        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.delete_pipeline(name)
 
     def test_adhoc_query_parquet(self):
         data = "1\n2\n"
@@ -186,13 +189,16 @@ class TestPipeline(unittest.TestCase):
         TEST_CLIENT.start_pipeline(name)
 
         TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
-        got: bytes = TEST_CLIENT.query(pipeline.name, "SELECT * FROM tbl", "parquet")
+
+        file = name.split("-")[0]
+        TEST_CLIENT.query_as_parquet(pipeline.name, "SELECT * FROM tbl", file)
         TEST_CLIENT.shutdown_pipeline(name)
         TEST_CLIENT.delete_pipeline(name)
 
-        expected = b'PAR1\x15\x04\x15\x10\x15\x14L\x15\x04\x15\x00\x12'
+        path = pathlib.Path(file + ".parquet")
+        assert path.stat().st_size > 0
 
-        assert got.find(expected) == 0
+        os.remove(path)
 
     def test_adhoc_query_json(self):
         data = "1\n2\n"
@@ -208,12 +214,11 @@ class TestPipeline(unittest.TestCase):
         TEST_CLIENT.start_pipeline(name)
 
         TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
-        got = TEST_CLIENT.query(pipeline.name, "SELECT * FROM tbl", "json")
-
+        resp = TEST_CLIENT.query(pipeline.name, "SELECT * FROM tbl", "json")
         expected = [{"id": 2}, {"id": 1}]
+        got = list(resp)
 
-        for d, e in zip(got, expected):
-            assert d == e
+        assert got == expected
 
         TEST_CLIENT.shutdown_pipeline(name)
         TEST_CLIENT.delete_pipeline(name)
