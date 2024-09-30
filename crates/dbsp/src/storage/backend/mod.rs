@@ -172,8 +172,8 @@ pub enum StorageError {
     ShortRead,
 
     /// Storage location not found.
-    #[error("The requested (base) directory for storage does not exist.")]
-    StorageLocationNotFound,
+    #[error("The requested (base) directory for storage ({0:?}) does not exist.")]
+    StorageLocationNotFound(PathBuf),
 
     /// A process already locked the provided storage directory.
     ///
@@ -237,7 +237,9 @@ impl PartialEq for StorageError {
         match (self, other) {
             (Self::OverlappingWrites, Self::OverlappingWrites) => true,
             (Self::ShortRead, Self::ShortRead) => true,
-            (Self::StorageLocationNotFound, Self::StorageLocationNotFound) => true,
+            (Self::StorageLocationNotFound(path), Self::StorageLocationNotFound(other_path)) => {
+                path == other_path
+            }
             (Self::StorageLocked(pid, path), Self::StorageLocked(other_pid, other_path)) => {
                 pid == other_pid && path == other_path
             }
