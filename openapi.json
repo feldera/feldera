@@ -4080,8 +4080,7 @@
         "type": "object",
         "description": "Configuration for persistent storage in a [`PipelineConfig`].",
         "required": [
-          "path",
-          "cache"
+          "path"
         ],
         "properties": {
           "cache": {

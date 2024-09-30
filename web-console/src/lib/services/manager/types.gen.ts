@@ -1760,7 +1760,7 @@ export type StorageCacheConfig = 'page_cache' | 'feldera_cache'
  * Configuration for persistent storage in a [`PipelineConfig`].
  */
 export type StorageConfig = {
-  cache: StorageCacheConfig
+  cache?: StorageCacheConfig
   /**
    * The location where the pipeline state is stored or will be stored.
    *
