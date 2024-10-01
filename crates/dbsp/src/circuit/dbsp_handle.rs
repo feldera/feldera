@@ -1,7 +1,7 @@
 use crate::circuit::checkpointer::{CheckpointMetadata, Checkpointer};
 use crate::monitor::visual_graph::Graph;
 use crate::{
-    circuit::runtime::RuntimeHandle, profile::Profiler, Error as DBSPError, RootCircuit, Runtime,
+    circuit::runtime::RuntimeHandle, profile::Profiler, Error as DbspError, RootCircuit, Runtime,
     RuntimeError, SchedulerError,
 };
 use anyhow::Error as AnyError;
@@ -307,7 +307,7 @@ impl Runtime {
     pub fn init_circuit<F, T>(
         config: impl Into<CircuitConfig>,
         constructor: F,
-    ) -> Result<(DBSPHandle, T), DBSPError>
+    ) -> Result<(DBSPHandle, T), DbspError>
     where
         F: FnOnce(&mut RootCircuit) -> Result<T, AnyError> + Clone + Send + 'static,
         T: Send + 'static,
@@ -434,7 +434,7 @@ impl Runtime {
                 Ok(Ok(ret)) => init_status.push(Some(Ok(ret))),
                 Err(_) => {
                     let panic_info = runtime.collect_panic_info();
-                    init_status.push(Some(Err(DBSPError::Runtime(RuntimeError::WorkerPanic {
+                    init_status.push(Some(Err(DbspError::Runtime(RuntimeError::WorkerPanic {
                         panic_info,
                     }))))
                 }
@@ -544,12 +544,12 @@ impl DBSPHandle {
             .map(|runtime| runtime.collect_panic_info())
     }
 
-    fn broadcast_command<F>(&mut self, command: Command, mut handler: F) -> Result<(), DBSPError>
+    fn broadcast_command<F>(&mut self, command: Command, mut handler: F) -> Result<(), DbspError>
     where
         F: FnMut(usize, Response),
     {
         if self.runtime.is_none() {
-            return Err(DBSPError::Runtime(RuntimeError::Terminated));
+            return Err(DbspError::Runtime(RuntimeError::Terminated));
         }
 
         // Send command.
@@ -560,7 +560,7 @@ impl DBSPHandle {
                 // Worker thread panicked. Exit without waiting for all workers to exit
                 // to avoid deadlocks due to workers waiting for each other.
                 self.kill_async();
-                return Err(DBSPError::Runtime(RuntimeError::WorkerPanic { panic_info }));
+                return Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }));
             }
             self.runtime.as_ref().unwrap().unpark_worker(worker);
         }
@@ -585,11 +585,11 @@ impl DBSPHandle {
                     let panic_info = self.collect_panic_info().unwrap_or_default();
                     self.kill_async();
 
-                    return Err(DBSPError::Runtime(RuntimeError::WorkerPanic { panic_info }));
+                    return Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }));
                 }
                 Ok(Err(e)) => {
                     let _ = self.kill_inner();
-                    return Err(DBSPError::Scheduler(e));
+                    return Err(DbspError::Scheduler(e));
                 }
                 Ok(Ok(resp)) => handler(worker, resp),
             }
@@ -599,7 +599,7 @@ impl DBSPHandle {
     }
 
     /// Evaluate the circuit for one clock cycle.
-    pub fn step(&mut self) -> Result<(), DBSPError> {
+    pub fn step(&mut self) -> Result<(), DbspError> {
         counter!("feldera.dbsp.step").increment(1);
         self.step_id += 1;
         let span = Arc::new(
@@ -611,7 +611,7 @@ impl DBSPHandle {
     }
 
     /// Used by the checkpointer to initiate a commit on the circuit.
-    fn send_fingerprint(&mut self) -> Result<u64, DBSPError> {
+    fn send_fingerprint(&mut self) -> Result<u64, DbspError> {
         let mut fps: HashMap<usize, u64> = HashMap::new();
         self.broadcast_command(Command::Fingerprint, |idx, res| {
             if let Response::Fingerprint(fp) = res {
@@ -631,7 +631,7 @@ impl DBSPHandle {
         Ok(fps.values().next().copied().unwrap_or_default())
     }
 
-    pub fn fingerprint(&mut self) -> Result<u64, DBSPError> {
+    pub fn fingerprint(&mut self) -> Result<u64, DbspError> {
         if let Some(fp) = self.fingerprint {
             Ok(fp)
         } else {
@@ -641,10 +641,10 @@ impl DBSPHandle {
         }
     }
 
-    fn verify_storage_compatibility(&mut self) -> Result<(), DBSPError> {
+    fn verify_storage_compatibility(&mut self) -> Result<(), DbspError> {
         for cpm in self.checkpointer.list_checkpoints()? {
             if cpm.fingerprint != self.fingerprint()? {
-                return Err(DBSPError::Runtime(RuntimeError::IncompatibleStorage));
+                return Err(DbspError::Runtime(RuntimeError::IncompatibleStorage));
             }
         }
         Ok(())
@@ -652,7 +652,7 @@ impl DBSPHandle {
 
     /// Create a new checkpoint by taking consistent snapshot of the state in
     /// dbsp.
-    pub fn commit(&mut self) -> Result<CheckpointMetadata, DBSPError> {
+    pub fn commit(&mut self) -> Result<CheckpointMetadata, DbspError> {
         self.commit_as(Uuid::now_v7(), None)
     }
 
@@ -661,18 +661,18 @@ impl DBSPHandle {
     pub fn commit_named<S: Into<String> + AsRef<str>>(
         &mut self,
         name: S,
-    ) -> Result<CheckpointMetadata, DBSPError> {
+    ) -> Result<CheckpointMetadata, DbspError> {
         self.commit_as(Uuid::now_v7(), Some(name.into()))
     }
 
     /// Used by the checkpointer to initiate a commit on the circuit.
-    pub(super) fn send_commit(&mut self, uuid: Uuid) -> Result<u64, DBSPError> {
+    pub(super) fn send_commit(&mut self, uuid: Uuid) -> Result<u64, DbspError> {
         self.broadcast_command(Command::Commit(uuid), |_, _| {})?;
         Ok(self.step_id)
     }
 
     /// Used to reset operator state to the point of the given Commit.
-    fn send_restore(&mut self, uuid: Uuid) -> Result<(), DBSPError> {
+    fn send_restore(&mut self, uuid: Uuid) -> Result<(), DbspError> {
         self.broadcast_command(Command::Restore(uuid), |_, _| {})?;
         Ok(())
     }
@@ -681,7 +681,7 @@ impl DBSPHandle {
         &mut self,
         uuid: Uuid,
         identifier: Option<String>,
-    ) -> Result<CheckpointMetadata, DBSPError> {
+    ) -> Result<CheckpointMetadata, DbspError> {
         let fingerprint = self.fingerprint()?;
         self.checkpointer.create_checkpoint_dir(uuid)?;
         let step_id = self.send_commit(uuid)?;
@@ -692,7 +692,7 @@ impl DBSPHandle {
     }
 
     /// List all currently available checkpoints.
-    pub fn list_checkpoints(&mut self) -> Result<Vec<CheckpointMetadata>, DBSPError> {
+    pub fn list_checkpoints(&mut self) -> Result<Vec<CheckpointMetadata>, DbspError> {
         self.checkpointer.list_checkpoints()
     }
 
@@ -701,7 +701,7 @@ impl DBSPHandle {
     /// # Returns
     /// - Metadata of the removed checkpoint, if one was removed.
     /// - None otherwise.
-    pub fn gc_checkpoint(&mut self) -> Result<Option<CheckpointMetadata>, DBSPError> {
+    pub fn gc_checkpoint(&mut self) -> Result<Option<CheckpointMetadata>, DbspError> {
         self.checkpointer.gc_checkpoint()
     }
 
@@ -711,7 +711,7 @@ impl DBSPHandle {
     /// [`Self::dump_profile`] outputs CPU usage info along with memory
     /// usage and other circuit metadata.  CPU profiling introduces small
     /// runtime overhead.
-    pub fn enable_cpu_profiler(&mut self) -> Result<(), DBSPError> {
+    pub fn enable_cpu_profiler(&mut self) -> Result<(), DbspError> {
         self.broadcast_command(Command::EnableProfiler, |_, _| {})
     }
 
@@ -723,7 +723,7 @@ impl DBSPHandle {
     /// [`Self::enable_cpu_profiler`]), the profile will contain both CPU and
     /// memory usage information; otherwise only memory usage details are
     /// reported.
-    pub fn dump_profile<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<PathBuf, DBSPError> {
+    pub fn dump_profile<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<PathBuf, DbspError> {
         Ok(self.graph_profile()?.dump(dir_path)?)
     }
 
@@ -732,7 +732,7 @@ impl DBSPHandle {
     /// If CPU profiling was enabled (see [`Self::enable_cpu_profiler`]), the
     /// profile will contain both CPU and memory usage information; otherwise
     /// only memory usage details are reported.
-    pub fn graph_profile(&mut self) -> Result<GraphProfile, DBSPError> {
+    pub fn graph_profile(&mut self) -> Result<GraphProfile, DbspError> {
         let mut worker_graphs = vec![Default::default(); self.status_receivers.len()];
         self.broadcast_command(Command::DumpProfile, |worker, resp| {
             if let Response::ProfileDump(prof) = resp {
@@ -745,7 +745,7 @@ impl DBSPHandle {
         })
     }
 
-    pub fn retrieve_profile(&mut self) -> Result<DbspProfile, DBSPError> {
+    pub fn retrieve_profile(&mut self) -> Result<DbspProfile, DbspError> {
         let mut profiles = vec![Default::default(); self.status_receivers.len()];
 
         self.broadcast_command(Command::RetrieveProfile, |worker, resp| {
@@ -799,7 +799,7 @@ mod tests {
     use crate::trace::BatchReaderFactories;
     use crate::utils::Tup2;
     use crate::{
-        indexed_zset, zset, Circuit, DBSPHandle, Error as DBSPError, IndexedZSetHandle,
+        indexed_zset, zset, Circuit, DBSPHandle, Error as DbspError, IndexedZSetHandle,
         InputHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime, RuntimeError, Stream,
         TypedBox, ZSetHandle, ZWeight,
     };
@@ -829,7 +829,7 @@ mod tests {
             Ok(())
         });
 
-        if let DBSPError::Runtime(err) = res.unwrap_err() {
+        if let DbspError::Runtime(err) = res.unwrap_err() {
             // println!("error: {err}");
             assert!(matches!(err, RuntimeError::WorkerPanic { .. }));
         } else {
@@ -865,7 +865,7 @@ mod tests {
         })
         .unwrap();
 
-        if let DBSPError::Runtime(err) = handle.step().unwrap_err() {
+        if let DbspError::Runtime(err) = handle.step().unwrap_err() {
             // println!("error: {err}");
             matches!(err, RuntimeError::WorkerPanic { .. });
         } else {
@@ -887,7 +887,7 @@ mod tests {
         })
         .unwrap();
 
-        if let DBSPError::Runtime(err) = handle.step().unwrap_err() {
+        if let DbspError::Runtime(err) = handle.step().unwrap_err() {
             // println!("error: {err}");
             matches!(err, RuntimeError::WorkerPanic { .. });
         } else {
@@ -945,7 +945,7 @@ mod tests {
     #[test]
     fn test_failing_constructor() {
         match Runtime::init_circuit(4, |_circuit| Err::<(), _>(anyhow!("constructor failed"))) {
-            Err(DBSPError::Constructor(msg)) => assert_eq!(msg.to_string(), "constructor failed"),
+            Err(DbspError::Constructor(msg)) => assert_eq!(msg.to_string(), "constructor failed"),
             _ => panic!(),
         }
     }
@@ -956,7 +956,7 @@ mod tests {
         InputHandle<usize>,
     );
 
-    fn mkcircuit(cconf: &CircuitConfig) -> Result<(DBSPHandle, CircuitHandle), DBSPError> {
+    fn mkcircuit(cconf: &CircuitConfig) -> Result<(DBSPHandle, CircuitHandle), DbspError> {
         Runtime::init_circuit(cconf, move |circuit| {
             let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
             let (sample_size_stream, sample_size_handle) = circuit.add_input_stream::<usize>();
@@ -981,7 +981,7 @@ mod tests {
 
     fn mkcircuit_different(
         cconf: &CircuitConfig,
-    ) -> Result<(DBSPHandle, CircuitHandle), DBSPError> {
+    ) -> Result<(DBSPHandle, CircuitHandle), DbspError> {
         Runtime::init_circuit(cconf, move |circuit| {
             let map_factories = BatchReaderFactories::new::<Tup2<i32, i32>, (), ZWeight>();
             let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
@@ -1021,7 +1021,7 @@ mod tests {
     #[allow(clippy::type_complexity)]
     fn mkcircuit_with_bounds(
         cconf: &CircuitConfig,
-    ) -> Result<(DBSPHandle, CircuitHandle), DBSPError> {
+    ) -> Result<(DBSPHandle, CircuitHandle), DbspError> {
         Runtime::init_circuit(cconf, move |circuit| {
             let (stream, handle) = circuit.add_input_indexed_zset::<i32, i32>();
             let (sample_size_stream, sample_size_handle) = circuit.add_input_stream::<usize>();
@@ -1066,7 +1066,7 @@ mod tests {
     /// point.
     fn generic_checkpoint_restore(
         input: Vec<Vec<Tup2<i32, Tup2<i32, i64>>>>,
-        circuit_fun: fn(&CircuitConfig) -> Result<(DBSPHandle, CircuitHandle), DBSPError>,
+        circuit_fun: fn(&CircuitConfig) -> Result<(DBSPHandle, CircuitHandle), DbspError>,
     ) {
         const SAMPLE_SIZE: usize = 25; // should be bigger than #keys
         assert!(input.len() < SAMPLE_SIZE, "input should be <SAMPLE_SIZE");
@@ -1168,7 +1168,7 @@ mod tests {
         let r = Runtime::init_circuit(cconf, |_circuit| Ok(()));
         assert!(matches!(
             r,
-            Err(DBSPError::Storage(StorageError::StorageLocked(_, _)))
+            Err(DbspError::Storage(StorageError::StorageLocked(_, _)))
         ));
     }
 
@@ -1184,7 +1184,7 @@ mod tests {
         let res = mkcircuit(&cconf);
         assert!(matches!(
             res,
-            Err(DBSPError::Storage(StorageError::CheckpointNotFound(_)))
+            Err(DbspError::Storage(StorageError::CheckpointNotFound(_)))
         ));
     }
 
