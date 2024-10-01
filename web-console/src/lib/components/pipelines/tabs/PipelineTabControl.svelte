@@ -38,11 +38,11 @@
     >
       {#if tabContentChanged}
         <div
-          class="bx bxs-circle absolute left-2.5 -m-1 w-8 p-1.5 text-xs duration-0 text-surface-950-50 hover:text-transparent"
+          class="gc gc-circle-solid absolute left-2.5 -m-1 w-8 p-1.5 text-xs duration-0 text-surface-950-50 hover:text-transparent"
         ></div>
       {/if}
     </a>
   {:else if tabContentChanged}
-    <div class="bx bxs-circle absolute right-0 top-1 text-xs text-surface-600-400"></div>
+    <div class="gc gc-circle-solid absolute right-0 top-1 text-xs text-surface-600-400"></div>
   {/if}
 </div>
