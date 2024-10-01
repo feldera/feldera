@@ -124,6 +124,6 @@ Key Concepts
 
    .. warning::
       If the data source is streaming, this will block forever.
-      In such cases, use :meth:`.Pipeline.start` instead.
+      In such cases, use :meth:`.Pipeline.wait_for_idle` instead.
 
 Checkout the :doc:`/examples`.

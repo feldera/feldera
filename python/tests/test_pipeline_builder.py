@@ -218,8 +218,8 @@ class TestPipelineBuilder(unittest.TestCase):
         df_students = pd.read_csv('students.csv')
         df_grades = pd.read_csv('grades.csv')
 
-        pipeline.start()
         pipeline.foreach_chunk(view_name, callback)
+        pipeline.start()
 
         pipeline.input_pandas(TBL_NAMES[0], df_students)
         pipeline.input_pandas(TBL_NAMES[1], df_grades)
