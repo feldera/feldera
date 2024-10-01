@@ -206,7 +206,5 @@
   <div class="w-9"></div>
 {/snippet}
 {#snippet _spinner()}
-  <div
-    class="bx bx-loader-alt pointer-events-none h-9 w-9 animate-spin pt-[0.5px] !text-[36px]"
-  ></div>
+  <div class="gc gc-loader-alt pointer-events-none h-9 w-9 animate-spin !text-[36px]"></div>
 {/snippet}

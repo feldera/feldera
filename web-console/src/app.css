@@ -1,7 +1,6 @@
 @import '@fontsource-variable/public-sans';
 @import '@fontsource-variable/dm-sans';
 @import '@fontsource/dm-mono';
-@import url('boxicons/css/boxicons.min.css');
 @import url('@fortawesome/fontawesome-free/css/brands.min.css');
 
 @tailwind base;

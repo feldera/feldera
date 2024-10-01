@@ -22,10 +22,18 @@ export default defineConfig(async () => {
       svg(),
       viteSvgToWebfont({
         context: resolve(__dirname, 'tmp/assets/icons/feldera-material-icons'),
-        fontName: 'FelderaIconsFont',
+        fontName: 'FelderaMaterialIconsFont',
         baseSelector: '.fd',
         classPrefix: 'fd-',
-        moduleId: 'vite-svg-2-webfont.css',
+        moduleId: 'feldera-material-icons-webfont.css',
+        cssFontsUrl: '/'
+      }),
+      viteSvgToWebfont({
+        context: resolve(__dirname, 'src/assets/icons/generic'),
+        fontName: 'FelderaGenericIconsFont',
+        baseSelector: '.gc',
+        classPrefix: 'gc-',
+        moduleId: 'generic-icons-webfont.css',
         cssFontsUrl: '/'
       })
     ],
