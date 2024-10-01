@@ -76,13 +76,13 @@ pub enum RunnerError {
     PipelineStartupError {
         pipeline_id: PipelineId,
         // TODO: This should be IOError, so we can serialize the error code
-        // similar to `DBSPError::IO`.
+        // similar to `DbspError::IO`.
         error: String,
     },
     PipelineShutdownError {
         pipeline_id: PipelineId,
         // TODO: This should be IOError, so we can serialize the error code
-        // similar to `DBSPError::IO`.
+        // similar to `DbspError::IO`.
         error: String,
     },
     PortFileParseError {
