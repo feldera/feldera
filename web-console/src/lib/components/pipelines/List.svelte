@@ -8,7 +8,7 @@
   import { postPipeline, type PipelineThumb } from '$lib/services/pipelineManager'
   import { goto } from '$app/navigation'
   import { page } from '$app/stores'
-  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+  import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
 
   let { pipelines = $bindable() }: { pipelines: PipelineThumb[] } = $props()
 
@@ -42,7 +42,7 @@
       }
     }
   }
-  let showDrawer = useLocalStorage('layout/drawer', false)
+  let showDrawer = useDrawer()
   let assistCreatingPipeline = $derived($page.url.hash === '#new')
   const stopAssisting = () => {
     goto('')
@@ -118,6 +118,11 @@
         .params.pipelineName === pipeline.name
         ? 'bg-white-black'
         : 'border-transparent hover:!bg-opacity-30 hover:bg-surface-100-900'}"
+      onclick={() => {
+        if (showDrawer.isMobileDrawer) {
+          showDrawer.value = false
+        }
+      }}
       href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
     >
       <div class="w-full overflow-ellipsis whitespace-break-spaces py-1">

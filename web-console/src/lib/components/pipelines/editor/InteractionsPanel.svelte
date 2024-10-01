@@ -25,7 +25,7 @@
     // tuple('ad-hoc query', TabQueryData),
     tuple('Performance' as const, undefined, PanelPerformance),
     // tuple('query plan', TabDBSPGraph),
-    tuple('Changes stream' as const, undefined, PanelChangeStream),
+    tuple('Change stream' as const, TabControlChangeStream, PanelChangeStream),
     tuple('Logs' as const, undefined, PanelLogs)
   ]
   let currentTab = $derived(
@@ -59,6 +59,11 @@
       {errorCount}
     </span>
   {/if}
+{/snippet}
+
+{#snippet TabControlChangeStream()}
+  <span class="inline sm:hidden"> Changes </span>
+  <span class="hidden sm:inline"> Change stream </span>
 {/snippet}
 
 {#snippet tabList()}

@@ -85,9 +85,7 @@
       {/snippet}
       {#snippet statusBarEnd(downstreamChanged)}
         {#if pipeline.current.status}
-          <DeploymentStatus
-            class="ml-auto h-full w-40 text-[1rem] "
-            status={pipeline.current.status}
+          <DeploymentStatus class="ml-auto w-40 text-[1rem] " status={pipeline.current.status}
           ></DeploymentStatus>
           <PipelineActions
             {pipeline}

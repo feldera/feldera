@@ -1,7 +1,6 @@
 <script lang="ts">
   import Drawer from '$lib/components/layout/Drawer.svelte'
   import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
-  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import FelderaModernLogoColorDark from '$assets/images/feldera-modern/Feldera Logo Color Dark.svg?component'
   import FelderaModernLogoColorLight from '$assets/images/feldera-modern/Feldera Logo Color Light.svg?component'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
@@ -15,12 +14,13 @@
   import { base } from '$app/paths'
   import { page } from '$app/stores'
   import { SvelteKitTopLoader } from 'sveltekit-top-loader'
+  import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
 
   const dialog = useGlobalDialog()
 
   let { children, data }: { children: Snippet; data: LayoutData } = $props()
   let { darkMode, toggleDarkMode } = useDarkMode()
-  let showDrawer = useLocalStorage('layout/drawer', true)
+  let showDrawer = useDrawer()
 
   let pipelines = usePipelineList(data.preloaded)
 </script>
