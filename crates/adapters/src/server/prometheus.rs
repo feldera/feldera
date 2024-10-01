@@ -46,14 +46,14 @@ impl PrometheusMetrics {
             .with_unit(metrics::Unit::Count)
             .build(),
             total_input_records: GaugeBuilder::new("total_input_records", pipeline_name.clone())
-                .with_description("total number of input records received from all endpoints")
+                .with_description("total number of input records received from all connectors")
                 .with_unit(metrics::Unit::Count)
                 .build(),
             total_processed_records: GaugeBuilder::new(
                 "total_processed_records",
                 pipeline_name.clone(),
             )
-            .with_description("total number of input records processed by DBSP")
+            .with_description("total number of input records processed by the pipeline")
             .with_unit(metrics::Unit::Count)
             .build(),
             pipeline_completed: GaugeBuilder::new("pipeline_completed", pipeline_name.clone())
