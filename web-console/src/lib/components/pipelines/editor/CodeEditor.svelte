@@ -125,8 +125,8 @@
   </div>
 {/snippet}
 
-<div class="flex flex-nowrap items-center gap-8 pr-2">
-  <div class="flex h-full flex-nowrap gap-2">
+<div class="flex flex-wrap items-center gap-x-8 gap-y-2 pr-2">
+  <div class="flex h-9 flex-nowrap gap-2">
     <PipelineEditorStatusBar
       {autoSavePipeline}
       downstreamChanged={editedText.downstreamChanged}
@@ -134,5 +134,7 @@
     ></PipelineEditorStatusBar>
     {@render statusBarCenter?.()}
   </div>
-  {@render statusBarEnd?.(editedText.downstreamChanged)}
+  <div class=" ml-auto flex flex-nowrap gap-x-8">
+    {@render statusBarEnd?.(editedText.downstreamChanged)}
+  </div>
 </div>

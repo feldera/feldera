@@ -15,7 +15,7 @@
   )
 </script>
 
-<div class=" -mt-[35px] mb-2 ml-14 w-fit">
+<div class=" mb-2 ml-4 w-auto max-w-md sm:-mt-[35px] sm:ml-14 sm:mr-60 xl:mr-[32rem]">
   {#if 'existing' in pipeline}
     {#snippet text()}
       {pipeline.existing}
