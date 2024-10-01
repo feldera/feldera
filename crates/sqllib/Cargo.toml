@@ -12,8 +12,8 @@ publish = true
 
 [dependencies]
 thiserror = "1.0"
-dbsp = { path = "../dbsp" }
-feldera-types = { path = "../feldera-types" }
+dbsp = { path = "../dbsp", version = "0.27.0" }
+feldera-types = { path = "../feldera-types", version = "0.27.0" }
 itertools = { version = "0.13.0" }
 # `serde-with-arbitrary-precision` is needed because we enable `arbitrary_precision` in `serde_json`.
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["maths", "rkyv", "serde-float", "serde-arbitrary-precision"] }
