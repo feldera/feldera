@@ -49,7 +49,7 @@ use crate::{
     circuit_cache_key,
     operator::communication::Exchange,
     time::{Timestamp, UnitTimestamp},
-    Error as DBSPError, Error, Runtime,
+    Error as DbspError, Error, Runtime,
 };
 use anyhow::Error as AnyError;
 use serde::Serialize;
@@ -824,11 +824,11 @@ pub trait Node {
 
     /// Instructs the node to commit the state of its inner operator to
     /// persistent storage.
-    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError>;
+    fn commit(&mut self, cid: Uuid) -> Result<(), DbspError>;
 
     /// Instructs the node to restore the state of its inner operator to
     /// the given checkpoint.
-    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError>;
+    fn restore(&mut self, cid: Uuid) -> Result<(), DbspError>;
 
     /// Takes a fingerprint of the node's inner operator adds it to `fip`.
     fn fingerprint(&self, fip: &mut Fingerprinter) {
@@ -2009,7 +2009,7 @@ impl RootCircuit {
     ///     Ok(())
     /// });
     /// ```
-    pub fn build<F, T>(constructor: F) -> Result<(CircuitHandle, T), DBSPError>
+    pub fn build<F, T>(constructor: F) -> Result<(CircuitHandle, T), DbspError>
     where
         F: FnOnce(&mut RootCircuit) -> Result<T, AnyError>,
     {
@@ -2021,13 +2021,13 @@ impl RootCircuit {
     /// Similar to [`build`](`Self::build`), but with a user-specified
     /// [`Scheduler`] implementation that decides the order in which to evaluate
     /// operators.  (This scheduler does not schedule processes or threads.)
-    pub fn build_with_scheduler<F, T, S>(constructor: F) -> Result<(CircuitHandle, T), DBSPError>
+    pub fn build_with_scheduler<F, T, S>(constructor: F) -> Result<(CircuitHandle, T), DbspError>
     where
         F: FnOnce(&mut RootCircuit) -> Result<T, AnyError>,
         S: Scheduler + 'static,
     {
         let mut circuit = RootCircuit::new();
-        let res = constructor(&mut circuit).map_err(DBSPError::Constructor)?;
+        let res = constructor(&mut circuit).map_err(DbspError::Constructor)?;
         let executor =
             Box::new(<OnceExecutor<S>>::new(&circuit)?) as Box<dyn Executor<RootCircuit>>;
 
@@ -3264,11 +3264,11 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
@@ -3356,11 +3356,11 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
@@ -3454,11 +3454,11 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
@@ -3545,11 +3545,11 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
@@ -3656,11 +3656,11 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn commit(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
@@ -3791,7 +3791,7 @@ where
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
@@ -3926,7 +3926,7 @@ where
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
@@ -4079,7 +4079,7 @@ where
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
@@ -4217,7 +4217,7 @@ where
         self.operator.commit(cid, self.global_id().persistent_id())
     }
 
-    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, cid: Uuid) -> Result<(), DbspError> {
         self.operator.restore(cid, self.global_id().persistent_id())
     }
 }
@@ -4337,7 +4337,7 @@ where
         unsafe { (*self.operator.get()).commit(cid, self.global_id().persistent_id()) }
     }
 
-    fn restore(&mut self, cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, cid: Uuid) -> Result<(), DbspError> {
         unsafe { (*self.operator.get()).restore(cid, self.global_id().persistent_id()) }
     }
 }
@@ -4435,7 +4435,7 @@ where
         Ok(())
     }
 
-    fn restore(&mut self, _cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, _cid: Uuid) -> Result<(), DbspError> {
         // See comment in `commit`.
         Ok(())
     }
@@ -4587,7 +4587,7 @@ where
         Ok(())
     }
 
-    fn restore(&mut self, _cid: Uuid) -> Result<(), DBSPError> {
+    fn restore(&mut self, _cid: Uuid) -> Result<(), DbspError> {
         Ok(())
     }
 }
@@ -4692,7 +4692,7 @@ mod tests {
         circuit::schedule::{DynamicScheduler, Scheduler, StaticScheduler},
         monitor::TraceMonitor,
         operator::{Generator, Z1},
-        Circuit, Error as DBSPError, RootCircuit,
+        Circuit, Error as DbspError, RootCircuit,
     };
     use anyhow::anyhow;
     use std::{cell::RefCell, ops::Deref, rc::Rc, vec::Vec};
@@ -4868,7 +4868,7 @@ mod tests {
     #[test]
     fn init_circuit_constructor_error() {
         match RootCircuit::build(|_circuit| Err::<(), _>(anyhow!("constructor failed"))) {
-            Err(DBSPError::Constructor(msg)) => assert_eq!(msg.to_string(), "constructor failed"),
+            Err(DbspError::Constructor(msg)) => assert_eq!(msg.to_string(), "constructor failed"),
             _ => panic!(),
         }
     }
