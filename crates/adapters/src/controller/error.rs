@@ -1,13 +1,13 @@
 use crate::{format::ParseError, DetailedError};
 use anyhow::Error as AnyError;
-use dbsp::Error as DBSPError;
+use dbsp::Error as DbspError;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::{
     backtrace::Backtrace,
     borrow::Cow,
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
-    io::Error as IOError,
+    io::Error as IoError,
     string::ToString,
 };
 
@@ -474,7 +474,7 @@ pub enum ControllerError {
     IoError {
         /// Describes the context where the error occurred.
         context: String,
-        io_error: IOError,
+        io_error: IoError,
         backtrace: Backtrace,
     },
 
@@ -537,7 +537,7 @@ pub enum ControllerError {
     },
 
     /// Error evaluating the DBSP circuit.
-    DbspError { error: DBSPError },
+    DbspError { error: DbspError },
 
     /// Error inside the Prometheus module.
     PrometheusError { error: String },
@@ -555,14 +555,14 @@ pub enum ControllerError {
 
 fn serialize_io_error<S>(
     context: &String,
-    io_error: &IOError,
+    io_error: &IoError,
     backtrace: &Backtrace,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let mut ser = serializer.serialize_struct("IOError", 4)?;
+    let mut ser = serializer.serialize_struct("IoError", 4)?;
     ser.serialize_field("context", context)?;
     ser.serialize_field("kind", &io_error.kind().to_string())?;
     ser.serialize_field("os_error", &io_error.raw_os_error())?;
@@ -623,7 +623,7 @@ impl DetailedError for ControllerError {
     // TODO: attempts to cast `AnyError` to `DetailedError`.
     fn error_code(&self) -> Cow<'static, str> {
         match self {
-            Self::IoError { .. } => Cow::from("ControllerIOError"),
+            Self::IoError { .. } => Cow::from("ControllerIoError"),
             Self::NotSupported { .. } => Cow::from("NotSupported"),
             Self::SchemaParseError { .. } => Cow::from("SchemaParseError"),
             Self::SchemaValidationError { .. } => Cow::from("SchemaParseError"),
@@ -737,7 +737,7 @@ impl Display for ControllerError {
 }
 
 impl ControllerError {
-    pub fn io_error(context: String, io_error: IOError) -> Self {
+    pub fn io_error(context: String, io_error: IoError) -> Self {
         Self::IoError {
             context,
             io_error,
@@ -958,7 +958,7 @@ impl ControllerError {
         }
     }
 
-    pub fn dbsp_error(error: DBSPError) -> Self {
+    pub fn dbsp_error(error: DbspError) -> Self {
         Self::DbspError { error }
     }
 
@@ -977,8 +977,8 @@ impl From<ConfigError> for ControllerError {
     }
 }
 
-impl From<DBSPError> for ControllerError {
-    fn from(error: DBSPError) -> Self {
+impl From<DbspError> for ControllerError {
+    fn from(error: DbspError) -> Self {
         Self::DbspError { error }
     }
 }

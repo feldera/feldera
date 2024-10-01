@@ -3,7 +3,7 @@
 
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::describe_metrics;
-use crate::error::Error as DBSPError;
+use crate::error::Error as DbspError;
 use crate::{
     storage::{
         backend::{new_default_backend, tempdir_for_thread, Backend, StorageError},
@@ -228,7 +228,7 @@ impl Debug for RuntimeInner {
 }
 
 impl RuntimeInner {
-    fn new(config: CircuitConfig, storage: PathBuf) -> Result<Self, DBSPError> {
+    fn new(config: CircuitConfig, storage: PathBuf) -> Result<Self, DbspError> {
         let local_workers = config.layout.local_workers().len();
         let mut panic_info = Vec::with_capacity(local_workers);
         for _ in 0..local_workers {
@@ -245,7 +245,7 @@ impl RuntimeInner {
             && !checkpoint_dir.exists()
             && !checkpoint_dir.is_dir()
         {
-            return Err(DBSPError::Storage(StorageError::CheckpointNotFound(
+            return Err(DbspError::Storage(StorageError::CheckpointNotFound(
                 config.init_checkpoint,
             )));
         }
@@ -348,7 +348,7 @@ impl Runtime {
     /// hruntime.join().unwrap();
     /// # }
     /// ```
-    pub fn run<F>(config: impl Into<CircuitConfig>, circuit: F) -> Result<RuntimeHandle, DBSPError>
+    pub fn run<F>(config: impl Into<CircuitConfig>, circuit: F) -> Result<RuntimeHandle, DbspError>
     where
         F: FnOnce() + Clone + Send + 'static,
     {
@@ -357,12 +357,12 @@ impl Runtime {
         let workers = config.layout.local_workers();
         let nworkers = workers.len();
 
-        let storage: Result<StorageLocation, DBSPError> = config.storage.clone().map_or_else(
+        let storage: Result<StorageLocation, DbspError> = config.storage.clone().map_or_else(
             // Note that we use into_path() here which avoids deleting the temporary directory
             // we still clean it up when the runtime is dropped -- but keep it around on panic.
             || {
                 if config.init_checkpoint != Uuid::nil() {
-                    return Err(DBSPError::Storage(StorageError::CheckpointNotFound(
+                    return Err(DbspError::Storage(StorageError::CheckpointNotFound(
                         config.init_checkpoint,
                     )));
                 }
