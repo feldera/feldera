@@ -149,15 +149,15 @@ impl GlobalControllerMetrics {
             .fetch_add(num_records, Ordering::AcqRel)
     }
 
-    fn num_buffered_input_records(&self) -> u64 {
+    pub fn num_buffered_input_records(&self) -> u64 {
         self.buffered_input_records.load(Ordering::Acquire)
     }
 
-    fn num_total_input_records(&self) -> u64 {
+    pub fn num_total_input_records(&self) -> u64 {
         self.total_input_records.load(Ordering::Acquire)
     }
 
-    fn num_total_processed_records(&self) -> u64 {
+    pub fn num_total_processed_records(&self) -> u64 {
         self.total_processed_records.load(Ordering::Acquire)
     }
 
