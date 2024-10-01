@@ -83,14 +83,7 @@ class HttpRequests:
                     stream=stream,
                 )
 
-            if stream:
-                return request
-            if request.headers.get("content-type") == "text/plain":
-                return request.text
-            elif request.headers.get("content-type") == "application/octet-stream":
-                return request.content
-
-            resp = self.__validate(request)
+            resp = self.__validate(request, stream=stream)
             logging.debug("got response: %s", str(resp))
             return resp
 
@@ -164,9 +157,17 @@ class HttpRequests:
         return request.json()
 
     @staticmethod
-    def __validate(request: requests.Response) -> Any:
+    def __validate(request: requests.Response, stream=False) -> Any:
         try:
             request.raise_for_status()
+
+            if stream:
+                return request
+            if request.headers.get("content-type") == "text/plain":
+                return request.text
+            elif request.headers.get("content-type") == "application/octet-stream":
+                return request.content
+
             resp = HttpRequests.__to_json(request)
             return resp
         except requests.exceptions.HTTPError as err:

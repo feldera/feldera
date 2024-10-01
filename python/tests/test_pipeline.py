@@ -161,7 +161,7 @@ class TestPipeline(unittest.TestCase):
         TEST_CLIENT.start_pipeline(name)
 
         TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
-        resp = TEST_CLIENT.query(pipeline.name, "SELECT * FROM tbl", "text")
+        resp = TEST_CLIENT.query_as_text(pipeline.name, "SELECT * FROM tbl")
         expected = """+----+
 | id |
 +----+
@@ -214,7 +214,7 @@ class TestPipeline(unittest.TestCase):
         TEST_CLIENT.start_pipeline(name)
 
         TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
-        resp = TEST_CLIENT.query(pipeline.name, "SELECT * FROM tbl", "json")
+        resp = TEST_CLIENT.query_as_json(pipeline.name, "SELECT * FROM tbl")
         expected = [{"id": 2}, {"id": 1}]
         got = list(resp)
 
