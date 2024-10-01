@@ -353,11 +353,6 @@ class Pipeline:
         :return: A generator that yields the rows of the result as Python dictionaries.
         """
 
-        if self.status() not in [
-            PipelineStatus.RUNNING,
-            PipelineStatus.PAUSED,
-        ]:
-            raise RuntimeError("Pipeline must be running or paused to run a query")
         return self.client.query_as_json(self.name, query)
 
     def query_parquet(self, query: str, path: str):
@@ -369,11 +364,6 @@ class Pipeline:
         :param path: The path of the parquet file.
         """
 
-        if self.status() not in [
-            PipelineStatus.RUNNING,
-            PipelineStatus.PAUSED,
-        ]:
-            raise RuntimeError("Pipeline must be running or paused to run a query")
         self.client.query_as_parquet(self.name, query, path)
 
     def query_tabular(self, query: str) -> Generator[str, None, None]:
@@ -384,9 +374,4 @@ class Pipeline:
         :return: A generator that yields a string representing the query result in a human-readable, tabular format.
         """
 
-        if self.status() not in [
-            PipelineStatus.RUNNING,
-            PipelineStatus.PAUSED,
-        ]:
-            raise RuntimeError("Pipeline must be running or paused to run a query")
         return self.client.query_as_text(self.name, query)
