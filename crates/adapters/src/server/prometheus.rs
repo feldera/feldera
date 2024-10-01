@@ -59,9 +59,6 @@ impl PrometheusMetrics {
             pipeline_completed: GaugeBuilder::new("pipeline_completed", pipeline_name.clone())
                 .with_description("boolean, 1 if true")
                 .build(),
-            step_requested: GaugeBuilder::new("step_reqeuested", pipeline_name.clone())
-                .with_description("boolean, 1 if true")
-                .build(),
         };
 
         let mut result = Self {
@@ -329,7 +326,6 @@ struct GlobalMetrics {
     total_input_records: Gauge,
     total_processed_records: Gauge,
     pipeline_completed: Gauge,
-    step_requested: Gauge,
 }
 
 impl GlobalMetrics {
@@ -344,7 +340,6 @@ impl GlobalMetrics {
 
         self.pipeline_completed
             .set(f64::from(status.pipeline_complete()));
-        self.step_requested.set(f64::from(status.step_requested()));
         self.total_processed_records
             .set(status.num_total_processed_records() as f64);
         self.total_input_records
