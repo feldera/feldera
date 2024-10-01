@@ -1,6 +1,6 @@
 use crate::{
     controller::{EndpointId, InputEndpointStatus, OutputEndpointStatus},
-    Controller,
+    Controller, ControllerStatus,
 };
 use anyhow::{Error as AnyError, Result as AnyResult};
 use metrics::Gauge;
@@ -15,22 +15,61 @@ pub(crate) struct PrometheusMetrics {
     pipeline_name: String,
     input_metrics: BTreeMap<EndpointId, InputMetrics>,
     output_metrics: BTreeMap<EndpointId, OutputMetrics>,
+    global_metrics: GlobalMetrics,
     handle: PrometheusHandle,
 }
 
 impl PrometheusMetrics {
     pub(crate) fn new(controller: &Controller) -> AnyResult<Self> {
-        let pipeline_name = controller
-            .status()
+        let status = controller.status();
+
+        let pipeline_name = status
             .pipeline_config
             .name
             .as_ref()
             .map_or_else(|| "unnamed".to_string(), |n| n.clone());
+
+        let global_metrics = GlobalMetrics {
+            cpu_msecs: GaugeBuilder::new("cpu_msecs", pipeline_name.clone())
+                .with_description("cpu time used by the pipeline process in milliseconds")
+                .with_unit(metrics::Unit::Milliseconds)
+                .build(),
+            rss_bytes: GaugeBuilder::new("rss_bytes", pipeline_name.clone())
+                .with_description("resident set size of the pipeline process in bytes")
+                .with_unit(metrics::Unit::Bytes)
+                .build(),
+            buffered_input_records: GaugeBuilder::new(
+                "buffered_input_records",
+                pipeline_name.clone(),
+            )
+            .with_description("total number of records currently buffered by all endpoints")
+            .with_unit(metrics::Unit::Count)
+            .build(),
+            total_input_records: GaugeBuilder::new("total_input_records", pipeline_name.clone())
+                .with_description("total number of input records received from all endpoints")
+                .with_unit(metrics::Unit::Count)
+                .build(),
+            total_processed_records: GaugeBuilder::new(
+                "total_processed_records",
+                pipeline_name.clone(),
+            )
+            .with_description("total number of input records processed by DBSP")
+            .with_unit(metrics::Unit::Count)
+            .build(),
+            pipeline_completed: GaugeBuilder::new("pipeline_completed", pipeline_name.clone())
+                .with_description("boolean, 1 if true")
+                .build(),
+            step_requested: GaugeBuilder::new("step_reqeuested", pipeline_name.clone())
+                .with_description("boolean, 1 if true")
+                .build(),
+        };
+
         let mut result = Self {
             pipeline_name,
             input_metrics: BTreeMap::new(),
             output_metrics: BTreeMap::new(),
             handle: controller.metrics(),
+            global_metrics,
         };
 
         let status = controller.status();
@@ -51,14 +90,29 @@ impl PrometheusMetrics {
         endpoint_id: EndpointId,
         status: &InputEndpointStatus,
     ) -> AnyResult<()> {
-        let total_bytes = self.create_gauge("input_total_bytes", &status.endpoint_name)?;
-        let total_records = self.create_gauge("input_total_records", &status.endpoint_name)?;
+        let total_bytes = GaugeBuilder::new("input_total_bytes", self.pipeline_name.clone())
+            .with_unit(metrics::Unit::Bytes)
+            .with_endpoint(status.endpoint_name.clone())
+            .build();
+        let total_records = GaugeBuilder::new("input_total_records", self.pipeline_name.clone())
+            .with_endpoint(status.endpoint_name.clone())
+            .with_unit(metrics::Unit::Count)
+            .build();
         let buffered_records =
-            self.create_gauge("input_buffered_records", &status.endpoint_name)?;
+            GaugeBuilder::new("input_buffered_records", self.pipeline_name.clone())
+                .with_endpoint(status.endpoint_name.clone())
+                .with_unit(metrics::Unit::Count)
+                .build();
         let num_transport_errors =
-            self.create_gauge("input_num_transport_errors", &status.endpoint_name)?;
+            GaugeBuilder::new("input_num_transport_errors", self.pipeline_name.clone())
+                .with_endpoint(status.endpoint_name.clone())
+                .with_unit(metrics::Unit::Count)
+                .build();
         let num_parse_errors =
-            self.create_gauge("input_num_parse_errors", &status.endpoint_name)?;
+            GaugeBuilder::new("input_num_parse_errors", self.pipeline_name.clone())
+                .with_endpoint(status.endpoint_name.clone())
+                .with_unit(metrics::Unit::Count)
+                .build();
 
         let input_metrics = InputMetrics {
             total_bytes,
@@ -106,17 +160,35 @@ impl PrometheusMetrics {
         status: &OutputEndpointStatus,
     ) -> AnyResult<()> {
         let transmitted_bytes =
-            self.create_gauge("output_transmitted_bytes", &status.endpoint_name)?;
+            GaugeBuilder::new("output_transmitted_bytes", self.pipeline_name.clone())
+                .with_endpoint(status.endpoint_name.clone())
+                .with_unit(metrics::Unit::Bytes)
+                .build();
         let transmitted_records =
-            self.create_gauge("output_transmitted_records", &status.endpoint_name)?;
+            GaugeBuilder::new("output_transmitted_records", self.pipeline_name.clone())
+                .with_endpoint(status.endpoint_name.clone())
+                .with_unit(metrics::Unit::Count)
+                .build();
         let buffered_records =
-            self.create_gauge("output_buffered_records", &status.endpoint_name)?;
+            GaugeBuilder::new("output_buffered_records", self.pipeline_name.clone())
+                .with_endpoint(status.endpoint_name.clone())
+                .with_unit(metrics::Unit::Count)
+                .build();
         let buffered_batches =
-            self.create_gauge("output_buffered_batches", &status.endpoint_name)?;
+            GaugeBuilder::new("output_buffered_batches", self.pipeline_name.clone())
+                .with_endpoint(status.endpoint_name.clone())
+                .with_unit(metrics::Unit::Count)
+                .build();
         let num_transport_errors =
-            self.create_gauge("output_num_transport_errors", &status.endpoint_name)?;
+            GaugeBuilder::new("output_num_transport_errors", self.pipeline_name.clone())
+                .with_endpoint(status.endpoint_name.clone())
+                .with_unit(metrics::Unit::Count)
+                .build();
         let num_encode_errors =
-            self.create_gauge("output_num_encode_errors", &status.endpoint_name)?;
+            GaugeBuilder::new("output_num_encode_errors", self.pipeline_name.clone())
+                .with_endpoint(status.endpoint_name.clone())
+                .with_unit(metrics::Unit::Count)
+                .build();
 
         let output_metrics = OutputMetrics {
             transmitted_bytes,
@@ -166,6 +238,8 @@ impl PrometheusMetrics {
     pub(crate) fn metrics(&self, controller: &Controller) -> AnyResult<Vec<u8>> {
         let status = controller.status();
 
+        self.global_metrics.update(status);
+
         for (endpoint_id, endpoint_status) in status.input_status().iter() {
             self.update_input_metrics(*endpoint_id, endpoint_status)?;
         }
@@ -176,16 +250,58 @@ impl PrometheusMetrics {
 
         Ok(self.handle.render().into())
     }
+}
 
-    fn create_gauge(&self, name: &str, endpoint: &str) -> AnyResult<Gauge> {
-        metrics::describe_gauge!(name.to_owned(), name.to_owned());
-        let gauge = metrics::gauge!(
-            name.to_owned(),
-            "pipeline" => self.pipeline_name.clone(),
-            "endpoint" => endpoint.to_owned()
-        );
+struct GaugeBuilder {
+    pipeline_name: String,
+    name: &'static str,
+    description: Option<&'static str>,
+    unit: Option<metrics::Unit>,
+    endpoint: Option<String>,
+}
 
-        Ok(gauge)
+impl GaugeBuilder {
+    fn new(name: &'static str, pipeline_name: String) -> GaugeBuilder {
+        Self {
+            pipeline_name,
+            name,
+            description: None,
+            unit: None,
+            endpoint: None,
+        }
+    }
+
+    fn with_description(mut self, description: &'static str) -> GaugeBuilder {
+        self.description = Some(description);
+        self
+    }
+
+    fn with_unit(mut self, unit: metrics::Unit) -> GaugeBuilder {
+        self.unit = Some(unit);
+        self
+    }
+
+    fn with_endpoint(mut self, endpoint: String) -> GaugeBuilder {
+        self.endpoint = Some(endpoint);
+        self
+    }
+
+    fn build(mut self) -> Gauge {
+        let pipeline_name = std::mem::take(&mut self.pipeline_name);
+        let description = self.description.unwrap_or_default().to_owned();
+        let mut labels = vec![("pipeline".to_owned(), pipeline_name)];
+
+        if let Some(unit) = self.unit {
+            metrics::describe_gauge!(self.name, unit, description);
+        } else {
+            metrics::describe_gauge!(self.name, description);
+        }
+
+        if let Some(endpoint) = self.endpoint {
+            labels.push(("endpoint".to_owned(), endpoint.to_owned()));
+        }
+
+        metrics::gauge!(self.name, &labels)
     }
 }
 
@@ -204,4 +320,36 @@ struct OutputMetrics {
     buffered_batches: Gauge,
     num_transport_errors: Gauge,
     num_encode_errors: Gauge,
+}
+
+struct GlobalMetrics {
+    cpu_msecs: Gauge,
+    rss_bytes: Gauge,
+    buffered_input_records: Gauge,
+    total_input_records: Gauge,
+    total_processed_records: Gauge,
+    pipeline_completed: Gauge,
+    step_requested: Gauge,
+}
+
+impl GlobalMetrics {
+    fn update(&self, status: &ControllerStatus) {
+        if let Some(ref cpu_msecs) = status.global_metrics.cpu_msecs {
+            self.cpu_msecs.set(cpu_msecs.load(Ordering::Acquire) as f64);
+        }
+
+        if let Some(ref rss_bytes) = status.global_metrics.rss_bytes {
+            self.rss_bytes.set(rss_bytes.load(Ordering::Acquire) as f64);
+        }
+
+        self.pipeline_completed
+            .set(f64::from(status.pipeline_complete()));
+        self.step_requested.set(f64::from(status.step_requested()));
+        self.total_processed_records
+            .set(status.num_total_processed_records() as f64);
+        self.total_input_records
+            .set(status.num_total_input_records() as f64);
+        self.buffered_input_records
+            .set(status.num_buffered_input_records() as f64);
+    }
 }
