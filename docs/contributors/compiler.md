@@ -209,7 +209,7 @@ $ cat ../temp/src/lib.rs
 // Automatically-generated file
 
 [...boring stuff removed...]
-fn circuit(workers: usize) -> Result<(DBSPHandle, (CollectionHandle<Tup3<String, Option<i32>, Option<bool>>, Weight>, OutputHandle<OrdZSet<Tup1<String>, Weight>>, )), DBSPError> {
+fn circuit(workers: usize) -> Result<(DBSPHandle, (CollectionHandle<Tup3<String, Option<i32>, Option<bool>>, Weight>, OutputHandle<OrdZSet<Tup1<String>, Weight>>, )), DbspError> {
 
     let (circuit, streams) = Runtime::init_circuit(workers, |circuit| {
         // CREATE TABLE `PERSON` (`NAME` VARCHAR NOT NULL, `AGE` INTEGER, `PRESENT` BOOLEAN)
