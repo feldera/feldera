@@ -27,7 +27,22 @@ def load_queries(dir):
     for f in os.listdir(dir):
         if f.endswith('.sql'):
             file = open(dir + f, 'r')
-            queries[f.split('.')[0]] = file.read()
+            query = f.split('.')[0]
+
+            try:
+                with open(dir + '/' + query + '.rs', 'r') as rs_file:
+                    udf_rust = rs_file.read()
+            except FileNotFoundError:
+                udf_rust = ''
+
+            try:
+                with open(dir + '/' + query + '.toml', 'r') as toml_file:
+                    udf_toml = toml_file.read()
+            except FileNotFoundError:
+                udf_toml = ''
+
+            sql = file.read()
+            queries[query] = (sql, udf_rust, udf_toml)
     return queries
 
 def load_table(folder: str, with_lateness: bool, suffix, events, cores, batchsize):
@@ -215,7 +230,10 @@ def main():
     for program_name in queries:
         # Create program
         full_name = get_full_name(folder, program_name)
-        program_sql = table + all_queries[program_name]
+        program_sql = table + all_queries[program_name][0]
+        udf_rust = all_queries[program_name][1]
+        udf_toml = all_queries[program_name][2]
+
         requests.put(f"{api_url}/v0/pipelines/{full_name}", headers=headers, json={
             "name": full_name,
             "description": f"Benchmark: {full_name}",
@@ -235,6 +253,8 @@ def main():
             },
             "program_config": {},
             "program_code": program_sql,
+            "udf_rust": udf_rust,
+            "udf_toml": udf_toml
         }).raise_for_status()
 
     print("Compiling program(s)...")
