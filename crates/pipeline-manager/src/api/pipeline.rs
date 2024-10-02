@@ -38,6 +38,8 @@ pub struct ExtendedPipelineDescrOptionalCode {
     pub created_at: DateTime<Utc>,
     pub runtime_config: RuntimeConfig,
     pub program_code: Option<String>,
+    pub udf_rust: Option<String>,
+    pub udf_toml: Option<String>,
     pub program_config: ProgramConfig,
     pub program_version: Version,
     pub program_status: ProgramStatus,
@@ -63,6 +65,16 @@ impl ExtendedPipelineDescrOptionalCode {
             runtime_config: extended_pipeline.runtime_config,
             program_code: if include_code {
                 Some(extended_pipeline.program_code)
+            } else {
+                None
+            },
+            udf_rust: if include_code {
+                Some(extended_pipeline.udf_rust)
+            } else {
+                None
+            },
+            udf_toml: if include_code {
+                Some(extended_pipeline.udf_toml)
             } else {
                 None
             },
@@ -109,6 +121,8 @@ pub struct PatchPipeline {
     pub description: Option<String>,
     pub runtime_config: Option<RuntimeConfig>,
     pub program_code: Option<String>,
+    pub udf_rust: Option<String>,
+    pub udf_toml: Option<String>,
     pub program_config: Option<ProgramConfig>,
 }
 
@@ -332,6 +346,8 @@ pub(crate) async fn patch_pipeline(
             &body.description,
             &body.runtime_config,
             &body.program_code,
+            &body.udf_rust,
+            &body.udf_toml,
             &body.program_config,
         )
         .await?;

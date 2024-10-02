@@ -768,7 +768,6 @@ mod test {
     use crate::runner::pipeline_executor::{LogMessage, PipelineExecutionDesc, PipelineExecutor};
     use async_trait::async_trait;
     use feldera_types::config::RuntimeConfig;
-    use feldera_types::program_schema::ProgramSchema;
     use serde_json::json;
     use std::sync::Arc;
     use std::time::Duration;
@@ -899,6 +898,8 @@ mod test {
                     description: "Description of example1".to_string(),
                     runtime_config: RuntimeConfig::from_yaml(""),
                     program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
+                    udf_rust: "".to_string(),
+                    udf_toml: "".to_string(),
                     program_config: ProgramConfig {
                         profile: Some(CompilationProfile::Unoptimized),
                     },
@@ -919,14 +920,7 @@ mod test {
                 tenant_id,
                 pipeline_id,
                 Version(1),
-                &ProgramInfo {
-                    schema: ProgramSchema {
-                        inputs: vec![],
-                        outputs: vec![],
-                    },
-                    input_connectors: Default::default(),
-                    output_connectors: Default::default(),
-                },
+                &ProgramInfo::default(),
             )
             .await
             .unwrap();

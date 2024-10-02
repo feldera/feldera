@@ -351,6 +351,8 @@ async fn pipeline(action: PipelineAction, client: Client) {
                         description: "".to_string(),
                         name: name.to_string(),
                         program_code,
+                        udf_rust: None,
+                        udf_toml: None,
                         program_config: profile.into(),
                         runtime_config: RuntimeConfig::default(),
                     })
@@ -401,6 +403,8 @@ async fn pipeline(action: PipelineAction, client: Client) {
                         description: None,
                         name: None,
                         program_code: Some(new_program),
+                        udf_rust: None,
+                        udf_toml: None,
                         program_config: None,
                         runtime_config: None,
                     })
@@ -713,6 +717,8 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     description: None,
                     name: None,
                     program_code: None,
+                    udf_rust: None,
+                    udf_toml: None,
                     program_config: None,
                     runtime_config: Some(rc),
                 })
@@ -945,6 +951,8 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
                 description: None,
                 name: None,
                 program_code: None,
+                udf_rust: None,
+                udf_toml: None,
                 program_config: Some(ProgramConfig {
                     profile: Some(profile.into()),
                 }),
@@ -990,6 +998,8 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
                     description: None,
                     name: None,
                     program_code: Some(program_code),
+                    udf_rust: None,
+                    udf_toml: None,
                     program_config: None,
                     runtime_config: None,
                 };

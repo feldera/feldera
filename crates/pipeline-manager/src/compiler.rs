@@ -5,8 +5,7 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
 use crate::db::types::program::{
-    generate_program_info_from_schema, CompilationProfile, ProgramInfo, ProgramStatus,
-    SqlCompilerMessage,
+    generate_program_info, CompilationProfile, ProgramInfo, ProgramStatus, SqlCompilerMessage,
 };
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
@@ -201,7 +200,7 @@ impl Compiler {
             )
         })?;
 
-        Compiler::write_project_toml(config, pipeline_id).await?;
+        Compiler::write_project_toml(config, "", pipeline_id).await?;
 
         fs::write(&rust_file_path, "fn main() {}")
             .await
@@ -364,6 +363,7 @@ inherits = "release"
     /// Generate project-level `Cargo.toml`.
     async fn write_project_toml(
         config: &CompilerConfig,
+        udf_toml: &str,
         pipeline_id: PipelineId,
     ) -> Result<(), ManagerError> {
         let template_path = config.project_toml_template_path();
@@ -385,6 +385,18 @@ inherits = "release"
             )
             .replace("../../crates", &format!("{p}/crates"))
             .replace("../lib", &format!("{}", config.sql_lib_path().display()));
+
+        let udf_dependencies = format!(
+            r#"# START: UDF dependencies
+{}
+# END: UDF dependencies
+"#,
+            &udf_toml
+        );
+        project_toml_code = project_toml_code.replace(
+            "[dependencies]",
+            &format!("[dependencies]\n{udf_dependencies}"),
+        );
         debug!("TOML:\n{project_toml_code}");
 
         let toml_path = config.project_toml_path(pipeline_id);
@@ -712,9 +724,16 @@ inherits = "release"
                                 .map_err(|e| {
                                     ManagerError::io_error(format!("reading '{}'", schema_path.display()), e)
                                 })?;
+
+                            let stub_path = config.udf_stub_path(pipeline_id);
+                            let stubs = fs::read_to_string(&stub_path).await
+                                .map_err(|e| {
+                                    ManagerError::io_error(format!("reading '{}'", stub_path.display()), e)
+                                })?;
+
                             let schema: ProgramSchema = serde_json::from_str(&schema_json)
                                 .map_err(|e| { ManagerError::invalid_program_schema(e.to_string()) })?;
-                            match generate_program_info_from_schema(schema) {
+                            match generate_program_info(schema, stubs) {
                                 Ok(program_info) => {
                                     // SQL compiler succeeded -- start the Rust job and update the
                                     // program schema.
@@ -940,19 +959,15 @@ impl CompilationJob {
             ManagerError::io_error(format!("creating error log '{}'", stderr_path.display()), e)
         })?;
 
-        // `main.rs` file.
-        let rust_file = File::create(&rust_file_path).await.map_err(|e| {
-            ManagerError::io_error(
-                format!("failed to create '{}'", rust_file_path.display()),
-                e,
-            )
-        })?;
-
         // Run compiler, direct output to `main.rs`.
+        // It will also generate UDF stubs in the same directory as main.rs and program schema
+        // in `schema_path`.
         let schema_path = config.schema_path(pipeline_id);
         let compiler_process = Command::new(config.sql_compiler_path())
             .arg("-js")
             .arg(schema_path)
+            .arg("-o")
+            .arg(rust_file_path)
             .arg(sql_file_path.as_os_str())
             .arg("-i")
             .arg("-je")
@@ -962,7 +977,6 @@ impl CompilationJob {
             .arg("lower")
             .stdin(Stdio::null())
             .stderr(Stdio::from(err_file.into_std().await))
-            .stdout(Stdio::from(rust_file.into_std().await))
             .spawn()
             .map_err(|e| {
                 ManagerError::io_error(
@@ -1000,8 +1014,15 @@ impl CompilationJob {
             .map_err(|e| ManagerError::io_error(format!("writing '{}'", rust_path.display()), e))?;
         drop(main_rs);
 
+        let udf_path = config.udf_path(pipeline_id);
+        fs::write(&udf_path, &job.pipeline.udf_rust)
+            .await
+            .map_err(|e| ManagerError::io_error(format!("writing '{}'", udf_path.display()), e))?;
+
         // Write `project/Cargo.toml`.
-        Compiler::write_project_toml(config, pipeline_id).await?;
+        Compiler::write_project_toml(config, &job.pipeline.udf_toml, pipeline_id).await?;
+
+        //Compiler::create_udf_crate(config, pipeline_id, &job.pipeline).await?;
 
         // Write workspace `Cargo.toml`.  The workspace contains SQL libs and the
         // generated project crate.
@@ -1076,7 +1097,6 @@ mod test {
         auth::TenantRecord, compiler::ProgramStatus, config::CompilerConfig, db::storage::Storage,
     };
     use feldera_types::config::RuntimeConfig;
-    use feldera_types::program_schema::ProgramSchema;
     use std::{fs::File, sync::Arc};
     use tempfile::TempDir;
     use tokio::{fs, sync::Mutex};
@@ -1099,6 +1119,8 @@ mod test {
                     description: "Description of the pipeline".to_string(),
                     runtime_config: RuntimeConfig::from_yaml(""),
                     program_code: "code-not-used".to_string(),
+                    udf_rust: "".to_string(),
+                    udf_toml: "".to_string(),
                     program_config: ProgramConfig {
                         profile: Some(CompilationProfile::Unoptimized),
                     },
@@ -1159,19 +1181,7 @@ mod test {
             .unwrap();
         db.lock()
             .await
-            .transit_program_status_to_compiling_rust(
-                tid,
-                pid,
-                vid,
-                &ProgramInfo {
-                    schema: ProgramSchema {
-                        inputs: vec![],
-                        outputs: vec![],
-                    },
-                    input_connectors: Default::default(),
-                    output_connectors: Default::default(),
-                },
-            )
+            .transit_program_status_to_compiling_rust(tid, pid, vid, &ProgramInfo::default())
             .await
             .unwrap();
         Compiler::reconcile_local_state(&conf, &db).await.unwrap();
@@ -1185,19 +1195,7 @@ mod test {
             .unwrap();
         db.lock()
             .await
-            .transit_program_status_to_compiling_rust(
-                tid,
-                pid,
-                vid,
-                &ProgramInfo {
-                    schema: ProgramSchema {
-                        inputs: vec![],
-                        outputs: vec![],
-                    },
-                    input_connectors: Default::default(),
-                    output_connectors: Default::default(),
-                },
-            )
+            .transit_program_status_to_compiling_rust(tid, pid, vid, &ProgramInfo::default())
             .await
             .unwrap();
         db.lock()
@@ -1236,19 +1234,7 @@ mod test {
             .unwrap();
         db.lock()
             .await
-            .transit_program_status_to_compiling_rust(
-                tid,
-                pid,
-                vid,
-                &ProgramInfo {
-                    schema: ProgramSchema {
-                        inputs: vec![],
-                        outputs: vec![],
-                    },
-                    input_connectors: Default::default(),
-                    output_connectors: Default::default(),
-                },
-            )
+            .transit_program_status_to_compiling_rust(tid, pid, vid, &ProgramInfo::default())
             .await
             .unwrap();
         db.lock()
@@ -1268,19 +1254,7 @@ mod test {
             .unwrap();
         db.lock()
             .await
-            .transit_program_status_to_compiling_rust(
-                tid,
-                pid,
-                vid,
-                &ProgramInfo {
-                    schema: ProgramSchema {
-                        inputs: vec![],
-                        outputs: vec![],
-                    },
-                    input_connectors: Default::default(),
-                    output_connectors: Default::default(),
-                },
-            )
+            .transit_program_status_to_compiling_rust(tid, pid, vid, &ProgramInfo::default())
             .await
             .unwrap();
         db.lock()
@@ -1347,36 +1321,12 @@ mod test {
             .unwrap();
         db.lock()
             .await
-            .transit_program_status_to_compiling_rust(
-                tid,
-                pid1,
-                v1,
-                &ProgramInfo {
-                    schema: ProgramSchema {
-                        inputs: vec![],
-                        outputs: vec![],
-                    },
-                    input_connectors: Default::default(),
-                    output_connectors: Default::default(),
-                },
-            )
+            .transit_program_status_to_compiling_rust(tid, pid1, v1, &ProgramInfo::default())
             .await
             .unwrap();
         db.lock()
             .await
-            .transit_program_status_to_compiling_rust(
-                tid,
-                pid2,
-                v2,
-                &ProgramInfo {
-                    schema: ProgramSchema {
-                        inputs: vec![],
-                        outputs: vec![],
-                    },
-                    input_connectors: Default::default(),
-                    output_connectors: Default::default(),
-                },
-            )
+            .transit_program_status_to_compiling_rust(tid, pid2, v2, &ProgramInfo::default())
             .await
             .unwrap();
         Compiler::reconcile_local_state(&conf, &db).await.unwrap();

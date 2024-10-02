@@ -358,6 +358,14 @@ pub struct PipelineDescr {
     /// Program SQL code.
     pub program_code: String,
 
+    /// Rust code for UDFs.
+    #[serde(default)]
+    pub udf_rust: String,
+
+    /// Rust dependencies in the TOML format.
+    #[serde(default)]
+    pub udf_toml: String,
+
     /// Program compilation configuration.
     pub program_config: ProgramConfig,
 }
@@ -387,6 +395,12 @@ pub struct ExtendedPipelineDescr {
 
     /// Program SQL code.
     pub program_code: String,
+
+    /// Rust code for UDFs.
+    pub udf_rust: String,
+
+    /// Rust dependencies in the TOML format.
+    pub udf_toml: String,
 
     /// Program compilation configuration.
     pub program_config: ProgramConfig,

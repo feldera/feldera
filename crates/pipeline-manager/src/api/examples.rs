@@ -56,6 +56,8 @@ pub(crate) fn pipeline_1() -> PipelineDescr {
             clock_resolution_usecs: Some(100_000),
         },
         program_code: "CREATE TABLE table1 ( col1 INT );".to_string(),
+        udf_rust: "".to_string(),
+        udf_toml: "".to_string(),
         program_config: ProgramConfig {
             profile: Some(CompilationProfile::Optimized),
         },
@@ -82,6 +84,8 @@ pub(crate) fn extended_pipeline_1() -> ExtendedPipelineDescr {
             clock_resolution_usecs: Some(100_000),
         },
         program_code: "CREATE TABLE table1 ( col1 INT );".to_string(),
+        udf_rust: "".to_string(),
+        udf_toml: "".to_string(),
         program_config: ProgramConfig {
             profile: Some(CompilationProfile::Optimized),
         },
@@ -126,6 +130,8 @@ pub(crate) fn extended_pipeline_2() -> ExtendedPipelineDescr {
             clock_resolution_usecs: Some(100_000),
         },
         program_code: "CREATE TABLE table2 ( col2 VARCHAR );".to_string(),
+        udf_rust: "".to_string(),
+        udf_toml: "".to_string(),
         program_config: ProgramConfig {
             profile: Some(CompilationProfile::Unoptimized),
         },
@@ -156,6 +162,8 @@ pub(crate) fn patch_pipeline() -> PatchPipeline {
         description: Some("This is a new description".to_string()),
         runtime_config: None,
         program_code: Some("CREATE TABLE table3 ( col3 INT );".to_string()),
+        udf_rust: None,
+        udf_toml: None,
         program_config: None,
     }
 }

@@ -19,10 +19,10 @@ use uuid::Uuid;
 
 /// Converts a pipeline table row to its extended descriptor.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
-    assert_eq!(row.len(), 21);
-    let program_info_str = row.get::<_, Option<String>>(13);
-    let deployment_config_str = row.get::<_, Option<String>>(19);
-    let deployment_error_str = row.get::<_, Option<String>>(18);
+    assert_eq!(row.len(), 23);
+    let program_info_str = row.get::<_, Option<String>>(15);
+    let deployment_config_str = row.get::<_, Option<String>>(21);
+    let deployment_error_str = row.get::<_, Option<String>>(20);
     Ok(ExtendedPipelineDescr {
         id: PipelineId(row.get(0)),
         // tenant_id is not used
@@ -32,18 +32,20 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         version: Version(row.get(5)),
         runtime_config: RuntimeConfig::from_yaml(row.get(6)),
         program_code: row.get(7),
-        program_config: ProgramConfig::from_yaml(row.get(8)),
-        program_version: Version(row.get(9)),
-        program_status: ProgramStatus::from_columns(row.get(10), row.get(12))?,
-        program_status_since: row.get(11),
+        udf_rust: row.get(8),
+        udf_toml: row.get(9),
+        program_config: ProgramConfig::from_yaml(row.get(10)),
+        program_version: Version(row.get(11)),
+        program_status: ProgramStatus::from_columns(row.get(12), row.get(14))?,
+        program_status_since: row.get(13),
         program_info: program_info_str.map(|s| ProgramInfo::from_yaml(&s)),
-        program_binary_url: row.get(14),
-        deployment_status: row.get::<_, String>(15).try_into()?,
-        deployment_status_since: row.get(16),
-        deployment_desired_status: row.get::<_, String>(17).try_into()?,
+        program_binary_url: row.get(16),
+        deployment_status: row.get::<_, String>(17).try_into()?,
+        deployment_status_since: row.get(18),
+        deployment_desired_status: row.get::<_, String>(19).try_into()?,
         deployment_error: deployment_error_str.map(|s| ErrorResponse::from_yaml(&s)),
         deployment_config: deployment_config_str.map(|s| PipelineConfig::from_yaml(&s)),
-        deployment_location: row.get(20),
+        deployment_location: row.get(22),
     })
 }
 
@@ -54,7 +56,7 @@ pub(crate) async fn list_pipelines(
     let stmt = txn
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
-                    p.program_code, p.program_config, p.program_version, p.program_status,
+                    p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
                     p.program_status_since, p.program_error, p.program_info, p.program_binary_url,
                     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
                     p.deployment_error, p.deployment_config, p.deployment_location
@@ -80,7 +82,7 @@ pub(crate) async fn get_pipeline(
     let stmt = txn
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
-                    p.program_code, p.program_config, p.program_version, p.program_status,
+                    p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
                     p.program_status_since, p.program_error, p.program_info, p.program_binary_url,
                     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
                     p.deployment_error, p.deployment_config, p.deployment_location
@@ -105,7 +107,7 @@ pub async fn get_pipeline_by_id(
     let stmt = txn
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
-                    p.program_code, p.program_config, p.program_version, p.program_status,
+                    p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
                     p.program_status_since, p.program_error, p.program_info, p.program_binary_url,
                     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
                     p.deployment_error, p.deployment_config, p.deployment_location
@@ -132,14 +134,14 @@ pub(crate) async fn new_pipeline(
 
         .prepare_cached(
             "INSERT INTO pipeline (id, tenant_id, name, description, created_at, version, runtime_config,
-                                   program_code, program_config, program_version, program_status,
+                                   program_code, udf_rust, udf_toml, program_config, program_version, program_status,
                                    program_status_since, program_error, program_info, program_binary_url,
                                    deployment_status, deployment_status_since, deployment_desired_status,
                                    deployment_error, deployment_config, deployment_location)
             VALUES ($1, $2, $3, $4, now(), $5, $6,
-                    $7, $8, $9, $10,
+                    $7, $8, $9, $10, $11, $12,
                     now(), NULL, NULL, NULL,
-                    $11, now(), $12,
+                    $13, now(), $14,
                     NULL, NULL, NULL)",
         )
         .await?;
@@ -153,11 +155,13 @@ pub(crate) async fn new_pipeline(
             &Version(1).0,                          // $5: version
             &pipeline.runtime_config.to_yaml(),     // $6: runtime_config
             &pipeline.program_code,                 // $7: program_code
-            &pipeline.program_config.to_yaml(),     // $8: program_config
-            &Version(1).0,                          // $9: program_version
-            &ProgramStatus::Pending.to_columns().0, // $10: program_status
-            &PipelineStatus::Shutdown.to_string(),  // $11: deployment_status
-            &PipelineStatus::Shutdown.to_string(),  // $12: deployment_desired_status
+            &pipeline.udf_rust,                     // $8: udf_rust
+            &pipeline.udf_toml,                     // $9: udf_toml
+            &pipeline.program_config.to_yaml(),     // $10: program_config
+            &Version(1).0,                          // $11: program_version
+            &ProgramStatus::Pending.to_columns().0, // $12: program_status
+            &PipelineStatus::Shutdown.to_string(),  // $13: deployment_status
+            &PipelineStatus::Shutdown.to_string(),  // $14: deployment_desired_status
         ],
     )
     .await
@@ -175,6 +179,8 @@ pub(crate) async fn update_pipeline(
     description: &Option<String>,
     runtime_config: &Option<RuntimeConfig>,
     program_code: &Option<String>,
+    udf_rust: &Option<String>,
+    udf_toml: &Option<String>,
     program_config: &Option<ProgramConfig>,
 ) -> Result<Version, DBError> {
     if let Some(name) = name {
@@ -204,6 +210,8 @@ pub(crate) async fn update_pipeline(
             || program_code
                 .as_ref()
                 .is_some_and(|v| *v == current.program_code))
+        && (udf_rust.is_none() || udf_rust.as_ref().is_some_and(|v| *v == current.udf_rust))
+        && (udf_toml.is_none() || udf_toml.as_ref().is_some_and(|v| *v == current.udf_toml))
         && (program_config.is_none()
             || program_config
                 .as_ref()
@@ -220,9 +228,11 @@ pub(crate) async fn update_pipeline(
                      description = COALESCE($2, description),
                      runtime_config = COALESCE($3, runtime_config),
                      program_code = COALESCE($4, program_code),
-                     program_config = COALESCE($5, program_config),
+                     udf_rust = COALESCE($5, udf_rust),
+                     udf_toml = COALESCE($6, udf_toml),
+                     program_config = COALESCE($7, program_config),
                      version = version + 1
-                 WHERE tenant_id = $6 AND name = $7",
+                 WHERE tenant_id = $8 AND name = $9",
         )
         .await?;
     let rows_affected = txn
@@ -233,6 +243,8 @@ pub(crate) async fn update_pipeline(
                 &description,
                 &runtime_config.as_ref().map(|v| v.to_yaml()),
                 &program_code,
+                &udf_rust,
+                &udf_toml,
                 &program_config.as_ref().map(|v| v.to_yaml()),
                 &tenant_id.0,
                 &original_name,
@@ -247,6 +259,8 @@ pub(crate) async fn update_pipeline(
     let program_changed = program_code
         .as_ref()
         .is_some_and(|v| *v != current.program_code)
+        || udf_rust.as_ref().is_some_and(|v| *v != current.udf_rust)
+        || udf_toml.as_ref().is_some_and(|v| *v != current.udf_toml)
         || program_config
             .as_ref()
             .is_some_and(|v| *v != current.program_config);
@@ -580,7 +594,7 @@ pub(crate) async fn list_pipelines_across_all_tenants(
     let stmt = txn
         .prepare_cached(
             "SELECT p.id,p. tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
-                    p.program_code, p.program_config, p.program_version, p.program_status,
+                    p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
                     p.program_status_since, p.program_error, p.program_info, p.program_binary_url,
                     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
                     p.deployment_error, p.deployment_config, p.deployment_location
@@ -607,7 +621,7 @@ pub(crate) async fn get_next_pipeline_program_to_compile(
     let stmt = txn
         .prepare_cached(
             "SELECT p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.runtime_config,
-                    p.program_code, p.program_config, p.program_version, p.program_status,
+                    p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
                     p.program_status_since, p.program_error, p.program_info, p.program_binary_url,
                     p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
                     p.deployment_error, p.deployment_config, p.deployment_location

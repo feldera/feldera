@@ -194,6 +194,8 @@ impl Storage for StoragePostgres {
                     &Some(pipeline.description.clone()),
                     &Some(pipeline.runtime_config.clone()),
                     &Some(pipeline.program_code.clone()),
+                    &Some(pipeline.udf_rust.clone()),
+                    &Some(pipeline.udf_toml.clone()),
                     &Some(pipeline.program_config.clone()),
                 )
                 .await?;
@@ -232,6 +234,8 @@ impl Storage for StoragePostgres {
         description: &Option<String>,
         runtime_config: &Option<RuntimeConfig>,
         program_code: &Option<String>,
+        udf_rust: &Option<String>,
+        udf_toml: &Option<String>,
         program_config: &Option<ProgramConfig>,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut client = self.pool.get().await?;
@@ -246,6 +250,8 @@ impl Storage for StoragePostgres {
             description,
             runtime_config,
             program_code,
+            udf_rust,
+            udf_toml,
             program_config,
         )
         .await?;
