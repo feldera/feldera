@@ -629,7 +629,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPClosureExpression makeKeys =
                 new DBSPRawTupleExpression(
                         localKeyExpression,
-                        DBSPTupleExpression.flatten(t.deref())).closure(t.asParameter());
+                        DBSPTupleExpression.flatten(inputRowType.to(DBSPTypeTuple.class), t.deref())).closure(t.asParameter());
         DBSPType localGroupType = localKeyExpression.getType();
         DBSPTypeIndexedZSet localGroupAndInput = makeIndexedZSet(localGroupType, inputRowType);
         DBSPOperator createIndex = new DBSPMapIndexOperator(
@@ -708,7 +708,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // actual expected type aggType (which is the tuple of aggTypes).
             flattenFields[aggregate.getGroupCount() + i] = flattenField.cast(aggTypes[i]);
         }
-        DBSPExpression mapper = new DBSPTupleExpression(flattenFields).closure(kv.asParameter());
+        DBSPExpression mapper = new DBSPTupleExpression(node, tuple, flattenFields).closure(kv.asParameter());
         DBSPMapOperator map = new DBSPMapOperator(node, mapper, this.makeZSet(tuple), adjust);
         this.circuit.addOperator(map);
         if (aggregate.getGroupCount() != 0 || aggregateCalls.isEmpty()) {
@@ -838,7 +838,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath row = inputType.ref().var();
         ExpressionCompiler expressionCompiler = new ExpressionCompiler(project, row, this.compiler);
 
-        List<DBSPExpression> resultColumns = new ArrayList<>();
+        DBSPExpression[] resultColumns = new DBSPExpression[tuple.size()];
         int index = 0;
         for (RexNode column : project.getProjects()) {
             if (column instanceof RexOver) {
@@ -851,11 +851,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     // Calcite's optimizations do not preserve types!
                     exp = exp.applyCloneIfNeeded().cast(expectedType);
                 }
-                resultColumns.add(exp);
+                resultColumns[index] = exp;
                 index++;
             }
         }
-        DBSPExpression exp = new DBSPTupleExpression(node, resultColumns);
+        DBSPExpression exp = new DBSPTupleExpression(node, tuple, resultColumns);
         DBSPExpression mapFunc = new DBSPClosureExpression(node, exp, row.asParameter());
         DBSPMapOperator op = new DBSPMapOperator(
                 node, mapFunc, this.makeZSet(outputElementType), opInput);

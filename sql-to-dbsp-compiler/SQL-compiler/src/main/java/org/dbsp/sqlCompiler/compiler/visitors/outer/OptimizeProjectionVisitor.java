@@ -49,7 +49,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneVisitor {
                 if (sourceFunction != null && projection.isShuffle()) {
                     DBSPTypeFunction previousFunctionType = sourceFunction.getType().to(DBSPTypeFunction.class);
                     DBSPType newFunctionType = new DBSPTypeFunction(
-                            operator.getOutputZSetElementType(), previousFunctionType.argumentTypes);
+                            operator.getOutputZSetElementType(), previousFunctionType.parameterTypes);
                     DBSPExpression newFunction = new DBSPFlatmap(
                             function.getNode(), newFunctionType, sourceFunction.inputElementType,
                             sourceFunction.collectionExpression, sourceFunction.leftCollectionIndexes,

@@ -42,13 +42,13 @@ public class StructTests extends SqlIoTest {
             SELECT PERS.p0.address FROM PERS
             WHERE PERS.p0.firstname = 'Mike'""";
         CompilerCircuitStream ccs = this.getCCS(ddl);
-        DBSPExpression address0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+        DBSPExpression address0 = new DBSPTupleExpression(true,
                 new DBSPStringLiteral("Broadway", true),
                 new DBSPStringLiteral("New York", true),
                 new DBSPStringLiteral("NY", true),
                 new DBSPStringLiteral("10000", true)
         );
-        DBSPExpression person0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+        DBSPExpression person0 = new DBSPTupleExpression(true,
                 new DBSPStringLiteral("Mike", true),
                 new DBSPStringLiteral("John", true),
                 address0
@@ -77,13 +77,13 @@ public class StructTests extends SqlIoTest {
             SELECT address_typ(PERS.p0.address.street, PERS.p1.address.city, 'CA', '90000') FROM PERS;
             """;
         CompilerCircuitStream ccs = this.getCCS(ddl);
-        DBSPExpression address0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+        DBSPExpression address0 = new DBSPTupleExpression(true,
                 new DBSPStringLiteral("Broadway", true),
                 new DBSPStringLiteral("New York", true),
                 new DBSPStringLiteral("NY", true),
                 new DBSPStringLiteral("10000", true)
         );
-        DBSPExpression person0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+        DBSPExpression person0 = new DBSPTupleExpression( true,
                 new DBSPStringLiteral("Mike", true),
                 new DBSPStringLiteral("John", true),
                 address0
@@ -111,7 +111,7 @@ public class StructTests extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPExpression pers = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+        DBSPExpression pers = new DBSPTupleExpression(true,
                 new DBSPVecLiteral(true,
                     new DBSPStringLiteral("Broadway", true),
                     new DBSPStringLiteral("5th Avenue", true),
@@ -131,7 +131,7 @@ public class StructTests extends SqlIoTest {
             CREATE TABLE PERS(p0 address_typ);
             CREATE VIEW V AS SELECT st FROM PERS, UNNEST(PERS.p0.street) AS st;""";
         CompilerCircuitStream ccs = this.getCCS(ddl);
-        DBSPExpression pers = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+        DBSPExpression pers = new DBSPTupleExpression(true,
                 new DBSPVecLiteral(true,
                         new DBSPStringLiteral("Broadway", true),
                         new DBSPStringLiteral("5th Avenue", true),
@@ -157,22 +157,22 @@ public class StructTests extends SqlIoTest {
             CREATE VIEW V AS SELECT A.* FROM (T CROSS JOIN UNNEST(T.col.fields) A)""";
         CompilerCircuitStream ccs = this.getCCS(ddl);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
-        DBSPExpression t0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+        DBSPExpression t0 = new DBSPTupleExpression(true,
                 new DBSPVecLiteral(true,
                         new DBSPTupleExpression(
-                                CalciteObject.EMPTY, true, new DBSPI32Literal(0, true), t),
+                                true, new DBSPI32Literal(0, true), t),
                         new DBSPTupleExpression(
-                                CalciteObject.EMPTY, true, new DBSPI32Literal(1, true), t),
+                                true, new DBSPI32Literal(1, true), t),
                         new DBSPTupleExpression(
-                                CalciteObject.EMPTY, true, new DBSPI32Literal(2, true), t)));
-        DBSPExpression t1 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+                                true, new DBSPI32Literal(2, true), t)));
+        DBSPExpression t1 = new DBSPTupleExpression(true,
                 new DBSPVecLiteral(true,
                         new DBSPTupleExpression(
-                                CalciteObject.EMPTY, true, new DBSPI32Literal(3, true), t),
+                                true, new DBSPI32Literal(3, true), t),
                         new DBSPTupleExpression(
-                                CalciteObject.EMPTY, true, new DBSPI32Literal(4, true), t),
+                                true, new DBSPI32Literal(4, true), t),
                         new DBSPTupleExpression(
-                                CalciteObject.EMPTY, true, new DBSPI32Literal(5, true), t)));
+                                true, new DBSPI32Literal(5, true), t)));
         DBSPZSetLiteral input = new DBSPZSetLiteral(
                 new DBSPTupleExpression(t0),
                 new DBSPTupleExpression(t1));
@@ -198,12 +198,12 @@ public class StructTests extends SqlIoTest {
         compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
         DBSPBoolLiteral t = new DBSPBoolLiteral(true, true);
-        DBSPExpression t0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+        DBSPExpression t0 = new DBSPTupleExpression(true,
                 new DBSPVecLiteral(true,
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(0, true), t), true),
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(1, true), t), true),
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(2, true), t), true)));
-        DBSPExpression t1 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+        DBSPExpression t1 = new DBSPTupleExpression(true,
                 new DBSPVecLiteral(true,
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(3, true), t), true),
                         new DBSPTupleExpression(Linq.list(new DBSPI32Literal(4, true), t), true),
@@ -240,13 +240,13 @@ public class StructTests extends SqlIoTest {
         DBSPCompiler compiler = this.testCompiler();
         compiler.compileStatements(ddl);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPExpression address0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+        DBSPExpression address0 = new DBSPTupleExpression(true,
                 new DBSPStringLiteral("Broadway", true),
                 new DBSPStringLiteral("New York", true),
                 new DBSPStringLiteral("NY", true),
                 new DBSPStringLiteral("10000", true)
         );
-        DBSPExpression person0 = new DBSPTupleExpression(CalciteObject.EMPTY, true,
+        DBSPExpression person0 = new DBSPTupleExpression(true,
                 new DBSPStringLiteral("Mike", true),
                 new DBSPStringLiteral("John", true),
                 new DBSPVecLiteral(true, address0, address0)

@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
@@ -11,17 +12,18 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 
 public class DBSPVariantLiteral extends DBSPLiteral {
-    // TODO: this may need to be an expression
-    @Nullable public final DBSPLiteral value;
+    // this is usually a literal
+    @Nullable public final DBSPExpression value;
     // If true this VARIANT has the value NULL inside.
     // But it's a VARIANT object, not a NULL
     public final boolean isSqlNull;
 
-    public DBSPVariantLiteral(@Nullable DBSPLiteral value, DBSPType type) {
+    public DBSPVariantLiteral(@Nullable DBSPExpression value, DBSPType type) {
         super(CalciteObject.EMPTY, type, value == null);
         this.value = value;
         this.isSqlNull = false;
         assert type.is(DBSPTypeVariant.class);
+        assert value == null || value.is(ISameValue.class);
     }
 
     public DBSPVariantLiteral(boolean mayBeNull) {
@@ -30,11 +32,11 @@ public class DBSPVariantLiteral extends DBSPLiteral {
         this.value = null;
     }
 
-    public DBSPVariantLiteral(@Nullable DBSPLiteral value, boolean mayBeNull) {
+    public DBSPVariantLiteral(@Nullable DBSPExpression value, boolean mayBeNull) {
         this(value, new DBSPTypeVariant(CalciteObject.EMPTY, mayBeNull));
     }
 
-    public DBSPVariantLiteral(@Nullable DBSPLiteral value) {
+    public DBSPVariantLiteral(@Nullable DBSPExpression value) {
         this(value, new DBSPTypeVariant(CalciteObject.EMPTY, false));
     }
 
@@ -55,7 +57,7 @@ public class DBSPVariantLiteral extends DBSPLiteral {
     }
 
     @Override
-    public boolean sameValue(@Nullable DBSPLiteral o) {
+    public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DBSPVariantLiteral that = (DBSPVariantLiteral) o;
@@ -63,7 +65,9 @@ public class DBSPVariantLiteral extends DBSPLiteral {
             return that.isSqlNull && this.value == that.value;
         if (this.value == null)
             return that.value == null;
-        return this.value.sameValue(that.value);
+        if (that.value == null)
+            return false;
+        return this.value.to(ISameValue.class).sameValue(that.value.to(ISameValue.class));
     }
 
     @Override

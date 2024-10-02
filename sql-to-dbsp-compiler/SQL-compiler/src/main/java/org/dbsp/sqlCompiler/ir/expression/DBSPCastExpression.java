@@ -23,19 +23,12 @@
 
 package org.dbsp.sqlCompiler.ir.expression;
 
-import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.util.IIndentStream;
 
 /** This class does not correspond to any Rust primitive construct.
@@ -47,54 +40,6 @@ public final class DBSPCastExpression extends DBSPExpression {
     public DBSPCastExpression(CalciteObject node, DBSPExpression source, DBSPType to) {
         super(node, to);
         this.source = source;
-        this.validate();
-    }
-
-    void validate() {
-        DBSPType sourceType = source.getType();
-        if (type.is(DBSPTypeVariant.class))
-            // Any cast to variant is ok
-            return;
-        if (type.is(DBSPTypeBaseType.class))
-            assert sourceType.is(DBSPTypeBaseType.class);
-        else if (type.is(DBSPTypeVec.class)) {
-            if (!sourceType.is(DBSPTypeVec.class) &&
-                    !sourceType.is(DBSPTypeVariant.class)) {
-                this.unsupported();
-            }
-        } else if (type.is(DBSPTypeMap.class)) {
-            if (!sourceType.is(DBSPTypeMap.class) &&
-                    !sourceType.is(DBSPTypeVariant.class)) {
-                this.unsupported();
-            }
-        } else if (type.is(DBSPTypeTuple.class)) {
-            if (!sourceType.is(DBSPTypeTuple.class) &&
-                    !sourceType.is(DBSPTypeVariant.class)) {
-                this.unsupported();
-            }
-            if (sourceType.is(DBSPTypeVariant.class)) {
-                // TODO
-                this.unimplemented();
-            }
-        }
-        if (type.is(DBSPTypeVariant.class)) {
-            if (sourceType.is(DBSPTypeTuple.class)) {
-                // TODO
-                this.unimplemented();
-            }
-        }
-    }
-
-    void unsupported() {
-        throw new UnsupportedException("Casting of value with type '" +
-                this.source.getType().asSqlString() +
-                "' to the target type '" + this.type.asSqlString() + "' not supported", this.getNode());
-    }
-
-    void unimplemented() {
-        throw new UnimplementedException("Casting of value with type '" +
-                this.source.getType().asSqlString() +
-                "' to the target type '" + this.type.asSqlString() + "' not yet implemented", this.getNode());
     }
 
     public DBSPCastExpression replaceSource(DBSPExpression source) {

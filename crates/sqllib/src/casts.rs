@@ -831,6 +831,28 @@ pub fn limit_or_size_string(value: String, size: i32, fixed: bool) -> String {
     }
 }
 
+macro_rules! cast_to_string {
+    ($type_name: ident, $arg_type: ty) => {
+        ::paste::paste! {
+            #[inline]
+            pub fn [<cast_to_s_ $type_name N >]( value: Option<$arg_type>, size: i32, fixed: bool ) -> String {
+                [<cast_to_s_ $type_name>](value.unwrap(), size, fixed)
+            }
+
+            #[inline]
+            pub fn [<cast_to_sN_ $type_name >]( value: $arg_type, size: i32, fixed: bool ) -> Option<String> {
+                Some([< cast_to_s_ $type_name >](value, size, fixed))
+            }
+
+            #[inline]
+            pub fn [<cast_to_sN_ $type_name N >]( value: Option<$arg_type>, size: i32, fixed: bool ) -> Option<String> {
+                let value = value?;
+                [<cast_to_sN_ $type_name >](value, size, fixed)
+            }
+        }
+    };
+}
+
 #[inline]
 pub fn cast_to_s_b(value: bool, size: i32, fixed: bool) -> String {
     let result = value.to_string();
@@ -838,20 +860,8 @@ pub fn cast_to_s_b(value: bool, size: i32, fixed: bool) -> String {
 }
 
 #[inline]
-pub fn cast_to_s_bN(value: Option<bool>, size: i32, fixed: bool) -> String {
-    let result = s_helper(value);
-    limit_or_size_string(result, size, fixed)
-}
-
-#[inline]
 pub fn cast_to_s_decimal(value: Decimal, size: i32, fixed: bool) -> String {
     let result = value.to_string();
-    limit_or_size_string(result, size, fixed)
-}
-
-#[inline]
-pub fn cast_to_s_decimalN(value: Option<Decimal>, size: i32, fixed: bool) -> String {
-    let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
@@ -871,15 +881,6 @@ pub fn cast_to_s_d(value: F64, size: i32, fixed: bool) -> String {
 }
 
 #[inline]
-pub fn cast_to_s_dN(value: Option<F64>, size: i32, fixed: bool) -> String {
-    let result = match value {
-        Some(inner) => return cast_to_s_d(inner, size, fixed),
-        None => String::from("NULL"),
-    };
-    limit_or_size_string(result, size, fixed)
-}
-
-#[inline]
 pub fn cast_to_s_f(value: F32, size: i32, fixed: bool) -> String {
     let result = format!("{1:.0$}", FLOAT_DISPLAY_PRECISION, value);
     let result = result.trim_end_matches('0').to_string();
@@ -895,23 +896,8 @@ pub fn cast_to_s_f(value: F32, size: i32, fixed: bool) -> String {
 }
 
 #[inline]
-pub fn cast_to_s_fN(value: Option<F32>, size: i32, fixed: bool) -> String {
-    let result = match value {
-        Some(inner) => return cast_to_s_f(inner, size, fixed),
-        None => String::from("NULL"),
-    };
-    limit_or_size_string(result, size, fixed)
-}
-
-#[inline]
 pub fn cast_to_s_s(value: String, size: i32, fixed: bool) -> String {
     let result = value;
-    limit_or_size_string(result, size, fixed)
-}
-
-#[inline]
-pub fn cast_to_s_sN(value: Option<String>, size: i32, fixed: bool) -> String {
-    let result = value.unwrap();
     limit_or_size_string(result, size, fixed)
 }
 
@@ -932,7 +918,32 @@ pub fn cast_to_s_Timestamp(value: Timestamp, size: i32, fixed: bool) -> String {
 }
 
 #[inline]
+pub fn cast_to_s_Date(value: Date, size: i32, fixed: bool) -> String {
+    let dt = value.to_date();
+    let month = dt.month();
+    let day = dt.day();
+    let year = dt.year();
+    let result = format!("{}-{:02}-{:02}", year, month, day);
+    limit_or_size_string(result, size, fixed)
+}
+
+pub fn cast_to_s_Time(value: Time, size: i32, fixed: bool) -> String {
+    let dt = value.to_time();
+    let hr = dt.hour();
+    let min = dt.minute();
+    let sec = dt.second();
+    let result = format!("{:02}:{:02}:{:02}", hr, min, sec);
+    limit_or_size_string(result, size, fixed)
+}
+
+#[inline]
 pub fn cast_to_s_i(value: isize, size: i32, fixed: bool) -> String {
+    let result = value.to_string();
+    limit_or_size_string(result, size, fixed)
+}
+
+#[inline]
+pub fn cast_to_s_i8(value: i8, size: i32, fixed: bool) -> String {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
@@ -944,20 +955,8 @@ pub fn cast_to_s_i16(value: i16, size: i32, fixed: bool) -> String {
 }
 
 #[inline]
-pub fn cast_to_s_i16N(value: Option<i16>, size: i32, fixed: bool) -> String {
-    let result = s_helper(value);
-    limit_or_size_string(result, size, fixed)
-}
-
-#[inline]
 pub fn cast_to_s_i32(value: i32, size: i32, fixed: bool) -> String {
     let result = value.to_string();
-    limit_or_size_string(result, size, fixed)
-}
-
-#[inline]
-pub fn cast_to_s_i32N(value: Option<i32>, size: i32, fixed: bool) -> String {
-    let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
@@ -968,143 +967,35 @@ pub fn cast_to_s_i64(value: i64, size: i32, fixed: bool) -> String {
 }
 
 #[inline]
-pub fn cast_to_s_i64N(value: Option<i64>, size: i32, fixed: bool) -> String {
-    let result = s_helper(value);
-    limit_or_size_string(result, size, fixed)
-}
-
-#[inline]
 pub fn cast_to_s_u(value: usize, size: i32, fixed: bool) -> String {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
-/////////// cast to StringN
+pub fn cast_to_s_V(value: Variant, size: i32, fixed: bool) -> String {
+    let result: String = value.try_into().unwrap();
+    limit_or_size_string(result, size, fixed)
+}
+
+cast_to_string!(b, bool);
+cast_to_string!(decimal, Decimal);
+cast_to_string!(f, F32);
+cast_to_string!(d, F64);
+cast_to_string!(s, String);
+cast_to_string!(i, isize);
+cast_to_string!(u, usize);
+cast_to_string!(i8, i8);
+cast_to_string!(i16, i16);
+cast_to_string!(i32, i32);
+cast_to_string!(i64, i64);
+cast_to_string!(Timestamp, Timestamp);
+cast_to_string!(Time, Time);
+cast_to_string!(Date, Date);
+cast_to_string!(V, Variant);
 
 #[inline]
 pub fn cast_to_sN_nullN(_value: Option<()>, _size: i32, _fixed: bool) -> Option<String> {
     None
-}
-
-#[inline]
-pub fn sN_helper<T>(value: Option<T>, size: i32, fixed: bool) -> Option<String>
-where
-    T: ToString,
-{
-    value.map(|x| limit_or_size_string(x.to_string(), size, fixed))
-}
-
-#[inline]
-pub fn cast_to_sN_b(value: bool, size: i32, fixed: bool) -> Option<String> {
-    let result = value.to_string();
-    Some(limit_or_size_string(result, size, fixed))
-}
-
-#[inline]
-pub fn cast_to_sN_bN(value: Option<bool>, size: i32, fixed: bool) -> Option<String> {
-    sN_helper(value, size, fixed)
-}
-
-#[inline]
-pub fn cast_to_sN_decimal(value: Decimal, size: i32, fixed: bool) -> Option<String> {
-    let result = value.to_string();
-    Some(limit_or_size_string(result, size, fixed))
-}
-
-#[inline]
-pub fn cast_to_sN_decimalN(value: Option<Decimal>, size: i32, fixed: bool) -> Option<String> {
-    sN_helper(value, size, fixed)
-}
-
-#[inline]
-pub fn cast_to_sN_d(value: F64, size: i32, fixed: bool) -> Option<String> {
-    let result = value.to_string();
-    Some(limit_or_size_string(result, size, fixed))
-}
-
-#[inline]
-pub fn cast_to_sN_dN(value: Option<F64>, size: i32, fixed: bool) -> Option<String> {
-    sN_helper(value, size, fixed)
-}
-
-#[inline]
-pub fn cast_to_sN_f(value: F32, size: i32, fixed: bool) -> Option<String> {
-    let result = value.to_string();
-    Some(limit_or_size_string(result, size, fixed))
-}
-
-#[inline]
-pub fn cast_to_sN_fN(value: Option<F32>, size: i32, fixed: bool) -> Option<String> {
-    sN_helper(value, size, fixed)
-}
-
-#[inline]
-pub fn cast_to_sN_s(value: String, size: i32, fixed: bool) -> Option<String> {
-    Some(limit_or_size_string(value, size, fixed))
-}
-
-#[inline]
-pub fn cast_to_sN_sN(value: Option<String>, size: i32, fixed: bool) -> Option<String> {
-    sN_helper(value, size, fixed)
-}
-
-#[inline]
-pub fn cast_to_sN_i(value: isize, size: i32, fixed: bool) -> Option<String> {
-    let result = value.to_string();
-    Some(limit_or_size_string(result, size, fixed))
-}
-
-#[inline]
-pub fn cast_to_sN_i16(value: i16, size: i32, fixed: bool) -> Option<String> {
-    let result = value.to_string();
-    Some(limit_or_size_string(result, size, fixed))
-}
-
-#[inline]
-pub fn cast_to_sN_i16N(value: Option<i16>, size: i32, fixed: bool) -> Option<String> {
-    sN_helper(value, size, fixed)
-}
-
-#[inline]
-pub fn cast_to_sN_i32(value: i32, size: i32, fixed: bool) -> Option<String> {
-    let result = value.to_string();
-    Some(limit_or_size_string(result, size, fixed))
-}
-
-#[inline]
-pub fn cast_to_sN_i32N(value: Option<i32>, size: i32, fixed: bool) -> Option<String> {
-    sN_helper(value, size, fixed)
-}
-
-#[inline]
-pub fn cast_to_sN_i64(value: i64, size: i32, fixed: bool) -> Option<String> {
-    let result = value.to_string();
-    Some(limit_or_size_string(result, size, fixed))
-}
-
-#[inline]
-pub fn cast_to_sN_i64N(value: Option<i64>, size: i32, fixed: bool) -> Option<String> {
-    sN_helper(value, size, fixed)
-}
-
-#[inline]
-pub fn cast_to_sN_u(value: usize, size: i32, fixed: bool) -> Option<String> {
-    let result = value.to_string();
-    Some(limit_or_size_string(result, size, fixed))
-}
-
-#[inline]
-pub fn cast_to_sN_V(value: Variant, size: i32, fixed: bool) -> Option<String> {
-    match value {
-        Variant::String(v) => Some(limit_or_size_string(v, size, fixed)),
-        _ => None,
-    }
-}
-
-#[inline]
-pub fn cast_to_sN_VN(value: Option<Variant>, size: i32, fixed: bool) -> Option<String> {
-    let value = value?;
-    cast_to_sN_V(value, size, fixed)
 }
 
 /////////// cast to integer
@@ -1356,6 +1247,11 @@ pub fn cast_to_i64N_LongIntervalN(value: Option<LongInterval>) -> Option<i64> {
 //////// casts to Short interval
 
 #[inline]
+pub fn cast_to_ShortInterval_i8(value: i8) -> ShortInterval {
+    ShortInterval::from(value as i64)
+}
+
+#[inline]
 pub fn cast_to_ShortInterval_i16(value: i16) -> ShortInterval {
     ShortInterval::from(value as i64)
 }
@@ -1461,6 +1357,21 @@ cast_function!(i, isize, i64, i64);
 
 pub fn cast_to_bytesN_nullN(_value: Option<()>) -> Option<ByteArray> {
     None
+}
+
+#[inline]
+pub fn cast_to_bytes_bytes(value: ByteArray) -> ByteArray {
+    value
+}
+
+#[inline]
+pub fn cast_to_bytes_bytesN(value: Option<ByteArray>) -> ByteArray {
+    value.unwrap()
+}
+
+#[inline]
+pub fn cast_to_bytesN_bytes(value: ByteArray) -> Option<ByteArray> {
+    Some(value)
 }
 
 ///////////////////// Cast to Variant
@@ -1592,6 +1503,16 @@ where
     vec.into()
 }
 
+pub fn cast_to_V_vecN<T>(vec: Option<Vec<T>>) -> Variant
+where
+    Variant: From<T>,
+{
+    match vec {
+        None => Variant::SqlNull,
+        Some(vec) => vec.into(),
+    }
+}
+
 pub fn cast_to_vec_V<T>(value: Variant) -> Vec<T>
 where
     Vec<T>: TryFrom<Variant, Error = Box<dyn Error>>,
@@ -1624,6 +1545,14 @@ where
     cast_to_vecN_V(value)
 }
 
+#[inline]
+pub fn cast_to_V_VN(value: Option<Variant>) -> Variant {
+    match value {
+        None => Variant::SqlNull,
+        Some(x) => x,
+    }
+}
+
 /////// cast variant to map
 
 pub fn cast_to_V_map<K, V>(map: BTreeMap<K, V>) -> Variant
@@ -1633,6 +1562,18 @@ where
     V: Clone,
 {
     map.into()
+}
+
+pub fn cast_to_V_mapN<K, V>(map: Option<BTreeMap<K, V>>) -> Variant
+where
+    Variant: From<K> + From<V>,
+    K: Clone + Ord,
+    V: Clone,
+{
+    match map {
+        None => Variant::SqlNull,
+        Some(map) => map.into(),
+    }
 }
 
 pub fn cast_to_map_V<K, V>(value: Variant) -> BTreeMap<K, V>

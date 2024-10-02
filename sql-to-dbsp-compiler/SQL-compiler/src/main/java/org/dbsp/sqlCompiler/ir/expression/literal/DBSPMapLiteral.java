@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -16,7 +17,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** Represents a (constant) map described by its elements. */
+/** Represents a map constructor.
+ * TODO: this should not extend DBSPLiteral, since it's not always a constant. */
 public final class DBSPMapLiteral extends DBSPLiteral {
     // Both lists must have the same length
     @Nullable
@@ -24,14 +26,6 @@ public final class DBSPMapLiteral extends DBSPLiteral {
     @Nullable
     public final List<DBSPExpression> values;
     public final DBSPTypeMap mapType;
-
-    /** Create a MapLiteral representing an empty map */
-    public DBSPMapLiteral(DBSPType keyType, DBSPType valueType, boolean mayBeNull) {
-        super(CalciteObject.EMPTY, new DBSPTypeMap(keyType, valueType, mayBeNull), false);
-        this.keys = new ArrayList<>();
-        this.values = new ArrayList<>();
-        this.mapType = this.getType().to(DBSPTypeMap.class);
-    }
 
     public static List<DBSPExpression> getKeys(List<DBSPExpression> data) {
         ArrayList<DBSPExpression> result = new ArrayList<>();
@@ -137,7 +131,7 @@ public final class DBSPMapLiteral extends DBSPLiteral {
     }
 
     @Override
-    public boolean sameValue(@Nullable DBSPLiteral o) {
+    public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DBSPMapLiteral that = (DBSPMapLiteral) o;

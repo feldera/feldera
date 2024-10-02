@@ -18,10 +18,10 @@ public abstract class DBSPApplyBaseExpression extends DBSPExpression {
         if (method) return;  // TODO
         if (this.function.getType().is(DBSPTypeFunction.class)) {
             DBSPTypeFunction funcType = this.function.getType().to(DBSPTypeFunction.class);
-            assert funcType.argumentTypes.length == this.arguments.length:
-                    "Has " + funcType.argumentTypes.length + " parameters, but only " +
+            assert funcType.parameterTypes.length == this.arguments.length:
+                    "Has " + funcType.parameterTypes.length + " parameters, but only " +
                             this.arguments.length + " arguments";
-            parameterTypes = funcType.argumentTypes;
+            parameterTypes = funcType.parameterTypes;
         }
         int index = 0;
         for (DBSPExpression arg: this.arguments) {

@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression.literal;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
 import org.dbsp.util.IIndentStream;
@@ -38,7 +39,7 @@ public final class DBSPKeywordLiteral extends DBSPLiteral {
     public final String keyword;
 
     @Override
-    public boolean sameValue(@Nullable DBSPLiteral o) {
+    public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DBSPKeywordLiteral that = (DBSPKeywordLiteral) o;

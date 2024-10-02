@@ -8,6 +8,8 @@ public class OptimizedVariantTests extends VariantTests {
     @Override
     public DBSPCompiler testCompiler() {
         CompilerOptions options = this.testOptions(false, true);
-        return new DBSPCompiler(options);
+        DBSPCompiler compiler = new DBSPCompiler(options);
+        this.prepareInputs(compiler);
+        return compiler;
     }
 }

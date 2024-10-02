@@ -193,12 +193,12 @@ public abstract class DBSPOperator extends DBSPNode implements IHasType, IDBSPOu
                     + source.outputType, this);
         }
         DBSPTypeFunction funcType = function.getType().to(DBSPTypeFunction.class);
-        DBSPType argType = funcType.argumentTypes[arg];
+        DBSPType argType = funcType.parameterTypes[arg];
         if (argType.is(DBSPTypeAny.class))
             return;
         if (!sourceElementType.sameType(argType))
             throw new InternalCompilerError("Expected function to accept\n" + sourceElementType +
-                    " as argument " + arg + " but it expects\n" + funcType.argumentTypes[arg], this);
+                    " as argument " + arg + " but it expects\n" + funcType.parameterTypes[arg], this);
     }
 
     protected void addInput(DBSPOperator node) {

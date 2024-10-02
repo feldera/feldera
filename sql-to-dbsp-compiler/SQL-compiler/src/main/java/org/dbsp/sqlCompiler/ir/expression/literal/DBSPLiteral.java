@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -42,7 +43,7 @@ import javax.annotation.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
-public abstract class DBSPLiteral extends DBSPExpression {
+public abstract class DBSPLiteral extends DBSPExpression implements ISameValue {
     protected final boolean isNull;
 
     protected DBSPLiteral(CalciteObject node, DBSPType type, boolean isNull) {
@@ -99,7 +100,7 @@ public abstract class DBSPLiteral extends DBSPExpression {
         } else if (type.is(DBSPTypeVec.class)) {
             return new DBSPVecLiteral(type, true);
         } else if (type.is(DBSPTypeTuple.class)) {
-            return new DBSPTupleExpression(type.to(DBSPTypeTuple.class));
+            return DBSPTupleExpression.none(type.to(DBSPTypeTuple.class));
         } else if (type.is(DBSPTypeNull.class)) {
             return new DBSPNullLiteral();
         } else if (type.is(DBSPTypeTimestamp.class)) {
@@ -117,9 +118,6 @@ public abstract class DBSPLiteral extends DBSPExpression {
             return "Some(" + value + ")";
         return value;
     }
-
-    /** True if this and the other literal have the same type and value. */
-    public abstract boolean sameValue(@Nullable DBSPLiteral other);
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {

@@ -39,8 +39,7 @@ public final class DBSPAggregate extends DBSPNode
         this.rowVar = rowVar;
         this.aggregates = aggregates;
         this.isLinear = Linq.all(aggregates, AggregateBase::isLinear);
-        this.emptySetResult = new DBSPTupleExpression(
-                Linq.map(aggregates, AggregateBase::getEmptySetResult), false);
+        this.emptySetResult = new DBSPTupleExpression(node, Linq.map(aggregates, AggregateBase::getEmptySetResult));
         for (AggregateBase b: this.aggregates)
             assert b.isLinear() == this.isLinear;
     }

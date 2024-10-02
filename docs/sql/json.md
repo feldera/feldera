@@ -15,6 +15,10 @@ compare the runtime type with `T`.  If the types are identical or there
 is a natural conversion from the runtime type to `T`, the original value
 is returned.  Otherwise the `CAST` returns `NULL`.
 
+A value of type `VARIANT` that stores a `MAP` can be converted to a
+user-defined type.  Each name of a field of the user-defined type is
+used as to index into the map.
+
 :::note
 
 Remember that the `DECIMAL` type specified without precision is the
@@ -24,12 +28,17 @@ and scale large enough for the values that you expect in the data.
 
 :::
 
-Values of type `ARRAY` and `MAP` can be cast to `VARIANT`.
+Values of type `ARRAY`, `MAP` and user-defined types can be cast to
+`VARIANT`.
 
 There exists a special value of `VARIANT` type called `null`.  This
 value is different from the SQL `NULL` value.  It is used to implement
 the JSON `null` value.  An important difference is that two `VARIANT`
 `null` values are equal, whereas `NULL` in SQL is not equal to anything.
+
+Converting a user-defined type to a `VARIANT` produces a `VARIANT`
+storing a value of type `MAP<VARCHAR, VARIANT>`, where each field of
+the map corresponds to a field of the user-defined structure.
 
 `VARIANT` values also offer the following operations:
 
@@ -369,4 +378,15 @@ SELECT TO_JSON(CAST(DATE '2020-01-01' AS VARIANT))
 -- timestamps are unparsed as strings (timezone is always +00)
 SELECT TO_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))
 "2020-01-01 10:00:00"
+
+CREATE TYPE S AS (i INT, s VARCHAR, a INT ARRAY);
+SELECT TO_JSON(CAST(s(2, 'a', ARRAY[1, 2, 3]) AS VARIANT));
+{"A":[1,2,3],"I":2,"S":"a"}
+
+SELECT CAST(PARSE_JSON('{"I": 2, "S": "a", "A": [1, 2, 3]}') AS S);
+{A=[1,2,3], I=2, S="a"}
+
+CREATE TYPE t AS (sa S ARRAY);
+SELECT TO_JSON(CAST(t(ARRAY[s(2, 'a', ARRAY[1, NULL, 3]), s(3, 'b', array())]) AS VARIANT));
+{"SA":[{"A":[1,null,3],"I":2,"S":"a"},{"A":[],"I":3,"S":"b"}]}
 ```

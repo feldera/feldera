@@ -89,23 +89,24 @@ public class TypeCompiler implements ICompilerComponent {
     public DBSPType convertType(
             CalciteObject node, String name,
             List<RelColumnMetadata> columns, boolean asStruct, boolean mayBeNull) {
+        List<DBSPTypeStruct.Field> fields = new ArrayList<>();
+        int index = 0;
+        for (RelColumnMetadata col : columns) {
+            DBSPType fType = this.convertType(col.getType(), true);
+            fields.add(new DBSPTypeStruct.Field(
+                    col.node, col.getName(), index++, fType, col.nameIsQuoted));
+        }
+        String saneName = this.compiler.getSaneStructName(name);
+        DBSPTypeStruct struct = new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
         if (asStruct) {
-            List<DBSPTypeStruct.Field> fields = new ArrayList<>();
-            int index = 0;
-            for (RelColumnMetadata col : columns) {
-                DBSPType fType = this.convertType(col.getType(), true);
-                fields.add(new DBSPTypeStruct.Field(
-                        col.node, col.getName(), index++, fType, col.nameIsQuoted));
-            }
-            String saneName = this.compiler.getSaneStructName(name);
-            return new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
+            return struct;
         } else {
-            List<DBSPType> fields = new ArrayList<>();
+            List<DBSPType> typeFields = new ArrayList<>();
             for (RelColumnMetadata col : columns) {
                 DBSPType fType = this.convertType(col.getType(), false);
-                fields.add(fType);
+                typeFields.add(fType);
             }
-            return new DBSPTypeTuple(node, mayBeNull, fields);
+            return new DBSPTypeTuple(node, mayBeNull, struct, typeFields);
         }
     }
 
@@ -118,9 +119,17 @@ public class TypeCompiler implements ICompilerComponent {
     public DBSPType convertType(RelDataType dt, boolean asStruct) {
         CalciteObject node = CalciteObject.create(dt);
         boolean nullable = dt.isNullable();
+        DBSPTypeStruct struct;
         if (dt.isStruct()) {
             boolean isNamedStruct = dt instanceof RelStruct;
-            if (asStruct) {
+            String saneName = this.compiler.getSaneStructName("*");
+            String name = saneName;
+            if (isNamedStruct) {
+                RelStruct rs = (RelStruct) dt;
+                name = rs.typeName.getSimple();
+                // Struct must be already declared
+                struct = Objects.requireNonNull(this.compiler.getStructByName(name));
+            } else {
                 List<DBSPTypeStruct.Field> fields = new ArrayList<>();
                 FreshName fieldNameGen = new FreshName(new HashSet<>());
                 int index = 0;
@@ -134,22 +143,18 @@ public class TypeCompiler implements ICompilerComponent {
                     fields.add(new DBSPTypeStruct.Field(
                             CalciteObject.create(dt), fieldName, index++, type, false));
                 }
-                String saneName = this.compiler.getSaneStructName("*");
-                String name = saneName;
-                if (isNamedStruct) {
-                    RelStruct rs = (RelStruct) dt;
-                    name = rs.typeName.getSimple();
-                    // Struct must be already declared
-                    return Objects.requireNonNull(this.compiler.getStructByName(name));
-                }
-                return new DBSPTypeStruct(node, name, saneName, fields, nullable);
+                struct = new DBSPTypeStruct(node, name, saneName, fields, nullable);
+            }
+            if (asStruct) {
+                return struct;
             } else {
-                List<DBSPType> fields = new ArrayList<>();
+                DBSPType[] fieldTypes = new DBSPType[dt.getFieldCount()];
+                int i = 0;
                 for (RelDataTypeField field : dt.getFieldList()) {
                     DBSPType type = this.convertType(field.getType(), asStruct);
-                    fields.add(type);
+                    fieldTypes[i++] = type;
                 }
-                return new DBSPTypeTuple(node, nullable, fields);
+                return new DBSPTypeTuple(node, nullable, struct, fieldTypes);
             }
         } else {
             SqlTypeName tn = dt.getSqlTypeName();

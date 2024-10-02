@@ -652,7 +652,7 @@ public class ImplementNow extends Passes {
             DBSPTupleExpression min = new DBSPTupleExpression(Linq.list(type.getMinValue()), false);
             DBSPTupleExpression timestampTuple = new DBSPTupleExpression(Linq.list(timestamp), false);
             DBSPParameter parameter = t.asParameter();
-            DBSPClosureExpression max = InsertLimiters.timestampMax(source.getNode(), min.getTupleType());
+            DBSPClosureExpression max = InsertLimiters.timestampMax(source.getNode(), min.getTypeAsTupleBase());
             DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                     source.getNode(), min.closure(),
                     timestampTuple.closure(parameter, new DBSPTypeRawTuple().ref().var().asParameter()),

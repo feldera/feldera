@@ -1261,7 +1261,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPTupleExpression min = new DBSPTupleExpression(minimums, false);
             DBSPTupleExpression timestamp = new DBSPTupleExpression(timestamps, false);
             DBSPParameter parameter = t.asParameter();
-            DBSPClosureExpression max = timestampMax(operator.getNode(), min.getTupleType());
+            DBSPClosureExpression max = timestampMax(operator.getNode(), min.getTypeAsTupleBase());
             DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                     operator.getNode(), min.closure(),
                     // Second parameter unused for timestamp

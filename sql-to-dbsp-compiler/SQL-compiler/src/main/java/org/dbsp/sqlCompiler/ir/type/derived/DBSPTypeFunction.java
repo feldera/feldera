@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Linq;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -37,12 +38,12 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.FUNCTION;
 
 public class DBSPTypeFunction extends DBSPType {
     public final DBSPType resultType;
-    public final DBSPType[] argumentTypes;
+    public final DBSPType[] parameterTypes;
 
-    public DBSPTypeFunction(DBSPType resultType, DBSPType... argumentTypes) {
+    public DBSPTypeFunction(DBSPType resultType, DBSPType... parameterTypes) {
         super(false, FUNCTION);
         this.resultType = resultType;
-        this.argumentTypes = argumentTypes;
+        this.parameterTypes = parameterTypes;
     }
 
     @Override
@@ -61,7 +62,7 @@ public class DBSPTypeFunction extends DBSPType {
         if (decision.stop()) return;
         visitor.push(this);
         this.resultType.accept(visitor);
-        for (DBSPType arg: this.argumentTypes)
+        for (DBSPType arg: this.parameterTypes)
             arg.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
@@ -70,7 +71,7 @@ public class DBSPTypeFunction extends DBSPType {
     @Override
     public int hashCode() {
         int result = Objects.hash(super.hashCode(), resultType);
-        result = 31 * result + Arrays.hashCode(argumentTypes);
+        result = 31 * result + Arrays.hashCode(parameterTypes);
         return result;
     }
 
@@ -83,17 +84,13 @@ public class DBSPTypeFunction extends DBSPType {
         DBSPTypeFunction other = type.to(DBSPTypeFunction.class);
         if (!this.resultType.sameType(other.resultType))
             return false;
-        return DBSPType.sameTypes(this.argumentTypes, other.argumentTypes);
-    }
-
-    public boolean sameParameterTypes(DBSPTypeFunction other) {
-        return DBSPType.sameTypes(this.argumentTypes, other.argumentTypes);
+        return DBSPType.sameTypes(this.parameterTypes, other.parameterTypes);
     }
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("|")
-                .join(", ", this.argumentTypes)
+                .join(", ", this.parameterTypes)
                 .append("| -> ")
                 .append(this.resultType);
     }

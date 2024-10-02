@@ -42,27 +42,59 @@ import java.util.List;
 import java.util.Objects;
 
 public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
-    public DBSPTupleExpression(CalciteObject object, boolean mayBeNull, DBSPExpression... expressions) {
-        super(object,
-                new DBSPTypeTuple(object, mayBeNull, Linq.map(expressions, DBSPExpression::getType, DBSPType.class)),
-                expressions);
+    public DBSPTupleExpression(CalciteObject object, DBSPTypeTuple type, DBSPExpression... expressions) {
+        super(object, type, expressions);
+        assert type.size() == expressions.length : "Tuple expression has size " + expressions.length +
+                " but the declared type is " + type;
+        for (int i = 0; i < type.size(); i++) {
+            assert type.tupFields[i].sameType(expressions[i].getType()) :
+                    "Tuple field " + expressions[i] + " does not match the declared field type " +
+                            type.tupFields[i];
+        }
     }
 
-    /** A tuple with value 'null'. */
-    public DBSPTupleExpression(DBSPTypeTuple type) {
+    public DBSPTupleExpression(CalciteObject object, DBSPTypeTuple type, List<DBSPExpression> expressions) {
+        this(object, type, expressions.toArray(new DBSPExpression[0]));
+    }
+
+    static DBSPTypeTuple createType(boolean mayBeNull, DBSPExpression... expressions) {
+        return new DBSPTypeTuple(CalciteObject.EMPTY, mayBeNull, null,
+                Linq.map(expressions, DBSPExpression::getType, DBSPType.class));
+    }
+
+    static DBSPTypeTuple createType(boolean mayBeNull, List<DBSPExpression> expressions) {
+        return new DBSPTypeTuple(CalciteObject.EMPTY, mayBeNull, null,
+                Linq.map(expressions, DBSPExpression::getType).toArray(new DBSPType[0]));
+    }
+
+    /** A DBSPTupleExpression with value null */
+    private DBSPTupleExpression(DBSPTypeTuple type) {
         super(type.getNode(), type);
     }
 
+    /** A DBSPTupleExpression with value null */
+    public static DBSPTupleExpression none(DBSPTypeTuple type) {
+        return new DBSPTupleExpression(type);
+    }
+
     public DBSPTupleExpression(DBSPExpression... expressions) {
-        this(CalciteObject.EMPTY, false, expressions);
+        this(CalciteObject.EMPTY, createType(false, expressions), expressions);
+    }
+
+    public DBSPTupleExpression(boolean mayBeNull, DBSPExpression... expressions) {
+        this(CalciteObject.EMPTY, createType(mayBeNull, expressions), expressions);
     }
 
     public DBSPTupleExpression(List<DBSPExpression> fields, boolean mayBeNull) {
-        this(CalciteObject.EMPTY, mayBeNull, fields.toArray(new DBSPExpression[0]));
+        this(CalciteObject.EMPTY, createType(mayBeNull, fields), fields.toArray(new DBSPExpression[0]));
     }
 
     public DBSPTupleExpression(CalciteObject node, List<DBSPExpression> fields) {
-        this(node, false, fields.toArray(new DBSPExpression[0]));
+        this(node, createType(false, fields), fields.toArray(new DBSPExpression[0]));
+    }
+
+    public DBSPTypeTuple getTypeAsTuple() {
+        return this.getType().to(DBSPTypeTuple.class);
     }
 
     /** @param expressions A list of expressions with tuple types.
@@ -80,6 +112,13 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
             }
         }
         return new DBSPTupleExpression(fields, false);
+    }
+
+    /** @param expressions A list of expressions with tuple types.
+     * @return  A tuple expressions that concatenates all fields of these tuple expressions. */
+    public static DBSPTupleExpression flatten(DBSPTypeTuple type, DBSPExpression... expressions) {
+        DBSPTupleExpression expr = flatten(expressions);
+        return new DBSPTupleExpression(expr.getNode(), type, Objects.requireNonNull(expr.fields));
     }
 
     public DBSPTupleExpression append(DBSPExpression expression) {
@@ -163,8 +202,8 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
     @Override
     public DBSPExpression deepCopy() {
         if (this.fields == null)
-            return new DBSPTupleExpression(this.getType().to(DBSPTypeTuple.class));
-        return new DBSPTupleExpression(this.getNode(), this.getType().mayBeNull,
+            return this.getType().none();
+        return new DBSPTupleExpression(this.getNode(), this.getTypeAsTuple(),
                 Linq.map(this.fields, DBSPExpression::deepCopy, DBSPExpression.class));
     }
 

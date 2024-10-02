@@ -234,8 +234,7 @@ public class ToRustVisitor extends CircuitVisitor {
      * for the struct.
      *
      * @param type      Type of record in the table.
-     * @param metadata  Metadata for the input columns (null for an output view).
-     */
+     * @param metadata  Metadata for the input columns (null for an output view). */
     protected void generateRenameMacro(DBSPTypeStruct type,
                                        @Nullable TableMetadata metadata) {
         this.builder.append("deserialize_table_record!(");

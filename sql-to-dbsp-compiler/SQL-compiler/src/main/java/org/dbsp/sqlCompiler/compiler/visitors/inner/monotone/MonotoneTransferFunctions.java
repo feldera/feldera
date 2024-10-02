@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.DeclarationValue;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.RepeatedExpressions;
@@ -407,10 +408,12 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             assert monotoneFields.length > 0;
             DBSPExpression[] monotoneComponents = Linq.map(
                     monotoneFields, MonotoneExpression::getReducedExpression, DBSPExpression.class);
+            DBSPTypeTuple type = new DBSPTypeTuple(CalciteObject.EMPTY,
+                    expression.getType().mayBeNull,
+                    Linq.list(Linq.map(monotoneComponents, DBSPExpression::getType, DBSPType.class)));
             reduced = expression.isRaw() ?
                     new DBSPRawTupleExpression(monotoneComponents) :
-                    new DBSPTupleExpression(
-                            expression.getNode(), expression.getType().mayBeNull, monotoneComponents);
+                    new DBSPTupleExpression(expression.getNode(), type, monotoneComponents);
         }
         boolean allConstant = Linq.all(expression.fields, this.constantExpressions::contains);
         if (allConstant) {

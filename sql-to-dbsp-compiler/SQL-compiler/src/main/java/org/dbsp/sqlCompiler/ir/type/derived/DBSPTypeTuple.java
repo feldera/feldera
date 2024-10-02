@@ -34,6 +34,8 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -41,12 +43,22 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TUPLE;
 
 /** Our own version of a tuple */
 public class DBSPTypeTuple extends DBSPTypeTupleBase {
-    public DBSPTypeTuple(CalciteObject node, boolean mayBeNull, DBSPType... tupFields) {
+    /** If the type is produced from a struct type, keep here original type.
+     * WARNING: this field is ignored by sameType! */
+    @Nullable
+    public final DBSPTypeStruct originalStruct;
+
+    public DBSPTypeTuple(CalciteObject node, boolean mayBeNull, @Nullable DBSPTypeStruct originalStruct, DBSPType... tupFields) {
         super(node, TUPLE, mayBeNull, tupFields);
+        this.originalStruct = originalStruct;
+    }
+
+    public DBSPTypeTuple(CalciteObject node, boolean mayBeNull, @Nullable DBSPTypeStruct originalStruct, List<DBSPType> tupFields) {
+        this(node, mayBeNull, originalStruct, tupFields.toArray(new DBSPType[0]));
     }
 
     public DBSPTypeTuple(CalciteObject node, DBSPType... tupFields) {
-        this(node, false, tupFields);
+        this(node, false, null, tupFields);
     }
 
     public DBSPTypeTuple(DBSPType... tupFields) {
@@ -58,7 +70,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     }
 
     public DBSPTypeTuple(CalciteObject node, boolean mayBeNull, List<DBSPType> tupFields) {
-        this(node, mayBeNull, tupFields.toArray(new DBSPType[0]));
+        this(node, mayBeNull, null, tupFields.toArray(new DBSPType[0]));
     }
 
     public DBSPTypeTuple(List<DBSPType> tupFields) {
@@ -83,7 +95,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
     public DBSPType setMayBeNull(boolean mayBeNull) {
         if (mayBeNull == this.mayBeNull)
             return this;
-        return new DBSPTypeTuple(this.getNode(), mayBeNull, this.tupFields);
+        return new DBSPTypeTuple(this.getNode(), mayBeNull, this.originalStruct, this.tupFields);
     }
 
     @Override
@@ -91,6 +103,7 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         return Arrays.hashCode(tupFields);
     }
 
+    // Field names are ingored when comparing types!
     @Override
     public boolean sameType(DBSPType type) {
         if (!super.sameNullability(type))
@@ -98,7 +111,8 @@ public class DBSPTypeTuple extends DBSPTypeTupleBase {
         if (!type.is(DBSPTypeTuple.class))
             return false;
         DBSPTypeTuple other = type.to(DBSPTypeTuple.class);
-        return DBSPType.sameTypes(this.tupFields, other.tupFields);
+        return // Linq.sameStrings(this.fieldNames, other.fieldNames) &&
+                DBSPType.sameTypes(this.tupFields, other.tupFields);
     }
 
     public DBSPTypeTuple slice(int start, int endExclusive) {

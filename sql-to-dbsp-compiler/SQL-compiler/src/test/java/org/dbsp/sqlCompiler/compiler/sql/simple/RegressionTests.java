@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWith
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
@@ -14,6 +15,74 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 public class RegressionTests extends SqlIoTest {
+    @Test
+    public void issue2639() {
+        String sql = """
+                CREATE TABLE t (
+                    bin BINARY
+                ) with ('materialized' = 'true');
+                
+                CREATE FUNCTION nbin2nbin(i BINARY NOT NULL) RETURNS BINARY NOT NULL AS i;
+                
+                CREATE MATERIALIZED VIEW v AS
+                SELECT
+                    nbin2nbin(bin)
+                FROM t;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue2642() {
+        String sql = """
+                create table t (
+                    v VARIANT
+                );
+                create view v as select COALESCE(v, VARIANTNULL()) from t;
+                """;
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void issue2641() {
+        String sql = """
+                create table t (
+                    d DATE
+                );
+                create view v as select COALESCE(d, '2023-01-01') from t;
+                """;
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
+    public void existingFunction() {
+        String sql = """
+                CREATE FUNCTION regexp_extract(s VARCHAR, p VARCHAR, pos INTEGER)
+                RETURNS VARCHAR NOT NULL AS CAST('foo' as VARCHAR);""";
+        this.statementsFailingInCompilation(sql,
+                "A function named 'REGEXP_EXTRACT' is already predefined");
+    }
+
+    @Test
+    public void issue2638() {
+        String sql = """
+                CREATE TABLE t (
+                    m MAP<VARCHAR, VARCHAR>
+                ) with ('materialized' = 'true');
+                
+                CREATE FUNCTION map2map(i MAP<VARCHAR, VARCHAR>) RETURNS MAP<VARCHAR, VARCHAR>;
+                CREATE FUNCTION nmap2nmap(i MAP<VARCHAR, VARCHAR> NOT NULL) RETURNS MAP<VARCHAR, VARCHAR> NOT NULL;
+                
+                CREATE MATERIALIZED VIEW v AS
+                SELECT
+                    map2map(m),
+                    nmap2nmap(m)
+                FROM t;""";
+        // This is not executed, since the udfs have no definitions
+        var ccs = this.getCCS(sql);
+        // Test that code generation does not crash
+        ToRustVisitor.toRustString(new StderrErrorReporter(), ccs.circuit, ccs.compiler.options);
+    }
+
     @Test
     public void tableAfterView() {
         // Test that tables created after views
@@ -28,19 +97,10 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
-    public void issue2498() {
-        String sql = """
-                CREATE TABLE t (
-                   line string
-                );
-                CREATE TYPE global_metrics AS (
-                    rss_bytes BIGINT,
-                    buffered_records BIGINT
-                );
-                CREATE LOCAL VIEW tmp AS SELECT PARSE_JSON(line) AS json FROM t;
-                CREATE VIEW rss AS
-                       SELECT CAST(json['global_metrics'] AS global_metrics) FROM tmp;""";
-        this.statementsFailingInCompilation(sql, "not yet implemented");
+    public void vecStringCast() {
+        String sql = "CREATE VIEW V AS SELECT CAST(ARRAY [1,2,3] AS VARCHAR)";
+        this.statementsFailingInCompilation(sql,
+                "Cast function cannot convert value of type INTEGER ARRAY to type VARCHAR");
     }
 
     @Test
