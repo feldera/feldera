@@ -20,10 +20,13 @@ pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::{Date, Time, Timestamp};
 pub use variant::Variant;
 
+// Re-export these types, so they can be used in UDFs without having to import the dbsp crate directly.
+// Perhaps they should be defined in sqllib in the first place?
+pub use dbsp::algebra::{F32, F64};
 use dbsp::{
     algebra::{
         AddByRef, HasOne, HasZero, NegByRef, OrdIndexedZSetFactories, OrdZSetFactories, Semigroup,
-        SemigroupValue, ZRingValue, F32, F64,
+        SemigroupValue, ZRingValue,
     },
     circuit::metrics::TOTAL_LATE_RECORDS,
     dynamic::{DowncastTrait, DynData, Erase},
