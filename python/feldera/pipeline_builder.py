@@ -14,6 +14,8 @@ class PipelineBuilder:
     :param name: The name of the pipeline
     :param description: The description of the pipeline
     :param sql: The SQL code of the pipeline
+    :param udf_rust: Rust code for UDFs
+    :param udf_toml: Rust dependencies required by UDFs (in the TOML format)
     :param compilation_profile: The compilation profile to use
     :param runtime_config: The runtime config to use
     """
@@ -23,6 +25,8 @@ class PipelineBuilder:
         client: FelderaClient,
         name: str,
         sql: str,
+        udf_rust: str = "",
+        udf_toml: str = "",
         description: str = "",
         compilation_profile: CompilationProfile = CompilationProfile.OPTIMIZED,
         runtime_config: RuntimeConfig = RuntimeConfig(resources=Resources()),
@@ -32,6 +36,8 @@ class PipelineBuilder:
         self.name: str | None = name
         self.description: str = description
         self.sql: str = sql
+        self.udf_rust: str = udf_rust
+        self.udf_toml: str = udf_toml
         self.compilation_profile: CompilationProfile = compilation_profile
         self.runtime_config: RuntimeConfig = runtime_config
 
@@ -52,6 +58,8 @@ class PipelineBuilder:
             self.name,
             description=self.description,
             sql=self.sql,
+            udf_rust = self.udf_rust,
+            udf_toml = self.udf_toml,
             program_config={
                 'profile': self.compilation_profile.value,
             },
@@ -85,6 +93,8 @@ class PipelineBuilder:
             self.name,
             description=self.description,
             sql=self.sql,
+            udf_rust = self.udf_rust,
+            udf_toml = self.udf_toml,
             program_config={
                 'profile': self.compilation_profile.value,
             },

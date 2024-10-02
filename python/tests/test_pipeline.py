@@ -22,7 +22,7 @@ class TestPipeline(unittest.TestCase):
         CREATE TABLE tbl(id INT);
         CREATE VIEW V AS SELECT * FROM tbl;
         """
-        pipeline = Pipeline(name, sql, {}, {})
+        pipeline = Pipeline(name, sql, "", "", {}, {})
         pipeline = TEST_CLIENT.create_pipeline(pipeline)
 
         if delete:
@@ -155,7 +155,7 @@ class TestPipeline(unittest.TestCase):
         CREATE TABLE tbl(id INT) with ('materialized' = 'true');
         """
 
-        pipeline = Pipeline(name, sql, {}, {})
+        pipeline = Pipeline(name, sql, "", "", {}, {})
         pipeline = TEST_CLIENT.create_pipeline(pipeline)
 
         TEST_CLIENT.start_pipeline(name)
@@ -183,7 +183,7 @@ class TestPipeline(unittest.TestCase):
         CREATE TABLE tbl(id INT) with ('materialized' = 'true');
         """
 
-        pipeline = Pipeline(name, sql, {}, {})
+        pipeline = Pipeline(name, sql, "", "", {}, {})
         pipeline = TEST_CLIENT.create_pipeline(pipeline)
 
         TEST_CLIENT.start_pipeline(name)
@@ -208,7 +208,7 @@ class TestPipeline(unittest.TestCase):
         CREATE TABLE tbl(id INT) with ('materialized' = 'true');
         """
 
-        pipeline = Pipeline(name, sql, {}, {})
+        pipeline = Pipeline(name, sql, "", "", {}, {})
         pipeline = TEST_CLIENT.create_pipeline(pipeline)
 
         TEST_CLIENT.start_pipeline(name)
