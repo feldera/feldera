@@ -45,7 +45,7 @@ public class ForeignKey {
             columns.add(column.getString());
         result.put("refers", this.otherTable.tableName.toString());
         ArrayNode tocolumns = result.putArray("tocolumns");
-        for (SqlFragment column: this.thisTable.columns)
+        for (SqlFragment column: this.otherTable.columns)
             tocolumns.add(column.getString());
         return result;
     }

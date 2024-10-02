@@ -144,7 +144,7 @@ public class PostgresTimestampTests extends SqlIoTest {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query, true);
         CompilerCircuitStream ccs = new CompilerCircuitStream(compiler);
-        DBSPZSetLiteral input = compiler.getTableContents().getTableContents("TIMESTAMP_TBL");
+        DBSPZSetLiteral input = compiler.getTableContents().getTableContents(compiler.canonicalName("TIMESTAMP_TBL"));
         InputOutputChange change = new InputOutputChange(new Change(input), expectedOutput);
         ccs.addChange(change);
         this.addRustTestCase(ccs);
@@ -492,7 +492,7 @@ public class PostgresTimestampTests extends SqlIoTest {
     }
 
     @Test
-    public void diff() {
+    public void testTimestampDiff() {
         // Calcite does not support timestamp difference
         // SELECT d1 - timestamp without time zone '1997-01-02' AS diff
         //   FROM TIMESTAMP_TBL WHERE d1 BETWEEN '1902-01-01' AND '2038-01-01';

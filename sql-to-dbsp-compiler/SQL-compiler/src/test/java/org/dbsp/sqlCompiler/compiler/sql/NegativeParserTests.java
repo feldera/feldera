@@ -75,14 +75,14 @@ public class NegativeParserTests extends BaseSQLTests {
                 CREATE TABLE productvariant_t (
                     id BIGINT DEFAULT NULL DEFAULT 1
                 );""";
-        this.statementsFailingInCompilation(ddl,  "Column ID already has a default value");
+        this.statementsFailingInCompilation(ddl,  "Column 'id' already has a default value");
     }
 
     @Test
     public void duplicatedKey2() {
         String ddl = "create table git_commit (\n" +
                 "    git_commit_id bigint not null PRIMARY KEY PRIMARY KEY)";
-        this.statementsFailingInCompilation(ddl, "Column GIT_COMMIT_ID already declared a primary key");
+        this.statementsFailingInCompilation(ddl, "Column 'git_commit_id' already declared a primary key");
     }
 
     @Test
@@ -152,7 +152,7 @@ public class NegativeParserTests extends BaseSQLTests {
                 "COL1 INT" +
                 ", COL1 DOUBLE" +
                 ");";
-        this.statementsFailingInCompilation(ddl, "Column with name 'COL1' already defined");
+        this.statementsFailingInCompilation(ddl, "Column with name 'col1' already defined");
     }
 
     @Test
@@ -183,7 +183,7 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertEquals(messages.errorCount(), 1);
         msg = messages.getError(0);
         Assert.assertFalse(msg.warning);
-        Assert.assertEquals(msg.message, "Object 'T' not found");
+        Assert.assertEquals(msg.message, "Object 't' not found");
 
         statements = new String[] {
                 "CREATE VIEW V AS SELECT ST_MAKELINE(ST_POINT(0,0), ST_POINT(0, 0))"
@@ -224,7 +224,7 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertEquals(messages.errorCount(), 0);
         CompilerMessages.Error error = messages.messages.get(0);
         Assert.assertTrue(error.warning);
-        Assert.assertTrue(error.message.contains("Table 'T' is not used"));
+        Assert.assertTrue(error.message.contains("Table 't' is not used"));
         Assert.assertTrue(messages.toString().contains("CREATE TABLE T"));
     }
 }

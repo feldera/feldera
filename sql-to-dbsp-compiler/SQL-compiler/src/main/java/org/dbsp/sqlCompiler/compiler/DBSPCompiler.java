@@ -101,7 +101,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     final GlobalTypes globalTypes = new GlobalTypes();
 
     /** Convert the string to the casing specified by the options */
-    public String toCase(String name) {
+    public String canonicalName(String name) {
         return this.options.canonicalName(name);
     }
 
@@ -523,7 +523,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     public void removeNowTable() {
-        String name = this.toCase("now");
+        String name = this.canonicalName("now");
         this.metadata.removeTable(name);
         this.midend.getTableContents().removeTable(name);
     }

@@ -174,7 +174,7 @@ public class MetadataTests extends BaseSQLTests {
         compiler.compileStatements(ddl);
         DBSPCircuit circuit = getCircuit(compiler);
         TestUtil.assertMessagesContain(compiler, "PRIMARY KEY cannot be nullable");
-        DBSPSourceTableOperator t = circuit.getInput("T");
+        DBSPSourceTableOperator t = circuit.getInput("t");
         Assert.assertNotNull(t);
         DBSPType ix = t.getOutputZSetElementType();
         Assert.assertTrue(ix.is(DBSPTypeTuple.class));
@@ -300,8 +300,8 @@ public class MetadataTests extends BaseSQLTests {
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, file.getPath());
         Assert.assertEquals(1, messages.errorCount());
         Assert.assertTrue(messages.toString().contains(
-                "Cannot apply 'MYFUNCTION' to arguments of type 'MYFUNCTION(<DATE>, <CHAR(1)>)'. " +
-                        "Supported form(s): MYFUNCTION(<DATE>, <INTEGER>)"));
+                "Cannot apply 'myfunction' to arguments of type 'myfunction(<DATE>, <CHAR(1)>)'. " +
+                        "Supported form(s): myfunction(<DATE>, <INTEGER>)"));
     }
 
     @Test
@@ -309,20 +309,20 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(
                 "CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL",
                 "CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5 MAYBE: 2' AS VARCHAR), 5)",
-                "CREATE FUNCTION \"empty\"() RETURNS VARCHAR",
+                "CREATE FUNCTION \"EMPTY\"() RETURNS VARCHAR",
                 "CREATE VIEW V1 AS SELECT \"empty\"()");
         File implementation = File.createTempFile("impl", ".rs", new File(rustDirectory));
         createInputFile(implementation,
                 System.lineSeparator(),
                 "use feldera_sqllib::*;",
-                "pub fn CONTAINS_NUMBER(str: String, value: Option<i32>) -> " +
+                "pub fn contains_number(str: String, value: Option<i32>) -> " +
                         "   Result<bool, Box<dyn std::error::Error>> {",
                 "   match value {",
                 "      None => Err(\"null value\".into()),",
                 "      Some(value) => Ok(str.contains(&format!(\"{}\", value).to_string())),",
                 "   }",
                 "}",
-                "pub fn empty() -> Result<Option<String>, Box<dyn std::error::Error>> {",
+                "pub fn EMPTY() -> Result<Option<String>, Box<dyn std::error::Error>> {",
                 "   Ok(Some(\"\".to_string()))",
                 "}");
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, "--udf",
@@ -361,7 +361,7 @@ public class MetadataTests extends BaseSQLTests {
             }
         };
         visitor.apply(circuit);
-        TestUtil.assertMessagesContain(compiler, "No view named 'W' found");
+        TestUtil.assertMessagesContain(compiler, "No view named 'w' found");
     }
 
     @Test
@@ -407,7 +407,7 @@ public class MetadataTests extends BaseSQLTests {
             System.err.println(message);
         Assert.assertEquals(message.exitCode, 0);
         TestUtil.assertMessagesContain(message,
-                "Table 'S', referred in FOREIGN KEY constraint of table 'T', does not exist");
+                "Table 's', referred in FOREIGN KEY constraint of table 't', does not exist");
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
@@ -415,24 +415,24 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertEquals("""
                 {
                   "inputs" : [ {
-                    "name" : "T",
+                    "name" : "t",
                     "case_sensitive" : false,
                     "fields" : [ {
-                      "name" : "COL1",
+                      "name" : "col1",
                       "case_sensitive" : false,
                       "columntype" : {
                         "nullable" : false,
                         "type" : "INTEGER"
                       }
                     }, {
-                      "name" : "COL2",
+                      "name" : "col2",
                       "case_sensitive" : false,
                       "columntype" : {
                         "nullable" : false,
                         "type" : "DOUBLE"
                       }
                     }, {
-                      "name" : "COL3",
+                      "name" : "col3",
                       "case_sensitive" : false,
                       "columntype" : {
                         "nullable" : false,
@@ -440,7 +440,7 @@ public class MetadataTests extends BaseSQLTests {
                         "type" : "VARCHAR"
                       }
                     }, {
-                      "name" : "COL4",
+                      "name" : "col4",
                       "case_sensitive" : false,
                       "columntype" : {
                         "component" : {
@@ -452,7 +452,7 @@ public class MetadataTests extends BaseSQLTests {
                         "type" : "ARRAY"
                       }
                     }, {
-                      "name" : "COL5",
+                      "name" : "col5",
                       "case_sensitive" : false,
                       "columntype" : {
                         "key" : {
@@ -467,16 +467,16 @@ public class MetadataTests extends BaseSQLTests {
                         }
                       }
                     } ],
-                    "primary_key" : [ "COL3" ],
+                    "primary_key" : [ "col3" ],
                     "materialized" : false,
                     "foreign_keys" : [ {
-                      "columns" : [ "COL2" ],
-                      "refers" : "S",
-                      "tocolumns" : [ "COL2" ]
+                      "columns" : [ "col2" ],
+                      "refers" : "s",
+                      "tocolumns" : [ "col0" ]
                     } ]
                   } ],
                   "outputs" : [ {
-                    "name" : "V",
+                    "name" : "v",
                     "case_sensitive" : false,
                     "fields" : [ {
                       "name" : "xCol",
@@ -488,7 +488,7 @@ public class MetadataTests extends BaseSQLTests {
                     } ],
                     "materialized" : false
                   }, {
-                    "name" : "V1",
+                    "name" : "v1",
                     "case_sensitive" : false,
                     "fields" : [ {
                       "name" : "yCol",
@@ -525,24 +525,24 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE T (
                    c INT PRIMARY KEY
                 );""",
-                "PRIMARY KEY column 'C' has type INTEGER, which is nullable");
+                "PRIMARY KEY column 'c' has type INTEGER, which is nullable");
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (
                    c INT ARRAY NOT NULL PRIMARY KEY
                 );""",
-                "PRIMARY KEY column 'C' cannot have type INTEGER ARRAY");
+                "PRIMARY KEY column 'c' cannot have type INTEGER ARRAY");
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (
                    FOREIGN KEY (a, b) REFERENCES S(a)
                 );""",
-                "FOREIGN KEY section of table 'T' contains 2 columns," +
+                "FOREIGN KEY section of table 't' contains 2 columns," +
                         " which does not match the size the REFERENCES, which is 1");
         this.shouldWarn("""
                         CREATE TABLE T (
                            FOREIGN KEY (a) REFERENCES UNKNOWN(a)
                         );""",
-                "Table not found: Table 'UNKNOWN', referred in " +
-                        "FOREIGN KEY constraint of table 'T', does not exist");
+                "Table not found: Table 'unknown', referred in " +
+                        "FOREIGN KEY constraint of table 't', does not exist");
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (
                    FOREIGN KEY (a) REFERENCES S(a)
@@ -550,7 +550,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE S (
                    nokey INT
                 );""",
-                "The PRIMARY KEY of table 'S' does not match the FOREIGN KEY of 'T'");
+                "The PRIMARY KEY of table 's' does not match the FOREIGN KEY of 't'");
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (
                    FOREIGN KEY (a) REFERENCES S(a)
@@ -558,7 +558,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE S (
                    key INT NOT NULL PRIMARY KEY
                 );""",
-                "Column not found: Table 'T' does not have a column named 'A'");
+                "Column not found: Table 't' does not have a column named 'a'");
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (
                    a INT,
@@ -567,7 +567,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE S (
                    a INT NOT NULL PRIMARY KEY
                 );""",
-                "Table 'S' does not have a column named 'B'");
+                "Table 's' does not have a column named 'b'");
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (
                    a INT,
@@ -577,7 +577,7 @@ public class MetadataTests extends BaseSQLTests {
                    a INT NOT NULL PRIMARY KEY,
                    b INT
                 );""",
-                "FOREIGN KEY column 'T.A' refers to column 'S.B' which is not a PRIMARY KEY");
+                "FOREIGN KEY column 't.a' refers to column 's.b' which is not a PRIMARY KEY");
         this.statementsFailingInCompilation("""
                 CREATE TABLE T (
                    a INT,
@@ -586,7 +586,7 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE S (
                    a VARCHAR NOT NULL PRIMARY KEY
                 );""",
-                "FOREIGN KEY column 'T.A' has type INT which does " +
-                        "not match the type VARCHAR of the referenced column 'S.A'");
+                "FOREIGN KEY column 't.a' has type INT which does " +
+                        "not match the type VARCHAR of the referenced column 's.a'");
     }
 }

@@ -116,7 +116,8 @@ public abstract class SqlIoTest extends BaseSQLTests {
                 compiler.getTableContents().tablesCreated.size()];
         int index = 0;
         for (String table: compiler.getTableContents().tablesCreated) {
-            DBSPZSetLiteral data = compiler.getTableContents().getTableContents(table.toUpperCase());
+            DBSPZSetLiteral data = compiler.getTableContents().getTableContents(
+                    compiler.canonicalName(table));
             inputs[index++] = data;
         }
         return new Change(inputs);

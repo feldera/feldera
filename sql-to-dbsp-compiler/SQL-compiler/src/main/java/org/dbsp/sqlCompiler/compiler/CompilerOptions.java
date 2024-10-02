@@ -73,7 +73,7 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public boolean unrestrictedIOTypes = false;
         @Parameter(names = "--unquotedCasing",
                 description = "How unquoted identifiers are treated.  Choices are: 'upper', 'lower', 'unchanged'")
-        public String unquotedCasing = "upper";
+        public String unquotedCasing = "lower";
 
         public boolean same(Language language) {
             // Only compare fields that matter.

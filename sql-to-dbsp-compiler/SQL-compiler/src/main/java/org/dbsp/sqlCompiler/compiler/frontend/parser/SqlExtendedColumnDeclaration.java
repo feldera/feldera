@@ -8,6 +8,7 @@ import org.apache.calcite.sql.parser.SqlParserPos;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -57,7 +58,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
 
     public SqlExtendedColumnDeclaration setPrimaryKey(SqlParserPos pos) {
         if (this.primaryKey) {
-            throw new CompilationError("Column " + this.name +
+            throw new CompilationError("Column " + Utilities.singleQuote(this.name.getSimple()) +
                     " already declared a primary key", CalciteObject.create(pos));
         }
         this.primaryKey = true;
@@ -66,7 +67,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
 
     public SqlExtendedColumnDeclaration setDefault(SqlNode expression) {
         if (this.defaultValue != null){
-            throw new CompilationError("Column " + this.name +
+            throw new CompilationError("Column " + Utilities.singleQuote(this.name.getSimple()) +
                     " already has a default value", CalciteObject.create(expression));
         }
         this.defaultValue = expression;
@@ -81,7 +82,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
 
     public SqlExtendedColumnDeclaration setLatenes(SqlNode lateness) {
         if (this.lateness != null) {
-            throw new CompilationError("Column " + this.name +
+            throw new CompilationError("Column " + Utilities.singleQuote(this.name.getSimple()) +
                     " already has lateness", CalciteObject.create(lateness));
         }
         this.lateness = lateness;
@@ -90,7 +91,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
 
     public SqlExtendedColumnDeclaration setWatermark(SqlNode watermark) {
         if (this.watermark != null) {
-            throw new CompilationError("Column " + this.name +
+            throw new CompilationError("Column " + Utilities.singleQuote(this.name.getSimple()) +
                     " already has a watermark", CalciteObject.create(watermark));
         }
         this.watermark = watermark;
