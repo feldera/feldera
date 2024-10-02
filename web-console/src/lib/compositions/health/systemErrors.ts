@@ -102,7 +102,7 @@ export const extractProgramError =
         (() => ({
           name: `Error compiling ${pipeline.name}`,
           message:
-            'Compilation error occurred when compiling the program - see the details below:\n' +
+            'Program compilation error. See details below:\n' +
             e.RustError,
           cause: {
             entityName: pipeline.name,

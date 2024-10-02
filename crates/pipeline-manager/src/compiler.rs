@@ -5,7 +5,8 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::common::Version;
 use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
 use crate::db::types::program::{
-    generate_program_info_from_schema, CompilationProfile, ProgramStatus, SqlCompilerMessage,
+    generate_program_info_from_schema, CompilationProfile, ProgramInfo, ProgramStatus,
+    SqlCompilerMessage,
 };
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
@@ -105,6 +106,15 @@ async fn index(
 #[get("/healthz")]
 async fn healthz(probe: web::Data<Arc<Mutex<Probe>>>) -> Result<impl Responder, ManagerError> {
     probe.lock().await.status_as_http_response()
+}
+
+/// Utility type for the transition when the compilation job exits.
+enum Transition {
+    CompilingRust { program_info: ProgramInfo },
+    SqlError { messages: Vec<SqlCompilerMessage> },
+    Success { program_binary_url: String },
+    RustError { error: String },
+    SystemError { error: String },
 }
 
 impl Compiler {
@@ -566,12 +576,24 @@ inherits = "release"
                         e
                     );
                 }
-                db.transit_program_status_to_pending(
-                    tenant_id,
-                    pipeline.id,
-                    pipeline.program_version,
-                )
-                .await?;
+                match db
+                    .transit_program_status_to_pending(
+                        tenant_id,
+                        pipeline.id,
+                        pipeline.program_version,
+                    )
+                    .await
+                {
+                    Ok(()) => {}
+                    Err(e) => match e {
+                        DBError::UnknownPipeline { .. } => {
+                            debug!("Program {} cannot be re-queued because it no longer exists (tenant: {tenant_id})", pipeline.id);
+                        }
+                        e => {
+                            return Err(e);
+                        }
+                    },
+                }
             }
             // If the program was supposed to be further in the compilation chain, but
             // we don't have the binary artifact available locally, we need to queue the program
@@ -585,12 +607,24 @@ inherits = "release"
                     "Program {} does not have a local artifact despite being in the {:?} state. Removing binary references to the program and re-queuing it for compilation.",
                     pipeline.id, pipeline.program_status
                 );
-                db.transit_program_status_to_pending(
-                    tenant_id,
-                    pipeline.id,
-                    pipeline.program_version,
-                )
-                .await?;
+                match db
+                    .transit_program_status_to_pending(
+                        tenant_id,
+                        pipeline.id,
+                        pipeline.program_version,
+                    )
+                    .await
+                {
+                    Ok(()) => {}
+                    Err(e) => match e {
+                        DBError::UnknownPipeline { .. } => {
+                            debug!("Program {} cannot be re-queued because it no longer exists (tenant: {tenant_id})", pipeline.id);
+                        }
+                        e => {
+                            return Err(e);
+                        }
+                    },
+                }
             }
         }
         debug!("Local compiler state has been reconciled with API state");
@@ -631,7 +665,7 @@ inherits = "release"
                     let mut cancel = false;
                     if let Some(job) = &job {
                         // Program was deleted, updated or the user changed its status
-                        // to cancelled -- abort compilation.
+                        // to canceled -- abort compilation.
                         let pipeline = db.lock().await.get_pipeline_by_id(job.tenant_id, job.pipeline.id).await;
                         match pipeline {
                             Ok(pipeline) => {
@@ -640,6 +674,8 @@ inherits = "release"
                                 }
                             },
                             Err(DBError::UnknownPipeline { .. }) => {
+                                debug!("Pipeline no longer exists, canceling compilation job: program {} version {} (tenant: {})",
+                                       job.pipeline.id, job.pipeline.program_version, job.tenant_id);
                                 cancel = true
                             }
                             Err(e) => {return Err(e.into())}
@@ -666,9 +702,8 @@ inherits = "release"
                     let elapsed = job.as_ref().unwrap().stage_start_time.elapsed().as_secs_f64();
                     let db = db.lock().await;
 
-                    match exit_status {
+                    let transition = match exit_status {
                         Ok(status) if status.success() && job.as_ref().unwrap().is_sql() => {
-                            histogram!(COMPILE_LATENCY_SQL, "status" => "success").record(elapsed);
                             // Read the schema so we can store it in the DB.
                             // We trust the compiler that it put the file
                             // there if it succeeded.
@@ -677,84 +712,129 @@ inherits = "release"
                                 .map_err(|e| {
                                     ManagerError::io_error(format!("reading '{}'", schema_path.display()), e)
                                 })?;
-
                             let schema: ProgramSchema = serde_json::from_str(&schema_json)
                                 .map_err(|e| { ManagerError::invalid_program_schema(e.to_string()) })?;
                             match generate_program_info_from_schema(schema) {
-                                Ok(info) => {
+                                Ok(program_info) => {
                                     // SQL compiler succeeded -- start the Rust job and update the
                                     // program schema.
-                                    db.transit_program_status_to_compiling_rust(
-                                        tenant_id,
-                                        pipeline_id,
-                                        version,
-                                        &info
-                                    ).await?;
-                                    info!("Invoking rust compiler for program {pipeline_id} version {version} (tenant {tenant_id}). This will take a while.");
-                                    debug!("Set ProgramStatus::CompilingRust '{pipeline_id}', version '{version}'");
-                                    job = Some(CompilationJob::rust(config, job.as_ref().unwrap()).await?);
+                                    Transition::CompilingRust {
+                                        program_info
+                                    }
                                 }
                                 Err(e) => {
+                                    // SQL compilation was successful, however the connectors could not be generated
                                     let message = SqlCompilerMessage::new_from_connector_generation_error(e);
-                                    db.transit_program_status_to_sql_error(
-                                        tenant_id, pipeline_id, version, vec![message]
-                                    ).await?;
-                                    job = None;
+                                    Transition::SqlError {
+                                        messages: vec![message]
+                                    }
                                 }
                             }
-
                         }
                         Ok(status) if status.success() && job.as_ref().unwrap().is_rust() => {
+                            // Rust compilation finished successfully and generated the binary
                             let program_binary_url = Self::version_binary(config, &job.as_ref().unwrap().pipeline).await?;
-                            // Rust compiler succeeded -- declare victory.
-                            db.transit_program_status_to_success(tenant_id, pipeline_id, version, &program_binary_url).await?;
-                            info!("Successfully fully compiled program {pipeline_id} version {version} (tenant {tenant_id})");
-                            debug!("Set ProgramStatus::Success '{pipeline_id}', version '{version}'");
-                            histogram!(COMPILE_LATENCY_RUST, "status" => "success").record(elapsed);
-                            job = None;
+                            Transition::Success {
+                                program_binary_url
+                            }
                         }
                         Ok(status) => {
                             // Compilation failed - update program status with the compiler
                             // error message.
                             let output = job.as_ref().unwrap().error_output(config).await?;
                             if job.as_ref().unwrap().is_rust() {
-                                db.transit_program_status_to_rust_error(
-                                    tenant_id, pipeline_id, version, &format!("{output}\nexit code: {status}")
-                                ).await?;
+                                let error = format!(
+                                    "Rust error: the Rust code generated based on the SQL failed to compile, which should not happen. \
+                                    Please file a bug report with the example SQL that triggers it at: https://github.com/feldera/feldera/issues\n\n\
+                                    The compilation task produced the following output:\n\n\
+                                    {output}\n\n\
+                                    Exit code: {status}"
+                                );
+                                Transition::RustError { error }
                             } else if let Ok(messages) = serde_json::from_str::<Vec<SqlCompilerMessage>>(&output) {
-                                // If we can parse the SqlCompilerMessages
-                                // as JSON, we assume the compiler worked:
-                                histogram!(COMPILE_LATENCY_SQL, "status" => "error").record(elapsed);
-                                db.transit_program_status_to_sql_error(
-                                    tenant_id, pipeline_id, version, messages.clone()
-                                ).await?;
+                                // SQL compilation failed and reported back error messages
+                                Transition::SqlError {
+                                    messages
+                                }
                             } else {
-                                // Otherwise something unexpected happened
-                                // and we return a system error:
-                                histogram!(COMPILE_LATENCY_SQL, "status" => "error").record(elapsed);
-                                db.transit_program_status_to_system_error(
-                                    tenant_id, pipeline_id, version, &format!("{output}\nexit code: {status}")
-                                ).await?;
-                            };
-                            job = None;
+                                // SQL compilation failed and was unable to report back error messages
+                                let error = format!(
+                                    "System error: the SQL compilation failed. \
+                                    The compilation task produced the following output:\n\n \
+                                    {output}\n\n\
+                                    Exit code: {status}"
+                                );
+                                Transition::SystemError {
+                                    error
+                                }
+                            }
                         }
                         Err(e) => {
-                            if job.unwrap().is_rust() {
-                                histogram!(COMPILE_LATENCY_RUST, "status" => "error").record(elapsed);
-                                db.transit_program_status_to_rust_error(
-                                    tenant_id, pipeline_id, version, &format!("I/O error with rustc: {e}")
-                                ).await?;
+                            if job.as_ref().unwrap().is_rust() {
+                                Transition::RustError {
+                                    error: format!("I/O error with rustc: {e}")
+                                }
                             } else {
-                                histogram!(COMPILE_LATENCY_SQL, "status" => "error").record(elapsed);
-                                db.transit_program_status_to_system_error(
-                                    tenant_id, pipeline_id, version, &format!("I/O error with sql-to-dbsp: {e}")
-                                ).await?;
-                            };
-                            job = None;
+                                Transition::SystemError {
+                                    error: format!("I/O error with sql-to-dbsp: {e}")
+                                }
+                            }
+                        }
+                    };
+
+                    // Perform the transition now compilation has exited
+                    let (new_job, db_result) = match transition {
+                        Transition::CompilingRust { program_info } => {
+                            info!("SQL compilation finished: program {pipeline_id} version {version} (tenant: {tenant_id})");
+                            info!("Invoking Rust compiler: program {pipeline_id} version {version} (tenant: {tenant_id}). This will take a while...");
+                            histogram!(COMPILE_LATENCY_SQL, "status" => "success").record(elapsed);
+                            let next_job = CompilationJob::rust(config, job.as_ref().unwrap()).await?;
+                            (Some(next_job), db.transit_program_status_to_compiling_rust(tenant_id, pipeline_id, version, &program_info).await)
+                        }
+                        Transition::Success { program_binary_url } => {
+                            info!("Rust compilation finished: program {pipeline_id} version {version} (tenant: {tenant_id})");
+                            histogram!(COMPILE_LATENCY_RUST, "status" => "success").record(elapsed);
+                            (None, db.transit_program_status_to_success(tenant_id, pipeline_id, version, &program_binary_url).await)
+                        }
+                        Transition::SqlError { messages } => {
+                            info!("SQL compilation failed");
+                            histogram!(COMPILE_LATENCY_SQL, "status" => "error").record(elapsed);
+                            (None, db.transit_program_status_to_sql_error(tenant_id, pipeline_id, version, messages).await)
+                        }
+                        Transition::RustError { error } => {
+                            info!("Rust compilation failed");
+                            histogram!(COMPILE_LATENCY_RUST, "status" => "error").record(elapsed);
+                            (None, db.transit_program_status_to_rust_error(tenant_id, pipeline_id, version, &error).await)
+                        }
+                        Transition::SystemError { error } => {
+                            info!("SQL compilation failed with system error");
+                            // Transitioning to system error only happens for SQL compilation
+                            histogram!(COMPILE_LATENCY_SQL, "status" => "error").record(elapsed);
+                            (None, db.transit_program_status_to_system_error(tenant_id, pipeline_id, version, &error).await)
+                        }
+                    };
+
+                    // It is possible for the pipeline to be deleted in the meanwhile,
+                    // in which case the job gets canceled.
+                    match db_result {
+                        Ok(()) => {
+                            job = new_job;
+                        }
+                        Err(e) => {
+                            match e {
+                                DBError::UnknownPipeline { .. } => {
+                                    debug!("Pipeline no longer exists, canceling compilation job: program {pipeline_id} version {version} (tenant: {tenant_id})");
+                                    job = None;
+                                }
+                                e => {
+                                    return Err(ManagerError::from(e));
+                                }
+                            }
                         }
                     }
                 }
             }
+
             // Pick the next program from the queue.
             if job.is_none() {
                 let pipeline = db
@@ -763,19 +843,34 @@ inherits = "release"
                     .get_next_pipeline_program_to_compile()
                     .await?;
                 if let Some((tenant_id, pipeline)) = pipeline {
-                    job = Some(CompilationJob::sql(tenant_id, config, &pipeline).await?);
-                    db.lock()
+                    let db_result = db
+                        .lock()
                         .await
                         .transit_program_status_to_compiling_sql(
                             tenant_id,
                             pipeline.id,
                             pipeline.program_version,
                         )
-                        .await?;
-                    info!(
-                        "Picked up the next program to compile: '{}', version '{}'",
-                        pipeline.id, pipeline.program_version
-                    );
+                        .await;
+
+                    // It is possible for the pipeline to be deleted in the meanwhile,
+                    // in which case the job gets canceled. The job will remain None,
+                    // and the next cycle there will be another attempt.
+                    match db_result {
+                        Ok(()) => {
+                            job = Some(CompilationJob::sql(tenant_id, config, &pipeline).await?);
+                            info!("Invoking SQL compiler: program {} version {} (tenant: {tenant_id})", pipeline.id, pipeline.program_version);
+                        }
+                        Err(e) => match e {
+                            DBError::UnknownPipeline { .. } => {
+                                debug!("Pipeline no longer exists, canceling compilation job: program {} version {} (tenant: {tenant_id})", pipeline.id, pipeline.program_version);
+                                job = None;
+                            }
+                            e => {
+                                return Err(ManagerError::from(e));
+                            }
+                        },
+                    }
                 }
             }
         }
