@@ -1,4 +1,4 @@
-from .test_base import TestTable
+from .test_base import TestTable, TestView
 
 class test_decimal_table(TestTable):
     """Define the table used by all decimal tests"""
@@ -10,3 +10,5 @@ class test_decimal_table(TestTable):
                      {"id": 0, "c1": None, "c2": 3802.71},
                      {"id": 1, "c1": 5681.08, "c2": 7689.88},
                      {"id": 1, "c1": 5681.08, "c2": 7335.88}]
+
+
