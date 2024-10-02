@@ -99,6 +99,8 @@ pub(crate) trait Storage {
         description: &Option<String>,
         runtime_config: &Option<RuntimeConfig>,
         program_code: &Option<String>,
+        udf_rust: &Option<String>,
+        udf_toml: &Option<String>,
         program_config: &Option<ProgramConfig>,
     ) -> Result<ExtendedPipelineDescr, DBError>;
 

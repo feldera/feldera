@@ -17,7 +17,6 @@ use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use feldera_types::config::{PipelineConfig, ResourceConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
-use feldera_types::program_schema::ProgramSchema;
 use openssl::sha;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
@@ -260,14 +259,7 @@ fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> ProgramConfig
 
 /// Generates a limited program information.
 fn map_val_to_limited_program_info(_val: ProgramInfoPropVal) -> ProgramInfo {
-    ProgramInfo {
-        schema: ProgramSchema {
-            inputs: vec![],
-            outputs: vec![],
-        },
-        input_connectors: Default::default(),
-        output_connectors: Default::default(),
-    }
+    ProgramInfo::default()
 }
 
 /// Generates pipeline name limited to only 5 variants.
@@ -283,6 +275,8 @@ fn limited_pipeline_descr() -> impl Strategy<Value = PipelineDescr> {
         String,
         RuntimeConfigPropVal,
         String,
+        String,
+        String,
         ProgramConfigPropVal,
     )>()
     .prop_map(|val| PipelineDescr {
@@ -290,7 +284,9 @@ fn limited_pipeline_descr() -> impl Strategy<Value = PipelineDescr> {
         description: val.1,
         runtime_config: map_val_to_limited_runtime_config(val.2),
         program_code: val.3,
-        program_config: map_val_to_limited_program_config(val.4),
+        udf_rust: val.4,
+        udf_toml: val.5,
+        program_config: map_val_to_limited_program_config(val.6),
     })
 }
 
@@ -440,6 +436,8 @@ async fn pipeline_creation() {
         description: "Test description".to_string(),
         runtime_config: Default::default(),
         program_code: "".to_string(),
+        udf_rust: "".to_string(),
+        udf_toml: "".to_string(),
         program_config: ProgramConfig {
             profile: Some(CompilationProfile::Unoptimized),
         },
@@ -523,6 +521,8 @@ async fn pipeline_retrieval() {
                 description: "d1".to_string(),
                 runtime_config: Default::default(),
                 program_code: "c1".to_string(),
+                udf_rust: "r1".to_string(),
+                udf_toml: "t1".to_string(),
                 program_config: ProgramConfig {
                     profile: Some(CompilationProfile::Unoptimized),
                 },
@@ -560,6 +560,8 @@ async fn pipeline_retrieval() {
                 description: "d2".to_string(),
                 runtime_config: Default::default(),
                 program_code: "c2".to_string(),
+                udf_rust: "r2".to_string(),
+                udf_toml: "t2".to_string(),
                 program_config: ProgramConfig {
                     profile: Some(CompilationProfile::Unoptimized),
                 },
@@ -645,6 +647,8 @@ async fn pipeline_versioning() {
                 description: "d1".to_string(),
                 runtime_config: Default::default(),
                 program_code: "c1".to_string(),
+                udf_rust: "r1".to_string(),
+                udf_toml: "t1".to_string(),
                 program_config: Default::default(),
             },
         )
@@ -659,7 +663,9 @@ async fn pipeline_versioning() {
     // Edit without changes should not affect versions
     handle
         .db
-        .update_pipeline(tenant_id, "example", &None, &None, &None, &None, &None)
+        .update_pipeline(
+            tenant_id, "example", &None, &None, &None, &None, &None, &None, &None,
+        )
         .await
         .unwrap();
     let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
@@ -676,6 +682,8 @@ async fn pipeline_versioning() {
             &None,
             &None,
             &Some("c1".to_string()),
+            &Some("r1".to_string()),
+            &Some("t1".to_string()),
             &None,
         )
         .await
@@ -692,6 +700,8 @@ async fn pipeline_versioning() {
             "example",
             &None,
             &Some("d1".to_string()),
+            &None,
+            &None,
             &None,
             &None,
             &None,
@@ -713,6 +723,8 @@ async fn pipeline_versioning() {
             &None,
             &Some("c2".to_string()),
             &None,
+            &None,
+            &None,
         )
         .await
         .unwrap();
@@ -720,6 +732,48 @@ async fn pipeline_versioning() {
     assert_eq!(current.program_code, "c2".to_string());
     assert_eq!(current.version, Version(2));
     assert_eq!(current.program_version, Version(2));
+
+    // Edit UDF -> increment version and program version
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            "example",
+            &None,
+            &None,
+            &None,
+            &None,
+            &Some("r2".to_string()),
+            &None,
+            &None,
+        )
+        .await
+        .unwrap();
+    let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
+    assert_eq!(current.udf_rust, "r2".to_string());
+    assert_eq!(current.version, Version(3));
+    assert_eq!(current.program_version, Version(3));
+
+    // Edit TOML -> increment version and program version
+    handle
+        .db
+        .update_pipeline(
+            tenant_id,
+            "example",
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &Some("t2".to_string()),
+            &None,
+        )
+        .await
+        .unwrap();
+    let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
+    assert_eq!(current.udf_toml, "t2".to_string());
+    assert_eq!(current.version, Version(4));
+    assert_eq!(current.program_version, Version(4));
 
     // Edit description -> increment version
     handle
@@ -732,13 +786,15 @@ async fn pipeline_versioning() {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         )
         .await
         .unwrap();
     let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
     assert_eq!(current.description, "d2".to_string());
-    assert_eq!(current.version, Version(3));
-    assert_eq!(current.program_version, Version(2));
+    assert_eq!(current.version, Version(5));
+    assert_eq!(current.program_version, Version(4));
 
     // Edit program configuration -> increment version and program version
     let new_program_config = ProgramConfig {
@@ -753,14 +809,16 @@ async fn pipeline_versioning() {
             &None,
             &None,
             &None,
+            &None,
+            &None,
             &Some(new_program_config.clone()),
         )
         .await
         .unwrap();
     let current = handle.db.get_pipeline(tenant_id, "example").await.unwrap();
     assert_eq!(current.program_config, new_program_config);
-    assert_eq!(current.version, Version(4));
-    assert_eq!(current.program_version, Version(3));
+    assert_eq!(current.version, Version(6));
+    assert_eq!(current.program_version, Version(5));
 
     // Edit name -> increment version
     handle
@@ -773,13 +831,15 @@ async fn pipeline_versioning() {
             &None,
             &None,
             &None,
+            &None,
+            &None,
         )
         .await
         .unwrap();
     let current = handle.db.get_pipeline(tenant_id, "example2").await.unwrap();
     assert_eq!(current.name, "example2".to_string());
-    assert_eq!(current.version, Version(5));
-    assert_eq!(current.program_version, Version(3));
+    assert_eq!(current.version, Version(7));
+    assert_eq!(current.program_version, Version(5));
 
     // Edit runtime configuration -> increment version
     let new_runtime_config = RuntimeConfig {
@@ -804,13 +864,15 @@ async fn pipeline_versioning() {
             &Some(new_runtime_config.clone()),
             &None,
             &None,
+            &None,
+            &None,
         )
         .await
         .unwrap();
     let current = handle.db.get_pipeline(tenant_id, "example2").await.unwrap();
     assert_eq!(current.runtime_config, new_runtime_config);
-    assert_eq!(current.version, Version(6));
-    assert_eq!(current.program_version, Version(3));
+    assert_eq!(current.version, Version(8));
+    assert_eq!(current.program_version, Version(5));
 }
 
 /// If the name of a pipeline already exists, it should return an error.
@@ -828,6 +890,8 @@ async fn pipeline_duplicate() {
                 description: "d1".to_string(),
                 runtime_config: Default::default(),
                 program_code: "c1".to_string(),
+                udf_rust: "r1".to_string(),
+                udf_toml: "t1".to_string(),
                 program_config: Default::default(),
             },
         )
@@ -844,6 +908,8 @@ async fn pipeline_duplicate() {
                 description: "d2".to_string(),
                 runtime_config: Default::default(),
                 program_code: "c2".to_string(),
+                udf_rust: "r2".to_string(),
+                udf_toml: "t2".to_string(),
                 program_config: Default::default(),
             },
         )
@@ -880,6 +946,8 @@ async fn pipeline_program_compilation() {
                 description: "d1".to_string(),
                 runtime_config: Default::default(),
                 program_code: "c1".to_string(),
+                udf_rust: "r1".to_string(),
+                udf_toml: "t1".to_string(),
                 program_config: Default::default(),
             },
         )
@@ -895,6 +963,8 @@ async fn pipeline_program_compilation() {
                 description: "d2".to_string(),
                 runtime_config: Default::default(),
                 program_code: "c2".to_string(),
+                udf_rust: "r2".to_string(),
+                udf_toml: "t2".to_string(),
                 program_config: Default::default(),
             },
         )
@@ -923,14 +993,7 @@ async fn pipeline_program_compilation() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &ProgramInfo {
-                schema: ProgramSchema {
-                    inputs: vec![],
-                    outputs: vec![],
-                },
-                input_connectors: Default::default(),
-                output_connectors: Default::default(),
-            },
+            &ProgramInfo::default(),
         )
         .await
         .unwrap();
@@ -988,6 +1051,8 @@ async fn pipeline_deployment() {
                 description: "d1".to_string(),
                 runtime_config: Default::default(),
                 program_code: "c1".to_string(),
+                udf_rust: "r1".to_string(),
+                udf_toml: "t2".to_string(),
                 program_config: Default::default(),
             },
         )
@@ -1006,14 +1071,7 @@ async fn pipeline_deployment() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &ProgramInfo {
-                schema: ProgramSchema {
-                    inputs: vec![],
-                    outputs: vec![],
-                },
-                input_connectors: Default::default(),
-                output_connectors: Default::default(),
-            },
+            &ProgramInfo::default(),
         )
         .await
         .unwrap();
@@ -1119,6 +1177,8 @@ enum StorageAction {
         #[proptest(strategy = "limited_option_pipeline_name()")] Option<String>,
         Option<String>,
         #[proptest(strategy = "limited_option_runtime_config()")] Option<RuntimeConfig>,
+        Option<String>,
+        Option<String>,
         Option<String>,
         #[proptest(strategy = "limited_option_program_config()")] Option<ProgramConfig>,
     ),
@@ -1465,10 +1525,10 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.new_or_update_pipeline(tenant_id, new_id, &original_name, pipeline_descr.clone()).await;
                                 check_response_pipeline_with_created(i, model_response, impl_response);
                             }
-                            StorageAction::UpdatePipeline(tenant_id, original_name, name, description, runtime_config, program_code, program_config) => {
+                            StorageAction::UpdatePipeline(tenant_id, original_name, name, description, runtime_config, program_code, udf_rust, udf_toml, program_config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.update_pipeline(tenant_id, &original_name, &name, &description, &runtime_config, &program_code, &program_config).await;
-                                let impl_response = handle.db.update_pipeline(tenant_id, &original_name, &name, &description, &runtime_config, &program_code, &program_config).await;
+                                let model_response = model.update_pipeline(tenant_id, &original_name, &name, &description, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
+                                let impl_response = handle.db.update_pipeline(tenant_id, &original_name, &name, &description, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
                                 check_response_pipeline(i, model_response, impl_response);
                             }
                             StorageAction::DeletePipeline(tenant_id, pipeline_name) => {
@@ -1919,6 +1979,8 @@ impl Storage for Mutex<DbModel> {
             created_at: now,
             runtime_config: pipeline.runtime_config,
             program_code: pipeline.program_code,
+            udf_rust: pipeline.udf_rust,
+            udf_toml: pipeline.udf_toml,
             program_config: pipeline.program_config,
             program_version: Version(1),
             program_status: ProgramStatus::Pending,
@@ -1959,6 +2021,8 @@ impl Storage for Mutex<DbModel> {
                     &Some(pipeline.description),
                     &Some(pipeline.runtime_config),
                     &Some(pipeline.program_code),
+                    &Some(pipeline.udf_rust),
+                    &Some(pipeline.udf_toml),
                     &Some(pipeline.program_config),
                 )
                 .await?,
@@ -1983,6 +2047,8 @@ impl Storage for Mutex<DbModel> {
         description: &Option<String>,
         runtime_config: &Option<RuntimeConfig>,
         program_code: &Option<String>,
+        udf_rust: &Option<String>,
+        udf_toml: &Option<String>,
         program_config: &Option<ProgramConfig>,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         if let Some(name) = name {
@@ -2037,6 +2103,20 @@ impl Storage for Mutex<DbModel> {
                 program_version_increment = true;
             }
             pipeline.program_code = program_code.clone();
+        }
+        if let Some(udf_rust) = udf_rust {
+            if *udf_rust != pipeline.udf_rust {
+                version_increment = true;
+                program_version_increment = true;
+            }
+            pipeline.udf_rust = udf_rust.clone();
+        }
+        if let Some(udf_toml) = udf_toml {
+            if *udf_toml != pipeline.udf_toml {
+                version_increment = true;
+                program_version_increment = true;
+            }
+            pipeline.udf_toml = udf_toml.clone();
         }
         if let Some(program_config) = program_config {
             if *program_config != pipeline.program_config {

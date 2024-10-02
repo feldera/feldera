@@ -237,6 +237,8 @@ mod test {
                         description: "Description of example".to_string(),
                         runtime_config: RuntimeConfig::from_yaml(""),
                         program_code: "CREATE TABLE example ( col1 INT );".to_string(),
+                        udf_rust: "".to_string(),
+                        udf_toml: "".to_string(),
                         program_config: ProgramConfig {
                             profile: Some(CompilationProfile::Unoptimized),
                         },
@@ -263,6 +265,8 @@ mod test {
                     &Some("Description of example2".to_string()),
                     &None,
                     &Some("CREATE TABLE example ( col1 VARCHAR );".to_string()),
+                    &None,
+                    &None,
                     &None,
                 )
                 .await;
@@ -310,6 +314,8 @@ mod test {
                     description: "Description of example1".to_string(),
                     runtime_config: RuntimeConfig::from_yaml(""),
                     program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
+                    udf_rust: "".to_string(),
+                    udf_toml: "".to_string(),
                     program_config: ProgramConfig {
                         profile: Some(CompilationProfile::Unoptimized),
                     },
