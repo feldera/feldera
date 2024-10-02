@@ -220,7 +220,6 @@ class FelderaClient:
             if status == "Paused":
                 break
             elif status == "Failed":
-                # TODO: return a more detailed error message
                 raise RuntimeError(f"Failed to pause pipeline")
 
             logging.debug("still pausing %s, waiting for 100 more milliseconds", pipeline_name)
@@ -230,7 +229,7 @@ class FelderaClient:
         """
         Shutdown a pipeline
 
-        :param pipeline_name: The name of the pipeline to shutdown
+        :param pipeline_name: The name of the pipeline to shut down
         """
 
         self.http.post(
