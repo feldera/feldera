@@ -2219,3 +2219,35 @@ async fn pipeline_logs() {
         String::from_utf8(response_logs.body().await.unwrap().to_vec()).unwrap()
     );
 }
+
+/// The compiler needs to handle and continue to function when the pipeline is deleted
+/// during program compilation.
+#[actix_web::test]
+#[serial]
+async fn pipeline_deleted_during_program_compilation() {
+    let config = setup().await;
+
+    // Test a variety of waiting before deletion
+    for duration_ms in [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000] {
+        // Create pipeline
+        let request_body = json!({
+            "name": "test-pddpc",
+            "description": "Description of the test pipeline",
+            "runtime_config": {},
+            "program_code": "",
+            "program_config": {}
+        });
+        let response = config.post("/v0/pipelines", &request_body).await;
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        // Wait for compilation to progress
+        sleep(Duration::from_millis(duration_ms)).await;
+
+        // Delete the pipeline
+        let response = config.delete("/v0/pipelines/test-pddpc").await;
+        assert_eq!(StatusCode::OK, response.status());
+    }
+
+    // Validate the compiler still works correctly by fully compiling a program
+    create_and_deploy_test_pipeline(&config, "").await;
+}
