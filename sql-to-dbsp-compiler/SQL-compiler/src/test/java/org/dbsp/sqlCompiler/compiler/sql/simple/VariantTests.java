@@ -27,8 +27,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVecLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeStr;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -415,13 +417,38 @@ public class VariantTests extends BaseSQLTests {
                 new DBSPStringLiteral("{\"SA\":[{\"A\":[1,null,3],\"I\":2,\"S\":\"a\"},{\"A\":[],\"I\":3,\"S\":\"b\"}]}", true));
         this.testQuery("SELECT CAST(PARSE_JSON('{\"SA\": [{\"I\": 2, \"S\": \"a\", \"A\": [1, 2, 3]}]}') AS T)",
                 new DBSPTupleExpression(true,
-                new DBSPVecLiteral(true,
-                new DBSPTupleExpression(true,
-                        new DBSPI32Literal(2, true),
-                        new DBSPStringLiteral("a", true),
                         new DBSPVecLiteral(true,
-                                new DBSPI32Literal(1, true),
-                                new DBSPI32Literal(2, true),
-                                new DBSPI32Literal(3, true))))));
+                                new DBSPTupleExpression(true,
+                                        new DBSPI32Literal(2, true),
+                                        new DBSPStringLiteral("a", true),
+                                        new DBSPVecLiteral(true,
+                                                new DBSPI32Literal(1, true),
+                                                new DBSPI32Literal(2, true),
+                                                new DBSPI32Literal(3, true))))));
+    }
+
+    @Test
+    public void testCastMapToStruct() {
+        DBSPType i32 = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
+        this.testQuery("SELECT CAST(CAST(MAP['I', 0] AS VARIANT) AS S)",
+                new DBSPTupleExpression(true,
+                        new DBSPI32Literal(0, true),
+                        DBSPTypeString.varchar(true).none(),
+                        new DBSPTypeVec(i32, true).none()));
+        this.testQuery("SELECT CAST(CAST(MAP['I', 's'] AS VARIANT) AS S)",
+                new DBSPTupleExpression(true,
+                        i32.none(),
+                        DBSPTypeString.varchar(true).none(),
+                        new DBSPTypeVec(i32, true).none()));
+        this.testQuery("SELECT CAST(CAST(MAP['i', 0] AS VARIANT) AS S)",
+                new DBSPTupleExpression(true,
+                        i32.none(),
+                        DBSPTypeString.varchar(true).none(),
+                        new DBSPTypeVec(i32, true).none()));
+        this.testQuery("SELECT CAST(CAST(MAP['I', 0, 'X', 2] AS VARIANT) AS S)",
+                new DBSPTupleExpression(true,
+                        new DBSPI32Literal(0, true),
+                        DBSPTypeString.varchar(true).none(),
+                        new DBSPTypeVec(i32, true).none()));
     }
 }

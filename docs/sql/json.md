@@ -17,7 +17,11 @@ is returned.  Otherwise the `CAST` returns `NULL`.
 
 A value of type `VARIANT` that stores a `MAP` can be converted to a
 user-defined type.  Each name of a field of the user-defined type is
-used as to index into the map.
+used as an index into the map.  If a field is missing in the map and
+the corresponding field of the struct gets the `NULL` value.  Fields
+in the map that do not correspond to the struct field names are
+ignored.  The user-defined structure field names are case-sensitive,
+according to the compiler flag `--unquotedCasing`.
 
 :::note
 
@@ -375,18 +379,34 @@ true
 SELECT TO_JSON(CAST(DATE '2020-01-01' AS VARIANT))
 "2020-01-01"
 
--- timestamps are unparsed as strings (timezone is always +00)
+-- timestamps are unparsed as strings
 SELECT TO_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))
 "2020-01-01 10:00:00"
 
+-- values with user-defined types can be converted to JSON
 CREATE TYPE S AS (i INT, s VARCHAR, a INT ARRAY);
 SELECT TO_JSON(CAST(s(2, 'a', ARRAY[1, 2, 3]) AS VARIANT));
 {"A":[1,2,3],"I":2,"S":"a"}
 
+-- The result of JSON parsing can be converted to user-defined types
 SELECT CAST(PARSE_JSON('{"I": 2, "S": "a", "A": [1, 2, 3]}') AS S);
 {A=[1,2,3], I=2, S="a"}
 
+-- This works even for nested types, such as user-defined types that
+-- contain arrays of user-defined types
 CREATE TYPE t AS (sa S ARRAY);
 SELECT TO_JSON(CAST(t(ARRAY[s(2, 'a', ARRAY[1, NULL, 3]), s(3, 'b', array())]) AS VARIANT));
 {"SA":[{"A":[1,null,3],"I":2,"S":"a"},{"A":[],"I":3,"S":"b"}]}
+
+SELECT CAST(CAST(MAP['I', 0] AS VARIANT) AS S)
+-- produces a structure S(I=0, A=NULL, S=NULL); missing fields are set to 'NULL'
+
+SELECT CAST(CAST(MAP['I', 's'] AS VARIANT) AS S)
+-- produces a structure S(I=NULL, A=NULL, S=NULL), since the field 'I' has the wrong type
+
+SELECT CAST(CAST(MAP['i', 's'] AS VARIANT) AS S)
+-- produces a structure S(I=NULL, A=NULL, S=NULL), since the field 'i' is lowercase
+
+SELECT CAST(CAST(MAP['I', 0, 'X', 2] AS VARIANT) AS S)
+-- produces a structure S(I=NULL, A=NULL, S=NULL), since the extra field 'X' in the map is ignored
 ```
