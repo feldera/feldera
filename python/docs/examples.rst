@@ -4,6 +4,16 @@ Examples
 Connecting to Feldera Sandbox
 =============================
 
+Ensure that you have an API key to connect to Feldera Sandbox.
+
+To get the key:
+
+- Login to the Feldera Sandbox.
+- Click on the top right button that says: "Logged in"
+- Click on "Manage API keys"
+- Generate a new API key
+- Give it a name, and copy the API key
+
 .. code-block:: python
 
     from feldera import FelderaClient, PipelineBuilder
@@ -19,12 +29,12 @@ Connecting to Feldera on localhost
 
     from feldera import FelderaClient, PipelineBuilder
 
-    client = FelderaClient('https://try.feldera.com', api_key=api_key)
+    client = FelderaClient('http://localhost:8080', api_key=api_key)
 
     pipeline = PipelineBuilder(client, name, sql).create()
 
-Creating a Pipeline
-===================
+Creating a Pipeline (OVERWRITING existing pipelines)
+====================================================
 
 .. code-block:: python
 
@@ -44,6 +54,7 @@ Creating a Pipeline
     CREATE VIEW average_scores AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
     """
 
+    # This will shutdown and overwrite any existing pipeline with the same name.
     pipeline = PipelineBuilder(client, name="notebook", sql=sql).create_or_replace()
 
 Starting a Pipeline
@@ -69,8 +80,8 @@ Using Pandas DataFrames
     pipeline.start()
 
     # feed pandas dataframes as input
-    pipeline.input_pandas(TBL_NAMES[0], df_students)
-    pipeline.input_pandas(TBL_NAMES[1], df_grades)
+    pipeline.input_pandas("students", df_students)
+    pipeline.input_pandas("grades", df_grades)
 
     # wait for the pipeline to complete and shutdown
     pipeline.wait_for_completion(True)
@@ -97,11 +108,11 @@ It takes a callback, and calls the callback on each chunk of received data.
     pipeline = PipelineBuilder(client, name="notebook", sql=sql).create_or_replace()
 
     # register the callback for data received from the selected view
-    pipeline.foreach_chunk(view_name, callback)
+    pipeline.foreach_chunk("view_name", callback)
 
     # run the pipeline
     pipeline.start()
-    pipeline.input_pandas(table_name, df)
+    pipeline.input_pandas("table_name", df)
 
     # wait for the pipeline to finish and shutdown
     pipeline.wait_for_completion(True)
