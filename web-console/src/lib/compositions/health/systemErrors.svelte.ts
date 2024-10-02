@@ -7,15 +7,17 @@ import type { ControllerStatus } from '$lib/types/pipelineManager'
 import {
   extractPipelineErrors,
   extractPipelineXgressErrors,
-  extractProgramError,
+  extractProgramErrors,
   type SystemError
 } from './systemErrors'
 
 export const listPipelineErrors = (pipeline: ExtendedPipeline) => {
-  let programErrors = extractProgramError(() => pipeline)({
-    name: pipeline.name,
-    status: pipeline.programStatus
-  })
+  let programErrors = Object.values(
+    extractProgramErrors(() => pipeline)({
+      name: pipeline.name,
+      status: pipeline.programStatus
+    })
+  ).flat(1)
   let pipelineErrors = extractPipelineErrors(pipeline)
   return {
     programErrors,
@@ -23,7 +25,8 @@ export const listPipelineErrors = (pipeline: ExtendedPipeline) => {
   }
 }
 
-export const useSystemErrors = (pipeline: { current: ExtendedPipeline }) => {
+export const useSystemErrors = (_pipeline: { current: ExtendedPipeline }) => {
+  let pipeline = $derived(_pipeline)
   let stats = $state<{ pipelineName: string; status: ControllerStatus | null | 'not running' }>({
     pipelineName: pipeline.current.name,
     status: null
@@ -34,17 +37,11 @@ export const useSystemErrors = (pipeline: { current: ExtendedPipeline }) => {
     }
     stats = await getPipelineStats(pipelineName)
   }
-  // let programErrors = $derived(
-  //   extractProgramError(() => pipeline.current)({
-  //     name: pipeline.current.name,
-  //     status: pipeline.current.programStatus
-  //   })
-  // )
-  // let pipelineErrors = $derived(extractPipelineErrors(pipeline.current))
   let { programErrors, pipelineErrors } = $derived(listPipelineErrors(pipeline.current))
   let xgressErrors = $derived(extractPipelineXgressErrors(stats))
   {
     let pipelineName = $derived(pipeline.current.name)
+
     $effect(() => {
       let interval = setInterval(() => {
         reloadStats(pipelineName)

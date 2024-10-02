@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { editor } from 'monaco-editor'
+  import type { editor } from 'monaco-editor/esm/vs/editor/editor.api'
   import { onMount } from 'svelte'
   const { updateContent, content } = $props<{
     updateContent: (newContent: string) => void

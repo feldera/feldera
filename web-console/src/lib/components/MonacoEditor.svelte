@@ -13,6 +13,30 @@
   export const themeNames: string[] = [...Object.keys(exportedThemes), ...nativeThemes].sort(
     (a, b) => a.localeCompare(b)
   )
+
+  import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
+  import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
+  import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
+  import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker'
+  import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
+
+  self.MonacoEnvironment = {
+    getWorker(_: any, label: string) {
+      if (label === 'json') {
+        return new jsonWorker()
+      }
+      if (label === 'css' || label === 'scss' || label === 'less') {
+        return new cssWorker()
+      }
+      if (label === 'html' || label === 'handlebars' || label === 'razor') {
+        return new htmlWorker()
+      }
+      if (label === 'typescript' || label === 'javascript') {
+        return new tsWorker()
+      }
+      return new editorWorker()
+    }
+  }
 </script>
 
 <script lang="ts">
@@ -21,6 +45,7 @@
   import { onDestroy, onMount } from 'svelte'
   import { createEventDispatcher } from 'svelte'
   import loader from '@monaco-editor/loader'
+  import { felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
 
   let monaco: typeof Monaco
 
@@ -64,13 +89,24 @@
     editor.setValue(value)
     if (position) editor.setPosition(position)
   }
-  $: model &&
-    markers &&
+  $: (() => {
+    if (!model) {
+      return
+    }
+    if (!markers) {
+      monaco.editor.removeAllMarkers(felderaCompilerMarkerSource)
+      return
+    }
     setTimeout(() => {
+      if (!markers) {
+        console.log('Missed removed markers')
+        return
+      }
       Object.entries(markers).forEach(([owner, markers]) =>
         monaco.editor.setModelMarkers(model, owner, markers)
       )
     })
+  })()
 
   onMount(async () => {
     monaco = await loader.init()
