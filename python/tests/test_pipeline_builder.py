@@ -284,7 +284,6 @@ Code snippet:
     def test_kafka(self):
         import json
 
-
         in_ci = os.environ.get("IN_CI")
 
         if in_ci == "1":
