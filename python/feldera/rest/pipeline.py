@@ -12,6 +12,8 @@ class Pipeline:
             self,
             name: str,
             sql: str,
+            udf_rust: str,
+            udf_toml: str,
             program_config: Mapping[str, Any],
             runtime_config: Mapping[str, Any],
             description: Optional[str] = None,
@@ -21,6 +23,8 @@ class Pipeline:
 
         :param name: The name of the pipeline
         :param sql: The SQL code of the pipeline
+        :param udf_rust: Rust code for UDFs
+        :param udf_toml: Rust dependencies required by UDFs (in the TOML format)
         :param program_config: The program config of the pipeline
         :param runtime_config: The configuration of the pipeline
         :param description: Optional. The description of the pipeline
@@ -28,6 +32,8 @@ class Pipeline:
 
         self.name: str = name
         self.program_code: str = sql.strip()
+        self.udf_rust: str = udf_rust
+        self.udf_toml: str = udf_toml
         self.description: Optional[str] = description
         self.program_config: Mapping[str, Any] = program_config
         self.runtime_config: Mapping[str, Any] = runtime_config
@@ -50,7 +56,7 @@ class Pipeline:
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):
-        pipeline = cls("", "", {}, {})
+        pipeline = cls("", "", "", "", {}, {})
         pipeline.__dict__ = d
         pipeline.tables = []
         pipeline.views = []

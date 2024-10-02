@@ -114,6 +114,8 @@ class FelderaClient:
         body = {
             "name": pipeline.name,
             "program_code": pipeline.program_code,
+            "udf_rust": pipeline.udf_rust,
+            "udf_toml": pipeline.udf_toml,
             "program_config": pipeline.program_config,
             "runtime_config": pipeline.runtime_config,
             "description": pipeline.description or "",
@@ -134,6 +136,8 @@ class FelderaClient:
         body = {
             "name": pipeline.name,
             "program_code": pipeline.program_code,
+            "udf_rust": pipeline.udf_rust,
+            "udf_toml": pipeline.udf_toml,
             "program_config": pipeline.program_config,
             "runtime_config": pipeline.runtime_config,
             "description": pipeline.description or "",
