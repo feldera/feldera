@@ -52,6 +52,13 @@ import java.util.Objects;
 public class Utilities {
     private Utilities() {}
 
+    public static String getBaseName(String filePath) {
+        File file = new File(filePath);
+        String fileName = file.getName();
+        int dotIndex = fileName.lastIndexOf('.');
+        return (dotIndex == -1) ? fileName : fileName.substring(0, dotIndex);
+    }
+
     /** Escape special characters in a string. */
     public static String escape(String value) {
         StringBuilder builder = new StringBuilder();

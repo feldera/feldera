@@ -68,9 +68,6 @@ Usage: sql-to-dbsp [options] Input file to compile
     --streaming
       Compiling a streaming program, where only inserts are allowed
       Default: false
-    --udf
-      Specify a Rust file containing implementations of user-defined functions
-      Default: <empty string>
     --unquotedCasing
       How unquoted identifiers are treated.  Choices are: 'upper', 'lower',
       'unchanged'

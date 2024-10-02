@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.ProgramAndTester;
+import org.dbsp.util.Utilities;
 
 import java.io.IOException;
 import java.io.PrintStream;
@@ -79,13 +80,12 @@ public class RustFileWriter {
             // Automatically-generated file
             #![allow(dead_code)]
             #![allow(non_snake_case)]
+            #![allow(non_camel_case_types)]
             #![allow(unused_imports)]
             #![allow(unused_parens)]
             #![allow(unused_variables)]
             #![allow(unused_mut)]
             #![allow(unconditional_panic)]
-
-            #![allow(non_camel_case_types)]
             """;
 
     /** Preamble used when generating Rust code. */
@@ -350,15 +350,19 @@ public class RustFileWriter {
                 .newline();
         this.generateStructures(used, stream);
 
-        if (!compiler.options.ioOptions.udfs.isEmpty()) {
-            int dot = DBSPCompiler.UDF_FILE_NAME.lastIndexOf(".");
-            stream.append("mod ")
-                    .append(DBSPCompiler.UDF_FILE_NAME.substring(0, dot))
-                    .append(";")
-                    .newline()
-                    .append("use crate::udf::*;")
-                    .newline();
-        }
+        String stubs = Utilities.getBaseName(DBSPCompiler.STUBS_FILE_NAME);
+        stream.append("mod ")
+                .append(stubs)
+                .append(";")
+                .newline()
+                .append("mod ")
+                .append(Utilities.getBaseName(DBSPCompiler.UDF_FILE_NAME))
+                .append(";")
+                .newline()
+                .append("use crate::")
+                .append(stubs)
+                .append("::*;")
+                .newline();
         return stream.toString();
     }
 

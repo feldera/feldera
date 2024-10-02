@@ -35,20 +35,22 @@ import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 
+import javax.annotation.Nullable;
 import java.util.List;
 
-/** A (Rust) function. */
+/** A (Rust) function.  If the body is null, this is just a function declaration. */
 @NonCoreIR
 public final class DBSPFunction extends DBSPNode implements IHasType, IDBSPDeclaration, IDBSPInnerNode {
     public final String name;
     public final List<DBSPParameter> parameters;
     public final DBSPType returnType;
+    @Nullable
     public final DBSPExpression body;
     public final List<String> annotations;
     public final DBSPTypeFunction type;
 
     public DBSPFunction(String name, List<DBSPParameter> parameters,
-                        DBSPType returnType, DBSPExpression body,
+                        DBSPType returnType, @Nullable DBSPExpression body,
                         List<String> annotations) {
         super(CalciteObject.EMPTY);
         this.name = name;
@@ -80,7 +82,8 @@ public final class DBSPFunction extends DBSPNode implements IHasType, IDBSPDecla
         this.returnType.accept(visitor);
         for (DBSPParameter argument: this.parameters)
             argument.accept(visitor);
-        this.body.accept(visitor);
+        if (this.body != null)
+            this.body.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }
@@ -108,13 +111,16 @@ public final class DBSPFunction extends DBSPNode implements IHasType, IDBSPDecla
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append("fn ")
+        builder.append("fn ")
                 .append(this.name)
                 .append("(")
                 .joinI(", ", this.parameters)
                 .append(") -> ")
-                .append(this.returnType)
+                .append(this.returnType);
+        if (this.body != null)
+            builder
                 .append(" ")
                 .append(this.body);
+        return builder;
     }
 }

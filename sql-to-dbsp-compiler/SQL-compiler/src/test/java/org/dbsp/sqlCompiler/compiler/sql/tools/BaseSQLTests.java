@@ -239,14 +239,16 @@ public class BaseSQLTests {
         Assert.assertTrue(message.contains(messageFragment));
     }
 
-    /**
-     * Runs all the tests from the testsToRun list.
-     */
+    /** Runs all the tests from the testsToRun list. */
     @AfterClass
     public static void runAllTests() throws IOException, InterruptedException {
         if (testsToRun.isEmpty())
             return;
-        PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
+        // Create empty stubs.rs file
+        PrintStream outputStream = new PrintStream(Files.newOutputStream(Paths.get(rustDirectory, DBSPCompiler.STUBS_FILE_NAME)));
+        outputStream.println();
+        outputStream.close();
+        outputStream = new PrintStream(Files.newOutputStream(Paths.get(testFilePath)));
         // Use the compiler from the first test case.
         DBSPCompiler firstCompiler = testsToRun.get(0).ccs.compiler;
         RustFileWriter writer = new RustFileWriter(outputStream);
