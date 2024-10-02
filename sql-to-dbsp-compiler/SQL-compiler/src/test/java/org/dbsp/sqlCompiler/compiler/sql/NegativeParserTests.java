@@ -218,7 +218,9 @@ public class NegativeParserTests extends BaseSQLTests {
                 CREATE TABLE S (COL1 INT);
                 CREATE VIEW V AS SELECT * FROM S""";
         File file = createInputScript(statements);
-        CompilerMessages messages = CompilerMain.execute(file.getPath(), "-o", "/dev/null");
+        File out = File.createTempFile("/tmp", "out");
+        out.deleteOnExit();
+        CompilerMessages messages = CompilerMain.execute(file.getPath(), "-o", out.getAbsolutePath());
         Assert.assertEquals(messages.exitCode, 0);
         Assert.assertEquals(messages.warningCount(), 1);
         Assert.assertEquals(messages.errorCount(), 0);

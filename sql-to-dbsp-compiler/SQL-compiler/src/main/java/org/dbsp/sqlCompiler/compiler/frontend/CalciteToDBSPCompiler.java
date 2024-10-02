@@ -213,8 +213,7 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
  * defining tables and views.  The views must be defined in terms of
  * the previously defined tables and views.  Multiple views can be
  * compiled.  The result is a circuit which has an input for each table
- * and an output for each view.
- */
+ * and an output for each (non-local) view. */
 public class CalciteToDBSPCompiler extends RelVisitor
         implements IWritesLogs, ICompilerComponent {
     // Result is deposited here
@@ -2646,8 +2645,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         new DBSPStructWithHelperItem(returnType.to(DBSPTypeStruct.class))));
             }
             this.circuit.addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(function)));
+            return function;
+        } else {
+            return stat.function.getDeclaration(this.compiler.getTypeCompiler());
         }
-        return null;
     }
 
     @Nullable

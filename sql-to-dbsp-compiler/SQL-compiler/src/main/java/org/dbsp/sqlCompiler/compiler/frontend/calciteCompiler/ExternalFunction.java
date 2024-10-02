@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -166,6 +167,20 @@ public class ExternalFunction extends SqlFunction {
             super(null, null, compiler);
             this.parameters = parameters;
         }
+    }
+
+    /** Get the declaration of an external function */
+    public DBSPFunction getDeclaration(TypeCompiler typeCompiler) {
+        List<DBSPParameter> parameters = new ArrayList<>();
+        for (RelDataTypeField param: this.parameterList) {
+            DBSPType type = typeCompiler.convertType(param.getType(), true);
+            DBSPParameter p = new DBSPParameter(param.getName(), type);
+            parameters.add(p);
+        }
+        DBSPType returnType = typeCompiler.convertType(this.returnType, true);
+        // Must wrap the return type in a Result
+        returnType = new DBSPTypeResult(returnType);
+        return new DBSPFunction(this.getName(), parameters, returnType, null, Linq.list());
     }
 
     @Nullable

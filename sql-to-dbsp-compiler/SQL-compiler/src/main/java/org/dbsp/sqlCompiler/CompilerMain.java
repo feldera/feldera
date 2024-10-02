@@ -34,9 +34,16 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToDotVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.ir.DBSPFunction;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import javax.sql.DataSource;
@@ -45,11 +52,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Map;
 
 /** Main entry point of the SQL compiler. */
@@ -120,6 +128,16 @@ public class CompilerMain {
         }
     }
 
+    // For a function prototype like f(s: i32) -> i32;
+    // generate a body like
+    // udf::f(s)
+    DBSPFunction generateStubBody(DBSPFunction function) {
+        String name = "udf::" + function.name;
+        List<DBSPExpression> arguments = Linq.map(function.parameters, DBSPParameter::asVariable);
+        DBSPExpression expression = new DBSPApplyExpression(name, function.returnType, arguments.toArray(new DBSPExpression[0]));
+        return new DBSPFunction(function.name, function.parameters, function.returnType, expression, function.annotations);
+    }
+
     /** Run compiler, return exit code. */
     CompilerMessages run() throws SQLException {
         DBSPCompiler compiler = new DBSPCompiler(this.options);
@@ -188,27 +206,42 @@ public class CompilerMain {
             stream.close();
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,
-                    "Error writing to file", e.getMessage());
+                    "Error writing to output file", e.getMessage());
             return compiler.messages;
         }
 
         try {
-            if (!this.options.ioOptions.udfs.isEmpty()) {
-                String outputFileName = this.options.ioOptions.outputFile;
-                if (outputFileName.isEmpty()) {
-                    compiler.reportError(SourcePositionRange.INVALID,
-                            "No output file", "`-udf` option requires specifying an output file");
-                    return compiler.messages;
+            List<DBSPFunction> extern = Linq.where(compiler.functions, f -> f.body == null);
+            String outputFile = this.options.ioOptions.outputFile;
+            if (!outputFile.isEmpty()) {
+                String outputPath = new File(outputFile).getAbsolutePath();
+                Path stubs = Paths.get(outputPath).getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
+                PrintStream protosStream = new PrintStream(Files.newOutputStream(stubs));
+
+                if (compiler.options.ioOptions.verbosity > 0)
+                    System.out.println("Writing UDF stubs to file " + stubs);
+                protosStream.append("""
+// Compiler-generated file
+// Stubs for user-defined functions
+
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
+
+use feldera_sqllib::*;
+use crate::*;
+
+""");
+
+                for (DBSPFunction function : extern) {
+                    function = this.generateStubBody(function);
+                    String str = ToRustInnerVisitor.toRustString(compiler, function, compiler.options, false);
+                    protosStream.println(str);
                 }
-                File outputFile = new File(outputFileName);
-                File outputDirectory = outputFile.getParentFile();
-                File source = new File(this.options.ioOptions.udfs);
-                File destination = new File(outputDirectory, DBSPCompiler.UDF_FILE_NAME);
-                Files.copy(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                protosStream.close();
             }
         } catch (IOException e) {
             compiler.reportError(SourcePositionRange.INVALID,
-                    "Error copying UDF file", e.getMessage());
+                    "Error writing to proto.rs file", e.getMessage());
             return compiler.messages;
         }
 

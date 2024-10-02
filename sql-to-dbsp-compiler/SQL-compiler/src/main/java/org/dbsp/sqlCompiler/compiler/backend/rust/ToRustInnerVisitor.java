@@ -1053,16 +1053,20 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (!function.returnType.is(DBSPTypeVoid.class)) {
             builder.append("-> ");
             function.returnType.accept(this);
-            builder.append(" ");
         }
-        if (function.body.is(DBSPBlockExpression.class)) {
-            function.body.accept(this);
+        if (function.body != null) {
+            builder.append(" ");
+            if (function.body.is(DBSPBlockExpression.class)) {
+                function.body.accept(this);
+            } else {
+                this.builder.append("{").increase();
+                function.body.accept(this);
+                this.builder.decrease()
+                        .newline()
+                        .append("}");
+            }
         } else {
-            this.builder.append("{").increase();
-            function.body.accept(this);
-            this.builder.decrease()
-                    .newline()
-                    .append("}");
+            this.builder.append(";");
         }
         return VisitDecision.STOP;
     }
