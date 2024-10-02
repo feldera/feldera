@@ -67,6 +67,8 @@ def dataframe_from_response(buffer: list[list[dict]], schema: dict):
 
     for column in schema['fields']:
         column_name = column['name']
+        if not column['case_sensitive']:
+            column_name = column_name.lower()
         column_type = column['columntype']['type']
         if column_type == 'DECIMAL':
             decimal_col.append(column_name)
