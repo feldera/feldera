@@ -27,6 +27,7 @@ dependencies = [
     "pandas",
     "typing-extensions",
     "numpy<2",
+    "pretty-errors",
 ]
 [project.urls]
 Homepage = "https://www.feldera.com"
