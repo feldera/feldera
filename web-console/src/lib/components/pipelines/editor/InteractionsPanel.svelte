@@ -20,6 +20,7 @@
     metrics
   }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
   const pipelineName = $derived(pipeline.current.name)
+
   const tabs = [
     tuple('Errors' as const, TabPipelineErrors, PanelPipelineErrors),
     // tuple('ad-hoc query', TabQueryData),

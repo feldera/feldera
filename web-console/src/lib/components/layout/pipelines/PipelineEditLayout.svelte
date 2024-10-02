@@ -1,10 +1,14 @@
+<script lang="ts" module>
+  let currentPipelineFile: Record<string, string> = $state({})
+</script>
+
 <script lang="ts">
   import { PaneGroup, Pane, PaneResizer } from 'paneforge'
   import InteractionsPanel from '$lib/components/pipelines/editor/InteractionsPanel.svelte'
   import DeploymentStatus from '$lib/components/pipelines/list/DeploymentStatus.svelte'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
-  import { extractProgramError, programErrorReport } from '$lib/compositions/health/systemErrors'
-  import { extractSQLCompilerErrorMarkers } from '$lib/functions/pipelines/monaco'
+  import { extractProgramErrors, programErrorReport } from '$lib/compositions/health/systemErrors'
+  import { extractErrorMarkers, felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
   import {
     postPipelineAction,
     type ExtendedPipeline,
@@ -46,34 +50,93 @@
   }
 
   const programErrors = $derived(
-    extractProgramError(programErrorReport(pipeline.current))({
+    extractProgramErrors(programErrorReport(pipeline.current))({
       name: pipeline.current.name,
       status: pipeline.current.programStatus
     })
   )
 
   let metrics = useAggregatePipelineStats(pipeline, 1000, 61000)
-  let files = $derived([
-    {
-      // name: `${pipeline.current.name}.sql`,
-      name: `program.sql`,
-      access: {
-        get current() {
-          return pipeline.current.programCode
+  let files = $derived.by(() => {
+    const p = pipeline
+    return [
+      {
+        name: `program.sql`,
+        access: {
+          get current() {
+            return p.current.programCode
+          },
+          set current(programCode: string) {
+            p.patch({ programCode })
+          }
         },
-        set current(programCode: string) {
-          // pipeline.optimisticUpdate({ programCode })
-          pipeline.patch({ programCode })
-        }
+        language: 'sql' as const,
+        markers: ((errors) =>
+          errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
+          programErrors['program.sql']
+        )
       },
-      markers: programErrors ? { sql: extractSQLCompilerErrorMarkers(programErrors) } : undefined
-    }
-  ])
+      {
+        name: `stubs.rs`,
+        access: {
+          get current() {
+            return p.current.programInfo?.udf_stubs ?? ''
+          }
+        },
+        language: 'rust' as const,
+        markers: ((errors) =>
+          errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
+          programErrors['stubs.rs']
+        )
+      },
+      {
+        name: `udf.rs`,
+        access: {
+          get current() {
+            return p.current.programUdfRs
+          },
+          set current(programUdfRs: string) {
+            p.patch({ programUdfRs })
+          }
+        },
+        language: 'rust' as const,
+        markers: ((errors) =>
+          errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
+          programErrors['udf.rs']
+        )
+      },
+      {
+        name: `Cargo.toml`,
+        access: {
+          get current() {
+            return p.current.programCargoToml
+          },
+          set current(programCargoToml: string) {
+            p.patch({ programCargoToml })
+          }
+        },
+        language: 'graphql' as const,
+        markers: ((errors) =>
+          errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
+          programErrors['Cargo.toml']
+        )
+      }
+    ]
+  })
+  let pipelineName = $derived(pipeline.current.name)
+  $effect.pre(() => {
+    currentPipelineFile[pipelineName] ??= 'program.sql'
+  })
 </script>
 
 <div class="h-full w-full">
   <PaneGroup direction="vertical" class="!overflow-visible">
-    <CodeEditor path={pipeline.current.name} {files} {editDisabled}>
+    <CodeEditor
+      path={pipelineName}
+      {files}
+      {editDisabled}
+      bind:currentFileName={currentPipelineFile[pipelineName]}
+    >
       {#snippet textEditor(children)}
         <Pane defaultSize={60} minSize={15} class="!overflow-visible">
           {@render children()}

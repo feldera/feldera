@@ -1,17 +1,22 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import { useDecoupledState } from '$lib/compositions/decoupledState.svelte'
+  import { DecoupledState } from '$lib/compositions/decoupledState.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import MonacoEditor, { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
-  import { editor } from 'monaco-editor'
+  import * as MonacoImports from 'monaco-editor'
+  import { editor } from 'monaco-editor/esm/vs/editor/editor.api'
+  import type { EditorLanguage } from 'monaco-editor/esm/metadata'
   import PipelineEditorStatusBar from '$lib/components/layout/pipelines/PipelineEditorStatusBar.svelte'
   import { page } from '$app/stores'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
+  import { pipelineFileNameRegex } from '$lib/compositions/health/systemErrors'
+  void MonacoImports // Explicitly import all monaco-editor esm modules
 
   let {
     path,
     files,
+    currentFileName = $bindable(),
     editDisabled,
     textEditor,
     statusBarCenter,
@@ -21,35 +26,35 @@
     files: {
       name: string
       access: { current: string }
+      language?: EditorLanguage
       markers?: Record<string, editor.IMarkerData[]>
     }[]
+    currentFileName: string
     editDisabled?: boolean
     textEditor: Snippet<[children: Snippet]>
     statusBarCenter?: Snippet
     statusBarEnd?: Snippet<[downstreamChanged: boolean]>
   } = $props()
 
-  let currentFileName = $state(files[0].name)
-
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
   let wait = $derived(autoSavePipeline.value ? 2000 : ('decoupled' as const))
   let file = $derived(files.find((f) => f.name === currentFileName)!)
-  let editedText = useDecoupledState(file.access, () => wait)
+
+  function isReadonlyProperty<T>(obj: T, prop: keyof T) {
+    return !Object.getOwnPropertyDescriptor(obj, prop)?.['set']
+  }
+  let isReadonly = $derived(editDisabled || isReadonlyProperty(file.access, 'current'))
+
+  let pipelineName = $derived(path)
+  let filePath = $derived(pipelineName + '/' + file.name)
+  let editedFiles: Record<string, DecoupledState<string>> = (() => ({
+    [filePath]: new DecoupledState(file.access, () => wait)
+  }))()
   {
     // TODO: handle remote update of the program code that conflicts with currently edited version
-    let pipelineName = $derived(path)
-    $effect(() => {
-      // Fetch new code when switching pipeline
-      pipelineName
-      setTimeout(() => {
-        editedText.pull()
-      })
-      return () => {
-        if (autoSavePipeline.value) {
-          editedText.cancelDebounce()
-        }
-      }
+    $effect.pre(() => {
+      editedFiles[filePath] ??= new DecoupledState(file.access, () => wait)
     })
   }
 
@@ -58,7 +63,7 @@
     if (!autoSavePipeline.value) {
       return
     }
-    setTimeout(() => editedText.push())
+    setTimeout(() => Object.values(editedFiles).forEach((file) => file.push()))
   })
 
   let editorRef: editor.IStandaloneCodeEditor = $state()!
@@ -66,9 +71,13 @@
     if (!editorRef) {
       return
     }
-    const [, line, , column] = $page.url.hash.match(/#:(\d+)(:(\d+))?/) ?? []
+    const [, fileName, line, , column] =
+      $page.url.hash.match(new RegExp(`#(${pipelineFileNameRegex}):(\\d+)(:(\\d+))?`)) ?? []
     if (!line) {
       return
+    }
+    if (currentFileName !== fileName) {
+      currentFileName = fileName
     }
     setTimeout(() => {
       editorRef.revealPosition({ lineNumber: parseInt(line), column: parseInt(column) ?? 1 })
@@ -85,9 +94,12 @@
   <div class="flex h-full flex-col">
     <div class="flex">
       {#each files as file}
-        <div class="py-1 pl-3 pr-8 {file.name === currentFileName ? 'bg-white-black' : ''}">
+        <button
+          class="py-1 pl-3 pr-8 {file.name === currentFileName ? 'bg-white-black' : ''}"
+          onclick={() => (currentFileName = file.name)}
+        >
           {file.name}
-        </div>
+        </button>
       {/each}
     </div>
     <div class="relative flex-1">
@@ -97,27 +109,28 @@
           on:ready={(x) => {
             x.detail.onKeyDown((e) => {
               if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
-                editedText.push()
+                editedFiles[filePath].push()
                 e.preventDefault()
               }
             })
           }}
           bind:editor={editorRef}
-          bind:value={editedText.current}
+          bind:value={editedFiles[filePath].current}
           options={{
             fontFamily: theme.config.monospaceFontFamily,
             fontSize: 16,
             theme: mode.darkMode.value === 'light' ? 'vs' : 'vs-dark',
             automaticLayout: true,
             lineNumbersMinChars: 3,
-            ...isMonacoEditorDisabled(editDisabled),
+            ...isMonacoEditorDisabled(isReadonly),
+            renderValidationDecorations: 'on', // Show red error squiggles even in read-only mode
             overviewRulerLanes: 0,
             hideCursorInOverviewRuler: true,
             overviewRulerBorder: false,
             scrollbar: {
               vertical: 'visible'
             },
-            language: 'sql'
+            language: file.language
           }}
         />
       </div>
@@ -129,12 +142,12 @@
   <div class="flex h-9 flex-nowrap gap-2">
     <PipelineEditorStatusBar
       {autoSavePipeline}
-      downstreamChanged={editedText.downstreamChanged}
-      saveCode={editedText.push}
+      downstreamChanged={editedFiles[filePath].downstreamChanged}
+      saveCode={editedFiles[filePath].push}
     ></PipelineEditorStatusBar>
     {@render statusBarCenter?.()}
   </div>
   <div class=" ml-auto flex flex-nowrap gap-x-8">
-    {@render statusBarEnd?.(editedText.downstreamChanged)}
+    {@render statusBarEnd?.(editedFiles[filePath].downstreamChanged)}
   </div>
 </div>

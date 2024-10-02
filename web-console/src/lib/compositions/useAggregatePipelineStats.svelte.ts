@@ -18,6 +18,7 @@ export const useAggregatePipelineStats = (
 ) => {
   let timeout = $state<NodeJS.Timeout>()
   let pipelineStatus = $derived(pipeline.current.status)
+
   let metricsAvailable = $derived(isMetricsAvailable(pipelineStatus))
   const doFetch = (pipelineName: string) => {
     if (!metricsAvailable) {

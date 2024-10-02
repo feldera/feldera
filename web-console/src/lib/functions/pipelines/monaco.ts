@@ -1,5 +1,5 @@
 import type Monaco from 'svelte-monaco'
-import { MarkerSeverity, type editor, type Range } from 'monaco-editor'
+import { MarkerSeverity, type editor, type Range } from 'monaco-editor/esm/vs/editor/editor.api'
 import invariant from 'tiny-invariant'
 import { showSqlCompilerMessage, type SystemError } from '$lib/compositions/health/systemErrors'
 import type { SqlCompilerMessage } from '$lib/services/pipelineManager'
@@ -86,8 +86,19 @@ export const getFormErrorsMarkers = (
   })
 }
 
-export const extractSQLCompilerErrorMarkers = (
-  errors: SystemError<string | SqlCompilerMessage>[]
+type ErrorRange = {
+  startLineNumber: number
+  endLineNumber: number
+  startColumn: number
+  endColumn: number
+  message: string
+  warning?: boolean
+}
+
+export const felderaCompilerMarkerSource = 'feldera compiler'
+
+export const extractErrorMarkers = (
+  errors: SystemError<string | SqlCompilerMessage | ErrorRange>[]
 ) => {
   return errors.map(({ cause: { body: error } }) => {
     if (typeof error === 'string') {
@@ -99,6 +110,16 @@ export const extractSQLCompilerErrorMarkers = (
         endColumn: 9999,
         message: error,
         severity: MarkerSeverity.Error
+      }
+    }
+    if ('startLineNumber' in error) {
+      return {
+        startLineNumber: error.startLineNumber,
+        endLineNumber: error.endLineNumber,
+        startColumn: error.startColumn,
+        endColumn: error.endColumn + 1,
+        message: error.message,
+        severity: error.warning ? MarkerSeverity.Warning : MarkerSeverity.Error
       }
     }
     return {

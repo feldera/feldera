@@ -2,9 +2,13 @@
   import { page } from '$app/stores'
   import { pipelineTabEq, useOpenPipelines } from '$lib/compositions/useOpenPipelines'
   import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
-  import { useWritablePipeline } from '$lib/compositions/useWritablePipeline.svelte.js'
+  import {
+    writablePipeline,
+    useRefreshPipeline
+  } from '$lib/compositions/useWritablePipeline.svelte.js'
   import { goto } from '$app/navigation'
   import { base } from '$app/paths'
+  import type { ExtendedPipeline } from '$lib/services/pipelineManager.js'
 
   let { data } = $props()
 
@@ -24,7 +28,15 @@
       addOpenedTab(pipelineName)
     })
   }
-  const pipeline = useWritablePipeline(
+  let pipelineCache = $state({ current: data.preloadedPipeline })
+  let set = (pipeline: ExtendedPipeline) => {
+    pipelineCache.current = pipeline
+  }
+  let pipeline = $derived(writablePipeline(pipelineCache, set))
+
+  useRefreshPipeline(
+    () => pipelineCache,
+    set,
     () => data.preloadedPipeline,
     () => goto(`${base}/`)
   )

@@ -50,18 +50,9 @@ const unauthenticatedClient = createClient({
 
 export type ExtendedPipelineDescrNoCode = Omit<ExtendedPipelineDescr, 'program_code'>
 
-// const emptyProgramDescr: ProgramDescr = {
-//   code: '',
-//   config: {},
-//   description: '',
-//   name: '',
-//   program_id: '',
-//   schema: { inputs: [], outputs: [] },
-//   status: 'Success',
-//   version: -1
-// }
-
-const toPipelineThumb = (pipeline: Omit<ExtendedPipelineDescr, 'program_code'>) => ({
+const toPipelineThumb = (
+  pipeline: Omit<ExtendedPipelineDescr, 'program_code' | 'udf_rust' | 'udf_toml'>
+) => ({
   name: pipeline.name,
   description: pipeline.description,
   runtimeConfig: pipeline.runtime_config,
@@ -80,7 +71,9 @@ const toPipeline = <P extends PipelineDescr>(pipeline: P) => ({
   description: pipeline.description,
   runtimeConfig: pipeline.runtime_config,
   programConfig: pipeline.program_config,
-  programCode: pipeline.program_code
+  programCode: pipeline.program_code,
+  programUdfRs: pipeline.udf_rust,
+  programCargoToml: pipeline.udf_toml
 })
 
 const toExtendedPipeline = ({
@@ -102,6 +95,8 @@ const toExtendedPipeline = ({
   name: pipeline.name,
   programBinaryUrl: pipeline.program_binary_url,
   programCode: pipeline.program_code,
+  programUdfRs: pipeline.udf_rust,
+  programCargoToml: pipeline.udf_toml,
   programConfig: pipeline.program_config,
   programInfo: pipeline.program_info,
   programStatus: program_status,
@@ -122,7 +117,9 @@ const fromPipeline = <T extends Partial<Pipeline>>(pipeline: T) => ({
   description: pipeline?.description,
   runtime_config: pipeline?.runtimeConfig,
   program_config: pipeline?.programConfig,
-  program_code: pipeline?.programCode
+  program_code: pipeline?.programCode,
+  udf_rust: pipeline?.programUdfRs,
+  udf_toml: pipeline?.programCargoToml
 })
 
 export type PipelineThumb = ReturnType<typeof toPipelineThumb>

@@ -6,14 +6,39 @@ import {
 } from '$lib/services/pipelineManager'
 import invariant from 'tiny-invariant'
 
-export const useWritablePipeline = (preloaded: () => ExtendedPipeline, onNotFound?: () => void) => {
-  let pipeline = $state(preloaded())
-  let pipelineName = $derived(pipeline.name)
+export const writablePipeline = (
+  pipeline: { current: ExtendedPipeline },
+  set: (pipeline: ExtendedPipeline) => void
+) => {
+  invariant(pipeline, 'useWritablePipeline: pipeline was not preloaded')
+  let pipelineName = pipeline.current.name
 
   if (!pipelineName) {
     throw new Error('Cannot use pipeline without specifying its name')
   }
 
+  return {
+    get current() {
+      return pipeline.current
+    },
+    async patch(newPipeline: Partial<Pipeline>) {
+      const res = await patchPipeline(pipelineName, newPipeline)
+      set(res)
+      return res
+    },
+    async optimisticUpdate(newPipeline: Partial<ExtendedPipeline>) {
+      set({ ...pipeline.current, ...newPipeline })
+    }
+  }
+}
+
+export const useRefreshPipeline = (
+  pipeline: () => { current: ExtendedPipeline },
+  set: (p: ExtendedPipeline) => void,
+  preloaded: () => ExtendedPipeline,
+  onNotFound?: () => void
+) => {
+  const pipelineName = $derived(pipeline().current.name)
   const reload = async () => {
     const requestedPipelineName = pipelineName
     let loaded = await getExtendedPipeline(requestedPipelineName, {
@@ -27,38 +52,30 @@ export const useWritablePipeline = (preloaded: () => ExtendedPipeline, onNotFoun
     if (requestedPipelineName !== pipelineName) {
       return
     }
-    pipeline = loaded
+    set(loaded)
   }
+
+  $effect(() => {
+    if (preloaded().name === pipelineName) {
+      return
+    }
+    set(preloaded())
+  })
 
   let interval: NodeJS.Timeout
   $effect(() => {
+    pipelineName
     restartInterval()
-    pipeline = preloaded()
   })
   const restartInterval = () => {
     clearInterval(interval)
     interval = setInterval(reload, 2000)
   }
+
   $effect(() => {
     queueMicrotask(reload)
     return () => {
       clearInterval(interval)
     }
   })
-
-  return {
-    get current() {
-      invariant(pipeline, 'useWritablePipeline: pipeline was not preloaded')
-      return pipeline
-    },
-    async patch(newPipeline: Partial<Pipeline>) {
-      return (pipeline = await patchPipeline(pipelineName, newPipeline))
-    },
-    async optimisticUpdate(newPipeline: Partial<ExtendedPipeline>) {
-      if (!pipeline) {
-        return
-      }
-      pipeline = { ...pipeline, ...newPipeline }
-    }
-  }
 }
