@@ -477,7 +477,7 @@ case $runner:$language in
 
     feldera:sql)
         rm -f results.csv
-        PYTHONUNBUFFERED=1 run_log feldera-sql/run.py \
+        PYTHONUNBUFFERED=1 run_log python3 feldera-sql/run.py \
             --api-url="$api_url" \
             --cores $cores \
             --events $events \
