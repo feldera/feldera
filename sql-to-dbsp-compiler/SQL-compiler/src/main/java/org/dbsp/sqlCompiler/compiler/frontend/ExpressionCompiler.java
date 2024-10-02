@@ -277,7 +277,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (right.is(DBSPTypeNull.class))
             return left.setMayBeNull(true);
         boolean anyNull = left.mayBeNull || right.mayBeNull;
-        if (left.setMayBeNull(true).sameType(right.setMayBeNull(true)))
+        if (left.sameTypeIgnoringNullability(right))
             return left.setMayBeNull(anyNull);
 
         DBSPTypeInteger li = left.as(DBSPTypeInteger.class);
@@ -642,9 +642,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             ops.set(argument, arg.cast(new DBSPTypeDouble(arg.getType().getNode(), arg.getType().mayBeNull)));
     }
 
-    void ensureInteger(List<DBSPExpression> ops, int argument, int length) {
+    void ensureInteger(List<DBSPExpression> ops, int argument, int integerSize) {
         DBSPExpression arg = ops.get(argument);
-        DBSPTypeInteger expected = new DBSPTypeInteger(arg.getType().getNode(), length, true, arg.getType().mayBeNull);
+        DBSPTypeInteger expected = new DBSPTypeInteger(arg.getType().getNode(), integerSize, true, arg.getType().mayBeNull);
 
         if (!arg.getType().sameType(expected))
             ops.set(argument, arg.cast(expected));
@@ -720,6 +720,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         // If type is NULL we can skip the call altogether...
         if (type.is(DBSPTypeNull.class))
             return new DBSPNullLiteral();
+        assert !type.is(DBSPTypeStruct.class);
 
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(call.toString())
@@ -1091,10 +1092,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         }
                         return compileFunction(module_prefix + opName, node, type, ops, 2, 3);
                     }
+                    case "array":
+                        assert ops.isEmpty();
+                        return new DBSPVecLiteral(node, type, Linq.list());
                     case "concat":
                         return makeBinaryExpressions(node, type, DBSPOpcode.CONCAT, ops);
                     case "now":
-                    case "array":
                     case "variantnull":
                         return compileFunction(call, node, type, ops, 0);
                     case "gunzip":
@@ -1117,7 +1120,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         // Like DATE_TRUNC
                         return compileKeywordFunction(call, node, null, type, ops, 1, 2);
                 }
-                return this.compileUDF(node, call, type, ops);
+                return this.compileUdfOrConstructor(node, call, type, ops);
             }
             case ARRAYS_OVERLAP: {
                 if (ops.size() != 2)
@@ -1443,19 +1446,20 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 toPosition(range.start), toPosition(range.end));
     }
 
-    private DBSPExpression compileUDF(CalciteObject node, RexCall call, DBSPType type, List<DBSPExpression> ops) {
+    private DBSPExpression compileUdfOrConstructor(CalciteObject node, RexCall call, DBSPType type, List<DBSPExpression> ops) {
         String function = call.op.getName();  // no lowercase applied
         boolean isConstructor = this.compiler.isStructConstructor(function);
         if (isConstructor) {
             DBSPTypeStruct struct = this.compiler.getStructByName(function);
-            assert Objects.requireNonNull(struct).toTuple().sameType(type);
+            DBSPType structTuple = Objects.requireNonNull(struct).toTupleDeep();
+            assert structTuple.sameType(type): "Expected the same type " + structTuple + " and " + type;
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
             for (int i = 0; i < ops.size(); i++) {
                 DBSPExpression opi = ops.get(i);
                 opi = opi.applyCloneIfNeeded().cast(tuple.getFieldType(i));
                 ops.set(i, opi);
             }
-            return new DBSPTupleExpression(node, ops);
+            return new DBSPTupleExpression(node, type.to(DBSPTypeTuple.class), ops);
         }
 
         ExternalFunction ef = this.compiler.getCustomFunctions()

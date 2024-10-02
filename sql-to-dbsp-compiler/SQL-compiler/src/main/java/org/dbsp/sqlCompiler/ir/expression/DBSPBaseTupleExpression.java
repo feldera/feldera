@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.Linq;
@@ -35,7 +36,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-public abstract class DBSPBaseTupleExpression extends DBSPExpression {
+public abstract class DBSPBaseTupleExpression
+        extends DBSPExpression
+        implements ISameValue {
     // Nullable only for constant null tuple expressions
     @Nullable
     public final DBSPExpression[] fields;
@@ -80,7 +83,41 @@ public abstract class DBSPBaseTupleExpression extends DBSPExpression {
         return this.fromFields(fields);
     }
 
-    public DBSPTypeTupleBase getTupleType() {
+    public DBSPTypeTupleBase getTypeAsTupleBase() {
         return this.getType().to(DBSPTypeTupleBase.class);
+    }
+
+    @Override
+    public boolean sameValue(@Nullable ISameValue o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPBaseTupleExpression other = o.to(DBSPBaseTupleExpression.class);
+        if (this.fields == null)
+            return other.fields == null;
+        if (other.fields == null)
+            return false;
+        if (this.fields.length != other.fields.length)
+            return false;
+        for (int i = 0; i < this.fields.length; i++) {
+            DBSPExpression field = this.fields[i];
+            DBSPExpression ofield = other.fields[i];
+            if (field == null) {
+                if (ofield == null)
+                    continue;
+                return false;
+            }
+            if (ofield == null)
+                return false;
+
+            ISameValue sfield = field.as(ISameValue.class);
+            if (sfield == null)
+                return false;
+            ISameValue sofield = ofield.as(ISameValue.class);
+            if (sofield == null)
+                return false;
+            if (!sfield.sameValue(sofield))
+                return false;
+        }
+        return true;
     }
 }

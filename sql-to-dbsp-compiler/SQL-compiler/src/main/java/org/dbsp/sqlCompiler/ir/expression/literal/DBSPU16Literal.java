@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
@@ -44,7 +45,7 @@ public final class DBSPU16Literal extends DBSPIntLiteral implements IsNumericLit
     public final Integer value;
 
     @Override
-    public boolean sameValue(@Nullable DBSPLiteral o) {
+    public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DBSPU16Literal that = (DBSPU16Literal) o;

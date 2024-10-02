@@ -22,7 +22,7 @@ public enum DBSPOpcode {
     MUL("*", false),
     DIV("/", false),
     // DIV_NULL is like DIV, but returns NULL for a 0 denominator
-    DIV_NULL("/", false),
+    DIV_NULL("div_null", false),
     MOD("%", false),
     EQ("==", false),
     NEQ("!=", false),
@@ -62,6 +62,9 @@ public enum DBSPOpcode {
     AGG_LTE("agg_lte", true),
     // Yet another way to compare, where NULL on the left is always greater
     GTE_LEFT("gte_left", true),
+
+    // Higher order operation: apply a function to every element of an array
+    ARRAY_CONVERT("array_map", false)
     ;
 
     private final String text;

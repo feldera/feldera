@@ -207,6 +207,12 @@ public class Linq {
         return result;
     }
 
+    public static <T> List<T> list(Iterator<T> data) {
+        List<T> result = new ArrayList<>();
+        data.forEachRemaining(result::add);
+        return result;
+    }
+
     public static <T> List<T> where(Collection<T> data, Predicate<T> function) {
         List<T> result = new ArrayList<>();
         for (T aData : data)

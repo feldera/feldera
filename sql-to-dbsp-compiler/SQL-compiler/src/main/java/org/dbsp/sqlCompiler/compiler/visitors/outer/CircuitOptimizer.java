@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateFunctions;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
@@ -89,6 +90,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         passes.add(new ExpandHop(reporter));
         passes.add(new RemoveDeindexOperators(reporter));
         passes.add(new RemoveViewOperators(reporter));
+        passes.add(new Repeat(reporter, new ExpandCasts(reporter).circuitRewriter()));
         if (options.languageOptions.optimizationLevel >= 2) {
             passes.add(new OptimizeWithGraph(reporter, g -> new FilterMapVisitor(reporter, g)));
             // optimize the maps introduced by the deindex removal

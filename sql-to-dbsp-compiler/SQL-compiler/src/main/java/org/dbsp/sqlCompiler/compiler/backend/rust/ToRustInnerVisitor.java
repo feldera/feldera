@@ -27,16 +27,17 @@ import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
-import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.AggregateBase;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAsExpression;
@@ -50,8 +51,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
@@ -117,14 +118,14 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
-import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
@@ -711,6 +712,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
         return VisitDecision.STOP;
     }
 
+    void unimplementedCast(DBSPCastExpression expression) {
+        throw new UnimplementedException(
+                "Cast from " + expression.source.getType() + " to " + expression.getType() +
+                " not implemented", expression.getNode());
+    }
+
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
         /* Default implementation of cast of a source expression to the 'this' type.
@@ -718,11 +725,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
          * the function called will be cast_to_b_i16N. */
         DBSPType destType = expression.getType();
         DBSPType sourceType = expression.source.getType();
-        DBSPTypeVec sourceVec = sourceType.as(DBSPTypeVec.class);
-        DBSPTypeVec destVec = destType.as(DBSPTypeVec.class);
+        DBSPTypeVec sourceVecType = sourceType.as(DBSPTypeVec.class);
+        DBSPTypeVec destVecType = destType.as(DBSPTypeVec.class);
         String functionName;
 
-        if (destVec != null) {
+        if (destVecType != null) {
             if (sourceType.is(DBSPTypeVariant.class)) {
                 // Cast variant to vec
                 functionName = "cast_to_vec" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
@@ -733,7 +740,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
         }
 
-        if (sourceVec != null) {
+        if (sourceVecType != null) {
             if (destType.is(DBSPTypeVariant.class)) {
                 // cast vec to variant
                 functionName = "cast_to_" + destType.baseTypeWithSuffix() + "_vec" + sourceType.nullableSuffix();
@@ -743,16 +750,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 return VisitDecision.STOP;
             }
 
-            if (destVec == null)
+            if (destVecType == null)
                 throw new UnsupportedException("Cast from " + sourceType + " to " + destType, expression.getNode());
-            if (destVec.getElementType().sameType(sourceVec.getElementType()) &&
-                destVec.mayBeNull && !sourceVec.mayBeNull) {
-                // TODO: This can happen when source is an empty vector literal with unknown type.
-                // Can anything else happen?
-                // Handle cast Vec<i> to Vec<i>?
-                expression.source.some().accept(this);
-            } else {
-                expression.source.accept(this);
+            if (destVecType.getElementType().sameType(sourceVecType.getElementType())) {
+                // should have been eliminated
+                this.unimplementedCast(expression);
             }
             return VisitDecision.STOP;
         }
@@ -777,6 +779,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.decrease().append(")");
                 return VisitDecision.STOP;
             }
+        }
+
+        if (sourceType.is(DBSPTypeTuple.class)) {
+            // should have been eliminated
+            this.unimplementedCast(expression);
+        }
+        if (destType.is(DBSPTypeTuple.class)) {
+            // should have been eliminated
+            this.unimplementedCast(expression);
         }
 
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
@@ -825,82 +836,93 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPBinaryExpression expression) {
-        if (expression.operation == DBSPOpcode.MUL_WEIGHT) {
-            expression.left.accept(this);
-            this.builder.append(".mul_by_ref(&");
-            expression.right.accept(this);
-            this.builder.append(")");
-            return VisitDecision.STOP;
-        } else if (expression.operation == DBSPOpcode.RUST_INDEX) {
-            expression.left.accept(this);
-            this.builder.append("[");
-            expression.right.accept(this);
-            this.builder.append("]");
-            return VisitDecision.STOP;
-        } else if (expression.operation == DBSPOpcode.SQL_INDEX) {
-            DBSPType collectionType = expression.left.getType();
-            DBSPType indexType = expression.right.getType();
-            DBSPTypeVec vec = collectionType.to(DBSPTypeVec.class);
-            this.builder.append("index")
-                    .append(expression.left.getType().nullableUnderlineSuffix())
-                    .append(vec.getElementType().nullableUnderlineSuffix())
-                    .append(indexType.nullableUnderlineSuffix())
-                    .append("(");
-            expression.left.accept(this);
-            this.builder.append(", ");
-            DBSPExpression sub1 = ExpressionCompiler.makeBinaryExpression(
-                    expression.getNode(), indexType, DBSPOpcode.SUB,
-                    expression.right, indexType.to(IsNumericType.class).getOne());
-            sub1 = sub1.cast(new DBSPTypeISize(CalciteObject.EMPTY, indexType.mayBeNull));
-            sub1.accept(this);
-            this.builder.append(")");
-            return VisitDecision.STOP;
-        } else if (expression.operation == DBSPOpcode.VARIANT_INDEX) {
-            DBSPType indexType = expression.right.getType();
-            this.builder.append("indexV")
-                    .append(expression.left.getType().nullableUnderlineSuffix())
-                    .append(indexType.nullableUnderlineSuffix())
-                    .append("(");
-            expression.left.accept(this);
-            this.builder.append(", ");
-            expression.right.accept(this);
-            this.builder.append(")");
-            return VisitDecision.STOP;
-        } else if (expression.operation == DBSPOpcode.MAP_INDEX) {
-            DBSPType collectionType = expression.left.getType();
-            DBSPTypeMap vec = collectionType.to(DBSPTypeMap.class);
-            this.builder.append("map_index")
-                    .append(expression.left.getType().nullableUnderlineSuffix())
-                    .append(vec.getKeyType().nullableUnderlineSuffix())
-                    .append(expression.right.getType().nullableUnderlineSuffix())
-                    .append("(");
-            expression.left.accept(this);
-            this.builder.append(", ");
-            expression.right.accept(this);
-            this.builder.append(")");
-            return VisitDecision.STOP;
-        } else if (expression.operation == DBSPOpcode.DIV_NULL) {
-            this.builder.append("div_null")
-                    .append(expression.left.getType().nullableUnderlineSuffix())
-                    .append(expression.right.getType().nullableUnderlineSuffix())
-                    .append("(");
-            expression.left.accept(this);
-            this.builder.append(", ");
-            expression.right.accept(this);
-            this.builder.append(")");
-            return VisitDecision.STOP;
+        switch (expression.operation) {
+            case MUL_WEIGHT: {
+                expression.left.accept(this);
+                this.builder.append(".mul_by_ref(&");
+                expression.right.accept(this);
+                this.builder.append(")");
+                break;
+            }
+            case RUST_INDEX: {
+                expression.left.accept(this);
+                this.builder.append("[");
+                expression.right.accept(this);
+                this.builder.append("]");
+                break;
+            }
+            case SQL_INDEX: {
+                DBSPType collectionType = expression.left.getType();
+                DBSPType indexType = expression.right.getType();
+                DBSPTypeVec vec = collectionType.to(DBSPTypeVec.class);
+                this.builder.append("index")
+                        .append(expression.left.getType().nullableUnderlineSuffix())
+                        .append(vec.getElementType().nullableUnderlineSuffix())
+                        .append(indexType.nullableUnderlineSuffix())
+                        .append("(");
+                expression.left.accept(this);
+                this.builder.append(", ");
+                DBSPExpression sub1 = ExpressionCompiler.makeBinaryExpression(
+                        expression.getNode(), indexType, DBSPOpcode.SUB,
+                        expression.right, indexType.to(IsNumericType.class).getOne());
+                sub1 = sub1.cast(new DBSPTypeISize(CalciteObject.EMPTY, indexType.mayBeNull));
+                sub1.accept(this);
+                this.builder.append(")");
+                break;
+            }
+            case VARIANT_INDEX: {
+                DBSPType indexType = expression.right.getType();
+                this.builder.append("indexV")
+                        .append(expression.left.getType().nullableUnderlineSuffix())
+                        .append(indexType.nullableUnderlineSuffix())
+                        .append("(");
+                expression.left.accept(this);
+                this.builder.append(", ");
+                expression.right.accept(this);
+                this.builder.append(")");
+                break;
+            }
+            case MAP_INDEX: {
+                DBSPType collectionType = expression.left.getType();
+                DBSPTypeMap vec = collectionType.to(DBSPTypeMap.class);
+                this.builder.append("map_index")
+                        .append(expression.left.getType().nullableUnderlineSuffix())
+                        .append(vec.getKeyType().nullableUnderlineSuffix())
+                        .append(expression.right.getType().nullableUnderlineSuffix())
+                        .append("(");
+                expression.left.accept(this);
+                this.builder.append(", ");
+                expression.right.accept(this);
+                this.builder.append(")");
+                break;
+            }
+            case ARRAY_CONVERT:
+            case DIV_NULL: {
+                this.builder.append(expression.operation.toString())
+                        .append(expression.left.getType().nullableUnderlineSuffix())
+                        .append(expression.right.getType().nullableUnderlineSuffix())
+                        .append("(");
+                expression.left.accept(this);
+                this.builder.append(", ");
+                expression.right.accept(this);
+                this.builder.append(")");
+                break;
+            }
+            default: {
+                String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
+                        expression.getNode(),
+                        expression.operation,
+                        expression.getType(),
+                        expression.left.getType(),
+                        expression.right.getType());
+                this.builder.append(function).append("(").increase();
+                expression.left.accept(this);
+                this.builder.append(",").newline();
+                expression.right.accept(this);
+                this.builder.decrease().append(")");
+                break;
+            }
         }
-        String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
-                expression.getNode(),
-                expression.operation,
-                expression.getType(),
-                expression.left.getType(),
-                expression.right.getType());
-        this.builder.append(function).append("(").increase();
-        expression.left.accept(this);
-        this.builder.append(",").newline();
-        expression.right.accept(this);
-        this.builder.decrease().append(")");
         return VisitDecision.STOP;
     }
 

@@ -78,8 +78,8 @@ public class ArrayTests extends BaseSQLTests {
         DBSPTypeVec vecType = new DBSPTypeVec(
                 new DBSPTypeTuple(
                         CalciteObject.EMPTY, true,
-                        new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false)
-        ), true);
+                        Linq.list(new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false))
+                ), true);
         // null vector
         Change input = new Change(new DBSPZSetLiteral(new DBSPTupleExpression(
                 Linq.list(new DBSPVecLiteral(vecType, true)), false)));

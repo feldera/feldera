@@ -41,5 +41,5 @@ path = "src/lib.rs"
 doctest = false
 
 # Incremental builds sometimes crash the Rust compiler
-[profile.test]
-incremental = false
+#[profile.test]
+#incremental = false

@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
@@ -89,7 +90,7 @@ public final class DBSPI32Literal extends DBSPIntLiteral implements IsNumericLit
     }
 
     @Override
-    public boolean sameValue(@Nullable DBSPLiteral o) {
+    public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DBSPI32Literal that = (DBSPI32Literal) o;

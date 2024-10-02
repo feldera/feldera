@@ -46,7 +46,23 @@ public class VariantTests extends BaseSQLTests {
     public DBSPCompiler testCompiler() {
         // Do not optimize, esp in Calcite
         CompilerOptions options = this.testOptions(false, false);
-        return new DBSPCompiler(options);
+        DBSPCompiler compiler = new DBSPCompiler(options);
+        this.prepareInputs(compiler);
+        return compiler;
+    }
+
+    @Override
+    public void prepareInputs(DBSPCompiler compiler) {
+        compiler.compileStatements("""
+        CREATE TYPE s AS (
+           i INT,
+           s VARCHAR,
+           a INT ARRAY
+        );
+        CREATE TYPE t AS (
+           sa S ARRAY
+        );""");
+        super.prepareInputs(compiler);
     }
 
     public void testQuery(String query, DBSPExpression... fields) {
@@ -364,5 +380,48 @@ public class VariantTests extends BaseSQLTests {
         // timestamps are unparsed as strings (timezone is always +00)
         this.testQuery("SELECT TO_JSON(CAST(TIMESTAMP '2020-01-01 10:00:00' AS VARIANT))",
                 new DBSPStringLiteral("\"2020-01-01 10:00:00\"", true));
+    }
+
+    @Test
+    public void structTests() {
+        this.testQuery("SELECT CAST(s(2, 'a', ARRAY[1, 2, 3]) AS VARIANT)",
+                new DBSPVariantLiteral(
+                        new DBSPMapLiteral(
+                                new DBSPTypeMap(DBSPTypeString.varchar(false),
+                                        new DBSPTypeVariant(false), false),
+                                Linq.list(
+                                        new DBSPStringLiteral("I"),
+                                        new DBSPStringLiteral("S"),
+                                        new DBSPStringLiteral("A")
+                                ),
+                                Linq.list(
+                                        new DBSPVariantLiteral(new DBSPI32Literal(2)),
+                                        new DBSPVariantLiteral(new DBSPStringLiteral("a")),
+                                        new DBSPVariantLiteral(new DBSPVecLiteral(
+                                                new DBSPI32Literal(1),
+                                                new DBSPI32Literal(2),
+                                                new DBSPI32Literal(3)))))));
+        this.testQuery("SELECT TO_JSON(CAST(s(2, 'a', ARRAY[1, 2, 3]) AS VARIANT))",
+                new DBSPStringLiteral("{\"A\":[1,2,3],\"I\":2,\"S\":\"a\"}", true));
+        this.testQuery("SELECT CAST(PARSE_JSON('{\"I\": 2, \"S\": \"a\", \"A\": [1, 2, 3]}') AS S)",
+                new DBSPTupleExpression(true,
+                        new DBSPI32Literal(2, true),
+                        new DBSPStringLiteral("a", true),
+                        new DBSPVecLiteral(true,
+                                new DBSPI32Literal(1, true),
+                                new DBSPI32Literal(2, true),
+                                new DBSPI32Literal(3, true))));
+        this.testQuery("SELECT TO_JSON(CAST(t(ARRAY[s(2, 'a', ARRAY[1, NULL, 3]), s(3, 'b', array())]) AS VARIANT))",
+                new DBSPStringLiteral("{\"SA\":[{\"A\":[1,null,3],\"I\":2,\"S\":\"a\"},{\"A\":[],\"I\":3,\"S\":\"b\"}]}", true));
+        this.testQuery("SELECT CAST(PARSE_JSON('{\"SA\": [{\"I\": 2, \"S\": \"a\", \"A\": [1, 2, 3]}]}') AS T)",
+                new DBSPTupleExpression(true,
+                new DBSPVecLiteral(true,
+                new DBSPTupleExpression(true,
+                        new DBSPI32Literal(2, true),
+                        new DBSPStringLiteral("a", true),
+                        new DBSPVecLiteral(true,
+                                new DBSPI32Literal(1, true),
+                                new DBSPI32Literal(2, true),
+                                new DBSPI32Literal(3, true))))));
     }
 }

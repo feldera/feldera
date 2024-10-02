@@ -34,9 +34,7 @@ import org.dbsp.util.IIndentStream;
 
 import java.util.Objects;
 
-/**
- * An unknown type, represented in code as _.
- */
+/** An unknown type, represented in code as _. */
 public class DBSPTypeAny extends DBSPType {
     public DBSPTypeAny() {
         super(CalciteObject.EMPTY, DBSPTypeCode.ANY, false);

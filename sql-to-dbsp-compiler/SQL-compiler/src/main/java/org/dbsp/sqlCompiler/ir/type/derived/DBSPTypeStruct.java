@@ -39,6 +39,7 @@ import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
@@ -183,6 +184,10 @@ public class DBSPTypeStruct extends DBSPType {
         return Objects.requireNonNull(this.fields.get(name));
     }
 
+    public Iterator<String> getFieldNames() {
+        return this.fields.keySet().iterator();
+    }
+
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), this.name, this.sanitizedName, this.fields.hashCode());
@@ -214,7 +219,7 @@ public class DBSPTypeStruct extends DBSPType {
     /** Generate a tuple type by ignoring the struct and field names. */
     public DBSPTypeTuple toTuple() {
         List<DBSPType> types = Linq.list(Linq.map(this.fields.values(), f -> f.type));
-        return new DBSPTypeTuple(this.getNode(), types);
+        return new DBSPTypeTuple(this.getNode(), false, this, types);
     }
 
     private static DBSPType toTupleDeep(DBSPType type) {

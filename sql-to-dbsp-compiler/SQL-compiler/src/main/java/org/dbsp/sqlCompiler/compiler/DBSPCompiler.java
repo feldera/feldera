@@ -325,7 +325,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                                     " which is not a PRIMARY KEY");
                     continue;
                 }
-                if (!selfMeta.type.setMayBeNull(false).sameType(otherMeta.type.setMayBeNull(false))) {
+                if (!selfMeta.type.sameTypeIgnoringNullability(otherMeta.type)) {
                     this.reportError(selfColumn.getSourcePosition(),
                             "Mismatched FOREIGN KEY column types",
                             "FOREIGN KEY column " +
@@ -393,6 +393,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     if (fe == null)
                         continue;
                     CreateFunctionStatement stat = fe.to(CreateFunctionStatement.class);
+                    boolean exists = this.frontend.functionExists(stat.function.getName());
+                    if (exists) {
+                        throw new CompilationError("A function named " + Utilities.singleQuote(stat.function.getName()) +
+                                " is already predefined, or the name is reserved.\nPlease consider using a " +
+                                "different name for the user-defined function",
+                                fe.getCalciteObject());
+                    }
                     SqlFunction function = stat.function;
                     if (!stat.function.isSqlFunction()) {
                         rustFunctions.add(function);

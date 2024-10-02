@@ -27,6 +27,7 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.ISameValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
@@ -63,7 +64,7 @@ public final class DBSPStringLiteral extends DBSPLiteral {
     }
 
     @Override
-    public boolean sameValue(@Nullable DBSPLiteral o) {
+    public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         DBSPStringLiteral that = (DBSPStringLiteral) o;

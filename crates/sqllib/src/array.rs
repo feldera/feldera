@@ -5,6 +5,21 @@ use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
 use std::ops::Index;
 
+pub fn array_map__<T, S, F>(vec: Vec<T>, f: F) -> Vec<S>
+where
+    F: Fn(&T) -> S,
+{
+    vec.iter().map(f).collect()
+}
+
+pub fn array_mapN_<T, S, F>(vec: Option<Vec<T>>, f: F) -> Option<Vec<S>>
+where
+    F: Fn(&T) -> S,
+{
+    let vec = vec?;
+    Some(array_map__(vec, f))
+}
+
 pub fn element__<T>(array: Vec<T>) -> Option<T>
 where
     T: Clone,

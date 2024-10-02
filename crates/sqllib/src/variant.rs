@@ -10,14 +10,11 @@ use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
 use num::FromPrimitive;
-use rkyv::collections::ArchivedBTreeMap;
-use rkyv::string::ArchivedString;
-use rkyv::Fallible;
 use rust_decimal::Decimal;
 use serde::de::{self, DeserializeSeed, Error as _, MapAccess, SeqAccess, Visitor};
-use serde::ser::{self, Error as _, SerializeMap};
+use serde::ser::{self, Error as _};
 use serde::{Deserialize, Serialize};
-use size_of::{Context, SizeOf};
+use size_of::SizeOf;
 use std::borrow::Cow;
 use std::cmp::Ord;
 use std::error::Error;
@@ -26,91 +23,6 @@ use std::fmt::Display;
 use std::str::FromStr;
 use std::{collections::BTreeMap, fmt::Debug, hash::Hash};
 use thiserror::Error;
-
-pub trait StructVariant: Send + Sync + 'static {
-    fn get(&self, key: &str) -> Option<Variant>;
-    fn iter(&self) -> Box<dyn Iterator<Item = (&str, &Variant)> + '_>;
-    fn values(&self) -> Box<dyn Iterator<Item = &Variant> + '_>;
-    fn clone_box(&self) -> Box<dyn StructVariant>;
-}
-
-impl Eq for dyn StructVariant {}
-
-impl PartialEq for dyn StructVariant {
-    fn eq(&self, other: &Self) -> bool {
-        self.iter().eq(other.iter())
-    }
-}
-
-impl Clone for Box<dyn StructVariant> {
-    fn clone(&self) -> Box<dyn StructVariant> {
-        self.clone_box()
-    }
-}
-
-impl Ord for dyn StructVariant {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.iter().cmp(other.iter())
-    }
-}
-
-impl PartialOrd for dyn StructVariant {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Hash for dyn StructVariant {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        for (k, v) in self.iter() {
-            k.hash(state);
-            v.hash(state);
-        }
-    }
-}
-
-impl Serialize for dyn StructVariant {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(None)?;
-        for (k, v) in self.iter() {
-            map.serialize_entry(k, v)?;
-        }
-        map.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for Box<dyn StructVariant + 'static> {
-    fn deserialize<D: serde::Deserializer<'de>>(_deserializer: D) -> Result<Self, D::Error> {
-        todo!()
-    }
-}
-
-impl Debug for dyn StructVariant {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_map().entries(self.iter()).finish()
-    }
-}
-
-impl SizeOf for dyn StructVariant {
-    fn size_of_children(&self, _context: &mut Context) {
-        todo!("don't understand how to use this crate")
-    }
-}
-
-impl rkyv::Archive for Box<dyn StructVariant> {
-    type Archived = ArchivedBTreeMap<ArchivedString, ArchivedVariant>;
-    type Resolver = ();
-
-    unsafe fn resolve(&self, _pos: usize, _resolver: Self::Resolver, _out: *mut Self::Archived) {
-        todo!()
-    }
-}
-
-impl<D: Fallible> rkyv::Deserialize<Box<dyn StructVariant>, D> for Box<dyn StructVariant> {
-    fn deserialize(&self, _deserializer: &mut D) -> Result<Box<dyn StructVariant>, D::Error> {
-        unimplemented!();
-    }
-}
 
 #[derive(
     Debug,
@@ -152,7 +64,6 @@ pub enum Variant {
     Array(#[omit_bounds] Vec<Variant>),
     #[size_of(skip, skip_bounds)]
     Map(#[omit_bounds] BTreeMap<Variant, Variant>),
-    //Struct(Option<Box<dyn StructVariant>>),
 }
 
 impl<'de> Deserialize<'de> for Variant {
@@ -518,7 +429,6 @@ from!(ShortInterval, ShortInterval);
 from!(LongInterval, LongInterval);
 from!(Geometry, GeoPoint);
 from!(Binary, ByteArray);
-//from!(Struct, Box<dyn StructVariant>);
 
 impl<T> From<Vec<T>> for Variant
 where

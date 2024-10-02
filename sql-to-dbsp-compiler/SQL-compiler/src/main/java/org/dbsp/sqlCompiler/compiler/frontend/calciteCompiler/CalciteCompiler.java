@@ -51,6 +51,7 @@ import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
 import org.apache.calcite.rel.type.RelProtoDataType;
 import org.apache.calcite.rel.type.RelRecordType;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.runtime.CalciteContextException;
@@ -69,6 +70,7 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
+import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.SqlTypeNameSpec;
 import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
@@ -109,13 +111,13 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
-import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentCharacterString;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
@@ -392,6 +394,16 @@ public class CalciteCompiler implements IWritesLogs {
                 StandardConvertletTable.INSTANCE,
                 this.converterConfig
         );
+    }
+
+    public boolean functionExists(String identifier) {
+        List<SqlOperator> operators = Objects.requireNonNull(this.validator).getOperatorTable().getOperatorList();
+        for (SqlOperator op: operators) {
+            if (op.getName().equalsIgnoreCase(identifier)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static String getPlan(RelNode rel) {
@@ -854,7 +866,10 @@ public class CalciteCompiler implements IWritesLogs {
         }
 
         @SuppressWarnings("EmptyMethod")
-        void visitScan(TableScan scan) { }
+        void visitScan(TableScan scan) {
+            // assume that the entire row has exactly 1 field
+            this.body = new RexInputRef(0, scan.getRowType());
+        }
 
         void visitProject(LogicalProject project) {
             List<RexNode> fields = project.getProjects();
