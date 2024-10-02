@@ -834,7 +834,7 @@ public class ImplementNow extends Passes {
                 now = new DBSPNowOperator(circuit.getNode());
             } else {
                 // A table followed by a differentiator.
-                String tableName = this.compiler.compiler().toCase("NOW");
+                String tableName = this.compiler.compiler().canonicalName("NOW");
                 now = circuit.to(DBSPCircuit.class).circuit.getInput(tableName);
                 if (now == null) {
                     throw new CompilationError("Declaration for table 'NOW' not found in program");

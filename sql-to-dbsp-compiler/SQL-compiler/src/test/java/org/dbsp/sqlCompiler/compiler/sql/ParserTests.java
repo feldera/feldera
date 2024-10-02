@@ -371,7 +371,7 @@ public class ParserTests {
         SqlForeignKey fk = (SqlForeignKey) second;
         Assert.assertEquals(1, fk.columnList.size());
         Assert.assertEquals(1, fk.otherColumnList.size());
-        Assert.assertEquals("INVENTORYITEM_T", fk.otherTable.getSimple());
+        Assert.assertEquals("inventoryitem_t", fk.otherTable.getSimple());
     }
 
     @Test

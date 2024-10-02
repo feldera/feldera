@@ -50,7 +50,7 @@ function `contains_number` above:
 ```rs
 use feldera_sqllib::*;
 
-pub fn CONTAINS_NUMBER(str: String, value: Option<i32>) ->
+pub fn contains_number(str: String, value: Option<i32>) ->
    Result<bool, Box<dyn std::error::Error>> {
    match value {
       None => Err(\"null value\".into()),
@@ -104,6 +104,7 @@ SQL | Rust
 `TIMESTAMP` | `Timestamp`
 `DATE` | `Date`
 `ARRAY T` | `Vec<T>`
+`VARIANT` | `Variant`
 
 Multiple SQL types may be represented by the same Rust type.  For
 example, `CHAR`, `CHAR(n)`, `VARCHAR(n)`, and `VARCHAR` are all

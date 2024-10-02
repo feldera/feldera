@@ -53,25 +53,22 @@ with an existing one.
 
 Differences between DBSP and a database:
 
-- A traditional database offers *ad-hoc* queries: these queries are
-  executed only once, on the current state of the database.  DBSP
-  queries are standing queries, and are designed to be executed
+- DBSP queries are standing queries, and are designed to be executed
   continuously.
 
 - A traditional database offers durable storage of data.  In general,
   DBSP does store the contents of the data, either for the tables or
   the defined views.  DBSP will only store sufficient data to compute
   the changes.  DBSP *can* be configured to store the data for tables
-  and views, but it does not provide a simple mechanism to manipulate
-  or query the data in such tables or views using ad-hoc queries.
+  and views.
 
 - DBSP does not provide any concurrency control mechanisms, or
   transactions.  DBSP is simply a stream processing engine, where each
   input change produces a corresponding output change.
 
-- Other traditional database constructs, such as foreign keys,
-  triggers, multi-version concurrency control, indexes, do not make
-  sense for a system like DBSP.
+- Other traditional database constructs, such as triggers, or
+  multi-version concurrency control, do not make sense for a system
+  like DBSP.
 
 - Currently the SQL compiler does not support recursive queries, or
   graph queries, but we plan to add support for these

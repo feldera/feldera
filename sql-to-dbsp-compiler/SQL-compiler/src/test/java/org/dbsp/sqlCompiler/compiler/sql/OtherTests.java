@@ -121,13 +121,13 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String expected = """
                 Circuit circuit {
                     // DBSPSourceMultisetOperator 91
-                    // CREATE TABLE `T` (`COL1` INTEGER NOT NULL, `COL2` DOUBLE NOT NULL, `COL3` BOOLEAN NOT NULL, `COL4` VARCHAR NOT NULL, `COL5` INTEGER, `COL6` DOUBLE)
-                    let stream91 = T();
+                    // CREATE TABLE `t` (`col1` INTEGER NOT NULL, `col2` DOUBLE NOT NULL, `col3` BOOLEAN NOT NULL, `col4` VARCHAR NOT NULL, `col5` INTEGER, `col6` DOUBLE)
+                    let stream91 = t();
                     // DBSPMapOperator 128
                     let stream128: stream<WSet<Tup1<b>>> = stream91.map((|t_1: &Tup6<i32, d, b, s, i32?, d?>| Tup1::new(((*t_1).2), )));
-                    // CREATE VIEW `V` AS
-                    // SELECT `T`.`COL3`
-                    // FROM `T`
+                    // CREATE VIEW `v` AS
+                    // SELECT `t`.`col3`
+                    // FROM `t`
                     let stream253: stream<WSet<Tup1<b>>> = stream128;
                 }
                 """;
@@ -363,7 +363,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.compileStatements(query);
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
         DBSPTypeZSet outputType = circuit.getSingleOutputType().to(DBSPTypeZSet.class);
-        DBSPOperator source = circuit.getInput("T");
+        DBSPOperator source = circuit.getInput(compiler.canonicalName("T"));
         Assert.assertNotNull(source);
         DBSPTypeZSet inputType = source.getType().to(DBSPTypeZSet.class);
         Assert.assertTrue(inputType.sameType(outputType));
@@ -379,7 +379,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         compiler.compileStatement(ddl);
         compiler.compileStatements(query);
         DBSPCircuit circuit = compiler.getFinalCircuit("circuit");
-        DBSPSinkOperator sink = circuit.circuit.getSink("V");
+        DBSPSinkOperator sink = circuit.circuit.getSink(compiler.canonicalName("V"));
         Assert.assertNotNull(sink);
         DBSPOperator op = sink.input();
         // There is no optimization I can imagine which will remove the distinct

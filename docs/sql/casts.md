@@ -36,3 +36,8 @@ Casts of strings to `DATE`, `TIME`, `TIMESTAMP` produce the result
 `NULL` when the string does not have the correct format.
 
 Casting a `NULL` value to any type produces a `NULL` result.
+
+A value of type `VARIANT` can be cast to any type and will produce a
+nullable result; this kind of cast will never fail at runtime.
+
+A value of any type can be cast to a `VARIANT` type.

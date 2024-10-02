@@ -74,7 +74,7 @@ Usage: sql-to-dbsp [options] Input file to compile
     --unquotedCasing
       How unquoted identifiers are treated.  Choices are: 'upper', 'lower',
       'unchanged'
-      Default: upper
+      Default: lower
     --no-restrict-io
       Do not restrict the types of columns allowed in tables and views
       Default: false
@@ -420,7 +420,7 @@ example of the generated JSON for the following program:
 ```sql
 CREATE TABLE T (
   COL1 INT NOT NULL
-, COL2 DOUBLE NOT NULL
+, COL2 DOUBLE NOT NULL FOREIGN KEY REFERENCES S(COL0)
 , COL3 VARCHAR(3) NOT NULL PRIMARY KEY
 , COL4 VARCHAR(3) ARRAY
 )
@@ -434,23 +434,23 @@ Output:
 ```json
 {
   "inputs" : [ {
-    "name" : "T",
+    "name" : "t",
     "fields" : [ {
-      "name" : "COL1",
+      "name" : "col1",
       "case_sensitive" : false,
       "columntype" : {
         "type" : "INTEGER",
         "nullable" : false
       }
     }, {
-      "name" : "COL2",
+      "name" : "col2",
       "case_sensitive" : false,
       "columntype" : {
         "type" : "DOUBLE",
         "nullable" : false
       }
     }, {
-      "name" : "COL3",
+      "name" : "col3",
       "case_sensitive" : false,
       "columntype" : {
         "type" : "VARCHAR",
@@ -458,7 +458,7 @@ Output:
         "precision" : 3
       }
     }, {
-      "name" : "COL4",
+      "name" : "col4",
       "case_sensitive" : false,
       "columntype" : {
         "type" : "ARRAY",
@@ -470,10 +470,16 @@ Output:
         }
       }
     } ],
-    "primary_key" : [ "COL3" ]
+    "primary_key" : [ "col3" ],
+    "materialized" : false,
+    "foreign_keys" : [ {
+      "columns" : [ "col2" ],
+      "refers" : "s",
+      "tocolumns" : [ "col0" ]
+    } ]
   } ],
   "outputs" : [ {
-    "name" : "V",
+    "name" : "v",
     "fields" : [ {
       "name" : "xCol",
       "case_sensitive" : false,

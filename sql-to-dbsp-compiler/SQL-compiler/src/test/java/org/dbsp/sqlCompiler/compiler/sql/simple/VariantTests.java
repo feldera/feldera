@@ -193,10 +193,10 @@ public class VariantTests extends BaseSQLTests {
         // Note that field name is quoted to match the case of the key
         this.testQuery("SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT).\"a\"",
                 new DBSPVariantLiteral(new DBSPI32Literal(1), true));
-        // Unquoted field may not match, depending on dialect
-        this.testQuery("SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT).a",
+        // Unquoted field may not match, depending on the 'unquotedCasing' compiler flag
+        this.testQuery("SELECT CAST(Map['A',1,'b',2,'c',3] AS VARIANT).A",
                 DBSPLiteral.none(new DBSPTypeVariant(true)));
-        // The safest way is to use an index
+        // The safest way is to index with a string
         this.testQuery("SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT)['a']",
                 new DBSPVariantLiteral(new DBSPI32Literal(1), true));
         // Maps can have variant keys too

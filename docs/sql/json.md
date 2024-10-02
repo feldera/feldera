@@ -292,11 +292,11 @@ VARCHAR
 SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT)."a"
 1
 
--- Unquoted field may not match, depending on dialect
-SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT).a
-null
+-- Unquoted field may not match, depending on the 'unquotedCasing' compiler flag
+SELECT CAST(Map['A',1,'b',2,'c',3] AS VARIANT).A
+NULL
 
--- The safest way is to use an index
+-- The safest way is to index with a string
 SELECT CAST(Map['a',1,'b',2,'c',3] AS VARIANT)['a']
 1
 
