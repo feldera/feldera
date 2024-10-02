@@ -22,6 +22,15 @@ $ pip install git+https://github.com/feldera/feldera@{BRANCH_NAME}#subdirectory=
 
 Replace `{BRANCH_NAME}` with the name of the branch you want to install from.
 
+### Installing from Local Directory
+
+If you have cloned the Feldera repo, you can install the python SDK as follows:
+
+```bash
+# the Feldera Python SDK is present inside the python/ directory
+pip install python/
+```
+
 Checkout the docs [here](./feldera/__init__.py) for an example on how to use the SDK.
 
 ## Documentation
