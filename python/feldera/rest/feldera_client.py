@@ -88,7 +88,16 @@ class FelderaClient:
             if status == "Success":
                 return p
             elif status not in wait:
-                # TODO: return a more detailed error message
+                # error handling for SQL compilation errors
+                if isinstance(status, dict):
+                    sql_errors = status.get("SqlError")
+                    if sql_errors:
+                        err_msg = f"Pipeline {name} failed to compile:\n"
+                        for sql_error in sql_errors:
+                            err_msg += f"{sql_error['error_type']}\n{sql_error['message']}\n"
+                            err_msg += f"Code snippet:\n{sql_error['snippet']}"
+                        raise RuntimeError(err_msg)
+
                 raise RuntimeError(f"The program failed to compile: {status}")
 
             logging.debug("still compiling %s, waiting for 100 more milliseconds", name)

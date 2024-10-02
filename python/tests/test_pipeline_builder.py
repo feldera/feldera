@@ -252,19 +252,31 @@ class TestPipelineBuilder(unittest.TestCase):
         pipeline.delete()
 
     def test_sql_error(self):
-        TBL_NAME = "student"
+        pipeline_name = "sql_error"
 
         sql = f"""
-        CREATE TABLE {TBL_NAME} (
-            id INT,
-            name STRING
-        );
+CREATE TABLE student(
+    id INT,
+    name STRING
+);
 
-        CREATE VIEW s AS SELECT * FROM blah;
+CREATE VIEW s AS SELECT * FROM blah;
         """
 
-        with self.assertRaises(Exception):
-            PipelineBuilder(TEST_CLIENT, name="sql_error", sql=sql).create_or_replace()
+        expected = f"""
+Pipeline {pipeline_name} failed to compile:
+Error in SQL statement
+Object 'blah' not found
+Code snippet:
+    6|CREATE VIEW s AS SELECT * FROM blah;
+                                     ^^^^""".strip()
+
+        with self.assertRaises(Exception) as err:
+            PipelineBuilder(TEST_CLIENT, name=pipeline_name, sql=sql).create_or_replace()
+
+        got_err: str = err.exception.args[0].strip()
+
+        assert expected == got_err
 
         pipeline = Pipeline.get("sql_error", TEST_CLIENT)
         pipeline.delete()
