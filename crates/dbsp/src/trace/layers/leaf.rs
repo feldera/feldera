@@ -473,7 +473,8 @@ impl<'a, K: DataTrait + ?Sized, R: WeightTrait + ?Sized> LeafCursor<'a, K, R> {
 
 impl<'s, K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<'s> for LeafCursor<'s, K, R> {
     /// The type revealed by the cursor.
-    type Item<'k> = (&'k K, &'k R)
+    type Item<'k>
+        = (&'k K, &'k R)
     where
         Self: 'k;
 
