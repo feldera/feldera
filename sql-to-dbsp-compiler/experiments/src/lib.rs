@@ -108,7 +108,7 @@ pub fn circuit(cconf: CircuitConfig) -> Result<(DBSPHandle, Catalog), Error> {
         impl From<Tup1<i64>> for struct_1 {
             fn from(tuple: Tup1<i64>) -> Self {
                 Self {
-                    field0: tuple.0.into(), 
+                    field0: tuple.0.into(),
                 }
             }
         }
@@ -131,7 +131,7 @@ pub fn circuit(cconf: CircuitConfig) -> Result<(DBSPHandle, Catalog), Error> {
         impl From<Tup1<i64>> for struct_1_key {
             fn from(tuple: Tup1<i64>) -> Self {
                 Self {
-                    field0: tuple.0.into(), 
+                    field0: tuple.0.into(),
                 }
             }
         }
@@ -154,7 +154,7 @@ pub fn circuit(cconf: CircuitConfig) -> Result<(DBSPHandle, Catalog), Error> {
         impl From<Tup1<i64>> for struct_1_upsert {
             fn from(tuple: Tup1<i64>) -> Self {
                 Self {
-                    field0: tuple.0.into(), 
+                    field0: tuple.0.into(),
                 }
             }
         }
@@ -168,38 +168,38 @@ pub fn circuit(cconf: CircuitConfig) -> Result<(DBSPHandle, Catalog), Error> {
         // CREATE TABLE `T` (`K` BIGINT NOT NULL PRIMARY KEY)
         let (stream493, handle493) = circuit.add_input_map::<Tup1<i64>, Tup1<i64>, Tup1<i64>, _>(
             Box::new(|updated: &mut Tup1<i64>, changes: &Tup1<i64>| {}));
-        catalog.register_input_map::<Tup1<i64>, struct_1_key, Tup1<i64>, struct_1, Tup1<i64>, struct_1_upsert, _, _>(stream493.clone(), handle493, move |t_8: &Tup1<i64>, | -> 
+        catalog.register_input_map::<Tup1<i64>, struct_1_key, Tup1<i64>, struct_1, Tup1<i64>, struct_1_upsert, _, _>(stream493.clone(), handle493, move |t_8: &Tup1<i64>, | ->
         Tup1<i64> {
             Tup1::new((*t_8).0)
-        }, move |t_9: &Tup1<i64>, | -> 
+        }, move |t_9: &Tup1<i64>, | ->
         Tup1<i64> {
             Tup1::new((*t_9).0)
         }, r#"{"name":"T","case_sensitive":false,"fields":[{"name":"K","case_sensitive":false,"columntype":{"nullable":false,"type":"BIGINT"}}],"primary_key":["K"],"materialized":false,"foreign_keys":[]}"#);
 
         // rel#26:LogicalAggregate.(input=LogicalTableScan#1,group={},C=COUNT())
         // DBSPMapIndexOperator 768(202)
-        let stream768: Stream<_, IndexedWSet<Tup0, Tup1<i64>>> = stream493.map_index(move |t_7: (&Tup1<i64>, &Tup1<i64>, ), | -> 
+        let stream768: Stream<_, IndexedWSet<Tup0, Tup1<i64>>> = stream493.map_index(move |t_7: (&Tup1<i64>, &Tup1<i64>, ), | ->
         (Tup0, Tup1<i64>, ) {
             (Tup0::new(), Tup1::new((*t_7.1).clone().0), )
         });
         // rel#26:LogicalAggregate.(input=LogicalTableScan#1,group={},C=COUNT())
         // DBSPAggregateLinearPostprocessOperator 774(121)
-        let stream774: Stream<_, IndexedWSet<Tup0, Tup1<i64>>> = stream768.aggregate_linear_postprocess(move |t_2: &Tup1<i64>, | -> 
+        let stream774: Stream<_, IndexedWSet<Tup0, Tup1<i64>>> = stream768.aggregate_linear_postprocess(move |t_2: &Tup1<i64>, | ->
         Tup1<i64> {
             Tup1::new(1i64)
-        }, move |t_3: Tup1<i64>, | -> 
+        }, move |t_3: Tup1<i64>, | ->
         Tup1<i64> {
             Tup1::new(t_3.0)
         });
         // rel#26:LogicalAggregate.(input=LogicalTableScan#1,group={},C=COUNT())
         // DBSPMapOperator 776(212)
-        let stream776: Stream<_, WSet<Tup1<i64>>> = stream774.map(move |t_4: (&Tup0, &Tup1<i64>, ), | -> 
+        let stream776: Stream<_, WSet<Tup1<i64>>> = stream774.map(move |t_4: (&Tup0, &Tup1<i64>, ), | ->
         Tup1<i64> {
             Tup1::new((*t_4.1).0)
         });
         // rel#26:LogicalAggregate.(input=LogicalTableScan#1,group={},C=COUNT())
         // DBSPMapOperator 781(217)
-        let stream781: Stream<_, WSet<Tup1<i64>>> = stream774.map(move |t_4: (&Tup0, &Tup1<i64>, ), | -> 
+        let stream781: Stream<_, WSet<Tup1<i64>>> = stream774.map(move |t_4: (&Tup0, &Tup1<i64>, ), | ->
         Tup1<i64> {
             Tup1::new(0i64)
         });
@@ -234,7 +234,7 @@ pub fn circuit(cconf: CircuitConfig) -> Result<(DBSPHandle, Catalog), Error> {
         impl From<Tup1<i64>> for struct_2 {
             fn from(tuple: Tup1<i64>) -> Self {
                 Self {
-                    field0: tuple.0.into(), 
+                    field0: tuple.0.into(),
                 }
             }
         }
