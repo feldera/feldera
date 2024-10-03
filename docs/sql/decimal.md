@@ -127,7 +127,7 @@ But invalid casts such as: ``CAST('1234.1234' AS DECIMAL(6, 3))`` will throw a r
   </tr>
   <tr>
     <td><code>SQRT(value)</code></td>
-    <td>Square root of value. Produces a runtime error for negative values.</td>
+    <td>Result has type DOUBLE. Square root of value. Produces NaN for negative <code>value</code></td>
   </tr>
   <tr>
     <td><code>LN(value)</code></td>

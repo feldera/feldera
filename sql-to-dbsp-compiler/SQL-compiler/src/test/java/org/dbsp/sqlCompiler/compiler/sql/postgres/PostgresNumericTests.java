@@ -32,7 +32,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPZSetLiteral;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /* Tests manually adapted from
@@ -722,7 +721,7 @@ public class PostgresNumericTests extends SqlIoTest {
                 "Illegal type: DECIMAL type must have scale <= precision");
     }
 
-    @Test @Ignore("Precision too high for Calcite")
+    @Test
     public void testSpecialValues2Numeric() {
         // Removed unsupported numeric values inf, nan, etc.
         // No div function known, so I removed this one
@@ -946,7 +945,13 @@ public class PostgresNumericTests extends SqlIoTest {
 
     @Test
     public void testSqrtError() {
-        this.qf("SELECT sqrt('-1'::numeric)", "Unable to compute sqrt of -1");
+        this.qs("""
+                SELECT sqrt('-1'::numeric), sqrt(-1e0);
+                 d   | d
+                -----------
+                 NaN | NaN
+                (1 row)
+                """);
     }
 
     @Test
