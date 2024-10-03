@@ -600,7 +600,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     public void rustFmt() throws IOException, InterruptedException {
         // Check that the rust library is properly formatted
         Utilities.runProcess(BaseSQLTests.projectDirectory + "/../crates/sqllib",
-                "cargo", "+nightly", "fmt", "--check");
+                "cargo", "fmt", "--all", "--", "--check");
         Utilities.runProcess(BaseSQLTests.projectDirectory + "/../crates/sqllib",
                 "cargo", "clippy", "--", "-D", "warnings");
     }
