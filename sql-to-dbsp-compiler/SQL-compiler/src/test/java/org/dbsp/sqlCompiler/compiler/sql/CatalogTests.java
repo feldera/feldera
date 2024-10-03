@@ -13,7 +13,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /** Tests that emit Rust code using the catalog. */
@@ -24,12 +23,6 @@ public class CatalogTests extends BaseSQLTests {
         result.ioOptions.emitHandles = false;
         result.languageOptions.unrestrictedIOTypes = false;
         return result;
-    }
-
-    @Test @Ignore("we allow VARIANT in tables now")
-    public void unsupportedColumn() {
-        this.statementsFailingInCompilation("CREATE TABLE T(v VARIANT)",
-                "Unsupported column type");
     }
 
     @Test

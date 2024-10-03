@@ -29,7 +29,6 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 INSERT INTO FLOAT8_TBL(f1) VALUES ('1.2345678901234e+200');
                 INSERT INTO FLOAT8_TBL(f1) VALUES ('1.2345678901234e-200');
                 """;
-
         compiler.compileStatements(prepareQuery);
     }
 
@@ -315,7 +314,7 @@ public class PostgresFloat8Tests extends SqlIoTest {
                 SELECT power('1'::DOUBLE, 'NaN'::DOUBLE);
                  power
                 -------
-                     1
+                   NaN
                 (1 row)
 
                 SELECT power('NaN'::DOUBLE, '0'::DOUBLE);
@@ -822,8 +821,7 @@ FROM (SELECT 10*cosd(a), 10*sind(a)
   10 |   0 |      0 | t
 (5 rows)
 */
-    // calcite returns: 1008618.49
-    @Test @Ignore("fails for calcite optimized version: https://github.com/feldera/feldera/issues/1347")
+    @Test
     public void testPower() {
         this.q("""
                 SELECT power(f.f1, '2.0'::DOUBLE) AS square_f1

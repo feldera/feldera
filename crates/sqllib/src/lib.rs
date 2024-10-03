@@ -15,6 +15,7 @@ pub mod variant;
 use casts::cast_to_decimal_decimal;
 pub use geopoint::GeoPoint;
 pub use interval::{LongInterval, ShortInterval};
+pub use num_traits::Float;
 pub use source::{SourcePosition, SourcePositionRange};
 pub use timestamp::{Date, Time, Timestamp};
 pub use variant::Variant;
@@ -1187,6 +1188,9 @@ pub fn power_i32_i32(left: i32, right: i32) -> F64 {
 some_polymorphic_function2!(power, i32, i32, i32, i32, F64);
 
 pub fn power_d_d(left: F64, right: F64) -> F64 {
+    if right.into_inner().is_nan() {
+        return right;
+    }
     F64::new(left.into_inner().powf(right.into_inner()))
 }
 
@@ -1204,6 +1208,10 @@ pub fn power_decimal_decimal(left: Decimal, right: Decimal) -> F64 {
 some_polymorphic_function2!(power, decimal, Decimal, decimal, Decimal, F64);
 
 pub fn power_decimal_d(left: Decimal, right: F64) -> F64 {
+    // Special case to match Java pow
+    if right.into_inner().is_nan() {
+        return right;
+    }
     F64::new(left.powf(right.into_inner()).to_f64().unwrap())
 }
 
@@ -1217,7 +1225,7 @@ some_polymorphic_function2!(power, d, F64, decimal, Decimal, F64);
 
 pub fn sqrt_decimal(left: Decimal) -> F64 {
     if left < Decimal::ZERO {
-        panic!("Unable to compute sqrt of {left}");
+        return F64::new(f64::NAN);
     }
 
     F64::from(left.sqrt().unwrap().to_f64().unwrap())
@@ -1227,9 +1235,6 @@ some_polymorphic_function1!(sqrt, decimal, Decimal, F64);
 
 pub fn sqrt_d(left: F64) -> F64 {
     let left = left.into_inner();
-    if left < 0.0 {
-        panic!("Unable to compute sqrt of {left}");
-    }
     F64::new(left.sqrt())
 }
 

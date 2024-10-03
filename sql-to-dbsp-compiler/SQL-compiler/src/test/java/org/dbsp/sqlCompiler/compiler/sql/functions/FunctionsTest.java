@@ -5,6 +5,8 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Ignore;
 import org.junit.Test;
 
+import static java.lang.Double.NaN;
+
 public class FunctionsTest extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
@@ -1681,7 +1683,7 @@ public class FunctionsTest extends SqlIoTest {
         );
     }
 
-    @Test @Ignore("FP comparison error for Calcite optimized version")
+    @Test
     public void testExpEdgeCase() {
         this.qs("""
                 -- changed the type from numeric to double

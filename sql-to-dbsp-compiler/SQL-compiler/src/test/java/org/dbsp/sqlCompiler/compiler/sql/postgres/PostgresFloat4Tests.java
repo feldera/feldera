@@ -37,7 +37,7 @@ public class PostgresFloat4Tests extends SqlIoTest {
                 -Infinity""");
     }
 
-    @Test @Ignore("Waiting for https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6059")
+    @Test
     public void testSpecialFP() {
         this.q("""
                 SELECT -10e-70 :: FLOAT4;

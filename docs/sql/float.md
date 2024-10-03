@@ -101,7 +101,7 @@ REAL '1.23'  -- string style
   </tr>
   <tr>
     <td><code>SQRT(value)</code></td>
-    <td>Square root of value. Produces a runtime error for negative values.</td>
+    <td>Square root of value. Produces NaN for a negative value.</td>
   </tr>
   <tr>
     <td><code>EXP(value)</code></td>
