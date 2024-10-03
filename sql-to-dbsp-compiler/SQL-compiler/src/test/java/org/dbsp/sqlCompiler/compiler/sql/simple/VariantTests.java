@@ -391,9 +391,9 @@ public class VariantTests extends BaseSQLTests {
                                 new DBSPTypeMap(DBSPTypeString.varchar(false),
                                         new DBSPTypeVariant(false), false),
                                 Linq.list(
-                                        new DBSPStringLiteral("I"),
-                                        new DBSPStringLiteral("S"),
-                                        new DBSPStringLiteral("A")
+                                        new DBSPStringLiteral("i"),
+                                        new DBSPStringLiteral("s"),
+                                        new DBSPStringLiteral("a")
                                 ),
                                 Linq.list(
                                         new DBSPVariantLiteral(new DBSPI32Literal(2)),
@@ -403,8 +403,8 @@ public class VariantTests extends BaseSQLTests {
                                                 new DBSPI32Literal(2),
                                                 new DBSPI32Literal(3)))))));
         this.testQuery("SELECT TO_JSON(CAST(s(2, 'a', ARRAY[1, 2, 3]) AS VARIANT))",
-                new DBSPStringLiteral("{\"A\":[1,2,3],\"I\":2,\"S\":\"a\"}", true));
-        this.testQuery("SELECT CAST(PARSE_JSON('{\"I\": 2, \"S\": \"a\", \"A\": [1, 2, 3]}') AS S)",
+                new DBSPStringLiteral("{\"a\":[1,2,3],\"i\":2,\"s\":\"a\"}", true));
+        this.testQuery("SELECT CAST(PARSE_JSON('{\"i\": 2, \"s\": \"a\", \"a\": [1, 2, 3]}') AS S)",
                 new DBSPTupleExpression(true,
                         new DBSPI32Literal(2, true),
                         new DBSPStringLiteral("a", true),
@@ -413,8 +413,8 @@ public class VariantTests extends BaseSQLTests {
                                 new DBSPI32Literal(2, true),
                                 new DBSPI32Literal(3, true))));
         this.testQuery("SELECT TO_JSON(CAST(t(ARRAY[s(2, 'a', ARRAY[1, NULL, 3]), s(3, 'b', array())]) AS VARIANT))",
-                new DBSPStringLiteral("{\"SA\":[{\"A\":[1,null,3],\"I\":2,\"S\":\"a\"},{\"A\":[],\"I\":3,\"S\":\"b\"}]}", true));
-        this.testQuery("SELECT CAST(PARSE_JSON('{\"SA\": [{\"I\": 2, \"S\": \"a\", \"A\": [1, 2, 3]}]}') AS T)",
+                new DBSPStringLiteral("{\"sa\":[{\"a\":[1,null,3],\"i\":2,\"s\":\"a\"},{\"a\":[],\"i\":3,\"s\":\"b\"}]}", true));
+        this.testQuery("SELECT CAST(PARSE_JSON('{\"sa\": [{\"i\": 2, \"s\": \"a\", \"a\": [1, 2, 3]}]}') AS T)",
                 new DBSPTupleExpression(true,
                         new DBSPVecLiteral(true,
                                 new DBSPTupleExpression(true,
@@ -429,22 +429,22 @@ public class VariantTests extends BaseSQLTests {
     @Test
     public void testCastMapToStruct() {
         DBSPType i32 = new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, true);
-        this.testQuery("SELECT CAST(CAST(MAP['I', 0] AS VARIANT) AS S)",
+        this.testQuery("SELECT CAST(CAST(MAP['i', 0] AS VARIANT) AS S)",
                 new DBSPTupleExpression(true,
                         new DBSPI32Literal(0, true),
                         DBSPTypeString.varchar(true).none(),
                         new DBSPTypeVec(i32, true).none()));
-        this.testQuery("SELECT CAST(CAST(MAP['I', 's'] AS VARIANT) AS S)",
+        this.testQuery("SELECT CAST(CAST(MAP['i', 's'] AS VARIANT) AS S)",
                 new DBSPTupleExpression(true,
                         i32.none(),
                         DBSPTypeString.varchar(true).none(),
                         new DBSPTypeVec(i32, true).none()));
-        this.testQuery("SELECT CAST(CAST(MAP['i', 0] AS VARIANT) AS S)",
+        this.testQuery("SELECT CAST(CAST(MAP['I', 0] AS VARIANT) AS S)",
                 new DBSPTupleExpression(true,
                         i32.none(),
                         DBSPTypeString.varchar(true).none(),
                         new DBSPTypeVec(i32, true).none()));
-        this.testQuery("SELECT CAST(CAST(MAP['I', 0, 'X', 2] AS VARIANT) AS S)",
+        this.testQuery("SELECT CAST(CAST(MAP['i', 0, 'X', 2] AS VARIANT) AS S)",
                 new DBSPTupleExpression(true,
                         new DBSPI32Literal(0, true),
                         DBSPTypeString.varchar(true).none(),
