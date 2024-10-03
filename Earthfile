@@ -53,10 +53,6 @@ install-rust:
         --component clippy \
         --component rustfmt \
         --component llvm-tools-preview
-    RUN rustup toolchain install nightly \
-        --component clippy \
-        --component rustfmt \
-        --component llvm-tools-preview
     RUN cargo install --locked --force --version 0.5.0 cargo-machete
     RUN cargo install --locked --force --version 0.36.11 cargo-make
     RUN cargo install --locked --force --version 0.5.22 cargo-llvm-cov
@@ -83,7 +79,7 @@ rust-sources:
 
 formatting-check:
     FROM +rust-sources
-    DO rust+CARGO --args="+nightly fmt --all -- --check"
+    DO rust+CARGO --args="fmt --all -- --check"
 
 machete:
     FROM +rust-sources
