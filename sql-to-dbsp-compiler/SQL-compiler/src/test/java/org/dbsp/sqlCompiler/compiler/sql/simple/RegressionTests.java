@@ -43,6 +43,20 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2640() {
+        String sql = """
+                CREATE TABLE t (
+                    bin VARBINARY
+                ) with ('materialized' = 'true');
+                CREATE FUNCTION nbin2nbin(i VARBINARY NOT NULL) RETURNS VARBINARY NOT NULL AS CAST(x'ABCD' as VARBINARY);
+                CREATE MATERIALIZED VIEW v AS
+                SELECT
+                    nbin2nbin(bin)
+                FROM t;""";
+        this.compileRustTestCase(sql);
+    }
+
+    @Test
     public void issue2641() {
         String sql = """
                 create table t (
@@ -59,7 +73,7 @@ public class RegressionTests extends SqlIoTest {
                 CREATE FUNCTION regexp_extract(s VARCHAR, p VARCHAR, pos INTEGER)
                 RETURNS VARCHAR NOT NULL AS CAST('foo' as VARCHAR);""";
         this.statementsFailingInCompilation(sql,
-                "A function named 'REGEXP_EXTRACT' is already predefined");
+                "A function named 'regexp_extract' is already predefined");
     }
 
     @Test

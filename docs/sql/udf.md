@@ -60,8 +60,8 @@ pub fn contains_number(str: String, value: Option<i32>) ->
 ```
 
 The `use feldera_sqllib::*` directive imports the definitions of the
-standard Rust types that the compiler uses to implement SQL datatypes.
-The next section explains what these types are.
+Rust types that the compiler uses to implement some of the SQL
+datatypes.  The next section explains what these types are.
 
 Notice the function implemented has an all-capitals name (which is not
 a standard convention for Rust), dictated by the default SQL
@@ -83,7 +83,9 @@ and not to crash.
 The following table shows the Rust representation of standard SQL data
 types.  A nullable SQL type is represented by the corresponding rust
 `Option<>` type.  Notice that some of these types are not standard
-Rust types, but are defined in the DBSP runtime library.
+Rust types, but are defined in the
+[feldera_sqllib](https://crates.io/crates/feldera-sqllib) runtime
+library.
 
 SQL | Rust
 -----------
@@ -92,19 +94,19 @@ SQL | Rust
 `SMALLINT` | `i16`
 `INT`  | `i32`
 `BIGINT` | `i64`
-`DECIMAL`(p, s) | `Decimal`
-`REAL` | `F32`
-`DOUBLE` | `F64`
+`DECIMAL`(p, s) | `rust_decimal::Decimal`
+`REAL` | `feldera_sqllib::F32`
+`DOUBLE` | `feldera_sqllib::F64`
 `CHAR`(n) | `String`
 `VARCHAR`, `VARCHAR`(n) | `String`
-`BINARY`, `BINARY`(n) | `ByteArray`
+`BINARY`, `BINARY`(n) | `feldera_sqllib::ByteArray`
 `NULL` | `()`
-`INTERVAL` | `ShortInterval`, `LongInterval`
-`TIME` | `Time`
-`TIMESTAMP` | `Timestamp`
-`DATE` | `Date`
+`INTERVAL` | `feldera_sqllib::ShortInterval`, `feldera_sqllib::LongInterval`
+`TIME` | `feldera_sqllib::Time`
+`TIMESTAMP` | `feldera_sqllib::Timestamp`
+`DATE` | `feldera_sqllib::Date`
 `ARRAY T` | `Vec<T>`
-`VARIANT` | `Variant`
+`VARIANT` | `feldera_sqllib::Variant`
 
 Multiple SQL types may be represented by the same Rust type.  For
 example, `CHAR`, `CHAR(n)`, `VARCHAR(n)`, and `VARCHAR` are all
