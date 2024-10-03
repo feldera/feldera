@@ -1,7 +1,7 @@
-from .test_base import TestView
+from .aggtst_base import TstView
 from decimal import Decimal
 
-class test_decimal_sum(TestView):
+class aggtst_decimal_sum(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_sum AS SELECT
@@ -9,7 +9,7 @@ class test_decimal_sum(TestView):
                       FROM decimal_tbl'''
         self.data = [{'c1': Decimal('12473.68'), 'c2': Decimal('21060.37')}]
 
-class test_decimal_sum_gby(TestView):
+class aggtst_decimal_sum_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_sum_gby AS SELECT
@@ -19,7 +19,7 @@ class test_decimal_sum_gby(TestView):
         self.data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('6034.61')},
                      {'id': 1, 'c1': Decimal('11362.16'), 'c2': Decimal('15025.76')}]
 
-class test_decimal_sum_distinct(TestView):
+class aggtst_decimal_sum_distinct(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_sum_distinct AS SELECT
@@ -27,7 +27,7 @@ class test_decimal_sum_distinct(TestView):
                       FROM decimal_tbl'''
         self.data = [{'c1': Decimal('6792.60'), 'c2': Decimal('21060.37')}]
 
-class test_decimal_sum_distinct_gby(TestView):
+class aggtst_decimal_sum_distinct_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_sum_distinct_gby AS SELECT
@@ -37,7 +37,7 @@ class test_decimal_sum_distinct_gby(TestView):
         self.data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('6034.61')},
                      {'id': 1,'c1': Decimal('5681.08'), 'c2': Decimal('15025.76')}]
 
-class test_decimal_sum_where(TestView):
+class aggtst_decimal_sum_where(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_sum_where AS SELECT
@@ -45,7 +45,7 @@ class test_decimal_sum_where(TestView):
                         FROM decimal_tbl'''
         self.data = [{'f_c1': Decimal('11362.16'), 'f_c2': Decimal('18828.47')}]
 
-class test_decimal_sum_where_gby(TestView):
+class aggtst_decimal_sum_where_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_sum_where_gby AS SELECT

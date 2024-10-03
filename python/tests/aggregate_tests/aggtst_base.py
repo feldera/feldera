@@ -1,5 +1,9 @@
 """Run multiple Python tests in a single pipeline"""
 
+from feldera import PipelineBuilder, Pipeline
+from tests import TEST_CLIENT
+from feldera.enums import CompilationProfile
+
 from typing import TypeAlias, Dict
 from types import ModuleType
 import os
@@ -7,10 +11,6 @@ import re
 import inspect
 import importlib
 import sys
-
-from feldera import PipelineBuilder, Pipeline
-from feldera.enums import CompilationProfile
-from tests import TEST_CLIENT
 
 JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
 
@@ -127,7 +127,7 @@ class View(SqlObject):
         assert expected == data , f"ASSERTION ERROR: failed view:{self.name}: {expected} != {data}"
 
 
-class TestAccumulator:
+class TstAccumulator:
     """Base class which accumulates multiple DBSP tests to run and executes them"""
     def __init__(self):
         self.tables = []
@@ -184,64 +184,23 @@ class TestAccumulator:
         pipeline.shutdown()
 
 
-class TestTable:
+class TstTable:
     """Base class for defining tables"""
     def __init__(self):
         self.sql = ""
         self.data = []
 
-    def register(self, ta: TestAccumulator):
+    def register(self, ta: TstAccumulator):
         ta.add_table(Table(self.sql, self.data))
 
 
-class TestView:
+class TstView:
     """Base class for defining views"""
     def __init__(self):
         self.sql = ""
         self.data = []
 
-    def register(self, ta: TestAccumulator):
+    def register(self, ta: TstAccumulator):
         ta.add_view(View(self.sql, self.data))
 
 
-######################
-## Add here import statements for all files with tests
-
-from tests.aggregate_tests import test_decimal_table, test_decimal_avg, test_decimal_sum
-from tests.aggregate_tests import test_bit_table, test_bit_and, test_bit_xor, test_bit_or
-from tests.aggregate_tests import test_int_table, test_sum, test_avg
-from tests.aggregate_tests import test_array, test_every, test_some, test_count, test_count_col
-from tests.aggregate_tests import test_max, test_min, test_stddev_pop, test_stddev_samp
-
-def register_tests_in_module(module, ta: TestAccumulator):
-    """Registers all the tests in the specified module.
-       Tests are classes that start with test_.
-       (As a consequence, a test may be disabled by renaming it
-       not to start with 'test_'.)
-       They must all derive from TestView or TestTable"""
-    for name, obj in inspect.getmembers(module):
-        if name.startswith("test_"):
-            if inspect.isclass(obj):
-                cls = getattr(module, name)
-                instance = cls()
-                instance.register(ta)
-                if DEBUG:
-                    print(f"Registering {name}")
-
-def main():
-    """Find all tests loaded by the current module and register them"""
-    ta = TestAccumulator()
-    current_module = sys.modules[__name__]
-    loaded = []
-    for key in current_module.__dict__.keys():
-        module = current_module.__dict__[key]
-        if isinstance(module, ModuleType):
-            if not module.__name__.startswith("tests.aggregate_tests"):
-                continue
-            loaded.append(module);
-    for module in loaded:
-        register_tests_in_module(module, ta)
-    ta.run_tests()
-
-if __name__ == '__main__':
-    main()

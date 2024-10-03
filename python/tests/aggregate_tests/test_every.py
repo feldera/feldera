@@ -1,6 +1,6 @@
-from .test_base import TestView
+from .aggtst_base import TstView
 
-class test_int_every(TestView):
+class aggtst_int_every(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_every_value AS SELECT
@@ -8,7 +8,7 @@ class test_int_every(TestView):
                       FROM int0_tbl'''
         self.data = [{'c1': False, 'c2': True, 'c3': False, 'c4': True, 'c5': True, 'c6': False, 'c7': True, 'c8': False}]
 
-class test_int_every_gby(TestView):
+class aggtst_int_every_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_every_gby AS SELECT
@@ -18,7 +18,7 @@ class test_int_every_gby(TestView):
         self.data = [{'id': 0, 'c1': False, 'c2': True, 'c3': False, 'c4': True, 'c5': True, 'c6': False, 'c7': True, 'c8': True},
                      {'id': 1, 'c1': True, 'c2': True, 'c3': True, 'c4': True, 'c5': True, 'c6': True, 'c7': True, 'c8': False}]
 
-class test_int_every_distinct(TestView):
+class aggtst_int_every_distinct(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_every_distinct AS SELECT
@@ -26,7 +26,7 @@ class test_int_every_distinct(TestView):
                       FROM int0_tbl'''
         self.data = [{'c1': False, 'c2': True, 'c3': False, 'c4': True, 'c5': True, 'c6': False, 'c7': True, 'c8': False}]
 
-class test_int_every_distinct_gby(TestView):
+class aggtst_int_every_distinct_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_every_distinct_gby AS SELECT
@@ -36,7 +36,7 @@ class test_int_every_distinct_gby(TestView):
         self.data = [{'id': 0, 'c1': False, 'c2': True, 'c3': False, 'c4': True, 'c5': True, 'c6': False, 'c7': True, 'c8': True},
                      {'id': 1, 'c1': True, 'c2': True, 'c3': True, 'c4': True, 'c5': True, 'c6': True, 'c7': True, 'c8': False}]
 
-class test_int_every_where(TestView):
+class aggtst_int_every_where(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_every_where AS SELECT
@@ -44,7 +44,7 @@ class test_int_every_where(TestView):
                       FROM int0_tbl'''
         self.data = [{'c1': False, 'c2': True, 'c3': True, 'c4': True, 'c5': True, 'c6': False, 'c7': True, 'c8': False}]
 
-class test_int_every_where_gby(TestView):
+class aggtst_int_every_where_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_every_where_gby AS SELECT

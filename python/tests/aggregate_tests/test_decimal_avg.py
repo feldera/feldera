@@ -1,7 +1,7 @@
-from .test_base import TestView
+from .aggtst_base import TstView
 from decimal import Decimal
 
-class test_decimal_avg(TestView):
+class aggtst_decimal_avg(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_avg AS
@@ -9,7 +9,7 @@ class test_decimal_avg(TestView):
                       FROM decimal_tbl'''
         self.data = [{'c1': Decimal('4157.89'), 'c2': Decimal('5265.09')}]
 
-class test_decimal_avg_gby(TestView):
+class aggtst_decimal_avg_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_avg_gby AS SELECT
@@ -19,7 +19,7 @@ class test_decimal_avg_gby(TestView):
         self.data = [{'id': 0, 'c1': Decimal('1111.52'), 'c2': Decimal('3017.30')},
                      {'id': 1, 'c1': Decimal('5681.08'), 'c2': Decimal('7512.88')}]
 
-class test_decimal_avg_distinct(TestView):
+class aggtst_decimal_avg_distinct(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_avg_distinct AS SELECT
@@ -27,7 +27,7 @@ class test_decimal_avg_distinct(TestView):
                       FROM decimal_tbl'''
         self.data = [{'c1': Decimal('3396.30'), 'c2': Decimal('5265.09')}]
 
-class test_decimal_avg_distinct_gby(TestView):
+class aggtst_decimal_avg_distinct_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_avg_distinct_gby AS SELECT
@@ -37,7 +37,7 @@ class test_decimal_avg_distinct_gby(TestView):
         self.data = [{'id':0,'c1': Decimal('1111.52'), 'c2': Decimal('3017.30')},
                      {'id':1,'c1': Decimal('5681.08'), 'c2': Decimal('7512.88')}]
 
-class test_decimal_avg_where(TestView):
+class aggtst_decimal_avg_where(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_avg_where AS SELECT
@@ -45,7 +45,7 @@ class test_decimal_avg_where(TestView):
                       FROM decimal_tbl'''
         self.data = [{'f_c1': Decimal('5681.08'), 'f_c2': Decimal('6276.15')}]
 
-class test_decimal_avg_where_gby(TestView):
+class aggtst_decimal_avg_where_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW decimal_avg_where_gby AS SELECT

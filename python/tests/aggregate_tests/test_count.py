@@ -1,6 +1,6 @@
-from .test_base import TestView
+from .aggtst_base import TstView
 
-class test_int_count(TestView):
+class aggtst_int_count(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [{'count': 4}]
@@ -8,7 +8,7 @@ class test_int_count(TestView):
                       COUNT(*) AS count
                       FROM int0_tbl'''
 
-class test_int_count_groupby(TestView):
+class aggtst_int_count_groupby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [{'id': 0, 'count': 2},
@@ -18,7 +18,7 @@ class test_int_count_groupby(TestView):
                       FROM int0_tbl
                       GROUP BY id'''
 
-class test_int_count_where(TestView):
+class aggtst_int_count_where(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [{'count': 3}]
@@ -26,7 +26,7 @@ class test_int_count_where(TestView):
                       COUNT(*) FILTER(WHERE (c5+C6)> 3) AS count
                       FROM int0_tbl'''
 
-class test_int_count_where_groupby(TestView):
+class aggtst_int_count_where_groupby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [{'id': 0, 'count': 2},

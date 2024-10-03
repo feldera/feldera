@@ -1,6 +1,6 @@
-from test_base import TestView
+from .aggtst_base import TstView
 
-class test_int_sum(TestView):
+class aggtst_int_sum(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_sum AS SELECT
@@ -8,7 +8,7 @@ class test_int_sum(TestView):
                       FROM int0_tbl'''
         self.data = [{'c1': 9, 'c2': 12, 'c3': 13, 'c4': 14, 'c5': 12, 'c6': 14, 'c7': 7, 'c8': 18}]
 
-class test_int_sum_gby(TestView):
+class aggtst_int_sum_gby(TstView):
     # Validated on Postgres
     def __init__(self):
         self.sql = '''CREATE VIEW int_sum_gby AS SELECT
@@ -18,7 +18,7 @@ class test_int_sum_gby(TestView):
         self.data = [{'id': 0, 'c1': 5, 'c2': 4, 'c3': 3, 'c4': 6, 'c5': 8, 'c6': 10, 'c7': 3, 'c8': 11},
                      {'id': 1, 'c1': 4, 'c2': 8, 'c3': 10, 'c4': 8, 'c5': 4, 'c6': 4, 'c7': 4, 'c8': 7}]
 
-class test_int_sum_distinct(TestView):
+class aggtst_int_sum_distinct(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_sum_distinct AS SELECT
@@ -26,7 +26,7 @@ class test_int_sum_distinct(TestView):
                       FROM int0_tbl'''
         self.data = [{'c1': 9, 'c2': 10, 'c3': 13, 'c4': 12, 'c5': 10, 'c6': 14, 'c7': 7, 'c8': 18}]
 
-class test_int_sum_distinct_gby(TestView):
+class aggtst_int_sum_distinct_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_sum_distinct_gby AS SELECT
@@ -36,7 +36,7 @@ class test_int_sum_distinct_gby(TestView):
         self.data =  [{'id': 0, 'c1': 5, 'c2': 2, 'c3': 3, 'c4': 6, 'c5': 8, 'c6': 10, 'c7': 3, 'c8': 11},
                       {'id': 1, 'c1': 4, 'c2': 8, 'c3': 10, 'c4': 8, 'c5': 2, 'c6': 4, 'c7': 4, 'c8': 7}]
 
-class test_int_sum_where(TestView):
+class aggtst_int_sum_where(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_sum_where AS SELECT
@@ -44,7 +44,7 @@ class test_int_sum_where(TestView):
                       FROM int0_tbl'''
         self.data = [{'f_c1': 5, 'f_c2': 9, 'f_c3': 9, 'f_c4': 8, 'f_c5': 10, 'f_c6': 11, 'f_c7': 3, 'f_c8': 16}]
 
-class test_int_sum_where_gby(TestView):
+class aggtst_int_sum_where_gby(TstView):
     def __init__(self):
         # Validated on Postgres
         self.sql = '''CREATE VIEW int_sum_where_gby AS SELECT
