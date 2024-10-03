@@ -54,6 +54,9 @@ import type {
   InputEndpointActionData,
   InputEndpointActionError,
   InputEndpointActionResponse,
+  GetPipelineLogsData,
+  GetPipelineLogsError,
+  GetPipelineLogsResponse,
   PipelineAdhocSqlData,
   PipelineAdhocSqlError,
   PipelineAdhocSqlResponse,
@@ -282,6 +285,25 @@ export const inputEndpointAction = (options: Options<InputEndpointActionData>) =
   return (options?.client ?? client).post<InputEndpointActionResponse, InputEndpointActionError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/input_endpoints/{endpoint_name}/{action}'
+  })
+}
+
+/**
+ * Retrieve pipeline logs as a stream.
+ * The logs stream catches up to the extent of the internally configured per-pipeline
+ * circular logs buffer (limited to a certain byte size and number of lines, whichever
+ * is reached first). After the catch-up, new lines are pushed whenever they become
+ * available.
+ *
+ * The logs stream will end when the pipeline is shut down. It is also possible for the
+ * logs stream to end prematurely due to the runner back-end (temporarily) losing
+ * connectivity to the pipeline instance (e.g., process). In this case, it is needed
+ * to issue again a new request to this endpoint.
+ */
+export const getPipelineLogs = (options: Options<GetPipelineLogsData>) => {
+  return (options?.client ?? client).get<GetPipelineLogsResponse, GetPipelineLogsError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/logs'
   })
 }
 
