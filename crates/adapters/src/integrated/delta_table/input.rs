@@ -118,13 +118,9 @@ impl DeltaTableInputReader {
 
         std::thread::spawn(move || {
             TOKIO.block_on(async {
-                let _ = Self::worker_task(
-                    endpoint_clone,
-                    input_stream,
-                    receiver_clone,
-                    init_status_sender,
-                )
-                .await;
+                let _ = endpoint_clone
+                    .worker_task(input_stream, receiver_clone, init_status_sender)
+                    .await;
             })
         });
 
@@ -140,110 +136,6 @@ impl DeltaTableInputReader {
             sender,
             inner: endpoint.clone(),
         })
-    }
-
-    async fn worker_task(
-        endpoint: Arc<DeltaTableInputEndpointInner>,
-        input_stream: Box<dyn ArrowStream>,
-        receiver: Receiver<PipelineState>,
-        init_status_sender: mpsc::Sender<Result<(), ControllerError>>,
-    ) {
-        let mut receiver_clone = receiver.clone();
-        select! {
-            _ = Self::worker_task_inner(endpoint.clone(), input_stream, receiver, init_status_sender) => {
-                debug!("delta_table {}: worker task terminated",
-                    &endpoint.endpoint_name,
-                );
-            }
-            _ = receiver_clone.wait_for(|state| state == &PipelineState::Terminated) => {
-                debug!("delta_table {}: received termination command; worker task canceled",
-                    &endpoint.endpoint_name,
-                );
-            }
-        }
-    }
-
-    async fn worker_task_inner(
-        endpoint: Arc<DeltaTableInputEndpointInner>,
-        mut input_stream: Box<dyn ArrowStream>,
-        mut receiver: Receiver<PipelineState>,
-        init_status_sender: mpsc::Sender<Result<(), ControllerError>>,
-    ) {
-        let table = match endpoint.open_table().await {
-            Err(e) => {
-                let _ = init_status_sender.send(Err(e)).await;
-                return;
-            }
-            Ok(table) => table,
-        };
-
-        let table = Arc::new(table);
-
-        let snapshot_df = match endpoint.prepare_snapshot_query(&table).await {
-            Err(e) => {
-                let _ = init_status_sender.send(Err(e)).await;
-                return;
-            }
-            Ok(snapshot_df) => snapshot_df,
-        };
-
-        // Code before this point is part of endpoint initialization.
-        // After this point, the thread should continue running until it receives a
-        // shutdown command from the controller.
-        let _ = init_status_sender.send(Ok(())).await;
-
-        // Execute the snapshot query; push snapshot data to the circuit.
-        if let Some(snapshot_df) = snapshot_df {
-            info!(
-                "delta_table {}: reading initial snapshot",
-                &endpoint.endpoint_name,
-            );
-
-            endpoint
-                .execute_df(
-                    snapshot_df,
-                    true,
-                    "initial snapshot",
-                    input_stream.as_mut(),
-                    &mut receiver,
-                )
-                .await;
-
-            //let _ = endpoint.datafusion.deregister_table("snapshot");
-            info!(
-                "delta_table {}: finished reading initial snapshot",
-                &endpoint.endpoint_name,
-            );
-        }
-
-        // Start following the table if required by the configuration.
-        if endpoint.config.follow() {
-            let mut version = table.version();
-            loop {
-                wait_running(&mut receiver).await;
-                match table.peek_next_commit(version).await {
-                    Ok(PeekCommit::UpToDate) => sleep(POLL_INTERVAL).await,
-                    Ok(PeekCommit::New(new_version, actions)) => {
-                        version = new_version;
-                        endpoint
-                            .process_log_entry(
-                                &actions,
-                                &table,
-                                input_stream.as_mut(),
-                                &mut receiver,
-                            )
-                            .await;
-                    }
-                    Err(e) => {
-                        endpoint.consumer.error(
-                            false,anyhow!("error reading the next log entry (current table version: {version}): {e}"));
-                        sleep(RETRY_INTERVAL).await;
-                    }
-                }
-            }
-        } else {
-            endpoint.consumer.eoi();
-        }
     }
 }
 
@@ -294,6 +186,108 @@ impl DeltaTableInputEndpointInner {
             consumer,
             datafusion: SessionContext::new(),
             queue,
+        }
+    }
+
+    async fn worker_task(
+        self: Arc<Self>,
+        input_stream: Box<dyn ArrowStream>,
+        receiver: Receiver<PipelineState>,
+        init_status_sender: mpsc::Sender<Result<(), ControllerError>>,
+    ) {
+        let mut receiver_clone = receiver.clone();
+        select! {
+            _ = Self::worker_task_inner(self.clone(), input_stream, receiver, init_status_sender) => {
+                debug!("delta_table {}: worker task terminated",
+                    &self.endpoint_name,
+                );
+            }
+            _ = receiver_clone.wait_for(|state| state == &PipelineState::Terminated) => {
+                debug!("delta_table {}: received termination command; worker task canceled",
+                    &self.endpoint_name,
+                );
+            }
+        }
+    }
+
+    async fn worker_task_inner(
+        self: Arc<Self>,
+        mut input_stream: Box<dyn ArrowStream>,
+        mut receiver: Receiver<PipelineState>,
+        init_status_sender: mpsc::Sender<Result<(), ControllerError>>,
+    ) {
+        let table = match self.open_table().await {
+            Err(e) => {
+                let _ = init_status_sender.send(Err(e)).await;
+                return;
+            }
+            Ok(table) => table,
+        };
+
+        let table = Arc::new(table);
+
+        let snapshot_df = match self.prepare_snapshot_query(&table).await {
+            Err(e) => {
+                let _ = init_status_sender.send(Err(e)).await;
+                return;
+            }
+            Ok(snapshot_df) => snapshot_df,
+        };
+
+        // Code before this point is part of endpoint initialization.
+        // After this point, the thread should continue running until it receives a
+        // shutdown command from the controller.
+        let _ = init_status_sender.send(Ok(())).await;
+
+        // Execute the snapshot query; push snapshot data to the circuit.
+        if let Some(snapshot_df) = snapshot_df {
+            info!(
+                "delta_table {}: reading initial snapshot",
+                &self.endpoint_name,
+            );
+
+            self.execute_df(
+                snapshot_df,
+                true,
+                "initial snapshot",
+                input_stream.as_mut(),
+                &mut receiver,
+            )
+            .await;
+
+            //let _ = self.datafusion.deregister_table("snapshot");
+            info!(
+                "delta_table {}: finished reading initial snapshot",
+                &self.endpoint_name,
+            );
+        }
+
+        // Start following the table if required by the configuration.
+        if self.config.follow() {
+            let mut version = table.version();
+            loop {
+                wait_running(&mut receiver).await;
+                match table.peek_next_commit(version).await {
+                    Ok(PeekCommit::UpToDate) => sleep(POLL_INTERVAL).await,
+                    Ok(PeekCommit::New(new_version, actions)) => {
+                        version = new_version;
+                        self.process_log_entry(
+                            &actions,
+                            &table,
+                            input_stream.as_mut(),
+                            &mut receiver,
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        self.consumer.error(
+                            false,anyhow!("error reading the next log entry (current table version: {version}): {e}"));
+                        sleep(RETRY_INTERVAL).await;
+                    }
+                }
+            }
+        } else {
+            self.consumer.eoi();
         }
     }
 
