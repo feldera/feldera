@@ -446,7 +446,7 @@ public class StreamingTests extends StreamingTestBase {
         // Rust program which profiles the circuit.
         String main = this.createMain("""
                     // Initial data value for timestamp
-                    let mut timestamp = cast_to_Timestamp_s("2024-01-10 10:10:10".to_string());
+                    let mut timestamp = cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10"));
                     for i in 0..1000000 {
                         let expire = timestamp.add(1000000);
                         timestamp = timestamp.add(20000);
@@ -1464,6 +1464,7 @@ public class StreamingTests extends StreamingTestBase {
                     append_to_collection_handle,
                     read_output_handle,
                     casts::cast_to_Timestamp_s,
+                    SqlString,
                 };
 
                 use std::{
@@ -1568,7 +1569,7 @@ public class StreamingTests extends StreamingTestBase {
         // Rust program which profiles the circuit.
         String main = this.createMain("""
                     // Initial data value for timestamp
-                    let mut timestamp = cast_to_Timestamp_s("2024-01-10 10:10:10".to_string());
+                    let mut timestamp = cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10"));
                     for i in 0..1000000 {
                         let value = Some(F64::new(i.into()));
                         timestamp = timestamp.add(20000);

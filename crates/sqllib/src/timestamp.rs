@@ -3,7 +3,7 @@
 use crate::{
     casts::*,
     interval::{LongInterval, ShortInterval},
-    FromInteger, ToInteger,
+    FromInteger, SqlString, ToInteger,
 };
 use chrono::{
     DateTime, Datelike, Days, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc,
@@ -1018,11 +1018,11 @@ pub fn datediff_day_Date_Date(left: Date, right: Date) -> i32 {
 
 some_polymorphic_function2!(datediff_day, Date, Date, Date, Date, i32);
 
-pub fn format_date__(format: String, date: Date) -> String {
-    return date.to_dateTime().format(&format).to_string();
+pub fn format_date__(format: SqlString, date: Date) -> SqlString {
+    return SqlString::from(date.to_dateTime().format(&format.str()).to_string());
 }
 
-some_function2!(format_date, String, Date, String);
+some_function2!(format_date, SqlString, Date, SqlString);
 
 pub fn date_trunc_millennium_Timestamp(timestamp: Timestamp) -> Timestamp {
     let dt = timestamp.get_date();

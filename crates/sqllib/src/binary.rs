@@ -1,6 +1,6 @@
 //! Support for byte arrays (binary objects in SQL)
 
-use crate::{some_function1, some_function2, some_function3, some_function4};
+use crate::{some_function1, some_function2, some_function3, some_function4, SqlString};
 use dbsp::num_entries_scalar;
 use feldera_types::{deserialize_without_context, serialize_without_context};
 use flate2::read::GzDecoder;
@@ -98,15 +98,15 @@ impl ByteArray {
     }
 }
 
-pub fn to_hex_(value: ByteArray) -> String {
-    value.data.encode_hex::<String>()
+pub fn to_hex_(value: ByteArray) -> SqlString {
+    SqlString::from(value.data.encode_hex::<String>())
 }
 
 pub fn concat_bytes_bytes(left: ByteArray, right: ByteArray) -> ByteArray {
     left.concat(&right)
 }
 
-some_function1!(to_hex, ByteArray, String);
+some_function1!(to_hex, ByteArray, SqlString);
 
 pub fn octet_length_(value: ByteArray) -> i32 {
     value.length() as i32
@@ -185,16 +185,16 @@ pub fn overlay4____(
 
 some_function4!(overlay4, ByteArray, ByteArray, i32, i32, ByteArray);
 
-pub fn gunzip_(source: ByteArray) -> String {
+pub fn gunzip_(source: ByteArray) -> SqlString {
     let mut gz = GzDecoder::new(&source.data[..]);
     let mut s = String::new();
 
     gz.read_to_string(&mut s)
         .expect("failed to decompress gzipped data");
-    s
+    SqlString::from(s)
 }
 
-some_function1!(gunzip, ByteArray, String);
+some_function1!(gunzip, ByteArray, SqlString);
 
 pub fn to_int_(source: ByteArray) -> i32 {
     let mut result = 0;

@@ -50,11 +50,11 @@ function `contains_number` above:
 ```rs
 use feldera_sqllib::*;
 
-pub fn CONTAINS_NUMBER(str: String, value: Option<i32>) ->
+pub fn CONTAINS_NUMBER(str: SqlString, value: Option<i32>) ->
    Result<bool, Box<dyn std::error::Error>> {
    match value {
       None => Err(\"null value\".into()),
-      Some(value) => Ok(str.contains(&format!(\"{}\", value).to_string())),
+      Some(value) => Ok(str.str().contains(&format!(\"{}\", value).to_string())),
    }
 }
 ```
@@ -95,8 +95,8 @@ SQL | Rust
 `DECIMAL`(p, s) | `Decimal`
 `REAL` | `F32`
 `DOUBLE` | `F64`
-`CHAR`(n) | `String`
-`VARCHAR`, `VARCHAR`(n) | `String`
+`CHAR`(n) | `SqlString`
+`VARCHAR`, `VARCHAR`(n) | `SqlString`
 `BINARY`, `BINARY`(n) | `ByteArray`
 `NULL` | `()`
 `INTERVAL` | `ShortInterval`, `LongInterval`
@@ -107,7 +107,7 @@ SQL | Rust
 
 Multiple SQL types may be represented by the same Rust type.  For
 example, `CHAR`, `CHAR(n)`, `VARCHAR(n)`, and `VARCHAR` are all
-represented by the standard Rust `String` type.
+represented by the `SqlString` type.
 
 The SQL family of `INTERVAL` types translates to one of two Rust
 types: `ShortInterval` (representing intervals from days to seconds),

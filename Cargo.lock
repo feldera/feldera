@@ -4466,6 +4466,7 @@ dependencies = [
  "flate2",
  "geo",
  "hex",
+ "internment",
  "itertools 0.13.0",
  "lazy_static",
  "like",
@@ -5507,6 +5508,18 @@ name = "integer-encoding"
 version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bb03732005da905c88227371639bf1ad885cc712789c011c31c5fb3ab3ccf02"
+
+[[package]]
+name = "internment"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7f54d755e2513c46a29d3c06fed25aa5d2008252469266055797f331a71aa42"
+dependencies = [
+ "ahash 0.8.11",
+ "dashmap 5.5.3",
+ "hashbrown 0.14.5",
+ "once_cell",
+]
 
 [[package]]
 name = "io-uring"

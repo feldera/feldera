@@ -315,15 +315,15 @@ public class MetadataTests extends BaseSQLTests {
         createInputFile(implementation,
                 System.lineSeparator(),
                 "use feldera_sqllib::*;",
-                "pub fn CONTAINS_NUMBER(str: String, value: Option<i32>) -> " +
+                "pub fn CONTAINS_NUMBER(str: SqlString, value: Option<i32>) -> " +
                         "   Result<bool, Box<dyn std::error::Error>> {",
                 "   match value {",
                 "      None => Err(\"null value\".into()),",
-                "      Some(value) => Ok(str.contains(&format!(\"{}\", value).to_string())),",
+                "      Some(value) => Ok(str.str().contains(&format!(\"{}\", value).to_string())),",
                 "   }",
                 "}",
-                "pub fn empty() -> Result<Option<String>, Box<dyn std::error::Error>> {",
-                "   Ok(Some(\"\".to_string()))",
+                "pub fn empty() -> Result<Option<SqlString>, Box<dyn std::error::Error>> {",
+                "   Ok(Some(SqlString::new()))",
                 "}");
         CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.testFilePath, "--udf",
                 implementation.getPath(), file.getPath());

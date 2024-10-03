@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 
-use crate::{binary::ByteArray, geopoint::*, interval::*, timestamp::*, variant::*};
+use crate::{binary::ByteArray, geopoint::*, interval::*, timestamp::*, variant::*, SqlString};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{FromPrimitive, One, ToPrimitive, Zero};
@@ -117,13 +117,13 @@ cast_to_b!(i, isize);
 cast_to_b!(u, usize);
 
 #[inline]
-pub fn cast_to_b_s(value: String) -> bool {
-    value.trim().parse().unwrap_or(false)
+pub fn cast_to_b_s(value: SqlString) -> bool {
+    value.str().trim().parse().unwrap_or(false)
 }
 
 #[inline]
-pub fn cast_to_b_sN(value: Option<String>) -> bool {
-    value.unwrap().trim().parse().unwrap_or(false)
+pub fn cast_to_b_sN(value: Option<SqlString>) -> bool {
+    value.unwrap().str().trim().parse().unwrap_or(false)
 }
 
 /////////// cast to bN
@@ -146,17 +146,17 @@ pub fn cast_to_bN_bN(value: Option<bool>) -> Option<bool> {
 /////////// cast to date
 
 #[inline]
-pub fn cast_to_Date_s(value: String) -> Date {
-    let dt = NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok();
+pub fn cast_to_Date_s(value: SqlString) -> Date {
+    let dt = NaiveDate::parse_from_str(&value.str(), "%Y-%m-%d").ok();
     match dt {
         Some(value) => {
             Date::new((value.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() / 86400) as i32)
         }
-        None => panic!("Could not parse string '{value}' as a Date"),
+        None => panic!("Could not parse string '{}' as a Date", value.str()),
     }
 }
 
-cast_function!(Date, Date, s, String);
+cast_function!(Date, Date, s, SqlString);
 
 pub fn cast_to_Date_Timestamp(value: Timestamp) -> Date {
     value.get_date()
@@ -179,14 +179,14 @@ cast_function!(Date, Date, Date, Date);
 /////////// cast to Time
 
 #[inline]
-pub fn cast_to_Time_s(value: String) -> Time {
-    match NaiveTime::parse_from_str(&value, "%H:%M:%S%.f").ok() {
-        None => panic!("Could not parse string '{value}' as a Time"),
+pub fn cast_to_Time_s(value: SqlString) -> Time {
+    match NaiveTime::parse_from_str(&value.str(), "%H:%M:%S%.f").ok() {
+        None => panic!("Could not parse string '{}' as a Time", value.str()),
         Some(value) => Time::from_time(value),
     }
 }
 
-cast_function!(Time, Time, s, String);
+cast_function!(Time, Time, s, SqlString);
 
 #[inline]
 pub fn cast_to_TimeN_nullN(_value: Option<()>) -> Option<Time> {
@@ -281,16 +281,16 @@ pub fn cast_to_decimal_fN(value: Option<F32>, precision: u32, scale: u32) -> Dec
 }
 
 #[inline]
-pub fn cast_to_decimal_s(value: String, precision: u32, scale: u32) -> Decimal {
-    let result = value.trim().parse().unwrap();
+pub fn cast_to_decimal_s(value: SqlString, precision: u32, scale: u32) -> Decimal {
+    let result = value.str().trim().parse().unwrap();
     cast_to_decimal_decimal(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimal_sN(value: Option<String>, precision: u32, scale: u32) -> Decimal {
+pub fn cast_to_decimal_sN(value: Option<SqlString>, precision: u32, scale: u32) -> Decimal {
     let result = match value {
         None => <rust_decimal::Decimal as Zero>::zero(),
-        Some(x) => x.trim().parse().unwrap(),
+        Some(x) => x.str().trim().parse().unwrap(),
     };
     cast_to_decimal_decimal(result, precision, scale)
 }
@@ -426,13 +426,17 @@ pub fn cast_to_decimalN_fN(value: Option<F32>, precision: u32, scale: u32) -> Op
 }
 
 #[inline]
-pub fn cast_to_decimalN_s(value: String, precision: u32, scale: u32) -> Option<Decimal> {
-    let result = Some(value.trim().parse().unwrap());
+pub fn cast_to_decimalN_s(value: SqlString, precision: u32, scale: u32) -> Option<Decimal> {
+    let result = Some(value.str().trim().parse().unwrap());
     set_ps(result, precision, scale)
 }
 
 #[inline]
-pub fn cast_to_decimalN_sN(value: Option<String>, precision: u32, scale: u32) -> Option<Decimal> {
+pub fn cast_to_decimalN_sN(
+    value: Option<SqlString>,
+    precision: u32,
+    scale: u32,
+) -> Option<Decimal> {
     let value = value?;
     cast_to_decimalN_s(value, precision, scale)
 }
@@ -523,16 +527,16 @@ pub fn cast_to_d_fN(value: Option<F32>) -> F64 {
 }
 
 #[inline]
-pub fn cast_to_d_s(value: String) -> F64 {
-    match value.trim().parse() {
+pub fn cast_to_d_s(value: SqlString) -> F64 {
+    match value.str().trim().parse() {
         Err(_) => F64::zero(),
         Ok(x) => x,
     }
 }
 
 #[inline]
-pub fn cast_to_d_sN(value: Option<String>) -> F64 {
-    match value.unwrap().trim().parse() {
+pub fn cast_to_d_sN(value: Option<SqlString>) -> F64 {
+    match value.unwrap().str().trim().parse() {
         Err(_) => F64::zero(),
         Ok(x) => x,
     }
@@ -593,18 +597,18 @@ pub fn cast_to_dN_fN(value: Option<F32>) -> Option<F64> {
 }
 
 #[inline]
-pub fn cast_to_dN_s(value: String) -> Option<F64> {
-    match value.trim().parse::<f64>() {
+pub fn cast_to_dN_s(value: SqlString) -> Option<F64> {
+    match value.str().trim().parse::<f64>() {
         Err(_) => Some(F64::zero()),
         Ok(x) => Some(F64::new(x)),
     }
 }
 
 #[inline]
-pub fn cast_to_dN_sN(value: Option<String>) -> Option<F64> {
+pub fn cast_to_dN_sN(value: Option<SqlString>) -> Option<F64> {
     match value {
         None => None,
-        Some(x) => match x.trim().parse::<f64>() {
+        Some(x) => match x.str().trim().parse::<f64>() {
             Err(_) => Some(F64::zero()),
             Ok(x) => Some(F64::new(x)),
         },
@@ -669,16 +673,16 @@ pub fn cast_to_f_fN(value: Option<F32>) -> F32 {
 }
 
 #[inline]
-pub fn cast_to_f_s(value: String) -> F32 {
-    match value.trim().parse() {
+pub fn cast_to_f_s(value: SqlString) -> F32 {
+    match value.str().trim().parse() {
         Err(_) => F32::zero(),
         Ok(x) => x,
     }
 }
 
 #[inline]
-pub fn cast_to_f_sN(value: Option<String>) -> F32 {
-    match value.unwrap().trim().parse() {
+pub fn cast_to_f_sN(value: Option<SqlString>) -> F32 {
+    match value.unwrap().str().trim().parse() {
         Err(_) => F32::zero(),
         Ok(x) => x,
     }
@@ -739,18 +743,18 @@ pub fn cast_to_fN_fN(value: Option<F32>) -> Option<F32> {
 }
 
 #[inline]
-pub fn cast_to_fN_s(value: String) -> Option<F32> {
-    match value.trim().parse::<f32>() {
+pub fn cast_to_fN_s(value: SqlString) -> Option<F32> {
+    match value.str().trim().parse::<f32>() {
         Err(_) => Some(F32::zero()),
         Ok(x) => Some(F32::from(x)),
     }
 }
 
 #[inline]
-pub fn cast_to_fN_sN(value: Option<String>) -> Option<F32> {
+pub fn cast_to_fN_sN(value: Option<SqlString>) -> Option<F32> {
     match value {
         None => None,
-        Some(x) => match x.trim().parse::<f32>() {
+        Some(x) => match x.str().trim().parse::<f32>() {
             Err(_) => Some(F32::zero()),
             Ok(x) => Some(F32::from(x)),
         },
@@ -764,7 +768,7 @@ pub fn cast_to_geopointN_geopoint(value: GeoPoint) -> Option<GeoPoint> {
     Some(value)
 }
 
-/////////// cast to String
+/////////// cast to SqlString
 
 // True if the size means "unlimited"
 fn is_unlimited_size(size: i32) -> bool {
@@ -772,7 +776,7 @@ fn is_unlimited_size(size: i32) -> bool {
 }
 
 #[inline]
-pub fn s_helper<T>(value: Option<T>) -> String
+fn s_helper<T>(value: Option<T>) -> String
 where
     T: ToString,
 {
@@ -783,7 +787,7 @@ where
 }
 
 #[inline(always)]
-pub fn truncate(value: String, size: usize) -> String {
+fn truncate(value: String, size: usize) -> String {
     let mut result = value;
     result.truncate(size);
     result
@@ -792,7 +796,7 @@ pub fn truncate(value: String, size: usize) -> String {
 /// Make sure the specified string has exactly the
 /// specified size.
 #[inline(always)]
-pub fn size_string(value: String, size: i32) -> String {
+fn size_string(value: String, size: i32) -> String {
     if is_unlimited_size(size) {
         value.trim_end().to_string()
     } else {
@@ -808,7 +812,7 @@ pub fn size_string(value: String, size: i32) -> String {
 /// Make sure that the specified string does not exceed
 /// the specified size.
 #[inline(always)]
-pub fn limit_string(value: String, size: i32) -> String {
+fn limit_string(value: String, size: i32) -> String {
     if is_unlimited_size(size) {
         value.trim_end().to_string()
     } else {
@@ -816,47 +820,47 @@ pub fn limit_string(value: String, size: i32) -> String {
         if value.len() < sz {
             value
         } else {
-            // TODO: this is legal only of all excess characters are spaces
+            // TODO: this is legal only if all excess characters are spaces
             truncate(value, sz)
         }
     }
 }
 
 #[inline(always)]
-pub fn limit_or_size_string(value: String, size: i32, fixed: bool) -> String {
+fn limit_or_size_string(value: String, size: i32, fixed: bool) -> SqlString {
     if fixed {
-        size_string(value, size)
+        SqlString::from(size_string(value, size))
     } else {
-        limit_string(value, size)
+        SqlString::from(limit_string(value, size))
     }
 }
 
 #[inline]
-pub fn cast_to_s_b(value: bool, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_b(value: bool, size: i32, fixed: bool) -> SqlString {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_bN(value: Option<bool>, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_bN(value: Option<bool>, size: i32, fixed: bool) -> SqlString {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_decimal(value: Decimal, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_decimal(value: Decimal, size: i32, fixed: bool) -> SqlString {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_decimalN(value: Option<Decimal>, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_decimalN(value: Option<Decimal>, size: i32, fixed: bool) -> SqlString {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_d(value: F64, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_d(value: F64, size: i32, fixed: bool) -> SqlString {
     let result = format!("{1:.0$}", DOUBLE_DISPLAY_PRECISION, value);
     let result = result.trim_end_matches('0').to_string();
     let result = result.trim_end_matches('.').to_string();
@@ -871,7 +875,7 @@ pub fn cast_to_s_d(value: F64, size: i32, fixed: bool) -> String {
 }
 
 #[inline]
-pub fn cast_to_s_dN(value: Option<F64>, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_dN(value: Option<F64>, size: i32, fixed: bool) -> SqlString {
     let result = match value {
         Some(inner) => return cast_to_s_d(inner, size, fixed),
         None => String::from("NULL"),
@@ -880,7 +884,7 @@ pub fn cast_to_s_dN(value: Option<F64>, size: i32, fixed: bool) -> String {
 }
 
 #[inline]
-pub fn cast_to_s_f(value: F32, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_f(value: F32, size: i32, fixed: bool) -> SqlString {
     let result = format!("{1:.0$}", FLOAT_DISPLAY_PRECISION, value);
     let result = result.trim_end_matches('0').to_string();
     let result = result.trim_end_matches('.').to_string();
@@ -895,7 +899,7 @@ pub fn cast_to_s_f(value: F32, size: i32, fixed: bool) -> String {
 }
 
 #[inline]
-pub fn cast_to_s_fN(value: Option<F32>, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_fN(value: Option<F32>, size: i32, fixed: bool) -> SqlString {
     let result = match value {
         Some(inner) => return cast_to_s_f(inner, size, fixed),
         None => String::from("NULL"),
@@ -904,19 +908,19 @@ pub fn cast_to_s_fN(value: Option<F32>, size: i32, fixed: bool) -> String {
 }
 
 #[inline]
-pub fn cast_to_s_s(value: String, size: i32, fixed: bool) -> String {
-    let result = value;
+pub fn cast_to_s_s(value: SqlString, size: i32, fixed: bool) -> SqlString {
+    let result = value.str();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_sN(value: Option<String>, size: i32, fixed: bool) -> String {
-    let result = value.unwrap();
+pub fn cast_to_s_sN(value: Option<SqlString>, size: i32, fixed: bool) -> SqlString {
+    let result = value.unwrap().str();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_Timestamp(value: Timestamp, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_Timestamp(value: Timestamp, size: i32, fixed: bool) -> SqlString {
     let dt = value.to_dateTime();
     let month = dt.month();
     let day = dt.day();
@@ -932,62 +936,62 @@ pub fn cast_to_s_Timestamp(value: Timestamp, size: i32, fixed: bool) -> String {
 }
 
 #[inline]
-pub fn cast_to_s_i(value: isize, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_i(value: isize, size: i32, fixed: bool) -> SqlString {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i16(value: i16, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_i16(value: i16, size: i32, fixed: bool) -> SqlString {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i16N(value: Option<i16>, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_i16N(value: Option<i16>, size: i32, fixed: bool) -> SqlString {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i32(value: i32, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_i32(value: i32, size: i32, fixed: bool) -> SqlString {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i32N(value: Option<i32>, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_i32N(value: Option<i32>, size: i32, fixed: bool) -> SqlString {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i64(value: i64, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_i64(value: i64, size: i32, fixed: bool) -> SqlString {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_i64N(value: Option<i64>, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_i64N(value: Option<i64>, size: i32, fixed: bool) -> SqlString {
     let result = s_helper(value);
     limit_or_size_string(result, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_s_u(value: usize, size: i32, fixed: bool) -> String {
+pub fn cast_to_s_u(value: usize, size: i32, fixed: bool) -> SqlString {
     let result = value.to_string();
     limit_or_size_string(result, size, fixed)
 }
 
-/////////// cast to StringN
+/////////// cast to SqlStringN
 
 #[inline]
-pub fn cast_to_sN_nullN(_value: Option<()>, _size: i32, _fixed: bool) -> Option<String> {
+pub fn cast_to_sN_nullN(_value: Option<()>, _size: i32, _fixed: bool) -> Option<SqlString> {
     None
 }
 
 #[inline]
-pub fn sN_helper<T>(value: Option<T>, size: i32, fixed: bool) -> Option<String>
+pub fn sN_helper<T>(value: Option<T>, size: i32, fixed: bool) -> Option<SqlString>
 where
     T: ToString,
 {
@@ -995,114 +999,114 @@ where
 }
 
 #[inline]
-pub fn cast_to_sN_b(value: bool, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_b(value: bool, size: i32, fixed: bool) -> Option<SqlString> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_bN(value: Option<bool>, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_bN(value: Option<bool>, size: i32, fixed: bool) -> Option<SqlString> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_decimal(value: Decimal, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_decimal(value: Decimal, size: i32, fixed: bool) -> Option<SqlString> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_decimalN(value: Option<Decimal>, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_decimalN(value: Option<Decimal>, size: i32, fixed: bool) -> Option<SqlString> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_d(value: F64, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_d(value: F64, size: i32, fixed: bool) -> Option<SqlString> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_dN(value: Option<F64>, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_dN(value: Option<F64>, size: i32, fixed: bool) -> Option<SqlString> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_f(value: F32, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_f(value: F32, size: i32, fixed: bool) -> Option<SqlString> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_fN(value: Option<F32>, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_fN(value: Option<F32>, size: i32, fixed: bool) -> Option<SqlString> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_s(value: String, size: i32, fixed: bool) -> Option<String> {
-    Some(limit_or_size_string(value, size, fixed))
+pub fn cast_to_sN_s(value: SqlString, size: i32, fixed: bool) -> Option<SqlString> {
+    Some(limit_or_size_string(value.str(), size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_sN(value: Option<String>, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_sN(value: Option<SqlString>, size: i32, fixed: bool) -> Option<SqlString> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_i(value: isize, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i(value: isize, size: i32, fixed: bool) -> Option<SqlString> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_i16(value: i16, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i16(value: i16, size: i32, fixed: bool) -> Option<SqlString> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_i16N(value: Option<i16>, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i16N(value: Option<i16>, size: i32, fixed: bool) -> Option<SqlString> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_i32(value: i32, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i32(value: i32, size: i32, fixed: bool) -> Option<SqlString> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_i32N(value: Option<i32>, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i32N(value: Option<i32>, size: i32, fixed: bool) -> Option<SqlString> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_i64(value: i64, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i64(value: i64, size: i32, fixed: bool) -> Option<SqlString> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_i64N(value: Option<i64>, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_i64N(value: Option<i64>, size: i32, fixed: bool) -> Option<SqlString> {
     sN_helper(value, size, fixed)
 }
 
 #[inline]
-pub fn cast_to_sN_u(value: usize, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_u(value: usize, size: i32, fixed: bool) -> Option<SqlString> {
     let result = value.to_string();
     Some(limit_or_size_string(result, size, fixed))
 }
 
 #[inline]
-pub fn cast_to_sN_V(value: Variant, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_V(value: Variant, size: i32, fixed: bool) -> Option<SqlString> {
     match value {
-        Variant::String(v) => Some(limit_or_size_string(v, size, fixed)),
+        Variant::String(v) => Some(limit_or_size_string(v.str(), size, fixed)),
         _ => None,
     }
 }
 
 #[inline]
-pub fn cast_to_sN_VN(value: Option<Variant>, size: i32, fixed: bool) -> Option<String> {
+pub fn cast_to_sN_VN(value: Option<Variant>, size: i32, fixed: bool) -> Option<SqlString> {
     let value = value?;
     cast_to_sN_V(value, size, fixed)
 }
@@ -1285,29 +1289,29 @@ macro_rules! cast_to_i {
             // From string
 
             #[inline]
-            pub fn [< cast_to_ $result_type _s >](value: String) -> $result_type {
-                value.trim().parse()
+            pub fn [< cast_to_ $result_type _s >](value: SqlString) -> $result_type {
+                value.str().trim().parse()
                     .unwrap_or_else(|_| panic!("Could not parse '{:?}' as a value of type '{}'",
                                                value.clone(),
                                                stringify!($result_type)))
             }
 
             #[inline]
-            pub fn [<cast_to_ $result_type _sN >](value: Option<String>) -> $result_type {
-                value.as_ref().unwrap().trim().parse()
+            pub fn [<cast_to_ $result_type _sN >](value: Option<SqlString>) -> $result_type {
+                value.as_ref().unwrap().str().trim().parse()
                     .unwrap_or_else(|_| panic!("Could not parse '{:?}' as a value of type '{}'",
                                                &value,
                                                stringify!($result_type)))
             }
 
             #[inline]
-            pub fn [<cast_to_ $result_type N_s >](value: String) -> Option<$result_type> {
-                value.trim().parse().ok()
+            pub fn [<cast_to_ $result_type N_s >](value: SqlString) -> Option<$result_type> {
+                value.str().trim().parse().ok()
             }
 
             #[inline]
-            pub fn [<cast_to_ $result_type N_sN >](value: Option<String>) -> Option<$result_type> {
-                value.unwrap().trim().parse().ok()
+            pub fn [<cast_to_ $result_type N_sN >](value: Option<SqlString>) -> Option<$result_type> {
+                value.unwrap().str().trim().parse().ok()
             }
 
             // From other integers
@@ -1380,8 +1384,8 @@ pub fn cast_to_ShortIntervalN_nullN(_value: Option<()>) -> Option<ShortInterval>
 //////// casts to Timestamp
 
 #[inline]
-pub fn cast_to_Timestamp_s(value: String) -> Timestamp {
-    if let Ok(v) = NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S%.f") {
+pub fn cast_to_Timestamp_s(value: SqlString) -> Timestamp {
+    if let Ok(v) = NaiveDateTime::parse_from_str(&value.str(), "%Y-%m-%d %H:%M:%S%.f") {
         // round the number of microseconds
         let nanos = v.and_utc().timestamp_subsec_nanos();
         let nanos = (nanos + 500000) / 1000000;
@@ -1393,7 +1397,7 @@ pub fn cast_to_Timestamp_s(value: String) -> Timestamp {
 
     // Try just a date.
     // parse_from_str fails to parse a datetime if there is no time in the format!
-    if let Ok(v) = NaiveDate::parse_from_str(&value, "%Y-%m-%d") {
+    if let Ok(v) = NaiveDate::parse_from_str(&value.str(), "%Y-%m-%d") {
         let dt = v.and_hms_opt(0, 0, 0).unwrap();
         let result = Timestamp::new(dt.and_utc().timestamp_millis());
         //println!("Parsed successfully {} using {} into {:?} ({})",
@@ -1404,7 +1408,7 @@ pub fn cast_to_Timestamp_s(value: String) -> Timestamp {
     panic!("Failed to parse '{value}' as a Timestamp");
 }
 
-cast_function!(Timestamp, Timestamp, s, String);
+cast_function!(Timestamp, Timestamp, s, SqlString);
 
 #[inline]
 pub fn cast_to_Timestamp_Date(value: Date) -> Timestamp {
@@ -1576,7 +1580,7 @@ cast_variant_numeric!(i64, i64, BigInt);
 cast_variant_numeric!(f, F32, Real);
 cast_variant_numeric!(d, F64, Double);
 cast_to_variant!(decimal, Decimal, Decimal); // The other two take extra arguments
-cast_to_variant!(s, String, String); // The other two take extra arguments
+cast_to_variant!(s, SqlString, String); // The other two take extra arguments
 cast_variant!(Date, Date, Date);
 cast_variant!(Time, Time, Time);
 cast_variant!(bytes, ByteArray, Binary);
