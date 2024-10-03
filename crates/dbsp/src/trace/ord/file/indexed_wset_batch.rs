@@ -335,7 +335,8 @@ where
     type Val = V;
     type Time = ();
     type R = R;
-    type Cursor<'s> = FileIndexedWSetCursor<'s, K, V, R>
+    type Cursor<'s>
+        = FileIndexedWSetCursor<'s, K, V, R>
     where
         V: 's;
 
@@ -868,7 +869,8 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type TimeDiffCursor<'a> = SingletonTimeDiffCursor<'a, R>
+    type TimeDiffCursor<'a>
+        = SingletonTimeDiffCursor<'a, R>
     where
         Self: 'a;
 
