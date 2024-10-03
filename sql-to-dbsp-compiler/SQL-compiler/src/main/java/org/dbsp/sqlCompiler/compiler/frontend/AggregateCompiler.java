@@ -336,6 +336,10 @@ public class AggregateCompiler implements ICompilerComponent {
                 node, DBSPTypeBool.create(false), compareOpcode,
                 tuple.fields[1].cast(currentType).applyCloneIfNeeded(),
                 accumulator.field(1).applyCloneIfNeeded());
+        if (this.filterArgument >= 0) {
+            ge = ExpressionCompiler.makeBinaryExpression(
+                    node, ge.getType(), DBSPOpcode.AND, ge, Objects.requireNonNull(this.filterArgument()));
+        }
         DBSPTupleExpression aggArgCast = new DBSPTupleExpression(
                 tuple.fields[0].cast(this.resultType).applyCloneIfNeeded(),
                 tuple.fields[1].cast(currentType).applyCloneIfNeeded());

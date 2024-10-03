@@ -60,6 +60,23 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue2649() {
+        String sql = """
+                CREATE TABLE T(id INT, c1 INT, c2 INT);
+                CREATE VIEW V AS SELECT
+                ARG_MIN(c1, c1) FILTER(WHERE c2 > 2) AS f_c1,
+                ARG_MAX(c2, c2) FILTER(WHERE id = 1) AS f_c2
+                FROM T;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES (0, 5, 8), (1, 4, 2), (0, NULL, 3), (1, NULL, 5);",
+                """
+                 f_c1 | f_c2 | weight
+                ----------------------
+                    5 |    5 |     1""");
+        this.addRustTestCase(ccs);
+    }
+
+    @Test
     public void issue2316() {
         String sql = """
                 CREATE TABLE sum(c1 TINYINT);
