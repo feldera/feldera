@@ -405,7 +405,8 @@ where
     type Val = V;
     type Time = ();
     type R = R;
-    type Cursor<'s> = VecIndexedWSetCursor<'s, K, V, R, O>
+    type Cursor<'s>
+        = VecIndexedWSetCursor<'s, K, V, R, O>
     where
         V: 's,
         O: 's;
@@ -769,7 +770,8 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type TimeDiffCursor<'a> = SingletonTimeDiffCursor<'a, R>
+    type TimeDiffCursor<'a>
+        = SingletonTimeDiffCursor<'a, R>
     where
         Self: 'a;
 
