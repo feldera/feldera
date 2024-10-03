@@ -340,7 +340,8 @@ where
     type R = R;
     type Factories = VecValBatchFactories<K, V, T, R>;
 
-    type Cursor<'s> = VecValCursor<'s, K, V, T, R, O>
+    type Cursor<'s>
+        = VecValCursor<'s, K, V, T, R, O>
     where
         O: 's;
 
@@ -846,7 +847,10 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
-    type TimeDiffCursor<'a> = VecValTimeDiffCursor<'a, T, R> where Self: 'a;
+    type TimeDiffCursor<'a>
+        = VecValTimeDiffCursor<'a, T, R>
+    where
+        Self: 'a;
 
     fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
         VecValTimeDiffCursor(self.cursor.child.values())

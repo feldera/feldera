@@ -297,7 +297,8 @@ where
     type Val = V;
     type Time = ();
     type R = R;
-    type Cursor<'s> = DelegatingCursor<'s, K, V, (), R>
+    type Cursor<'s>
+        = DelegatingCursor<'s, K, V, (), R>
     where
         V: 's;
 

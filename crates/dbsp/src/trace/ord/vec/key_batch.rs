@@ -272,7 +272,10 @@ where
     type Val = DynUnit;
     type Time = T;
     type R = R;
-    type Cursor<'s> = ValKeyCursor<'s, K, T, R, O> where O: 's;
+    type Cursor<'s>
+        = ValKeyCursor<'s, K, T, R, O>
+    where
+        O: 's;
     type Factories = VecKeyBatchFactories<K, T, R>;
     // type Consumer = VecKeyConsumer<K, T, R, O>;
 
@@ -717,7 +720,10 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
-    type TimeDiffCursor<'a> = ValKeyTimeDiffCursor<'a, T, R> where Self: 'a;
+    type TimeDiffCursor<'a>
+        = ValKeyTimeDiffCursor<'a, T, R>
+    where
+        Self: 'a;
 
     fn time_diff_cursor(&self) -> Self::TimeDiffCursor<'_> {
         ValKeyTimeDiffCursor(self.cursor.values())
