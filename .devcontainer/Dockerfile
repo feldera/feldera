@@ -35,7 +35,7 @@ RUN apt-get install -y \
    gcc clang libclang-dev python3-pip python3-plumbum \
    hub numactl openjdk-19-jre-headless maven
 
-## Install nodejs and global packages
+## Install nodejs and global packages (optional)
 # - nodejs
 RUN mkdir -p /etc/apt/keyrings
 RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg

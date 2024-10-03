@@ -30,29 +30,6 @@ The test code has the following dependencies:
   docker run -p 9092:9092 --rm -itd docker.redpanda.com/vectorized/redpanda:v24.2.4 redpanda start --smp 2
   ```
 
-Furthermore, for developing client (web browser) UI used to monitor a
-DBSP application server, the following tools need to be installed:
-
-- `npm` (node package manager):
-  - You can verify if `npm` is installed using
-  >$ npm version
-  - If not installed, go to <https://nodejs.org/en/download> the node.js downloads page.
-  - Select any of the available versions of Node.js to download and install it.
-  - To verify that `npm` is installed, open the Command Prompt window, and then enter
-  >$ npm version.
-
-- `typescript`:
-  - You can verify if typescript is already available by typing `tsc`.
-  If not, you can install it globally using
-  >$ npm install -g typescript
-
-To generate the web browser UI run the following commands:
-
-```
-$ cd static
-$ tsc
-```
-
 ## DBSP application server demo
 
 This directory also contains a demo application runnign a very simple

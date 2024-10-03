@@ -24,19 +24,11 @@ install-deps:
         locale-gen
     ENV LC_ALL en_US.UTF-8
     ENV LANG en_US.UTF-8
-    # NodeJS install
-    RUN sudo apt-get install -y ca-certificates curl gnupg
-    RUN sudo mkdir -p /etc/apt/keyrings
-    RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-    ENV NODE_MAJOR=20
-    RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
-    RUN sudo apt-get update
-    RUN sudo apt-get install nodejs -y
-    RUN apt install unzip -y
     ## Install Bun.js
+    RUN sudo apt-get install -y ca-certificates gnupg unzip
     RUN curl -fsSL https://bun.sh/install | bash
     ENV PATH="$HOME/.bun/bin:$PATH"
-
+    # Install redpanda's rpk cli
     RUN apt install python3-requests -y
     RUN arch=`dpkg --print-architecture`; \
             curl -LO https://github.com/redpanda-data/redpanda/releases/latest/download/rpk-linux-$arch.zip \
