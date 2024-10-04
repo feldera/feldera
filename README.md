@@ -103,7 +103,7 @@ demo.
 ## ⚙️ Running Feldera from sources
 
 To run Feldera from sources, first install all the required
-[dependencies](CONTRIBUTING.md). This includes the Rust toolchain (at least 1.75), Java (at
+[dependencies](CONTRIBUTING.md). This includes the Rust toolchain (at least 1.80), Java (at
 least JDK 19), Maven and Typescript.
 
 After that, the first step is to build the SQL compiler:
