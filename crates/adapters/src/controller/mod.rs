@@ -33,6 +33,7 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use arrow::datatypes::Schema;
+use atomic::Atomic;
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
@@ -871,10 +872,6 @@ impl OutputEndpoints {
             .find(|ep| ep.endpoint_name == endpoint_name)
     }
 
-    fn alloc_endpoint_id(&self) -> EndpointId {
-        self.by_id.keys().next_back().map(|k| k + 1).unwrap_or(0)
-    }
-
     fn insert(
         &mut self,
         endpoint_id: EndpointId,
@@ -995,7 +992,9 @@ pub struct ControllerInner {
     // Always lock this after the catalog is locked to avoid deadlocks
     trace_snapshot: ConsistentSnapshots,
     inputs: Mutex<BTreeMap<EndpointId, InputEndpointDescr>>,
+    next_input_id: Atomic<EndpointId>,
     outputs: ShardedLock<OutputEndpoints>,
+    next_output_id: Atomic<EndpointId>,
     circuit_thread_unparker: Unparker,
     backpressure_thread_unparker: Unparker,
     error_cb: Box<dyn Fn(ControllerError) + Send + Sync>,
@@ -1039,7 +1038,9 @@ impl ControllerInner {
             catalog: Arc::new(Box::new(Catalog::new())),
             trace_snapshot: Arc::new(TokioMutex::new(BTreeMap::new())),
             inputs: Mutex::new(BTreeMap::new()),
+            next_input_id: Atomic::new(0),
             outputs: ShardedLock::new(OutputEndpoints::new()),
+            next_output_id: Atomic::new(0),
             circuit_thread_unparker,
             backpressure_thread_unparker,
             error_cb,
@@ -1166,7 +1167,7 @@ impl ControllerInner {
                 ControllerError::unknown_input_stream(endpoint_name, &endpoint_config.stream)
             })?;
 
-        let endpoint_id = inputs.keys().next_back().map(|k| k + 1).unwrap_or(0);
+        let endpoint_id = self.next_input_id.fetch_add(1, Ordering::AcqRel);
 
         let max_batch_size = endpoint_config.connector_config.max_batch_size;
         let probe = Box::new(InputProbe::new(endpoint_id, endpoint_name, self.clone()));
@@ -1343,7 +1344,7 @@ impl ControllerInner {
                 ControllerError::unknown_output_stream(endpoint_name, &endpoint_config.stream)
             })?;
 
-        let endpoint_id = outputs.alloc_endpoint_id();
+        let endpoint_id = self.next_output_id.fetch_add(1, Ordering::AcqRel);
         let endpoint_name_str = endpoint_name.to_string();
 
         let self_weak = Arc::downgrade(self);
