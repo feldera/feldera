@@ -52,7 +52,7 @@ def run():
     for module in loaded:
         register_tests_in_module(module, ta)
     ta.run_tests()
-    
+
 def main():
     run()
 
