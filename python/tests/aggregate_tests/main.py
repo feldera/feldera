@@ -39,13 +39,12 @@ def register_tests_in_module(module, ta: TstAccumulator):
                 if DEBUG:
                     print(f"Registering {name}")
 
-def main():
+def run():
     """Find all tests loaded by the current module and register them"""
     ta = TstAccumulator()
     current_module = sys.modules[__name__]
     loaded = []
-    for key in current_module.__dict__.keys():
-        module = current_module.__dict__[key]
+    for key, module in sys.modules.items():
         if isinstance(module, ModuleType):
             if not module.__name__.startswith("tests.aggregate_tests"):
                 continue
@@ -53,6 +52,9 @@ def main():
     for module in loaded:
         register_tests_in_module(module, ta)
     ta.run_tests()
+    
+def main():
+    run()
 
 if __name__ == '__main__':
     main()
