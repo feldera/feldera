@@ -195,7 +195,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             this.startTest();
             if (this.execute) {
                 String[] extraArgs = new String[0];
-                Utilities.compileAndTestRust(Main.rustDirectory, true, extraArgs);
+                Utilities.compileAndTestRust(Main.getAbsoluteRustDirectory(), true, extraArgs);
             }
             this.queriesToRun.clear();
             System.out.println(elapsedTime(queryNo));
@@ -309,7 +309,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     }
 
     void cleanupFilesystem() {
-        File directory = new File(Main.rustDirectory);
+        File directory = new File(Main.getAbsoluteRustDirectory());
         FilenameFilter filter = (dir, name) -> name.startsWith(Main.testFileName) || name.endsWith("csv");
         File[] files = directory.listFiles(filter);
         if (files == null)
@@ -558,7 +558,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             List<ProgramAndTester> functions
     ) throws IOException {
         String genFileName = Main.testFileName + ".rs";
-        String testFilePath = Main.rustDirectory + "/" + genFileName;
+        String testFilePath = Main.getAbsoluteRustDirectory() + "/" + genFileName;
         PrintStream stream = new PrintStream(testFilePath, StandardCharsets.UTF_8);
         RustFileWriter rust = new RustFileWriter(stream).forSlt();
 
