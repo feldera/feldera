@@ -964,6 +964,7 @@ impl CompilationJob {
         // in `schema_path`.
         let schema_path = config.schema_path(pipeline_id);
         let compiler_process = Command::new(config.sql_compiler_path())
+            .arg("--sqlnames")
             .arg("-js")
             .arg(schema_path)
             .arg("-o")
