@@ -73,11 +73,17 @@ public final class DBSPPartialCircuit extends DBSPNode implements IDBSPOuterNode
         return this.sourceOperators.keySet();
     }
 
+    /** @return the names of the output views. */
+    public Set<String> getOutputViews() {
+        return this.sinkOperators.keySet();
+    }
+
     public int getOutputCount() {
         return this.sinkOperators.size();
     }
 
     public DBSPType getSingleOutputType() {
+        // This method is used by many tests
         assert this.sinkOperators.size() == 1: "Expected a single output, got " + this.sinkOperators.size();
         return this.sinkOperators.values().iterator().next().getType();
     }

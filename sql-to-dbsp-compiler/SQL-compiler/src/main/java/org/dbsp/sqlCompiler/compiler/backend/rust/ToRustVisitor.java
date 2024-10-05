@@ -57,6 +57,7 @@ import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
@@ -438,6 +439,19 @@ public class ToRustVisitor extends CircuitVisitor {
             if (!node.is(DBSPSourceBaseOperator.class))
                 this.processNode(node);
 
+        // Hack: if a view has a 'rust' property, emit the attached code here
+        for (String view: circuit.getOutputViews()) {
+            DBSPSinkOperator sink = circuit.getSink(view);
+            assert sink != null;
+            if (sink.metadata.properties != null) {
+                SqlFragment rust = sink.metadata.properties.getPropertyValue("rust");
+                if (rust != null) {
+                    String toAppend = rust.getString();
+                    this.builder.append(toAppend).newline();
+                }
+            }
+        }
+
         if (!this.useHandles)
             this.builder.append("Ok(catalog)");
         else
@@ -511,6 +525,14 @@ public class ToRustVisitor extends CircuitVisitor {
         DBSPTypeZSet zsetType = operator.getType().to(DBSPTypeZSet.class);
         zsetType.elementType.accept(this.innerVisitor);
         this.builder.append(">();").newline();
+        if (this.options.ioOptions.sqlNames) {
+            this.builder.append("let ")
+                    .append(operator.tableName)
+                    .append(" = &")
+                    .append(operator.getOutputName())
+                    .append(";")
+                    .newline();
+        }
         if (!this.useHandles) {
             String registerFunction = operator.metadata.materialized ?
                     "register_materialized_input_zset" : "register_input_zset";
@@ -595,6 +617,14 @@ public class ToRustVisitor extends CircuitVisitor {
         }
 
         this.builder.decrease().append(");").newline();
+        if (this.options.ioOptions.sqlNames) {
+            this.builder.append("let ")
+                    .append(operator.tableName)
+                    .append(" = &")
+                    .append(operator.getOutputName())
+                    .append(";")
+                    .newline();
+        }
         if (!this.useHandles) {
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
             DBSPStrLiteral json = new DBSPStrLiteral(tableDescription.asJson().toString(), false, true);
