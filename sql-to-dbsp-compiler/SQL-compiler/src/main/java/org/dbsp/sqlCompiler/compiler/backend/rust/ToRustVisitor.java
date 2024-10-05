@@ -805,6 +805,14 @@ public class ToRustVisitor extends CircuitVisitor {
             json.accept(this.innerVisitor);
             this.builder.append(");")
                     .newline();
+            if (this.options.ioOptions.sqlNames) {
+                this.builder.append("let ")
+                        .append(operator.viewName)
+                        .append(" = &")
+                        .append(operator.input().getOutputName())
+                        .append(";")
+                        .newline();
+            }
         } else {
             this.builder.append("let ")
                     .append(this.handleName(operator))
