@@ -401,6 +401,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             case CreateViewStatement.EMIT_FINAL:
                 // Actual value validated elsewhere
                 break;
+            case "rust":
             case "connectors":
                 this.validateConnectorsProperty(node, key, value);
                 break;

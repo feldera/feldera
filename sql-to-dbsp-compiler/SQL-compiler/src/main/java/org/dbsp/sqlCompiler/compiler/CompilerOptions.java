@@ -194,6 +194,9 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         @Parameter(names = "--nowstream",
                 description = "Implement NOW as a stream (true) or as an internal operator (false)")
         public boolean nowStream = false;
+        @Parameter(names = "--sqlnames", hidden = true,
+                description = "Use the table names as identifiers in the generated code")
+        public boolean sqlNames = false;
 
         /** Only compare fields that matter. */
         public boolean same(IO other) {
