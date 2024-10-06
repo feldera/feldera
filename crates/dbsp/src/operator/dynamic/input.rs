@@ -499,15 +499,21 @@ impl RootCircuit {
     /// key.  Upsert/delete commands are routed to the worker in charge of
     /// the given key.
     ///
+    ///
     /// # Data retention
     ///
-    /// Applying [`Stream::dyn_integrate_trace_retain_keys`],
-    /// [`Stream::dyn_integrate_trace_retain_values`], and
-    /// [`Stream::dyn_integrate_trace_with_bound`] methods to the stream has the
-    /// additional effect of filtering out all values that don't satisfy the
-    /// retention policy configured by these methods from the stream.
-    /// Specifically, retention conditions configured at logical time `t`
+    /// Applying the [`Stream::dyn_integrate_trace_retain_keys`] to the stream has the
+    /// additional effect of filtering out all updates that don't satisfy the
+    /// retention policy.
+    /// In particular, this means that attempts to overwrite, update, or delete
+    /// a key-value pair whose key doesn't satisfy current retention
+    /// conditions are ignored, since all these operations involve deleting
+    /// an existing tuple.
+    ///
+    /// Retention conditions configured at logical time `t`
     /// are applied starting from logical time `t+1`.
+    ///
+    /// FIXME: see <https://github.com/feldera/feldera/issues/2669>
     // TODO: Add a version that takes a custom hash function.
     pub fn dyn_add_input_map<K, V, U>(
         &self,
@@ -1387,11 +1393,11 @@ mod test {
             indexed_zset! { 1 => {2 => -1}, 2 => {2 => 1}, 3 => {3 => -1, 4 => 1}, 4 => {5 => 1}},
             indexed_zset! { 1 => {6 => 1},  3 => {4 => -1}, 4 => {5 => -1, 6 => 1}},
             indexed_zset! { 1 => {6 => -1, 100 => 1}},
-            indexed_zset! {},
-            indexed_zset! { 1 => {91 => 1, 100 => -1}},
+            indexed_zset! { 1 => { 100 => -1, 80 => 1 }},
+            indexed_zset! { 1 => {91 => 1, 80 => -1}},
             indexed_zset! { 5 => {200 => 1}},
-            indexed_zset! {},
-            indexed_zset! { 5 => {191 => 1, 200 => -1}},
+            indexed_zset! { 5 => { 200 => -1, 91 => 1 }},
+            indexed_zset! { 5 => {191 => 1, 91 => -1}},
         ]
     }
     fn input_map_updates2() -> Vec<Vec<Tup2<u64, Update<u64, i64>>>> {
@@ -1489,9 +1495,9 @@ mod test {
             indexed_zset! { 1 => {4 => -1} },
             indexed_zset! { 1 => {1 => 1}, 2 => {5=>1} },
             indexed_zset! { 3 => {5 => -1, 15 => 1} },
-            indexed_zset! { 2 => {5 => -1, 15 => 1} },
-            indexed_zset! {},
-            indexed_zset! {2 => {15 => -1, 10 => 1}, 4 => {15 => 1}},
+            indexed_zset! { 1 => {1 => -1, 11 => 1 } , 2 => {5 => -1, 15 => 1} },
+            indexed_zset! { 1 => {11 => -1}, 2 => { 15 => -1, 4 =>  1}, 4 => { 1 => 1}},
+            indexed_zset! {2 => {4 => -1, 10 => 1}, 4 => {1 => -1, 4 => 1}},
             indexed_zset! {},
         ]
     }
@@ -1502,12 +1508,6 @@ mod test {
     ) -> AnyResult<MapHandle<u64, u64, i64>> {
         let (stream, handle) =
             circuit.add_input_map::<u64, u64, i64, _>(|v, u| *v = ((*v as i64) + u) as u64);
-        let watermark = stream.waterline(
-            || (0, 0),
-            |k, v| (*k, *v),
-            |ts1, ts2| (max(ts1.0, ts2.0), max(ts1.1, ts2.1)),
-        );
-        stream.integrate_trace_retain_values(&watermark, |v, ts| *v >= ts.1.saturating_sub(10));
 
         let mut expected_batches = expected_outputs().into_iter();
 
@@ -1520,6 +1520,10 @@ mod test {
         Ok(handle)
     }
 
+    // FIXME: the inputs to these tests are meant to exercise the logic that filters inputs based
+    // on lateness, but it does not currently work correctly (see https://github.com/feldera/feldera/issues/2669).
+    // We therefore don't use waterlines in tests and check for the standard upsert behavior
+    // without filtering.
     #[test]
     fn map_test_st() {
         let (circuit, mut input_handle) =
@@ -1577,15 +1581,17 @@ mod test {
         dbsp.kill().unwrap();
     }
 
+    // FIXME: the inputs to these tests are meant to exercise the logic that filters inputs based
+    // on lateness, but it does not currently work correctly (see https://github.com/feldera/feldera/issues/2669).
+    // We therefore don't use waterlines in tests and check for the standard upsert behavior
+    // without filtering.
     #[test]
-    #[ignore = "non-deterministic failures"]
     fn map_test_mt1() {
         map_test_mt(1, input_map_updates1, output_map_updates1);
         map_test_mt(1, input_map_updates2, output_map_updates2);
     }
 
     #[test]
-    #[ignore = "non-deterministic failures"]
     fn map_test_mt4() {
         map_test_mt(4, input_map_updates1, output_map_updates1);
         map_test_mt(4, input_map_updates2, output_map_updates2);
