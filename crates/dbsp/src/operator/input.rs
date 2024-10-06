@@ -428,18 +428,18 @@ impl RootCircuit {
     ///
     /// # Data retention
     ///
-    /// Applying [`Stream::integrate_trace_retain_keys`],
-    /// [`Stream::integrate_trace_retain_values`], and
-    /// [`Stream::integrate_trace_with_bound`] methods to the stream has the
+    /// Applying the [`Stream::integrate_trace_retain_keys`] to the stream has the
     /// additional effect of filtering out all updates that don't satisfy the
-    /// retention policy configured by these methods from the stream.
+    /// retention policy.
     /// In particular, this means that attempts to overwrite, update, or delete
-    /// a key-value pair whose key or value don't satisfy current retention
+    /// a key-value pair whose key doesn't satisfy current retention
     /// conditions are ignored, since all these operations involve deleting
     /// an existing tuple.
     ///
     /// Retention conditions configured at logical time `t`
     /// are applied starting from logical time `t+1`.
+    ///
+    /// FIXME: see <https://github.com/feldera/feldera/issues/2669>
     // TODO: Add a version that takes a custom hash function.
     pub fn add_input_map<K, V, U, PF>(
         &self,
