@@ -1,7 +1,9 @@
 from .aggtst_base import TstTable
 
+
 class aggtst_decimal_table(TstTable):
     """Define the table used by all decimal tests"""
+
     def __init__(self):
         self.sql = '''CREATE TABLE decimal_tbl(
                       id INT, c1 DECIMAL(6,2), c2 DECIMAL(6,2) NOT NULL
