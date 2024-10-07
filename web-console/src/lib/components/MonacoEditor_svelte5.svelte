@@ -47,4 +47,16 @@
     width: 100%;
     height: 100%;
   }
+
+  div :global(.monaco-editor .monaco-inputbox .input) {
+    box-shadow: none;
+  }
+
+  div :global(.monaco-editor .monaco-inputbox .input::placeholder) {
+    line-height: normal;
+    font-family: inherit;
+    font-size: inherit;
+    padding-top: inherit;
+    padding-bottom: inherit;
+  }
 </style>
