@@ -1,215 +1,427 @@
-use crate::db::types::pipeline::PipelineDescr;
-use crate::error::ManagerError;
+use log::{debug, error};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use thiserror::Error as ThisError;
 use utoipa::ToSchema;
 
-#[derive(ThisError, Serialize, Debug, PartialEq)]
+#[derive(ThisError, Serialize, Debug, Eq, PartialEq)]
 pub enum DemoError {
     /// Error when unable to read the demos directory.
     #[error("could not read demos directory {path} due to: {error}")]
     UnableToReadDirectory { path: String, error: String },
-    /// Error when unable to read a directory entry in the demo directory.
-    #[error("could not read directory entry due to: {error}")]
+    /// Error when unable to read a directory entry in the demos directory.
+    #[error("could not read demos directory entry due to: {error}")]
     UnableToReadDirEntry { error: String },
     /// Error when the demo file could not be read to a string.
-    #[error("could not read file {path} to string due to: {error}")]
+    #[error("could not read demo file {path} to string due to: {error}")]
     UnableToReadFile { path: String, error: String },
-    /// Error when the demo JSON could not be deserialized.
-    #[error("could not JSON deserialize string read from {path} as demo due to: {error}")]
-    DeserializationFailed { path: String, error: String },
+    /// Error when the SQL preamble could not be matched.
+    #[error("demo file {path} has an invalid SQL preamble: {reason}")]
+    InvalidSqlWithPreamble { path: String, reason: String },
 }
 
-#[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct Demo {
-    /// Demo title.
-    pub title: String,
-
-    /// Demo pipeline.
-    pub pipeline: PipelineDescr,
+    /// Name of the demo (parsed from SQL preamble).
+    name: String,
+    /// Title of the demo (parsed from SQL preamble).
+    title: String,
+    /// Description of the demo (parsed from SQL preamble).
+    description: String,
+    /// Program SQL code.
+    program_code: String,
 }
 
-/// Reads the JSON demos from the demos directory.
+/// Parses the SQL preamble to retrieve the demo metadata.
+pub fn parse_demo_from_sql_file(path: String, content: String) -> Result<Demo, DemoError> {
+    // Match preamble
+    let re_preamble = Regex::new(
+        r"^-- (.+) \(([a-zA-Z0-9_-]+)\)[ \t]*\r?\n--[ \t]*\r?\n((-- .+\r?\n)+)--[ \t]*\r?\n",
+    )
+    .expect("Invalid preamble regex");
+    let Some(captures) = re_preamble.captures(&content) else {
+        return Err(DemoError::InvalidSqlWithPreamble {
+            path,
+            reason: "does not match preamble regex pattern".to_string(),
+        });
+    };
+    let title = captures
+        .get(1)
+        .expect("Regex title is missing")
+        .as_str()
+        .trim()
+        .to_string();
+    let name = captures
+        .get(2)
+        .expect("Regex name is missing")
+        .as_str()
+        .to_string();
+    let description_lines = captures
+        .get(3)
+        .expect("Regex description is missing")
+        .as_str();
+
+    // Post-process description lines
+    let re_description_line = Regex::new(r"-- .+\r?\n").expect("Invalid description line regex");
+    let matches: Vec<_> = re_description_line
+        .find_iter(description_lines)
+        .map(|m| {
+            m.as_str()
+                .strip_prefix("-- ")
+                .expect("Regex description line prefix does not exist")
+                .trim()
+                .to_string()
+        })
+        .collect();
+    let description = matches.join(" ").trim().to_string();
+
+    // Character limits
+    if title.is_empty() {
+        return Err(DemoError::InvalidSqlWithPreamble {
+            path,
+            reason: "title is empty".to_string(),
+        });
+    }
+    if title.len() > 100 {
+        return Err(DemoError::InvalidSqlWithPreamble {
+            path,
+            reason: format!("title '{title}' exceeds 100 characters"),
+        });
+    }
+    // Name is already checked to be non-empty due to regex
+    if name.len() > 100 {
+        return Err(DemoError::InvalidSqlWithPreamble {
+            path,
+            reason: format!("name '{name}' exceeds 100 characters"),
+        });
+    }
+    if description.is_empty() {
+        return Err(DemoError::InvalidSqlWithPreamble {
+            path,
+            reason: "description is empty".to_string(),
+        });
+    }
+    if description.len() > 1000 {
+        return Err(DemoError::InvalidSqlWithPreamble {
+            path,
+            reason: format!("description '{description}' exceeds 1000 characters"),
+        });
+    }
+
+    Ok(Demo {
+        name,
+        title,
+        description,
+        program_code: content,
+    })
+}
+
+/// Reads the demos from the demos directories.
 ///
-/// Every file in the directory must be a JSON file, and there cannot be
-/// any other files or directories in there.
-pub fn read_demos_from_directory(demos_dir: &Path) -> Result<Vec<Demo>, ManagerError> {
+/// For each directory, the files are read sorted on the filename.
+/// For multiple directories, the lists of demos are appended one after the other into a single one.
+/// Files which do not end in `.sql` and directories are ignored. Symlinks are followed.
+pub fn read_demos_from_directories(demos_dir: &Vec<String>) -> Vec<Demo> {
     let mut result: Vec<Demo> = vec![];
 
-    // Directory entries
-    let entries = fs::read_dir(demos_dir)
-        .map_err(|error| ManagerError::DemoError {
-            demo_error: DemoError::UnableToReadDirectory {
-                path: demos_dir.to_string_lossy().to_string(),
-                error: error.to_string(),
-            },
-        })?
-        .collect::<Vec<_>>();
+    // Go over the directories one-by-one in the order they were passed
+    for dir in demos_dir {
+        // Directory entries
+        let entries = match fs::read_dir(Path::new(dir)) {
+            Ok(entries) => entries.collect::<Vec<_>>(),
+            Err(e) => {
+                error!(
+                    "{}",
+                    DemoError::UnableToReadDirectory {
+                        path: dir.clone(),
+                        error: e.to_string(),
+                    }
+                );
+                continue;
+            }
+        };
 
-    // Sorted paths
-    let mut paths = vec![];
-    for entry in entries {
-        let entry = entry.map_err(|error| ManagerError::DemoError {
-            demo_error: DemoError::UnableToReadDirEntry {
-                error: error.to_string(),
-            },
-        })?;
-        paths.push(entry.path());
-    }
-    paths.sort();
+        // Sorted paths
+        let mut paths = vec![];
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => {
+                    error!(
+                        "{}",
+                        DemoError::UnableToReadDirEntry {
+                            error: e.to_string(),
+                        }
+                    );
+                    continue;
+                }
+            };
+            paths.push(entry.path());
+        }
+        paths.sort();
 
-    // Convert each file read from a path to a demo
-    for path in paths {
-        let content =
-            fs::read_to_string(path.as_path()).map_err(|error| ManagerError::DemoError {
-                demo_error: DemoError::UnableToReadFile {
-                    path: path.to_string_lossy().to_string(),
-                    error: error.to_string(),
-                },
-            })?;
-        let val = serde_json::from_str(&content).map_err(|error| ManagerError::DemoError {
-            demo_error: DemoError::DeserializationFailed {
-                path: path.to_string_lossy().to_string(),
-                error: error.to_string(),
-            },
-        })?;
-        result.push(val);
+        // Convert each file read from a path to a demo
+        for path in paths {
+            let path_str = path.to_string_lossy().to_string();
+            if path.is_file() && path_str.ends_with(".sql") {
+                let content = match fs::read_to_string(path.as_path()) {
+                    Ok(content) => content,
+                    Err(e) => {
+                        error!(
+                            "{}",
+                            DemoError::UnableToReadFile {
+                                path: path_str.clone(),
+                                error: e.to_string(),
+                            }
+                        );
+                        continue;
+                    }
+                };
+                let demo = match parse_demo_from_sql_file(path_str.clone(), content) {
+                    Ok(demo) => demo,
+                    Err(e) => {
+                        error!("{e}");
+                        continue;
+                    }
+                };
+                result.push(demo);
+            } else {
+                debug!("Not a file or does not end with '.sql', thus ignored as demo: {path:?}");
+            }
+        }
     }
-    Ok(result)
+
+    result
 }
 
 #[cfg(test)]
 mod test {
-    use crate::db::types::pipeline::PipelineDescr;
-    use crate::demo::{read_demos_from_directory, Demo, DemoError};
-    use crate::error::ManagerError;
+    use crate::demo::{parse_demo_from_sql_file, read_demos_from_directories, Demo, DemoError};
     use std::fs;
     use std::fs::File;
     use std::io::Write;
+    use std::path::Path;
 
-    #[test]
-    fn demos_dir_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        let dir_path = dir.path();
-        assert!(read_demos_from_directory(dir_path).unwrap().is_empty());
-    }
+    // SQL examples
+    const EXAMPLE_SQL_1: &str = "-- Example 1 (example-1)\n--\n-- Line A\n--\n";
+    const EXAMPLE_SQL_2: &str = "-- Example 2 (example-2)\n--\n-- Line A\n--\n-- Line C\n\nLine D";
+    const EXAMPLE_SQL_3: &str =
+        "-- Example 3 (example-3)\n--\n-- Line A\t\n-- Line B\n--\n-- Line C\n\nLine D";
+    const EXAMPLE_SQL_4: &str =
+        "-- Example 4 (example-4)\n--\n-- description4\tdescription4 \t\n--\n\n\nThe SQL";
 
-    #[test]
-    fn demos_dir_does_not_exist() {
-        let dir = tempfile::tempdir().unwrap();
-        let dir_path = dir.path().join("does-not-exist");
-        assert!(matches!(
-            read_demos_from_directory(dir_path.as_path()).unwrap_err(),
-            ManagerError::DemoError {
-                demo_error: DemoError::UnableToReadDirectory { .. },
-            }
-        ));
-    }
-
-    #[test]
-    fn demos_dir_directory_present() {
-        let dir = tempfile::tempdir().unwrap();
-        let dir_path = dir.path();
-        fs::create_dir(dir_path.join("does-exist").as_path()).unwrap();
-        assert!(matches!(
-            read_demos_from_directory(dir_path).unwrap_err(),
-            ManagerError::DemoError {
-                demo_error: DemoError::UnableToReadFile { .. },
-            }
-        ));
-    }
-
-    #[test]
-    #[allow(clippy::unused_io_amount)]
-    fn demos_dir_deserialization_failed() {
-        let dir = tempfile::tempdir().unwrap();
-        let dir_path = dir.path();
-        let mut file = File::create(dir_path.join("file.txt").as_path()).unwrap();
-        file.write("this_is_not_valid".as_bytes()).unwrap();
-        assert!(matches!(
-            read_demos_from_directory(dir_path).unwrap_err(),
-            ManagerError::DemoError {
-                demo_error: DemoError::DeserializationFailed { .. },
-            }
-        ));
-    }
-
-    #[test]
-    #[allow(clippy::unused_io_amount)]
-    fn demos_dir_one() {
-        let dir = tempfile::tempdir().unwrap();
-        let dir_path = dir.path();
-        let demo = Demo {
-            title: "Example 1".to_string(),
-            pipeline: PipelineDescr {
-                name: "example1".to_string(),
-                description: "Description of example1".to_string(),
-                runtime_config: Default::default(),
-                program_code: "CREATE TABLE example1(col1 INT);".to_string(),
-                program_config: Default::default(),
-            },
-        };
-        let mut file = File::create(dir_path.join("file.txt").as_path()).unwrap();
-        file.write(serde_json::to_string(&demo).unwrap().as_bytes())
-            .unwrap();
-        let read_demos = read_demos_from_directory(dir_path).unwrap();
-        assert_eq!(read_demos.len(), 1);
-        assert_eq!(demo, read_demos[0]);
-    }
-
-    #[test]
-    #[allow(clippy::unused_io_amount)]
-    fn demos_dir_multiple() {
-        let dir = tempfile::tempdir().unwrap();
-        let dir_path = dir.path();
-        let demos = vec![
+    /// Expected demo structures
+    fn expected_demos() -> Vec<Demo> {
+        vec![
             Demo {
+                name: "example-1".to_string(),
                 title: "Example 1".to_string(),
-                pipeline: PipelineDescr {
-                    name: "example1".to_string(),
-                    description: "Description of example1".to_string(),
-                    runtime_config: Default::default(),
-                    program_code: "CREATE TABLE example1(col1 INT);".to_string(),
-                    program_config: Default::default(),
-                },
+                description: "Line A".to_string(),
+                program_code: EXAMPLE_SQL_1.to_string(),
             },
             Demo {
-                title: "Example 3".to_string(),
-                pipeline: PipelineDescr {
-                    name: "example3".to_string(),
-                    description: "Description of example3".to_string(),
-                    runtime_config: Default::default(),
-                    program_code: "CREATE TABLE example3(col3 INT);".to_string(),
-                    program_config: Default::default(),
-                },
-            },
-            Demo {
+                name: "example-2".to_string(),
                 title: "Example 2".to_string(),
-                pipeline: PipelineDescr {
-                    name: "example2".to_string(),
-                    description: "Description of example2".to_string(),
-                    runtime_config: Default::default(),
-                    program_code: "CREATE TABLE example2(col2 INT);".to_string(),
-                    program_config: Default::default(),
-                },
+                description: "Line A".to_string(),
+                program_code: EXAMPLE_SQL_2.to_string(),
             },
-        ];
-        for demo in &demos {
-            let mut file = File::create(
-                dir_path
-                    .join(format!("{}.json", demo.pipeline.name))
-                    .as_path(),
-            )
-            .unwrap();
-            file.write(serde_json::to_string(&demo).unwrap().as_bytes())
-                .unwrap();
+            Demo {
+                name: "example-3".to_string(),
+                title: "Example 3".to_string(),
+                description: "Line A Line B".to_string(),
+                program_code: EXAMPLE_SQL_3.to_string(),
+            },
+            Demo {
+                name: "example-4".to_string(),
+                title: "Example 4".to_string(),
+                description: "description4\tdescription4".to_string(),
+                program_code: EXAMPLE_SQL_4.to_string(),
+            },
+        ]
+    }
+
+    #[test]
+    fn test_invalid_preamble_regex() {
+        for invalid_sql in [
+            "",
+            "-- ",
+            "-- title\n--\n-- description\n--\n,", // Missing name
+            "-- (name)\n--\n-- description\n--\n,", // Missing title
+            "-- title (name)\n--\n-- \n--\n,",     // Missing description
+        ] {
+            let file_path = "does-not-exist".to_string();
+            let err =
+                parse_demo_from_sql_file(file_path.clone(), invalid_sql.to_string()).unwrap_err();
+            assert!(matches!(
+                err,
+                DemoError::InvalidSqlWithPreamble {
+                    path,
+                    reason,
+                } if path == file_path && reason == *"does not match preamble regex pattern"
+            ));
         }
-        let read_demos = read_demos_from_directory(dir_path).unwrap();
-        assert_eq!(read_demos.len(), 3);
-        assert!(
-            read_demos[0] == demos[0] && read_demos[1] == demos[2] && read_demos[2] == demos[1]
+    }
+
+    #[test]
+    fn test_invalid_lengths() {
+        for (invalid_sql, expected_reason) in [
+            (
+                "--   (name)\n--\n-- description\n--\nSQL".to_string(),
+                "title is empty".to_string(),
+            ),
+            (
+                format!("-- {} (name)\n--\n-- description\n--\nSQL", "a".repeat(101)),
+                format!("title '{}' exceeds 100 characters", "a".repeat(101)),
+            ),
+            // Name is already checked to be non-empty due to regex
+            (
+                format!(
+                    "-- title ({})\n--\n-- description\n--\nSQL",
+                    "a".repeat(101)
+                ),
+                format!("name '{}' exceeds 100 characters", "a".repeat(101)),
+            ),
+            (
+                "-- title (name)\n--\n--  \n--\nSQL".to_string(),
+                "description is empty".to_string(),
+            ),
+            (
+                format!("-- title (name)\n--\n-- {}\n--\nSQL", "a".repeat(1001)),
+                format!("description '{}' exceeds 1000 characters", "a".repeat(1001)),
+            ),
+        ] {
+            let file_path = "does-not-exist".to_string();
+            let err = parse_demo_from_sql_file(file_path.clone(), invalid_sql).unwrap_err();
+            assert!(matches!(
+                err,
+                DemoError::InvalidSqlWithPreamble {
+                    path,
+                    reason,
+                } if path == file_path && reason == expected_reason
+            ));
+        }
+    }
+
+    #[test]
+    fn no_dir() {
+        assert!(read_demos_from_directories(&vec![]).is_empty());
+    }
+
+    #[test]
+    fn dir_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_str().unwrap();
+        assert!(read_demos_from_directories(&vec![dir_path.to_string()]).is_empty());
+    }
+
+    #[test]
+    fn dir_does_not_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir
+            .path()
+            .join("does-not-exist")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(read_demos_from_directories(&vec![dir_path]), vec![]);
+    }
+
+    #[test]
+    fn ignore_non_sql_and_invalid_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path();
+
+        // Is a directory
+        fs::create_dir(dir_path.join("does-exist").as_path()).unwrap();
+
+        // Valid file
+        let mut file = File::create(dir_path.join("file.sql").as_path()).unwrap();
+        let sql = "-- title (name)\n--\n-- description\n--\nSQL";
+        file.write(sql.as_bytes()).unwrap();
+
+        // Does not end in .sql
+        let mut file = File::create(dir_path.join("file.txt").as_path()).unwrap();
+        file.write("txt".as_bytes()).unwrap();
+
+        // Invalid file
+        let mut file = File::create(dir_path.join("file2.sql").as_path()).unwrap();
+        file.write("abc".as_bytes()).unwrap();
+
+        // Only the valid one should have been read as demo
+        assert_eq!(
+            read_demos_from_directories(&vec![dir_path.to_str().unwrap().to_string()]),
+            vec![Demo {
+                name: "name".to_string(),
+                title: "title".to_string(),
+                description: "description".to_string(),
+                program_code: sql.to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn one_demo() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path();
+        let mut file = File::create(dir_path.join("file.sql").as_path()).unwrap();
+        file.write(EXAMPLE_SQL_1.as_bytes()).unwrap();
+        assert_eq!(
+            read_demos_from_directories(&vec![dir_path.to_str().unwrap().to_string()]),
+            vec![expected_demos()[0].clone()]
+        );
+    }
+
+    /// Create several demo files whose names (excluding '.sql') equal their content.
+    fn make_demo_files_in_dir(dir_path: &Path, names: &Vec<&str>) {
+        for name in names {
+            let mut file = File::create(dir_path.join(format!("{}.sql", name)).as_path()).unwrap();
+            file.write(name.as_bytes()).unwrap();
+        }
+    }
+
+    #[test]
+    fn multiple_demos_in_one_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path();
+        let demos = vec![EXAMPLE_SQL_1, EXAMPLE_SQL_3, EXAMPLE_SQL_2];
+        make_demo_files_in_dir(dir_path, &demos);
+        let read_demos = read_demos_from_directories(&vec![dir_path.to_str().unwrap().to_string()]);
+        assert_eq!(
+            read_demos,
+            vec![
+                expected_demos()[0].clone(),
+                expected_demos()[1].clone(),
+                expected_demos()[2].clone(),
+            ]
+        );
+    }
+
+    #[test]
+    fn multiple_demos_in_multiple_dirs() {
+        let dir1 = tempfile::tempdir().unwrap();
+        let dir_path1 = dir1.path();
+        let demos = vec![EXAMPLE_SQL_2, EXAMPLE_SQL_4];
+        make_demo_files_in_dir(dir_path1, &demos);
+
+        let dir2 = tempfile::tempdir().unwrap();
+        let dir_path2 = dir2.path();
+        let demos = vec![EXAMPLE_SQL_3, EXAMPLE_SQL_1];
+        make_demo_files_in_dir(dir_path2, &demos);
+
+        let read_demos = read_demos_from_directories(&vec![
+            dir_path1.to_str().unwrap().to_string(),
+            dir_path2.to_str().unwrap().to_string(),
+        ]);
+        assert_eq!(
+            read_demos,
+            vec![
+                expected_demos()[1].clone(),
+                expected_demos()[3].clone(),
+                expected_demos()[0].clone(),
+                expected_demos()[2].clone(),
+            ]
         );
     }
 }

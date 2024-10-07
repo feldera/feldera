@@ -44,21 +44,6 @@ export type AuthProvider =
     }
 
 /**
- * Configuration to authenticate against AWS
- */
-export type AwsCredentials =
-  | {
-      type: 'NoSignRequest'
-    }
-  | {
-      aws_access_key_id: string
-      aws_secret_access_key: string
-      type: 'AccessKey'
-    }
-
-export type type = 'NoSignRequest'
-
-/**
  * A set of updates to a SQL table or view.
  *
  * The `sequence_number` field stores the offset of the chunk relative to the
@@ -207,19 +192,6 @@ export type ConnectorConfig = OutputBufferConfig & {
   paused?: boolean
   transport: TransportConfig
 }
-
-/**
- * Strategy to feed a fetched object into an InputConsumer.
- */
-export type ConsumeStrategy =
-  | {
-      type: 'Fragment'
-    }
-  | {
-      type: 'Object'
-    }
-
-export type type2 = 'Fragment'
 
 /**
  * Configuration for generating random data for a table.
@@ -449,9 +421,20 @@ export type DeltaTableWriterConfig = {
 }
 
 export type Demo = {
-  pipeline: PipelineDescr
   /**
-   * Demo title.
+   * Description of the demo (parsed from SQL preamble).
+   */
+  description: string
+  /**
+   * Name of the demo (parsed from SQL preamble).
+   */
+  name: string
+  /**
+   * Program SQL code.
+   */
+  program_code: string
+  /**
+   * Title of the demo (parsed from SQL preamble).
    */
   title: string
 }
@@ -644,6 +627,22 @@ export type GenerationPlan = {
    * If not set, the generator will produce rows as fast as possible.
    */
   rate?: number | null
+  /**
+   * When multiple workers are used, each worker will pick a consecutive "chunk" of
+   * records to generate.
+   *
+   * By default, if not specified, the generator will use the formula `min(rate, 10_000)`
+   * to determine it. This works well in most situations. However, if you're
+   * running tests with lateness and many workers you can e.g., reduce the
+   * chunk size to make sure a smaller range of records is being ingested in parallel.
+   *
+   * # Example
+   * Assume you generate a total of 125 records with 4 workers and a chunk size of 25.
+   * In this case, worker A will generate records 0..25, worker B will generate records 25..50,
+   * etc. A, B, C, and D will generate records in parallel. The first worker to finish its chunk
+   * will pick up the last chunk of records (100..125) to generate.
+   */
+  worker_chunk_size?: number | null
 }
 
 /**
@@ -1395,21 +1394,6 @@ export type PubSubInputConfig = {
 }
 
 /**
- * Strategy that determines which objects to read from a given bucket
- */
-export type ReadStrategy =
-  | {
-      key: string
-      type: 'SingleKey'
-    }
-  | {
-      prefix: string
-      type: 'Prefix'
-    }
-
-export type type3 = 'SingleKey'
-
-/**
  * A SQL table or view. It has a name and a list of fields.
  *
  * Matches the Calcite JSON format.
@@ -1624,16 +1608,45 @@ export type RuntimeConfig = {
  */
 export type S3InputConfig = {
   /**
-   * S3 bucket name to access
+   * AWS Access Key id. This property must be specified unless `no_sign_request` is set to `true`.
+   */
+  aws_access_key_id?: string | null
+  /**
+   * Secret Access Key. This property must be specified unless `no_sign_request` is set to `true`.
+   */
+  aws_secret_access_key?: string | null
+  /**
+   * S3 bucket name to access.
    */
   bucket_name: string
-  consume_strategy?: ConsumeStrategy
-  credentials: AwsCredentials
-  read_strategy: ReadStrategy
   /**
-   * AWS region
+   * Read a single object specified by a key.
+   */
+  key?: string | null
+  /**
+   * Do not sign requests. This is equivalent to the `--no-sign-request` flag in the AWS CLI.
+   */
+  no_sign_request?: boolean
+  /**
+   * Read all objects whose keys match a prefix. Set to an empty string to read all objects in the bucket.
+   */
+  prefix?: string | null
+  /**
+   * AWS region.
    */
   region: string
+  /**
+   * Determines how the connector ingests an individual S3 object. When `true`,
+   * the connector pushes the object to the pipeline chunk-by-chunk, so that the
+   * pipeline can parse and process initial chunks of the object before the entire
+   * object has been retrieved. This mode is suitable for streaming formats such as
+   * newline-delimited JSON. When `false`, the connector buffers the entire object
+   * in memory and pushes it to the pipeline as a single chunk.  Appropriate for
+   * formats like Parquet that cannot be streamed.
+   *
+   * The default value is `false`.
+   */
+  streaming?: boolean
 }
 
 export type SourcePosition = {
@@ -2073,6 +2086,19 @@ export type InputEndpointActionResponse = unknown
 
 export type InputEndpointActionError = ErrorResponse
 
+export type GetPipelineLogsData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type GetPipelineLogsResponse = Blob | File
+
+export type GetPipelineLogsError = ErrorResponse
+
 export type PipelineAdhocSqlData = {
   path: {
     /**
@@ -2213,11 +2239,11 @@ export type $OpenApiTs = {
     get: {
       res: {
         /**
-         * List of demos.
+         * List of demos
          */
         '200': Array<Demo>
         /**
-         * Failed to read demos from the demos directory.
+         * Failed to read demos from the demos directories
          */
         '500': ErrorResponse
       }
@@ -2385,7 +2411,7 @@ export type $OpenApiTs = {
          */
         '200': Blob | File
         /**
-         * Pipeline is not running or paused
+         * Pipeline is not running or paused, or getting a heap profile is not supported on this platform
          */
         '400': ErrorResponse
         /**
@@ -2433,6 +2459,21 @@ export type $OpenApiTs = {
       }
     }
   }
+  '/v0/pipelines/{pipeline_name}/logs': {
+    get: {
+      req: GetPipelineLogsData
+      res: {
+        /**
+         * Pipeline logs retrieved successfully
+         */
+        '200': Blob | File
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+      }
+    }
+  }
   '/v0/pipelines/{pipeline_name}/query': {
     get: {
       req: PipelineAdhocSqlData
@@ -2461,7 +2502,7 @@ export type $OpenApiTs = {
       req: GetPipelineStatsData
       res: {
         /**
-         * Pipeline metrics retrieved successfully.
+         * Pipeline metrics retrieved successfully
          */
         '200': {
           [key: string]: unknown

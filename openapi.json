@@ -268,7 +268,7 @@
         "operationId": "get_config_demos",
         "responses": {
           "200": {
-            "description": "List of demos.",
+            "description": "List of demos",
             "content": {
               "application/json": {
                 "schema": {
@@ -281,7 +281,7 @@
             }
           },
           "500": {
-            "description": "Failed to read demos from the demos directory.",
+            "description": "Failed to read demos from the demos directories",
             "content": {
               "application/json": {
                 "schema": {
@@ -2307,16 +2307,27 @@
       "Demo": {
         "type": "object",
         "required": [
+          "name",
           "title",
-          "pipeline"
+          "description",
+          "program_code"
         ],
         "properties": {
-          "pipeline": {
-            "$ref": "#/components/schemas/PipelineDescr"
+          "description": {
+            "type": "string",
+            "description": "Description of the demo (parsed from SQL preamble)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the demo (parsed from SQL preamble)."
+          },
+          "program_code": {
+            "type": "string",
+            "description": "Program SQL code."
           },
           "title": {
             "type": "string",
-            "description": "Demo title."
+            "description": "Title of the demo (parsed from SQL preamble)."
           }
         }
       },

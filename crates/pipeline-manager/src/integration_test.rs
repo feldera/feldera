@@ -105,7 +105,7 @@ async fn initialize_local_pipeline_manager_instance() -> TempDir {
         dump_openapi: false,
         config_file: None,
         allowed_origins: None,
-        demos_dir: None,
+        demos_dir: vec![],
         telemetry: "".to_string(),
         runner_hostname_port: "127.0.0.1:8089".to_string(),
     }

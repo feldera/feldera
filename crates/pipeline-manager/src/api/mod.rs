@@ -26,6 +26,7 @@ mod pipeline;
 use crate::auth::JwkCache;
 use crate::config::ApiServerConfig;
 use crate::db::storage_postgres::StoragePostgres;
+use crate::demo::{read_demos_from_directories, Demo};
 use crate::error::ManagerError;
 use crate::probe::Probe;
 use crate::runner::interaction::RunnerInteraction;
@@ -327,18 +328,21 @@ pub(crate) struct ServerState {
     _config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
     probe: Arc<Mutex<Probe>>,
+    demos: Vec<Demo>,
 }
 
 impl ServerState {
     pub async fn new(config: ApiServerConfig, db: Arc<Mutex<StoragePostgres>>) -> AnyResult<Self> {
         let runner = RunnerInteraction::new(config.clone(), db.clone());
         let db_copy = db.clone();
+        let demos = read_demos_from_directories(&config.demos_dir);
         Ok(Self {
             db,
             runner,
             _config: config,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             probe: Probe::new(db_copy).await,
+            demos,
         })
     }
 }
