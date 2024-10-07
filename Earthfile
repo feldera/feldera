@@ -113,6 +113,11 @@ install-python:
     RUN pip install --user -v python/
     SAVE ARTIFACT /root/.local/lib/python3.10
 
+demo-packaged-sql-formatting-check:
+    FROM +install-python
+    COPY --dir demo/packaged demo/packaged
+    RUN (cd demo/packaged && python3 validate-preamble.py sql/*.sql)
+
 build-webui-deps:
     FROM +install-deps
 
@@ -302,6 +307,10 @@ build-pipeline-manager-container:
     RUN mkdir -p .feldera/cargo_workspace
     COPY --chown=feldera Cargo.lock .feldera/cargo_workspace/Cargo.lock
 
+    # Copy over demos
+    RUN mkdir -p demos
+    COPY demo/packaged/sql demos
+
     # Then copy over the crates needed by the sql compiler
     COPY crates/dbsp database-stream-processor/crates/dbsp
     COPY crates/feldera-types database-stream-processor/crates/feldera-types
@@ -322,12 +331,12 @@ build-pipeline-manager-container:
     ENV PATH="$PATH:/home/feldera/.cargo/bin"
 
     RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler --compilation-profile=unoptimized --dbsp-override-path=/home/feldera/database-stream-processor --precompile
-    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/database-stream-processor", "--compilation-profile=unoptimized"]
+    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/database-stream-processor", "--compilation-profile=unoptimized", "--demos-dir", "/home/feldera/demos"]
 
 # Same as the above, but with a permissive CORS setting, else playwright doesn't work
 pipeline-manager-container-cors-all:
     FROM +build-pipeline-manager-container
-    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/database-stream-processor", "--dev-mode", "--compilation-profile=unoptimized"]
+    ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/database-stream-processor/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/database-stream-processor", "--dev-mode", "--compilation-profile=unoptimized", "--demos-dir", "/home/feldera/demos"]
 
 # TODO: mirrors the Dockerfile. See note above.
 build-demo-container:
@@ -551,6 +560,7 @@ ci-tests:
     BUILD +openapi-checker
     BUILD +test-sql
     BUILD +integration-tests
+    BUILD +demo-packaged-sql-formatting-check
     # BUILD +test-docker-compose-stable
     # TODO: Temporarily disabled while we port the demo script
     # BUILD +test-snowflake

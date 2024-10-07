@@ -1,9 +1,7 @@
 // Configuration API to retrieve the current authentication configuration and list of demos
-use crate::demo::{read_demos_from_directory, Demo};
 use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
 use serde::Serialize;
 use serde_json::json;
-use std::path::Path;
 use utoipa::ToSchema;
 
 use super::{ManagerError, ServerState};
@@ -69,11 +67,11 @@ async fn get_config_authentication(
     path="/config/demos",
     responses(
         (status = OK
-            , description = "List of demos."
+            , description = "List of demos"
             , content_type = "application/json"
             , body = Vec<Demo>),
         (status = INTERNAL_SERVER_ERROR
-            , description = "Failed to read demos from the demos directory."
+            , description = "Failed to read demos from the demos directories"
             , body = ErrorResponse),
     ),
     context_path = "/v0",
@@ -82,12 +80,7 @@ async fn get_config_authentication(
 )]
 #[get("/config/demos")]
 async fn get_config_demos(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
-    match &state._config.demos_dir {
-        None => Ok(HttpResponse::Ok().json(Vec::<Demo>::new())),
-        Some(demos_dir) => {
-            Ok(HttpResponse::Ok().json(read_demos_from_directory(Path::new(&demos_dir))?))
-        }
-    }
+    Ok(HttpResponse::Ok().json(&state.demos))
 }
 
 #[derive(Serialize, ToSchema)]

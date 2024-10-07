@@ -112,6 +112,10 @@ COPY --from=javabuild /sql/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar
 RUN mkdir -p .feldera/cargo_workspace
 COPY --chown=feldera Cargo.lock .feldera/cargo_workspace/Cargo.lock
 
+# Copy over demos
+RUN mkdir -p demos
+COPY demo/packaged/sql demos
+
 # The crates needed for the SQL compiler
 COPY crates/dbsp lib/crates/dbsp
 COPY crates/feldera-types lib/crates/feldera-types
@@ -141,7 +145,7 @@ ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 # Run the precompile phase to speed up Rust compilations during deployment
 RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler --dbsp-override-path=/home/feldera/lib --precompile
 ENV BANNER_ADDR=localhost
-ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/lib", "--allowed-origins", "https://www.feldera.com", "--allowed-origins", "http://localhost:8080"]
+ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/feldera/lib/sql-to-dbsp-compiler", "--dbsp-override-path=/home/feldera/lib", "--allowed-origins", "https://www.feldera.com", "--allowed-origins", "http://localhost:8080", "--demos-dir", "/home/feldera/demos"]
 
 ##### The stages below are used to build the demo container
 

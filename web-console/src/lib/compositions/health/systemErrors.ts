@@ -101,9 +101,7 @@ export const extractProgramError =
       .with({ RustError: P.any }, (e) => [
         (() => ({
           name: `Error compiling ${pipeline.name}`,
-          message:
-            'Program compilation error. See details below:\n' +
-            e.RustError,
+          message: 'Program compilation error. See details below:\n' + e.RustError,
           cause: {
             entityName: pipeline.name,
             tag: 'programError',

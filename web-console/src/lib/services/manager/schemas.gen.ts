@@ -76,42 +76,6 @@ export const $AuthProvider = {
   ]
 } as const
 
-export const $AwsCredentials = {
-  oneOf: [
-    {
-      type: 'object',
-      required: ['type'],
-      properties: {
-        type: {
-          type: 'string',
-          enum: ['NoSignRequest']
-        }
-      }
-    },
-    {
-      type: 'object',
-      description: 'Authenticate using a long-lived AWS access key and secret',
-      required: ['aws_access_key_id', 'aws_secret_access_key', 'type'],
-      properties: {
-        aws_access_key_id: {
-          type: 'string'
-        },
-        aws_secret_access_key: {
-          type: 'string'
-        },
-        type: {
-          type: 'string',
-          enum: ['AccessKey']
-        }
-      }
-    }
-  ],
-  description: 'Configuration to authenticate against AWS',
-  discriminator: {
-    propertyName: 'type'
-  }
-} as const
-
 export const $Chunk = {
   type: 'object',
   description: `A set of updates to a SQL table or view.
@@ -334,32 +298,6 @@ The default is \`false\`.`
   description: "A data connector's configuration"
 } as const
 
-export const $ConsumeStrategy = {
-  oneOf: [
-    {
-      type: 'object',
-      required: ['type'],
-      properties: {
-        type: {
-          type: 'string',
-          enum: ['Fragment']
-        }
-      }
-    },
-    {
-      type: 'object',
-      required: ['type'],
-      properties: {
-        type: {
-          type: 'string',
-          enum: ['Object']
-        }
-      }
-    }
-  ],
-  description: 'Strategy to feed a fetched object into an InputConsumer.'
-} as const
-
 export const $DatagenInputConfig = {
   type: 'object',
   description: 'Configuration for generating random data for a table.',
@@ -397,7 +335,8 @@ apart from setting a seed, \`workers\` also needs to remain unchanged.
       description: 'Number of workers to use for generating data.',
       minimum: 0
     }
-  }
+  },
+  additionalProperties: false
 } as const
 
 export const $DatagenStrategy = {
@@ -614,14 +553,23 @@ For specific options available for different storage backends, see:
 
 export const $Demo = {
   type: 'object',
-  required: ['title', 'pipeline'],
+  required: ['name', 'title', 'description', 'program_code'],
   properties: {
-    pipeline: {
-      $ref: '#/components/schemas/PipelineDescr'
+    description: {
+      type: 'string',
+      description: 'Description of the demo (parsed from SQL preamble).'
+    },
+    name: {
+      type: 'string',
+      description: 'Name of the demo (parsed from SQL preamble).'
+    },
+    program_code: {
+      type: 'string',
+      description: 'Program SQL code.'
     },
     title: {
       type: 'string',
-      description: 'Demo title.'
+      description: 'Title of the demo (parsed from SQL preamble).'
     }
   }
 } as const
@@ -973,8 +921,27 @@ this case it's possible the total number of records is less than the specified l
 If not set, the generator will produce rows as fast as possible.`,
       nullable: true,
       minimum: 0
+    },
+    worker_chunk_size: {
+      type: 'integer',
+      description: `When multiple workers are used, each worker will pick a consecutive "chunk" of
+records to generate.
+
+By default, if not specified, the generator will use the formula \`min(rate, 10_000)\`
+to determine it. This works well in most situations. However, if you're
+running tests with lateness and many workers you can e.g., reduce the
+chunk size to make sure a smaller range of records is being ingested in parallel.
+
+# Example
+Assume you generate a total of 125 records with 4 workers and a chunk size of 25.
+In this case, worker A will generate records 0..25, worker B will generate records 25..50,
+etc. A, B, C, and D will generate records in parallel. The first worker to finish its chunk
+will pick up the last chunk of records (100..125) to generate.`,
+      nullable: true,
+      minimum: 0
     }
-  }
+  },
+  additionalProperties: false
 } as const
 
 export const $InputEndpointConfig = {
@@ -2018,43 +1985,6 @@ This option is mutually exclusive with the \`snapshot\` option.`,
   }
 } as const
 
-export const $ReadStrategy = {
-  oneOf: [
-    {
-      type: 'object',
-      description: 'Read a single object specified by a key',
-      required: ['key', 'type'],
-      properties: {
-        key: {
-          type: 'string'
-        },
-        type: {
-          type: 'string',
-          enum: ['SingleKey']
-        }
-      }
-    },
-    {
-      type: 'object',
-      description: 'Read all objects whose keys match a prefix',
-      required: ['prefix', 'type'],
-      properties: {
-        prefix: {
-          type: 'string'
-        },
-        type: {
-          type: 'string',
-          enum: ['Prefix']
-        }
-      }
-    }
-  ],
-  description: 'Strategy that determines which objects to read from a given bucket',
-  discriminator: {
-    propertyName: 'type'
-  }
-} as const
-
 export const $Relation = {
   allOf: [
     {
@@ -2247,7 +2177,8 @@ If set to a single value, the generator will produce only that value.
 Note that \`range\` is ignored if \`values\` is set.`,
       nullable: true
     }
-  }
+  },
+  additionalProperties: false
 } as const
 
 export const $RuntimeConfig = {
@@ -2345,24 +2276,55 @@ This feature is currently experimental.`
 export const $S3InputConfig = {
   type: 'object',
   description: 'Configuration for reading data from AWS S3.',
-  required: ['credentials', 'region', 'bucket_name', 'read_strategy'],
+  required: ['region', 'bucket_name'],
   properties: {
+    aws_access_key_id: {
+      type: 'string',
+      description:
+        'AWS Access Key id. This property must be specified unless `no_sign_request` is set to `true`.',
+      nullable: true
+    },
+    aws_secret_access_key: {
+      type: 'string',
+      description:
+        'Secret Access Key. This property must be specified unless `no_sign_request` is set to `true`.',
+      nullable: true
+    },
     bucket_name: {
       type: 'string',
-      description: 'S3 bucket name to access'
+      description: 'S3 bucket name to access.'
     },
-    consume_strategy: {
-      $ref: '#/components/schemas/ConsumeStrategy'
+    key: {
+      type: 'string',
+      description: 'Read a single object specified by a key.',
+      nullable: true
     },
-    credentials: {
-      $ref: '#/components/schemas/AwsCredentials'
+    no_sign_request: {
+      type: 'boolean',
+      description:
+        'Do not sign requests. This is equivalent to the `--no-sign-request` flag in the AWS CLI.'
     },
-    read_strategy: {
-      $ref: '#/components/schemas/ReadStrategy'
+    prefix: {
+      type: 'string',
+      description:
+        'Read all objects whose keys match a prefix. Set to an empty string to read all objects in the bucket.',
+      nullable: true
     },
     region: {
       type: 'string',
-      description: 'AWS region'
+      description: 'AWS region.'
+    },
+    streaming: {
+      type: 'boolean',
+      description: `Determines how the connector ingests an individual S3 object. When \`true\`,
+the connector pushes the object to the pipeline chunk-by-chunk, so that the
+pipeline can parse and process initial chunks of the object before the entire
+object has been retrieved. This mode is suitable for streaming formats such as
+newline-delimited JSON. When \`false\`, the connector buffers the entire object
+in memory and pushes it to the pipeline as a single chunk.  Appropriate for
+formats like Parquet that cannot be streamed.
+
+The default value is \`false\`.`
     }
   }
 } as const

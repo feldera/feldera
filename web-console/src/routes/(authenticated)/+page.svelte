@@ -17,11 +17,11 @@
     >
       {#each data.demos as demo}
         <div class="card flex flex-col gap-2 bg-white p-4 dark:bg-black">
-          <button class="text-left text-primary-500" onclick={() => tryPipeline(demo.pipeline)}>
+          <button class="text-left text-primary-500" onclick={() => tryPipeline(demo)}>
             <span class="text-lg">{demo.title}</span>
-            <span class="fd fd-arrow_forward w-0 translate-y-0.5 scale-150"></span>
+            <span class="fd fd-arrow_forward w-0 text-[24px]"></span>
           </button>
-          <span class="text-left">{demo.pipeline.description}</span>
+          <span class="text-left">{demo.description}</span>
         </div>
       {/each}
     </div>

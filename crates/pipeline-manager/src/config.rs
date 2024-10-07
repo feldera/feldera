@@ -50,6 +50,10 @@ fn default_compilation_profile() -> CompilationProfile {
     CompilationProfile::Optimized
 }
 
+fn default_demos_dir() -> Vec<String> {
+    vec!["demo/packaged/sql".to_string()]
+}
+
 /// Pipeline manager configuration read from a YAML config file or from command
 /// line arguments.
 #[derive(Parser, Deserialize, Debug, Clone)]
@@ -170,13 +174,16 @@ pub struct ApiServerConfig {
     #[arg(long)]
     pub dev_mode: bool,
 
-    /// Local directory in which demos are stored for supplying clients like the UI with
+    /// Local directories in which demos are stored for supplying clients like the UI with
     /// a set of demos to present to the user. Administrators can use this option to set
     /// up environment-specific demos for users (e.g., ones that connect to an internal
     /// data source).
-    #[serde(default)]
-    #[arg(long)]
-    pub demos_dir: Option<String>,
+    ///
+    /// For each directory, the files are read sorted on the filename.
+    /// For multiple directories, the lists of demos are appended one after the other into a single one.
+    /// Files which do not end in `.sql` and directories are ignored. Symlinks are followed.
+    #[arg(long, default_values_t = default_demos_dir())]
+    pub demos_dir: Vec<String>,
 
     /// Telemetry key.
     ///
