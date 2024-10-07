@@ -20,6 +20,7 @@ public class CatalogTests extends BaseSQLTests {
     @Override
     public CompilerOptions testOptions(boolean incremental, boolean optimize) {
         CompilerOptions result = super.testOptions(incremental, optimize);
+        // result.ioOptions.sqlNames = true;
         result.ioOptions.emitHandles = false;
         result.languageOptions.unrestrictedIOTypes = false;
         return result;

@@ -512,7 +512,7 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(type, operator.metadata);
 
         this.writeComments(operator)
@@ -560,17 +560,17 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceMapOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(type, operator.metadata);
 
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
                 operator.originalRowType.sanitizedName + "_key");
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(keyStructType, operator.metadata);
 
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
                 operator.originalRowType.sanitizedName + "_upsert");
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(upsertStruct, operator.metadata);
 
         this.writeComments(operator)
@@ -784,8 +784,15 @@ public class ToRustVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPSinkOperator operator) {
         this.writeComments(operator);
         DBSPTypeStruct type = operator.originalRowType;
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles) {
             this.generateStructHelpers(type, null);
+            this.builder.append("type ")
+                    .append(operator.viewName)
+                    .append("_struct = ")
+                    .append(type.sanitizedName)
+                    .append(";")
+                    .newline();
+        }
         if (!this.useHandles) {
             IHasSchema description = this.metadata.getViewDescription(operator.viewName);
             DBSPStrLiteral json = new DBSPStrLiteral(description.asJson().toString(), false, true);
