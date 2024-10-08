@@ -25,19 +25,38 @@ def main():
     # Command-line arguments
     parser = argparse.ArgumentParser()
     default_api_url = "http://localhost:8080"
-    parser.add_argument("--api-url", default=default_api_url, help=f"Feldera API URL (default: {default_api_url})")
-    parser.add_argument("--prepare-args", required=False, help="number of SecOps pipelines to simulate")
-    parser.add_argument("--kafka-url-for-connector", required=False, default="redpanda:9092",
-                        help="Kafka URL from pipeline")
-    parser.add_argument("--registry-url-for-connector", required=False, default="http://redpanda:8081",
-                        help="Schema registry URL from pipeline")
+    parser.add_argument(
+        "--api-url",
+        default=default_api_url,
+        help=f"Feldera API URL (default: {default_api_url})",
+    )
+    parser.add_argument(
+        "--prepare-args", required=False, help="number of SecOps pipelines to simulate"
+    )
+    parser.add_argument(
+        "--kafka-url-for-connector",
+        required=False,
+        default="redpanda:9092",
+        help="Kafka URL from pipeline",
+    )
+    parser.add_argument(
+        "--registry-url-for-connector",
+        required=False,
+        default="http://redpanda:8081",
+        help="Schema registry URL from pipeline",
+    )
 
     args = parser.parse_args()
-    prepare_feldera(args.api_url, args.kafka_url_for_connector, args.registry_url_for_connector)
-    prepare_redpanda_start_simulator("0" if args.prepare_args is None else args.prepare_args).wait()
+    prepare_feldera(
+        args.api_url, args.kafka_url_for_connector, args.registry_url_for_connector
+    )
+    prepare_redpanda_start_simulator(
+        "0" if args.prepare_args is None else args.prepare_args
+    ).wait()
 
 
 PIPELINE_NAME = "sec-ops-pipeline"
+
 
 def make_connector(topic, pipeline_to_redpanda_server, input=True, group_id=None):
     if input:
@@ -52,30 +71,29 @@ def make_connector(topic, pipeline_to_redpanda_server, input=True, group_id=None
         config = {"topic": topic}
     config["bootstrap.servers"] = pipeline_to_redpanda_server
 
-    return [{
-        "format": {
-            "name": "json",
-            "config": {
-                "update_format": "insert_delete"
-            }
-        },
-        "transport": {
-            "name": name,
-            "config": config
+    return [
+        {
+            "format": {"name": "json", "config": {"update_format": "insert_delete"}},
+            "transport": {"name": name, "config": config},
         }
-    }]
+    ]
+
 
 def build_sql(pipeline_to_redpanda_server, pipeline_to_schema_registry):
     subst = {}
-    for topic in ("secops_pipeline",
-                  "secops_artifact",
-                  "secops_vulnerability",
-                  "secops_cluster",
-                  "secops_k8sobject"):
+    for topic in (
+        "secops_pipeline",
+        "secops_artifact",
+        "secops_vulnerability",
+        "secops_cluster",
+        "secops_k8sobject",
+    ):
         subst[topic] = make_connector(topic, pipeline_to_redpanda_server)
 
-    for topic in ('secops_pipeline_sources',):
-        subst[topic] = make_connector(topic, pipeline_to_redpanda_server, group_id=topic)
+    for topic in ("secops_pipeline_sources",):
+        subst[topic] = make_connector(
+            topic, pipeline_to_redpanda_server, group_id=topic
+        )
 
     for topic in ("secops_vulnerability_stats",):
         connector = make_connector(topic, pipeline_to_redpanda_server, input=False)
@@ -90,29 +108,32 @@ def build_sql(pipeline_to_redpanda_server, pipeline_to_schema_registry):
                         { "name": "most_severe_vulnerability", "type": ["null","int"] }
                     ]
                 }"""
-            connector += [{
-                "format": {
-                    "name": "avro",
-                    "config": {
-                        "schema": schema,
-                        "registry_urls": [pipeline_to_schema_registry],
-                    }
-                },
-                "transport": {
-                    "name": "kafka_output",
-                    "config": {
-                        "bootstrap.servers": pipeline_to_redpanda_server,
-                        "topic": "secops_vulnerability_stats_avro",
-                        "headers": [{"key": "header1", "value": "this is a string"},
-                                    {"key": "header2", "value": list(b'byte array')}]
-                    }
+            connector += [
+                {
+                    "format": {
+                        "name": "avro",
+                        "config": {
+                            "schema": schema,
+                            "registry_urls": [pipeline_to_schema_registry],
+                        },
+                    },
+                    "transport": {
+                        "name": "kafka_output",
+                        "config": {
+                            "bootstrap.servers": pipeline_to_redpanda_server,
+                            "topic": "secops_vulnerability_stats_avro",
+                            "headers": [
+                                {"key": "header1", "value": "this is a string"},
+                                {"key": "header2", "value": list(b"byte array")},
+                            ],
+                        },
+                    },
                 }
-            }]
+            ]
         subst[topic] = connector
 
     for key in subst.keys():
         subst[key] = json.dumps(subst[key], indent=4)
-
 
     return """-- CI/CD pipeline.
 create table pipeline (
@@ -289,22 +310,33 @@ create materialized view k8scluster_vulnerability_stats (
 
 def prepare_feldera(api_url, pipeline_to_redpanda_server, pipeline_to_schema_registry):
     # Create pipeline
-    requests.put(f"{api_url}/v0/pipelines/{PIPELINE_NAME}", json={
-        "name": PIPELINE_NAME,
-        "description": "Developer security operations demo",
-        "runtime_config": {"workers": 8},
-        "program_config": {},
-        "program_code": build_sql(pipeline_to_redpanda_server, pipeline_to_schema_registry),
-    }).raise_for_status()
+    requests.put(
+        f"{api_url}/v0/pipelines/{PIPELINE_NAME}",
+        json={
+            "name": PIPELINE_NAME,
+            "description": "Developer security operations demo",
+            "runtime_config": {"workers": 8},
+            "program_config": {},
+            "program_code": build_sql(
+                pipeline_to_redpanda_server, pipeline_to_schema_registry
+            ),
+        },
+    ).raise_for_status()
 
     # Compile program
     print("Compiling program ...")
     while True:
-        status = requests.get(f"{api_url}/v0/pipelines/{PIPELINE_NAME}").json()["program_status"]
+        status = requests.get(f"{api_url}/v0/pipelines/{PIPELINE_NAME}").json()[
+            "program_status"
+        ]
         print(f"Program status: {status}")
         if status == "Success":
             break
-        elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
+        elif (
+            status != "Pending"
+            and status != "CompilingRust"
+            and status != "CompilingSql"
+        ):
             raise RuntimeError(f"Failed program compilation with status {status}")
         time.sleep(2)
 
@@ -326,10 +358,10 @@ def prepare_redpanda_start_simulator(num_pipelines, quiet=False):
     print("(Re-)created topic secops_vulnerability_stats")
 
     # Start running the simulator
-    kwargs = { 'cwd': os.path.join(SCRIPT_DIR, "simulator") }
+    kwargs = {"cwd": os.path.join(SCRIPT_DIR, "simulator")}
     if quiet:
-        kwargs['stdout'] = subprocess.DEVNULL
-        kwargs['stderr'] = subprocess.DEVNULL
+        kwargs["stdout"] = subprocess.DEVNULL
+        kwargs["stderr"] = subprocess.DEVNULL
     if which("cargo") is None:
         # Expect a pre-built binary in simulator/secops_simulator. Used
         # by the Docker container workflow where we don't want to use cargo run.
@@ -341,7 +373,7 @@ def prepare_redpanda_start_simulator(num_pipelines, quiet=False):
             cmd[2] = os.environ["RUST_BUILD_PROFILE"]
         new_env = os.environ.copy()
         new_env["RUST_LOG"] = "debug"
-        kwargs['env'] = new_env
+        kwargs["env"] = new_env
     return subprocess.Popen(cmd, **kwargs)
 
 

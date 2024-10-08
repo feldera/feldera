@@ -20,9 +20,7 @@ def generate_program(transport_cfg, format_cfg):
                 "transport": {0},
                 "format": {1}
             }}]'
-        );""".format(
-            json.dumps(transport_cfg), json.dumps(format_cfg)
-        )
+        );""".format(json.dumps(transport_cfg), json.dumps(format_cfg))
     else:
         code += ";"
 
@@ -79,7 +77,7 @@ if __name__ == "__main__":
                 "config": {
                     "update_format": "raw",
                     "array": False,
-                }
-            }
+                },
+            },
         )
     )

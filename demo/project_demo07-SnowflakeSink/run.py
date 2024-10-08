@@ -26,7 +26,11 @@ if SNOWFLAKE_CI_USER_PASSWORD is None:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
+    parser.add_argument(
+        "--api-url",
+        required=True,
+        help="Feldera API URL (e.g., http://localhost:8080 )",
+    )
     args = parser.parse_args()
     prepare_snowflake_debezium()
     prepare_feldera(args.api_url)
@@ -166,72 +170,95 @@ def prepare_feldera(api_url):
     # Create program
     program_name = "demo-snowflake-sink-program"
     program_sql = open(PROJECT_SQL).read()
-    response = requests.put(f"{api_url}/v0/programs/{program_name}", json={
-        "description": "",
-        "code": program_sql
-    })
+    response = requests.put(
+        f"{api_url}/v0/programs/{program_name}",
+        json={"description": "", "code": program_sql},
+    )
     response.raise_for_status()
     program_version = response.json()["version"]
 
     # Compile program
     print(f"Compiling program {program_name} (version: {program_version})...")
-    requests.post(f"{api_url}/v0/programs/{program_name}/compile", json={"version": program_version}).raise_for_status()
+    requests.post(
+        f"{api_url}/v0/programs/{program_name}/compile",
+        json={"version": program_version},
+    ).raise_for_status()
     while True:
         status = requests.get(f"{api_url}/v0/programs/{program_name}").json()["status"]
         print(f"Program status: {status}")
         if status == "Success":
             break
-        elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
+        elif (
+            status != "Pending"
+            and status != "CompilingRust"
+            and status != "CompilingSql"
+        ):
             raise RuntimeError(f"Failed program compilation with status {status}")
         time.sleep(5)
 
     # Connectors
     connectors = []
-    for (connector_name, stream, topic) in [
-        ("price", 'PRICE_OUT',  "snowflake.price"),
-        ("preferred_vendor", 'PREFERRED_VENDOR', "snowflake.preferred_vendor"),
+    for connector_name, stream, topic in [
+        ("price", "PRICE_OUT", "snowflake.price"),
+        ("preferred_vendor", "PREFERRED_VENDOR", "snowflake.preferred_vendor"),
     ]:
-        requests.put(f"{api_url}/v0/connectors/{connector_name}", json={
-            "description": "",
-            "config": {
-                "format": {
-                    "name": "json",
-                    "config": {
-                        "update_format": "snowflake"
-                    }
+        requests.put(
+            f"{api_url}/v0/connectors/{connector_name}",
+            json={
+                "description": "",
+                "config": {
+                    "format": {
+                        "name": "json",
+                        "config": {"update_format": "snowflake"},
+                    },
+                    "transport": {
+                        "name": "kafka_output",
+                        "config": {
+                            "bootstrap.servers": pipeline_to_redpanda_server,
+                            "topic": topic,
+                        },
+                    },
                 },
-                "transport": {
-                    "name": "kafka_output",
-                    "config": {
-                        "bootstrap.servers": pipeline_to_redpanda_server,
-                        "topic": topic
-                    }
-                }
+            },
+        )
+        connectors.append(
+            {
+                "connector_name": connector_name,
+                "is_input": False,
+                "name": connector_name,
+                "relation_name": stream,
             }
-        })
-        connectors.append({
-            "connector_name": connector_name,
-            "is_input": False,
-            "name": connector_name,
-            "relation_name": stream
-        })
+        )
 
     # Create pipeline
     pipeline_name = "demo-snowflake-sink-pipeline"
-    requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
-        "description": "",
-        "config": {"workers": 8},
-        "program_name": program_name,
-        "connectors": connectors,
-    }).raise_for_status()
+    requests.put(
+        f"{api_url}/v0/pipelines/{pipeline_name}",
+        json={
+            "description": "",
+            "config": {"workers": 8},
+            "program_name": program_name,
+            "connectors": connectors,
+        },
+    ).raise_for_status()
 
     # Start pipeline
     print("(Re)starting pipeline...")
     requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
-    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Shutdown":
+    while (
+        requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"][
+            "current_status"
+        ]
+        != "Shutdown"
+    ):
         time.sleep(1)
     requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start").raise_for_status()
-    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"]["current_status"] != "Running":
+    while (
+        requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["state"][
+            "current_status"
+        ]
+        != "Running"
+    ):
         time.sleep(1)
     print("Pipeline (re)started")
 

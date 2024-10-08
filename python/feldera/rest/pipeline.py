@@ -9,14 +9,14 @@ class Pipeline:
     """
 
     def __init__(
-            self,
-            name: str,
-            sql: str,
-            udf_rust: str,
-            udf_toml: str,
-            program_config: Mapping[str, Any],
-            runtime_config: Mapping[str, Any],
-            description: Optional[str] = None,
+        self,
+        name: str,
+        sql: str,
+        udf_rust: str,
+        udf_toml: str,
+        program_config: Mapping[str, Any],
+        runtime_config: Mapping[str, Any],
+        description: Optional[str] = None,
     ):
         """
         Initializes a new pipeline
@@ -50,7 +50,9 @@ class Pipeline:
         self.deployment_error: Optional[dict] = None
         self.deployment_location: Optional[str] = None
         self.program_binary_url: Optional[str] = None
-        self.program_info: Optional[dict] = None  # info about input & output connectors and the schema
+        self.program_info: Optional[dict] = (
+            None  # info about input & output connectors and the schema
+        )
         self.program_status: Optional[str] = None
         self.program_status_since: Optional[str] = None
 
@@ -64,11 +66,11 @@ class Pipeline:
         info = d.get("program_info")
 
         if info is not None:
-            for i in info['schema']['inputs']:
+            for i in info["schema"]["inputs"]:
                 tbl = SQLTable.from_dict(i)
                 pipeline.tables.append(tbl)
 
-            for output in info['schema']['outputs']:
+            for output in info["schema"]["outputs"]:
                 v = SQLView.from_dict(output)
                 pipeline.views.append(v)
 

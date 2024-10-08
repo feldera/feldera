@@ -11,12 +11,13 @@ def process_input(p: Pipeline, data: List[Dict[str, Any]]):
     p.wait_for_completion(shutdown=False)
 
 
-
 code = generate_program(None, None)
 
 client = FelderaClient("http://localhost:8080")
 config = RuntimeConfig(workers=10, storage=False)
-pipeline = PipelineBuilder(client, name="tiktok_test", sql=code, runtime_config=config).create_or_replace()
+pipeline = PipelineBuilder(
+    client, name="tiktok_test", sql=code, runtime_config=config
+).create_or_replace()
 
 # pipeline.foreach_chunk("user_agg", lambda df, chunk : print(df))
 

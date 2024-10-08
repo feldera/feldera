@@ -1,4 +1,5 @@
 """Run multiple Python tests in a single pipeline"""
+
 import unittest
 
 from feldera import PipelineBuilder, Pipeline
@@ -21,14 +22,14 @@ DEBUG = False
 
 
 def beautify(sql: str) -> str:
-    body = sql.split('\n')
+    body = sql.split("\n")
     body = [x.strip() for x in body]
     return "\n".join(body)
 
 
 class SqlObject:
     """Base class for tables and views
-       Each sql object has a name, a definition in SQL, and some data"""
+    Each sql object has a name, a definition in SQL, and some data"""
 
     def __init__(self, name: str, sql: str, data: JSON):
         """Create a SQL object"""
@@ -47,9 +48,11 @@ class SqlObject:
     @staticmethod
     def extract_name(sql: str, table: bool) -> str:
         """Extract a table or view name from a SQL string;
-           assumes a nicely written SQL program"""
+        assumes a nicely written SQL program"""
 
-        pattern = r'CREATE\s+' + ('TABLE' if table else 'MATERIALIZED VIEW') + r'\s+(\w+)'
+        pattern = (
+            r"CREATE\s+" + ("TABLE" if table else "MATERIALIZED VIEW") + r"\s+(\w+)"
+        )
         match = re.search(pattern, sql, re.IGNORECASE)
         # If a match is found, return the table name
         if match:
@@ -83,12 +86,12 @@ class Table(SqlObject):
 
     def as_sql_insert(self) -> str:
         """Returns an insert statement for the table.  Assumes that the dictionary
-           contains the columns in the right order"""
+        contains the columns in the right order"""
         stat = "INSERT INTO " + self.name + " VALUES"
         for row in self.data:
             if stat != "":
                 stat += ", "
-            stat += "(" + Table.row_to_values(row['insert']) + ")"
+            stat += "(" + Table.row_to_values(row["insert"]) + ")"
         return stat + ";"
 
 
@@ -133,10 +136,10 @@ class TstAccumulator:
         for table in self.tables:
             if DEBUG:
                 print(table.name, table.sql)
-            result += (table.get_sql() + ";\n\n")
+            result += table.get_sql() + ";\n\n"
         result += "\n"
         for view in self.views:
-            result += (view.get_sql() + ";\n\n")
+            result += view.get_sql() + ";\n\n"
         if DEBUG:
             print("Generated sql\n" + result)
         return result
@@ -145,10 +148,8 @@ class TstAccumulator:
         """Run all tests registered"""
         sql = self.generate_sql()
         pipeline = PipelineBuilder(
-            TEST_CLIENT,
-            "test",
-            sql=sql,
-            compilation_profile=CompilationProfile.DEV).create_or_replace()
+            TEST_CLIENT, "test", sql=sql, compilation_profile=CompilationProfile.DEV
+        ).create_or_replace()
 
         pipeline.start()
 

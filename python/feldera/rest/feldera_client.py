@@ -24,10 +24,10 @@ class FelderaClient:
     """
 
     def __init__(
-            self,
-            url: str,
-            api_key: Optional[str] = None,
-            timeout: Optional[int] = None,
+        self,
+        url: str,
+        api_key: Optional[str] = None,
+        timeout: Optional[int] = None,
     ) -> None:
         """
         :param url: The url to Feldera API (ex: https://try.feldera.com)
@@ -94,7 +94,9 @@ class FelderaClient:
                     if sql_errors:
                         err_msg = f"Pipeline {name} failed to compile:\n"
                         for sql_error in sql_errors:
-                            err_msg += f"{sql_error['error_type']}\n{sql_error['message']}\n"
+                            err_msg += (
+                                f"{sql_error['error_type']}\n{sql_error['message']}\n"
+                            )
                             err_msg += f"Code snippet:\n{sql_error['snippet']}"
                         raise RuntimeError(err_msg)
 
@@ -205,7 +207,9 @@ class FelderaClient:
             elif status == "Failed":
                 raise RuntimeError(f"Failed to start pipeline")
 
-            logging.debug("still starting %s, waiting for 100 more milliseconds", pipeline_name)
+            logging.debug(
+                "still starting %s, waiting for 100 more milliseconds", pipeline_name
+            )
             time.sleep(0.1)
 
     def pause_pipeline(self, pipeline_name: str):
@@ -226,7 +230,9 @@ class FelderaClient:
             elif status == "Failed":
                 raise RuntimeError(f"Failed to pause pipeline")
 
-            logging.debug("still pausing %s, waiting for 100 more milliseconds", pipeline_name)
+            logging.debug(
+                "still pausing %s, waiting for 100 more milliseconds", pipeline_name
+            )
             time.sleep(0.1)
 
     def shutdown_pipeline(self, pipeline_name: str):
@@ -249,11 +255,16 @@ class FelderaClient:
             if status == "Shutdown":
                 return
 
-            logging.debug("still shutting down %s, waiting for 100 more milliseconds", pipeline_name)
+            logging.debug(
+                "still shutting down %s, waiting for 100 more milliseconds",
+                pipeline_name,
+            )
             time.sleep(0.1)
 
         # retry sending shutdown request as the pipline hasn't shutdown yet
-        logging.debug("pipeline %s hasn't shutdown after %s s, retrying", pipeline_name, timeout)
+        logging.debug(
+            "pipeline %s hasn't shutdown after %s s, retrying", pipeline_name, timeout
+        )
         self.http.post(
             path=f"/pipelines/{pipeline_name}/shutdown",
         )
@@ -267,22 +278,25 @@ class FelderaClient:
             if status == "Shutdown":
                 return
 
-            logging.debug("still shutting down %s, waiting for 100 more milliseconds", pipeline_name)
+            logging.debug(
+                "still shutting down %s, waiting for 100 more milliseconds",
+                pipeline_name,
+            )
             time.sleep(0.1)
 
         raise RuntimeError(f"Failed to shutdown pipeline {pipeline_name}")
 
     def push_to_pipeline(
-            self,
-            pipeline_name: str,
-            table_name: str,
-            format: str,
-            data: list[list | str | dict],
-            array: bool = False,
-            force: bool = False,
-            update_format: str = "raw",
-            json_flavor: str = None,
-            serialize: bool = True,
+        self,
+        pipeline_name: str,
+        table_name: str,
+        format: str,
+        data: list[list | str | dict],
+        array: bool = False,
+        force: bool = False,
+        update_format: str = "raw",
+        json_flavor: str = None,
+        serialize: bool = True,
     ):
         """
         Insert data into a pipeline
@@ -305,11 +319,27 @@ class FelderaClient:
         if format not in ["json", "csv"]:
             raise ValueError("format must be either 'json' or 'csv'")
 
-        if update_format not in ["insert_delete", "weighted", "debezium", "snowflake", "raw"]:
-            raise ValueError("update_format must be one of 'insert_delete', 'weighted', 'debezium', 'snowflake', 'raw'")
+        if update_format not in [
+            "insert_delete",
+            "weighted",
+            "debezium",
+            "snowflake",
+            "raw",
+        ]:
+            raise ValueError(
+                "update_format must be one of 'insert_delete', 'weighted', 'debezium', 'snowflake', 'raw'"
+            )
 
-        if json_flavor is not None and json_flavor not in ["default", "debezium_mysql", "snowflake", "kafka_connect_json_converter", "pandas"]:
-            raise ValueError("json_flavor must be one of 'default', 'debezium_mysql', 'snowflake', 'kafka_connect_json_converter', 'pandas'")
+        if json_flavor is not None and json_flavor not in [
+            "default",
+            "debezium_mysql",
+            "snowflake",
+            "kafka_connect_json_converter",
+            "pandas",
+        ]:
+            raise ValueError(
+                "json_flavor must be one of 'default', 'debezium_mysql', 'snowflake', 'kafka_connect_json_converter', 'pandas'"
+            )
 
         # python sends `True` which isn't accepted by the backend
         array = _prepare_boolean_input(array)
@@ -342,13 +372,13 @@ class FelderaClient:
         )
 
     def listen_to_pipeline(
-            self,
-            pipeline_name: str,
-            table_name: str,
-            format: str,
-            backpressure: bool = True,
-            array: bool = False,
-            timeout: Optional[float] = None,
+        self,
+        pipeline_name: str,
+        table_name: str,
+        format: str,
+        backpressure: bool = True,
+        array: bool = False,
+        timeout: Optional[float] = None,
     ):
         """
         Listen for updates to views for pipeline, yields the chunks of data
@@ -390,7 +420,9 @@ class FelderaClient:
             if chunk:
                 yield json.loads(chunk, parse_float=Decimal)
 
-    def query_as_text(self, pipeline_name: str, query: str) -> Generator[str, None, None]:
+    def query_as_text(
+        self, pipeline_name: str, query: str
+    ) -> Generator[str, None, None]:
         """
         Executes an ad-hoc query on the specified pipeline and returns a generator that yields lines of the table.
 
@@ -451,7 +483,9 @@ class FelderaClient:
                 file.write(chunk)
         file.close()
 
-    def query_as_json(self, pipeline_name: str, query: str) -> Generator[dict, None, None]:
+    def query_as_json(
+        self, pipeline_name: str, query: str
+    ) -> Generator[dict, None, None]:
         """
         Executes an ad-hoc query on the specified pipeline and returns the result as a generator that yields
         rows of the query as Python dictionaries.
@@ -475,4 +509,3 @@ class FelderaClient:
         for chunk in resp.iter_lines(chunk_size=50000000):
             if chunk:
                 yield json.loads(chunk, parse_float=Decimal)
-

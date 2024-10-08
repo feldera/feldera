@@ -28,6 +28,7 @@ dependencies = [
     "typing-extensions",
     "numpy<2",
     "pretty-errors",
+    "ruff>=0.6.9",
 ]
 [project.urls]
 Homepage = "https://www.feldera.com"

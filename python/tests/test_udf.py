@@ -6,6 +6,7 @@ from pandas import Timedelta, Timestamp
 from feldera import PipelineBuilder, Pipeline
 from tests import TEST_CLIENT
 
+
 class TestUDF(unittest.TestCase):
     def test_local(self):
         sql = f"""
@@ -231,7 +232,9 @@ pub fn nstr2nstr(i: String) -> Result<String, Box<dyn std::error::Error>> {
 //  }
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT, name="test_udfs", sql=sql, udf_rust=udfs).create_or_replace()
+        pipeline = PipelineBuilder(
+            TEST_CLIENT, name="test_udfs", sql=sql, udf_rust=udfs
+        ).create_or_replace()
 
         # TODO: use .query() instead
         out = pipeline.listen("v")
@@ -240,66 +243,71 @@ pub fn nstr2nstr(i: String) -> Result<String, Box<dyn std::error::Error>> {
 
         pipeline.input_json(
             "t",
-            [{
-                "i": 1,
-                "ti": -2,
-                "si": 3,
-                "bi": -4,
-                "r": 0.5,
-                "d": 1e-5,
-                "bin": [],
-                "dt": "2024-09-25",
-                "t": "13:05:00",
-                "ts":  "2024-09-25 13:05:00",
-                "a": [1,2,3,4,5],
-                "m": {"foo": "bar"},
-                "v": "{\"foo\": \"bar\"}",
-                "b": True,
-                "dc": "123.45",
-                "s": "foobar"
-            }]
+            [
+                {
+                    "i": 1,
+                    "ti": -2,
+                    "si": 3,
+                    "bi": -4,
+                    "r": 0.5,
+                    "d": 1e-5,
+                    "bin": [],
+                    "dt": "2024-09-25",
+                    "t": "13:05:00",
+                    "ts": "2024-09-25 13:05:00",
+                    "a": [1, 2, 3, 4, 5],
+                    "m": {"foo": "bar"},
+                    "v": '{"foo": "bar"}',
+                    "b": True,
+                    "dc": "123.45",
+                    "s": "foobar",
+                }
+            ],
         )
         pipeline.wait_for_idle()
 
         output = out.to_dict()
-        assert output == [{
-            'expr$0': True,
-            'expr$1': True,
-            'expr$10': 0.5,
-            'expr$11': 0.5,
-            'expr$12': 1e-05,
-            'expr$13': 1e-05,
-            'expr$14': [],
-            'expr$15': [],
-            'expr$16': Timestamp('2024-09-25 00:00:00'),
-            'expr$17': Timestamp('2024-09-25 00:00:00'),
-            'expr$18': Timestamp('2024-09-25 13:05:00'),
-            'expr$19': Timestamp('2024-09-25 13:05:00'),
-            'expr$2': 1,
-            'expr$20': Timedelta('0 days 13:05:00'),
-            'expr$21': Timedelta('0 days 13:05:00'),
-            'expr$22': [1, 2, 3, 4, 5],
-            'expr$23': [1, 2, 3, 4, 5],
-            'expr$24': {'foo': 'bar'},
-            'expr$25': {'foo': 'bar'},
-            'expr$26': '{"foo": "bar"}',
-            'expr$27': '{"foo": "bar"}',
-            'expr$28': Decimal('123.45'),
-            'expr$29': Decimal('123.45'),
-            'expr$3': 1,
-            'expr$30': 'foobar',
-            'expr$31': 'foobar',
-            'expr$4': -2,
-            'expr$5': -2,
-            'expr$6': 3,
-            'expr$7': 3,
-            'expr$8': -4,
-            'expr$9': -4,
-            'insert_delete': 1
-        }]
+        assert output == [
+            {
+                "expr$0": True,
+                "expr$1": True,
+                "expr$10": 0.5,
+                "expr$11": 0.5,
+                "expr$12": 1e-05,
+                "expr$13": 1e-05,
+                "expr$14": [],
+                "expr$15": [],
+                "expr$16": Timestamp("2024-09-25 00:00:00"),
+                "expr$17": Timestamp("2024-09-25 00:00:00"),
+                "expr$18": Timestamp("2024-09-25 13:05:00"),
+                "expr$19": Timestamp("2024-09-25 13:05:00"),
+                "expr$2": 1,
+                "expr$20": Timedelta("0 days 13:05:00"),
+                "expr$21": Timedelta("0 days 13:05:00"),
+                "expr$22": [1, 2, 3, 4, 5],
+                "expr$23": [1, 2, 3, 4, 5],
+                "expr$24": {"foo": "bar"},
+                "expr$25": {"foo": "bar"},
+                "expr$26": '{"foo": "bar"}',
+                "expr$27": '{"foo": "bar"}',
+                "expr$28": Decimal("123.45"),
+                "expr$29": Decimal("123.45"),
+                "expr$3": 1,
+                "expr$30": "foobar",
+                "expr$31": "foobar",
+                "expr$4": -2,
+                "expr$5": -2,
+                "expr$6": 3,
+                "expr$7": 3,
+                "expr$8": -4,
+                "expr$9": -4,
+                "insert_delete": 1,
+            }
+        ]
 
         pipeline.shutdown()
         pipeline.delete()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

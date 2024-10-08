@@ -109,7 +109,6 @@ class TestPipeline(unittest.TestCase):
         TEST_CLIENT.delete_pipeline(name)
 
     def __listener(self, name: str):
-
         gen_obj = TEST_CLIENT.listen_to_pipeline(
             pipeline_name=name,
             table_name="V",
@@ -169,7 +168,7 @@ class TestPipeline(unittest.TestCase):
 | 1  |
 +----+"""
 
-        got = '\n'.join(resp)
+        got = "\n".join(resp)
         assert got == expected
 
         TEST_CLIENT.shutdown_pipeline(name)
@@ -224,5 +223,5 @@ class TestPipeline(unittest.TestCase):
         TEST_CLIENT.delete_pipeline(name)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

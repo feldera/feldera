@@ -114,12 +114,22 @@ as
 def main():
     parser = argparse.ArgumentParser(
         description="Demo tutorial combining supply chain concepts (e.g., price, vendor, part) and "
-                    "generating insights (e.g, lowest price, preferred vendor)"
+        "generating insights (e.g, lowest price, preferred vendor)"
     )
-    parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
-    parser.add_argument('--start', action='store_true', default=False, help="Start the Feldera pipeline")
-    parser.add_argument('--kafka-url', required=False, default="redpanda:9092",
-                        help="Kafka URL reachable from the pipeline")
+    parser.add_argument(
+        "--api-url",
+        required=True,
+        help="Feldera API URL (e.g., http://localhost:8080 )",
+    )
+    parser.add_argument(
+        "--start", action="store_true", default=False, help="Start the Feldera pipeline"
+    )
+    parser.add_argument(
+        "--kafka-url",
+        required=False,
+        default="redpanda:9092",
+        help="Kafka URL reachable from the pipeline",
+    )
     args = parser.parse_args()
     api_url = args.api_url
     start_pipeline = args.start
@@ -135,45 +145,76 @@ def main():
 
     # Create pipeline
     pipeline_name = "demo-supply-chain-tutorial-pipeline"
-    requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
-        "name": pipeline_name,
-        "description": "Supply Chain Tutorial demo pipeline",
-        "runtime_config": {"workers": 8},
-        "program_config": {},
-        "program_code": build_sql(pipeline_to_redpanda_server),
-    }).raise_for_status()
+    requests.put(
+        f"{api_url}/v0/pipelines/{pipeline_name}",
+        json={
+            "name": pipeline_name,
+            "description": "Supply Chain Tutorial demo pipeline",
+            "runtime_config": {"workers": 8},
+            "program_config": {},
+            "program_code": build_sql(pipeline_to_redpanda_server),
+        },
+    ).raise_for_status()
 
     # Compile program
     print(f"Compiling program ...")
     while True:
-        status = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["program_status"]
+        status = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()[
+            "program_status"
+        ]
         print(f"Program status: {status}")
         if status == "Success":
             break
-        elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
+        elif (
+            status != "Pending"
+            and status != "CompilingRust"
+            and status != "CompilingSql"
+        ):
             raise RuntimeError(f"Failed program compilation with status {status}")
         time.sleep(2)
 
     # Start pipeline
     if start_pipeline:
         print("(Re)starting pipeline...")
-        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
-        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["deployment_status"] != "Shutdown":
+        requests.post(
+            f"{api_url}/v0/pipelines/{pipeline_name}/shutdown"
+        ).raise_for_status()
+        while (
+            requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()[
+                "deployment_status"
+            ]
+            != "Shutdown"
+        ):
             time.sleep(1)
-        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start").raise_for_status()
-        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["deployment_status"] != "Running":
+        requests.post(
+            f"{api_url}/v0/pipelines/{pipeline_name}/start"
+        ).raise_for_status()
+        while (
+            requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()[
+                "deployment_status"
+            ]
+            != "Running"
+        ):
             time.sleep(1)
         print("Pipeline (re)started")
 
         # Wait for the `tutorial-price-s3` connector to reach end of input
         # before enabling `tutorial-price-redpanda.`
         print("Waiting for 'tutorial-price-s3' connector to finish reading")
-        while find_endpoint(requests.get(f"{api_url}/v0/pipelines/{pipeline_name}/stats").json()["inputs"],
-                            "price.tutorial-price-s3")["metrics"]["end_of_input"] != True:
+        while (
+            find_endpoint(
+                requests.get(f"{api_url}/v0/pipelines/{pipeline_name}/stats").json()[
+                    "inputs"
+                ],
+                "price.tutorial-price-s3",
+            )["metrics"]["end_of_input"]
+            != True
+        ):
             time.sleep(1)
         print("Starting the 'tutorial-price-redpanda' connector")
         requests.post(
-            f"{api_url}/v0/pipelines/{pipeline_name}/input_endpoints/price.tutorial-price-redpanda/start").raise_for_status()
+            f"{api_url}/v0/pipelines/{pipeline_name}/input_endpoints/price.tutorial-price-redpanda/start"
+        ).raise_for_status()
 
 
 if __name__ == "__main__":

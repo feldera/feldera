@@ -22,39 +22,41 @@ import argparse
 # File locations
 FILE_DIR = os.path.join(os.path.dirname(__file__))
 
+
 def load_queries(dir):
     queries = {}
     for f in os.listdir(dir):
-        if f.endswith('.sql'):
-            file = open(dir + f, 'r')
-            query = f.split('.')[0]
+        if f.endswith(".sql"):
+            file = open(dir + f, "r")
+            query = f.split(".")[0]
 
             try:
-                with open(dir + '/' + query + '.rs', 'r') as rs_file:
+                with open(dir + "/" + query + ".rs", "r") as rs_file:
                     udf_rust = rs_file.read()
             except FileNotFoundError:
-                udf_rust = ''
+                udf_rust = ""
 
             try:
-                with open(dir + '/' + query + '.toml', 'r') as toml_file:
+                with open(dir + "/" + query + ".toml", "r") as toml_file:
                     udf_toml = toml_file.read()
             except FileNotFoundError:
-                udf_toml = ''
+                udf_toml = ""
 
             sql = file.read()
             queries[query] = (sql, udf_rust, udf_toml)
     return queries
 
+
 def load_table(folder: str, with_lateness: bool, suffix, events, cores, batchsize):
-    p = os.path.join(FILE_DIR, folder, 'table.sql')
-    file = open(p, 'r')
+    p = os.path.join(FILE_DIR, folder, "table.sql")
+    file = open(p, "r")
     text = file.read()
-    table_start_string = 'create table '
+    table_start_string = "create table "
     inputs = []
-    for line in text.lower().split('\n'):
+    for line in text.lower().split("\n"):
         i = line.find(table_start_string)
         if i >= 0:
-            inputs += [line[i + len(table_start_string):].split(' ')[0]]
+            inputs += [line[i + len(table_start_string) :].split(" ")[0]]
     subst = {input: make_connector(input, suffix) for input in inputs}
     if with_lateness:
         subst["lateness"] = "LATENESS INTERVAL 4 SECONDS"
@@ -66,76 +68,110 @@ def load_table(folder: str, with_lateness: bool, suffix, events, cores, batchsiz
     subst["batchsize"] = batchsize
     return text.format(**subst)
 
+
 def sort_queries(queries):
     return sorted(queries, key=lambda q: int(q[1:]))
+
 
 def parse_queries(all_queries, arg):
     if arg is not None:
         queries = set()
         for s in arg:
-            for q in s.split(','):
+            for q in s.split(","):
                 q = q.lower()
-                if q == 'all':
+                if q == "all":
                     queries = set(all_queries.keys())
                 elif q in all_queries:
                     queries.add(q)
-                elif q != '':
-                    sys.stderr.write(f'unknown query {q}\n')
+                elif q != "":
+                    sys.stderr.write(f"unknown query {q}\n")
                     sys.exit(1)
     else:
         queries = set(all_queries.keys())
 
     if len(queries) == 0:
-        sys.stderr.write('no queries specified\n')
+        sys.stderr.write("no queries specified\n")
         sys.exit(1)
 
     return queries
+
 
 def make_connector(topic, suffix):
     name = "kafka_input"
     config = {
         "topics": [topic + suffix],
         "enable.partition.eof": "true",
-        "auto.offset.reset": "earliest"
+        "auto.offset.reset": "earliest",
     }
 
-    return json.dumps([{
-        "format": {
-            "name": "csv",
-            "config": {},
-        },
-        "transport": {
-            "name": name,
-            "config": config | kafka_options
-        }
-    }], indent=4)
+    return json.dumps(
+        [
+            {
+                "format": {
+                    "name": "csv",
+                    "config": {},
+                },
+                "transport": {"name": name, "config": config | kafka_options},
+            }
+        ],
+        indent=4,
+    )
+
 
 def get_full_name(folder, name):
-    return folder.split('/')[-1] + '-' + name
+    return folder.split("/")[-1] + "-" + name
+
 
 def stop_pipeline(pipeline_name, wait):
-    r = requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown", headers=headers)
+    r = requests.post(
+        f"{api_url}/v0/pipelines/{pipeline_name}/shutdown", headers=headers
+    )
     if r.status_code == 404:
         return
     r.raise_for_status()
     if wait:
         return wait_for_status(pipeline_name, "Shutdown")
 
+
 def start_pipeline(pipeline_name, wait):
-    requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start", headers=headers).raise_for_status()
+    requests.post(
+        f"{api_url}/v0/pipelines/{pipeline_name}/start", headers=headers
+    ).raise_for_status()
     if wait:
         return wait_for_status(pipeline_name, "Running")
 
+
 def wait_for_status(pipeline_name, status):
     start = time.time()
-    while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}", headers=headers).json()["deployment_status"] != status:
-        time.sleep(.1)
+    while (
+        requests.get(f"{api_url}/v0/pipelines/{pipeline_name}", headers=headers).json()[
+            "deployment_status"
+        ]
+        != status
+    ):
+        time.sleep(0.1)
     return time.time() - start
+
 
 def write_results(results, outfile):
     writer = csv.writer(outfile)
-    writer.writerow(['when', 'runner', 'mode', 'language', 'name', 'num_cores', 'num_events', 'elapsed', 'peak_memory_bytes', 'cpu_msecs', 'late_drops'])
+    writer.writerow(
+        [
+            "when",
+            "runner",
+            "mode",
+            "language",
+            "name",
+            "num_cores",
+            "num_events",
+            "elapsed",
+            "peak_memory_bytes",
+            "cpu_msecs",
+            "late_drops",
+        ]
+    )
     writer.writerows(results)
+
 
 def write_metrics(keys, results, outfile):
     writer = csv.writer(outfile)
@@ -150,38 +186,102 @@ def write_metrics(keys, results, outfile):
                 row_list += [""]
         writer.writerow(row_list)
 
+
 def main():
     # Command-line arguments
-    parser = argparse.ArgumentParser(
-        description='Nexmark benchmark demo'
-    )
+    parser = argparse.ArgumentParser(description="Nexmark benchmark demo")
 
     group = parser.add_argument_group("Options for all benchmarks")
-    group.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
-    group.add_argument("--api-key", required=False, help="Feldera API key (e.g., \"apikey:0123456789ABCDEF\")")
-    group.add_argument("--cores", type=int, help="Number of cores to use for workers (default: 16)")
-    group.add_argument("--batchsize", type=int, help="Batch size to use for input (default: 10000)")
-    group.add_argument('--storage', action=argparse.BooleanOptionalAction, help='whether to enable storage (default: --no-storage)')
-    group.add_argument('--min-storage-bytes', type=int, help='If storage is enabled, the minimum number of bytes to write a batch to storage.')
-    group.add_argument('--folder', help='Folder with table and queries, organized as folder/table.sql, folder/queries/qN.sql for numbers N (default: benchmarks/nexmark)')
-    group.add_argument('--query', action='append', help='queries to run (by default, all queries), specify one or more')
-    group.add_argument('--csv', help='File to write results in .csv format')
-    group.add_argument('--csv-metrics', help='File to write pipeline metrics (memory, disk) in .csv format')
-    group.add_argument('--metrics-interval', help='How often metrics should be sampled, in seconds (default: 1)')
-    group.add_argument('--include-disabled', action=argparse.BooleanOptionalAction, help='Include queries from the disabled-queries/ directory.')
-    group.add_argument('--circuit-profile', action=argparse.BooleanOptionalAction, help='If set to true, will save a circuit profile (default: --no-circuit-profile)')
+    group.add_argument(
+        "--api-url",
+        required=True,
+        help="Feldera API URL (e.g., http://localhost:8080 )",
+    )
+    group.add_argument(
+        "--api-key",
+        required=False,
+        help='Feldera API key (e.g., "apikey:0123456789ABCDEF")',
+    )
+    group.add_argument(
+        "--cores", type=int, help="Number of cores to use for workers (default: 16)"
+    )
+    group.add_argument(
+        "--batchsize", type=int, help="Batch size to use for input (default: 10000)"
+    )
+    group.add_argument(
+        "--storage",
+        action=argparse.BooleanOptionalAction,
+        help="whether to enable storage (default: --no-storage)",
+    )
+    group.add_argument(
+        "--min-storage-bytes",
+        type=int,
+        help="If storage is enabled, the minimum number of bytes to write a batch to storage.",
+    )
+    group.add_argument(
+        "--folder",
+        help="Folder with table and queries, organized as folder/table.sql, folder/queries/qN.sql for numbers N (default: benchmarks/nexmark)",
+    )
+    group.add_argument(
+        "--query",
+        action="append",
+        help="queries to run (by default, all queries), specify one or more",
+    )
+    group.add_argument("--csv", help="File to write results in .csv format")
+    group.add_argument(
+        "--csv-metrics",
+        help="File to write pipeline metrics (memory, disk) in .csv format",
+    )
+    group.add_argument(
+        "--metrics-interval",
+        help="How often metrics should be sampled, in seconds (default: 1)",
+    )
+    group.add_argument(
+        "--include-disabled",
+        action=argparse.BooleanOptionalAction,
+        help="Include queries from the disabled-queries/ directory.",
+    )
+    group.add_argument(
+        "--circuit-profile",
+        action=argparse.BooleanOptionalAction,
+        help="If set to true, will save a circuit profile (default: --no-circuit-profile)",
+    )
 
     group = parser.add_argument_group("Options for Nexmark benchmark only")
-    group.add_argument('--lateness', action=argparse.BooleanOptionalAction, help='whether to use lateness for GC to save memory (default: --lateness)')
-    group.add_argument('--events', help='How many events to simulate (default: 100000)')
+    group.add_argument(
+        "--lateness",
+        action=argparse.BooleanOptionalAction,
+        help="whether to use lateness for GC to save memory (default: --lateness)",
+    )
+    group.add_argument("--events", help="How many events to simulate (default: 100000)")
 
     group = parser.add_argument_group("Options only for benchmarks other than Nexmark")
-    group.add_argument("-O", "--option", action='append', required=False,
-                        help="Kafka options passed as -O option=value, e.g., -O bootstrap.servers=localhost:9092; ignored for Nexmark, required for other benchmarks")
-    group.add_argument("--poller-threads", required=False, type=int, help="Override number of poller threads to use")
-    group.add_argument('--input-topic-suffix', help='suffix to apply to input topic names (by default, "")')
-    parser.set_defaults(lateness=True, storage=False, batchsize=10000, cores=16, metrics_interval=1, folder='benchmarks/nexmark', events=100000)
-
+    group.add_argument(
+        "-O",
+        "--option",
+        action="append",
+        required=False,
+        help="Kafka options passed as -O option=value, e.g., -O bootstrap.servers=localhost:9092; ignored for Nexmark, required for other benchmarks",
+    )
+    group.add_argument(
+        "--poller-threads",
+        required=False,
+        type=int,
+        help="Override number of poller threads to use",
+    )
+    group.add_argument(
+        "--input-topic-suffix",
+        help='suffix to apply to input topic names (by default, "")',
+    )
+    parser.set_defaults(
+        lateness=True,
+        storage=False,
+        batchsize=10000,
+        cores=16,
+        metrics_interval=1,
+        folder="benchmarks/nexmark",
+        events=100000,
+    )
 
     global api_url, kafka_options, headers
     api_url = parser.parse_args().api_url
@@ -191,16 +291,18 @@ def main():
     for option_value in parser.parse_args().option or ():
         option, value = option_value.split("=")
         kafka_options[option] = value
-    suffix = parser.parse_args().input_topic_suffix or ''
+    suffix = parser.parse_args().input_topic_suffix or ""
     events = parser.parse_args().events
     cores = int(parser.parse_args().cores)
     batchsize = int(parser.parse_args().batchsize)
 
     folder = parser.parse_args().folder
-    table = load_table(folder, parser.parse_args().lateness, suffix, events, cores, batchsize)
-    all_queries = load_queries(os.path.join(FILE_DIR, folder + '/queries/'))
+    table = load_table(
+        folder, parser.parse_args().lateness, suffix, events, cores, batchsize
+    )
+    all_queries = load_queries(os.path.join(FILE_DIR, folder + "/queries/"))
     include_disabled = parser.parse_args().include_disabled or False
-    disabled_folder = os.path.join(FILE_DIR, folder + '/disabled-queries/')
+    disabled_folder = os.path.join(FILE_DIR, folder + "/disabled-queries/")
     if include_disabled and os.path.exists(disabled_folder):
         all_queries |= load_queries(disabled_folder)
     profile = parser.parse_args().circuit_profile
@@ -217,7 +319,7 @@ def main():
     csvmetricsfile = parser.parse_args().csv_metrics
     metricsinterval = float(parser.parse_args().metrics_interval)
 
-    when = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(time.time()))
+    when = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time()))
 
     # Stop pipelines
     print("Stopping pipeline(s)...")
@@ -234,38 +336,48 @@ def main():
         udf_rust = all_queries[program_name][1]
         udf_toml = all_queries[program_name][2]
 
-        requests.put(f"{api_url}/v0/pipelines/{full_name}", headers=headers, json={
-            "name": full_name,
-            "description": f"Benchmark: {full_name}",
-            "runtime_config": {
-                "workers": cores,
-                "storage": storage,
-                "min_storage_bytes": min_storage_bytes,
-                "cpu_profiler": True,
-                "resources": {
-                    # "cpu_cores_min": 0,
-                    # "cpu_cores_max": 16,
-                    # "memory_mb_min": 100,
-                    # "memory_mb_max": 32000,
-                    # "storage_mb_max": 128000,
-                    # "storage_class": "..."
-                }
+        requests.put(
+            f"{api_url}/v0/pipelines/{full_name}",
+            headers=headers,
+            json={
+                "name": full_name,
+                "description": f"Benchmark: {full_name}",
+                "runtime_config": {
+                    "workers": cores,
+                    "storage": storage,
+                    "min_storage_bytes": min_storage_bytes,
+                    "cpu_profiler": True,
+                    "resources": {
+                        # "cpu_cores_min": 0,
+                        # "cpu_cores_max": 16,
+                        # "memory_mb_min": 100,
+                        # "memory_mb_max": 32000,
+                        # "storage_mb_max": 128000,
+                        # "storage_class": "..."
+                    },
+                },
+                "program_config": {},
+                "program_code": program_sql,
+                "udf_rust": udf_rust,
+                "udf_toml": udf_toml,
             },
-            "program_config": {},
-            "program_code": program_sql,
-            "udf_rust": udf_rust,
-            "udf_toml": udf_toml
-        }).raise_for_status()
+        ).raise_for_status()
 
     print("Compiling program(s)...")
     for program_name in queries:
         full_name = get_full_name(folder, program_name)
         while True:
-            status = requests.get(f"{api_url}/v0/pipelines/{full_name}", headers=headers).json()["program_status"]
+            status = requests.get(
+                f"{api_url}/v0/pipelines/{full_name}", headers=headers
+            ).json()["program_status"]
             print(f"Program {full_name} compilation status: {status}")
             if status == "Success":
                 break
-            elif status != "Pending" and status != "CompilingRust" and status != "CompilingSql":
+            elif (
+                status != "Pending"
+                and status != "CompilingRust"
+                and status != "CompilingSql"
+            ):
                 raise RuntimeError(f"Failed program compilation with status {status}")
             time.sleep(5)
 
@@ -288,14 +400,16 @@ def main():
         peak_memory = 0
         error = False
         while True:
-            req = requests.get(f"{api_url}/v0/pipelines/{full_name}/stats", headers=headers)
+            req = requests.get(
+                f"{api_url}/v0/pipelines/{full_name}/stats", headers=headers
+            )
             if req.status_code != 200:
                 print("Failed to get stats: ", req)
             if req.status_code == 400:
                 break
 
             stats = req.json()
-            #for input in stats["inputs"]:
+            # for input in stats["inputs"]:
             #    print(input["endpoint_name"], input["metrics"]["end_of_input"])
             elapsed = time.time() - start
             if "global_metrics" in stats:
@@ -304,7 +418,7 @@ def main():
                 peak_memory = max(peak_memory, global_metrics["rss_bytes"])
                 cpu_msecs = global_metrics.get("cpu_msecs", 0)
                 last_metrics = elapsed
-                metrics_dict = {"name":pipeline_name, "elapsed_seconds":elapsed}
+                metrics_dict = {"name": pipeline_name, "elapsed_seconds": elapsed}
                 for key, value in global_metrics.items():
                     metrics_seen.add(key)
                     metrics_dict[key] = value
@@ -327,10 +441,12 @@ def main():
                 late_drops = metrics_dict.get("records_late", 0)
                 steps = metrics_dict.get("feldera_dbsp_step", 0)
                 if processed > last_processed:
-                    before, after = ('\r', '') if os.isatty(1) else ('', '\n')
+                    before, after = ("\r", "") if os.isatty(1) else ("", "\n")
                     peak_gib = peak_memory / 1024 / 1024 / 1024
                     cpu_secs = cpu_msecs / 1000
-                    sys.stdout.write(f"{before}Pipeline {full_name} processed {processed} records in {elapsed:.1f} seconds ({peak_gib:.1f} GiB peak memory, {cpu_secs:.1f} s CPU time, {late_drops} late drops){after}")
+                    sys.stdout.write(
+                        f"{before}Pipeline {full_name} processed {processed} records in {elapsed:.1f} seconds ({peak_gib:.1f} GiB peak memory, {cpu_secs:.1f} s CPU time, {late_drops} late drops){after}"
+                    )
                 last_processed = processed
                 if stats["global_metrics"]["pipeline_complete"]:
                     break
@@ -339,18 +455,39 @@ def main():
             print()
         elapsed = "{:.1f}".format(time.time() - start)
         if error:
-            print(f"*** Pipeline {pipeline_name} terminated with error");
+            print(f"*** Pipeline {pipeline_name} terminated with error")
         else:
             print(f"Pipeline {full_name} completed in {elapsed} s")
 
-            results += [[when, "feldera", "stream", "sql", pipeline_name, cores, last_processed, elapsed, peak_memory, cpu_msecs, late_drops]]
+            results += [
+                [
+                    when,
+                    "feldera",
+                    "stream",
+                    "sql",
+                    pipeline_name,
+                    cores,
+                    last_processed,
+                    elapsed,
+                    peak_memory,
+                    cpu_msecs,
+                    late_drops,
+                ]
+            ]
 
             if profile:
-                response = requests.get(f"{api_url}/v0/pipelines/{full_name}/circuit_profile", headers=headers)
+                response = requests.get(
+                    f"{api_url}/v0/pipelines/{full_name}/circuit_profile",
+                    headers=headers,
+                )
                 if response.status_code == 200:
                     profile_file_name = full_name + ".zip"
-                    print("\nWriting circuit profile stats to " + profile_file_name + "...")
-                    with open(profile_file_name, 'wb') as f:
+                    print(
+                        "\nWriting circuit profile stats to "
+                        + profile_file_name
+                        + "..."
+                    )
+                    with open(profile_file_name, "wb") as f:
                         for chunk in response.iter_content(1024):
                             f.write(chunk)
                 else:
@@ -364,9 +501,12 @@ def main():
 
     write_results(results, sys.stdout)
     if csvfile is not None:
-        write_results(results, open(csvfile, 'w', newline=''))
+        write_results(results, open(csvfile, "w", newline=""))
     if csvmetricsfile is not None:
-        write_metrics(metrics_seen, pipeline_metrics, open(csvmetricsfile, 'w', newline=''))
+        write_metrics(
+            metrics_seen, pipeline_metrics, open(csvmetricsfile, "w", newline="")
+        )
+
 
 if __name__ == "__main__":
     main()

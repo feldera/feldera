@@ -61,7 +61,7 @@ class PipelineStatus(Enum):
                    │
                    ▼
                 Failed
-   """
+    """
 
     NOT_FOUND = 1
     """
@@ -184,4 +184,3 @@ class PipelineStatus(Enum):
 
     def __eq__(self, other):
         return self.value == other.value
-

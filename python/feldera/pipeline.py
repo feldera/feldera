@@ -72,8 +72,12 @@ class Pipeline:
         ensure_dataframe_has_columns(df)
 
         pipeline = self.client.get_pipeline(self.name)
-        if table_name.lower() != "now" and table_name.lower() not in [tbl.name.lower() for tbl in pipeline.tables]:
-            raise ValueError(f"Cannot push to table '{table_name}' as it is not registered yet")
+        if table_name.lower() != "now" and table_name.lower() not in [
+            tbl.name.lower() for tbl in pipeline.tables
+        ]:
+            raise ValueError(
+                f"Cannot push to table '{table_name}' as it is not registered yet"
+            )
         else:
             # consider validating the schema here
             for datum in chunk_dataframe(df):
@@ -81,15 +85,21 @@ class Pipeline:
                     self.name,
                     table_name,
                     "json",
-                    datum.to_json(orient='records', date_format='epoch'),
-                    json_flavor='pandas',
+                    datum.to_json(orient="records", date_format="epoch"),
+                    json_flavor="pandas",
                     array=True,
                     serialize=False,
                     force=force,
                 )
             return
 
-    def input_json(self, table_name: str, data: Dict | list, update_format: str = "raw", force: bool = False):
+    def input_json(
+        self,
+        table_name: str,
+        data: Dict | list,
+        update_format: str = "raw",
+        force: bool = False,
+    ):
         """
         Push this JSON data to the specified table of the pipeline.
 
@@ -112,7 +122,7 @@ class Pipeline:
             data,
             update_format=update_format,
             array=array,
-            force=force
+            force=force,
         )
 
     def listen(self, view_name: str) -> OutputHandler:
@@ -134,7 +144,9 @@ class Pipeline:
 
         return handler
 
-    def foreach_chunk(self, view_name: str, callback: Callable[[pandas.DataFrame, int], None]):
+    def foreach_chunk(
+        self, view_name: str, callback: Callable[[pandas.DataFrame, int], None]
+    ):
         """
         Run the given callback on each chunk of the output of the specified view.
 
@@ -190,11 +202,15 @@ class Pipeline:
             raise RuntimeError("Pipeline must be running to wait for completion")
 
         while True:
-            metrics: dict = self.client.get_pipeline_stats(self.name).get("global_metrics")
+            metrics: dict = self.client.get_pipeline_stats(self.name).get(
+                "global_metrics"
+            )
             pipeline_complete: bool = metrics.get("pipeline_complete")
 
             if pipeline_complete is None:
-                raise RuntimeError("received unknown metrics from the pipeline, pipeline_complete is None")
+                raise RuntimeError(
+                    "received unknown metrics from the pipeline, pipeline_complete is None"
+                )
 
             if pipeline_complete:
                 break
@@ -215,7 +231,9 @@ class Pipeline:
 
         status = self.status()
         if status != PipelineStatus.SHUTDOWN:
-            raise RuntimeError(f"pipeline {self.name} in state: {str(status.name)} cannot be started")
+            raise RuntimeError(
+                f"pipeline {self.name} in state: {str(status.name)} cannot be started"
+            )
 
         self.pause()
         self.__setup_output_listeners()
@@ -230,10 +248,10 @@ class Pipeline:
         self.start()
 
     def wait_for_idle(
-            self,
-            idle_interval_s: float = 5.0,
-            timeout_s: float = 600.0,
-            poll_interval_s: float = 0.2
+        self,
+        idle_interval_s: float = 5.0,
+        timeout_s: float = 600.0,
+        poll_interval_s: float = 0.2,
     ):
         """
         Wait for the pipeline to become idle and then returns.
@@ -253,12 +271,18 @@ class Pipeline:
             reached.
         """
         if idle_interval_s > timeout_s:
-            raise ValueError(f"idle interval ({idle_interval_s}s) cannot be larger than timeout ({timeout_s}s)")
+            raise ValueError(
+                f"idle interval ({idle_interval_s}s) cannot be larger than timeout ({timeout_s}s)"
+            )
         if poll_interval_s > timeout_s:
-            raise ValueError(f"poll interval ({poll_interval_s}s) cannot be larger than timeout ({timeout_s}s)")
+            raise ValueError(
+                f"poll interval ({poll_interval_s}s) cannot be larger than timeout ({timeout_s}s)"
+            )
         if poll_interval_s > idle_interval_s:
-            raise ValueError(f"poll interval ({poll_interval_s}s) cannot be larger "
-                             f"than idle interval ({idle_interval_s}s)")
+            raise ValueError(
+                f"poll interval ({poll_interval_s}s) cannot be larger "
+                f"than idle interval ({idle_interval_s}s)"
+            )
 
         start_time_s = time.monotonic()
         idle_started_s = None
@@ -267,16 +291,24 @@ class Pipeline:
             now_s = time.monotonic()
 
             # Metrics retrieval
-            metrics: dict = self.client.get_pipeline_stats(self.name).get("global_metrics")
+            metrics: dict = self.client.get_pipeline_stats(self.name).get(
+                "global_metrics"
+            )
             total_input_records: int | None = metrics.get("total_input_records")
             total_processed_records: int | None = metrics.get("total_processed_records")
             if total_input_records is None:
-                raise RuntimeError("total_input_records is missing from the pipeline metrics")
+                raise RuntimeError(
+                    "total_input_records is missing from the pipeline metrics"
+                )
             if total_processed_records is None:
-                raise RuntimeError("total_processed_records is missing from the pipeline metrics")
+                raise RuntimeError(
+                    "total_processed_records is missing from the pipeline metrics"
+                )
 
             # Idle check
-            unchanged = prev[0] == total_input_records and prev[1] == total_processed_records
+            unchanged = (
+                prev[0] == total_input_records and prev[1] == total_processed_records
+            )
             equal = total_input_records == total_processed_records
             prev = (total_input_records, total_processed_records)
             if unchanged and equal:
@@ -328,7 +360,7 @@ class Pipeline:
         self.client.delete_pipeline(self.name)
 
     @staticmethod
-    def get(name: str, client: FelderaClient) -> 'Pipeline':
+    def get(name: str, client: FelderaClient) -> "Pipeline":
         """
         Get the pipeline if it exists.
 

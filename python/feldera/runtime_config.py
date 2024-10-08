@@ -25,7 +25,6 @@ class Resources:
         storage_class: Optional[str] = None,
         storage_mb_max: Optional[int] = None,
     ):
-
         config = config or {}
 
         self.cpu_cores_max = cpu_cores_max
@@ -44,17 +43,17 @@ class RuntimeConfig:
     """
 
     def __init__(
-            self,
-            workers: Optional[int] = None,
-            storage: Optional[bool] = False,
-            tracing: Optional[bool] = False,
-            tracing_endpoint_jaeger: Optional[str] = "",
-            cpu_profiler: bool = True,
-            max_buffering_delay_usecs: int = 0,
-            min_batch_size_records: int = 0,
-            min_storage_bytes: Optional[int] = None,
-            clock_resolution_usecs: Optional[int] = None,
-            resources: Optional[Resources] = None,
+        self,
+        workers: Optional[int] = None,
+        storage: Optional[bool] = False,
+        tracing: Optional[bool] = False,
+        tracing_endpoint_jaeger: Optional[str] = "",
+        cpu_profiler: bool = True,
+        max_buffering_delay_usecs: int = 0,
+        min_batch_size_records: int = 0,
+        min_storage_bytes: Optional[int] = None,
+        clock_resolution_usecs: Optional[int] = None,
+        resources: Optional[Resources] = None,
     ):
         self.workers = workers
         self.storage = storage

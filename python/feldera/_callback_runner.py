@@ -15,12 +15,12 @@ class _CallbackRunnerInstruction(Enum):
 
 class CallbackRunner(Thread):
     def __init__(
-            self,
-            client: FelderaClient,
-            pipeline_name: str,
-            view_name: str,
-            callback: Callable[[pd.DataFrame, int], None],
-            queue: Optional[Queue],
+        self,
+        client: FelderaClient,
+        pipeline_name: str,
+        view_name: str,
+        callback: Callable[[pd.DataFrame, int], None],
+        queue: Optional[Queue],
     ):
         super().__init__()
         self.daemon = True
@@ -49,7 +49,9 @@ class CallbackRunner(Thread):
                     break
 
         if self.schema is None:
-            raise ValueError(f"Table or View {self.view_name} not found in the pipeline schema.")
+            raise ValueError(
+                f"Table or View {self.view_name} not found in the pipeline schema."
+            )
 
         # by default, we assume that the pipeline has been started
         ack: _CallbackRunnerInstruction = _CallbackRunnerInstruction.PipelineStarted
@@ -60,12 +62,12 @@ class CallbackRunner(Thread):
             ack: _CallbackRunnerInstruction = self.queue.get()
 
         match ack:
-
             # if the pipeline has actually been started, we start a listener
             case _CallbackRunnerInstruction.PipelineStarted:
-
                 # listen to the pipeline
-                gen_obj = self.client.listen_to_pipeline(self.pipeline_name, self.view_name, format="json")
+                gen_obj = self.client.listen_to_pipeline(
+                    self.pipeline_name, self.view_name, format="json"
+                )
 
                 # if there is a queue set up, inform the main thread that the listener has been started, and it can
                 # proceed with starting the pipeline
@@ -90,7 +92,6 @@ class CallbackRunner(Thread):
 
                             # if the queue has received a message
                             if again_ack:
-
                                 match again_ack:
                                     case _CallbackRunnerInstruction.RanToCompletion:
                                         # stop blocking the main thread on `join` and return from this thread

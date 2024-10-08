@@ -7,7 +7,13 @@ from feldera._callback_runner import CallbackRunner
 
 
 class OutputHandler:
-    def __init__(self, client: FelderaClient, pipeline_name: str, view_name: str, queue: Optional[Queue]):
+    def __init__(
+        self,
+        client: FelderaClient,
+        pipeline_name: str,
+        view_name: str,
+        queue: Optional[Queue],
+    ):
         """
         Initializes the output handler, but doesn't start it.
         To start the output handler, call the `.OutputHandler.start` method.
@@ -25,7 +31,9 @@ class OutputHandler:
                 self.buffer.append(df)
 
         # sets up the callback runner
-        self.handler = CallbackRunner(self.client, self.pipeline_name, self.view_name, callback, queue)
+        self.handler = CallbackRunner(
+            self.client, self.pipeline_name, self.view_name, callback, queue
+        )
 
     def start(self):
         """
@@ -56,5 +64,4 @@ class OutputHandler:
         :param clear_buffer: Whether to clear the buffer after getting the output.
         """
 
-        return self.to_pandas(clear_buffer).to_dict(orient='records')
-
+        return self.to_pandas(clear_buffer).to_dict(orient="records")

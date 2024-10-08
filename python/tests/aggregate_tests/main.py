@@ -12,6 +12,7 @@ from tests.aggregate_tests.test_bit_table import *
 from tests.aggregate_tests.test_bit_xor import *
 from tests.aggregate_tests.test_count import *
 from tests.aggregate_tests.test_count_col import *
+
 # from tests.aggregate_tests.test_decimal_avg import *
 # from tests.aggregate_tests.test_decimal_sum import *
 # from tests.aggregate_tests.test_decimal_table import *
@@ -27,10 +28,10 @@ from tests.aggregate_tests.test_sum import *
 
 def register_tests_in_module(module, ta: TstAccumulator):
     """Registers all the tests in the specified module.
-       Tests are classes that start with aggtst_.
-       (As a consequence, a test may be disabled by renaming it
-       not to start with 'aggtst_'.)
-       They must all derive from TstView or TstTable"""
+    Tests are classes that start with aggtst_.
+    (As a consequence, a test may be disabled by renaming it
+    not to start with 'aggtst_'.)
+    They must all derive from TstView or TstTable"""
     for name, obj in inspect.getmembers(module):
         if name.startswith("aggtst_"):
             if inspect.isclass(obj):
@@ -60,5 +61,5 @@ def main():
     run()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

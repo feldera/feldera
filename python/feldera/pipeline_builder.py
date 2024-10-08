@@ -30,7 +30,6 @@ class PipelineBuilder:
         description: str = "",
         compilation_profile: CompilationProfile = CompilationProfile.OPTIMIZED,
         runtime_config: RuntimeConfig = RuntimeConfig(resources=Resources()),
-
     ):
         self.client: FelderaClient = client
         self.name: str | None = name
@@ -58,10 +57,10 @@ class PipelineBuilder:
             self.name,
             description=self.description,
             sql=self.sql,
-            udf_rust = self.udf_rust,
-            udf_toml = self.udf_toml,
+            udf_rust=self.udf_rust,
+            udf_toml=self.udf_toml,
             program_config={
-                'profile': self.compilation_profile.value,
+                "profile": self.compilation_profile.value,
             },
             runtime_config=self.runtime_config.__dict__,
         )
@@ -93,12 +92,14 @@ class PipelineBuilder:
             self.name,
             description=self.description,
             sql=self.sql,
-            udf_rust = self.udf_rust,
-            udf_toml = self.udf_toml,
+            udf_rust=self.udf_rust,
+            udf_toml=self.udf_toml,
             program_config={
-                'profile': self.compilation_profile.value,
+                "profile": self.compilation_profile.value,
             },
-            runtime_config=dict((k, v) for k, v in self.runtime_config.__dict__.items() if v is not None),
+            runtime_config=dict(
+                (k, v) for k, v in self.runtime_config.__dict__.items() if v is not None
+            ),
         )
 
         inner = self.client.create_or_update_pipeline(inner)

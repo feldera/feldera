@@ -27,13 +27,34 @@ TEST_SCHEMA = "test_schema"
 TEST_TABLE = "test_table"
 NUM_RECORDS = 500000
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--api-url", default="http://localhost:8080", help="Feldera API URL (e.g., http://localhost:8080)")
-    parser.add_argument("--kafka-url-from-pipeline", default="redpanda:9092", help="Kafka broker address reachable from the pipeline")
-    parser.add_argument("--registry-url-from-pipeline", default="http://redpanda:8081", help="Schema registry address reachable from the pipeline")
-    parser.add_argument("--registry-url-from-connect", default="http://redpanda:8081", help="Schema registry address reachable from the Kafka Connect server")
-    parser.add_argument("--kafka-url-from-script", default="localhost:19092", help="Kafka broker address reachable from this script")
+    parser.add_argument(
+        "--api-url",
+        default="http://localhost:8080",
+        help="Feldera API URL (e.g., http://localhost:8080)",
+    )
+    parser.add_argument(
+        "--kafka-url-from-pipeline",
+        default="redpanda:9092",
+        help="Kafka broker address reachable from the pipeline",
+    )
+    parser.add_argument(
+        "--registry-url-from-pipeline",
+        default="http://redpanda:8081",
+        help="Schema registry address reachable from the pipeline",
+    )
+    parser.add_argument(
+        "--registry-url-from-connect",
+        default="http://redpanda:8081",
+        help="Schema registry address reachable from the Kafka Connect server",
+    )
+    parser.add_argument(
+        "--kafka-url-from-script",
+        default="localhost:19092",
+        help="Kafka broker address reachable from this script",
+    )
 
     args = parser.parse_args()
 
@@ -54,11 +75,15 @@ def main():
         "table.include.list": f"{TEST_SCHEMA}.*",
         "topic.prefix": "json",
         "decimal.handling.mode": "string",
-        "time.precision.mode": "connect"
+        "time.precision.mode": "connect",
     }
 
-    create_debezium_postgres_connector("inventory-connector-json", args.kafka_url_from_script, json_config, [f"json.{TEST_SCHEMA}.{TEST_TABLE}"])
-
+    create_debezium_postgres_connector(
+        "inventory-connector-json",
+        args.kafka_url_from_script,
+        json_config,
+        [f"json.{TEST_SCHEMA}.{TEST_TABLE}"],
+    )
 
     # Connector using Avro format
     avro_config = {
@@ -80,8 +105,16 @@ def main():
         "value.converter.schema.registry.url": args.registry_url_from_connect,
     }
 
-    create_debezium_postgres_connector("test-connector-avro", args.kafka_url_from_script, avro_config, [f"avro.{TEST_SCHEMA}.{TEST_TABLE}"])
-    run_feldera_pipeline(args.api_url, args.kafka_url_from_pipeline, args.registry_url_from_pipeline)
+    create_debezium_postgres_connector(
+        "test-connector-avro",
+        args.kafka_url_from_script,
+        avro_config,
+        [f"avro.{TEST_SCHEMA}.{TEST_TABLE}"],
+    )
+    run_feldera_pipeline(
+        args.api_url, args.kafka_url_from_pipeline, args.registry_url_from_pipeline
+    )
+
 
 def populate_database():
     postgres_server = os.getenv("POSTGRES_SERVER", "localhost:6432")
@@ -118,7 +151,12 @@ def populate_database():
                     print(f"{i} records")
 
 
-def create_debezium_postgres_connector(connector_name: str, kafka_url_from_script: str, config: Dict, expected_topics: List[str]):
+def create_debezium_postgres_connector(
+    connector_name: str,
+    kafka_url_from_script: str,
+    config: Dict,
+    expected_topics: List[str],
+):
     connect_server = os.getenv("KAFKA_CONNECT_SERVER", "http://localhost:8083")
 
     print(f"Delete old {connector_name} connector")
@@ -133,21 +171,14 @@ def create_debezium_postgres_connector(connector_name: str, kafka_url_from_scrip
     )
 
     print(f"Create {connector_name} connector")
-    config ={
-        "name": connector_name,
-        "config": config
-    }
+    config = {"name": connector_name, "config": config}
 
-    requests.post(
-        f"{connect_server}/connectors", json=config
-    ).raise_for_status()
+    requests.post(f"{connect_server}/connectors", json=config).raise_for_status()
 
     print(f"Checking {connector_name} connector status")
     start_time = time.time()
     while True:
-        response = requests.get(
-            f"{connect_server}/connectors/{connector_name}/status"
-        )
+        response = requests.get(f"{connect_server}/connectors/{connector_name}/status")
         print(f"response: {response}")
         if response.ok:
             status = response.json()
@@ -180,16 +211,22 @@ def create_debezium_postgres_connector(connector_name: str, kafka_url_from_scrip
         print("Waiting for topics")
         time.sleep(1)
 
-def run_feldera_pipeline(api_url, kafka_url, registry_url):
 
+def run_feldera_pipeline(api_url, kafka_url, registry_url):
     pipeline_name = "demo-debezium-postgres-pipeline"
     client = FelderaClient(api_url)
-    sql = open(PROJECT_SQL).read().replace("[REPLACE-BOOTSTRAP-SERVERS]", kafka_url).replace("[REPLACE-REGISTRY-URL]", registry_url)
+    sql = (
+        open(PROJECT_SQL)
+        .read()
+        .replace("[REPLACE-BOOTSTRAP-SERVERS]", kafka_url)
+        .replace("[REPLACE-REGISTRY-URL]", registry_url)
+    )
 
     print("Starting pipeline...")
     pipeline = PipelineBuilder(client, name=pipeline_name, sql=sql).create_or_replace()
     pipeline.start()
     print("Pipeline started")
+
 
 if __name__ == "__main__":
     main()

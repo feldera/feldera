@@ -15,8 +15,17 @@ EXAMPLE_SQL = os.path.join(SCRIPT_DIR, "program.sql")
 def main():
     # Command-line arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--api-url", required=True, help="Feldera API URL (e.g., http://localhost:8080 )")
-    parser.add_argument("--kafka", default="redpanda:9092", required=False, help="Kafka bootstrap servers")
+    parser.add_argument(
+        "--api-url",
+        required=True,
+        help="Feldera API URL (e.g., http://localhost:8080 )",
+    )
+    parser.add_argument(
+        "--kafka",
+        default="redpanda:9092",
+        required=False,
+        help="Kafka bootstrap servers",
+    )
     args = parser.parse_args()
     api_url = args.api_url
 
@@ -35,10 +44,12 @@ def main():
         admin_client.delete_topics(["simple_count_input"])
     if "simple_count_output" in existing_topics:
         admin_client.delete_topics(["simple_count_output"])
-    admin_client.create_topics([
-        NewTopic("simple_count_input", num_partitions=1, replication_factor=1),
-        NewTopic("simple_count_output", num_partitions=1, replication_factor=1),
-    ])
+    admin_client.create_topics(
+        [
+            NewTopic("simple_count_input", num_partitions=1, replication_factor=1),
+            NewTopic("simple_count_output", num_partitions=1, replication_factor=1),
+        ]
+    )
     print("Topics ready")
 
     # Produce of rows into the input topic
@@ -68,20 +79,34 @@ def main():
     # Shut down the pipeline if it already exists such that it can be edited
     print("Shutting down the pipeline...")
     if requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").ok:
-        requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/shutdown").raise_for_status()
-        while requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()["deployment_status"] != "Shutdown":
+        requests.post(
+            f"{api_url}/v0/pipelines/{pipeline_name}/shutdown"
+        ).raise_for_status()
+        while (
+            requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()[
+                "deployment_status"
+            ]
+            != "Shutdown"
+        ):
             time.sleep(1)
 
     # Create pipeline
     print("Creating pipeline...")
-    program_sql = open(EXAMPLE_SQL).read().replace("[REPLACE-BOOTSTRAP-SERVERS]", pipeline_to_kafka_server)
-    response = requests.put(f"{api_url}/v0/pipelines/{pipeline_name}", json={
-        "name": pipeline_name,
-        "description": "Description of the simple-count pipeline",
-        "runtime_config": {},
-        "program_code": program_sql,
-        "program_config": {}
-    })
+    program_sql = (
+        open(EXAMPLE_SQL)
+        .read()
+        .replace("[REPLACE-BOOTSTRAP-SERVERS]", pipeline_to_kafka_server)
+    )
+    response = requests.put(
+        f"{api_url}/v0/pipelines/{pipeline_name}",
+        json={
+            "name": pipeline_name,
+            "description": "Description of the simple-count pipeline",
+            "runtime_config": {},
+            "program_code": program_sql,
+            "program_config": {},
+        },
+    )
     if response.ok:
         print("SUCCESS: created pipeline")
         print(json.dumps(json.loads(response.content.decode("utf-8")), indent=4))
