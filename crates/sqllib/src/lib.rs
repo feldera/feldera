@@ -12,6 +12,7 @@ pub mod string;
 pub mod timestamp;
 pub mod variant;
 
+pub use binary::ByteArray;
 use casts::cast_to_decimal_decimal;
 pub use geopoint::GeoPoint;
 pub use interval::{LongInterval, ShortInterval};
