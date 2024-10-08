@@ -2,7 +2,7 @@ import Monaco, {
   exportedThemes,
   nativeThemes,
   themeNames
-} from '$lib/components/MonacoEditor.svelte'
+} from '$lib/components/MonacoEditorRunes.svelte'
 
 export const isMonacoEditorDisabled = (disabled?: boolean) => ({
   domReadOnly: disabled,

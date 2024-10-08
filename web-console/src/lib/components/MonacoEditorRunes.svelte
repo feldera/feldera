@@ -1,4 +1,4 @@
-<script context="module" lang="ts">
+<script lang="ts" module>
   loader.config({ monaco: monacoImport, 'vs/nls': { availableLanguages: { '*': 'en' } } })
 
   export const exportedThemes = Object.fromEntries(
@@ -43,53 +43,48 @@
   import type Monaco from 'monaco-editor/esm/vs/editor/editor.api'
   import * as monacoImport from 'monaco-editor/esm/vs/editor/editor.api'
   import { onDestroy, onMount } from 'svelte'
-  import { createEventDispatcher } from 'svelte'
   import loader from '@monaco-editor/loader'
   import { felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
 
   let monaco: typeof Monaco
 
-  const dispatch = createEventDispatcher<{
-    ready: Monaco.editor.IStandaloneCodeEditor
-  }>()
-
   let container: HTMLDivElement
-  export let editor: Monaco.editor.IStandaloneCodeEditor | undefined = undefined
-  export let value: string
+  let {
+    editor = $bindable(),
+    model,
+    options,
+    markers,
+    onready
+  }: {
+    editor: Monaco.editor.IStandaloneCodeEditor
+    model: Monaco.editor.ITextModel
+    options?: Omit<
+      Monaco.editor.IStandaloneEditorConstructionOptions,
+      'model' | 'value' | 'language'
+    >
+    markers: Record<string, Monaco.editor.IMarkerData[]> | undefined
+    onready: (event: Monaco.editor.IStandaloneCodeEditor) => void
+  } = $props()
 
-  export let theme: string | undefined = undefined
-  export let options: Monaco.editor.IStandaloneEditorConstructionOptions = {
-    value,
-    automaticLayout: true
-  }
-  export let markers: Record<string, Monaco.editor.IMarkerData[]> | undefined = undefined
-
-  function refreshTheme() {
-    if (theme) {
-      if (exportedThemes[theme]) {
-        const themeName = theme // the theme name can change during the async call
-        exportedThemes[theme]().then((resolvedTheme) => {
-          monaco?.editor.defineTheme(themeName, resolvedTheme as any)
-          monaco?.editor.setTheme(themeName)
-        })
-      } else if (nativeThemes.includes(theme)) {
-        monaco?.editor.setTheme(theme)
-      }
+  $effect(() => {
+    if (!editor) {
+      return
     }
-  }
+    if (model.uri === editor.getModel()?.uri) {
+      return
+    }
+    editor.setModel(model)
+  })
 
-  $: if (theme) refreshTheme()
+  $effect(() => {
+    editor?.updateOptions(options ?? {})
+  })
 
-  $: editor?.updateOptions(options)
-  $: model = editor?.getModel()
-  $: model && options.language ? monaco.editor.setModelLanguage(model, options.language) : void 0
-
-  $: if (editor && editor.getValue() != value) {
-    const position = editor.getPosition()
-    editor.setValue(value)
-    if (position) editor.setPosition(position)
-  }
-  $: (() => {
+  $effect(() => {
+    markers
+    if (!monaco) {
+      return
+    }
     if (!model) {
       return
     }
@@ -102,24 +97,13 @@
         monaco.editor.setModelMarkers(model, owner, markers)
       )
     })
-  })()
+  })
 
   onMount(async () => {
     monaco = await loader.init()
-    editor = monaco.editor.create(container, options)
+    editor = monaco.editor.create(container, { ...options, model: null })
 
-    dispatch('ready', editor)
-
-    refreshTheme()
-
-    editor.getModel()!.onDidChangeContent(() => {
-      if (!editor) return
-      const currentValue = editor.getValue()
-      if (value === currentValue) {
-        return
-      }
-      value = currentValue
-    })
+    onready(editor)
   })
 
   onDestroy(() => editor?.dispose())
@@ -135,11 +119,11 @@
     margin: 0;
   }
 
-  div.monaco-container :global(.monaco-editor .monaco-inputbox .input) {
+  div :global(.monaco-editor .monaco-inputbox .input) {
     box-shadow: none;
   }
 
-  div.monaco-container :global(.monaco-editor .monaco-inputbox .input::placeholder) {
+  div :global(.monaco-editor .monaco-inputbox .input::placeholder) {
     line-height: normal;
     font-family: inherit;
     font-size: inherit;
