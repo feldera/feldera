@@ -809,6 +809,7 @@ impl Controller {
                                 consistent_snapshot.insert(name.clone(), ih.take_from_all());
                             }
                         }
+                        drop(consistent_snapshot);
 
                         // Push output batches to output pipelines.
                         if !replaying {
