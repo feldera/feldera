@@ -8,37 +8,37 @@ def sql_type_to_pandas_type(sql_type: str):
     """
 
     match sql_type.upper():
-        case 'BOOLEAN':
-            return 'boolean'
-        case 'TINYINT':
-            return 'Int8'
-        case 'SMALLINT':
-            return 'Int16'
-        case 'INTEGER':
-            return 'Int32'
-        case 'BIGINT':
-            return 'Int64'
-        case 'REAL':
-            return 'Float32'
-        case 'DOUBLE':
-            return 'Float64'
-        case 'DECIMAL':
+        case "BOOLEAN":
+            return "boolean"
+        case "TINYINT":
+            return "Int8"
+        case "SMALLINT":
+            return "Int16"
+        case "INTEGER":
+            return "Int32"
+        case "BIGINT":
+            return "Int64"
+        case "REAL":
+            return "Float32"
+        case "DOUBLE":
+            return "Float64"
+        case "DECIMAL":
             return None
-        case 'CHAR':
-            return 'str'
-        case 'VARCHAR':
-            return 'str'
-        case 'DATE' | 'TIMESTAMP':
-            return 'datetime64[ns]'
-        case 'TIME' | 'INTERVAL':
-            return 'timedelta64[ns]'
-        case 'ARRAY':
+        case "CHAR":
+            return "str"
+        case "VARCHAR":
+            return "str"
+        case "DATE" | "TIMESTAMP":
+            return "datetime64[ns]"
+        case "TIME" | "INTERVAL":
+            return "timedelta64[ns]"
+        case "ARRAY":
             return None
-        case 'NULL':
+        case "NULL":
             return None
-        case 'BINARY' | 'VARBINARY':
+        case "BINARY" | "VARBINARY":
             return None
-        case 'STRUCT' | 'MAP':
+        case "STRUCT" | "MAP":
             return None
 
 
@@ -65,19 +65,22 @@ def dataframe_from_response(buffer: list[list[dict]], schema: dict):
 
     decimal_col = []
 
-    for column in schema['fields']:
-        column_name = column['name']
-        if not column['case_sensitive']:
+    for column in schema["fields"]:
+        column_name = column["name"]
+        if not column["case_sensitive"]:
             column_name = column_name.lower()
-        column_type = column['columntype']['type']
-        if column_type == 'DECIMAL':
+        column_type = column["columntype"]["type"]
+        if column_type == "DECIMAL":
             decimal_col.append(column_name)
 
         pd_schema[column_name] = sql_type_to_pandas_type(column_type)
 
     data = [
-        {**item['insert'], 'insert_delete': 1} if 'insert' in item else {**item['delete'], 'insert_delete': -1}
-        for sublist in buffer for item in sublist
+        {**item["insert"], "insert_delete": 1}
+        if "insert" in item
+        else {**item["delete"], "insert_delete": -1}
+        for sublist in buffer
+        for item in sublist
     ]
 
     if len(decimal_col) != 0:
@@ -85,7 +88,6 @@ def dataframe_from_response(buffer: list[list[dict]], schema: dict):
             for col in decimal_col:
                 if datum[col] is not None:
                     datum[col] = Decimal(datum[col])
-
 
     df = pd.DataFrame(data)
     df = df.astype(pd_schema)
@@ -99,4 +101,4 @@ def chunk_dataframe(df, chunk_size=1000):
     """
 
     for i in range(0, len(df), chunk_size):
-        yield df.iloc[i:i + chunk_size]
+        yield df.iloc[i : i + chunk_size]

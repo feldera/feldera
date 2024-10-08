@@ -7,11 +7,11 @@ class Config:
     """
 
     def __init__(
-            self,
-            url: str,
-            api_key: Optional[str] = None,
-            version: Optional[str] = None,
-            timeout: Optional[float] = None,
+        self,
+        url: str,
+        api_key: Optional[str] = None,
+        version: Optional[str] = None,
+        timeout: Optional[float] = None,
     ) -> None:
         """
         :param url: The url to the Feldera API (ex: https://try.feldera.com)

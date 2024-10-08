@@ -2,10 +2,13 @@ import re
 import sys
 
 # Format the SQL must adhere to
-SQL_FORMAT_REGEX_PATTERN = re.compile("^-- (.+) \(([a-zA-Z0-9_-]+)\)[ \t]*\r?\n--[ \t]*\r?\n((-- .+\r?\n)+)--[ \t]*\r?\n")
+SQL_FORMAT_REGEX_PATTERN = re.compile(
+    "^-- (.+) \(([a-zA-Z0-9_-]+)\)[ \t]*\r?\n--[ \t]*\r?\n((-- .+\r?\n)+)--[ \t]*\r?\n"
+)
 
 # Format of each description line
 SQL_FORMAT_DESCRIPTION_LINE = re.compile("-- .+\r?\n")
+
 
 def main():
     args = sys.argv[1:]
@@ -25,9 +28,13 @@ def main():
         # Post-process description lines
         description_match = re.findall(SQL_FORMAT_DESCRIPTION_LINE, description_lines)
         if description_match is None:
-            print(f"FAIL: description line did not match pattern which should not happen")
+            print(
+                f"FAIL: description line did not match pattern which should not happen"
+            )
             exit(1)
-        description = " ".join(list(map(lambda l: l.removeprefix("-- ").strip(), description_match))).strip()
+        description = " ".join(
+            list(map(lambda l: l.removeprefix("-- ").strip(), description_match))
+        ).strip()
 
         # Character limits
         if len(title) == 0:

@@ -7,21 +7,25 @@ import time
 import argparse
 import subprocess
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'project_demo00-SecOps'))
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "project_demo00-SecOps"))
 import run as secops
+
 
 def list_pngs(dir):
     pngs = set()
     try:
         names = os.listdir(dir)
     except:
-        print(f"failed to read files from {dir} (perhaps you should specify --screenshot-dir?)")
+        print(
+            f"failed to read files from {dir} (perhaps you should specify --screenshot-dir?)"
+        )
         raise
 
     for name in names:
-        if name.endswith('.png'):
+        if name.endswith(".png"):
             pngs.add(name)
     return pngs
+
 
 def screenshot():
     files1 = list_pngs(SCREENSHOT_DIR)
@@ -39,56 +43,63 @@ def screenshot():
             files1 = files2
         time.sleep(0.1)
 
+
 def screenshot_as(name):
     os.replace(screenshot(), name)
 
+
 def screenshot_sequence(stem):
-        for name in os.listdir():
-            if name.startswith(f'{stem}-') and name.endswith('.png'):
-                os.remove(name)
-        names = []
-        try:
-            while True:
-                n = len(names)
-                name = f'{stem}-{n:02}.png'
-                screenshot_as(name)
-                names += [name]
-        except KeyboardInterrupt:
-            pass
-        print()
-        return names
+    for name in os.listdir():
+        if name.startswith(f"{stem}-") and name.endswith(".png"):
+            os.remove(name)
+    names = []
+    try:
+        while True:
+            n = len(names)
+            name = f"{stem}-{n:02}.png"
+            screenshot_as(name)
+            names += [name]
+    except KeyboardInterrupt:
+        pass
+    print()
+    return names
 
 
 def main():
     # Command-line arguments
-    parser = argparse.ArgumentParser(
-        description='Builds demos for the website'
+    parser = argparse.ArgumentParser(description="Builds demos for the website")
+    default_screenshot_dir = "{}/Pictures/Screenshots".format(os.environ["HOME"])
+    default_steps = "calibrate,pipeline,program,connectors"
+    parser.add_argument(
+        "--screenshot-dir",
+        default=default_screenshot_dir,
+        help=f"directory where screenshots appear (defaults to {default_screenshot_dir}",
     )
-    default_screenshot_dir = '{}/Pictures/Screenshots'.format(os.environ['HOME'])
-    default_steps = 'calibrate,pipeline,program,connectors'
-    parser.add_argument('--screenshot-dir', default=default_screenshot_dir, help=f'directory where screenshots appear (defaults to {default_screenshot_dir}')
-    parser.add_argument('--steps', default=default_steps, help=f'steps to run (default: {default_steps})')
+    parser.add_argument(
+        "--steps",
+        default=default_steps,
+        help=f"steps to run (default: {default_steps})",
+    )
 
     args = parser.parse_args()
     global SCREENSHOT_DIR
     SCREENSHOT_DIR = parser.parse_args().screenshot_dir
-    steps = parser.parse_args().steps.split(',')
+    steps = parser.parse_args().steps.split(",")
 
-    if 'calibrate' in steps:
+    if "calibrate" in steps:
         calibrate()
 
-    if 'program' in steps:
+    if "program" in steps:
         record_program()
         assemble_program()
 
-    if 'connectors' in steps:
+    if "connectors" in steps:
         record_connectors()
         assemble_connectors()
 
-    if 'pipeline' in steps:
+    if "pipeline" in steps:
         record_pipeline()
         assemble_pipeline()
-
 
 
 def calibrate():
@@ -148,20 +159,20 @@ Let's record running the pipeline:
 - Wait for "starting up" to appear.
 - Hover over the Play icon ▶️ and take a screenshot.
 """)
-    screenshot_as('pipeline-starting.png')
+    screenshot_as("pipeline-starting.png")
 
     print("""\
 - Wait for "running" to appear.
 - Hover over the pause icon ⏸️ and take a screenshot.
 """)
-    screenshot_as('pipeline-running.png')
+    screenshot_as("pipeline-running.png")
 
     print("""\
 Every 5 seconds or so, as the throughput graph updates:
   - Move the cursor aside and take a screenshot.
 When the graph fills the entire width, hit Control+C.
 """)
-    screenshot_sequence('pipeline-throughput')
+    screenshot_sequence("pipeline-throughput")
 
     print("""\
 - Hover over the pause button and screenshot.
@@ -196,18 +207,44 @@ When the graph fills the entire width, hit Control+C.
 
 def assemble_pipeline():
     print("assembling pipeline.gif...")
-    throughput = sorted(glob.glob('pipeline-throughput-[0-9][0-9].png'))
-    subprocess.run(['magick', '-size', '1200x1200',
-                    '-delay', '200', 'pipeline-home.png',
-                    '-delay', '200', 'pipeline-start.png',
-                    '-delay', '100', 'pipeline-running.png',
-                    '-delay', '75'] + throughput +
-                   ['-delay', '200', 'pipeline-pause.png',
-                    '-delay', '150', 'pipeline-pausing.png',
-                    '-delay', '200', 'pipeline-stop.png',
-                    '-delay', '200', 'pipeline-stopping.png',
-                    '-delay', '200', 'pipeline-stopped.png',
-                    'pipeline.gif'])
+    throughput = sorted(glob.glob("pipeline-throughput-[0-9][0-9].png"))
+    subprocess.run(
+        [
+            "magick",
+            "-size",
+            "1200x1200",
+            "-delay",
+            "200",
+            "pipeline-home.png",
+            "-delay",
+            "200",
+            "pipeline-start.png",
+            "-delay",
+            "100",
+            "pipeline-running.png",
+            "-delay",
+            "75",
+        ]
+        + throughput
+        + [
+            "-delay",
+            "200",
+            "pipeline-pause.png",
+            "-delay",
+            "150",
+            "pipeline-pausing.png",
+            "-delay",
+            "200",
+            "pipeline-stop.png",
+            "-delay",
+            "200",
+            "pipeline-stopping.png",
+            "-delay",
+            "200",
+            "pipeline-stopped.png",
+            "pipeline.gif",
+        ]
+    )
 
 
 def record_program():
@@ -243,20 +280,36 @@ Then, repeatedly:
 - Hover over the SQL program and take a screenshot.
 ...until you get to the end of the program, then hit Control+C.
 """)
-    screenshot_sequence('program-scroll')
+    screenshot_sequence("program-scroll")
 
 
 def assemble_program():
-    names = sorted(glob.glob('program-scroll-*.png'))
+    names = sorted(glob.glob("program-scroll-*.png"))
     print("assembling program.gif...")
-    subprocess.run(['magick', '-size', '1200x1200',
-                    '-delay', '200', 'program-home.png',
-                    '-delay', '100', 'program-secops.png',
-                    '-delay', '100', 'program-secops2.png',
-                    'program-editor.png',
-                    '-delay', '200',
-                    '-delay', '40'] + names[:-1] +
-                   ['-delay', '100', names[-1], 'program.gif'])
+    subprocess.run(
+        [
+            "magick",
+            "-size",
+            "1200x1200",
+            "-delay",
+            "200",
+            "program-home.png",
+            "-delay",
+            "100",
+            "program-secops.png",
+            "-delay",
+            "100",
+            "program-secops2.png",
+            "program-editor.png",
+            "-delay",
+            "200",
+            "-delay",
+            "40",
+        ]
+        + names[:-1]
+        + ["-delay", "100", names[-1], "program.gif"]
+    )
+
 
 def record_connectors():
     print("""\
@@ -276,16 +329,26 @@ Then, repeatedly:
 ...until you get to k8sobject (the last table with a connector),
    then hit Control+C.
 """)
-    screenshot_sequence('connectors-scroll')
+    screenshot_sequence("connectors-scroll")
 
 
 def assemble_connectors():
     print("assembling connectors.gif...")
-    names = sorted(glob.glob('connectors-scroll-*.png'))
-    subprocess.run(['magick', '-size', '1200x1200',
-                    '-delay', '200', 'connectors-pipeline.png',
-                    '-delay', '60'] + names[:-1] +
-                   ['-delay', '200', names[-1], 'connectors.gif'])
+    names = sorted(glob.glob("connectors-scroll-*.png"))
+    subprocess.run(
+        [
+            "magick",
+            "-size",
+            "1200x1200",
+            "-delay",
+            "200",
+            "connectors-pipeline.png",
+            "-delay",
+            "60",
+        ]
+        + names[:-1]
+        + ["-delay", "200", names[-1], "connectors.gif"]
+    )
 
 
 if __name__ == "__main__":

@@ -10,18 +10,9 @@ print("kafka_server:", config.KAFKA_SERVER)
 print("pipeline to kafka: ", config.KAFKA_SERVER_FROM_PIPELINE)
 
 
-json = {
-    "name": "json",
-    "config": {
-        "update_format": "raw",
-        "array": False
-    }
-}
+json = {"name": "json", "config": {"update_format": "raw", "array": False}}
 
-csv = {
-    "name": "csv",
-    "config": {}
-}
+csv = {"name": "csv", "config": {}}
 
 
 data_fmt = csv if config.DATA_FMT == "csv" else json
@@ -37,11 +28,13 @@ code = generate_program(
             "poller_threads": 12,
         },
     },
-    data_fmt
+    data_fmt,
 )
 
 runtime_config = RuntimeConfig(storage=False, workers=10)
-pipeline = PipelineBuilder(client, name="mil", sql=code, runtime_config=runtime_config).create_or_replace()
+pipeline = PipelineBuilder(
+    client, name="mil", sql=code, runtime_config=runtime_config
+).create_or_replace()
 
 print("Starting Feldera Pipeline")
 pipeline.start()

@@ -2,7 +2,11 @@ import logging
 
 from feldera.rest.config import Config
 
-from feldera.rest.errors import FelderaAPIError, FelderaTimeoutError, FelderaCommunicationError
+from feldera.rest.errors import (
+    FelderaAPIError,
+    FelderaTimeoutError,
+    FelderaCommunicationError,
+)
 
 import json
 import requests
@@ -16,23 +20,21 @@ def json_serialize(body: Any) -> str:
 class HttpRequests:
     def __init__(self, config: Config) -> None:
         self.config = config
-        self.headers = {
-            "User-Agent": "feldera-python-sdk/v1"
-        }
+        self.headers = {"User-Agent": "feldera-python-sdk/v1"}
         if self.config.api_key:
             self.headers["Authorization"] = f"Bearer {self.config.api_key}"
 
     def send_request(
-            self,
-            http_method: Callable,
-            path: str,
-            body: Optional[
-                Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
-            ] = None,
-            content_type: str = "application/json",
-            params: Optional[Mapping[str, Any]] = None,
-            stream: bool = False,
-            serialize: bool = True,
+        self,
+        http_method: Callable,
+        path: str,
+        body: Optional[
+            Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
+        ] = None,
+        content_type: str = "application/json",
+        params: Optional[Mapping[str, Any]] = None,
+        stream: bool = False,
+        serialize: bool = True,
     ) -> Any:
         """
         :param http_method: The HTTP method to use. Takes the equivalent `requests.*` module. (Example: `requests.get`)
@@ -53,7 +55,10 @@ class HttpRequests:
 
             logging.debug(
                 "sending %s request to: %s with headers: %s, and params: %s",
-                http_method.__name__, request_path, str(headers), str(params)
+                http_method.__name__,
+                request_path,
+                str(headers),
+                str(params),
             )
 
             if http_method.__name__ == "get":
@@ -93,60 +98,63 @@ class HttpRequests:
             raise FelderaCommunicationError(str(err)) from err
 
     def get(
-            self,
-            path: str,
-            params: Optional[Mapping[str, Any]] = None,
-            stream: bool = False,
+        self,
+        path: str,
+        params: Optional[Mapping[str, Any]] = None,
+        stream: bool = False,
     ) -> Any:
         return self.send_request(requests.get, path, params=params, stream=stream)
 
     def post(
-            self,
-            path: str,
-            body: Optional[
-                Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
-            ] = None,
-            content_type: Optional[str] = "application/json",
-            params: Optional[Mapping[str, Any]] = None,
-            stream: bool = False,
-            serialize: bool = True,
+        self,
+        path: str,
+        body: Optional[
+            Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
+        ] = None,
+        content_type: Optional[str] = "application/json",
+        params: Optional[Mapping[str, Any]] = None,
+        stream: bool = False,
+        serialize: bool = True,
     ) -> Any:
         return self.send_request(
             requests.post,
             path,
             body,
             content_type,
-            params, stream=stream,
-            serialize=serialize
+            params,
+            stream=stream,
+            serialize=serialize,
         )
 
     def patch(
-            self,
-            path: str,
-            body: Optional[
-                Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
-            ] = None,
-            content_type: Optional[str] = "application/json",
-            params: Optional[Mapping[str, Any]] = None
+        self,
+        path: str,
+        body: Optional[
+            Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
+        ] = None,
+        content_type: Optional[str] = "application/json",
+        params: Optional[Mapping[str, Any]] = None,
     ) -> Any:
         return self.send_request(requests.patch, path, body, content_type, params)
 
     def put(
-            self,
-            path: str,
-            body: Optional[
-                Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
-            ] = None,
-            content_type: Optional[str] = "application/json",
-            params: Optional[Mapping[str, Any]] = None
+        self,
+        path: str,
+        body: Optional[
+            Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
+        ] = None,
+        content_type: Optional[str] = "application/json",
+        params: Optional[Mapping[str, Any]] = None,
     ) -> Any:
         return self.send_request(requests.put, path, body, content_type, params)
 
     def delete(
-            self,
-            path: str,
-            body: Optional[Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str]]] = None,
-            params: Optional[Mapping[str, Any]] = None
+        self,
+        path: str,
+        body: Optional[
+            Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str]]
+        ] = None,
+        params: Optional[Mapping[str, Any]] = None,
     ) -> Any:
         return self.send_request(requests.delete, path, body, params=params)
 

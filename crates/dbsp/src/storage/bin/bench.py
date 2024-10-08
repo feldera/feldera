@@ -41,11 +41,11 @@ def plot(results):
     )
 
     results["Read"] = (
-                              (results["per_thread_file_size"] * results["threads"]) / ONE_MIB
-                      ) / results["read_time"]
+        (results["per_thread_file_size"] * results["threads"]) / ONE_MIB
+    ) / results["read_time"]
     results["Write"] = (
-                               (results["per_thread_file_size"] * results["threads"]) / ONE_MIB
-                       ) / results["write_time"]
+        (results["per_thread_file_size"] * results["threads"]) / ONE_MIB
+    ) / results["write_time"]
 
     # Melt the DataFrame to long format
     df_long = pd.melt(
@@ -59,29 +59,29 @@ def plot(results):
     print(df_long)
 
     plot = (
-            p9.ggplot(
-                data=df_long,
-                mapping=p9.aes(
-                    x="threads",
-                    y="tput",
-                    group="buffer_size_str",
-                    color="buffer_size_str",
-                ),
-            )
-            + p9.labs(y="Throughput [MiB/s]")
-            + p9.scale_x_continuous(
-        breaks=[1 << x for x in THREAD_SHIFT_RANGE], name="# Threads"
-    )
-            + p9.theme_538()
-            + p9.theme(
-        legend_position="top",
-        legend_title=p9.element_blank(),
-        subplots_adjust={"wspace": 0.25},
-    )
-            + p9.scale_color_brewer(type="qual", palette="Set2")
-            + p9.geom_point()
-            + p9.geom_line()
-            + p9.facet_wrap("~operation", scales="free_y")
+        p9.ggplot(
+            data=df_long,
+            mapping=p9.aes(
+                x="threads",
+                y="tput",
+                group="buffer_size_str",
+                color="buffer_size_str",
+            ),
+        )
+        + p9.labs(y="Throughput [MiB/s]")
+        + p9.scale_x_continuous(
+            breaks=[1 << x for x in THREAD_SHIFT_RANGE], name="# Threads"
+        )
+        + p9.theme_538()
+        + p9.theme(
+            legend_position="top",
+            legend_title=p9.element_blank(),
+            subplots_adjust={"wspace": 0.25},
+        )
+        + p9.scale_color_brewer(type="qual", palette="Set2")
+        + p9.geom_point()
+        + p9.geom_line()
+        + p9.facet_wrap("~operation", scales="free_y")
     )
     plot.save("disk_throughput_plot.png", width=12, height=5, dpi=300, verbose=False)
 
