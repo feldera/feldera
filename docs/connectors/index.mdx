@@ -87,8 +87,19 @@ of tables and views.
 
 The following attributes are common to all connectors:
 
-* `max_queued_records` - Backpressure threshold. Maximal number of records queued by the endpoint before the endpoint
-   is paused by the backpressure mechanism. By default this is set to 1 million.
+* `max_queued_records` - The approximate maximum number of records to
+  keep in memory.  For an input connector, this is the maximum number
+  that the endpoint will read into memory, before the endpoint pauses
+  further reading until the pipeline has consumed some of the backlog.
+  For an output connector, this is the maximum number that the
+  endpoint will hold in memory waiting for the output endpoint to send
+  them, before the circuit pauses execution until the backlog
+  subsides.  By default, this is 1,000,000.
+
+* `max_batch_size` - For an input connector, the approximate maximum
+  number of records that the pipeline will process in a single
+  pipeline step.  By default, this is 10,000.
+
 * `paused` - If set to to true the connector will not fetch or push data to the pipeline when started
    unless [explicitly enabled through the API](/api/change-the-desired-state-of-an-input-endpoint).
    By default this is set to false.
