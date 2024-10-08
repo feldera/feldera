@@ -185,9 +185,16 @@ pub enum PipelineAction {
         name: String,
         /// A path to a file containing the SQL code.
         ///
+        /// If no path is provided, the pipeline will be created with an empty program.
         /// See the `stdin` flag for reading from stdin instead.
         #[arg(value_hint = ValueHint::FilePath, conflicts_with = "stdin")]
         program_path: Option<String>,
+        /// A path to a file containing the Rust UDF functions.
+        #[arg(short = 'u', long, value_hint = ValueHint::FilePath, conflicts_with = "stdin")]
+        udf_rs: Option<String>,
+        /// A path to the TOML file containing the dependencies for the UDF functions.
+        #[arg(short = 't', long, value_hint = ValueHint::FilePath, conflicts_with = "stdin")]
+        udf_toml: Option<String>,
         /// The compilation profile to use.
         #[arg(default_value = "optimized")]
         profile: Profile,
@@ -398,24 +405,37 @@ pub enum PipelineAction {
 
 #[derive(Subcommand)]
 pub enum ProgramAction {
-    /// Retrieve the program.
+    /// Retrieve the program code.
+    ///
+    /// By default, this returns the SQL code, but you can use the flags to retrieve
+    /// the Rust UDF code instead.
     Get {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
+        /// Retrieve the Rust UDF code.
+        #[arg(short = 'u', long, default_value_t = false)]
+        udf_rs: bool,
+        /// Retrieve the TOML dependencies file for the UDF code.
+        #[arg(short = 't', long, default_value_t = false)]
+        udf_toml: bool,
     },
     /// Sets a new program.
     Set {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
-
         /// A path to a file containing the SQL code.
         ///
         /// See the `stdin` flag for reading from stdin instead.
         #[arg(value_hint = ValueHint::FilePath, conflicts_with = "stdin")]
         program_path: Option<String>,
-
+        /// A path to a file containing the Rust UDF functions.
+        #[arg(short = 'u', long, value_hint = ValueHint::FilePath, conflicts_with = "stdin")]
+        udf_rs: Option<String>,
+        /// A path to the TOML file containing the dependencies for the UDF functions.
+        #[arg(short = 't', long, value_hint = ValueHint::FilePath, conflicts_with = "stdin")]
+        udf_toml: Option<String>,
         /// Read the SQL program code from stdin.
         ///
         /// EXAMPLES:
@@ -423,13 +443,7 @@ pub enum ProgramAction {
         /// * cat program.sql | fda program set p1 -s
         /// * echo "SELECT 1" | fda program set p1 -s
         /// * fda program get p2 | fda program set p1 -s
-        #[arg(
-            verbatim_doc_comment,
-            short = 's',
-            long,
-            default_value_t = false,
-            conflicts_with = "program_path"
-        )]
+        #[arg(verbatim_doc_comment, short = 's', long, default_value_t = false)]
         stdin: bool,
     },
     /// Retrieve the configuration of the program.

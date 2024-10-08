@@ -1,6 +1,8 @@
 # Command line utility (fda)
 
 `fda` is a command line utility for interacting with the Feldera Manager's REST API.
+It allows you to create, manage, and monitor pipelines. It also features an interactive
+[shell](#shell) for inspecting and modifying the state of tables and views using SQL commands.
 
 ## Installation
 
@@ -83,7 +85,7 @@ right. Go to **Manage API Keys** and click **Generate new key**.
 
 :::
 
-## Usage Examples
+## Examples
 
 Specify the host and API key as command line arguments or environment variables:
 
@@ -112,6 +114,12 @@ Enable storage for `p1`:
 
 ```commandline
 fda set-config p1 storage true
+```
+
+Add Rust UDF code to `p1`:
+
+```commandline
+fda program set p1 --udf-toml udf.toml --udf-rs udf.rs
 ```
 
 Run the pipeline `p1`:

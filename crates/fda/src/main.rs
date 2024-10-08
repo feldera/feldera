@@ -278,28 +278,43 @@ fn patch_runtime_config(
     Ok(())
 }
 
-async fn read_program_code(program_path: Option<String>, stdin: bool) -> Result<String, ()> {
-    if program_path.is_none() && !stdin {
-        eprintln!("No program code provided. Use `--stdin` to read from stdin.");
-        return Err(());
+/// Reads a file, returning the content as a string.
+///
+/// If the file path is `None`, returns `None`.
+/// If the file cannot be read, returns `Err(())`.
+async fn read_file(file_path: Option<String>) -> Result<Option<String>, ()> {
+    if let Some(path) = file_path {
+        match tokio::fs::read_to_string(path.as_str()).await {
+            Ok(udf_code) => {
+                debug!("Read from file: {}", path);
+                Ok(Some(udf_code))
+            }
+            Err(e) => {
+                eprintln!("Failed to read '{}': {}", path, e);
+                Err(())
+            }
+        }
+    } else {
+        Ok(None)
     }
-    let program_path = program_path.unwrap_or_else(|| "".to_string());
+}
+
+async fn read_program_code(
+    program_path: Option<String>,
+    stdin: bool,
+) -> Result<Option<String>, ()> {
     if stdin {
         let mut program_code = String::new();
         let mut stdin = std::io::stdin();
         if stdin.read_to_string(&mut program_code).is_ok() {
             debug!("Read program code from stdin");
-            Ok(program_code)
+            Ok(Some(program_code))
         } else {
             eprintln!("Failed to read program code from stdin");
             Err(())
         }
-    } else if let Ok(program_code) = tokio::fs::read_to_string(program_path.as_str()).await {
-        debug!("Read program code from file: {}", program_path);
-        Ok(program_code)
     } else {
-        eprintln!("Failed to read program code from file: {}", program_path);
-        Err(())
+        read_file(program_path).await
     }
 }
 
@@ -347,17 +362,23 @@ async fn pipeline(action: PipelineAction, client: Client) {
             name,
             program_path,
             profile,
+            udf_rs,
+            udf_toml,
             stdin,
         } => {
-            if let Ok(program_code) = read_program_code(program_path, stdin).await {
+            if let (Ok(program_code), Ok(udf_rust), Ok(udf_toml)) = (
+                read_program_code(program_path, stdin).await,
+                read_file(udf_rs).await,
+                read_file(udf_toml).await,
+            ) {
                 let response = client
                     .post_pipeline()
                     .body(PipelineDescr {
                         description: "".to_string(),
                         name: name.to_string(),
-                        program_code,
-                        udf_rust: None,
-                        udf_toml: None,
+                        program_code: program_code.unwrap_or_default(),
+                        udf_rust,
+                        udf_toml,
                         program_config: profile.into(),
                         runtime_config: RuntimeConfig::default(),
                     })
@@ -372,7 +393,7 @@ async fn pipeline(action: PipelineAction, client: Client) {
                 println!("Pipeline created successfully.");
                 debug!("{:#?}", response);
             } else {
-                // Already reported error in read_program_code.
+                // Already reported error in read_program_code or read_file.
                 std::process::exit(1);
             }
         }
@@ -919,7 +940,11 @@ async fn endpoint(
 
 async fn program(action: ProgramAction, client: Client) {
     match action {
-        ProgramAction::Get { name } => {
+        ProgramAction::Get {
+            name,
+            udf_rs,
+            udf_toml,
+        } => {
             let response = client
                 .get_pipeline()
                 .pipeline_name(name)
@@ -931,7 +956,15 @@ async fn program(action: ProgramAction, client: Client) {
                     1,
                 ))
                 .unwrap();
-            println!("{}", response.program_code);
+            if !udf_rs && !udf_toml {
+                println!("{}", response.program_code);
+            }
+            if udf_rs {
+                println!("{}", response.udf_rust);
+            }
+            if udf_toml {
+                println!("{}", response.udf_toml);
+            }
         }
         ProgramAction::Config { name } => {
             let response = client
@@ -997,15 +1030,21 @@ async fn program(action: ProgramAction, client: Client) {
         ProgramAction::Set {
             name,
             program_path,
+            udf_rs,
+            udf_toml,
             stdin,
         } => {
-            if let Ok(program_code) = read_program_code(program_path, stdin).await {
+            if let (Ok(program_code), Ok(udf_rust), Ok(udf_toml)) = (
+                read_program_code(program_path, stdin).await,
+                read_file(udf_rs).await,
+                read_file(udf_toml).await,
+            ) {
                 let pp = PatchPipeline {
                     description: None,
                     name: None,
-                    program_code: Some(program_code),
-                    udf_rust: None,
-                    udf_toml: None,
+                    program_code,
+                    udf_rust,
+                    udf_toml,
                     program_config: None,
                     runtime_config: None,
                 };
@@ -1023,7 +1062,7 @@ async fn program(action: ProgramAction, client: Client) {
                     .unwrap();
                 println!("Program updated successfully.");
             } else {
-                // Already reported error in read_program_code.
+                // Already reported error in read_program_code or read_file.
                 std::process::exit(1);
             }
         }

@@ -21,6 +21,7 @@ Type:  \h for help with fda shell commands
        The following fda shell commands are available in the shell
        to interact with the current pipeline:
 
+       - SQL commands: SELECT or INSERT
        - start
        - pause
        - restart [-r, --recompile]
