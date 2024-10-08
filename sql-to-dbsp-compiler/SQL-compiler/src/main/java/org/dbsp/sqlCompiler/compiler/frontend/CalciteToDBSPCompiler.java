@@ -91,6 +91,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
@@ -118,6 +119,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.HasSchema;
@@ -2632,7 +2634,23 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 tableMeta, tableName, def.statement);
         this.circuit.addOperator(result);
         this.metadata.addTable(create);
-        return null;
+        return result;
+    }
+
+    @Nullable
+    DBSPNode compileDeclareView(DeclareViewStatement create) {
+        String tableName = create.getName();
+        DBSPType rowType = create.getRowTypeAsTuple(this.compiler.getTypeCompiler());
+        DBSPTypeStruct originalRowType = create.getRowTypeAsStruct(this.compiler.getTypeCompiler());
+        CalciteObject identifier = CalciteObject.EMPTY;
+        List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
+        TableMetadata tableMeta = new TableMetadata(tableName, metadata, new ArrayList<>(), false, false);
+        DBSPSourceViewDeclarationOperator result = new DBSPSourceViewDeclarationOperator(
+                create.getCalciteObject(), identifier, this.makeZSet(rowType), originalRowType,
+                tableMeta, tableName);
+        this.circuit.addOperator(result);
+        this.metadata.addTable(create);
+        return result;
     }
 
     @Nullable
@@ -2699,6 +2717,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         } else if (statement.is(LatenessStatement.class)) {
             LatenessStatement stat = statement.to(LatenessStatement.class);
             return this.compileLateness(stat);
+        } else if (statement.is(DeclareViewStatement.class)) {
+            DeclareViewStatement decl = statement.to(DeclareViewStatement.class);
+            return this.compileDeclareView(decl);
         }
         throw new UnimplementedException(statement.getCalciteObject());
     }
