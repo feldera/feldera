@@ -1,12 +1,12 @@
 import { base } from '$app/paths'
 import { groupBy } from '$lib/functions/common/array'
+import { nonNull } from '$lib/functions/common/function'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
 import type { ErrorResponse } from '$lib/services/manager'
 import {
   getPipeline,
   type ExtendedPipeline,
   type Pipeline,
-  type PipelineThumb,
   type SqlCompilerMessage
 } from '$lib/services/pipelineManager'
 import type { ControllerStatus } from '$lib/types/pipelineManager'
@@ -91,7 +91,7 @@ export const extractRustCompilerError =
     source: string,
     getReport: (pipelineName: string, message: string) => Report
   ) =>
-  (stderr: string): SystemError<any, Report> => {
+  (stderr: string): SystemError<any, Report> | null => {
     const warning = /^warning:/.test(stderr)
 
     const matchFileError = (fileName: string, fileRegex: RegExp, lineOffset: number) => {
@@ -138,18 +138,7 @@ export const extractRustCompilerError =
       return err
     }
 
-    return {
-      name: `Error compiling ${pipelineName}`,
-      message: stderr, //'Program compilation error. See details below:\n' + stderr,
-      cause: {
-        entityName: pipelineName,
-        tag: 'programError',
-        source,
-        report: getReport(pipelineName, stderr),
-        body: stderr,
-        warning
-      }
-    }
+    return null
   }
 
 /**
@@ -174,7 +163,7 @@ export const extractProgramErrors =
           /((warning:|error:|error\[[\w]+\]:)[\s\S]+?)\n(\n|(?=( +Compiling|warning:|error:|error\[[\w]+\]:)))/g
         const rustCompilerErrors: string[] =
           Array.from(e.RustError.matchAll(rustCompilerErrorRegex)).map((match) => match[1]) ?? []
-        return rustCompilerErrors.map(extractRustCompilerError(pipeline.name, source, getReport))
+        return rustCompilerErrors.map(extractRustCompilerError(pipeline.name, source, getReport)).filter(nonNull)
       })
       .with(
         {
