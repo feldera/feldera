@@ -9,10 +9,10 @@ from tests.aggregate_tests.aggtst_base import DEBUG, TstAccumulator
 
 from tests.aggregate_tests.aggtst_base import *  # noqa: F403
 from tests.aggregate_tests.test_array import *  # noqa: F403
+from tests.aggregate_tests.test_arg_max import * # noqa: F403
 from tests.aggregate_tests.test_avg import *  # noqa: F403
 from tests.aggregate_tests.test_bit_and import *  # noqa: F403
 from tests.aggregate_tests.test_bit_or import *  # noqa: F403
-from tests.aggregate_tests.test_bit_table import *  # noqa: F403
 from tests.aggregate_tests.test_bit_xor import *  # noqa: F403
 from tests.aggregate_tests.test_count import *  # noqa: F403
 from tests.aggregate_tests.test_count_col import *  # noqa: F403
