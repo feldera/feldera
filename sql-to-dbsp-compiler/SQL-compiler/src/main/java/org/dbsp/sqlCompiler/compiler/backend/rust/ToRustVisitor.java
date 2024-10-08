@@ -46,6 +46,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
@@ -498,7 +499,7 @@ public class ToRustVisitor extends CircuitVisitor {
     @Override
     public VisitDecision preorder(DBSPSourceMultisetOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(type, operator.metadata);
 
         this.writeComments(operator)
@@ -536,19 +537,24 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPSourceViewDeclarationOperator operator) {
+        throw new InternalCompilerError("Source View Operator should have been eliminated " + operator);
+    }
+
+    @Override
     public VisitDecision preorder(DBSPSourceMapOperator operator) {
         DBSPTypeStruct type = operator.originalRowType;
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(type, operator.metadata);
 
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
                 operator.originalRowType.sanitizedName + "_key");
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(keyStructType, operator.metadata);
 
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
                 operator.originalRowType.sanitizedName + "_upsert");
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(upsertStruct, operator.metadata);
 
         this.writeComments(operator)
@@ -754,7 +760,7 @@ public class ToRustVisitor extends CircuitVisitor {
     public VisitDecision preorder(DBSPSinkOperator operator) {
         this.writeComments(operator);
         DBSPTypeStruct type = operator.originalRowType;
-        if (!this.options.ioOptions.emitHandles)
+        if (!this.useHandles)
             this.generateStructHelpers(type, null);
         if (!this.useHandles) {
             IHasSchema description = this.metadata.getViewDescription(operator.viewName);
