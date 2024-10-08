@@ -29,7 +29,6 @@ from tests.aggregate_tests.test_stddev_pop import *  # noqa: F403
 from tests.aggregate_tests.test_stddev_samp import *  # noqa: F403
 from tests.aggregate_tests.test_sum import *  # noqa: F403
 
-
 def register_tests_in_module(module, ta: TstAccumulator):
     """Registers all the tests in the specified module.
     Tests are classes that start with aggtst_.
