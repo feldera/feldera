@@ -114,6 +114,9 @@ pub async fn shell(name: String, client: Client) {
                     {
                         let mut args = trimmed_line.split(' ').collect::<Vec<&str>>();
                         args.insert(0, "fda");
+                        if trimmed_line == "program" {
+                            args.push("get");
+                        }
                         args.push(name.as_str());
 
                         match Cli::try_parse_from(&args) {

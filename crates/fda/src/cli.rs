@@ -186,8 +186,8 @@ pub enum PipelineAction {
         /// A path to a file containing the SQL code.
         ///
         /// See the `stdin` flag for reading from stdin instead.
-        #[arg(value_hint = ValueHint::FilePath)]
-        program_path: String,
+        #[arg(value_hint = ValueHint::FilePath, conflicts_with = "stdin")]
+        program_path: Option<String>,
         /// The compilation profile to use.
         #[arg(default_value = "optimized")]
         profile: Profile,
@@ -195,10 +195,16 @@ pub enum PipelineAction {
         ///
         /// EXAMPLES:
         ///
-        /// * cat program.sql | fda create p1 -s -
-        /// * echo "SELECT 1" | fda create p2 -s - dev
-        /// * fda program p2 | fda create p3 -s -
-        #[arg(verbatim_doc_comment, short = 's', long, default_value_t = false)]
+        /// * cat program.sql | fda create p1 -s
+        /// * echo "SELECT 1" | fda create p2 -s
+        /// * fda program get p2 | fda create p3 -s
+        #[arg(
+            verbatim_doc_comment,
+            short = 's',
+            long,
+            default_value_t = false,
+            conflicts_with = "program_path"
+        )]
         stdin: bool,
     },
     /// Start a pipeline.
@@ -291,11 +297,8 @@ pub enum PipelineAction {
     ///
     /// If no sub-command is specified retrieves the program.
     Program {
-        /// The name of the pipeline.
-        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
-        name: String,
         #[command(subcommand)]
-        action: Option<ProgramAction>,
+        action: ProgramAction,
     },
     /// Retrieve the runtime configuration of a pipeline.
     #[clap(aliases = &["cfg"])]
@@ -395,30 +398,53 @@ pub enum PipelineAction {
 
 #[derive(Subcommand)]
 pub enum ProgramAction {
-    /// Set a new SQL program.
+    /// Retrieve the program.
+    Get {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
+    /// Sets a new program.
     Set {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+
         /// A path to a file containing the SQL code.
         ///
         /// See the `stdin` flag for reading from stdin instead.
-        #[arg(value_hint = ValueHint::FilePath)]
-        program_path: String,
+        #[arg(value_hint = ValueHint::FilePath, conflicts_with = "stdin")]
+        program_path: Option<String>,
 
-        /// Read the program code from stdin.
+        /// Read the SQL program code from stdin.
         ///
         /// EXAMPLES:
         ///
-        /// * cat program.sql | fda program p1 set -s -
-        /// * echo "SELECT 1" | fda program p1 set -s -
-        /// * fda program p2 | fda program p1 set -s -
-        #[arg(verbatim_doc_comment, short = 's', long, default_value_t = false)]
+        /// * cat program.sql | fda program set p1 -s
+        /// * echo "SELECT 1" | fda program set p1 -s
+        /// * fda program get p2 | fda program set p1 -s
+        #[arg(
+            verbatim_doc_comment,
+            short = 's',
+            long,
+            default_value_t = false,
+            conflicts_with = "program_path"
+        )]
         stdin: bool,
     },
     /// Retrieve the configuration of the program.
     #[clap(aliases = &["cfg"])]
-    Config,
+    Config {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
     /// Set the configuration of the program.
     #[clap(aliases = &["set-cfg"])]
     SetConfig {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
         /// The updated configuration for the pipeline.
         ///
         /// The profile accepts the following values:
@@ -426,7 +452,11 @@ pub enum ProgramAction {
         profile: Profile,
     },
     /// Retrieve the compilation status of the program.
-    Status,
+    Status {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
