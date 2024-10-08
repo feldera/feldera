@@ -252,6 +252,8 @@ openapi-checker:
         diff -bur openapi.json ../openapi.json-base
 
 test-python:
+    ARG all=0
+
     FROM +build-manager
     COPY +build-manager/pipeline-manager .
     RUN mkdir -p /root/.local/lib/python3.10
@@ -280,8 +282,13 @@ test-python:
             sleep 10 && \
             (./pipeline-manager --bind-address=0.0.0.0 --api-server-working-directory=/working-dir --compiler-working-directory=/working-dir --runner-working-directory=/working-dir --sql-compiler-home=/dbsp/sql-to-dbsp-compiler --dbsp-override-path=/dbsp --db-connection-string=postgresql://postgres:postgres@localhost:5432 --compilation-profile=unoptimized &) && \
             sleep 5 && \
-            cd tests && python3 -m pytest . && \
-	    cd .. && PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/main.py
+	    PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/main.py && \
+            if [ $ALL = "1" ]; then \
+                cd tests && python -m pytest . ; \
+            else \
+                echo "Skipping pytest as --all argument is not set to 1"; \
+            fi
+
     END
 
 test-rust:
@@ -560,6 +567,7 @@ ci-tests:
     BUILD +openapi-checker
     BUILD +test-sql
     BUILD +integration-tests
+    BUILD +test-python
     BUILD +demo-packaged-sql-formatting-check
     # BUILD +test-docker-compose-stable
     # TODO: Temporarily disabled while we port the demo script
@@ -567,7 +575,7 @@ ci-tests:
     # BUILD +test-s3
 
 nightly-tests:
-    BUILD +test-python
+    BUILD +test-python --all=1
     BUILD +test-debezium-postgres
     BUILD +test-debezium-jdbc-sink
     BUILD +test-debezium-mysql
