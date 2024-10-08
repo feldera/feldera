@@ -73,7 +73,7 @@ const toPipeline = <P extends PipelineDescr>(pipeline: P) => ({
   programConfig: pipeline.program_config,
   programCode: pipeline.program_code,
   programUdfRs: pipeline.udf_rust,
-  programCargoToml: pipeline.udf_toml
+  programUdfToml: pipeline.udf_toml
 })
 
 const toExtendedPipeline = ({
@@ -96,7 +96,7 @@ const toExtendedPipeline = ({
   programBinaryUrl: pipeline.program_binary_url,
   programCode: pipeline.program_code,
   programUdfRs: pipeline.udf_rust,
-  programCargoToml: pipeline.udf_toml,
+  programUdfToml: pipeline.udf_toml,
   programConfig: pipeline.program_config,
   programInfo: pipeline.program_info,
   programStatus: program_status,
@@ -119,7 +119,7 @@ const fromPipeline = <T extends Partial<Pipeline>>(pipeline: T) => ({
   program_config: pipeline?.programConfig,
   program_code: pipeline?.programCode,
   udf_rust: pipeline?.programUdfRs,
-  udf_toml: pipeline?.programCargoToml
+  udf_toml: pipeline?.programUdfToml
 })
 
 export type PipelineThumb = ReturnType<typeof toPipelineThumb>

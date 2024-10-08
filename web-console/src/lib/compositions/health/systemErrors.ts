@@ -125,7 +125,7 @@ export const extractRustCompilerError =
       }
     }
     let err: SystemError<any, Report> | undefined
-    err = matchFileError('Cargo.toml', /\/Cargo\.toml:(\d+):(\d+)/, -10)
+    err = matchFileError('udf.toml', /\/udf\.toml:(\d+):(\d+)/, -10)
     if (err) {
       return err
     }
@@ -163,7 +163,9 @@ export const extractProgramErrors =
           /((warning:|error:|error\[[\w]+\]:)[\s\S]+?)\n(\n|(?=( +Compiling|warning:|error:|error\[[\w]+\]:)))/g
         const rustCompilerErrors: string[] =
           Array.from(e.RustError.matchAll(rustCompilerErrorRegex)).map((match) => match[1]) ?? []
-        return rustCompilerErrors.map(extractRustCompilerError(pipeline.name, source, getReport)).filter(nonNull)
+        return rustCompilerErrors
+          .map(extractRustCompilerError(pipeline.name, source, getReport))
+          .filter(nonNull)
       })
       .with(
         {

@@ -22,6 +22,7 @@
   import { page } from '$app/stores'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
   import { pipelineFileNameRegex } from '$lib/compositions/health/systemErrors'
+  import { effectMonacoContentPlaceholder } from '$lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte'
   void MonacoImports // Explicitly import all monaco-editor esm modules
 
   let {
@@ -39,6 +40,7 @@
       access: { current: string }
       language?: EditorLanguage
       markers?: Record<string, editor.IMarkerData[]>
+      placeholder?: string
     }[]
     currentFileName: string
     editDisabled?: boolean
@@ -131,6 +133,11 @@
     }, 50)
   })
 
+  let placeholderContent = $derived(file.placeholder)
+  $effect(() => {
+    return effectMonacoContentPlaceholder(editorRef, placeholderContent, { opacity: '70%' })
+  })
+
   const mode = useDarkMode()
   const theme = useSkeletonTheme()
 </script>
@@ -179,6 +186,8 @@
             // language: file.language
           }}
         />
+        <!-- <MonacoEditorContentPlaceholder {editorRef} placeholder={file.placeholder}
+        ></MonacoEditorContentPlaceholder> -->
       </div>
     </div>
   </div>
