@@ -103,23 +103,31 @@
         markers: ((errors) =>
           errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
           programErrors['udf.rs']
-        )
+        ),
+        placeholder: `// UDF implementation in Rust.
+// See function prototypes in \`stubs.rs\`
+
+pub fn my_udf(input: String) -> Result<String, Box<dyn std::error::Error>> {
+  todo!()
+}`
       },
       {
-        name: `Cargo.toml`,
+        name: `udf.toml`,
         access: {
           get current() {
-            return p.current.programCargoToml
+            return p.current.programUdfToml
           },
-          set current(programCargoToml: string) {
-            p.patch({ programCargoToml })
+          set current(programUdfToml: string) {
+            p.patch({ programUdfToml })
           }
         },
         language: 'graphql' as const,
         markers: ((errors) =>
           errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
-          programErrors['Cargo.toml']
-        )
+          programErrors['udf.toml']
+        ),
+        placeholder: `# List Rust dependencies required by udf.rs.
+example = "1.0"`
       }
     ]
   })
@@ -135,8 +143,7 @@
       path={pipelineName}
       {files}
       {editDisabled}
-      bind:currentFileName={currentPipelineFile[pipelineName]}
-    >
+      bind:currentFileName={currentPipelineFile[pipelineName]}>
       {#snippet textEditor(children)}
         <Pane defaultSize={60} minSize={15} class="!overflow-visible">
           {@render children()}
@@ -161,7 +168,7 @@
         {/if}
       {/snippet}
     </CodeEditor>
-    <div class="h-[1px] w-full bg-surface-100-900"></div>
+    <div class="bg-surface-100-900 h-[1px] w-full"></div>
     <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
       {#if pipeline.current.name}
         <InteractionsPanel {pipeline} {metrics}></InteractionsPanel>
