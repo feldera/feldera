@@ -157,7 +157,7 @@ def main():
     ).raise_for_status()
 
     # Compile program
-    print(f"Compiling program ...")
+    print("Compiling program ...")
     while True:
         status = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()[
             "program_status"

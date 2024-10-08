@@ -20,7 +20,7 @@ LANDING_SCHEMA_NAME = f"{SCHEMA_NAME}_landing"
 SNOWFLAKE_CI_USER_PASSWORD = os.getenv("SNOWFLAKE_CI_USER_PASSWORD")
 if SNOWFLAKE_CI_USER_PASSWORD is None:
     raise EnvironmentError(
-        f"The environment variable SNOWFLAKE_CI_USER_PASSWORD is not defined."
+        "The environment variable SNOWFLAKE_CI_USER_PASSWORD is not defined."
     )
 
 
@@ -43,12 +43,12 @@ def prepare_snowflake_debezium():
     passphrase = os.getenv("SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE")
     if passphrase is None:
         raise EnvironmentError(
-            f"The environment variable SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE is not defined."
+            "The environment variable SNOWFLAKE_CI_USER_PRIVATE_KEY_PASSPHRASE is not defined."
         )
     private_key = os.getenv("SNOWFLAKE_CI_USER_PRIVATE_KEY")
     if private_key is None:
         raise EnvironmentError(
-            f"The environment variable SNOWFLAKE_CI_USER_PRIVATE_KEY is not defined."
+            "The environment variable SNOWFLAKE_CI_USER_PRIVATE_KEY is not defined."
         )
 
     # Run snowsql script to create landing and target tables in Snowflake.
@@ -319,7 +319,7 @@ def generate_data(api_url):
             print(f"found {len(vendors)} vendors")
             break
         if time.time() - start > 200:
-            raise Exception(f"Timeout waiting for data ingest into Snowflake")
+            raise Exception("Timeout waiting for data ingest into Snowflake")
         print("Waiting for Snowlfake ingest")
         time.sleep(5)
 

@@ -15,18 +15,6 @@ import os
 import time
 import requests
 import argparse
-import datetime
-import json
-import joblib
-import multiprocessing
-from joblib import Parallel, delayed
-from typing import List
-from typing import Callable
-from faker import Faker
-from faker.providers import company
-from faker.providers import DynamicProvider
-from kafka import KafkaProducer
-from kafka.admin import KafkaAdminClient, NewTopic
 
 # File locations
 SCRIPT_DIR = os.path.join(os.path.dirname(__file__))
@@ -70,7 +58,7 @@ def main():
 
     response = requests.delete(f"{api_url}/v0/programs/{program_name}", headers=headers)
 
-    print(f"Compiling full program")
+    print("Compiling full program")
     compile(program_name, program_sql, headers)
 
     # Add queries one-by-one

@@ -1,16 +1,13 @@
-import os
 import unittest
-import pandas as pd
 
-import unittest
-from feldera import PipelineBuilder, Pipeline
+from feldera import PipelineBuilder
 from tests import TEST_CLIENT
 from decimal import Decimal
 
 
 class TestVariant(unittest.TestCase):
     def test_local(self):
-        sql = f"""
+        sql = """
 -- Ingest JSON as string; output it as VARIANT.
 CREATE TABLE json_table (json VARCHAR) with ('materialized' = 'true');
 CREATE MATERIALIZED VIEW json_view AS SELECT PARSE_JSON(json) AS json FROM json_table;
@@ -30,7 +27,6 @@ CREATE MATERIALIZED VIEW typed_view AS SELECT
 FROM variant_table;
         """
 
-        dir_path = os.path.dirname(os.path.realpath(__file__))
         pipeline = PipelineBuilder(
             TEST_CLIENT, name="test_variant", sql=sql
         ).create_or_replace()

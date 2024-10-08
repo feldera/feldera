@@ -268,7 +268,7 @@ class TestPipelineBuilder(unittest.TestCase):
     def test_sql_error(self):
         pipeline_name = "sql_error"
 
-        sql = f"""
+        sql = """
 CREATE TABLE student(
     id INT,
     name STRING
@@ -699,7 +699,7 @@ Code snippet:
         pipeline.delete()
 
     def test_issue2142(self):
-        sql = f"""
+        sql = """
         CREATE TABLE t0 (c1 INT);
         CREATE VIEW v0 AS SELECT * FROM t0;
         """
@@ -726,7 +726,7 @@ Code snippet:
         pipeline.delete()
 
     def test_pandas_binary(self):
-        sql = f"""
+        sql = """
         CREATE TABLE t0 (c1 VARBINARY);
         CREATE VIEW v0 AS SELECT SUBSTRING(c1 FROM 2) as c1 FROM t0;
         """
@@ -751,7 +751,7 @@ Code snippet:
     def test_pandas_decimal(self):
         from decimal import Decimal
 
-        sql = f"""
+        sql = """
         CREATE TABLE t0 (c1 DECIMAL(5, 2));
         CREATE VIEW v0 AS SELECT c1 + 2.75::DECIMAL(5, 2) as c1 FROM t0;
         """
@@ -774,7 +774,7 @@ Code snippet:
         pipeline.delete()
 
     def test_pandas_array(self):
-        sql = f"""
+        sql = """
         CREATE TABLE t0 (c1 INT ARRAY);
         CREATE VIEW v0 AS SELECT c1 FROM t0;
         """
@@ -798,7 +798,7 @@ Code snippet:
         pipeline.delete()
 
     def test_pandas_struct(self):
-        sql = f"""
+        sql = """
         CREATE TYPE s AS (
             f1 INT,
             f2 STRING
@@ -826,7 +826,7 @@ Code snippet:
     def test_pandas_date_time_timestamp(self):
         from pandas import Timestamp, Timedelta
 
-        sql = f"""
+        sql = """
         CREATE TABLE t0 (c1 DATE, c2 TIME, c3 TIMESTAMP);
         CREATE VIEW v0 AS SELECT c1, c2, c3 FROM t0;
         """
@@ -854,7 +854,7 @@ Code snippet:
         pipeline.delete()
 
     def test_pandas_simple(self):
-        sql = f"""
+        sql = """
         CREATE TABLE t0 (c0 BOOLEAN, c1 TINYINT, c2 SMALLINT, c3 INT, c4 BIGINT, c5 REAL, c6 DOUBLE, c7 VARCHAR, c8 CHAR);
         CREATE VIEW v0 AS SELECT * FROM t0;
         """
@@ -889,7 +889,7 @@ Code snippet:
         pipeline.delete()
 
     def test_pandas_map(self):
-        sql = f"""
+        sql = """
         CREATE TABLE t0 (c1 MAP<STRING, INT>);
         CREATE VIEW v0 AS SELECT c1 FROM t0;
         """
@@ -910,7 +910,7 @@ Code snippet:
         pipeline.delete()
 
     def test_failed_pipeline_shutdown(self):
-        sql = f"""
+        sql = """
             CREATE TABLE t0 (c1 TINYINT);
             CREATE VIEW v0 AS SELECT c1 + 127::TINYINT FROM t0;"""
 

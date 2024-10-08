@@ -6,7 +6,7 @@ from mimesis import Generic
 from mimesis.locales import Locale
 import random
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from typing import List, Dict
 import config
 
 

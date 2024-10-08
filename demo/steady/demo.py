@@ -119,7 +119,7 @@ def main():
     print("Pipeline (re)started")
 
     # Produce rows into the table
-    print(f"Inserting rows into table example...")
+    print("Inserting rows into table example...")
     start_time_item_entry_generation = datetime.datetime.now().timestamp()
     for entry_no in range(1, num_total + 1):
         # Rate limiting

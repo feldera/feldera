@@ -1,29 +1,33 @@
-from feldera import PipelineBuilder, Pipeline
+import sys
+import inspect
+from types import ModuleType
+
+from tests.aggregate_tests.aggtst_base import DEBUG, TstAccumulator
 
 ######################
 ## Add here import statements for all files with tests
 
-from tests.aggregate_tests.aggtst_base import *
-from tests.aggregate_tests.test_array import *
-from tests.aggregate_tests.test_avg import *
-from tests.aggregate_tests.test_bit_and import *
-from tests.aggregate_tests.test_bit_or import *
-from tests.aggregate_tests.test_bit_table import *
-from tests.aggregate_tests.test_bit_xor import *
-from tests.aggregate_tests.test_count import *
-from tests.aggregate_tests.test_count_col import *
+from tests.aggregate_tests.aggtst_base import *  # noqa: F403
+from tests.aggregate_tests.test_array import *  # noqa: F403
+from tests.aggregate_tests.test_avg import *  # noqa: F403
+from tests.aggregate_tests.test_bit_and import *  # noqa: F403
+from tests.aggregate_tests.test_bit_or import *  # noqa: F403
+from tests.aggregate_tests.test_bit_table import *  # noqa: F403
+from tests.aggregate_tests.test_bit_xor import *  # noqa: F403
+from tests.aggregate_tests.test_count import *  # noqa: F403
+from tests.aggregate_tests.test_count_col import *  # noqa: F403
 
-# from tests.aggregate_tests.test_decimal_avg import *
-# from tests.aggregate_tests.test_decimal_sum import *
-# from tests.aggregate_tests.test_decimal_table import *
-from tests.aggregate_tests.test_every import *
-from tests.aggregate_tests.test_int_table import *
-from tests.aggregate_tests.test_max import *
-from tests.aggregate_tests.test_min import *
-from tests.aggregate_tests.test_some import *
-from tests.aggregate_tests.test_stddev_pop import *
-from tests.aggregate_tests.test_stddev_samp import *
-from tests.aggregate_tests.test_sum import *
+# from tests.aggregate_tests.test_decimal_avg import *  # noqa: F403
+# from tests.aggregate_tests.test_decimal_sum import *  # noqa: F403
+# from tests.aggregate_tests.test_decimal_table import *  # noqa: F403
+from tests.aggregate_tests.test_every import *  # noqa: F403
+from tests.aggregate_tests.test_int_table import *  # noqa: F403
+from tests.aggregate_tests.test_max import *  # noqa: F403
+from tests.aggregate_tests.test_min import *  # noqa: F403
+from tests.aggregate_tests.test_some import *  # noqa: F403
+from tests.aggregate_tests.test_stddev_pop import *  # noqa: F403
+from tests.aggregate_tests.test_stddev_samp import *  # noqa: F403
+from tests.aggregate_tests.test_sum import *  # noqa: F403
 
 
 def register_tests_in_module(module, ta: TstAccumulator):
@@ -45,7 +49,6 @@ def register_tests_in_module(module, ta: TstAccumulator):
 def run():
     """Find all tests loaded by the current module and register them"""
     ta = TstAccumulator()
-    current_module = sys.modules[__name__]
     loaded = []
     for key, module in sys.modules.items():
         if isinstance(module, ModuleType):

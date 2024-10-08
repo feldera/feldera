@@ -1,10 +1,7 @@
-from IPython.display import display
 from feldera import PipelineBuilder, FelderaClient
-import pandas as pd
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
-import numpy as np
 import argparse
 from argparse import RawTextHelpFormatter
 import time
@@ -95,15 +92,15 @@ specifying an AWS access key and region.
 
     # S3 access credentials for output delta tables.
     s3_credentials = {}
-    if not args.aws_access_key_id is None:
+    if args.aws_access_key_id is not None:
         s3_credentials = s3_credentials | {"aws_access_key_id": args.aws_access_key_id}
 
-    if not args.aws_secret_access_key is None:
+    if args.aws_secret_access_key is not None:
         s3_credentials = s3_credentials | {
             "aws_secret_access_key": args.aws_secret_access_key
         }
 
-    if not args.aws_region is None:
+    if args.aws_region is not None:
         s3_credentials = s3_credentials | {"aws_region": args.aws_region}
 
     # Load DEMOGRAPHICS data from a Delta table stored in an S3 bucket.
@@ -136,7 +133,7 @@ specifying an AWS access key and region.
     ]
 
     # Write computed feature vectors to another delta table.
-    if not args.deltalake_uri is None:
+    if args.deltalake_uri is not None:
         features_connectors = [
             {
                 "transport": {
@@ -225,7 +222,7 @@ specifying an AWS access key and region.
     ]
 
     # Store computed feature vectors in another delta table.
-    if not args.deltalake_uri is None:
+    if args.deltalake_uri is not None:
         features_connectors = [
             {
                 "transport": {
