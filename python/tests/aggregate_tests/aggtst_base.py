@@ -7,12 +7,7 @@ from tests import TEST_CLIENT
 from feldera.enums import CompilationProfile
 
 from typing import TypeAlias, Dict
-from types import ModuleType
-import os
 import re
-import inspect
-import importlib
-import sys
 
 JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
 

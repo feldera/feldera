@@ -124,7 +124,7 @@ class FelderaClient:
         }
 
         self.http.post(
-            path=f"/pipelines",
+            path="/pipelines",
             body=body,
         )
 
@@ -171,7 +171,7 @@ class FelderaClient:
 
         :param name: The name of the pipeline
         """
-        resp = self.http.delete(
+        self.http.delete(
             path=f"/pipelines/{name}",
         )
 
@@ -205,7 +205,7 @@ class FelderaClient:
             if status == "Running":
                 break
             elif status == "Failed":
-                raise RuntimeError(f"Failed to start pipeline")
+                raise RuntimeError("Failed to start pipeline")
 
             logging.debug(
                 "still starting %s, waiting for 100 more milliseconds", pipeline_name
@@ -228,7 +228,7 @@ class FelderaClient:
             if status == "Paused":
                 break
             elif status == "Failed":
-                raise RuntimeError(f"Failed to pause pipeline")
+                raise RuntimeError("Failed to pause pipeline")
 
             logging.debug(
                 "still pausing %s, waiting for 100 more milliseconds", pipeline_name

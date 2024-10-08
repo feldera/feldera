@@ -150,7 +150,7 @@ class TestPipeline(unittest.TestCase):
         data = "1\n2\n"
         name = str(uuid.uuid4())
 
-        sql = f"""
+        sql = """
         CREATE TABLE tbl(id INT) with ('materialized' = 'true');
         """
 
@@ -178,7 +178,7 @@ class TestPipeline(unittest.TestCase):
         data = "1\n2\n"
         name = str(uuid.uuid4())
 
-        sql = f"""
+        sql = """
         CREATE TABLE tbl(id INT) with ('materialized' = 'true');
         """
 
@@ -203,7 +203,7 @@ class TestPipeline(unittest.TestCase):
         data = "1\n2\n"
         name = str(uuid.uuid4())
 
-        sql = f"""
+        sql = """
         CREATE TABLE tbl(id INT) with ('materialized' = 'true');
         """
 

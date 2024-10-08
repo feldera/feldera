@@ -8,7 +8,6 @@ import argparse
 import subprocess
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "project_demo00-SecOps"))
-import run as secops
 
 
 def list_pngs(dir):

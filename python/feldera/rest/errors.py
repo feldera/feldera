@@ -38,7 +38,7 @@ class FelderaAPIError(FelderaError):
                 if self.message:
                     err_msg += f"\nMessage: {self.message}"
                 self.details = json_data.get("details")
-            except:
+            except Exception:
                 self.message = request.text
 
         super().__init__(err_msg)

@@ -13,11 +13,9 @@ import os
 import time
 import requests
 import argparse
-import json
 import psycopg
 from feldera import FelderaClient, PipelineBuilder
 from kafka.admin import KafkaAdminClient
-from kafka.errors import UnknownTopicOrPartitionError
 from typing import List, Dict
 
 # File locations
@@ -94,7 +92,7 @@ def main():
         "database.password": "postgres",
         "database.dbname": "postgres",
         "table.include.list": f"{TEST_SCHEMA}.*",
-        "topic.prefix": f"avro",
+        "topic.prefix": "avro",
         "key.converter": "io.confluent.connect.avro.AvroConverter",
         "value.converter": "io.confluent.connect.avro.AvroConverter",
         "key.converter.schemas.enable": "true",

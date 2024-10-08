@@ -1,15 +1,14 @@
 from decimal import Decimal
-import os
 import unittest
 
 from pandas import Timedelta, Timestamp
-from feldera import PipelineBuilder, Pipeline
+from feldera import PipelineBuilder
 from tests import TEST_CLIENT
 
 
 class TestUDF(unittest.TestCase):
     def test_local(self):
-        sql = f"""
+        sql = """
 CREATE TYPE my_struct AS (
    i INT,
    s VARCHAR

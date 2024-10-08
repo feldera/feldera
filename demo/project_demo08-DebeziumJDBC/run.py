@@ -194,7 +194,7 @@ def create_jdbc_connector(connector_name: str, topic_name: str, config: Dict):
     connect_server = os.getenv("KAFKA_CONNECT_SERVER", "http://localhost:8083")
 
     # It's important to stop the connector before deleting the topics.
-    print(f"(Re-)creating topic")
+    print("(Re-)creating topic")
     rpk["topic", "delete", topic_name]()
     rpk["topic", "create", topic_name]()
 

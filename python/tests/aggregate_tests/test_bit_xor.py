@@ -51,7 +51,6 @@ class aggtst_int_bit_xor_distinct(TstView):
         self.data = [
             {"c1": 1, "c2": 4, "c3": 1, "c4": 0, "c5": 4, "c6": 0, "c7": 7, "c8": 12}
         ]
-        table_name = "bit_xor_distinct"
         self.sql = """CREATE MATERIALIZED VIEW int_bit_xor_distinct AS SELECT
                       BIT_XOR(DISTINCT c1) AS c1, BIT_XOR(DISTINCT c2) AS c2, BIT_XOR(DISTINCT c3) AS c3, BIT_XOR(DISTINCT c4) AS c4, BIT_XOR(DISTINCT c5) AS c5, BIT_XOR(DISTINCT c6) AS c6, BIT_XOR(DISTINCT c7) AS c7, BIT_XOR(DISTINCT c8) AS c8
                       FROM int0_tbl"""
