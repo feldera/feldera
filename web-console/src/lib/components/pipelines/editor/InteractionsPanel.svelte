@@ -75,19 +75,29 @@
   classes="flex flex-col flex-1 !space-y-0"
 >
   {#snippet list()}
-    {#each tabs as [tabName, tabControl]}
-      <Tabs.Control value={tabName} classes="btn rounded-none" labelBase="">
-        {#if tabControl}
-          {@render tabControl(pipeline.current)}
-        {:else}
-          <span>{tabName}</span>
-        {/if}
-      </Tabs.Control>
-    {/each}
+    <div class=" w-full">
+      {#each tabs as [tabName, tabControl]}
+        <Tabs.Control
+          value={tabName}
+          classes="btn rounded-none"
+          labelBase=""
+          translateX=""
+          stateInactive="[&:not(:hover)]:text-surface-700-300"
+          ,
+          stateActive="bg-white-black"
+        >
+          {#if tabControl}
+            {@render tabControl(pipeline.current)}
+          {:else}
+            <span>{tabName}</span>
+          {/if}
+        </Tabs.Control>
+      {/each}
+    </div>
   {/snippet}
 
   {#snippet content()}
-    {#each tabs as [tabName,, TabComponent]}
+    {#each tabs as [tabName, , TabComponent]}
       <Tabs.Panel value={tabName} classes="h-full overflow-y-auto relative">
         <div class="absolute h-full w-full">
           <TabComponent {pipeline} {metrics}></TabComponent>

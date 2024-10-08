@@ -1,12 +1,18 @@
 import BigNumber from 'bignumber.js'
-import { JSONParser, Tokenizer, TokenParser, type JSONParserOptions, type TokenParserOptions } from '@streamparser/json'
+import {
+  JSONParser,
+  Tokenizer,
+  TokenParser,
+  type JSONParserOptions,
+  type TokenParserOptions
+} from '@streamparser/json'
 import type { ParsedElementInfo } from '@streamparser/json/utils/types/parsedElementInfo.js'
 import { discreteDerivative } from '$lib/functions/common/math'
 import { tuple } from '$lib/functions/common/tuple'
 import { chunkIndices } from '$lib/functions/common/array'
 import { humanSize } from '$lib/functions/common/string'
-import { JSONParser as JSONParserTransformStream } from '@streamparser/json-whatwg';
-import { cloneParsedElementInfo } from '@streamparser/json-whatwg/utils.js';
+import { JSONParser as JSONParserTransformStream } from '@streamparser/json-whatwg'
+import { cloneParsedElementInfo } from '@streamparser/json-whatwg/utils.js'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
@@ -173,9 +179,9 @@ const parseStreamOfUTF8JSON =
 export const parseUTF8JSON = <T>(
   stream: ReadableStream<Uint8Array>,
   cbs: {
-    pushChanges: (changes: T[]) => void,
-    onBytesSkipped?: (bytes: number) => void,
-    onParseEnded?: () => void,
+    pushChanges: (changes: T[]) => void
+    onBytesSkipped?: (bytes: number) => void
+    onParseEnded?: () => void
   },
   options?: TokenParserOptions & { bufferSize?: number }
 ) => {
@@ -210,16 +216,23 @@ export const parseUTF8JSON = <T>(
   // )
 
   // let cancel = false
-    const reader = stream
-      .pipeThrough(splitStreamByMaxChunk(options?.bufferSize ?? 100000))
-      .pipeThrough(new BackpressureTransformStream({maxChunkBufferSize: 1000000, onBytesSkipped: cbs.onBytesSkipped}))
-      .pipeThrough(new CustomJSONParserTransformStream({
-        ...options,
-      }))
-      .getReader()
-    let resultBuffer = [] as T[]
+  const reader = stream
+    .pipeThrough(splitStreamByMaxChunk(options?.bufferSize ?? 100000))
+    .pipeThrough(
+      new BackpressureTransformStream({
+        maxChunkBufferSize: 1000000,
+        onBytesSkipped: cbs.onBytesSkipped
+      })
+    )
+    .pipeThrough(
+      new CustomJSONParserTransformStream({
+        ...options
+      })
+    )
+    .getReader()
+  let resultBuffer = [] as T[]
   setTimeout(async () => {
-    while(true) {
+    while (true) {
       const { done, value } = await reader.read()
       if (done || !value /*|| cancel*/) {
         break
@@ -229,8 +242,8 @@ export const parseUTF8JSON = <T>(
   })
   setTimeout(async () => {
     let closed = false
-    reader.closed.then(() => closed = true)
-    while(true) {
+    reader.closed.then(() => (closed = true))
+    while (true) {
       if (closed) {
         break
       }
@@ -239,7 +252,7 @@ export const parseUTF8JSON = <T>(
         cbs.pushChanges?.(resultBuffer)
         resultBuffer.length = 0
       }
-      await new Promise(resolve => setTimeout(resolve));
+      await new Promise((resolve) => setTimeout(resolve))
     }
   })
   return {
@@ -272,7 +285,8 @@ const processUTF8StreamInChunks = (
     }
   })
   return {
-    stop: () => { // Stop producing parse results immediately
+    stop: () => {
+      // Stop producing parse results immediately
       reader.cancel()
     }
   }
@@ -293,7 +307,7 @@ function splitStreamByMaxChunk(maxChunkBytes: number): TransformStream<Uint8Arra
         const end = Math.min(chunk.length, start + maxChunkBytes)
 
         controller.enqueue(chunk.subarray(start, end))
-        controller.desiredSize , controller.enqueue, controller.error, controller.terminate
+        controller.desiredSize, controller.enqueue, controller.error, controller.terminate
 
         start = end
         // if (end !== chunk.length) {
@@ -317,20 +331,26 @@ class BackpressureTransformStream extends TransformStream<Uint8Array, Uint8Array
   private bufferSize = 0
   private maxChunkBufferSize: number
 
-  constructor({maxChunkBufferSize, onBytesSkipped}: {maxChunkBufferSize: number, onBytesSkipped?: (byteCount: number) => void}) {
+  constructor({
+    maxChunkBufferSize,
+    onBytesSkipped
+  }: {
+    maxChunkBufferSize: number
+    onBytesSkipped?: (byteCount: number) => void
+  }) {
     super({
       transform: async (chunk: Uint8Array, controller) => {
         // const chunkSize = chunk.length; // Get size of the incoming chunk
         // console.log(`Received chunk: "${chunk}" with size ${chunk.length} bytes`);
-        this.bufferSize += chunk.length;
+        this.bufferSize += chunk.length
 
         let skippedByteCount = 0
         console.log('BackpressureTransformStream a', chunk.length)
         // Drop oldest chunks if buffer size exceeds the max limit
         while (this.bufferSize > this.maxChunkBufferSize) {
-          const oldestChunk = this.chunkBuffer.shift(); // Remove oldest chunk
+          const oldestChunk = this.chunkBuffer.shift() // Remove oldest chunk
           if (oldestChunk) {
-            this.bufferSize -= oldestChunk.length;
+            this.bufferSize -= oldestChunk.length
             skippedByteCount += oldestChunk.length
             // console.log(`Dropped chunk: "${oldestChunk.length}" to reduce buffer size`);
           }
@@ -341,7 +361,7 @@ class BackpressureTransformStream extends TransformStream<Uint8Array, Uint8Array
         }
 
         // Add the chunk to the buffer
-        this.chunkBuffer.push(chunk);
+        this.chunkBuffer.push(chunk)
 
         if (hasBackpressure(controller)) {
           // await new Promise(resolve => setTimeout(resolve));
@@ -352,11 +372,11 @@ class BackpressureTransformStream extends TransformStream<Uint8Array, Uint8Array
         console.log('BackpressureTransformStream d', chunk.length)
 
         // Enqueue the current chunk to downstream
-        controller.enqueue(this.chunkBuffer.shift());
+        controller.enqueue(this.chunkBuffer.shift())
       },
       flush: async (controller) => {
         while (true) {
-          const oldestChunk = this.chunkBuffer.shift();
+          const oldestChunk = this.chunkBuffer.shift()
           if (!oldestChunk) {
             break
           }
@@ -364,9 +384,9 @@ class BackpressureTransformStream extends TransformStream<Uint8Array, Uint8Array
           // await new Promise(resolve => setTimeout(resolve));
         }
       }
-    });
+    })
 
-    this.maxChunkBufferSize = maxChunkBufferSize; // Initialize the maximum buffer size
+    this.maxChunkBufferSize = maxChunkBufferSize // Initialize the maximum buffer size
   }
 }
 
@@ -505,7 +525,10 @@ function splitStreamByNewline(): TransformStream<Uint8Array, Uint8Array> {
 
 // ===================================
 
-const mkTransformerParser = <T>(controller: TransformStreamDefaultController<T>, opts?: JSONParserOptions) => {
+const mkTransformerParser = <T>(
+  controller: TransformStreamDefaultController<T>,
+  opts?: JSONParserOptions
+) => {
   console.log('mkparser')
   const parser = new JSONParser(opts)
   parser.onValue = (value) => {
@@ -517,16 +540,14 @@ const mkTransformerParser = <T>(controller: TransformStreamDefaultController<T>,
   return parser
 }
 
-class JSONParserTransformer<T>
-  implements Transformer<Iterable<number> | string, T>
-{
+class JSONParserTransformer<T> implements Transformer<Iterable<number> | string, T> {
   // @ts-ignore Controller always defined during start
   private controller: TransformStreamDefaultController<T>
   private parser: JSONParser
   private opts?: JSONParserOptions
 
   constructor(opts?: JSONParserOptions) {
-  // @ts-ignore Property 'controller' is used before being assigned.
+    // @ts-ignore Property 'controller' is used before being assigned.
     this.parser = mkTransformerParser(this.controller, opts)
     this.opts = opts
   }
@@ -537,7 +558,7 @@ class JSONParserTransformer<T>
 
   transform(chunk: Iterable<number> | string) {
     try {
-      this.parser.write(chunk);
+      this.parser.write(chunk)
     } catch (e) {
       console.log('parse err', e)
       this.parser = mkTransformerParser(this.controller, this.opts)
@@ -545,7 +566,7 @@ class JSONParserTransformer<T>
   }
 
   flush() {
-    this.parser.end();
+    this.parser.end()
   }
 }
 
@@ -556,9 +577,9 @@ class CustomJSONParserTransformStream extends TransformStream<
   constructor(
     opts?: JSONParserOptions,
     writableStrategy?: QueuingStrategy,
-    readableStrategy?: QueuingStrategy,
+    readableStrategy?: QueuingStrategy
   ) {
-    const transformer = new JSONParserTransformer(opts);
-    super(transformer, writableStrategy, readableStrategy);
+    const transformer = new JSONParserTransformer(opts)
+    super(transformer, writableStrategy, readableStrategy)
   }
 }

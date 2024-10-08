@@ -92,7 +92,7 @@
 {@render textEditor(x)}
 {#snippet x()}
   <div class="flex h-full flex-col">
-    <div class="flex">
+    <div class="flex flex-wrap">
       {#each files as file}
         <button
           class="py-1 pl-3 pr-8 {file.name === currentFileName ? 'bg-white-black' : ''}"

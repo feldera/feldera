@@ -157,7 +157,8 @@
           ? adhocQueries[pipelineName].queries[i].result?.endResultStream
           : undefined}
         disabled={isIdle}
-        isLastQuery={getAdhocQueries()[pipelineName].queries.length === i + 1}></Query>
+        isLastQuery={getAdhocQueries()[pipelineName].queries.length === i + 1}
+      ></Query>
     {/if}
   {/each}
 </div>
