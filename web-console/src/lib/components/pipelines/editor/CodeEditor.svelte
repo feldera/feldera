@@ -1,3 +1,14 @@
+<script lang="ts" module>
+  let openFiles: Record<
+    string,
+    {
+      sync: DecoupledState<string>
+      model: editor.ITextModel
+      view: editor.ICodeEditorViewState | null
+    }
+  > = {}
+</script>
+
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
@@ -36,6 +47,7 @@
     statusBarEnd?: Snippet<[downstreamChanged: boolean]>
   } = $props()
 
+  let editorRef: editor.IStandaloneCodeEditor = $state()!
   const autoSavePipeline = useLocalStorage('layout/pipelines/autosave', true)
 
   let wait = $derived(autoSavePipeline.value ? 2000 : ('decoupled' as const))
@@ -46,27 +58,61 @@
   }
   let isReadonly = $derived(editDisabled || isReadonlyProperty(file.access, 'current'))
 
-  let pipelineName = $derived(path)
-  let filePath = $derived(pipelineName + '/' + file.name)
-  let editedFiles: Record<string, DecoupledState<string>> = (() => ({
-    [filePath]: new DecoupledState(file.access, () => wait)
-  }))()
+  let filePath = $derived(path + '/' + file.name)
+  let previousFilePath = $state<string | undefined>(undefined)
   {
     // TODO: handle remote update of the program code that conflicts with currently edited version
     $effect.pre(() => {
-      editedFiles[filePath] ??= new DecoupledState(file.access, () => wait)
+      if (openFiles[filePath]) {
+        return
+      }
+      const access = file.access
+      const model = editor.createModel(
+        access.current,
+        file.language,
+        MonacoImports.Uri.file(filePath)
+      )
+      const sync = new DecoupledState(access, () => wait)
+      model.onDidChangeContent((e) => {
+        sync.current = editorRef.getValue()
+      })
+      openFiles[filePath] = {
+        sync,
+        model,
+        view: null
+      }
     })
   }
+  let currentModel: editor.ITextModel = $state(undefined!)
+  $effect.pre(() => {
+    currentModel = openFiles[filePath].model
+  })
+  $effect.pre(() => {
+    filePath
+    $effect.root(() => {
+      if (!editorRef) {
+        return
+      }
+      // Save last file's scroll position
+      if (previousFilePath) {
+        openFiles[previousFilePath].view = editorRef.saveViewState()!
+      }
+      previousFilePath = filePath
+      // Restore current file's scroll position
+      setTimeout(() => {
+        editorRef.restoreViewState(openFiles[filePath].view)
+      }, 1)
+    })
+  })
 
   $effect(() => {
     // Trigger save right away when autosave is turned on
     if (!autoSavePipeline.value) {
       return
     }
-    setTimeout(() => Object.values(editedFiles).forEach((file) => file.push()))
+    setTimeout(() => Object.values(openFiles).forEach((file) => file.sync.push()))
   })
 
-  let editorRef: editor.IStandaloneCodeEditor = $state()!
   $effect(() => {
     if (!editorRef) {
       return
@@ -103,19 +149,19 @@
       {/each}
     </div>
     <div class="relative flex-1">
-      <div class="absolute h-full w-full" class:opacity-50={editDisabled}>
+      <div class="absolute h-full w-full" class:opacity-70={editDisabled}>
         <MonacoEditor
           markers={file.markers}
-          on:ready={(x) => {
-            x.detail.onKeyDown((e) => {
+          onready={(editor) => {
+            editor.onKeyDown((e) => {
               if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
-                editedFiles[filePath].push()
+                openFiles[filePath].sync.push()
                 e.preventDefault()
               }
             })
           }}
           bind:editor={editorRef}
-          bind:value={editedFiles[filePath].current}
+          model={currentModel}
           options={{
             fontFamily: theme.config.monospaceFontFamily,
             fontSize: 16,
@@ -129,8 +175,8 @@
             overviewRulerBorder: false,
             scrollbar: {
               vertical: 'visible'
-            },
-            language: file.language
+            }
+            // language: file.language
           }}
         />
       </div>
@@ -142,12 +188,12 @@
   <div class="flex h-9 flex-nowrap gap-2">
     <PipelineEditorStatusBar
       {autoSavePipeline}
-      downstreamChanged={editedFiles[filePath].downstreamChanged}
-      saveCode={editedFiles[filePath].push}
+      downstreamChanged={openFiles[filePath].sync.downstreamChanged}
+      saveCode={openFiles[filePath].sync.push}
     ></PipelineEditorStatusBar>
     {@render statusBarCenter?.()}
   </div>
   <div class=" ml-auto flex flex-nowrap gap-x-8">
-    {@render statusBarEnd?.(editedFiles[filePath].downstreamChanged)}
+    {@render statusBarEnd?.(openFiles[filePath].sync.downstreamChanged)}
   </div>
 </div>
