@@ -95,6 +95,7 @@ fda pipelines
 ```
 
 Create a new pipeline `p1` from a `program.sql` file:
+
 ```commandline
 echo "CREATE TABLE example ( id INT NOT NULL PRIMARY KEY );
 CREATE VIEW example_count AS ( SELECT COUNT(*) AS num_rows FROM example );" > program.sql
@@ -102,32 +103,61 @@ fda create p1 program.sql
 ```
 
 Retrieve the program for `p1` and create a new pipeline `p2` from it:
+
 ```commandline
-fda program p1 | fda create p2 -s -
+fda program get p1 | fda create p2 -s
 ```
 
 Enable storage for `p1`:
+
 ```commandline
 fda set-config p1 storage true
 ```
 
 Run the pipeline `p1`:
+
 ```commandline
 fda start p1
 ```
 
 Retrieve the stats for `p1`:
+
 ```commandline
 fda stats p1
 ```
 
 Retrieve the latest logging statements for `p1`:
+
 ```commandline
 fda logs p1
 ```
 
 Shutdown and delete the pipeline `p1`:
+
 ```commandline
 fda shutdown p1
 fda delete p1
 ```
+
+## Shell
+
+You can enter the `fda` shell for a pipeline by running the following command:
+
+```commandline
+fda shell p1
+```
+
+Within the shell, you can interact with the pipeline `p1` by sending ad-hoc SQL queries to it. Currently, `INSERT` or
+`SELECT` statements are supported. You can not create or alter tables and views using ad-hoc SQL.
+
+:::note
+
+Tables and views are only accessible with ad-hoc queries if they are declared as materialized.
+
+:::
+
+Ad-hoc SQL commands are not evaluated incrementally but instead executed using a batch engine. You can however,
+very cheaply query the state of a materialized view.
+
+The shell also lets you execute certain CLI commands like `start`, `restart`, `shutdown` without having to provide the
+pipeline name every time. Type `help` for more information.

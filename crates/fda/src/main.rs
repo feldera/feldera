@@ -278,7 +278,12 @@ fn patch_runtime_config(
     Ok(())
 }
 
-async fn read_program_code(program_path: String, stdin: bool) -> Result<String, ()> {
+async fn read_program_code(program_path: Option<String>, stdin: bool) -> Result<String, ()> {
+    if program_path.is_none() && !stdin {
+        eprintln!("No program code provided. Use `--stdin` to read from stdin.");
+        return Err(());
+    }
+    let program_path = program_path.unwrap_or_else(|| "".to_string());
     if stdin {
         let mut program_code = String::new();
         let mut stdin = std::io::stdin();
@@ -737,7 +742,7 @@ async fn pipeline(action: PipelineAction, client: Client) {
                     .expect("Failed to serialize pipeline stats")
             );
         }
-        PipelineAction::Program { name, action } => program(name, action, client).await,
+        PipelineAction::Program { action } => program(action, client).await,
         PipelineAction::Endpoint {
             name,
             endpoint_name,
@@ -912,9 +917,9 @@ async fn endpoint(
     };
 }
 
-async fn program(name: String, action: Option<ProgramAction>, client: Client) {
+async fn program(action: ProgramAction, client: Client) {
     match action {
-        None => {
+        ProgramAction::Get { name } => {
             let response = client
                 .get_pipeline()
                 .pipeline_name(name)
@@ -928,7 +933,7 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
                 .unwrap();
             println!("{}", response.program_code);
         }
-        Some(ProgramAction::Config) => {
+        ProgramAction::Config { name } => {
             let response = client
                 .get_pipeline()
                 .pipeline_name(name)
@@ -946,7 +951,7 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
                     .expect("Failed to serialize pipeline stats")
             );
         }
-        Some(ProgramAction::SetConfig { profile }) => {
+        ProgramAction::SetConfig { name, profile } => {
             let pp = PatchPipeline {
                 description: None,
                 name: None,
@@ -972,7 +977,7 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
                 .unwrap();
             println!("Program config updated successfully.");
         }
-        Some(ProgramAction::Status) => {
+        ProgramAction::Status { name } => {
             let response = client
                 .get_pipeline()
                 .pipeline_name(name)
@@ -989,10 +994,11 @@ async fn program(name: String, action: Option<ProgramAction>, client: Client) {
                 response.program_status, response.program_version.0, response.program_status_since
             );
         }
-        Some(ProgramAction::Set {
+        ProgramAction::Set {
+            name,
             program_path,
             stdin,
-        }) => {
+        } => {
             if let Ok(program_code) = read_program_code(program_path, stdin).await {
                 let pp = PatchPipeline {
                     description: None,
