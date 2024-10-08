@@ -19,6 +19,7 @@ data: {
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView"
+      "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDeclareView"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey"
     ]
@@ -920,6 +921,7 @@ data: {
     # Each must accept arguments "(SqlParserPos pos, boolean replace)".
     createStatementParserMethods: [
       "SqlCreateView"
+      "SqlDeclareView"
       "SqlCreateExtendedTable"
       "SqlCreateType"
       "SqlCreateFunction"

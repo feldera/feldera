@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CalciteCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDeclareView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
@@ -82,6 +83,19 @@ public class ParserTests {
         Assert.assertNotNull(node);
         Assert.assertTrue(node instanceof SqlCreateView);
         Assert.assertSame(SqlCreateView.ViewKind.MATERIALIZED, ((SqlCreateView) node).viewKind);
+    }
+
+    @Test
+    public void parseRecursive() throws SqlParseException {
+        CalciteCompiler compiler = this.getCompiler();
+        List<CalciteCompiler.ParsedStatement> node = compiler.parseStatements("""
+                CREATE RECURSIVE VIEW V(x INT);
+                CREATE VIEW V AS SELECT * FROM V;
+                """);
+        Assert.assertNotNull(node);
+        Assert.assertEquals(2, node.size());
+        Assert.assertTrue(node.get(0).statement() instanceof SqlDeclareView);
+        Assert.assertTrue(node.get(1).statement() instanceof SqlCreateView);
     }
 
     @Test

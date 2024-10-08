@@ -51,7 +51,8 @@ public class CompilerOptions implements IDiff<CompilerOptions> {
         public int optimizationLevel = 2;
         /** Useful for development */
         public boolean throwOnError = false;
-        @Parameter(names = "--alltables", description = "Generate an input for each CREATE TABLE, even if the table is not used by any view")
+        @Parameter(names = "--alltables", description =
+                "Generate an input for each CREATE TABLE, even if the table is not used by any view")
         public boolean generateInputForEveryTable = false;
         @Parameter(names = "--ignoreOrder",
                 description = "Ignore ORDER BY clauses at the end")

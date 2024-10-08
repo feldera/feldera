@@ -61,6 +61,7 @@ import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.SqlBasicTypeNameSpec;
+import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlCharStringLiteral;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlExplainFormat;
@@ -73,6 +74,7 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorTable;
+import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlTypeNameSpec;
 import org.apache.calcite.sql.SqlUserDefinedTypeNameSpec;
 import org.apache.calcite.sql.SqlWriter;
@@ -114,6 +116,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlDeclareView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragment;
@@ -125,6 +128,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTypeStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.FrontEndStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.LatenessStatement;
@@ -141,10 +145,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -185,6 +191,7 @@ public class CalciteCompiler implements IWritesLogs {
     private final CustomFunctions customFunctions;
     /** User-defined types */
     private final HashMap<String, RelStruct> udt;
+    private final Set<String> declaredViews;
 
     /** Create a copy of the 'source' compiler which can be used to compile
      * some generated SQL without affecting its data structures */
@@ -199,6 +206,7 @@ public class CalciteCompiler implements IWritesLogs {
         this.customFunctions = new CustomFunctions(source.customFunctions);
         this.calciteCatalog = new Catalog(source.calciteCatalog);
         this.udt = new HashMap<>(source.udt);
+        this.declaredViews = new HashSet<>(source.declaredViews);
         this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
         this.copySchema(source.rootSchema);
         this.rootSchema.add(this.calciteCatalog.schemaName, this.calciteCatalog);
@@ -345,6 +353,7 @@ public class CalciteCompiler implements IWritesLogs {
         this.validator = null;
         this.validateTypes = null;
         this.converter = null;
+        this.declaredViews = new HashSet<>();
 
         SqlOperatorTable operatorTable = this.createOperatorTable();
         this.addOperatorTable(operatorTable);
@@ -1050,6 +1059,61 @@ public class CalciteCompiler implements IWritesLogs {
         }
     }
 
+    /** Replaces references to a recursive view's name by references to another view */
+    static class ReplaceRecursiveViews extends SqlShuttle {
+        final Set<String> declaredViews;
+        final java.util.function.Function<String, String> inputName;
+        List<SqlCall> stack = new ArrayList<>();
+        int childIndex;
+
+        ReplaceRecursiveViews(Set<String> declaredViews, java.util.function.Function<String, String> inputName) {
+            this.declaredViews = declaredViews;
+            this.inputName = inputName;
+        }
+
+        SqlKind last() {
+            return Utilities.last(this.stack).getKind();
+        }
+
+        @Override
+        public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlCall call) {
+            this.stack.add(call);
+            CallCopyingArgHandler argHandler = new CallCopyingArgHandler(call, false);
+            List<SqlNode> operands = call.getOperandList();
+            for (childIndex = 0; childIndex < operands.size(); ++childIndex) {
+                argHandler.visitChild(this, call, childIndex, operands.get(childIndex));
+            }
+            Utilities.removeLast(this.stack);
+            return argHandler.result();
+        }
+
+        @Override
+         public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlIdentifier id) {
+            boolean inFrom = last() == SqlKind.SELECT && this.childIndex == SqlSelect.FROM_OPERAND;
+            if (id.isSimple()) {
+                if (inFrom && this.declaredViews.contains(id.getSimple())) {
+                    id = id.setName(0, this.inputName.apply(id.getSimple()));
+                }
+                return id;
+            } else {
+                SqlIdentifier component = id.getComponent(0);
+                if (this.declaredViews.contains(component.getSimple())) {
+                    id = id.setName(0, this.inputName.apply(component.getSimple()));
+                }
+                return id;
+            }
+         }
+     }
+
+    SqlNode replaceRecursiveViews(SqlNode query) {
+        if (this.declaredViews.isEmpty())
+            return query;
+        ReplaceRecursiveViews rr = new ReplaceRecursiveViews(
+                this.declaredViews, DeclareViewStatement::inputViewName);
+        query = rr.visitNode(query);
+        return Objects.requireNonNull(query);
+    }
+
     // Adjust the source position in the exception to match the original position
     CalciteContextException rewriteException(
             CalciteContextException e,
@@ -1097,8 +1161,7 @@ public class CalciteCompiler implements IWritesLogs {
                 List<ForeignKey> fk = this.createForeignKeys(ct);
                 CreateTableStatement table = new CreateTableStatement(
                         node, sqlStatement, tableName, Utilities.identifierIsQuoted(ct.name), cols, fk, properties);
-                boolean success = this.calciteCatalog.addTable(
-                        tableName, table.getEmulatedTable(), this.errorReporter, table);
+                boolean success = this.calciteCatalog.addTable(table, this.errorReporter);
                 if (!success)
                     return null;
                 return table;
@@ -1132,6 +1195,7 @@ public class CalciteCompiler implements IWritesLogs {
                 Logger.INSTANCE.belowLevel(this, 2)
                         .append(query.toString())
                         .newline();
+                query = this.replaceRecursiveViews(query);
                 RelRoot relRoot = converter.convertQuery(query, true, true);
                 List<RelColumnMetadata> columns = this.createViewColumnsMetadata(CalciteObject.create(node),
                         cv.name, relRoot, cv.columnList, cv.viewKind);
@@ -1150,12 +1214,11 @@ public class CalciteCompiler implements IWritesLogs {
                 }
                 RelNode optimized = this.optimize(relRoot.rel);
                 relRoot = relRoot.withRel(optimized);
-                String viewName = cv.name.getSimple();
                 CreateViewStatement view = new CreateViewStatement(node, sqlStatement,
                         cv.name.getSimple(), Utilities.identifierIsQuoted(cv.name),
                         columns, cv, relRoot, viewProperties);
                 // From Calcite's point of view we treat this view just as another table.
-                boolean success = this.calciteCatalog.addTable(viewName, view.getEmulatedTable(), this.errorReporter, view);
+                boolean success = this.calciteCatalog.addTable(view, this.errorReporter);
                 if (!success)
                     return null;
                 return view;
@@ -1236,6 +1299,25 @@ public class CalciteCompiler implements IWritesLogs {
                     RexNode expr = this.getConverter().convertExpression(lateness.getLateness());
                     return new LatenessStatement(node, sqlStatement,
                             lateness.getView(), lateness.getColumn(), expr);
+                } else if (node.statement instanceof SqlDeclareView cv) {
+                    List<RelColumnMetadata> columns = new ArrayList<>();
+                    int index = 0;
+                    for (SqlNode n: cv.columns) {
+                        SqlColumnDeclaration cd = (SqlColumnDeclaration) n;
+                        String name = cd.name.getSimple();
+                        RelDataType type = this.specToRel(cd.dataType, false);
+                        RelDataTypeField field = new RelDataTypeFieldImpl(name, index++, type);
+                        var meta = new RelColumnMetadata(CalciteObject.create(n), field, false,
+                                Utilities.identifierIsQuoted(cd.name), null, null, null);
+                        columns.add(meta);
+                    }
+                    var result = new DeclareViewStatement(node, sqlStatement, cv.name.getSimple(),
+                            Utilities.identifierIsQuoted(cv.name), columns);
+                    this.declaredViews.add(cv.name.getSimple());
+                    boolean success = this.calciteCatalog.addTable(result, this.errorReporter);
+                    if (!success)
+                        return null;
+                    return result;
                 }
                 break;
             }

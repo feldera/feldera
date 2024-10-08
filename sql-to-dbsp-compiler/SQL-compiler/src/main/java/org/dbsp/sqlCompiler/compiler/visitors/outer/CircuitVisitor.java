@@ -281,6 +281,10 @@ public abstract class CircuitVisitor
         return this.preorder(node.to(DBSPSourceTableOperator.class));
     }
 
+    public VisitDecision preorder(DBSPSourceViewDeclarationOperator node) {
+        return this.preorder(node.to(DBSPSourceTableOperator.class));
+    }
+
     public VisitDecision preorder(DBSPSourceMapOperator node) {
         return this.preorder(node.to(DBSPSourceTableOperator.class));
     }
@@ -530,6 +534,10 @@ public abstract class CircuitVisitor
     }
 
     public void postorder(DBSPSourceMultisetOperator node) {
+        this.postorder(node.to(DBSPSourceTableOperator.class));
+    }
+
+    public void postorder(DBSPSourceViewDeclarationOperator node) {
         this.postorder(node.to(DBSPSourceTableOperator.class));
     }
 

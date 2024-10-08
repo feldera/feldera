@@ -49,6 +49,7 @@ public record CircuitOptimizer(DBSPCompiler compiler) implements ICompilerCompon
         CompilerOptions options = this.compiler().options;
 
         passes.add(new ImplementNow(reporter, compiler));
+        passes.add(new OptimizeWithGraph(reporter, g -> new RecursiveComponents(reporter, g)));
         if (options.languageOptions.outputsAreSets)
             passes.add(new EnsureDistinctOutputs(reporter));
         passes.add(new MinMaxOptimize(reporter, compiler.weightVar));
