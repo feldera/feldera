@@ -5,24 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use utoipa::ToSchema;
 
-fn default_scale() -> i64 {
-    1
-}
-
-fn default_exponent() -> i64 {
-    1
-}
-
-fn default_workers() -> usize {
-    1
-}
-
-fn default_sequence() -> Vec<GenerationPlan> {
-    vec![GenerationPlan::default()]
-}
-
 /// Strategy used to generate values.
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum DatagenStrategy {
@@ -35,6 +19,7 @@ pub enum DatagenStrategy {
     /// - 1 day for the date type.
     ///
     /// The step size can be increased/decreased with the `scale` parameter.
+    #[default]
     Increment,
     /// A uniform random distribution is chosen to generate the value.
     Uniform,
@@ -125,15 +110,9 @@ pub enum DatagenStrategy {
     DirPath,
 }
 
-impl Default for DatagenStrategy {
-    fn default() -> Self {
-        Self::Increment
-    }
-}
-
 /// Configuration for generating random data for a field of a table.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct RngFieldSettings {
     /// Percentage of records where this field should be set to NULL.
     ///
@@ -142,7 +121,6 @@ pub struct RngFieldSettings {
     pub null_percentage: Option<usize>,
 
     /// Random strategy used to generate the value.
-    #[serde(default)]
     pub strategy: DatagenStrategy,
 
     /// An optional, exclusive range [a, b) to limit the range of values the generator should produce.
@@ -184,7 +162,6 @@ pub struct RngFieldSettings {
     ///   the scale factor is required to be positive too.
     ///
     /// The default scale factor is 1.
-    #[serde(default = "default_scale")]
     pub scale: i64,
 
     /// The frequency rank exponent for the Zipf distribution.
@@ -192,7 +169,6 @@ pub struct RngFieldSettings {
     /// - This value is only used if the strategy is set to `Zipf`.
     /// - The default value is 1.0.
     // TODO: make this f64 after API merge
-    #[serde(default = "default_exponent")]
     pub e: i64,
 
     /// An optional set of values the generator will pick from.
@@ -239,7 +215,7 @@ impl Default for RngFieldSettings {
 
 /// A random generation plan for a table that generates either a limited amount of rows or runs continuously.
 #[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct GenerationPlan {
     /// Non-zero number of rows to generate per second.
     ///
@@ -273,13 +249,12 @@ pub struct GenerationPlan {
     pub worker_chunk_size: Option<usize>,
 
     /// Specifies the values that the generator should produce.
-    #[serde(default)]
     pub fields: HashMap<String, Box<RngFieldSettings>>,
 }
 
 /// Configuration for generating random data for a table.
-#[derive(Default, Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[serde(default, deny_unknown_fields)]
 pub struct DatagenInputConfig {
     /// The sequence of generations to perform.
     ///
@@ -288,11 +263,9 @@ pub struct DatagenInputConfig {
     ///
     /// Note that if one of the sequences before the last one generates an unlimited number of rows
     /// the following sequences will not be executed.
-    #[serde(default = "default_sequence")]
     pub plan: Vec<GenerationPlan>,
 
     /// Number of workers to use for generating data.
-    #[serde(default = "default_workers")]
     pub workers: usize,
 
     /// Optional seed for the random generator.
@@ -305,4 +278,14 @@ pub struct DatagenInputConfig {
     ///   apart from setting a seed, `workers` also needs to remain unchanged.
     /// - The input will arrive in non-deterministic order if `workers > 1`.
     pub seed: Option<u64>,
+}
+
+impl Default for DatagenInputConfig {
+    fn default() -> Self {
+        Self {
+            plan: vec![GenerationPlan::default()],
+            workers: 1,
+            seed: None,
+        }
+    }
 }

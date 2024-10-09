@@ -313,7 +313,15 @@ If not set, the generator will produce a single sequence with default settings.
 If set, the generator will produce the specified sequences in sequential order.
 
 Note that if one of the sequences before the last one generates an unlimited number of rows
-the following sequences will not be executed.`
+the following sequences will not be executed.`,
+      default: [
+        {
+          fields: {},
+          limit: null,
+          rate: null,
+          worker_chunk_size: null
+        }
+      ]
     },
     seed: {
       type: 'integer',
@@ -327,12 +335,14 @@ every time the pipeline is run.
 - To ensure the set of generated input records is deterministic across multiple runs,
 apart from setting a seed, \`workers\` also needs to remain unchanged.
 - The input will arrive in non-deterministic order if \`workers > 1\`.`,
+      default: null,
       nullable: true,
       minimum: 0
     },
     workers: {
       type: 'integer',
       description: 'Number of workers to use for generating data.',
+      default: 1,
       minimum: 0
     }
   },
@@ -921,6 +931,7 @@ export const $GenerationPlan = {
     fields: {
       type: 'object',
       description: 'Specifies the values that the generator should produce.',
+      default: {},
       additionalProperties: {
         $ref: '#/components/schemas/RngFieldSettings'
       }
@@ -936,6 +947,7 @@ If set, the generator will produce new records until the specified limit is reac
 Note that if the table has one or more primary keys that don't use the \`increment\` strategy to
 generate the key there is a potential that an update is generated instead of an insert. In
 this case it's possible the total number of records is less than the specified limit.`,
+      default: null,
       nullable: true,
       minimum: 0
     },
@@ -945,6 +957,7 @@ this case it's possible the total number of records is less than the specified l
       description: `Non-zero number of rows to generate per second.
 
 If not set, the generator will produce rows as fast as possible.`,
+      default: null,
       nullable: true,
       minimum: 0
     },
@@ -963,6 +976,7 @@ Assume you generate a total of 125 records with 4 workers and a chunk size of 25
 In this case, worker A will generate records 0..25, worker B will generate records 25..50,
 etc. A, B, C, and D will generate records in parallel. The first worker to finish its chunk
 will pick up the last chunk of records (100..125) to generate.`,
+      default: null,
       nullable: true,
       minimum: 0
     }
@@ -1182,6 +1196,7 @@ export const $KafkaOutputFtConfig = {
 options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md).
 
 These options override \`kafka_options\` for consumers, and may be empty.`,
+      default: {},
       additionalProperties: {
         type: 'string'
       }
@@ -1193,6 +1208,7 @@ These options override \`kafka_options\` for consumers, and may be empty.`,
 options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md).
 
 These options override \`kafka_options\` for producers, and may be empty.`,
+      default: {},
       additionalProperties: {
         type: 'string'
       }
@@ -1349,7 +1365,8 @@ pushed to the output transport when one of several conditions is satisfied:
 milliseconds.
 * buffer size exceeds \`max_output_buffer_size_records\` records.
 
-This flag is \`false\` by default.`
+This flag is \`false\` by default.`,
+      default: false
     },
     max_output_buffer_size_records: {
       type: 'integer',
@@ -1365,6 +1382,7 @@ the other output conditions is satisfied.
 
 NOTE: this configuration option requires the \`enable_output_buffer\` flag
 to be set.`,
+      default: 18446744073709552000,
       minimum: 0
     },
     max_output_buffer_time_millis: {
@@ -1378,6 +1396,7 @@ set the buffer will be flushed at most every
 
 NOTE: this configuration option requires the \`enable_output_buffer\` flag
 to be set.`,
+      default: 18446744073709552000,
       minimum: 0
     }
   }
@@ -1471,6 +1490,7 @@ at most each \`clock_resolution_usecs\` microseconds.
 It is set to 100 milliseconds (100,000 microseconds) by default.
 
 Set to \`null\` to disable periodic clock updates.`,
+          default: 100000,
           nullable: true,
           minimum: 0
         },
@@ -1478,13 +1498,15 @@ Set to \`null\` to disable periodic clock updates.`,
           type: 'boolean',
           description: `Enable CPU profiler.
 
-The default value is \`true\`.`
+The default value is \`true\`.`,
+          default: true
         },
         max_buffering_delay_usecs: {
           type: 'integer',
           format: 'int64',
           description: `Maximal delay in microseconds to wait for \`min_batch_size_records\` to
 get buffered by the controller, defaults to 0.`,
+          default: 0,
           minimum: 0
         },
         min_batch_size_records: {
@@ -1497,6 +1519,7 @@ least \`min_batch_size_records\` records have been received (total
 across all endpoints) or \`max_buffering_delay_usecs\` microseconds
 have passed since at least one input records has been buffered.
 Defaults to 0.`,
+          default: 0,
           minimum: 0
         },
         min_storage_bytes: {
@@ -1509,11 +1532,24 @@ true.
 A value of 0 will write even empty batches to storage, and nonzero
 values provide a threshold.  \`usize::MAX\` would effectively disable
 storage.`,
+          default: null,
           nullable: true,
           minimum: 0
         },
         resources: {
-          $ref: '#/components/schemas/ResourceConfig'
+          allOf: [
+            {
+              $ref: '#/components/schemas/ResourceConfig'
+            }
+          ],
+          default: {
+            cpu_cores_max: null,
+            cpu_cores_min: null,
+            memory_mb_max: null,
+            memory_mb_min: null,
+            storage_class: null,
+            storage_mb_max: null
+          }
         },
         storage: {
           type: 'boolean',
@@ -1526,20 +1562,24 @@ need to read from, or write to disk
 
 - If \`true\`, the pipeline state is stored in the specified location,
 is persisted across restarts, and can be checkpointed and recovered.
-This feature is currently experimental.`
+This feature is currently experimental.`,
+          default: false
         },
         tracing: {
           type: 'boolean',
-          description: 'Enable pipeline tracing.'
+          description: 'Enable pipeline tracing.',
+          default: false
         },
         tracing_endpoint_jaeger: {
           type: 'string',
-          description: 'Jaeger tracing endpoint to send tracing information to.'
+          description: 'Jaeger tracing endpoint to send tracing information to.',
+          default: '127.0.0.1:6831'
         },
         workers: {
           type: 'integer',
           format: 'int32',
           description: 'Number of DBSP worker threads.',
+          default: 8,
           minimum: 0
         }
       }
@@ -2008,6 +2048,7 @@ export const $ResourceConfig = {
       format: 'int64',
       description: `The maximum number of CPU cores to reserve
 for an instance of this pipeline`,
+      default: null,
       nullable: true,
       minimum: 0
     },
@@ -2016,6 +2057,7 @@ for an instance of this pipeline`,
       format: 'int64',
       description: `The minimum number of CPU cores to reserve
 for an instance of this pipeline`,
+      default: null,
       nullable: true,
       minimum: 0
     },
@@ -2024,6 +2066,7 @@ for an instance of this pipeline`,
       format: 'int64',
       description: `The maximum memory in Megabytes to reserve
 for an instance of this pipeline`,
+      default: null,
       nullable: true,
       minimum: 0
     },
@@ -2032,6 +2075,7 @@ for an instance of this pipeline`,
       format: 'int64',
       description: `The minimum memory in Megabytes to reserve
 for an instance of this pipeline`,
+      default: null,
       nullable: true,
       minimum: 0
     },
@@ -2039,6 +2083,7 @@ for an instance of this pipeline`,
       type: 'string',
       description: `Storage class to use for an instance of this pipeline.
 The class determines storage performance such as IOPS and throughput.`,
+      default: null,
       nullable: true
     },
     storage_mb_max: {
@@ -2046,6 +2091,7 @@ The class determines storage performance such as IOPS and throughput.`,
       format: 'int64',
       description: `The total storage in Megabytes to reserve
 for an instance of this pipeline`,
+      default: null,
       nullable: true,
       minimum: 0
     }
@@ -2055,7 +2101,6 @@ for an instance of this pipeline`,
 export const $RngFieldSettings = {
   type: 'object',
   description: 'Configuration for generating random data for a field of a table.',
-  required: ['range'],
   properties: {
     e: {
       type: 'integer',
@@ -2063,12 +2108,14 @@ export const $RngFieldSettings = {
       description: `The frequency rank exponent for the Zipf distribution.
 
 - This value is only used if the strategy is set to \`Zipf\`.
-- The default value is 1.0.`
+- The default value is 1.0.`,
+      default: 1
     },
     fields: {
       type: 'object',
       description:
         'Specifies the values that the generator should produce in case the field is a struct type.',
+      default: null,
       additionalProperties: {
         $ref: '#/components/schemas/RngFieldSettings'
       },
@@ -2080,6 +2127,7 @@ export const $RngFieldSettings = {
           $ref: '#/components/schemas/RngFieldSettings'
         }
       ],
+      default: null,
       nullable: true
     },
     null_percentage: {
@@ -2088,6 +2136,7 @@ export const $RngFieldSettings = {
 
 If not set, the generator will produce only records with non-NULL values.
 If set to \`1..=100\`, the generator will produce records with NULL values with the specified percentage.`,
+      default: null,
       nullable: true,
       minimum: 0
     },
@@ -2132,10 +2181,16 @@ If not set, a range of [0, 5) is used by default.
 - If \`range\` is specified and the range is required to be positive (struct, map, array etc.)
 the scale factor is required to be positive too.
 
-The default scale factor is 1.`
+The default scale factor is 1.`,
+      default: 1
     },
     strategy: {
-      $ref: '#/components/schemas/DatagenStrategy'
+      allOf: [
+        {
+          $ref: '#/components/schemas/DatagenStrategy'
+        }
+      ],
+      default: 'increment'
     },
     value: {
       allOf: [
@@ -2143,6 +2198,7 @@ The default scale factor is 1.`
           $ref: '#/components/schemas/RngFieldSettings'
         }
       ],
+      default: null,
       nullable: true
     },
     values: {
@@ -2158,6 +2214,7 @@ If set to an empty set, the generator will produce NULL values.
 If set to a single value, the generator will produce only that value.
 
 Note that \`range\` is ignored if \`values\` is set.`,
+      default: null,
       nullable: true
     }
   },
@@ -2182,6 +2239,7 @@ at most each \`clock_resolution_usecs\` microseconds.
 It is set to 100 milliseconds (100,000 microseconds) by default.
 
 Set to \`null\` to disable periodic clock updates.`,
+      default: 100000,
       nullable: true,
       minimum: 0
     },
@@ -2189,13 +2247,15 @@ Set to \`null\` to disable periodic clock updates.`,
       type: 'boolean',
       description: `Enable CPU profiler.
 
-The default value is \`true\`.`
+The default value is \`true\`.`,
+      default: true
     },
     max_buffering_delay_usecs: {
       type: 'integer',
       format: 'int64',
       description: `Maximal delay in microseconds to wait for \`min_batch_size_records\` to
 get buffered by the controller, defaults to 0.`,
+      default: 0,
       minimum: 0
     },
     min_batch_size_records: {
@@ -2208,6 +2268,7 @@ least \`min_batch_size_records\` records have been received (total
 across all endpoints) or \`max_buffering_delay_usecs\` microseconds
 have passed since at least one input records has been buffered.
 Defaults to 0.`,
+      default: 0,
       minimum: 0
     },
     min_storage_bytes: {
@@ -2220,11 +2281,24 @@ true.
 A value of 0 will write even empty batches to storage, and nonzero
 values provide a threshold.  \`usize::MAX\` would effectively disable
 storage.`,
+      default: null,
       nullable: true,
       minimum: 0
     },
     resources: {
-      $ref: '#/components/schemas/ResourceConfig'
+      allOf: [
+        {
+          $ref: '#/components/schemas/ResourceConfig'
+        }
+      ],
+      default: {
+        cpu_cores_max: null,
+        cpu_cores_min: null,
+        memory_mb_max: null,
+        memory_mb_min: null,
+        storage_class: null,
+        storage_mb_max: null
+      }
     },
     storage: {
       type: 'boolean',
@@ -2237,20 +2311,24 @@ need to read from, or write to disk
 
 - If \`true\`, the pipeline state is stored in the specified location,
 is persisted across restarts, and can be checkpointed and recovered.
-This feature is currently experimental.`
+This feature is currently experimental.`,
+      default: false
     },
     tracing: {
       type: 'boolean',
-      description: 'Enable pipeline tracing.'
+      description: 'Enable pipeline tracing.',
+      default: false
     },
     tracing_endpoint_jaeger: {
       type: 'string',
-      description: 'Jaeger tracing endpoint to send tracing information to.'
+      description: 'Jaeger tracing endpoint to send tracing information to.',
+      default: '127.0.0.1:6831'
     },
     workers: {
       type: 'integer',
       format: 'int32',
       description: 'Number of DBSP worker threads.',
+      default: 8,
       minimum: 0
     }
   }
