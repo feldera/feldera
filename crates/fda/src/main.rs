@@ -1,7 +1,8 @@
 //! A CLI App for the Feldera REST API.
 
 use std::convert::Infallible;
-use std::io::{Read, Write};
+use std::fs::File;
+use std::io::{ErrorKind, Read, Write};
 
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
@@ -1069,6 +1070,35 @@ async fn program(action: ProgramAction, client: Client) {
     }
 }
 
+fn debug(action: DebugActions) {
+    match action {
+        DebugActions::MsgpCat { path } => {
+            let mut file = match File::open(&path) {
+                Ok(file) => file,
+                Err(error) => {
+                    eprintln!("{}: open failed ({error})", path.display());
+                    std::process::exit(1);
+                }
+            };
+            loop {
+                let value = match rmpv::decode::value::read_value(&mut file) {
+                    Ok(value) => value,
+                    Err(rmpv::decode::Error::InvalidMarkerRead(error))
+                        if error.kind() == ErrorKind::UnexpectedEof =>
+                    {
+                        break
+                    }
+                    Err(error) => {
+                        eprintln!("{}: read failed ({error})", path.display());
+                        std::process::exit(1);
+                    }
+                };
+                println!("{value}");
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     CompleteEnv::with_factory(Cli::command).complete();
@@ -1089,16 +1119,19 @@ async fn main() {
         cli.host = cli.host.trim_end_matches('/').to_string();
     }
 
-    let client = make_client(cli.host, cli.auth, cli.timeout)
-        .map_err(|e| {
-            eprintln!("Failed to create HTTP client: {}", e);
-            std::process::exit(1);
-        })
-        .unwrap();
+    let client = || {
+        make_client(cli.host, cli.auth, cli.timeout)
+            .map_err(|e| {
+                eprintln!("Failed to create HTTP client: {}", e);
+                std::process::exit(1);
+            })
+            .unwrap()
+    };
 
     match cli.command {
-        Commands::Apikey { action } => api_key_commands(action, client).await,
-        Commands::Pipelines => pipelines(client).await,
-        Commands::Pipeline(action) => pipeline(action, client).await,
+        Commands::Apikey { action } => api_key_commands(action, client()).await,
+        Commands::Pipelines => pipelines(client()).await,
+        Commands::Pipeline(action) => pipeline(action, client()).await,
+        Commands::Debug { action } => debug(action),
     }
 }

@@ -108,6 +108,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: ApiKeyActions,
     },
+    /// Debugging tools.
+    Debug {
+        #[command(subcommand)]
+        action: DebugActions,
+    },
 }
 
 #[derive(Subcommand)]
@@ -124,6 +129,17 @@ pub enum ApiKeyActions {
     Delete {
         /// The name of the API key to delete
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DebugActions {
+    /// Print a MessagePack file, such as `steps.bin` in a checkpoint directory,
+    /// to stdout.
+    MsgpCat {
+        /// The MessagePack file to read.
+        #[arg(value_hint = ValueHint::FilePath)]
+        path: PathBuf,
     },
 }
 

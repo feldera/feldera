@@ -1,13 +1,13 @@
 use dbsp::circuit::checkpointer::CheckpointMetadata;
+use rmpv::Value as RmpValue;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
-use serde_json::{Error as JsonError, Value as JsonValue};
 use std::{
     backtrace::Backtrace,
     cmp::Ordering,
     collections::HashMap,
     fmt::{Display, Formatter, Result as FmtResult},
     fs::{File, OpenOptions},
-    io::{BufRead, BufReader, BufWriter, Error as IoError, Seek, SeekFrom, Write},
+    io::{BufReader, BufWriter, Error as IoError, ErrorKind, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::mpsc::{channel, Receiver, Sender},
     thread::{self, JoinHandle},
@@ -26,11 +26,16 @@ pub enum StepError {
         backtrace: Backtrace,
     },
 
-    ParseError {
+    EncodeError {
         path: PathBuf,
-        #[serde(serialize_with = "serialize_json_error")]
-        error: JsonError,
-        line_number: usize,
+        #[serde(serialize_with = "serialize_as_string")]
+        error: rmp_serde::encode::Error,
+    },
+
+    DecodeError {
+        path: PathBuf,
+        #[serde(serialize_with = "serialize_as_string")]
+        error: rmp_serde::decode::Error,
         offset: u64,
     },
 
@@ -61,19 +66,37 @@ where
     ser.end()
 }
 
-fn serialize_json_error<S>(error: &JsonError, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_as_string<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
+    T: ToString,
 {
-    serializer.serialize_str(&error.to_string())
+    serializer.serialize_str(&value.to_string())
 }
 
 impl Display for StepError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
-            StepError::ParseError { path, error, line_number, offset } => write!(f, "error parsing step on line {line_number} starting at offset {offset} in {} ({error})", path.display()),
-            StepError::MissingStep { path, step } => write!(f, "{} should contain step {step} but it is not present", path.display()),
-            StepError::IoError { path, io_error, .. } => write!(f, "I/O error on {}: {io_error}", path.display()),
+            StepError::EncodeError { path, error } => {
+                write!(f, "{}: error writing step ({error})", path.display())
+            }
+            StepError::DecodeError {
+                path,
+                error,
+                offset,
+            } => write!(
+                f,
+                "error parsing step starting at offset {offset} in {} ({error})",
+                path.display()
+            ),
+            StepError::MissingStep { path, step } => write!(
+                f,
+                "{} should contain step {step} but it is not present",
+                path.display()
+            ),
+            StepError::IoError { path, io_error, .. } => {
+                write!(f, "I/O error on {}: {io_error}", path.display())
+            }
             StepError::UnexpectedRead => write!(f, "Unexpected read while in write mode"),
             StepError::UnexpectedWrite => write!(f, "Unexpected write while in read mode"),
             StepError::UnexpectedWait => write!(f, "Unexpected wait while in read mode"),
@@ -157,11 +180,10 @@ impl Drop for BackgroundSync {
     }
 }
 
-/// Reads a `steps.json` file that tracks per-input adapter, per-step metadata.
+/// Reads a `steps.bin` file that tracks per-input adapter, per-step metadata.
 pub struct StepReader {
     path: PathBuf,
     reader: BufReader<File>,
-    line_number: usize,
 }
 
 pub enum ReadResult {
@@ -173,7 +195,7 @@ pub enum ReadResult {
 }
 
 impl StepReader {
-    /// Opens the existing `steps.json` file at `path`.
+    /// Opens the existing `steps.bin` file at `path`.
     pub fn open<P>(path: P) -> Result<Self, StepError>
     where
         P: AsRef<Path>,
@@ -186,44 +208,40 @@ impl StepReader {
                 .open(&path)
                 .map_err(|io_error| StepError::io_error(&path, io_error))?,
         );
-        Ok(Self {
-            path,
-            reader,
-            line_number: 0,
-        })
+        Ok(Self { path, reader })
     }
 
     /// Reads one step from this file. Returns either the step or, if end of
     /// file was reached, a [StepWriter] that can be used to append new steps.
     pub fn read(mut self) -> Result<ReadResult, StepError> {
         let start_offset = self.reader.stream_position().unwrap();
-        self.line_number += 1;
-        let mut line = String::new();
-        if self
-            .reader
-            .read_line(&mut line)
-            .map_err(|error| StepError::io_error(&self.path, error))?
-            > 0
-            && line.ends_with('\n')
-        {
-            let step = serde_json::from_str::<StepMetadata>(&line).map_err(|error| {
-                StepError::ParseError {
-                    path: self.path.clone(),
-                    error,
-                    line_number: self.line_number,
-                    offset: start_offset,
-                }
-            })?;
-            Ok(ReadResult::Step {
+        match rmp_serde::decode::from_read::<_, StepMetadata>(&mut self.reader) {
+            Ok(step) => Ok(ReadResult::Step {
                 reader: self,
                 metadata: step,
-            })
-        } else {
-            let mut file = self.reader.into_inner();
-            file.set_len(start_offset)
-                .and_then(|()| file.seek(SeekFrom::Start(start_offset)))
-                .map_err(|io_error| StepError::io_error(&self.path, io_error))?;
-            Ok(ReadResult::Writer(StepWriter::new(self.path, file)))
+            }),
+            Err(error) => {
+                match error {
+                    rmp_serde::decode::Error::InvalidMarkerRead(e)
+                    | rmp_serde::decode::Error::InvalidDataRead(e)
+                        if e.kind() == ErrorKind::UnexpectedEof =>
+                    {
+                        // End of file.
+                    }
+                    _ => {
+                        return Err(StepError::DecodeError {
+                            path: self.path.clone(),
+                            error,
+                            offset: start_offset,
+                        })
+                    }
+                };
+                let mut file = self.reader.into_inner();
+                file.set_len(start_offset)
+                    .and_then(|()| file.seek(SeekFrom::Start(start_offset)))
+                    .map_err(|io_error| StepError::io_error(&self.path, io_error))?;
+                Ok(ReadResult::Writer(StepWriter::new(self.path, file)))
+            }
         }
     }
 
@@ -256,7 +274,7 @@ impl StepReader {
     }
 }
 
-/// A writer for a `steps.json` file that records per-input adapter, per-step metadata.
+/// A writer for a `steps.bin` file that records per-input adapter, per-step metadata.
 pub struct StepWriter {
     path: PathBuf,
     writer: BufWriter<File>,
@@ -285,10 +303,14 @@ impl StepWriter {
     /// Appends `step` to this writer and starts I/O for the write in the
     /// background.
     pub fn write(&mut self, step: &StepMetadata) -> Result<(), StepError> {
-        serde_json::to_writer(&mut self.writer, step)
-            .map_err(|error| IoError::from(error.io_error_kind().unwrap()))
-            .and_then(|()| writeln!(self.writer))
-            .and_then(|()| self.writer.flush())
+        rmp_serde::encode::write_named(&mut self.writer, step).map_err(|error| {
+            StepError::EncodeError {
+                path: self.path.to_path_buf(),
+                error,
+            }
+        })?;
+        self.writer
+            .flush()
             .map_err(|error| StepError::io_error(&self.path, error))?;
         self.sync.sync();
         Ok(())
@@ -305,7 +327,7 @@ impl StepWriter {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct StepMetadata {
     pub step: Step,
-    pub input_endpoints: HashMap<String, JsonValue>,
+    pub input_endpoints: HashMap<String, RmpValue>,
 }
 
 #[cfg(test)]
@@ -314,15 +336,17 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use crate::controller::metadata::ReadResult;
+    use crate::{controller::metadata::ReadResult, test::init_test_logger};
 
     use super::{StepMetadata, StepReader, StepWriter};
 
     /// Create and write a steps file and then read it back.
     #[test]
     fn test_create() {
+        init_test_logger();
+
         let tempdir = TempDir::new().unwrap();
-        let path = tempdir.path().join("steps.json");
+        let path = tempdir.path().join("steps.bin");
 
         let written_data = (0..10)
             .map(|step| StepMetadata {
@@ -354,8 +378,10 @@ mod tests {
     /// Create and write a steps file, then read it back, and continue adding more steps at the end.
     #[test]
     fn test_append() {
+        init_test_logger();
+
         let tempdir = TempDir::new().unwrap();
-        let path = tempdir.path().join("steps.json");
+        let path = tempdir.path().join("steps.bin");
 
         let written_data = (0..10)
             .map(|step| StepMetadata {
@@ -400,8 +426,10 @@ mod tests {
     /// Create and write a steps file and then read it back with seeking.
     #[test]
     fn test_seek() {
+        init_test_logger();
+
         let tempdir = TempDir::new().unwrap();
-        let path = tempdir.path().join("steps.json");
+        let path = tempdir.path().join("steps.bin");
 
         let written_data = (0..10)
             .map(|step| StepMetadata {
