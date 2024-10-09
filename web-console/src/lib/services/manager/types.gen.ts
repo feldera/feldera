@@ -1467,7 +1467,7 @@ export type RngFieldSettings = {
    * If not set, a range of [0, 5) is used by default.
    * - For struct/boolean/null types `range` is ignored.
    */
-  range: {
+  range?: {
     [key: string]: unknown
   }
   /**

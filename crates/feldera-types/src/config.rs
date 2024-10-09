@@ -32,23 +32,6 @@ pub const fn default_max_batch_size() -> u64 {
     10_000
 }
 
-/// Default number of DBSP worker threads.
-const fn default_workers() -> u16 {
-    8
-}
-
-/// Default endpoint to send tracing data to.
-fn default_tracing_endpoint() -> String {
-    "127.0.0.1:6831".to_string()
-}
-
-/// Default value of `RuntimeConfig::tracing`.
-// We discovered that the jaeger crate can use up gigabytes of RAM, so it's not harmless
-// to keep it on by default.
-fn default_tracing() -> bool {
-    false
-}
-
 /// Pipeline deployment configuration.
 /// It represents configuration entries directly provided by the user
 /// (e.g., runtime configuration) and entries derived from the schema
@@ -147,22 +130,12 @@ impl StorageCacheConfig {
     }
 }
 
-/// Enable the CPU profile by default.
-fn default_cpu_profiler() -> bool {
-    true
-}
-
-/// Update the clock every 100ms by default.
-fn default_clock_resolution_usecs() -> Option<u64> {
-    Some(100_000)
-}
-
 /// Global pipeline configuration settings. This is the publicly
 /// exposed type for users to configure pipelines.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
-    #[serde(default = "default_workers")]
     pub workers: u16,
 
     /// Should persistent storage be enabled for this pipeline?
@@ -175,21 +148,17 @@ pub struct RuntimeConfig {
     /// - If `true`, the pipeline state is stored in the specified location,
     ///   is persisted across restarts, and can be checkpointed and recovered.
     ///   This feature is currently experimental.
-    #[serde(default)]
     pub storage: bool,
 
     /// Enable CPU profiler.
     ///
     /// The default value is `true`.
-    #[serde(default = "default_cpu_profiler")]
     pub cpu_profiler: bool,
 
     /// Enable pipeline tracing.
-    #[serde(default = "default_tracing")]
     pub tracing: bool,
 
     /// Jaeger tracing endpoint to send tracing information to.
-    #[serde(default = "default_tracing_endpoint")]
     pub tracing_endpoint_jaeger: String,
 
     /// Minimal input batch size.
@@ -199,17 +168,14 @@ pub struct RuntimeConfig {
     /// across all endpoints) or `max_buffering_delay_usecs` microseconds
     /// have passed since at least one input records has been buffered.
     /// Defaults to 0.
-    #[serde(default)]
     pub min_batch_size_records: u64,
 
     /// Maximal delay in microseconds to wait for `min_batch_size_records` to
     /// get buffered by the controller, defaults to 0.
-    #[serde(default)]
     pub max_buffering_delay_usecs: u64,
 
     /// Resource reservations and limits. This is enforced
     /// only in Feldera Cloud.
-    #[serde(default)]
     pub resources: ResourceConfig,
 
     /// The minimum estimated number of bytes in a batch of data to write it to
@@ -232,23 +198,29 @@ pub struct RuntimeConfig {
     /// It is set to 100 milliseconds (100,000 microseconds) by default.
     ///
     /// Set to `null` to disable periodic clock updates.
-    #[serde(default = "default_clock_resolution_usecs")]
     pub clock_resolution_usecs: Option<u64>,
 }
 
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
-            workers: default_workers(),
+            workers: 8,
             storage: false,
-            cpu_profiler: default_cpu_profiler(),
-            tracing: default_tracing(),
-            tracing_endpoint_jaeger: default_tracing_endpoint(),
+            cpu_profiler: true,
+            tracing: {
+                // We discovered that the jaeger crate can use up gigabytes of RAM, so it's not harmless
+                // to keep it on by default.
+                false
+            },
+            tracing_endpoint_jaeger: "127.0.0.1:6831".to_string(),
             min_batch_size_records: 0,
             max_buffering_delay_usecs: 0,
             resources: ResourceConfig::default(),
             min_storage_bytes: None,
-            clock_resolution_usecs: default_clock_resolution_usecs(),
+            clock_resolution_usecs: {
+                // Every 100 ms.
+                Some(100_000)
+            },
         }
     }
 }
@@ -334,15 +306,8 @@ pub struct ConnectorConfig {
     pub paused: bool,
 }
 
-fn default_max_buffer_time_millis() -> usize {
-    usize::MAX
-}
-
-fn default_max_buffer_size_records() -> usize {
-    usize::MAX
-}
-
-#[derive(Debug, Default, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct OutputBufferConfig {
     /// Enable output buffering.
     ///
@@ -366,7 +331,6 @@ pub struct OutputBufferConfig {
     ///
     /// This flag is `false` by default.
     // TODO: on-demand output triggered via the API.
-    #[serde(default)]
     pub enable_output_buffer: bool,
 
     /// Maximum time in milliseconds data is kept in the output buffer.
@@ -378,7 +342,6 @@ pub struct OutputBufferConfig {
     ///
     /// NOTE: this configuration option requires the `enable_output_buffer` flag
     /// to be set.
-    #[serde(default = "default_max_buffer_time_millis")]
     pub max_output_buffer_time_millis: usize,
 
     /// Maximum number of updates to be kept in the output buffer.
@@ -393,15 +356,24 @@ pub struct OutputBufferConfig {
     ///
     /// NOTE: this configuration option requires the `enable_output_buffer` flag
     /// to be set.
-    #[serde(default = "default_max_buffer_size_records")]
     pub max_output_buffer_size_records: usize,
+}
+
+impl Default for OutputBufferConfig {
+    fn default() -> Self {
+        Self {
+            enable_output_buffer: false,
+            max_output_buffer_size_records: usize::MAX,
+            max_output_buffer_time_millis: usize::MAX,
+        }
+    }
 }
 
 impl OutputBufferConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.enable_output_buffer
-            && self.max_output_buffer_size_records == default_max_buffer_size_records()
-            && self.max_output_buffer_time_millis == default_max_buffer_time_millis()
+            && self.max_output_buffer_size_records == Self::default().max_output_buffer_size_records
+            && self.max_output_buffer_time_millis == Self::default().max_output_buffer_time_millis
         {
             return Err(
                 "when the 'enable_output_buffer' flag is set, one of 'max_output_buffer_size_records' and 'max_output_buffer_time_millis' settings must be specified"
@@ -482,34 +454,29 @@ pub struct FormatConfig {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct ResourceConfig {
     /// The minimum number of CPU cores to reserve
     /// for an instance of this pipeline
-    #[serde(default)]
     pub cpu_cores_min: Option<u64>,
 
     /// The maximum number of CPU cores to reserve
     /// for an instance of this pipeline
-    #[serde(default)]
     pub cpu_cores_max: Option<u64>,
 
     /// The minimum memory in Megabytes to reserve
     /// for an instance of this pipeline
-    #[serde(default)]
     pub memory_mb_min: Option<u64>,
 
     /// The maximum memory in Megabytes to reserve
     /// for an instance of this pipeline
-    #[serde(default)]
     pub memory_mb_max: Option<u64>,
 
     /// The total storage in Megabytes to reserve
     /// for an instance of this pipeline
-    #[serde(default)]
     pub storage_mb_max: Option<u64>,
 
     /// Storage class to use for an instance of this pipeline.
     /// The class determines storage performance such as IOPS and throughput.
-    #[serde(default)]
     pub storage_class: Option<String>,
 }
