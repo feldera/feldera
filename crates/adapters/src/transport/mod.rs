@@ -120,6 +120,14 @@ pub fn input_transport_config_to_endpoint(
     }
 }
 
+pub fn input_transport_config_is_fault_tolerant(config: &TransportConfig) -> bool {
+    if let Ok(Some(endpoint)) = input_transport_config_to_endpoint(config.clone()) {
+        endpoint.is_fault_tolerant()
+    } else {
+        false
+    }
+}
+
 /// Creates an output transport endpoint instance using an output transport configuration.
 ///
 /// Returns an error if there is a invalid configuration for the endpoint.
