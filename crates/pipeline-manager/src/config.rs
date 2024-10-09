@@ -182,6 +182,8 @@ pub struct ApiServerConfig {
     /// For each directory, the files are read sorted on the filename.
     /// For multiple directories, the lists of demos are appended one after the other into a single one.
     /// Files which do not end in `.sql` and directories are ignored. Symlinks are followed.
+    /// If a `<filename>.sql` exists, checks for `<filename>.udf.rs` and `<filename>.udf.toml`.
+    /// If present, these will be included in the demo as well.
     #[arg(long, default_values_t = default_demos_dir())]
     pub demos_dir: Vec<String>,
 

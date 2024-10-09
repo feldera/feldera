@@ -2330,7 +2330,9 @@
           "name",
           "title",
           "description",
-          "program_code"
+          "program_code",
+          "udf_rust",
+          "udf_toml"
         ],
         "properties": {
           "description": {
@@ -2348,6 +2350,14 @@
           "title": {
             "type": "string",
             "description": "Title of the demo (parsed from SQL preamble)."
+          },
+          "udf_rust": {
+            "type": "string",
+            "description": "User defined function (UDF) Rust code."
+          },
+          "udf_toml": {
+            "type": "string",
+            "description": "User defined function (UDF) TOML dependencies."
           }
         }
       },

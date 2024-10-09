@@ -32,16 +32,25 @@ pub struct Demo {
     description: String,
     /// Program SQL code.
     program_code: String,
+    /// User defined function (UDF) Rust code.
+    udf_rust: String,
+    /// User defined function (UDF) TOML dependencies.
+    udf_toml: String,
 }
 
 /// Parses the SQL preamble to retrieve the demo metadata.
-pub fn parse_demo_from_sql_file(path: String, content: String) -> Result<Demo, DemoError> {
+pub fn parse_demo(
+    path: String,
+    program_code: String,
+    udf_rust: String,
+    udf_toml: String,
+) -> Result<Demo, DemoError> {
     // Match preamble
     let re_preamble = Regex::new(
         r"^-- (.+) \(([a-zA-Z0-9_-]+)\)[ \t]*\r?\n--[ \t]*\r?\n((-- .+\r?\n)+)--[ \t]*\r?\n",
     )
     .expect("Invalid preamble regex");
-    let Some(captures) = re_preamble.captures(&content) else {
+    let Some(captures) = re_preamble.captures(&program_code) else {
         return Err(DemoError::InvalidSqlWithPreamble {
             path,
             reason: "does not match preamble regex pattern".to_string(),
@@ -114,8 +123,28 @@ pub fn parse_demo_from_sql_file(path: String, content: String) -> Result<Demo, D
         name,
         title,
         description,
-        program_code: content,
+        program_code,
+        udf_rust,
+        udf_toml,
     })
+}
+
+/// Reads the content of a file fully as string.
+/// Prints error message and returns `None` if the content could not be read.
+fn read_from_file_or_print_error(path: &Path) -> Option<String> {
+    match fs::read_to_string(path) {
+        Ok(content) => Some(content),
+        Err(e) => {
+            error!(
+                "{}",
+                DemoError::UnableToReadFile {
+                    path: path.to_string_lossy().to_string(),
+                    error: e.to_string(),
+                }
+            );
+            None
+        }
+    }
 }
 
 /// Reads the demos from the demos directories.
@@ -123,6 +152,8 @@ pub fn parse_demo_from_sql_file(path: String, content: String) -> Result<Demo, D
 /// For each directory, the files are read sorted on the filename.
 /// For multiple directories, the lists of demos are appended one after the other into a single one.
 /// Files which do not end in `.sql` and directories are ignored. Symlinks are followed.
+/// If a `<filename>.sql` exists, checks for `<filename>.udf.rs` and `<filename>.udf.toml`.
+/// If present, these will be included in the demo as well.
 pub fn read_demos_from_directories(demos_dir: &Vec<String>) -> Vec<Demo> {
     let mut result: Vec<Demo> = vec![];
 
@@ -164,22 +195,43 @@ pub fn read_demos_from_directories(demos_dir: &Vec<String>) -> Vec<Demo> {
 
         // Convert each file read from a path to a demo
         for path in paths {
-            let path_str = path.to_string_lossy().to_string();
-            if path.is_file() && path_str.ends_with(".sql") {
-                let content = match fs::read_to_string(path.as_path()) {
-                    Ok(content) => content,
-                    Err(e) => {
-                        error!(
-                            "{}",
-                            DemoError::UnableToReadFile {
-                                path: path_str.clone(),
-                                error: e.to_string(),
-                            }
-                        );
-                        continue;
-                    }
+            if path.is_file() && path.extension().is_some_and(|ext| ext == "sql") {
+                // SQL
+                let Some(program_code) = read_from_file_or_print_error(&path) else {
+                    continue;
                 };
-                let demo = match parse_demo_from_sql_file(path_str.clone(), content) {
+
+                // User defined function (UDF) Rust
+                let path_udf_rs = path.with_extension("udf.rs");
+                let udf_rs = if path_udf_rs.is_file() {
+                    let Some(udf_rs) = read_from_file_or_print_error(&path_udf_rs) else {
+                        // If a UDF Rust file was detected, it must have been successfully read.
+                        continue;
+                    };
+                    udf_rs
+                } else {
+                    "".to_string()
+                };
+
+                // User defined function (UDF) TOML dependencies
+                let path_udf_toml = path.with_extension("udf.toml");
+                let udf_toml = if path_udf_toml.is_file() {
+                    let Some(udf_toml) = read_from_file_or_print_error(&path_udf_toml) else {
+                        // If a UDF TOML file was detected, it must have been successfully read.
+                        continue;
+                    };
+                    udf_toml
+                } else {
+                    "".to_string()
+                };
+
+                // Create demo
+                let demo = match parse_demo(
+                    path.to_string_lossy().to_string(),
+                    program_code,
+                    udf_rs,
+                    udf_toml,
+                ) {
                     Ok(demo) => demo,
                     Err(e) => {
                         error!("{e}");
@@ -198,7 +250,7 @@ pub fn read_demos_from_directories(demos_dir: &Vec<String>) -> Vec<Demo> {
 
 #[cfg(test)]
 mod test {
-    use crate::demo::{parse_demo_from_sql_file, read_demos_from_directories, Demo, DemoError};
+    use crate::demo::{parse_demo, read_demos_from_directories, Demo, DemoError};
     use std::fs;
     use std::fs::File;
     use std::io::Write;
@@ -220,24 +272,32 @@ mod test {
                 title: "Example 1".to_string(),
                 description: "Line A".to_string(),
                 program_code: EXAMPLE_SQL_1.to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
             },
             Demo {
                 name: "example-2".to_string(),
                 title: "Example 2".to_string(),
                 description: "Line A".to_string(),
                 program_code: EXAMPLE_SQL_2.to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
             },
             Demo {
                 name: "example-3".to_string(),
                 title: "Example 3".to_string(),
                 description: "Line A Line B".to_string(),
                 program_code: EXAMPLE_SQL_3.to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
             },
             Demo {
                 name: "example-4".to_string(),
                 title: "Example 4".to_string(),
                 description: "description4\tdescription4".to_string(),
                 program_code: EXAMPLE_SQL_4.to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
             },
         ]
     }
@@ -252,8 +312,13 @@ mod test {
             "-- title (name)\n--\n-- \n--\n,",     // Missing description
         ] {
             let file_path = "does-not-exist".to_string();
-            let err =
-                parse_demo_from_sql_file(file_path.clone(), invalid_sql.to_string()).unwrap_err();
+            let err = parse_demo(
+                file_path.clone(),
+                invalid_sql.to_string(),
+                "".to_string(),
+                "".to_string(),
+            )
+            .unwrap_err();
             assert!(matches!(
                 err,
                 DemoError::InvalidSqlWithPreamble {
@@ -293,7 +358,13 @@ mod test {
             ),
         ] {
             let file_path = "does-not-exist".to_string();
-            let err = parse_demo_from_sql_file(file_path.clone(), invalid_sql).unwrap_err();
+            let err = parse_demo(
+                file_path.clone(),
+                invalid_sql,
+                "".to_string(),
+                "".to_string(),
+            )
+            .unwrap_err();
             assert!(matches!(
                 err,
                 DemoError::InvalidSqlWithPreamble {
@@ -357,6 +428,8 @@ mod test {
                 title: "title".to_string(),
                 description: "description".to_string(),
                 program_code: sql.to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
             }]
         );
     }
@@ -422,6 +495,59 @@ mod test {
                 expected_demos()[0].clone(),
                 expected_demos()[2].clone(),
             ]
+        );
+    }
+
+    #[test]
+    fn one_demo_with_udf_rust_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path();
+        let mut file = File::create(dir_path.join("file.sql").as_path()).unwrap();
+        file.write(EXAMPLE_SQL_1.as_bytes()).unwrap();
+        let mut file = File::create(dir_path.join("file.udf.rs").as_path()).unwrap();
+        file.write("123".as_bytes()).unwrap();
+        let mut file = File::create(dir_path.join("file.udf.toml").as_path()).unwrap();
+        file.write("456".as_bytes()).unwrap();
+        let mut expectation = expected_demos()[0].clone();
+        expectation.udf_rust = "123".to_string();
+        expectation.udf_toml = "456".to_string();
+        assert_eq!(
+            read_demos_from_directories(&vec![dir_path.to_str().unwrap().to_string()]),
+            vec![expectation]
+        );
+    }
+
+    #[test]
+    fn one_demo_with_udf_only_rust() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path();
+        let mut file = File::create(dir_path.join("file.sql").as_path()).unwrap();
+        file.write(EXAMPLE_SQL_1.as_bytes()).unwrap();
+        let mut file = File::create(dir_path.join("file.udf.rs").as_path()).unwrap();
+        file.write("rust_code".as_bytes()).unwrap();
+        let mut expectation = expected_demos()[0].clone();
+        expectation.udf_rust = "rust_code".to_string();
+        expectation.udf_toml = "".to_string();
+        assert_eq!(
+            read_demos_from_directories(&vec![dir_path.to_str().unwrap().to_string()]),
+            vec![expectation]
+        );
+    }
+
+    #[test]
+    fn one_demo_with_udf_only_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path();
+        let mut file = File::create(dir_path.join("file.sql").as_path()).unwrap();
+        file.write(EXAMPLE_SQL_1.as_bytes()).unwrap();
+        let mut file = File::create(dir_path.join("file.udf.toml").as_path()).unwrap();
+        file.write("example = \"1.0.0\"".as_bytes()).unwrap();
+        let mut expectation = expected_demos()[0].clone();
+        expectation.udf_rust = "".to_string();
+        expectation.udf_toml = "example = \"1.0.0\"".to_string();
+        assert_eq!(
+            read_demos_from_directories(&vec![dir_path.to_str().unwrap().to_string()]),
+            vec![expectation]
         );
     }
 }
