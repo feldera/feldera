@@ -19,9 +19,6 @@ cd "${SQL_COMPILER_DIR}" && ./build.sh
 
 WORKING_DIR="${1:-${HOME}/.dbsp}"
 
-# This is the most portable way to get an absolute path since
-# 'realpath' is not available on MacOS by default.
-WORKING_DIR_ABS=$(cd "$(dirname "${WORKING_DIR}")" && pwd -P)/$(basename "${WORKING_DIR}")
 DEFAULT_BIND_ADDRESS="127.0.0.1"
 BIND_ADDRESS="${2:-$DEFAULT_BIND_ADDRESS}"
 
@@ -44,11 +41,6 @@ if [ -n "$manager_pid" ]; then
 fi
 
 cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo build $RUST_BUILD_PROFILE $PG_EMBED
-cd "${MANAGER_DIR}" && ~/.cargo/bin/cargo run --bin pipeline-manager $RUST_BUILD_PROFILE $PG_EMBED -- \
+cd "${ROOT_DIR}" && ~/.cargo/bin/cargo run --bin pipeline-manager $RUST_BUILD_PROFILE $PG_EMBED -- \
     --bind-address="${BIND_ADDRESS}" \
-    --api-server-working-directory="${WORKING_DIR_ABS}" \
-    --compiler-working-directory="${WORKING_DIR_ABS}" \
-    --runner-working-directory="${WORKING_DIR_ABS}" \
-    --sql-compiler-home="${SQL_COMPILER_DIR}" \
-    --dbsp-override-path="${ROOT_DIR}" \
     ${DB_CONNECTION_STRING}
