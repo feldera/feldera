@@ -1,7 +1,7 @@
-//! Support for byte arrays (binary objects in SQL)
+//! byte arrays (binary objects in SQL)
 
 use crate::{some_function1, some_function2, some_function3, some_function4};
-use dbsp::num_entries_scalar;
+use dbsp::NumEntries;
 use feldera_types::{deserialize_without_context, serialize_without_context};
 use flate2::read::GzDecoder;
 use hex::ToHex;
@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{cmp::min, fmt::Debug, io::Read};
 
+/// A ByteArray object, representing a SQL value with type
+/// `BINARY` or `VARBINARY`.
 #[derive(
     Debug,
     Default,
@@ -35,24 +37,43 @@ pub struct ByteArray {
 serialize_without_context!(ByteArray);
 deserialize_without_context!(ByteArray);
 
-num_entries_scalar! {
-    // TODO: Is this right?
-    ByteArray,
+#[doc(hidden)]
+impl NumEntries for &ByteArray {
+    const CONST_NUM_ENTRIES: Option<usize> = None;
+
+    #[doc(hidden)]
+    #[inline]
+    fn num_entries_shallow(&self) -> usize {
+        self.length()
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    fn num_entries_deep(&self) -> usize {
+        self.length()
+    }
 }
 
 impl ByteArray {
+    /// Create a ByteArray from a slice of bytes
     pub fn new(d: &[u8]) -> Self {
         Self { data: d.to_vec() }
     }
 
+    /// Create a ByteArray from a Vector of bytes
     pub fn from_vec(d: Vec<u8>) -> Self {
         Self { data: d }
     }
 
+    /// Length of the byte array in bytes
     pub fn length(&self) -> usize {
         self.data.len()
     }
 
+    #[doc(hidden)]
+    /// Combine two byte arrays of the same length using
+    /// a pointwise function.  panics if the lengths
+    /// are not the same.
     pub fn zip<F>(&self, other: &Self, op: F) -> ByteArray
     where
         F: Fn(&u8, &u8) -> u8,
@@ -74,18 +95,28 @@ impl ByteArray {
         ByteArray::new(&result)
     }
 
+    #[doc(hidden)]
+    /// Bytewise 'and' of two byte arrays of the same length.
+    /// Panics if the arrays do not have the same length.
     pub fn and(&self, other: &Self) -> Self {
         self.zip(other, |left, right| left & right)
     }
 
+    #[doc(hidden)]
+    /// Bytewise 'or' of two byte arrays of the same length.
+    /// Panics if the arrays do not have the same length.
     pub fn or(&self, other: &Self) -> Self {
         self.zip(other, |left, right| left | right)
     }
 
+    #[doc(hidden)]
+    /// Bytewise 'xor' of two byte arrays of the same length.
+    /// Panics if the arrays do not have the same length.
     pub fn xor(&self, other: &Self) -> Self {
         self.zip(other, |left, right| left ^ right)
     }
 
+    /// Concatenate two byte arrays, produces a new byte array.
     pub fn concat(&self, other: &Self) -> Self {
         let mut r = Vec::<u8>::with_capacity(self.data.len() + other.data.len());
         r.extend(&self.data);
@@ -93,27 +124,32 @@ impl ByteArray {
         ByteArray::from_vec(r)
     }
 
+    /// Get a reference to the data in a ByteArray as a byte slice
     pub fn as_slice(&self) -> &[u8] {
         &self.data
     }
 }
 
+#[doc(hidden)]
 pub fn to_hex_(value: ByteArray) -> String {
     value.data.encode_hex::<String>()
 }
 
+#[doc(hidden)]
 pub fn concat_bytes_bytes(left: ByteArray, right: ByteArray) -> ByteArray {
     left.concat(&right)
 }
 
 some_function1!(to_hex, ByteArray, String);
 
+#[doc(hidden)]
 pub fn octet_length_(value: ByteArray) -> i32 {
     value.length() as i32
 }
 
 some_function1!(octet_length, ByteArray, i32);
 
+#[doc(hidden)]
 pub fn position__(needle: ByteArray, haystack: ByteArray) -> i32 {
     haystack
         .data
@@ -125,6 +161,7 @@ pub fn position__(needle: ByteArray, haystack: ByteArray) -> i32 {
 
 some_function2!(position, ByteArray, ByteArray, i32);
 
+#[doc(hidden)]
 pub fn substring2__(source: ByteArray, left: i32) -> ByteArray {
     // SQL indexing starts at 1
     let start = if left < 1 { 0 } else { left - 1 };
@@ -135,6 +172,7 @@ pub fn substring2__(source: ByteArray, left: i32) -> ByteArray {
 
 some_function2!(substring2, ByteArray, i32, ByteArray);
 
+#[doc(hidden)]
 pub fn substring3___(source: ByteArray, left: i32, count: i32) -> ByteArray {
     // SQL indexing starts at 1
     let start = if left < 1 { 0 } else { left - 1 };
@@ -152,6 +190,7 @@ pub fn substring3___(source: ByteArray, left: i32, count: i32) -> ByteArray {
 
 some_function3!(substring3, ByteArray, i32, i32, ByteArray);
 
+#[doc(hidden)]
 pub fn overlay3___(source: ByteArray, replacement: ByteArray, position: i32) -> ByteArray {
     let len = replacement.length() as i32;
     overlay4____(source, replacement, position, len)
@@ -159,6 +198,7 @@ pub fn overlay3___(source: ByteArray, replacement: ByteArray, position: i32) -> 
 
 some_function3!(overlay3, ByteArray, ByteArray, i32, ByteArray);
 
+#[doc(hidden)]
 pub fn overlay4____(
     source: ByteArray,
     mut replacement: ByteArray,
@@ -185,6 +225,7 @@ pub fn overlay4____(
 
 some_function4!(overlay4, ByteArray, ByteArray, i32, i32, ByteArray);
 
+#[doc(hidden)]
 pub fn gunzip_(source: ByteArray) -> String {
     let mut gz = GzDecoder::new(&source.data[..]);
     let mut s = String::new();
@@ -196,6 +237,7 @@ pub fn gunzip_(source: ByteArray) -> String {
 
 some_function1!(gunzip, ByteArray, String);
 
+#[doc(hidden)]
 pub fn to_int_(source: ByteArray) -> i32 {
     let mut result = 0;
     for i in 0..min(4, source.length()) {

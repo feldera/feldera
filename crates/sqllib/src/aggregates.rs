@@ -15,6 +15,7 @@ use std::marker::Copy;
 
 /// Holds some methods for wrapping values into unsigned values
 /// This is used by partitioned_rolling_aggregate
+#[doc(hidden)]
 pub struct UnsignedWrapper {}
 
 /// The conversion involves four types:
@@ -26,6 +27,7 @@ pub struct UnsignedWrapper {}
 impl UnsignedWrapper {
     // Conversion from O to U
     // O cannot be nullable, so nullsLast is irrelevant
+    #[doc(hidden)]
     pub fn from_signed<O, S, I, U>(value: O, ascending: bool, _nullsLast: bool) -> U
     where
         O: ToInteger<S> + Debug,
@@ -46,6 +48,7 @@ impl UnsignedWrapper {
     }
 
     // Conversion from O to U
+    #[doc(hidden)]
     pub fn from_option<O, S, I, U>(value: Option<O>, ascending: bool, nullsLast: bool) -> U
     where
         O: ToInteger<S> + Debug,
@@ -70,6 +73,7 @@ impl UnsignedWrapper {
     // O cannot be nullable, so nullsLast is irrelevant
     // However, we still have it so that the signature of both
     // functions is the same.
+    #[doc(hidden)]
     pub fn to_signed<O, S, I, U>(value: U, ascending: bool, _nullsLast: bool) -> O
     where
         O: FromInteger<S> + Debug,
@@ -89,6 +93,7 @@ impl UnsignedWrapper {
     }
 
     // Conversion from U to O where the 0 of U is converted to None
+    #[doc(hidden)]
     pub fn to_signed_option<O, S, I, U>(value: U, ascending: bool, nullsLast: bool) -> Option<O>
     where
         O: FromInteger<S> + Debug,
@@ -118,14 +123,15 @@ impl UnsignedWrapper {
 // etc.
 // And 4 more functions:
 // f_t_t_conditional(left: T, right: T, predicate: bool) -> T
-#[macro_export]
 macro_rules! some_aggregate {
     ($base_name: ident, $func_name:ident, $short_name: ident, $arg_type: ty) => {
         ::paste::paste! {
+            #[doc(hidden)]
             pub fn [<$func_name _ $short_name _ $short_name>]( left: $arg_type, right: $arg_type ) -> $arg_type {
                 $base_name(left, right)
             }
 
+            #[doc(hidden)]
             pub fn [<$func_name _ $short_name N _ $short_name>]( left: Option<$arg_type>, right: $arg_type ) -> Option<$arg_type> {
                 match left {
                     None => Some(right.clone()),
@@ -133,6 +139,7 @@ macro_rules! some_aggregate {
                 }
             }
 
+            #[doc(hidden)]
             pub fn [<$func_name _ $short_name _ $short_name N>]( left: $arg_type, right: Option<$arg_type> ) -> Option<$arg_type> {
                 match right {
                     None => Some(left.clone()),
@@ -140,6 +147,7 @@ macro_rules! some_aggregate {
                 }
             }
 
+            #[doc(hidden)]
             pub fn [<$func_name _ $short_name N _ $short_name N>]( left: Option<$arg_type>, right: Option<$arg_type> ) -> Option<$arg_type> {
                 match (left.clone(), right.clone()) {
                     (None, _) => right.clone(),
@@ -148,6 +156,7 @@ macro_rules! some_aggregate {
                 }
             }
 
+            #[doc(hidden)]
             pub fn [<$func_name _ $short_name _ $short_name _conditional>]( left: $arg_type, right: $arg_type, predicate: bool ) -> $arg_type {
                 if predicate {
                     $base_name(left, right)
@@ -156,6 +165,7 @@ macro_rules! some_aggregate {
                 }
             }
 
+            #[doc(hidden)]
             pub fn [<$func_name _ $short_name N _ $short_name _conditional>]( left: Option<$arg_type>, right: $arg_type, predicate: bool ) -> Option<$arg_type> {
                 match (left.clone(), right.clone(), predicate) {
                     (_, _, false) => left.clone(),
@@ -164,6 +174,7 @@ macro_rules! some_aggregate {
                 }
             }
 
+            #[doc(hidden)]
             pub fn [<$func_name _ $short_name _ $short_name N _conditional>]( left: $arg_type, right: Option<$arg_type>, predicate: bool ) -> Option<$arg_type> {
                 match (left.clone(), right.clone(), predicate) {
                     (_, _, false) => Some(left.clone()),
@@ -172,6 +183,7 @@ macro_rules! some_aggregate {
                 }
             }
 
+            #[doc(hidden)]
             pub fn [<$func_name _ $short_name N _ $short_name N _conditional>]( left: Option<$arg_type>, right: Option<$arg_type>, predicate: bool ) -> Option<$arg_type> {
                 match (left.clone(), right.clone(), predicate) {
                     (_, _, false) => left.clone(),
@@ -183,8 +195,8 @@ macro_rules! some_aggregate {
         }
     };
 }
+pub(crate) use some_aggregate;
 
-#[macro_export]
 macro_rules! for_all_int_aggregate {
     ($base_name: ident, $func_name: ident) => {
         some_aggregate!($base_name, $func_name, i8, i8);
@@ -194,7 +206,6 @@ macro_rules! for_all_int_aggregate {
     };
 }
 
-#[macro_export]
 macro_rules! for_all_numeric_aggregate {
     ($base_name: ident, $func_name: ident) => {
         for_all_int_aggregate!($base_name, $func_name);
@@ -204,6 +215,7 @@ macro_rules! for_all_numeric_aggregate {
     };
 }
 
+#[doc(hidden)]
 pub fn agg_max<T>(left: T, right: T) -> T
 where
     T: Ord,
@@ -218,6 +230,7 @@ some_aggregate!(agg_max, agg_max, Date, Date);
 some_aggregate!(agg_max, agg_max, Time, Time);
 some_aggregate!(agg_max, agg_max, s, String);
 
+#[doc(hidden)]
 pub fn agg_min<T>(left: T, right: T) -> T
 where
     T: Ord,
@@ -232,6 +245,7 @@ some_aggregate!(agg_min, agg_min, Date, Date);
 some_aggregate!(agg_min, agg_min, Time, Time);
 some_aggregate!(agg_min, agg_min, s, String);
 
+#[doc(hidden)]
 pub fn agg_plus<T>(left: T, right: T) -> T
 where
     T: CheckedAdd + Copy,
@@ -239,14 +253,17 @@ where
     left.checked_add(&right).expect("Addition overflow")
 }
 
+#[doc(hidden)]
 pub fn agg_plus_f32(left: F32, right: F32) -> F32 {
     left + right
 }
 
+#[doc(hidden)]
 pub fn agg_plus_f64(left: F64, right: F64) -> F64 {
     left + right
 }
 
+#[doc(hidden)]
 pub fn agg_plus_decimal(left: Decimal, right: Decimal) -> Decimal {
     left + right
 }
@@ -257,6 +274,7 @@ some_aggregate!(agg_plus_decimal, agg_plus, decimal, Decimal);
 
 for_all_int_aggregate!(agg_plus, agg_plus);
 
+#[doc(hidden)]
 #[inline(always)]
 fn agg_and<T>(left: T, right: T) -> T
 where
@@ -267,6 +285,7 @@ where
 
 for_all_int_aggregate!(agg_and, agg_and);
 
+#[doc(hidden)]
 #[inline(always)]
 fn agg_or<T>(left: T, right: T) -> T
 where
@@ -277,6 +296,7 @@ where
 
 for_all_int_aggregate!(agg_or, agg_or);
 
+#[doc(hidden)]
 #[inline(always)]
 fn agg_xor<T>(left: T, right: T) -> T
 where
@@ -287,18 +307,21 @@ where
 
 for_all_int_aggregate!(agg_xor, agg_xor);
 
+#[doc(hidden)]
 pub fn agg_and_bytes(left: ByteArray, right: ByteArray) -> ByteArray {
     left.and(&right)
 }
 
 some_aggregate!(agg_and_bytes, agg_and, bytes, ByteArray);
 
+#[doc(hidden)]
 pub fn agg_or_bytes(left: ByteArray, right: ByteArray) -> ByteArray {
     left.or(&right)
 }
 
 some_aggregate!(agg_or_bytes, agg_or, bytes, ByteArray);
 
+#[doc(hidden)]
 pub fn agg_xor_bytes(left: ByteArray, right: ByteArray) -> ByteArray {
     left.xor(&right)
 }
@@ -307,6 +330,7 @@ some_aggregate!(agg_xor_bytes, agg_xor, bytes, ByteArray);
 
 // In this aggregate the left value is the current value
 // while the right value is the accumulator
+#[doc(hidden)]
 pub fn agg_lte__<T>(left: T, right: T) -> bool
 where
     T: Ord,
@@ -314,6 +338,7 @@ where
     left <= right
 }
 
+#[doc(hidden)]
 pub fn agg_lte__N<T>(left: T, right: Option<T>) -> bool
 where
     T: Ord,
@@ -324,6 +349,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn agg_lte_N_<T>(left: Option<T>, right: T) -> bool
 where
     T: Ord,
@@ -334,6 +360,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn agg_lte_N_N<T>(left: Option<T>, right: Option<T>) -> bool
 where
     T: Ord,
@@ -346,6 +373,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn agg_gte__<T>(left: T, right: T) -> bool
 where
     T: Ord,
@@ -353,6 +381,7 @@ where
     left >= right
 }
 
+#[doc(hidden)]
 pub fn agg_gte__N<T>(left: T, right: Option<T>) -> bool
 where
     T: Ord,
@@ -363,6 +392,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn agg_gte_N_<T>(left: Option<T>, right: T) -> bool
 where
     T: Ord,
@@ -373,6 +403,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn agg_gte_N_N<T>(left: Option<T>, right: Option<T>) -> bool
 where
     T: Ord,
@@ -387,6 +418,7 @@ where
 
 //////////////
 
+#[doc(hidden)]
 pub fn gte_left__<T>(left: T, right: T) -> bool
 where
     T: Ord,
@@ -394,6 +426,7 @@ where
     left >= right
 }
 
+#[doc(hidden)]
 pub fn gte_left__N<T>(left: T, right: Option<T>) -> bool
 where
     T: Ord,
@@ -404,6 +437,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn gte_left_N_<T>(left: Option<T>, right: T) -> bool
 where
     T: Ord,
@@ -414,6 +448,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn gte_left_N_N<T>(left: Option<T>, right: Option<T>) -> bool
 where
     T: Ord,
