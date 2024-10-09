@@ -222,10 +222,11 @@ public class CompilerMain {
                     System.out.println("Writing UDF stubs to file " + stubs);
                 protosStream.append("""
 // Compiler-generated file
-// Stubs for user-defined functions
+// This file contains stubs for user-defined functions. Copy these stubs to
+// `udf.rs`, replacing their bodies with the actual UDF implementations.
+// See detailed documentation in https://docs.feldera.com/sql/udf.
 
 #![allow(non_snake_case)]
-#![allow(non_camel_case_types)]
 
 use feldera_sqllib::*;
 use crate::*;
