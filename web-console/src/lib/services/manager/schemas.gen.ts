@@ -553,7 +553,7 @@ For specific options available for different storage backends, see:
 
 export const $Demo = {
   type: 'object',
-  required: ['name', 'title', 'description', 'program_code'],
+  required: ['name', 'title', 'description', 'program_code', 'udf_rust', 'udf_toml'],
   properties: {
     description: {
       type: 'string',
@@ -570,6 +570,14 @@ export const $Demo = {
     title: {
       type: 'string',
       description: 'Title of the demo (parsed from SQL preamble).'
+    },
+    udf_rust: {
+      type: 'string',
+      description: 'User defined function (UDF) Rust code.'
+    },
+    udf_toml: {
+      type: 'string',
+      description: 'User defined function (UDF) TOML dependencies.'
     }
   }
 } as const

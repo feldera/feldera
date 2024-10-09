@@ -13,7 +13,9 @@ export const useTryPipeline = () => {
         description: pipeline.description,
         program_code: pipeline.program_code,
         program_config: {},
-        runtime_config: {}
+        runtime_config: {},
+        udf_rust: pipeline.udf_rust,
+        udf_toml: pipeline.udf_toml
       })
       updatePipelines((pipelines) => (pipelines.push(newPipeline), pipelines))
     } catch {}
