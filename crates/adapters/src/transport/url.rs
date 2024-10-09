@@ -281,23 +281,23 @@ impl UrlInputReader {
                             }
                             consumer.extended(
                                 total,
-                                serde_json::to_value(Metadata {
+                                rmpv::ext::to_value(Metadata {
                                     offsets: range.unwrap_or_else(|| {
                                         let ofs = splitter.position();
                                         ofs..ofs
                                     }),
-                                })?,
+                                }).unwrap(),
                             );
                         }
                         Some(InputReaderCommand::Seek(metadata)) => {
-                            let Metadata { offsets } = serde_json::from_value(metadata)?;
+                            let Metadata { offsets } = rmpv::ext::from_value(metadata)?;
                             let offset = offsets.end;
                             stream.seek(offset);
                             splitter.seek(offset);
                         }
                         Some(InputReaderCommand::Replay(metadata)) => {
                             deadline = None;
-                            let Metadata { offsets } = serde_json::from_value(metadata)?;
+                            let Metadata { offsets } = rmpv::ext::from_value(metadata)?;
                             stream.seek(offsets.start);
                             splitter.seek(offsets.start);
                             let mut remainder = (offsets.end - offsets.start) as usize;

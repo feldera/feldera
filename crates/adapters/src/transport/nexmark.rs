@@ -21,6 +21,7 @@ use enum_map::EnumMap;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::nexmark::{NexmarkInputConfig, NexmarkInputOptions, NexmarkTable};
 use rand::rngs::ThreadRng;
+use rmpv::Value as RmpValue;
 
 use super::{InputReaderCommand, NonFtInputReaderCommand};
 
@@ -96,9 +97,9 @@ impl InputGenerator {
                     total += buffer.flush_all();
                 }
             }
-            self.consumer.extended(total, serde_json::Value::Null);
+            self.consumer.extended(total, RmpValue::Nil);
         } else {
-            self.consumer.extended(0, serde_json::Value::Null);
+            self.consumer.extended(0, RmpValue::Nil);
         }
     }
 }

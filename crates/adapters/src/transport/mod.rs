@@ -25,7 +25,7 @@ use anyhow::{Error as AnyError, Result as AnyResult};
 use dyn_clone::DynClone;
 #[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
-use serde_json::Value as JsonValue;
+use rmpv::Value as RmpValue;
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
@@ -122,7 +122,7 @@ pub fn input_transport_config_to_endpoint(
 }
 
 pub fn input_transport_config_is_fault_tolerant(config: &TransportConfig) -> bool {
-    if let Ok(Some(endpoint)) = input_transport_config_to_endpoint(config.clone()) {
+    if let Ok(Some(endpoint)) = input_transport_config_to_endpoint(config.clone(), "default") {
         endpoint.is_fault_tolerant()
     } else {
         false
@@ -190,7 +190,7 @@ pub enum InputReaderCommand {
     ///
     /// Only fault-tolerant input readers need to accept this. If it is given,
     /// it will be issued only once and before any of the other commands.
-    Seek(JsonValue),
+    Seek(RmpValue),
 
     /// Tells the input reader to replay the step described in `metadata` by
     /// reading and flushing buffers for the data in the step, and then
@@ -207,7 +207,7 @@ pub enum InputReaderCommand {
     /// Only fault-tolerant input readers need to accept this. It will be issued
     /// zero or more times, after [InputReaderCommand::Seek] but before any
     /// other commands.
-    Replay(JsonValue),
+    Replay(RmpValue),
 
     /// Tells the input reader to accept further input. The first time it
     /// receives this command, the reader should start from:
@@ -355,7 +355,7 @@ impl InputQueue {
                 break;
             }
         }
-        self.consumer.extended(total, serde_json::Value::Null);
+        self.consumer.extended(total, RmpValue::Nil);
     }
 
     pub fn len(&self) -> usize {
@@ -374,11 +374,11 @@ pub trait InputReader: Send {
     /// Requests the input reader to execute `command`.
     fn request(&self, command: InputReaderCommand);
 
-    fn seek(&self, metadata: JsonValue) {
+    fn seek(&self, metadata: RmpValue) {
         self.request(InputReaderCommand::Seek(metadata));
     }
 
-    fn replay(&self, metadata: JsonValue) {
+    fn replay(&self, metadata: RmpValue) {
         self.request(InputReaderCommand::Replay(metadata));
     }
 
@@ -414,7 +414,7 @@ pub trait InputConsumer: Send + Sync + DynClone {
     fn parse_errors(&self, errors: Vec<ParseError>);
     fn buffered(&self, num_records: usize, num_bytes: usize);
     fn replayed(&self, num_records: usize);
-    fn extended(&self, num_records: usize, metadata: JsonValue);
+    fn extended(&self, num_records: usize, metadata: RmpValue);
 
     /// Reports that the endpoint has reached end of input and that no more data
     /// will be received from the endpoint.

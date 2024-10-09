@@ -52,7 +52,7 @@ use metrics_util::{
     debugging::{DebuggingRecorder, Snapshotter},
     layers::FanoutBuilder,
 };
-use serde_json::Value as JsonValue;
+use rmpv::Value as RmpValue;
 use stats::StepProgress;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -528,7 +528,7 @@ impl Controller {
                         })?;
                     }
 
-                    let steps_path = path.join("steps.json");
+                    let steps_path = path.join("steps.bin");
                     if fs::exists(&steps_path).map_err(startup_io_error)? || checkpoint.step > 0 {
                         info!("{}: opening to read input steps", steps_path.display());
                         step_reader = Some(StepReader::open(&steps_path)?);
@@ -2066,7 +2066,7 @@ impl InputConsumer for InputProbe {
         self.controller.unpark_circuit();
     }
 
-    fn extended(&self, num_records: usize, metadata: JsonValue) {
+    fn extended(&self, num_records: usize, metadata: RmpValue) {
         self.controller
             .status
             .completed(self.endpoint_id, num_records as u64, Some(metadata));

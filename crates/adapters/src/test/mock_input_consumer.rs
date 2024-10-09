@@ -2,6 +2,7 @@ use crate::catalog::InputCollectionHandle;
 use crate::format::{InputBuffer, Splitter};
 use crate::{controller::FormatConfig, InputConsumer, InputFormat, ParseError, Parser};
 use anyhow::{anyhow, Error as AnyError};
+use rmpv::Value as RmpValue;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub type ErrorCallback = Box<dyn FnMut(bool, &AnyError) + Send>;
@@ -99,7 +100,7 @@ impl InputConsumer for MockInputConsumer {
 
     fn replayed(&self, _num_records: usize) {}
 
-    fn extended(&self, _num_records: usize, _metadata: serde_json::Value) {
+    fn extended(&self, _num_records: usize, _metadata: RmpValue) {
         self.state().n_extended += 1;
     }
 }

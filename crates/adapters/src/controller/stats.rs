@@ -46,8 +46,8 @@ use ordered_float::OrderedFloat;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use psutil::process::{Process, ProcessError};
 use rand::{seq::index::sample, thread_rng};
+use rmpv::Value as RmpValue;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
-use serde_json::Value as JsonValue;
 use std::{
     cmp::min,
     collections::BTreeMap,
@@ -606,12 +606,7 @@ impl ControllerStatus {
         };
     }
 
-    pub fn completed(
-        &self,
-        endpoint_id: EndpointId,
-        num_records: u64,
-        metadata: Option<JsonValue>,
-    ) {
+    pub fn completed(&self, endpoint_id: EndpointId, num_records: u64, metadata: Option<RmpValue>) {
         let inputs = self.inputs.read().unwrap();
         self.global_metrics.consume_buffered_inputs(num_records);
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
@@ -801,7 +796,7 @@ pub enum StepProgress {
     Started,
     Complete {
         num_records: u64,
-        metadata: Option<JsonValue>,
+        metadata: Option<RmpValue>,
     },
 }
 
@@ -898,7 +893,7 @@ impl InputEndpointStatus {
         }
     }
 
-    fn completed(&self, num_records: u64, metadata: Option<JsonValue>) {
+    fn completed(&self, num_records: u64, metadata: Option<RmpValue>) {
         *self.progress.lock().unwrap() = StepProgress::Complete {
             num_records,
             metadata,

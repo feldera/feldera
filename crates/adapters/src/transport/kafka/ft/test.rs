@@ -1,4 +1,5 @@
 use crate::format::{Splitter, Sponge};
+use crate::transport::kafka::ft::input::Metadata;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
     test::{
@@ -13,7 +14,7 @@ use crossbeam::sync::{Parker, Unparker};
 use env_logger::Env;
 use feldera_types::program_schema::Relation;
 use log::info;
-use serde_json::{json, Value as JsonValue};
+use rmpv::Value as RmpValue;
 use std::ops::Range;
 use std::sync::atomic::AtomicUsize;
 use std::{
@@ -158,10 +159,17 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
         }
     }
 
-    fn metadata(topic: &str, batch: &Range<u32>) -> JsonValue {
-        json! {
-            {"offsets": {topic: [{"start": batch.start, "end": batch.end}]}}
-        }
+    fn metadata(topic: &str, batch: &Range<u32>) -> RmpValue {
+        #[allow(clippy::single_range_in_vec_init)]
+        let metadata = Metadata {
+            offsets: Some((
+                String::from(topic),
+                vec![batch.start as i64..batch.end as i64],
+            ))
+            .into_iter()
+            .collect(),
+        };
+        rmpv::ext::to_value(metadata).unwrap()
     }
 
     let n_batches = batch_sizes.len();
@@ -246,7 +254,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, PartialEq)]
 enum ConsumerCall {
     ParseErrors,
     Buffered {
@@ -258,7 +266,7 @@ enum ConsumerCall {
     },
     Extended {
         num_records: usize,
-        metadata: serde_json::Value,
+        metadata: RmpValue,
     },
     Error(bool),
     Eoi,
@@ -490,7 +498,7 @@ impl InputConsumer for DummyInputConsumer {
         self.called(ConsumerCall::Replayed { num_records });
     }
 
-    fn extended(&self, num_records: usize, metadata: serde_json::Value) {
+    fn extended(&self, num_records: usize, metadata: RmpValue) {
         self.called(ConsumerCall::Extended {
             num_records,
             metadata,

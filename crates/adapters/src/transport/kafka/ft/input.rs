@@ -117,7 +117,7 @@ impl KafkaFtInputReaderInner {
         let mut command_receiver = BufferedReceiver::new(command_receiver);
         match command_receiver.recv()? {
             InputReaderCommand::Seek(metadata) => {
-                let metadata = serde_json::from_value::<Metadata>(metadata)?;
+                let metadata = rmpv::ext::from_value::<Metadata>(metadata)?;
                 let offsets = metadata.parse(&topics, &partition_counts)?;
                 for (topic, partitions) in topics.iter().zip(offsets.into_iter()) {
                     let mut buffered_partition = Vec::with_capacity(partitions.len());
@@ -167,7 +167,7 @@ impl KafkaFtInputReaderInner {
                 }
                 InputReaderCommand::Disconnect => return Ok(()),
                 InputReaderCommand::Replay(metadata) => {
-                    let metadata = serde_json::from_value::<Metadata>(metadata)?;
+                    let metadata = rmpv::ext::from_value::<Metadata>(metadata)?;
                     let metadata = metadata.parse(&topics, &partition_counts)?;
                     let mut replayer = MetadataReplayer::new(&metadata);
                     let mut total_records = 0;
@@ -292,7 +292,7 @@ impl KafkaFtInputReaderInner {
                             }))
                             .collect();
                         consumer
-                            .extended(total, serde_json::to_value(&Metadata { offsets }).unwrap());
+                            .extended(total, rmpv::ext::to_value(&Metadata { offsets }).unwrap());
                     }
                     Ok(InputReaderCommand::Disconnect) | Err(TryRecvError::Disconnected) => {
                         return Ok(())
@@ -489,9 +489,9 @@ impl Drop for KafkaFtInputReader {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Metadata {
+pub(super) struct Metadata {
     /// Maps from a topic name to per-partition ranges of offsets.
-    offsets: HashMap<String, Vec<Range<i64>>>,
+    pub offsets: HashMap<String, Vec<Range<i64>>>,
 }
 
 impl Metadata {
