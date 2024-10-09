@@ -34,14 +34,13 @@ use utoipa::ToSchema;
 /// ```json
 /// [{"insert": {"b": true, "i": 0}}, {"delete": {"b": false, "i": 100, "s": "foo"}}]
 /// ```
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
 pub struct JsonParserConfig {
     /// JSON update format.
-    #[serde(default)]
     pub update_format: JsonUpdateFormat,
 
     /// Specifies JSON encoding used for individual table records.
-    #[serde(default)]
     pub json_flavor: JsonFlavor,
 
     /// Set to `true` if updates in this stream are packaged into JSON arrays.
@@ -51,7 +50,6 @@ pub struct JsonParserConfig {
     /// ```json
     /// [{"b": true, "i": 0},{"b": false, "i": 100, "s": "foo"}]
     /// ```
-    #[serde(default)]
     pub array: bool,
 }
 
@@ -60,7 +58,7 @@ pub struct JsonParserConfig {
 /// Each element in a JSON-formatted input stream specifies
 /// an update to one or more records in an input table.  We support
 /// several different ways to represent such updates.
-#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, ToSchema)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, PartialEq, Eq, ToSchema)]
 pub enum JsonUpdateFormat {
     /// Insert/delete format.
     ///
@@ -72,6 +70,7 @@ pub enum JsonUpdateFormat {
     /// ```json
     /// {"insert": {"column1": "hello, world!", "column2": 100}}
     /// ```
+    #[default]
     #[serde(rename = "insert_delete")]
     InsertDelete,
 
@@ -115,12 +114,6 @@ pub enum JsonUpdateFormat {
     /// additional envelope that gets inserted in the input table.
     #[serde(rename = "raw")]
     Raw,
-}
-
-impl Default for JsonUpdateFormat {
-    fn default() -> Self {
-        Self::InsertDelete
-    }
 }
 
 impl Display for JsonUpdateFormat {
@@ -171,20 +164,14 @@ pub enum JsonFlavor {
     Datagen,
 }
 
-const fn default_buffer_size_records() -> usize {
-    10_000
-}
-
 // TODO: support multiple update formats, e.g., `WeightedUpdate`
 // supports arbitrary weights beyond `MAX_DUPLICATES`.
 #[derive(Deserialize, Serialize, ToSchema)]
+#[serde(default)]
 pub struct JsonEncoderConfig {
-    #[serde(default)]
     pub update_format: JsonUpdateFormat,
     pub json_flavor: Option<JsonFlavor>,
-    #[serde(default = "default_buffer_size_records")]
     pub buffer_size_records: usize,
-    #[serde(default)]
     pub array: bool,
 
     /// When this option is set, only the listed fields appear in the Debezium message key.
@@ -195,4 +182,16 @@ pub struct JsonEncoderConfig {
     ///
     /// This option is only valid with the `debezium` update format.
     pub key_fields: Option<Vec<String>>,
+}
+
+impl Default for JsonEncoderConfig {
+    fn default() -> Self {
+        Self {
+            update_format: JsonUpdateFormat::default(),
+            json_flavor: None,
+            buffer_size_records: 10_000,
+            array: false,
+            key_fields: None,
+        }
+    }
 }
