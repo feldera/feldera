@@ -931,6 +931,26 @@ Code snippet:
         pipeline.shutdown()
         pipeline.delete()
 
+    def test_adhoc_execute(self):
+        sql = """
+        CREATE TABLE t0 (c1 TINYINT) with ('materialized' = 'true');
+        """
+
+        pipeline = PipelineBuilder(
+            TEST_CLIENT, name="test_adhoc_execute", sql=sql
+        ).create_or_replace()
+        pipeline.start()
+        pipeline.wait_for_completion()
+        pipeline.execute("INSERT INTO t0 VALUES (1), (2);")
+        resp = pipeline.query("SELECT * FROM t0;")
+
+        got = list(resp)
+        expected = [{"c1": 1}, {"c1": 2}]
+
+        pipeline.shutdown()
+
+        self.assertCountEqual(got, expected)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,7 @@ import time
 import pandas
 
 from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
+from collections import deque
 from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
@@ -380,6 +381,10 @@ class Pipeline:
     def query(self, query: str) -> Generator[Mapping[str, Any], None, None]:
         """
         Executes an ad-hoc SQL query on this pipeline and returns the result in the specified format.
+        For ``INSERT`` and ``DELETE`` queries, consider using :meth:`.execute` instead.
+
+        Important:
+            This method is lazy. It returns a generator and is not evaluated until you consume the result.
 
         :param query: The SQL query to be executed.
         :return: A generator that yields the rows of the result as Python dictionaries.
@@ -402,8 +407,27 @@ class Pipeline:
         """
         Executes a SQL query on this pipeline and returns the result as a formatted string.
 
+        Important:
+            This method is lazy. It returns a generator and is not evaluated until you consume the result.
+
         :param query: The SQL query to be executed.
         :return: A generator that yields a string representing the query result in a human-readable, tabular format.
         """
 
         return self.client.query_as_text(self.name, query)
+
+    def execute(self, query: str):
+        """
+        Executes an ad-hoc SQL query on the current pipeline, discarding its result.
+        Unlike the :meth:`.query` method which returns a generator for retrieving query results lazily,
+        this method processes the query eagerly and fully before returning.
+
+        This method is suitable for SQL operations like ``INSERT`` and ``DELETE``, where the user needs
+        confirmation of successful query execution, but does not require the query result.
+        If the query fails, an exception will be raised.
+
+        :param query: The SQL query to be executed.
+        """
+
+        gen = self.query_tabular(query)
+        deque(gen, maxlen=0)
