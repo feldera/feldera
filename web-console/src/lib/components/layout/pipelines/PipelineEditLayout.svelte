@@ -143,7 +143,8 @@ example = "1.0"`
       path={pipelineName}
       {files}
       {editDisabled}
-      bind:currentFileName={currentPipelineFile[pipelineName]}>
+      bind:currentFileName={currentPipelineFile[pipelineName]}
+    >
       {#snippet textEditor(children)}
         <Pane defaultSize={60} minSize={15} class="!overflow-visible">
           {@render children()}
@@ -168,7 +169,7 @@ example = "1.0"`
         {/if}
       {/snippet}
     </CodeEditor>
-    <div class="bg-surface-100-900 h-[1px] w-full"></div>
+    <div class="h-[1px] w-full bg-surface-100-900"></div>
     <Pane minSize={15} class="flex h-full flex-col !overflow-visible">
       {#if pipeline.current.name}
         <InteractionsPanel {pipeline} {metrics}></InteractionsPanel>

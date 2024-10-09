@@ -21,19 +21,21 @@ export class MonacoPlaceholderContentWidget {
     this.editorRef = editorRef
     this.placeholderStyle = placeholderStyle
     // register a listener for editor code changes
-    let disposeHandler = this.editorRef.onDidChangeModelContent(() =>
-      this.onDidChangeModelContent()
+    let disposeHandler1 = this.editorRef.onDidChangeModelContent(() =>
+      this.refreshPlaceholderVisibility()
     )
+    let disposeHandler2 = this.editorRef.onDidChangeModel(() => this.refreshPlaceholderVisibility())
     // ensure that on initial load the placeholder is shown
-    this.onDidChangeModelContent()
+    this.refreshPlaceholderVisibility()
     // ensure widget and event handler are properly disposed of
     this.dispose = () => {
-      disposeHandler.dispose()
+      disposeHandler1.dispose()
+      disposeHandler2.dispose()
       this.editorRef.removeContentWidget(this)
     }
   }
 
-  onDidChangeModelContent() {
+  refreshPlaceholderVisibility() {
     if (this.editorRef.getValue() === '') {
       this.editorRef.addContentWidget(this)
     } else {
@@ -52,7 +54,9 @@ export class MonacoPlaceholderContentWidget {
       this.domNode.style.width = 'max-content'
       this.domNode.style.whiteSpace = 'pre-wrap'
       this.domNode.style.pointerEvents = 'none'
-      for (const [prop, val] of Object.entries(this.placeholderStyle ?? {})) {
+      for (const [prop, val] of Object.entries(
+        (this.placeholderStyle as CSSStyleDeclaration) ?? {}
+      )) {
         const [value, pri = ''] = val.split('!')
         this.domNode.style.setProperty(prop, value, pri)
       }
