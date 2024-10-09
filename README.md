@@ -25,7 +25,7 @@
   <a href="https://discord.gg/5YBX9Uw5u7">
     <img alt="Discord" src="https://img.shields.io/badge/discord-blue.svg?logo=discord&logoColor=white">
   </a>
-  <a href="https://www.feldera.com/sandbox">
+  <a href="https://try.feldera.com/">
     <img alt="Sandbox" src="https://img.shields.io/badge/feldera_sandbox-blue?logo=CodeSandbox">
   </a>
 </h1>
