@@ -268,14 +268,14 @@ pub struct KafkaOutputConfig {
 }
 
 /// Fault tolerance configuration for Kafka output connector.
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[serde(default)]
 pub struct KafkaOutputFtConfig {
     /// Options passed to `rdkafka` for consumers only, as documented at
     /// [`librdkafka`
     /// options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md).
     ///
     /// These options override `kafka_options` for consumers, and may be empty.
-    #[serde(default)]
     pub consumer_options: BTreeMap<String, String>,
 
     /// Options passed to `rdkafka` for producers only, as documented at
@@ -283,7 +283,6 @@ pub struct KafkaOutputFtConfig {
     /// options](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md).
     ///
     /// These options override `kafka_options` for producers, and may be empty.
-    #[serde(default)]
     pub producer_options: BTreeMap<String, String>,
 }
 
