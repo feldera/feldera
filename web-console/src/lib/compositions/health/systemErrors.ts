@@ -85,6 +85,29 @@ const fetchedProgramErrorReport = async (pipelineName: string, message: string) 
 export const showSqlCompilerMessage = (e: SqlCompilerMessage) =>
   `${e.error_type ? e.error_type + ':\n' : ''}${e.message}${e.snippet ? '\n' + e.snippet : ''}`
 
+export const extractInternalCompilationError = <Report>(
+  stderr: string,
+  pipelineName: string,
+  source: string,
+  getReport: (pipelineName: string, message: string) => Report
+): SystemError<any, Report> | null => {
+  const isInternalError = /main\.rs:/.test(stderr)
+  if (!isInternalError) {
+    return null
+  }
+  return {
+    name: `Error compiling ${pipelineName}`,
+    message: stderr,
+    cause: {
+      entityName: pipelineName,
+      tag: 'programError',
+      source,
+      report: getReport(pipelineName, stderr),
+      body: stderr.match(/([\S\s]+?)\n/)?.[1] ?? 'Unknown internal compilation error' // Return first stderr paragraph as error body
+    }
+  }
+}
+
 export const extractRustCompilerError =
   <Report>(
     pipelineName: string,
@@ -125,7 +148,7 @@ export const extractRustCompilerError =
       }
     }
     let err: SystemError<any, Report> | undefined
-    err = matchFileError('udf.toml', /\/udf\.toml:(\d+):(\d+)/, -10)
+    err = matchFileError('udf.toml', /\/Cargo\.toml:(\d+):(\d+)/, -10)
     if (err) {
       return err
     }
@@ -161,11 +184,15 @@ export const extractProgramErrors =
       .with({ RustError: P.any }, (e) => {
         const rustCompilerErrorRegex =
           /((warning:|error:|error\[[\w]+\]:)[\s\S]+?)\n(\n|(?=( +Compiling|warning:|error:|error\[[\w]+\]:)))/g
-        const rustCompilerErrors: string[] =
+        const rustCompilerMessages: string[] =
           Array.from(e.RustError.matchAll(rustCompilerErrorRegex)).map((match) => match[1]) ?? []
-        return rustCompilerErrors
-          .map(extractRustCompilerError(pipeline.name, source, getReport))
-          .filter(nonNull)
+        const rustCompilerErrors = [
+          extractInternalCompilationError(e.RustError, pipeline.name, source, getReport)
+        ]
+        rustCompilerErrors.push(
+          ...rustCompilerMessages.map(extractRustCompilerError(pipeline.name, source, getReport))
+        )
+        return rustCompilerErrors.filter(nonNull)
       })
       .with(
         {
