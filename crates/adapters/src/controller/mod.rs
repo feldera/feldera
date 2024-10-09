@@ -19,6 +19,7 @@
 
 use crate::catalog::OutputCollectionHandles;
 use crate::create_integrated_output_endpoint;
+use crate::transport::input_transport_config_is_fault_tolerant;
 use crate::transport::InputReader;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -485,6 +486,15 @@ impl Controller {
             usize::MAX
         };
 
+        // Check whether all of the configured inputs are fault-tolerant.
+        let mut inputs_are_fault_tolerant = true;
+        for (_name, config) in controller.status.pipeline_config.inputs.iter() {
+            if !input_transport_config_is_fault_tolerant(&config.connector_config.transport) {
+                inputs_are_fault_tolerant = false;
+                break;
+            }
+        }
+
         // Read the checkpoint and input steps, if any.
         let mut checkpoint = Checkpoint::default();
         let mut step_reader = None;
@@ -502,7 +512,7 @@ impl Controller {
                 }
                 fs::create_dir_all(path).map_err(startup_io_error)?;
 
-                if controller.has_fault_tolerant_inputs() {
+                if inputs_are_fault_tolerant {
                     info!("enabling fault tolerance");
 
                     let state_path = path.join("state.json");
