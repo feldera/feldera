@@ -437,6 +437,14 @@ export type Demo = {
    * Title of the demo (parsed from SQL preamble).
    */
   title: string
+  /**
+   * User defined function (UDF) Rust code.
+   */
+  udf_rust: string
+  /**
+   * User defined function (UDF) TOML dependencies.
+   */
+  udf_toml: string
 }
 
 /**
