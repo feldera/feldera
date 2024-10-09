@@ -391,9 +391,9 @@ impl Serialize for ControllerMetric {
 }
 
 impl ControllerStatus {
-    pub fn new(pipeline_config: &PipelineConfig) -> Self {
+    pub fn new(pipeline_config: PipelineConfig) -> Self {
         Self {
-            pipeline_config: pipeline_config.clone(),
+            pipeline_config,
             global_metrics: GlobalControllerMetrics::new(),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),

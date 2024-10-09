@@ -1,4 +1,5 @@
 use dbsp::circuit::checkpointer::CheckpointMetadata;
+use feldera_types::config::PipelineConfig;
 use rmpv::Value as RmpValue;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 use std::{
@@ -6,14 +7,14 @@ use std::{
     cmp::Ordering,
     collections::HashMap,
     fmt::{Display, Formatter, Result as FmtResult},
-    fs::{File, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::{BufReader, BufWriter, Error as IoError, ErrorKind, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::mpsc::{channel, Receiver, Sender},
     thread::{self, JoinHandle},
 };
 
-use crate::{transport::Step, ControllerError};
+use crate::{transport::Step, util::write_file_atomically, ControllerError};
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
@@ -120,11 +121,49 @@ impl From<StepError> for ControllerError {
     }
 }
 
-#[derive(Serialize, Deserialize, Default)]
+/// Checkpoint for a pipeline.
+#[derive(Serialize, Deserialize)]
 pub struct Checkpoint {
     #[serde(flatten)]
     pub circuit: CheckpointMetadata,
     pub step: Step,
+    pub config: PipelineConfig,
+}
+
+impl Checkpoint {
+    /// Reads a checkpoint in JSON format from `path`.
+    pub(super) fn read<P>(path: P) -> Result<Self, ControllerError>
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
+        let data = fs::read(path).map_err(|io_error| {
+            ControllerError::io_error(
+                format!("{}: failed to read checkpoint", path.display()),
+                io_error,
+            )
+        })?;
+        serde_json::from_slice::<Checkpoint>(&data).map_err(|e| {
+            ControllerError::CheckpointParseError {
+                error: e.to_string(),
+            }
+        })
+    }
+
+    /// Writes this checkpoint in JSON format to `path`, atomically replacing
+    /// any file that was previously at `path`.
+    pub(super) fn write<P>(&self, path: P) -> Result<(), ControllerError>
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
+        write_file_atomically(path, &serde_json::to_vec(self).unwrap()).map_err(|error| {
+            ControllerError::io_error(
+                format!("{}: failed to write pipeline state", path.display()),
+                error,
+            )
+        })
+    }
 }
 
 pub struct BackgroundSync {
@@ -321,6 +360,52 @@ impl StepWriter {
         self.sync
             .wait()
             .map_err(|error| StepError::io_error(&self.path, error))
+    }
+}
+
+pub enum StepRw {
+    Reader(StepReader),
+    Writer(StepWriter),
+}
+
+impl StepRw {
+    /// Opens the existing `steps.bin` file at `path`.
+    pub fn open<P>(path: P) -> Result<Self, StepError>
+    where
+        P: AsRef<Path>,
+    {
+        StepReader::open(path).map(Self::Reader)
+    }
+
+    pub fn create<P>(path: P) -> Result<Self, StepError>
+    where
+        P: AsRef<Path>,
+    {
+        StepWriter::create(path).map(Self::Writer)
+    }
+
+    pub fn into_reader(self) -> Option<StepReader> {
+        match self {
+            Self::Reader(step_reader) => Some(step_reader),
+            Self::Writer(_) => None,
+        }
+    }
+
+    pub fn read(self) -> Result<(Option<StepMetadata>, StepRw), StepError> {
+        match self {
+            Self::Reader(reader) => match reader.read()? {
+                ReadResult::Step { reader, metadata } => Ok((Some(metadata), Self::Reader(reader))),
+                ReadResult::Writer(writer) => Ok((None, Self::Writer(writer))),
+            },
+            Self::Writer(_) => Ok((None, self)),
+        }
+    }
+
+    pub fn as_writer(&mut self) -> Option<&mut StepWriter> {
+        match self {
+            Self::Reader(_) => None,
+            Self::Writer(step_writer) => Some(step_writer),
+        }
     }
 }
 
